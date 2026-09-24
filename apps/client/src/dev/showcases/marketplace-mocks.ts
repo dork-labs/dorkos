@@ -354,6 +354,12 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     scope: 'global',
     installPath: '/Users/kai/.dork/plugins/obsidian-sync',
     installedAt: '2026-03-01T14:30:00Z',
+    // Held back from every session: its files changed since it was approved.
+    heldBack: {
+      reason: 'unasked',
+      reviewable: true,
+      note: 'Held back: its files changed since you approved it. Review it to decide.',
+    },
   },
   {
     name: 'python-skills',
@@ -366,7 +372,6 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
   },
 ];
 
-/** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
 /** What a new version of the Flow plugin runs on its own, as a check discloses it. */
 const FLOW_NEXT_RUNS: DisclosedEffects = {
   hooks: [
@@ -399,6 +404,13 @@ const FLOW_NEXT_RUNS: DisclosedEffects = {
   skillTools: [{ source: 'skills/triage/SKILL.md', skill: 'triage', tools: ['Bash(gh:*)'] }],
 };
 
+/** What the Flow plugin installed now runs: one hook fewer, an older server. */
+const FLOW_NOW_RUNS: DisclosedEffects = {
+  ...FLOW_NEXT_RUNS,
+  hooks: [FLOW_NEXT_RUNS.hooks[1]!],
+  mcpServers: [{ ...FLOW_NEXT_RUNS.mcpServers[0]!, args: ['-y', '@linear/mcp-server@1'] }],
+};
+
 /** A new version that runs nothing on its own. */
 const RUNS_NOTHING: DisclosedEffects = {
   hooks: [],
@@ -410,6 +422,7 @@ const RUNS_NOTHING: DisclosedEffects = {
   skillTools: [],
 };
 
+/** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
 export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
   {
     packageName: 'code-reviewer',
@@ -424,6 +437,8 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     type: 'agent',
     scope: 'global',
     disclosed: RUNS_NOTHING,
+    contentHash: 'sha256:reviewer-150',
+    installedDisclosed: RUNS_NOTHING,
   },
   {
     packageName: 'flow',
@@ -441,6 +456,8 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     agentName: 'Release Bot',
     applyError: 'another install is already running in this folder',
     disclosed: FLOW_NEXT_RUNS,
+    contentHash: 'sha256:flow-073',
+    installedDisclosed: FLOW_NOW_RUNS,
   },
   {
     packageName: 'flow',
@@ -455,6 +472,8 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     type: 'plugin',
     scope: 'global',
     disclosed: FLOW_NEXT_RUNS,
+    contentHash: 'sha256:flow-080',
+    installedDisclosed: FLOW_NEXT_RUNS,
   },
   {
     packageName: 'obsidian-sync',
@@ -496,6 +515,8 @@ export const MOCK_UPDATE_CHECKS_ALL_CURRENT: InstallationUpdateCheck[] = MOCK_UP
     applyError: undefined,
     note: undefined,
     disclosed: undefined,
+    contentHash: undefined,
+    installedDisclosed: undefined,
   })
 );
 

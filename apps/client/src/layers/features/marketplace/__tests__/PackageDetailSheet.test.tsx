@@ -152,6 +152,7 @@ function makeDetail(overrides: Partial<MarketplacePackageDetail> = {}): Marketpl
       executables: [],
       skillTools: [],
     },
+    contentHash: 'sha256:staged',
     manifest: {
       name: '@dorkos/code-reviewer',
       version: '1.0.0',

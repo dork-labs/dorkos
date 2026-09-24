@@ -210,6 +210,8 @@ export interface ApprovableUpdate {
   latestVersion: string;
   /** What the new version would run: its hooks, scheduled jobs and MCP servers. */
   disclosed: DisclosedEffects | null;
+  /** The new version's shipped-content hash, as staged for the check. */
+  contentHash: string;
 }
 
 /**
@@ -235,6 +237,8 @@ export type ApprovalGate<R> = (updates: ApprovableUpdate[]) => Promise<R | undef
  * @param deps - The server's update dependencies.
  * @param req - The requested project and the selection.
  * @param gate - The surface's way of asking a person.
+ * @param settle - Called with the reinstalls that landed, before the refresh
+ *   (consent is recorded here, DOR-2306).
  * @returns The refusal, or the per-installation result.
  * @throws {PackageNotInstalledForUpdateError} When a selected name or path is
  *   not in view, before anything is checked.
@@ -242,13 +246,17 @@ export type ApprovalGate<R> = (updates: ApprovableUpdate[]) => Promise<R | undef
 export async function applyApprovedUpdates<R>(
   deps: InstalledUpdatesDeps,
   req: RequestedProject & InstallationSelector,
-  gate: ApprovalGate<R>
+  gate: ApprovalGate<R>,
+  settle?: (landed: ApprovableUpdate[]) => Promise<void>
 ): Promise<{ refused: R } | { result: InstallationUpdatesResult }> {
   const installations = selectInstallations(await scanUpdateView(deps, req.projectPath), req);
   const plan = await deps.updateFlow.planInstallations({ installations, disclose: true });
 
   const updates: ApprovableUpdate[] = plan.checks
-    .filter((c) => c.status === 'update-available' && c.disclosed !== undefined)
+    .filter(
+      (c) =>
+        c.status === 'update-available' && c.disclosed !== undefined && c.contentHash !== undefined
+    )
     .map((c) => {
       const projectPath = callerSpelling(c.agentPath, req);
       return {
@@ -261,6 +269,7 @@ export async function applyApprovedUpdates<R>(
         installedVersion: c.installedVersion,
         latestVersion: c.latestVersion,
         disclosed: c.disclosed ?? null,
+        contentHash: c.contentHash!,
       };
     });
   if (updates.length === 0) return { result: { checks: plan.checks } };
@@ -272,6 +281,10 @@ export async function applyApprovedUpdates<R>(
     plan,
     new Map(updates.map((u) => [u.installPath, u.disclosed]))
   );
+  // The surface settles consent for exactly the reinstalls that landed, and
+  // BEFORE the refresh below reads it: a failed one records nothing.
+  const landed = new Set(result.checks.filter((c) => c.applied).map((c) => c.installPath));
+  await settle?.(updates.filter((u) => landed.has(u.installPath)));
   notifyApplied(deps, result, req);
   return { result };
 }
@@ -287,12 +300,14 @@ export interface ShownUpdate {
   latestVersion: string;
   /** What that version runs, as the check reported it. */
   disclosed: DisclosedEffects | null;
+  /** The check's content hash for that version. */
+  contentHash: string;
 }
 
 /**
  * The reinstalls an apply would make that differ from what the caller was
- * shown: another version, or a version that runs anything else, or an
- * installation it was never shown at all. Empty means every reinstall is
+ * shown: another version, other files, a version that runs anything else, or
+ * an installation it was never shown at all. Empty means every reinstall is
  * exactly what was shown.
  *
  * The comparison is {@link sameDisclosedEffects}, the canonicalization the
@@ -313,6 +328,7 @@ export function updatesNotAsShown(
     return (
       target === undefined ||
       target.latestVersion !== update.latestVersion ||
+      target.contentHash !== update.contentHash ||
       !sameDisclosedEffects(target.disclosed, update.disclosed)
     );
   });

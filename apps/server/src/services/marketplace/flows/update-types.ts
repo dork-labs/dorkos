@@ -40,7 +40,7 @@ export interface InstallerLike {
    * would have, without installing. Used to show a person what an update's new
    * version would run before they approve it (DOR-2195).
    */
-  preview(req: InstallRequest): Promise<{ preview: PermissionPreview }>;
+  preview(req: InstallRequest): Promise<{ preview: PermissionPreview; packagePath: string }>;
 }
 
 /**
@@ -139,6 +139,13 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
    * planned with `disclose`, which is what an approval card shows and binds.
    */
   disclosed?: DisclosedEffects | null;
+  /** The new version's shipped-content hash, planned with `disclose` (`lib/content-hash.ts`). */
+  contentHash?: string;
+  /**
+   * What the installed version runs now, planned with `disclose`; `null` when
+   * it could not be read. Lets a confirm step say what the new version adds.
+   */
+  installedDisclosed?: DisclosedEffects | null;
 }
 
 /** A request to check a set of scanned installations. */

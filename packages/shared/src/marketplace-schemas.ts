@@ -155,6 +155,13 @@ export interface MarketplacePackageDetail {
    */
   disclosed: DisclosedEffects;
   /**
+   * A hash of the package's files as they were staged for this preview. Send
+   * it back as `InstallOptions.approvedContentHash`: a globally installed
+   * package that runs anything loads into sessions only when its installed
+   * copy hashes the same (DOR-2306).
+   */
+  contentHash: string;
+  /**
    * Raw markdown of the package's root `README.md`, read from the staged clone
    * (case-insensitive, capped at 200 KB). Omitted when the package ships no
    * README so the UI renders nothing rather than an empty section.
@@ -725,6 +732,8 @@ export interface InstallOptions {
    * is then recorded as their approval to load it (DOR-2306).
    */
   approvedDisclosure?: DisclosedEffects;
+  /** The preview's `contentHash`, sent back with {@link approvedDisclosure}. */
+  approvedContentHash?: string;
 }
 
 /**
@@ -919,6 +928,16 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
    * ({@link ApplyUpdateTarget}), so it is what a confirm step must show.
    */
   disclosed?: DisclosedEffects | null;
+  /**
+   * A hash of the new version's files, as staged for this check. Sent back
+   * with {@link disclosed}: the apply refuses a new version whose files moved.
+   */
+  contentHash?: string;
+  /**
+   * What the version installed NOW runs, read from its install root, so a
+   * confirm step can say what the new version adds or changes.
+   */
+  installedDisclosed?: DisclosedEffects | null;
 }
 
 /**
@@ -934,6 +953,8 @@ export interface ApplyUpdateTarget {
   latestVersion: string;
   /** What that version runs, as the check reported it (`check.disclosed`). */
   disclosed: DisclosedEffects | null;
+  /** The check's `contentHash` for that version. */
+  contentHash: string;
 }
 
 /**
@@ -1030,6 +1051,49 @@ export interface InstalledPackage {
    * its update check is `unknown` and says to update the source instead.
    */
   linked?: true;
+  /**
+   * Set on a global installation that runs things on its own and is held
+   * back from every session because nobody approved it as it is now
+   * (DOR-2306). Absent when it loads.
+   */
+  heldBack?: HeldBackState;
+}
+
+/** Why a global package is held back from sessions. */
+export type HeldBackReason = 'unasked' | 'refused' | 'unreadable' | 'unreadable-config';
+
+/** A global package held back from every session, and what a person can do about it. */
+export interface HeldBackState {
+  /** Why it is held back. */
+  reason: HeldBackReason;
+  /** One plain sentence saying why, and what to do. */
+  note: string;
+  /**
+   * Whether an approval card can be raised for it. False when it cannot be
+   * shown in full: something in it could not be read, the settings file could
+   * not be read, or its list is too long for a card (the terminal can still
+   * show it: `dorkos marketplace held-back --allow <name>`).
+   */
+  reviewable: boolean;
+}
+
+/**
+ * One held-back global package as `GET /api/marketplace/held-back` lists it:
+ * everything a person needs to decide, and the content hash a decision binds.
+ */
+export interface HeldBackPackage extends HeldBackState {
+  /** The package's directory name. */
+  name: string;
+  /** Its installed version, when recorded. */
+  version?: string;
+  /** Where it was installed from, when recorded. */
+  source?: string;
+  /** Whether an earlier approval exists for other bytes: it changed since then. */
+  changedSinceApproval: boolean;
+  /** What it runs, when it could be read. */
+  effects?: DisclosedEffects;
+  /** The content hash an allow or refuse is bound to, when it could be read. */
+  contentHash?: string;
 }
 
 // ---------------------------------------------------------------------------

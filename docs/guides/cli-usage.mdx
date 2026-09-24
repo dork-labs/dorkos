@@ -156,6 +156,8 @@ dorkos marketplace update <package> --apply               # Review and install a
 dorkos marketplace update --apply                         # Review and install every available update
 dorkos marketplace update --apply --yes                   # Install without the question (still prints what runs)
 dorkos marketplace update <package> --project <path>      # Check or apply within a specific project
+dorkos marketplace held-back                              # List packages held back from every session, and why
+dorkos marketplace held-back --allow <package>            # Print what it runs, then let it load (asks first)
 
 dorkos marketplace add <url> [--name <name>]              # Register a new source (you only)
 dorkos marketplace remove <name>                          # Remove a source (you only)

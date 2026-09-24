@@ -5,8 +5,9 @@
  * pipeline changed any runnable declaration on the way (a copy that drops a
  * file, a rewrite), every approved package would be held back from sessions
  * forever. This drives the real installer end to end over a package that runs
- * one of everything, and checks the approval it records is the one activation
- * finds.
+ * one of everything (a package with an extension, whose install compiles it),
+ * and checks the approval it records, from the staged bytes the preview
+ * hashed, is the one activation finds on the installed copy.
  *
  * @vitest-environment node
  */
@@ -36,6 +37,7 @@ import { initBoundary } from '../../../lib/boundary.js';
 import { disclosedEffectsOf } from '../disclosed-effects.js';
 import { globalConsentRecorder, partitionGlobalPlugins } from '../global-plugin-consent.js';
 import { buildInstallerForTests } from './installer-harness.js';
+import { shippedContentHash } from '../lib/content-hash.js';
 
 const FIXTURE = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -95,16 +97,21 @@ describe('global activation consent, through the real installer', () => {
     expect(shown?.executables).toEqual(['notes']);
     expect(shown?.skillTools.length).toBe(1);
 
+    // The staged files the person saw, as the preview hashes them.
+    const { packagePath } = await installer.preview({ name: source });
+    const contentHash = await shippedContentHash(packagePath);
+
     // Held back until someone approves it...
     const result = await installer.install({ name: source, approvedDisclosure: shown });
     expect((await partitionGlobalPlugins(dorkHome)).withheld.map((w) => w.reason)).toEqual([
       'unasked',
     ]);
 
-    // ...and loaded once the person's install is recorded as that approval.
-    globalConsentRecorder.approveInstall(
+    // ...and loaded once the person's install is recorded as that approval:
+    // the installed copy declares and ships exactly what the preview did.
+    await globalConsentRecorder.settle(
       { installPath: result.installPath, type: result.type, global: true },
-      shown
+      { disclosed: shown, contentHash }
     );
     expect(await partitionGlobalPlugins(dorkHome)).toEqual({
       activate: ['valid-plugin'],

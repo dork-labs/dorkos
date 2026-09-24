@@ -43,6 +43,7 @@ import {
 } from '../core/approvals/index.js';
 import {
   describeDisclosedEffects,
+  describeEffectsInFull,
   disclosedEffectsOf,
   type DisclosedEffects,
 } from '../marketplace/disclosed-effects.js';
@@ -136,6 +137,18 @@ export interface ConfirmationRequest {
    * for the whole of that line and why it falls where it does.
    */
   preview?: PermissionPreview;
+  /**
+   * Install only: the shipped-content hash of the package the preview staged
+   * (`marketplace/lib/content-hash.ts`). Bound, so an approval covers these
+   * bytes and no others (DOR-2306).
+   */
+  contentHash?: string;
+  /**
+   * Install only, shown on the card and not bound: the version and where the
+   * package comes from, so a person can tell what they are approving (the
+   * binding above already pins the bytes).
+   */
+  origin?: { version?: string; source?: string };
   /**
    * Opaque label for the agent that asked, shown on the approval card so an
    * operator can see WHO wants this. Not part of the effect, so deliberately not
@@ -277,6 +290,9 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
       // Absence is bound as absence here too: an operation that previews nothing
       // must not hash the same as one whose package declares nothing.
       disclosed,
+      // The staged files the card describes (DOR-2306): a source that moves
+      // after the card is a different install.
+      contentHash: req.contentHash ?? null,
     }),
     disclosed,
   };
@@ -292,12 +308,13 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
  */
 function canonicalUpdates(
   updates: readonly ApprovableUpdate[]
-): Pick<ApprovableUpdate, 'installPath' | 'latestVersion' | 'disclosed'>[] {
+): Pick<ApprovableUpdate, 'installPath' | 'latestVersion' | 'disclosed' | 'contentHash'>[] {
   return updates
     .map((u) => ({
       installPath: u.installPath,
       latestVersion: u.latestVersion,
       disclosed: u.disclosed,
+      contentHash: u.contentHash,
     }))
     .sort((a, b) => a.installPath.localeCompare(b.installPath));
 }
@@ -317,6 +334,25 @@ function tooManyUpdatesRefusal(count: number): ConfirmationResult {
       `These ${count} updates, and everything their new versions would run, are too much to show ` +
       `on one approval card, so DorkOS did not ask. Nothing was changed. Update fewer at a time: ` +
       `check first, then apply with the installPaths of a few of them.`,
+  };
+}
+
+/** Whether an install's full list would be cut on the card. */
+function tooLongToShow(req: ConfirmationRequest): boolean {
+  return (
+    req.operation === 'install' &&
+    req.preview !== undefined &&
+    describeInstallInFull(req).length > UPDATE_DETAIL_MAX_LENGTH
+  );
+}
+
+/** Refuse an install whose full list will not fit on one card; nothing runs. */
+function tooMuchToShowRefusal(): ConfirmationResult {
+  return {
+    status: 'declined',
+    reason:
+      'This package runs too much to show in full on one approval card, so DorkOS did not ask. ' +
+      'Nothing was changed. A person can review and install it themselves with `dorkos install`.',
   };
 }
 
@@ -353,6 +389,23 @@ function unbindableRefusal(
       `not enforce. Nothing was changed. This is a bug in the tool that asked, not something to ` +
       `approve around.`,
   };
+}
+
+/**
+ * The full text of an install card: who asked, the version and where it comes
+ * from, and everything the package runs on its own, written out whole.
+ */
+function describeInstallInFull(req: ConfirmationRequest): string {
+  const where = req.projectPath
+    ? 'declared, but not started for a project install'
+    : 'in every session';
+  const lines = [
+    `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
+    `Version ${JSON.stringify(req.origin?.version ?? 'not stated')}, from ${JSON.stringify(req.origin?.source ?? req.marketplace ?? 'any enabled marketplace')}.`,
+    '',
+    ...describeEffectsInFull(disclosedEffectsOf(req.preview), where),
+  ];
+  return lines.join('\n');
 }
 
 /** Where an operation lands, for the card: a named project or the global scope. */
@@ -473,6 +526,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
     if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
       return tooManyUpdatesRefusal(req.updates.length);
     }
+    if (tooLongToShow(req)) return tooMuchToShowRefusal();
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
@@ -498,7 +552,11 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       capabilityId: binding.capabilityId,
       inputHash: binding.inputHash,
       summary: summaryOf(req),
-      ...(req.updates ? { detail: describeUpdatesInFull(req.updates) } : {}),
+      ...(req.updates
+        ? { detail: describeUpdatesInFull(req.updates) }
+        : req.operation === 'install' && req.preview
+          ? { detail: describeInstallInFull(req) }
+          : {}),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return ticket.token;
@@ -525,6 +583,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
     if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
       return tooManyUpdatesRefusal(req.updates.length);
     }
+    if (tooLongToShow(req)) return tooMuchToShowRefusal();
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);

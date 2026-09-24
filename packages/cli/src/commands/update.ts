@@ -251,6 +251,7 @@ async function applyUpdates(args: UpdateArgs): Promise<number> {
           installPath: check.installPath,
           latestVersion: check.latestVersion,
           disclosed: check.disclosed ?? null,
+          contentHash: check.contentHash ?? '',
         })),
         ...(args.projectPath && { projectPath: args.projectPath }),
         ...(args.approvalToken && { confirmationToken: args.approvalToken }),

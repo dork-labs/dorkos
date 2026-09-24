@@ -63,7 +63,12 @@ describe('createMarketplaceMethods().checkMarketplaceUpdates', () => {
 });
 
 /** One target that runs nothing on its own. */
-const TARGET = { installPath: '/x', latestVersion: '2.0.0', disclosed: null };
+const TARGET = {
+  installPath: '/x',
+  latestVersion: '2.0.0',
+  disclosed: null,
+  contentHash: 'sha256:a',
+};
 
 describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
   it('POSTs apply: true with exactly the named installations, each as it was shown', async () => {
@@ -82,8 +87,18 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
       skillTools: [],
     };
     const targets = [
-      { installPath: '/home/.dork/plugins/flow', latestVersion: '2.0.0', disclosed: runs },
-      { installPath: '/work/alpha/.dork/plugins/flow', latestVersion: '2.0.0', disclosed: null },
+      {
+        installPath: '/home/.dork/plugins/flow',
+        latestVersion: '2.0.0',
+        disclosed: runs,
+        contentHash: 'sha256:a',
+      },
+      {
+        installPath: '/work/alpha/.dork/plugins/flow',
+        latestVersion: '2.0.0',
+        disclosed: null,
+        contentHash: 'sha256:b',
+      },
     ] as const;
 
     await createMarketplaceMethods('/api').applyMarketplaceUpdates({

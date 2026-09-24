@@ -18467,6 +18467,32 @@
                               true
                             ],
                             "description": "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
+                          },
+                          "heldBack": {
+                            "type": "object",
+                            "properties": {
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "unasked",
+                                  "refused",
+                                  "unreadable",
+                                  "unreadable-config"
+                                ]
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "reviewable": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "reason",
+                              "note",
+                              "reviewable"
+                            ],
+                            "description": "Present only on a global installation held back from every session until a person approves it as it is (DOR-2306)."
                           }
                         },
                         "required": [
@@ -18586,6 +18612,32 @@
                               true
                             ],
                             "description": "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
+                          },
+                          "heldBack": {
+                            "type": "object",
+                            "properties": {
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "unasked",
+                                  "refused",
+                                  "unreadable",
+                                  "unreadable-config"
+                                ]
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "reviewable": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "reason",
+                              "note",
+                              "reviewable"
+                            ],
+                            "description": "Present only on a global installation held back from every session until a person approves it as it is (DOR-2306)."
                           },
                           "provides": {
                             "type": "object",
@@ -19524,6 +19576,9 @@
                         "skillTools"
                       ]
                     },
+                    "contentHash": {
+                      "type": "string"
+                    },
                     "readme": {
                       "type": "string"
                     }
@@ -19532,7 +19587,8 @@
                     "manifest",
                     "packagePath",
                     "preview",
-                    "disclosed"
+                    "disclosed",
+                    "contentHash"
                   ]
                 }
               }
@@ -19807,6 +19863,14 @@
                       "skillTools"
                     ],
                     "description": "Install only: the preview's `disclosed`, sent back untouched. The install refuses a package that now runs anything else (409 `disclosure_changed`)."
+                  },
+                  "approvedContentHash": {
+                    "type": "string",
+                    "description": "Install only: the preview's `contentHash`. A global package that runs anything loads into sessions only when its installed files hash the same."
+                  },
+                  "confirmationToken": {
+                    "type": "string",
+                    "description": "Install only: the token an agent's earlier 202 carried, once a person approved."
                   }
                 }
               }
@@ -20447,13 +20511,18 @@
                         "skillTools"
                       ],
                       "description": "What the package runs on its own, in the form an install is held to: send it back as `approvedDisclosure`."
+                    },
+                    "contentHash": {
+                      "type": "string",
+                      "description": "The staged files, hashed: send it back as `approvedContentHash`."
                     }
                   },
                   "required": [
                     "preview",
                     "manifest",
                     "packagePath",
-                    "disclosed"
+                    "disclosed",
+                    "contentHash"
                   ]
                 }
               }
@@ -20728,6 +20797,14 @@
                       "skillTools"
                     ],
                     "description": "Install only: the preview's `disclosed`, sent back untouched. The install refuses a package that now runs anything else (409 `disclosure_changed`)."
+                  },
+                  "approvedContentHash": {
+                    "type": "string",
+                    "description": "Install only: the preview's `contentHash`. A global package that runs anything loads into sessions only when its installed files hash the same."
+                  },
+                  "confirmationToken": {
+                    "type": "string",
+                    "description": "Install only: the token an agent's earlier 202 carried, once a person approved."
                   }
                 }
               }
@@ -20819,6 +20896,416 @@
                     "installPath",
                     "manifest",
                     "warnings"
+                  ]
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "An agent's global install that runs things on its own, or replaces a global package, waits for a person to approve the card; nothing was installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "requires_confirmation"
+                      ]
+                    },
+                    "confirmationToken": {
+                      "type": "string"
+                    },
+                    "preview": {
+                      "type": "object",
+                      "properties": {
+                        "fileChanges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "action": {
+                                "type": "string",
+                                "enum": [
+                                  "create",
+                                  "modify",
+                                  "delete"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "action"
+                            ]
+                          }
+                        },
+                        "extensions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "slots": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "slots"
+                            ]
+                          }
+                        },
+                        "hooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "event": {
+                                "type": "string"
+                              },
+                              "matcher": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "source": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "event",
+                              "command"
+                            ]
+                          }
+                        },
+                        "unreadableHooks": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "event": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path"
+                            ]
+                          }
+                        },
+                        "mcpServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "transport": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "url": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "transport"
+                            ]
+                          }
+                        },
+                        "lspServers": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "args": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command",
+                              "args"
+                            ]
+                          }
+                        },
+                        "monitors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "when": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "command"
+                            ]
+                          }
+                        },
+                        "executables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "skillTools": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "tools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "tools"
+                            ]
+                          }
+                        },
+                        "unreadableDeclarations": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "mcp-server",
+                                  "lsp-server",
+                                  "monitor"
+                                ]
+                              },
+                              "entry": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "kind"
+                            ]
+                          }
+                        },
+                        "schedules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "cron": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "permissionMode": {
+                                "$ref": "#/components/schemas/PermissionMode"
+                              },
+                              "startsEnabled": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "cron",
+                              "permissionMode",
+                              "startsEnabled"
+                            ]
+                          }
+                        },
+                        "secrets": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "key": {
+                                "type": "string"
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "description": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "key",
+                              "required"
+                            ]
+                          }
+                        },
+                        "npmDependencies": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string"
+                              },
+                              "range": {
+                                "type": "string"
+                              },
+                              "optional": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "range"
+                            ]
+                          }
+                        },
+                        "externalHosts": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "requires": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "satisfied": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "type",
+                              "name",
+                              "satisfied"
+                            ]
+                          }
+                        },
+                        "conflicts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "level": {
+                                "type": "string",
+                                "enum": [
+                                  "error",
+                                  "warning"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "package-name",
+                                  "slot",
+                                  "skill-name",
+                                  "task-name",
+                                  "cron-collision",
+                                  "adapter-id"
+                                ]
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "conflictingPackage": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "level",
+                              "type",
+                              "description"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "fileChanges",
+                        "extensions",
+                        "hooks",
+                        "unreadableHooks",
+                        "mcpServers",
+                        "lspServers",
+                        "monitors",
+                        "executables",
+                        "skillTools",
+                        "unreadableDeclarations",
+                        "schedules",
+                        "secrets",
+                        "npmDependencies",
+                        "externalHosts",
+                        "requires",
+                        "conflicts"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "confirmationToken",
+                    "preview",
+                    "message"
                   ]
                 }
               }
@@ -21544,6 +22031,223 @@
                               "skillTools"
                             ],
                             "description": "On every update-available check: what the new version runs on its own. An apply sends it back untouched."
+                          },
+                          "contentHash": {
+                            "type": "string",
+                            "description": "The new version's staged files, hashed. An apply sends it back untouched."
+                          },
+                          "installedDisclosed": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "hooks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "event": {
+                                      "type": "string"
+                                    },
+                                    "matcher": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "event",
+                                    "matcher",
+                                    "command",
+                                    "source"
+                                  ]
+                                }
+                              },
+                              "schedules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "cron": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "permissionMode": {
+                                      "type": "string"
+                                    },
+                                    "startsEnabled": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "cron",
+                                    "permissionMode",
+                                    "startsEnabled"
+                                  ]
+                                }
+                              },
+                              "mcpServers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "url": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "transport",
+                                    "command",
+                                    "args",
+                                    "url"
+                                  ]
+                                }
+                              },
+                              "lspServers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "when": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "command",
+                                    "args",
+                                    "when"
+                                  ]
+                                }
+                              },
+                              "monitors": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "when": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "command",
+                                    "args",
+                                    "when"
+                                  ]
+                                }
+                              },
+                              "executables": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "skillTools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "tools": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "tools"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "hooks",
+                              "schedules",
+                              "mcpServers",
+                              "lspServers",
+                              "monitors",
+                              "executables",
+                              "skillTools"
+                            ],
+                            "description": "What the installed version runs now; null when it could not be read."
                           }
                         },
                         "required": [
@@ -21833,12 +22537,17 @@
                             "executables",
                             "skillTools"
                           ]
+                        },
+                        "contentHash": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
                         "installPath",
                         "latestVersion",
-                        "disclosed"
+                        "disclosed",
+                        "contentHash"
                       ]
                     },
                     "minItems": 1
@@ -22246,6 +22955,223 @@
                               "skillTools"
                             ],
                             "description": "On every update-available check: what the new version runs on its own. An apply sends it back untouched."
+                          },
+                          "contentHash": {
+                            "type": "string",
+                            "description": "The new version's staged files, hashed. An apply sends it back untouched."
+                          },
+                          "installedDisclosed": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "hooks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "event": {
+                                      "type": "string"
+                                    },
+                                    "matcher": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "event",
+                                    "matcher",
+                                    "command",
+                                    "source"
+                                  ]
+                                }
+                              },
+                              "schedules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "cron": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "permissionMode": {
+                                      "type": "string"
+                                    },
+                                    "startsEnabled": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "cron",
+                                    "permissionMode",
+                                    "startsEnabled"
+                                  ]
+                                }
+                              },
+                              "mcpServers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "url": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "transport",
+                                    "command",
+                                    "args",
+                                    "url"
+                                  ]
+                                }
+                              },
+                              "lspServers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "when": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "command",
+                                    "args",
+                                    "when"
+                                  ]
+                                }
+                              },
+                              "monitors": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "when": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "command",
+                                    "args",
+                                    "when"
+                                  ]
+                                }
+                              },
+                              "executables": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "skillTools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "tools": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "tools"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "hooks",
+                              "schedules",
+                              "mcpServers",
+                              "lspServers",
+                              "monitors",
+                              "executables",
+                              "skillTools"
+                            ],
+                            "description": "What the installed version runs now; null when it could not be read."
                           }
                         },
                         "required": [
@@ -22387,6 +23313,408 @@
           },
           "502": {
             "description": "The package's git remote could not be reached, or its fetch failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/held-back": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "List global packages held back from every session",
+        "description": "A globally installed package that runs things on its own loads into sessions only when a person approved it exactly as it is (its files and what it runs). Each entry says why it is held back, what it runs, and the content hash a decision is bound to.",
+        "responses": {
+          "200": {
+            "description": "Every held-back package",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "packages": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "unasked",
+                              "refused",
+                              "unreadable",
+                              "unreadable-config"
+                            ]
+                          },
+                          "note": {
+                            "type": "string"
+                          },
+                          "reviewable": {
+                            "type": "boolean"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "changedSinceApproval": {
+                            "type": "boolean"
+                          },
+                          "effects": {
+                            "type": "object",
+                            "properties": {
+                              "hooks": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "event": {
+                                      "type": "string"
+                                    },
+                                    "matcher": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "source": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "event",
+                                    "matcher",
+                                    "command",
+                                    "source"
+                                  ]
+                                }
+                              },
+                              "schedules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "cron": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "permissionMode": {
+                                      "type": "string"
+                                    },
+                                    "startsEnabled": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "cron",
+                                    "permissionMode",
+                                    "startsEnabled"
+                                  ]
+                                }
+                              },
+                              "mcpServers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "transport": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "url": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "transport",
+                                    "command",
+                                    "args",
+                                    "url"
+                                  ]
+                                }
+                              },
+                              "lspServers": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "when": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "command",
+                                    "args",
+                                    "when"
+                                  ]
+                                }
+                              },
+                              "monitors": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string"
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "args": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "when": {
+                                      "type": [
+                                        "string",
+                                        "null"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "name",
+                                    "command",
+                                    "args",
+                                    "when"
+                                  ]
+                                }
+                              },
+                              "executables": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "skillTools": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "tools": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "tools"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "hooks",
+                              "schedules",
+                              "mcpServers",
+                              "lspServers",
+                              "monitors",
+                              "executables",
+                              "skillTools"
+                            ]
+                          },
+                          "contentHash": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "reason",
+                          "note",
+                          "reviewable",
+                          "changedSinceApproval"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "packages"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/held-back/{name}/review": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Raise the approval card for a held-back package again",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "The card is raised; a person decides on it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "asked"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not held back, or cannot be shown on a card (the error says what to do)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/held-back/{name}/decision": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Record the person's allow or refuse for a held-back package",
+        "description": "The person only: an agent is refused. Bound to the content hash the person was shown; a package that changed since is not decided by it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "allow",
+                      "refuse"
+                    ]
+                  },
+                  "contentHash": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "decision",
+                  "contentHash"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded"
+          },
+          "403": {
+            "description": "Not the person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not held back, unreadable, or changed since it was shown",
             "content": {
               "application/json": {
                 "schema": {

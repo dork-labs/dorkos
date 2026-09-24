@@ -49,6 +49,8 @@ Packages:
   installed                   List what is installed, and where
   outdated                    List only the packages that have an update
                                 (exits 1 when any do, for scripts)
+  held-back                   List global packages held back from sessions,
+                                and allow or turn one down
 
 Sources:
   add <url> [--name <name>]   Register a marketplace source
@@ -125,6 +127,26 @@ Examples:
   dorkos marketplace update code-review-suite     # check a single package
   dorkos marketplace update --apply               # review and apply every available update
 `,
+  'held-back': `
+Usage: dorkos marketplace held-back [--allow <name> [--yes] | --refuse <name>]
+
+A package you installed for all your projects loads into every session. If it
+runs commands or programs of its own, DorkOS holds it back until you approve it
+exactly as it is. Installing or updating it yourself counts as approving it.
+
+On its own this lists what is held back and why. --allow prints everything the
+package runs and asks you; --refuse turns it down. Either decision covers the
+package's files as they are now: if they change, DorkOS asks again.
+
+Options:
+      --allow <name>    Let this package run in every session
+      --refuse <name>   Keep it held back
+  -y, --yes             Do not ask before allowing (it still prints what runs)
+
+Examples:
+  dorkos marketplace held-back
+  dorkos marketplace held-back --allow code-formatter
+`,
   uninstall: `
 Usage: dorkos marketplace uninstall <name> [options]
        dorkos uninstall <name> [options]
@@ -187,7 +209,8 @@ Examples:
 };
 
 /** Every subcommand, in the order the one-line usage names them. */
-const SUBCOMMANDS = 'install|update|uninstall|installed|outdated|add|remove|list|refresh|validate';
+const SUBCOMMANDS =
+  'install|update|uninstall|installed|outdated|held-back|add|remove|list|refresh|validate';
 
 /**
  * Dispatch a `dorkos marketplace <subcommand>` invocation.
@@ -236,6 +259,11 @@ export async function runMarketplaceDispatcher(
     if (subcommand === 'uninstall') {
       const { runUninstall, parseUninstallArgs } = await import('./uninstall.js');
       return await runUninstall(parseUninstallArgs(subArgs));
+    }
+    if (subcommand === 'held-back') {
+      const { runMarketplaceHeldBack, parseMarketplaceHeldBackArgs } =
+        await import('./marketplace-held-back.js');
+      return await runMarketplaceHeldBack(parseMarketplaceHeldBackArgs(subArgs));
     }
     if (subcommand === 'installed') {
       const { runMarketplaceInstalled, parseMarketplaceInstalledArgs } =

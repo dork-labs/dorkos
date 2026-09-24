@@ -39,7 +39,7 @@ import { listEnabledPluginNames } from '../../../marketplace/installed-scanner.j
 import {
   globalActivationEntry,
   partitionGlobalPlugins,
-  readActivationEffects,
+  readActivationState,
 } from '../../../marketplace/global-plugin-consent.js';
 
 /** A no-op logger, so a warning never becomes console noise. */
@@ -109,10 +109,10 @@ describe('case 10: global SDK injection survives the user tier', () => {
     expect(
       (await partitionGlobalPlugins(dorkHome, { approved: [], refused: [] })).activate
     ).toEqual([]);
-    const reading = await readActivationEffects(join(dorkHome, 'plugins', 'globex'));
+    const reading = await readActivationState(join(dorkHome, 'plugins', 'globex'));
     if (!('effects' in reading)) throw new Error('the staged package should be readable');
     const { activate: enabled } = await partitionGlobalPlugins(dorkHome, {
-      approved: [globalActivationEntry('globex', reading.effects)],
+      approved: [globalActivationEntry('globex', reading.effects, reading.contentHash)],
       refused: [],
     });
     expect(enabled).toContain('globex');

@@ -933,6 +933,14 @@ console.log('');
 // never-started second `TunnelManager` and the address never printed.
 attachTunnelPrintout(server.tunnelManager);
 
+// Say which globally installed packages are held back from every session
+// because nobody approved them as they are (DOR-2306). A headless server has
+// no browser to show the approval card in, so the terminal says it and names
+// the command that decides it.
+void import('./commands/marketplace-held-back.js').then(({ printHeldBackNotice }) =>
+  printHeldBackNotice()
+);
+
 // Open browser automatically (skipped in non-TTY or when --no-open)
 if (shouldOpenBrowser && process.stdin.isTTY) {
   const { exec } = await import('node:child_process');

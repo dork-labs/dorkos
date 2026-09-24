@@ -161,6 +161,7 @@ export function useApplyUpdatesWithToast() {
         installPath: check.installPath,
         latestVersion: check.latestVersion,
         disclosed: check.disclosed ?? null,
+        contentHash: check.contentHash ?? '',
       }));
       if (first === undefined) return;
       const paths = fresh.map(({ check }) => check.installPath);

@@ -40,7 +40,24 @@ import {
   DisclosedEffectsSchema,
   disclosedEffectsOf,
 } from '../services/marketplace/disclosed-effects.js';
-import type { GlobalConsentRecorder } from '../services/marketplace/global-plugin-consent.js';
+import {
+  activationEffectsOf,
+  globalPackageDir,
+  globalPackageExists,
+  GLOBALLY_ACTIVATED_TYPES,
+  type ApprovedPackage,
+  type GlobalConsentRecorder,
+} from '../services/marketplace/global-plugin-consent.js';
+import { shippedContentHash } from '../services/marketplace/lib/content-hash.js';
+import {
+  decideHeldBackPackage,
+  HeldBackDecisionError,
+  HeldBackReviewError,
+  listHeldBackPackages,
+  reviewHeldBackPackage,
+  type AskAboutWithheldGlobalPluginsOptions,
+} from '../services/marketplace/ask-withheld-global-plugins.js';
+import { disclosesAnything, type DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
 import type {
   ConfirmationProvider,
   ConfirmationRequest,
@@ -171,6 +188,12 @@ export interface MarketplaceRouteDeps {
    */
   consent: GlobalConsentRecorder;
   /**
+   * How a held-back global package's card is raised when a person asks for it
+   * (the Installed view's Review button), and what runs after a yes: the
+   * approval primitive and the plugin refresh (DOR-2306).
+   */
+  heldBackCards: Pick<AskAboutWithheldGlobalPluginsOptions, 'approvals' | 'onGranted'>;
+  /**
    * List the registered agents whose project directories the cross-scope
    * installed scan should walk (typically `meshCore.listWithPaths()`). When
    * absent — mesh disabled or not yet initialized — the installed listing
@@ -203,6 +226,12 @@ const InstallRequestBodySchema = z.object({
   // sent back untouched. The install refuses a package that now runs anything
   // else (DOR-2306); preview ignores it.
   approvedDisclosure: DisclosedEffectsSchema.optional(),
+  // The preview's `contentHash`, sent back with the disclosure: a global
+  // package loads into sessions only when its installed copy hashes the same.
+  approvedContentHash: z.string().min(1).optional(),
+  // An agent's install of a global package that runs anything waits on an
+  // approval card; the retry carries its token (DOR-2306).
+  confirmationToken: z.string().min(1).optional(),
 });
 
 /** Body schema for `POST /api/marketplace/packages/:name/uninstall`. */
@@ -244,12 +273,21 @@ const ApplyUpdatesBodySchema = z
           installPath: z.string().min(1),
           latestVersion: z.string(),
           disclosed: DisclosedEffectsSchema.nullable(),
+          contentHash: z.string().min(1),
         })
       )
       .min(1),
     // The token an earlier call's `requires_confirmation` answer carried, once
     // a person has approved the card (an agent's apply only).
     confirmationToken: z.string().min(1).optional(),
+  })
+  .strict();
+
+/** Body schema for `POST /api/marketplace/held-back/:name/decision`. */
+const HeldBackDecisionBodySchema = z
+  .object({
+    decision: z.enum(['allow', 'refuse']),
+    contentHash: z.string().min(1),
   })
   .strict();
 
@@ -354,6 +392,34 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
   };
 }
 
+/** Machine-readable code for a request only an older dorkos CLI sends. */
+const OUTDATED_CLIENT_CODE = 'client_outdated';
+
+/**
+ * Whether a `POST /updates` body is one only an older client sends: an apply
+ * with no `targets`, or with the retired `names` / `installPaths` selectors.
+ */
+function fromOutdatedClient(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const b = body as Record<string, unknown>;
+  return b.apply === true && (!('targets' in b) || 'names' in b || 'installPaths' in b);
+}
+
+/**
+ * Answer a request from a client older than this server with a sentence that
+ * says what to do, instead of a schema error (DOR-2306): updates now show what
+ * each new version runs before anything is applied, which an old client cannot.
+ */
+function outdatedClientResponse(res: Response): Response {
+  return res.status(400).json({
+    error:
+      'This dorkos CLI is older than the DorkOS it is talking to, so nothing was updated. ' +
+      'Update the CLI (npm install -g dorkos), then run the update again: it now shows what ' +
+      'each new version runs before it installs anything.',
+    code: OUTDATED_CLIENT_CODE,
+  });
+}
+
 /** Why `POST /updates` ran nothing, as its gate decided. */
 type UpdateRefusal =
   /** What a reinstall would run now is not what the caller was shown. */
@@ -438,6 +504,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     capabilityRegistry,
     confirmationProvider,
     consent,
+    heldBackCards,
   } = deps;
   const router = Router();
 
@@ -769,7 +836,21 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const confined = await confineProjectPath(res, query.projectPath);
       if (confined.refused) return confined.refused;
       const records = await scanUpdateView(updateDeps, confined.projectPath);
-      return res.json({ packages: records.map((r) => r.package) });
+      // A global package held back from every session says so on its row, so
+      // it never just vanishes from sessions without a word (DOR-2306).
+      const heldBack = new Map(
+        (await listHeldBackPackages(dorkHome)).map((held) => [
+          globalPackageDir(dorkHome, held.name),
+          { reason: held.reason, note: held.note, reviewable: held.reviewable },
+        ])
+      );
+      return res.json({
+        packages: records.map((r) => {
+          const held =
+            r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
+          return held ? { ...r.package, heldBack: held } : r.package;
+        }),
+      });
     } catch (err) {
       logger.error('[Marketplace] Failed to list installed packages', err);
       return res.status(500).json({ error: 'Failed to list installed packages' });
@@ -976,26 +1057,40 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         ...(parsed.data.projectPath !== undefined && { projectPath: parsed.data.projectPath }),
       });
       if (decision.outcome !== 'allowed') return gateResponse(res, decision);
+      const { approvedDisclosure, approvedContentHash, confirmationToken, ...request } =
+        parsed.data;
+      const global = confined.projectPath === undefined;
+      let approved: ApprovedPackage | undefined;
+      let heldTo = approvedDisclosure;
+      if (trustedCaller(readCallerAuthority(req, res))) {
+        // The person saw what it runs and which files: the installer holds the
+        // install to the disclosure, and consent records it only when the
+        // installed copy hashes the same (DOR-2306).
+        if (approvedDisclosure && approvedContentHash) {
+          approved = { disclosed: approvedDisclosure, contentHash: approvedContentHash };
+        }
+      } else if (global) {
+        // An agent's global install can load into every session, so one that
+        // runs anything, or that replaces a global package, waits on the same
+        // card an agent's update does (DOR-2306).
+        const asked = await askAboutAgentInstall(req, res, request, confirmationToken);
+        if ('refused' in asked) return asked.refused;
+        approved = asked.approved;
+        // Held to what was previewed either way: a source that changes what
+        // it runs before the install lands is refused, card or not.
+        heldTo = asked.previewed;
+      }
       const result = await installer.install({
         name: req.params.name,
-        ...parsed.data,
+        ...request,
+        ...(heldTo !== undefined && { approvedDisclosure: heldTo }),
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
-      // The person saw what this package runs and the installer held the
-      // install to exactly that (it refuses anything else before writing), so a
-      // global plugin they installed loads without a second card. Only for the
-      // person: an agent's install is loaded only after a person approves the
-      // card activation raises for it (DOR-2306).
-      if (parsed.data.approvedDisclosure && trustedCaller(readCallerAuthority(req, res))) {
-        consent.approveInstall(
-          {
-            installPath: result.installPath,
-            type: result.type,
-            global: confined.projectPath === undefined,
-          },
-          parsed.data.approvedDisclosure
-        );
-      }
+      // After the install landed, never before: a failed install records nothing.
+      await consent.settle(
+        { installPath: result.installPath, type: result.type, global },
+        approved
+      );
       // Report the RESOLVED manifest name, never the raw `:name` route param.
       // For `dorkos install ./local/path` or `github:user/repo` the param is
       // an install identifier, not the package name, and consumers (Harness
@@ -1057,6 +1152,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         ...parsed.data,
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
+      // A removed global package's approvals go with it, so the same bytes put
+      // back later are asked about again (DOR-2306).
+      if (confined.projectPath === undefined) consent.removed(result.packageName);
       // Resolved name, not the raw route param — see the install route (DOR-264).
       onPluginsChanged({
         projectPath: parsed.data.projectPath,
@@ -1078,6 +1176,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   // body schema is strict, so a retired `apply: true` is a 400, never a check
   // that a caller mistakes for an update.
   router.post('/packages/:name/update', async (req, res) => {
+    if ((req.body as { apply?: unknown } | undefined)?.apply === true) {
+      return outdatedClientResponse(res);
+    }
     const parsed = UpdateRequestBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       return res
@@ -1139,6 +1240,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   // reinstall stays in the scope its installation was found in; a failed one is
   // reported on that installation and the rest carry on.
   router.post('/updates', async (req, res) => {
+    if (fromOutdatedClient(req.body)) return outdatedClientResponse(res);
     const parsed = ApplyUpdatesBodySchema.safeParse(req.body);
     if (!parsed.success) {
       return res
@@ -1197,8 +1299,21 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
             );
             if (confirmation) return confirmation;
           }
-          consent.approveUpdates(updates);
           return undefined;
+        },
+        // Only what landed, and only now that it has (DOR-2306): each is
+        // recorded as approved when its installed copy is what was shown.
+        async (landed) => {
+          for (const update of landed) {
+            await consent.settle(
+              {
+                installPath: update.installPath,
+                type: update.type,
+                global: update.scope === 'global',
+              },
+              { disclosed: update.disclosed, contentHash: update.contentHash }
+            );
+          }
         }
       );
       if ('refused' in outcome) return updateRefusalResponse(res, outcome.refused);
@@ -1211,6 +1326,73 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       return res.status(mapped.status).json(mapped.body);
     }
   });
+
+  /**
+   * Preview an agent's global install and, when it runs anything on its own or
+   * replaces a global package, ask a person with the card `marketplace_install`
+   * raises: bound to the package, what it runs and its staged files, and
+   * saying who asked, the version and where it comes from (DOR-2306).
+   *
+   * @returns What the install is held to, and the person's approval when a
+   *   card was granted; or the response that ends the request unrun.
+   */
+  const askAboutAgentInstall = async (
+    req: Request,
+    res: Response,
+    request: z.infer<typeof InstallRequestBodySchema>,
+    token: string | undefined
+  ): Promise<
+    { refused: Response } | { previewed: DisclosedEffects | undefined; approved?: ApprovedPackage }
+  > => {
+    const name = String(req.params.name);
+    const staged = await installer.preview({ name, ...request });
+    const previewed = disclosedEffectsOf(staged.preview) ?? undefined;
+    const activated = GLOBALLY_ACTIVATED_TYPES.has(staged.manifest.type);
+    const replaces = await globalPackageExists(dorkHome, staged.manifest.name);
+    const runs = disclosesAnything(activationEffectsOf(previewed ?? null));
+    if (!activated || (!replaces && !runs)) return { previewed };
+
+    const contentHash = await shippedContentHash(staged.packagePath);
+    const identity = getRequestAgentIdentity(res);
+    const confirmation: ConfirmationRequest = {
+      packageName: name,
+      ...(request.marketplace !== undefined && { marketplace: request.marketplace }),
+      operation: 'install',
+      preview: staged.preview,
+      contentHash,
+      origin: {
+        version: staged.manifest.version,
+        ...((request.source ?? request.marketplace) !== undefined && {
+          source: request.source ?? request.marketplace,
+        }),
+      },
+      ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+    };
+    const answer = token
+      ? await confirmationProvider.resolveToken(token, confirmation)
+      : await confirmationProvider.requestInstallConfirmation(confirmation);
+    if (answer.status === 'pending') {
+      return {
+        refused: res.status(202).json({
+          status: 'requires_confirmation',
+          confirmationToken: answer.token,
+          preview: staged.preview,
+          message:
+            `${answer.reason ? `${answer.reason} ` : ''}A person must approve this install in ` +
+            'DorkOS first: it runs things on its own in every session, or replaces a package ' +
+            'that does. Send the same request again with this confirmationToken once they have.',
+        }),
+      };
+    }
+    if (answer.status === 'declined') {
+      return {
+        refused: res
+          .status(403)
+          .json({ status: 'declined', reason: answer.reason ?? 'The install was not approved.' }),
+      };
+    }
+    return { previewed, approved: { disclosed: previewed ?? null, contentHash } };
+  };
 
   /**
    * Ask a person about an agent's update, or resolve the card they were
@@ -1244,6 +1426,68 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       ...(confirmation.reason ? { reason: confirmation.reason } : {}),
     };
   };
+
+  // GET /held-back -- every global package held back from sessions, and why
+  // (DOR-2306): what it runs, and the content hash a decision is bound to.
+  router.get('/held-back', async (_req, res) => {
+    try {
+      return res.json({ packages: await listHeldBackPackages(dorkHome) });
+    } catch (err) {
+      logger.error('[Marketplace] Failed to list held-back packages', err);
+      return res.status(500).json({ error: 'Failed to list held-back packages' });
+    }
+  });
+
+  // POST /held-back/:name/review -- raise the approval card for a held-back
+  // package again, because a person asked. Raising a card only ever asks a
+  // person, so any caller may; deciding it is the person's.
+  router.post('/held-back/:name/review', async (req, res) => {
+    try {
+      await reviewHeldBackPackage({ dorkHome, ...heldBackCards }, String(req.params.name));
+      return res.status(202).json({ status: 'asked' });
+    } catch (err) {
+      if (err instanceof HeldBackReviewError) {
+        return res.status(409).json({ error: err.message, code: 'not_reviewable' });
+      }
+      logger.error(`[Marketplace] Failed to raise a card for ${req.params.name}`, err);
+      return res.status(500).json({ error: 'Failed to raise the approval card' });
+    }
+  });
+
+  // POST /held-back/:name/decision -- a person's allow or refuse, made in the
+  // terminal after seeing everything the package runs, bound to the content
+  // hash they saw. The person's only, like the source routes: an agent or a
+  // caller holding an approval token is refused.
+  router.post('/held-back/:name/decision', async (req, res) => {
+    if (!resolveDecisionAuthority(readCallerAuthority(req, res)).allowed) {
+      return res.status(403).json({
+        error: 'Only you can decide whether a held-back package runs, not an agent.',
+        code: 'operator_only',
+      });
+    }
+    const parsed = HeldBackDecisionBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+    try {
+      await decideHeldBackPackage(
+        dorkHome,
+        String(req.params.name),
+        parsed.data.decision,
+        parsed.data.contentHash
+      );
+      if (parsed.data.decision === 'allow') await heldBackCards.onGranted();
+      return res.status(204).send();
+    } catch (err) {
+      if (err instanceof HeldBackDecisionError) {
+        return res.status(409).json({ error: err.message, code: 'not_decidable' });
+      }
+      logger.error(`[Marketplace] Failed to record a decision for ${req.params.name}`, err);
+      return res.status(500).json({ error: 'Failed to record the decision' });
+    }
+  });
 
   return router;
 }

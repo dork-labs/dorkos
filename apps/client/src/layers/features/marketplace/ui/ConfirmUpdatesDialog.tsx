@@ -3,9 +3,11 @@
  * will reinstall (package, place, version change) and, under each one,
  * everything its new version runs on its own: each command and when it runs,
  * each server or program and where it starts, each skill allowed to use tools
- * without asking, each scheduled job. Confirming updates exactly those, held
- * to what is listed: the apply sends each disclosure back, and the server
- * refuses a version that now runs anything else (DOR-2306).
+ * without asking, each scheduled job. What is new or changed against the
+ * installed version leads, marked; what is unchanged is folded behind a count.
+ * Confirming updates exactly those, held to the whole list: the apply sends
+ * each disclosure and the files' hash back, and the server refuses a version
+ * that now runs or ships anything else (DOR-2306).
  *
  * It confirms any list, one installation included. "Update all" opens it, and
  * so does a row's Update whenever the new version runs something; a new
@@ -16,7 +18,9 @@
  *
  * @module features/marketplace/ui/ConfirmUpdatesDialog
  */
+import { ChevronRight } from 'lucide-react';
 import {
+  Badge,
   Button,
   ResponsiveDialog,
   ResponsiveDialogBody,
@@ -27,13 +31,13 @@ import {
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
 import { humanizePackageName } from '@/layers/shared/lib';
-import { formatDisclosedEffects } from '../lib/format-permissions';
+import { formatDisclosureChanges, type DisclosureRow } from '../lib/format-permissions';
 import {
   formatCheckVersion,
   installationPlace,
   type StaleInstallation,
 } from '../lib/installed-updates';
-import { PermissionItem } from './PermissionPreviewSection';
+import { PermissionItem, withBreakPoints } from './PermissionPreviewSection';
 
 interface ConfirmUpdatesDialogProps {
   /** The installations to confirm; `null` keeps the dialog closed. */
@@ -53,29 +57,108 @@ function subjectOf(stale: StaleInstallation[]): string {
   return place ? `${name} on ${place}` : name;
 }
 
+/** Every row one installation's new version runs, marked against what is installed. */
+function rowsOf({ check }: StaleInstallation): DisclosureRow[] {
+  if (!check.disclosed) return [];
+  return formatDisclosureChanges(
+    check.disclosed,
+    check.installedDisclosed,
+    check.scope === 'global' ? 'global' : 'project'
+  );
+}
+
 /**
- * What one installation's new version runs, as rows. Nothing to list is said
- * in one line, so "runs nothing" is never mistaken for "not checked".
+ * One line over the list: how many of the new versions run things on their
+ * own, and how many add or change something, so a person knows where to look.
+ *
+ * @param stale - The installations being confirmed.
+ * @returns The sentence, e.g. "2 of 3 run things on their own · 1 adds something new".
  */
-function Disclosure({ check }: StaleInstallation) {
-  const rows = check.disclosed
-    ? formatDisclosedEffects(check.disclosed, check.scope === 'global' ? 'global' : 'project')
-    : [];
+export function summarizeUpdateDisclosures(stale: readonly StaleInstallation[]): string {
+  const rows = stale.map(rowsOf);
+  const running = rows.filter((r) => r.length > 0).length;
+  const adding = rows.filter((r) =>
+    r.some((row) => row.change === 'new' || row.change === 'changed')
+  ).length;
+  const runs =
+    stale.length === 1
+      ? running === 1
+        ? 'The new version runs things on its own'
+        : 'The new version runs nothing on its own'
+      : `${running} of ${stale.length} run things on their own`;
+  if (adding === 0) return runs;
+  const adds =
+    stale.length === 1
+      ? 'it adds or changes something'
+      : `${adding} ${adding === 1 ? 'adds' : 'add'} or ${adding === 1 ? 'changes' : 'change'} something`;
+  return `${runs} · ${adds}`;
+}
+
+/** The mark on a new or changed row. */
+function ChangeBadge({ change }: { change: DisclosureRow['change'] }) {
+  if (change !== 'new' && change !== 'changed') return null;
+  return (
+    <Badge
+      variant="outline"
+      className="text-3xs shrink-0 border-amber-500/60 text-amber-700 dark:text-amber-300"
+    >
+      {change === 'new' ? 'New' : 'Changed'}
+    </Badge>
+  );
+}
+
+/** A row with its mark beside it. */
+function MarkedRow({ row, change }: DisclosureRow) {
+  return (
+    <div className="flex items-start gap-2">
+      <ul className="min-w-0 flex-1">
+        <PermissionItem item={row} />
+      </ul>
+      <ChangeBadge change={change} />
+    </div>
+  );
+}
+
+/**
+ * What one installation's new version runs. New and changed rows lead;
+ * unchanged ones fold behind a count, still part of what is approved. Nothing
+ * to list is said in one line, so "runs nothing" is never mistaken for "not
+ * checked".
+ */
+function Disclosure(item: StaleInstallation) {
+  const rows = rowsOf(item);
   if (rows.length === 0) {
     return (
       <p className="text-muted-foreground text-xs">The new version runs nothing on its own.</p>
     );
   }
+  const lead = rows.filter((r) => r.change !== 'unchanged');
+  const unchanged = rows.filter((r) => r.change === 'unchanged');
   return (
     <div className="space-y-1.5">
       <p className="text-muted-foreground text-xs">
         The new version runs {rows.length === 1 ? 'this' : `these ${rows.length}`} on its own:
       </p>
-      <ul aria-label="What the new version runs" className="space-y-2">
-        {rows.map((row, index) => (
-          <PermissionItem key={index} item={row} />
+      <div role="list" aria-label="What the new version runs" className="space-y-2">
+        {lead.map((row, index) => (
+          <div role="listitem" key={`lead-${index}`}>
+            <MarkedRow {...row} />
+          </div>
         ))}
-      </ul>
+        {unchanged.length > 0 && (
+          <details className="group/unchanged" role="listitem" open={lead.length === 0}>
+            <summary className="text-muted-foreground hover:text-foreground focus-ring inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs select-none [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-open/unchanged:rotate-90" />
+              {unchanged.length} unchanged
+            </summary>
+            <div className="mt-2 space-y-2">
+              {unchanged.map((row, index) => (
+                <MarkedRow key={`same-${index}`} {...row} />
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
     </div>
   );
 }
@@ -97,8 +180,8 @@ function StaleItem(item: StaleInstallation) {
           <div className="text-sm font-medium">{humanizePackageName(installation.name)}</div>
           <div className="text-muted-foreground text-xs">{place ?? 'All agents'}</div>
           {place && installation.agentPath && (
-            <div className="text-muted-foreground text-2xs truncate font-mono">
-              {installation.agentPath}
+            <div className="text-muted-foreground text-2xs font-mono [overflow-wrap:anywhere]">
+              {withBreakPoints(installation.agentPath)}
             </div>
           )}
         </div>
@@ -122,13 +205,21 @@ export function ConfirmUpdatesDialog({ stale, onCancel, onConfirm }: ConfirmUpda
       <ResponsiveDialogContent className="max-h-[85vh] !min-h-0 sm:max-w-lg">
         {stale && (
           <>
-            <ResponsiveDialogHeader className="shrink-0">
-              <ResponsiveDialogTitle>Update {subjectOf(stale)}?</ResponsiveDialogTitle>
-              <ResponsiveDialogDescription>
+            <ResponsiveDialogHeader className="shrink-0 text-left">
+              <ResponsiveDialogTitle className="text-left">
+                Update {subjectOf(stale)}?
+              </ResponsiveDialogTitle>
+              <ResponsiveDialogDescription className="text-left">
                 {stale.length === 1
                   ? 'DorkOS replaces this package with its newest version, in the same place it is installed now. Check what the new version runs before you update.'
                   : 'DorkOS replaces each package below with its newest version, in the same place it is installed now. Check what each new version runs before you update.'}
               </ResponsiveDialogDescription>
+              <p
+                className="text-foreground text-left text-xs font-medium"
+                data-testid="update-disclosure-summary"
+              >
+                {summarizeUpdateDisclosures(stale)}
+              </p>
             </ResponsiveDialogHeader>
 
             <ResponsiveDialogBody>

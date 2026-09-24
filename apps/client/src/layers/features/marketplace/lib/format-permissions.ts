@@ -681,3 +681,92 @@ export function formatDisclosedEffects(
   }));
   return [...formatCommands(parts, PROGRAMS_START[scope]), ...formatSchedules({ schedules })];
 }
+
+/** How one thing a new version runs compares with the version installed now. */
+export type DisclosureChange = 'new' | 'changed' | 'unchanged' | 'unknown';
+
+/** One row of what a new version runs, and how it compares with what is installed. */
+export interface DisclosureRow {
+  /** The row, formatted exactly as the install preview formats it. */
+  row: FormattedPermission;
+  /**
+   * `new` for something the installed version does not run, `changed` for a
+   * named server, monitor, skill or job it runs differently, `unchanged` for
+   * something it runs exactly so, `unknown` when what is installed could not
+   * be read.
+   */
+  change: DisclosureChange;
+}
+
+/** A disclosure with nothing in it, to hold one item at a time. */
+const NOTHING_DISCLOSED: DisclosedEffects = {
+  hooks: [],
+  schedules: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+};
+
+/** The kinds of things a disclosure lists, in the order rows are shown. */
+const DISCLOSURE_KINDS = [
+  'hooks',
+  'mcpServers',
+  'lspServers',
+  'monitors',
+  'executables',
+  'skillTools',
+  'schedules',
+] as const;
+
+/** The name a named item goes by, so a changed one is told from a new one. */
+function nameOf(kind: (typeof DISCLOSURE_KINDS)[number], item: unknown): string | undefined {
+  if (kind === 'hooks' || kind === 'executables') return undefined;
+  if (kind === 'skillTools') return (item as { source: string }).source;
+  return (item as { name: string }).name;
+}
+
+/**
+ * Everything a new version runs, one row per thing, each marked against the
+ * version installed now, so a confirm step can lead with what is new and fold
+ * what is not. The rows are the same ones {@link formatDisclosedEffects} makes,
+ * so the list a person approves is unchanged: only its order and marks differ.
+ *
+ * @param next - What the new version runs.
+ * @param installed - What the installed version runs; `null` or absent when it
+ *   could not be read, which marks every row `unknown`.
+ * @param scope - Where the installation is, which decides when programs start.
+ * @returns One row per thing the new version runs, in the preview's order.
+ */
+export function formatDisclosureChanges(
+  next: DisclosedEffects,
+  installed: DisclosedEffects | null | undefined,
+  scope: DisclosureScope
+): DisclosureRow[] {
+  const rows: DisclosureRow[] = [];
+  for (const kind of DISCLOSURE_KINDS) {
+    for (const item of next[kind] as unknown[]) {
+      const piece = { ...NOTHING_DISCLOSED, [kind]: [item] } as DisclosedEffects;
+      const [row] = formatDisclosedEffects(piece, scope);
+      if (!row) continue;
+      rows.push({ row, change: changeOf(kind, item, installed) });
+    }
+  }
+  return rows;
+}
+
+/** How one item compares with what is installed. */
+function changeOf(
+  kind: (typeof DISCLOSURE_KINDS)[number],
+  item: unknown,
+  installed: DisclosedEffects | null | undefined
+): DisclosureChange {
+  if (!installed) return 'unknown';
+  const before = installed[kind] as unknown[];
+  const same = JSON.stringify(item);
+  if (before.some((old) => JSON.stringify(old) === same)) return 'unchanged';
+  const name = nameOf(kind, item);
+  if (name !== undefined && before.some((old) => nameOf(kind, old) === name)) return 'changed';
+  return 'new';
+}

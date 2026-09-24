@@ -316,13 +316,52 @@ export function recordHookApproval(request: HookProjectionRequest): void {
  *
  * @param entry - The `<packageName>@<digest>` entry to allow.
  * @param reason - What the audit log says was happening.
+ * @param replacing - Earlier yeses this one supersedes, removed in the same
+ *   write (a global package keeps one approval: the one for what is installed).
  */
-export function recordApprovedEntry(entry: string, reason: string): void {
+export function recordApprovedEntry(
+  entry: string,
+  reason: string,
+  replacing: (stored: string) => boolean = () => false
+): void {
+  const { approved, refused } = storedHookDecisions();
+  const kept = approved.filter((stored) => stored === entry || !replacing(stored));
+  writeDecisions(
+    reason,
+    kept.includes(entry) ? kept : [...kept, entry],
+    refused.filter((stored) => stored !== entry)
+  );
+}
+
+/**
+ * Forget one stored no, so the decision can be made again.
+ *
+ * @param entry - The `<packageName>@<digest>` entry to forget.
+ * @param reason - What the audit log says was happening.
+ */
+export function forgetRefusedEntry(entry: string, reason: string): void {
   const { approved, refused } = storedHookDecisions();
   writeDecisions(
     reason,
-    approved.includes(entry) ? [...approved] : [...approved, entry],
+    [...approved],
     refused.filter((stored) => stored !== entry)
+  );
+}
+
+/**
+ * Forget every stored yes a predicate matches, leaving every no in place.
+ * Used when a global package is replaced or removed, so an old approval can
+ * never cover the same bytes coming back later (a downgrade).
+ *
+ * @param matches - Which approved entries to forget.
+ * @param reason - What the audit log says was happening.
+ */
+export function forgetApprovedEntries(matches: (stored: string) => boolean, reason: string): void {
+  const { approved, refused } = storedHookDecisions();
+  writeDecisions(
+    reason,
+    approved.filter((stored) => !matches(stored)),
+    [...refused]
   );
 }
 

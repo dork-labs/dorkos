@@ -105,7 +105,7 @@ function buildStubDeps(): MarketplaceMcpDeps {
       resolve: vi.fn(explode('confirmationProvider.resolve')),
     } as unknown as MarketplaceMcpDeps['confirmationProvider'],
     onPluginsChanged: vi.fn(explode('onPluginsChanged')),
-    consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

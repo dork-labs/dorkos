@@ -35,9 +35,9 @@ See `01-ideation.md` §1 and §3. In short: `marketplace.install` is tier `act`,
 ## Non-Goals
 
 - Extensions approved by id (`extension-load-policy.ts`). Same class, documented there, and gated by a separate person-approval (`approvedToRun`). A follow-up.
-- Showing a withheld global plugin's state as a row badge in the Installed view. The approval card is the ask; a follow-up can add a badge.
 - Project installs' hooks: already gated at projection (`project-with-consent.ts`); unchanged.
-- The content of a script a hook runs (same stated limit as `hook-consent.ts`).
+- Files outside the package that a hook's script reads at run time (the package's own bytes are bound; see D3).
+- Shapes and agents installed by an agent: they are not loaded into sessions by the SDK, so the agent-install card (D2b) covers plugins, skill-packs and adapters only.
 - Any change to `marketplace-installer.ts` (DOR-2245 is rebasing onto it).
 
 ## Technical Dependencies
@@ -166,3 +166,17 @@ None open. Decisions are in `01-ideation.md` §4, and the ADR `decisions/260924-
 ## References
 
 - DOR-2195 / #2070 (`7ed6ee577`), DOR-647, DOR-522, DOR-1849, ADR 260706-192819.
+
+## Review delta (round 1, 2026-09-24)
+
+The adversarial review (CHANGES_REQUIRED) proved that binding an approval to a package's NAME and DECLARATIONS is not enough: a same-named package with the same `hooks.json` and a hostile `hooks/fmt.sh` loaded under the old approval. The design now binds bytes:
+
+- **D3, amended.** A global package's approval binds the content hash of its installed tree (`lib/content-hash.ts`: every file's path, execute bit and SHA-256, every in-tree link's target; DorkOS's runtime state skipped: `.dork/data`, `.dork/secrets.json`, the install records). A link out of the tree or a special file makes the package unapprovable. The declarations stay in the binding for display. One approval per package: recording one replaces the rest, and every global install, update and uninstall forgets them, so a downgrade to old approved bytes is held back.
+- **D2b, new.** An agent's HTTP install of a global plugin, skill-pack or adapter that runs anything, or that replaces an existing global package, goes through the `marketplace_install` card, bound to its disclosure and staged content hash, and naming who asked, the version and the source.
+- **D4, amended.** Consent is settled only after the install or update landed (`GlobalConsentRecorder.settle`), and records a yes only when the landed copy declares what the person saw and its shipped files hash the same as the `contentHash` they were shown (preview, update check and update target all carry it). A failed apply records nothing.
+- **I1.** The runtime re-checks the consented list at the start of every turn; the hash is cached behind an lstat fingerprint (size, mtime, ctime, inode), so an unchanged tree costs one `lstat` walk. Residual: a file rewritten mid-turn runs in that turn.
+- **I2.** `GET /api/marketplace/held-back`, `POST /held-back/:name/review`, `POST /held-back/:name/decision` (operator only, bound to the hash shown); Installed rows show "Held back" with Review; `dorkos marketplace held-back [--allow|--refuse]`; `dorkos` prints held-back packages at start.
+- **M1.** At most one open card per package name, and one per ten minutes per name while it keeps changing (a person's Review bypasses the wait). Cards state why, the version and the source; for on-disk changes DorkOS cannot know who made them, and says so.
+- **M3.** An older CLI's apply is answered with a 400 `client_outdated` telling the person to update the CLI.
+- **UX.** The confirm marks each thing a new version runs as New or Changed against the installed version (`installedDisclosed` on each check), folds unchanged ones behind a count, and opens with a summary line. Commands wrap at `/` and quotes, and paths wrap instead of truncating.
+- **Content hashing and DOR-2245 / DOR-2197.** DOR-2245 (not merged) hashes files for ownership (`lib/installed-files.ts`: per-file SHA-256 in a record). Sharing its helper would couple this security fix to an unmerged branch, so `lib/content-hash.ts` is written to be adopted: `hashTree(root, { skip })` and `TreeHashCache`. DOR-2197 can store `hashTree` in `InstallMetadata`; when DOR-2245 lands, its `userEditable` matcher belongs in the installed-hash skip.

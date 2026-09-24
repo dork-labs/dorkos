@@ -192,7 +192,10 @@ export function InstallConfirmationDialog() {
       // global plugin installed this way loads without a second card (DOR-2306).
       const opts = {
         ...(selectedProjectPath && { projectPath: selectedProjectPath }),
-        ...(detail?.disclosed && { approvedDisclosure: detail.disclosed }),
+        ...(detail?.disclosed && {
+          approvedDisclosure: detail.disclosed,
+          approvedContentHash: detail.contentHash,
+        }),
       };
       await install.mutateAsync({
         name: pkg.name,

@@ -32,6 +32,7 @@
  * future SDK version adds one, switch to it.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync } from 'node:fs';
 import { mkdtemp, rm, writeFile, mkdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -214,6 +215,9 @@ function emptyPreview(): PermissionPreview {
  * file-scoped transaction engine is never reached from this test (see the
  * note at the top of the file).
  */
+/** An empty staged package directory every stub preview points at. */
+const STAGED_DIR = mkdtempSync(path.join(tmpdir(), 'mcp-integration-staged-'));
+
 function buildStubInstaller(): InstallerLike & {
   preview: ReturnType<typeof vi.fn>;
   install: ReturnType<typeof vi.fn>;
@@ -223,7 +227,7 @@ function buildStubInstaller(): InstallerLike & {
     return {
       preview: emptyPreview(),
       manifest: buildManifest(req.name),
-      packagePath: `/tmp/staged/${req.name}`,
+      packagePath: STAGED_DIR,
     };
   });
   const install = vi.fn(async (req: InstallRequest): Promise<InstallResult> => {
@@ -363,7 +367,7 @@ function buildIntegrationDeps(opts: {
     uninstallFlow: opts.uninstallFlow,
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: vi.fn(),
-    consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: opts.logger,
   };
 }

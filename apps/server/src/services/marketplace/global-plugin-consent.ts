@@ -19,12 +19,30 @@
  *
  * ## What a person approves
  *
- * One package's exact set of programs ({@link activationEffectsOf}), read from
- * the installed files by the same reader the install preview uses
- * (`readRunnableDeclarations`). Scheduled jobs are left out on purpose: the SDK
- * does not load them, and each arrives parked at `pending_approval` behind a
- * gate of its own. A package that runs nothing on its own loads without being
- * asked about.
+ * One package's exact BYTES, and the programs it declares. A declaration like
+ * `${CLAUDE_PLUGIN_ROOT}/hooks/fmt.sh` says nothing about what `fmt.sh` does,
+ * so a yes is bound to the content hash of the installed tree
+ * (`lib/content-hash.ts`, DorkOS's own runtime state left out), and the
+ * declarations ({@link activationEffectsOf}, read by the same reader the
+ * install preview uses) are what the person is shown. Scheduled jobs are left
+ * out of the declarations on purpose: the SDK does not load them, and each
+ * arrives parked at `pending_approval` behind a gate of its own. A package
+ * that declares nothing that runs on its own loads without being asked about.
+ *
+ * ## When it is checked
+ *
+ * Whenever the runtime builds its plugin list, which it re-checks at the start
+ * of every turn. The hash is cached behind a stat fingerprint (size, mtime,
+ * ctime and inode of every entry), so the check costs an `lstat` walk until
+ * something in the tree is written. The residual, stated: a file rewritten in
+ * the middle of a turn runs in that turn; the next turn leaves the package out.
+ *
+ * ## One approval per package
+ *
+ * Recording a yes removes every earlier yes for the same package, and every
+ * install, update or removal of a global package forgets them first. So an
+ * old approved version put back later (a downgrade, a copy from a backup) is
+ * a package nobody approved, and is held back.
  *
  * ## Fail closed, whole
  *
@@ -44,12 +62,13 @@
  *
  * ## Where a yes is recorded
  *
- * Only where a person approved exactly that set: the app's install or update
- * (the caller sends back what it was shown and the server held the install to
- * it), a granted approval card (an agent's update or install, or the card
- * `ask-withheld-global-plugins.ts` raises for a withheld package). Never for a
- * caller who merely may skip a card (`preApproved`), and never for an agent's
- * install over HTTP: those load only after a person says yes to that card.
+ * Only where a person approved exactly that package, and only after the
+ * install or update landed: the app's or the terminal's own install or update
+ * (the caller sends back the disclosure and content hash it was shown, and the
+ * installed copy must hash the same), a granted approval card (an agent's
+ * install or update, or the card `ask-withheld-global-plugins.ts` raises for a
+ * held-back package), or `dorkos marketplace held-back --allow`. Never for a
+ * caller who merely may skip a card (`preApproved`).
  *
  * @module services/marketplace/global-plugin-consent
  */
@@ -60,16 +79,28 @@ import type { PackageType } from '@dorkos/marketplace';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import {
+  forgetApprovedEntries,
+  forgetRefusedEntry,
   GLOBAL_ACTIVATION_ENTRY_MARKER,
   recordApprovedEntry,
   recordRefusedEntry,
   storedHookDecisions,
   type HookDecisions,
 } from '../harness/hook-consent.js';
-import { disclosedEffectsOf, type DisclosedEffects } from './disclosed-effects.js';
+import {
+  disclosedEffectsOf,
+  sameDisclosedEffects,
+  type DisclosedEffects,
+} from './disclosed-effects.js';
+import { readInstallMetadata } from './installed-metadata.js';
 import { listEnabledPluginNames } from './installed-scanner.js';
+import {
+  isRuntimeStatePath,
+  shippedContentHash,
+  TreeHashCache,
+  TreeUnhashableError,
+} from './lib/content-hash.js';
 import { readRunnableDeclarations } from './permission-preview.js';
-import type { ApprovableUpdate } from './flows/update-installed.js';
 
 /** The package types the SDK loads into every session from the global scope. */
 export const GLOBALLY_ACTIVATED_TYPES: ReadonlySet<PackageType> = new Set<PackageType>([
@@ -101,40 +132,106 @@ export function activationEffectsOf(disclosed: DisclosedEffects | null): Disclos
 }
 
 /**
+ * Where a global plugin, skill-pack or adapter of this name is installed: the
+ * directory the SDK loads it from.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @param name - The package's directory name.
+ */
+export function globalPackageDir(dorkHome: string, name: string): string {
+  return path.join(dorkHome, 'plugins', name);
+}
+
+/**
+ * Whether a global plugin, skill-pack or adapter of this name is installed.
+ *
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @param name - The package's directory name.
+ */
+export function globalPackageExists(dorkHome: string, name: string): Promise<boolean> {
+  return access(globalPackageDir(dorkHome, name)).then(
+    () => true,
+    () => false
+  );
+}
+
+/** Every installed tree's content hash, re-computed only when the tree was written. */
+const installedHashes = new TreeHashCache();
+
+/**
+ * The content hash of an installed package, everything but DorkOS's runtime
+ * state (`isRuntimeStatePath`): the npm step's `node_modules` is in it,
+ * because a server the package starts runs that code too.
+ *
+ * @param packageDir - The installed package directory.
+ * @returns `sha256:<hex>`.
+ * @throws {TreeUnhashableError} For a link out of the package or a special file.
+ */
+export function installedContentHash(packageDir: string): Promise<string> {
+  return installedHashes.hash(packageDir, 'installed', { skip: isRuntimeStatePath });
+}
+
+/**
  * The stored form of one global-activation decision: `<name>@global-<digest>`,
- * where the digest covers the package's install directory name and exactly what
- * it runs. Any change to either makes the entry stop matching, so an update or
- * an edit that changes what runs is asked about again.
+ * where the digest covers the package's install directory name, what it
+ * declares, and the content hash of its installed tree. Any change to any of
+ * them makes the entry stop matching.
  *
  * @param name - The package's directory under `<dorkHome>/plugins/`, the name the SDK loads it by.
  * @param effects - What it runs ({@link activationEffectsOf}).
+ * @param contentHash - {@link installedContentHash} of the installed tree.
  * @returns The entry as it is stored in the hook-decision lists.
  */
-export function globalActivationEntry(name: string, effects: DisclosedEffects): string {
+export function globalActivationEntry(
+  name: string,
+  effects: DisclosedEffects,
+  contentHash: string
+): string {
   const digest = createHash('sha256')
-    .update(stableStringify(['global-activation', name, activationEffectsOf(effects)]), 'utf8')
+    .update(
+      stableStringify(['global-activation', name, activationEffectsOf(effects), contentHash]),
+      'utf8'
+    )
     .digest('hex');
   return `${name}${GLOBAL_ACTIVATION_ENTRY_MARKER}${digest}`;
 }
 
-/** What {@link readActivationEffects} found in an installed package. */
-export type ActivationReading = { effects: DisclosedEffects } | { unreadable: string[] };
+/** Whether a stored entry is a global-activation decision for this package. */
+function isEntryFor(name: string): (stored: string) => boolean {
+  const prefix = `${name}${GLOBAL_ACTIVATION_ENTRY_MARKER}`;
+  return (stored) => stored.startsWith(prefix) && !stored.slice(prefix.length).includes('@');
+}
+
+/** What {@link readActivationState} found in an installed package. */
+export type ActivationReading =
+  { effects: DisclosedEffects; contentHash: string } | { unreadable: string[] };
 
 /**
- * Read what an installed package would run if it were loaded.
+ * Read what an installed package would run if it were loaded, and hash it.
  *
  * @param packageDir - The installed package directory.
- * @returns What it runs, or every declaration that could not be read. A package
- *   with anything unreadable cannot be shown to a person, so it cannot be approved.
+ * @returns What it runs and its content hash, or every declaration that could
+ *   not be read (and anything whose bytes could not be pinned). A package with
+ *   anything unreadable cannot be shown to a person, so it cannot be approved.
  */
-export async function readActivationEffects(packageDir: string): Promise<ActivationReading> {
+export async function readActivationState(packageDir: string): Promise<ActivationReading> {
   const declared = await readRunnableDeclarations(packageDir);
   const unreadable = [
     ...declared.unreadableHooks.map((h) => (h.event ? `${h.path} (${h.event})` : h.path)),
     ...declared.unreadableDeclarations.map((d) => (d.entry ? `${d.path} (${d.entry})` : d.path)),
   ];
   if (unreadable.length > 0) return { unreadable };
-  return { effects: activationEffectsOf(disclosedEffectsOf({ ...declared, schedules: [] })) };
+  let contentHash: string;
+  try {
+    contentHash = await installedContentHash(packageDir);
+  } catch (err) {
+    if (err instanceof TreeUnhashableError) return { unreadable: [err.message] };
+    throw err;
+  }
+  return {
+    effects: activationEffectsOf(disclosedEffectsOf({ ...declared, schedules: [] })),
+    contentHash,
+  };
 }
 
 /** Why a global package is left out of every session. */
@@ -150,6 +247,13 @@ export interface WithheldGlobalPlugin {
   reason: GlobalWithheldReason;
   /** What it runs, when that could be read. */
   effects?: DisclosedEffects;
+  /** Its content hash, when it could be read: what an approval would bind. */
+  contentHash?: string;
+  /**
+   * An earlier approval for this package exists but covers other bytes or
+   * programs: it changed since a person approved it.
+   */
+  changedSinceApproval?: boolean;
   /** The declarations that could not be read, when {@link reason} is `unreadable`. */
   unreadable?: string[];
   /** Why the settings file could not be read, when {@link reason} is `unreadable-config`. */
@@ -188,13 +292,9 @@ export async function partitionGlobalPlugins(
   let stored: HookDecisions | undefined = decisions;
   const readDecisions = (): HookDecisions => (stored ??= storedHookDecisions());
   for (const name of await listEnabledPluginNames(dorkHome)) {
-    const packageDir = path.join(dorkHome, 'plugins', name);
-    try {
-      await access(packageDir);
-    } catch {
-      continue;
-    }
-    const reading = await readActivationEffects(packageDir);
+    const packageDir = globalPackageDir(dorkHome, name);
+    if (!(await globalPackageExists(dorkHome, name))) continue;
+    const reading = await readActivationState(packageDir);
     if ('unreadable' in reading) {
       partition.withheld.push({
         name,
@@ -204,7 +304,7 @@ export async function partitionGlobalPlugins(
       });
       continue;
     }
-    const { effects } = reading;
+    const { effects, contentHash } = reading;
     if (!disclosesAnything(effects)) {
       partition.activate.push(name);
       continue;
@@ -216,17 +316,25 @@ export async function partitionGlobalPlugins(
         packageDir,
         reason: 'unreadable-config',
         effects,
+        contentHash,
         configProblem: unreadable,
       });
       continue;
     }
-    const entry = globalActivationEntry(name, effects);
+    const entry = globalActivationEntry(name, effects, contentHash);
     if (refused.includes(entry)) {
-      partition.withheld.push({ name, packageDir, reason: 'refused', effects });
+      partition.withheld.push({ name, packageDir, reason: 'refused', effects, contentHash });
     } else if (approved.includes(entry)) {
       partition.activate.push(name);
     } else {
-      partition.withheld.push({ name, packageDir, reason: 'unasked', effects });
+      partition.withheld.push({
+        name,
+        packageDir,
+        reason: 'unasked',
+        effects,
+        contentHash,
+        ...(approved.some(isEntryFor(name)) && { changedSinceApproval: true }),
+      });
     }
   }
   return partition;
@@ -244,80 +352,126 @@ export async function listConsentedPluginNames(dorkHome: string): Promise<string
 }
 
 /**
- * Record that a person allowed this global package to run exactly these programs.
+ * Record that a person allowed this global package, as it is now, to run in
+ * every session. Replaces any earlier approval for the package.
  *
  * @param name - The package's directory name.
  * @param effects - What it runs, as the person was shown it.
+ * @param contentHash - {@link installedContentHash} of what they approved.
  */
-export function recordGlobalActivationApproval(name: string, effects: DisclosedEffects): void {
+export function recordGlobalActivationApproval(
+  name: string,
+  effects: DisclosedEffects,
+  contentHash: string
+): void {
   recordApprovedEntry(
-    globalActivationEntry(name, effects),
-    'approving a global package to run in every session'
+    globalActivationEntry(name, effects, contentHash),
+    'approving a global package to run in every session',
+    isEntryFor(name)
   );
 }
 
 /**
- * Record that a person turned this global package's programs down.
+ * Record that a person turned this global package, as it is now, down.
  *
  * @param name - The package's directory name.
  * @param effects - What it runs, as the person was shown it.
+ * @param contentHash - {@link installedContentHash} of what they refused.
  */
-export function recordGlobalActivationRefusal(name: string, effects: DisclosedEffects): void {
+export function recordGlobalActivationRefusal(
+  name: string,
+  effects: DisclosedEffects,
+  contentHash: string
+): void {
   recordRefusedEntry(
-    globalActivationEntry(name, effects),
+    globalActivationEntry(name, effects, contentHash),
     'turning down a global package running in every session'
   );
 }
 
 /**
- * Records a person's approval where one was given, so a package they just
- * approved is not withheld and asked about a second time. Injected into the
- * surfaces that apply or install, so each surface's tests can see exactly what
- * it records.
+ * Forget a person's refusal of this global package as it is now, so they can
+ * decide again (the Review button on a refused package).
+ *
+ * @param name - The package's directory name.
+ * @param effects - What it runs.
+ * @param contentHash - {@link installedContentHash} of what they refused.
+ */
+export function forgetRefusal(name: string, effects: DisclosedEffects, contentHash: string): void {
+  forgetRefusedEntry(
+    globalActivationEntry(name, effects, contentHash),
+    'deciding a global package again'
+  );
+}
+
+/**
+ * Forget every approval for a global package: it was replaced or removed, so
+ * no earlier yes may cover whatever is put there next.
+ *
+ * @param name - The package's directory name.
+ */
+export function forgetGlobalActivationApprovals(name: string): void {
+  forgetApprovedEntries(isEntryFor(name), 'a global package was replaced or removed');
+}
+
+/** What a person approved about an install: what it runs and the bytes they were shown. */
+export interface ApprovedPackage {
+  /** The disclosure they saw. */
+  disclosed: DisclosedEffects | null;
+  /** The shipped-content hash of the package they saw (`shippedContentHash`). */
+  contentHash: string;
+}
+
+/** A global or project install that just landed. */
+export interface LandedInstall {
+  /** Where it landed. */
+  installPath: string;
+  /** Its package type. */
+  type: PackageType;
+  /** Whether it is a global install. */
+  global: boolean;
+}
+
+/**
+ * Settles consent after installs and updates land, so a package a person just
+ * approved loads without a second card, and nothing anybody else put there
+ * rides an old approval. Injected into every surface that installs, updates or
+ * removes, so each surface's tests see exactly what it settles.
  */
 export interface GlobalConsentRecorder {
   /**
-   * A person approved these reinstalls, each with what its new version runs.
-   * Only global installations of a type the SDK loads are recorded.
+   * An install or update landed. Every earlier approval for the package is
+   * forgotten; when `approved` is given (a person saw it), the new copy is
+   * recorded as approved, but only if it declares exactly what they were
+   * shown and its shipped bytes hash the same as what they were shown.
    */
-  approveUpdates(updates: readonly ApprovableUpdate[]): void;
-  /**
-   * A person approved installing this package with this disclosure, and the
-   * install was held to it. Only a global install of a type the SDK loads is
-   * recorded.
-   */
-  approveInstall(
-    install: { installPath: string; type: PackageType; global: boolean },
-    disclosed: DisclosedEffects | null
-  ): void;
+  settle(install: LandedInstall, approved?: ApprovedPackage): Promise<void>;
+  /** A global package was removed: forget its approvals. */
+  removed(name: string): void;
 }
 
 /** The recorder the server runs with: writes to the hook-decision lists. */
 export const globalConsentRecorder: GlobalConsentRecorder = {
-  approveUpdates(updates) {
-    for (const update of updates) {
-      if (update.scope !== 'global') continue;
-      recordIfItRuns(update.installPath, update.type, update.disclosed);
+  async settle(install, approved) {
+    if (!install.global || !GLOBALLY_ACTIVATED_TYPES.has(install.type)) return;
+    const name = path.basename(install.installPath);
+    forgetGlobalActivationApprovals(name);
+    if (!approved) return;
+    const reading = await readActivationState(install.installPath);
+    if ('unreadable' in reading || !disclosesAnything(reading.effects)) return;
+    // What landed must be what the person saw: the same programs, and the
+    // same bytes. Anything else stays held back and asks with a card.
+    if (!sameDisclosedEffects(reading.effects, activationEffectsOf(approved.disclosed))) return;
+    let shipped: string;
+    try {
+      shipped = await shippedContentHash(install.installPath);
+    } catch {
+      return;
     }
+    if (shipped !== approved.contentHash) return;
+    recordGlobalActivationApproval(name, reading.effects, reading.contentHash);
   },
-  approveInstall(install, disclosed) {
-    if (!install.global) return;
-    recordIfItRuns(install.installPath, install.type, disclosed);
+  removed(name) {
+    forgetGlobalActivationApprovals(name);
   },
 };
-
-/**
- * Record a yes for a global package of a type the SDK loads, when it runs
- * anything. A package that runs nothing loads without a decision, so storing
- * one would only be noise in the list a person reads.
- */
-function recordIfItRuns(
-  installPath: string,
-  type: PackageType,
-  disclosed: DisclosedEffects | null
-): void {
-  if (!GLOBALLY_ACTIVATED_TYPES.has(type)) return;
-  const effects = activationEffectsOf(disclosed);
-  if (!disclosesAnything(effects)) return;
-  recordGlobalActivationApproval(path.basename(installPath), effects);
-}

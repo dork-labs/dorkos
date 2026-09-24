@@ -31,7 +31,12 @@ const GLOBAL_PATH = '/home/.dork/plugins/flow';
 const ALPHA_PATH = '/work/alpha/.dork/plugins/flow';
 
 /** One apply target that runs nothing on its own, as a check would report it. */
-const target = (installPath: string) => ({ installPath, latestVersion: '2.0.0', disclosed: null });
+const target = (installPath: string) => ({
+  installPath,
+  latestVersion: '2.0.0',
+  disclosed: null,
+  contentHash: 'sha256:a',
+});
 
 function makeCheck(overrides: Partial<InstallationUpdateCheck> = {}): InstallationUpdateCheck {
   return {

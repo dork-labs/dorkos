@@ -132,6 +132,7 @@ function makeDetail(preview?: Partial<PermissionPreview>): MarketplacePackageDet
       executables: [],
       skillTools: [],
     },
+    contentHash: 'sha256:staged',
     manifest: {
       name: '@dorkos/code-reviewer',
       version: '1.0.0',
@@ -320,7 +321,10 @@ describe('InstallConfirmationDialog', () => {
       name: '@dorkos/code-reviewer',
       // What the dialog showed the package runs, sent back so the install is
       // held to it (DOR-2306).
-      options: { approvedDisclosure: expect.objectContaining({ hooks: [] }) },
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
     });
   });
 
@@ -513,7 +517,10 @@ describe('InstallConfirmationDialog', () => {
       name: 'my-shape',
       // What the dialog showed the package runs, sent back so the install is
       // held to it (DOR-2306).
-      options: { approvedDisclosure: expect.objectContaining({ hooks: [] }) },
+      options: {
+        approvedDisclosure: expect.objectContaining({ hooks: [] }),
+        approvedContentHash: 'sha256:staged',
+      },
     });
   });
 

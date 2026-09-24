@@ -86,7 +86,7 @@ function createStubDeps(opts: {
     uninstallFlow: opts.uninstallFlow,
     confirmationProvider: opts.confirmationProvider,
     onPluginsChanged: opts.onPluginsChanged ?? vi.fn(),
-    consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger: {
       info: vi.fn(),
       warn: vi.fn(),

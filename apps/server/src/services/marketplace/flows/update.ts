@@ -50,6 +50,8 @@
 import { isRealCommitSha } from '@dorkos/marketplace';
 import type { InstallRequest, InstallResult } from '../types.js';
 import { disclosedEffectsOf, type DisclosedEffects } from '../disclosed-effects.js';
+import { shippedContentHash } from '../lib/content-hash.js';
+import { readRunnableDeclarations } from '../permission-preview.js';
 import type { InstallationRecord } from '../installed-scanner.js';
 import { Slots } from '../lib/slots.js';
 import {
@@ -111,6 +113,10 @@ interface PlannedCheck {
   request?: InstallRequest;
   /** What the new version would run, when the check was planned with `disclose`. */
   disclosed?: DisclosedEffects | null;
+  /** The new version's shipped-content hash, when planned with `disclose`. */
+  contentHash?: string;
+  /** What the installed version runs now, when planned with `disclose`. */
+  installedDisclosed?: DisclosedEffects | null;
 }
 
 /**
@@ -180,9 +186,11 @@ export class UpdateFlow {
       req.installations.map((record) => this.checkSafely(record, req.disclose ?? false))
     );
     return {
-      checks: planned.map(({ check, disclosed }, i) => ({
+      checks: planned.map(({ check, disclosed, contentHash, installedDisclosed }, i) => ({
         ...withIdentity(check, req.installations[i]!.package),
         ...(disclosed !== undefined && { disclosed }),
+        ...(contentHash !== undefined && { contentHash }),
+        ...(installedDisclosed !== undefined && { installedDisclosed }),
       })),
       steps: planned.map(({ request }, i) => ({
         record: req.installations[i]!,
@@ -309,7 +317,7 @@ export class UpdateFlow {
   ): Promise<PlannedCheck> {
     if (planned.check.status !== 'update-available' || !planned.request) return planned;
     try {
-      const { preview } = await this.deps.installer.preview({
+      const { preview, packagePath } = await this.deps.installer.preview({
         ...planned.request,
         projectPath: record.package.agentPath,
       });
@@ -329,7 +337,25 @@ export class UpdateFlow {
           ),
         };
       }
-      return { ...planned, disclosed: disclosedEffectsOf(preview) };
+      // The new version's files, as staged, so an apply can refuse one whose
+      // files moved after a person saw it; and what the installed version runs
+      // now, so a confirm step can say what is new (DOR-2306).
+      const [contentHash, installedDisclosed] = await Promise.all([
+        shippedContentHash(packagePath),
+        readRunnableDeclarations(record.package.installPath).then((declared) =>
+          disclosedEffectsOf(
+            declared.unreadableHooks.length + declared.unreadableDeclarations.length > 0
+              ? undefined
+              : { ...declared, schedules: [] }
+          )
+        ),
+      ]);
+      return {
+        ...planned,
+        disclosed: disclosedEffectsOf(preview),
+        contentHash,
+        installedDisclosed,
+      };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       return {

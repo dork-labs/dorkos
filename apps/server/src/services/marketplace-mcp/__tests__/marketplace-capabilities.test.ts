@@ -96,7 +96,7 @@ function buildDeps(): {
     updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider,
     onPluginsChanged: vi.fn(),
-    consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
+    consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     logger,
   } satisfies MarketplaceMcpDeps;
 

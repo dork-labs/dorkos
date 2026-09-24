@@ -143,7 +143,14 @@ describe('useApplyUpdatesWithToast', () => {
       executables: [],
       skillTools: [],
     };
-    act(() => result.current.apply([makeCheck({ disclosed: runs }), FLOW].map(stale)));
+    act(() =>
+      result.current.apply(
+        [
+          makeCheck({ disclosed: runs, contentHash: 'sha256:r' }),
+          { ...FLOW, contentHash: 'sha256:f' },
+        ].map(stale)
+      )
+    );
 
     // Each installation carries the version and disclosure the person was
     // shown, untouched: the server installs only what still matches (DOR-2306).
@@ -151,8 +158,18 @@ describe('useApplyUpdatesWithToast', () => {
     // that runs nothing.
     expect(mutateAsync).toHaveBeenCalledWith({
       targets: [
-        { installPath: '/home/.dork/agents/reviewer', latestVersion: '1.3.0', disclosed: runs },
-        { installPath: '/home/.dork/plugins/flow', latestVersion: '0.7.3', disclosed: null },
+        {
+          installPath: '/home/.dork/agents/reviewer',
+          latestVersion: '1.3.0',
+          disclosed: runs,
+          contentHash: 'sha256:r',
+        },
+        {
+          installPath: '/home/.dork/plugins/flow',
+          latestVersion: '0.7.3',
+          disclosed: null,
+          contentHash: 'sha256:f',
+        },
       ],
     });
     expect(toastMock.loading).toHaveBeenCalledWith('Updating 2 packages…');
@@ -382,7 +399,12 @@ describe('useApplyUpdatesWithToast', () => {
     expect(mutateAsync).toHaveBeenCalledTimes(2);
     expect(mutateAsync).toHaveBeenLastCalledWith({
       targets: [
-        { installPath: '/home/.dork/plugins/flow', latestVersion: '0.7.3', disclosed: null },
+        {
+          installPath: '/home/.dork/plugins/flow',
+          latestVersion: '0.7.3',
+          disclosed: null,
+          contentHash: '',
+        },
       ],
     });
     expect(toastMock.loading).toHaveBeenCalledTimes(2);

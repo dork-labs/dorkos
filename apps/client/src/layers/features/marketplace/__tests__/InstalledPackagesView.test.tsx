@@ -29,9 +29,15 @@ import { InstalledPackagesView } from '../ui/InstalledPackagesView';
 // (which fire sonner notifications) and reads the update check through the
 // feature's view hook, so mock those rather than the raw entity hooks.
 
+const reviewMutate = vi.fn();
 vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
   useApplyingInstallPaths: vi.fn(),
+  useReviewHeldBackPackage: () => ({
+    mutate: reviewMutate,
+    isPending: false,
+    variables: undefined,
+  }),
 }));
 
 vi.mock('@/layers/entities/shapes', () => ({
@@ -715,6 +721,56 @@ describe('InstalledPackagesView', () => {
       await user.click(screen.getByRole('button', { name: 'Check again' }));
 
       expect(recheck).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('held-back global packages (DOR-2306, I2)', () => {
+    /** The row that lists `name`. */
+    function row(name: string): HTMLElement {
+      return screen.getAllByText(name)[0]!.closest<HTMLElement>('[role="listitem"]')!;
+    }
+
+    it('says a held-back package is held back and why, and asks again on Review', async () => {
+      // Purpose: a package left out of every session must never just vanish.
+      const user = userEvent.setup();
+      const held = makeInstalled({
+        name: 'fmt',
+        type: 'plugin',
+        heldBack: {
+          reason: 'unasked',
+          reviewable: true,
+          note: 'Held back: its files changed since you approved it. Review it to decide.',
+        },
+      });
+      showRows([held]);
+
+      render(<InstalledPackagesView />);
+
+      const fmt = row('Fmt');
+      expect(within(fmt).getByText('Held back')).toBeInTheDocument();
+      expect(within(fmt).getByText(/its files changed since you approved it/)).toBeInTheDocument();
+      await user.click(within(fmt).getByRole('button', { name: 'Review Fmt' }));
+      expect(reviewMutate).toHaveBeenCalledWith('fmt', expect.anything());
+    });
+
+    it('offers no Review for one that cannot be put on a card, and says what to do', () => {
+      const held = makeInstalled({
+        name: 'broken',
+        type: 'plugin',
+        heldBack: {
+          reason: 'unreadable',
+          reviewable: false,
+          note: 'Held back: DorkOS could not read part of it (hooks/hooks.json). Reinstall it, or uninstall it.',
+        },
+      });
+      showRows([held]);
+
+      render(<InstalledPackagesView />);
+
+      expect(
+        within(row('Broken')).queryByRole('button', { name: /review/i })
+      ).not.toBeInTheDocument();
+      expect(within(row('Broken')).getByText(/Reinstall it, or uninstall it/)).toBeInTheDocument();
     });
   });
 

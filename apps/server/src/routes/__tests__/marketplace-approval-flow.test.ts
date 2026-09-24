@@ -11,6 +11,9 @@
  *
  * @vitest-environment node
  */
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
@@ -64,7 +67,12 @@ describe('marketplace install → cockpit approval → retry', () => {
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
 
     installer = {
-      preview: vi.fn().mockResolvedValue({ preview: EMPTY_PREVIEW }),
+      // A real (empty) staged directory: the card binds its files (DOR-2306).
+      preview: vi.fn().mockResolvedValue({
+        preview: EMPTY_PREVIEW,
+        manifest: { name: 'sentry-monitor', version: '1.0.0', type: 'plugin' },
+        packagePath: mkdtempSync(join(tmpdir(), 'approval-flow-staged-')),
+      }),
       install: vi.fn().mockResolvedValue({
         packageName: 'sentry-monitor',
         version: '1.0.0',
@@ -77,7 +85,7 @@ describe('marketplace install → cockpit approval → retry', () => {
       installer,
       confirmationProvider: new TokenConfirmationProvider(approvals),
       onPluginsChanged: () => {},
-      consent: { approveUpdates: vi.fn(), approveInstall: vi.fn() },
+      consent: { settle: vi.fn(async () => {}), removed: vi.fn() },
     } as unknown as MarketplaceMcpDeps);
 
     app = express();

@@ -322,6 +322,17 @@ const LocalInstallRequestBodySchema = z.object({
     "Install only: the preview's `disclosed`, sent back untouched. The install refuses a " +
       'package that now runs anything else (409 `disclosure_changed`).'
   ),
+  approvedContentHash: z
+    .string()
+    .optional()
+    .describe(
+      "Install only: the preview's `contentHash`. A global package that runs anything loads into " +
+        'sessions only when its installed files hash the same.'
+    ),
+  confirmationToken: z
+    .string()
+    .optional()
+    .describe("Install only: the token an agent's earlier 202 carried, once a person approved."),
 });
 
 /**
@@ -474,6 +485,13 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
     .describe(
       'On every update-available check: what the new version runs on its own. An apply sends it back untouched.'
     ),
+  contentHash: z
+    .string()
+    .optional()
+    .describe("The new version's staged files, hashed. An apply sends it back untouched."),
+  installedDisclosed: DisclosedEffectsSchema.nullable()
+    .optional()
+    .describe('What the installed version runs now; null when it could not be read.'),
 });
 
 /** The 404 body when an update names packages or installations not in view. */
@@ -2321,6 +2339,16 @@ const InstalledPackageSchema = z.object({
     .describe(
       "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
     ),
+  heldBack: z
+    .object({
+      reason: z.enum(['unasked', 'refused', 'unreadable', 'unreadable-config']),
+      note: z.string(),
+      reviewable: z.boolean(),
+    })
+    .optional()
+    .describe(
+      'Present only on a global installation held back from every session until a person approves it as it is (DOR-2306).'
+    ),
 });
 
 /**
@@ -2624,6 +2652,7 @@ registry.registerPath({
             packagePath: z.string(),
             preview: LocalPermissionPreviewSchema,
             disclosed: DisclosedEffectsSchema,
+            contentHash: z.string(),
             // Raw README markdown read from the staged clone; omitted when the
             // package ships no README (see routes/marketplace.ts readPackageReadme).
             readme: z.string().optional(),
@@ -2665,6 +2694,9 @@ registry.registerPath({
             disclosed: DisclosedEffectsSchema.describe(
               'What the package runs on its own, in the form an install is held to: send it back as `approvedDisclosure`.'
             ),
+            contentHash: z
+              .string()
+              .describe('The staged files, hashed: send it back as `approvedContentHash`.'),
           }),
         },
       },
@@ -2695,6 +2727,21 @@ registry.registerPath({
     200: {
       description: 'Install result from the type-specific flow',
       content: { 'application/json': { schema: LocalInstallResultSchema } },
+    },
+    202: {
+      description:
+        "An agent's global install that runs things on its own, or replaces a global package, " +
+        'waits for a person to approve the card; nothing was installed',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            preview: LocalPermissionPreviewSchema,
+            message: z.string(),
+          }),
+        },
+      },
     },
     400: {
       description: 'Validation error or invalid package',
@@ -2852,6 +2899,7 @@ registry.registerPath({
                     installPath: z.string().min(1),
                     latestVersion: z.string(),
                     disclosed: DisclosedEffectsSchema.nullable(),
+                    contentHash: z.string().min(1),
                   })
                 )
                 .min(1),
@@ -2909,6 +2957,88 @@ registry.registerPath({
     },
     502: {
       description: "The package's git remote could not be reached, or its fetch failed",
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+const LocalHeldBackPackageSchema = z.object({
+  name: z.string(),
+  reason: z.enum(['unasked', 'refused', 'unreadable', 'unreadable-config']),
+  note: z.string(),
+  reviewable: z.boolean(),
+  version: z.string().optional(),
+  source: z.string().optional(),
+  changedSinceApproval: z.boolean(),
+  effects: DisclosedEffectsSchema.optional(),
+  contentHash: z.string().optional(),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/held-back',
+  tags: ['Marketplace'],
+  summary: 'List global packages held back from every session',
+  description:
+    'A globally installed package that runs things on its own loads into sessions only when a ' +
+    'person approved it exactly as it is (its files and what it runs). Each entry says why it is ' +
+    'held back, what it runs, and the content hash a decision is bound to.',
+  responses: {
+    200: {
+      description: 'Every held-back package',
+      content: {
+        'application/json': { schema: z.object({ packages: z.array(LocalHeldBackPackageSchema) }) },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/held-back/{name}/review',
+  tags: ['Marketplace'],
+  summary: 'Raise the approval card for a held-back package again',
+  request: { params: z.object({ name: z.string() }) },
+  responses: {
+    202: {
+      description: 'The card is raised; a person decides on it',
+      content: { 'application/json': { schema: z.object({ status: z.literal('asked') }) } },
+    },
+    409: {
+      description: 'Not held back, or cannot be shown on a card (the error says what to do)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/held-back/{name}/decision',
+  tags: ['Marketplace'],
+  summary: "Record the person's allow or refuse for a held-back package",
+  description:
+    'The person only: an agent is refused. Bound to the content hash the person was shown; a ' +
+    'package that changed since is not decided by it.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({ decision: z.enum(['allow', 'refuse']), contentHash: z.string().min(1) })
+            .strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    204: { description: 'Recorded' },
+    403: {
+      description: 'Not the person',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Not held back, unreadable, or changed since it was shown',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

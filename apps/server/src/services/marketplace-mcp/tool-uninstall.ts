@@ -200,8 +200,10 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
     //    refresh the runtime's plugin list and prune the package's harness
     //    projections (DOR-2057). The files are already gone, so a notifier that
     //    throws is logged and the uninstall is still reported as what it is.
-    //    The RAW project path, as the HTTP route sends it (DOR-711).
+    //    The RAW project path, as the HTTP route sends it (DOR-711). A removed
+    //    global package's approvals go with it (DOR-2306).
     try {
+      if (args.projectPath === undefined) deps.consent.removed(result.packageName);
       deps.onPluginsChanged({
         projectPath: args.projectPath,
         packageName: result.packageName,

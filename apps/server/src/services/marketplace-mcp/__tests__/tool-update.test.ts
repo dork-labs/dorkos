@@ -140,14 +140,16 @@ describe('createUpdateHandler', () => {
     update: ReturnType<typeof vi.fn<(req: InstallRequest) => Promise<InstallResult>>>;
     resolveLatest: ReturnType<typeof vi.fn<(req: InstallRequest) => Promise<LatestResolution>>>;
     preview: ReturnType<
-      typeof vi.fn<(req: InstallRequest) => Promise<{ preview: PermissionPreview }>>
+      typeof vi.fn<
+        (req: InstallRequest) => Promise<{ preview: PermissionPreview; packagePath: string }>
+      >
     >;
   };
   let approvals: ApprovalService;
   let onPluginsChanged: ReturnType<typeof vi.fn<MarketplaceMcpDeps['onPluginsChanged']>>;
   let consent: {
-    approveUpdates: ReturnType<typeof vi.fn<MarketplaceMcpDeps['consent']['approveUpdates']>>;
-    approveInstall: ReturnType<typeof vi.fn<MarketplaceMcpDeps['consent']['approveInstall']>>;
+    settle: ReturnType<typeof vi.fn<MarketplaceMcpDeps['consent']['settle']>>;
+    removed: ReturnType<typeof vi.fn<MarketplaceMcpDeps['consent']['removed']>>;
   };
   let deps: MarketplaceMcpDeps;
 
@@ -202,7 +204,11 @@ describe('createUpdateHandler', () => {
           warnings: [],
         };
       }),
-      preview: vi.fn(async (req: InstallRequest) => ({ preview: current(req.name) })),
+      // Staged at the global copy's path: the check hashes the staged files.
+      preview: vi.fn(async (req: InstallRequest) => ({
+        preview: current(req.name),
+        packagePath: path.join(dorkHome, 'plugins', req.name),
+      })),
       resolveLatest: vi.fn(async (req: InstallRequest): Promise<LatestResolution> => {
         const version = latest[req.name];
         if (version instanceof Error) throw version;
@@ -234,7 +240,7 @@ describe('createUpdateHandler', () => {
 
     approvals = new ApprovalService(createTestDb());
     onPluginsChanged = vi.fn<MarketplaceMcpDeps['onPluginsChanged']>();
-    consent = { approveUpdates: vi.fn(), approveInstall: vi.fn() };
+    consent = { settle: vi.fn(async () => {}), removed: vi.fn() };
     deps = {
       dorkHome,
       updateFlow,
@@ -549,14 +555,26 @@ describe('createUpdateHandler', () => {
       { projectPath: undefined, packageName: 'alpha', action: 'install' },
       { projectPath, packageName: 'alpha', action: 'install' },
     ]);
-    // The person read everything each new version runs and said yes: that yes
-    // is what lets a global package load into sessions (DOR-2306), recorded
+    // The person read everything each new version runs and said yes: each
+    // reinstall that landed is settled with what the card showed (DOR-2306),
     // before the refresh reads it.
-    expect(consent.approveUpdates).toHaveBeenCalledTimes(1);
-    expect(consent.approveUpdates.mock.calls[0]?.[0].map((u) => u.installPath).sort()).toEqual(
-      [alphaPath, projectAlphaPath].sort()
-    );
-    expect(consent.approveUpdates.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(consent.settle.mock.calls.map(([install, approved]) => [install, approved])).toEqual([
+      [
+        { installPath: alphaPath, type: 'plugin', global: true },
+        {
+          disclosed: disclosedEffectsOf(previewDeclaring()),
+          contentHash: expect.stringMatching(/^sha256:/),
+        },
+      ],
+      [
+        { installPath: projectAlphaPath, type: 'plugin', global: false },
+        {
+          disclosed: disclosedEffectsOf(previewDeclaring()),
+          contentHash: expect.stringMatching(/^sha256:/),
+        },
+      ],
+    ]);
+    expect(consent.settle.mock.invocationCallOrder[0]).toBeLessThan(
       onPluginsChanged.mock.invocationCallOrder[0] ?? 0
     );
   });
@@ -565,7 +583,7 @@ describe('createUpdateHandler', () => {
     // Purpose: only a person's yes may let a global package's programs load.
     const handler = createUpdateHandler(deps);
     const first = parse(await handler({ names: ['alpha'], apply: true }));
-    expect(consent.approveUpdates).not.toHaveBeenCalled();
+    expect(consent.settle).not.toHaveBeenCalled();
     for (const pending of approvals.listPending()) approvals.deny(pending.approvalId, 'no');
     await handler({
       names: ['alpha'],
@@ -573,7 +591,7 @@ describe('createUpdateHandler', () => {
       confirmationToken: first.confirmationToken as string,
     });
 
-    expect(consent.approveUpdates).not.toHaveBeenCalled();
+    expect(consent.settle).not.toHaveBeenCalled();
   });
 
   it('runs nothing when the person says no', async () => {
@@ -621,8 +639,10 @@ describe('createUpdateHandler', () => {
     expect(approvals.listPending()).toEqual([]);
     expect(installer.update).toHaveBeenCalledTimes(2);
     // Nobody was shown anything on this call, so nothing is recorded as seen:
-    // a global package it updated waits for its own card before it loads.
-    expect(consent.approveUpdates).not.toHaveBeenCalled();
+    // each landed reinstall is settled with no approval (earlier ones are
+    // forgotten), and a global package waits for its own card before it loads.
+    expect(consent.settle).toHaveBeenCalledTimes(2);
+    for (const [, approved] of consent.settle.mock.calls) expect(approved).toBeUndefined();
   });
 
   it('refuses a project outside the boundary before looking at anything', async () => {

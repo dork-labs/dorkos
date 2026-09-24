@@ -209,6 +209,23 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
   /**
+   * The global packages a person approved as they are now
+   * (`marketplace/global-plugin-consent.ts`), re-read at the start of every
+   * turn (DOR-2306). Injected at boot by {@link setConsentedPluginNames}; a
+   * runtime built without it (tests) re-checks only on a refresh.
+   */
+  private consentedPluginNames: (() => Promise<string[]>) | undefined;
+
+  /**
+   * Re-check the consented global packages at the start of every turn.
+   *
+   * @param list - Lists the global packages that may load right now.
+   */
+  setConsentedPluginNames(list: () => Promise<string[]>): void {
+    this.consentedPluginNames = list;
+  }
+
+  /**
    * cwds with a command-cache warm probe currently in flight. Dedupes
    * concurrent `getCommands` calls so one cold cwd spawns at most one probe.
    */
@@ -590,6 +607,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let observedEvent = false;
     let sawRuntimeError = false;
     try {
+      if (this.consentedPluginNames) await this.revalidateActivatedPlugins();
       const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
       const stream = this.persistent.shouldDispatch(sessionId)
         ? this.persistent.dispatch({
@@ -688,6 +706,33 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * sessions.
    */
   async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
+    return this.refreshActivatedPluginsNow(changedProjectPath);
+  }
+
+  /**
+   * Re-check, at the start of a turn, that every global package the SDK is
+   * handed is still one a person approved as it is now (DOR-2306). A package
+   * edited on disk since the last refresh is caught here rather than running
+   * until the next install. Cheap: each package's content hash is re-computed
+   * only when an `lstat` walk sees something in it written. When the set
+   * changed, it runs the full refresh, which also reloads live sessions.
+   *
+   * Best-effort like the refresh: a failed check leaves the list as it was.
+   */
+  private async revalidateActivatedPlugins(): Promise<void> {
+    if (!this.consentedPluginNames) return;
+    try {
+      const now = await this.consentedPluginNames();
+      const current = this.activatedPlugins.map((p) => p.path.split(/[\\/]/).pop());
+      const same = now.length === current.length && now.every((name, i) => name === current[i]);
+      if (!same) await this.refreshActivatedPluginsNow();
+    } catch {
+      // Best-effort; the next refresh or turn checks again.
+    }
+  }
+
+  /** The body of {@link refreshActivatedPlugins}. */
+  private async refreshActivatedPluginsNow(changedProjectPath?: string): Promise<void> {
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { listConsentedPluginNames } =
@@ -1113,6 +1158,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         this.cwd
       );
       const cwdKey = session.cwd || this.cwd;
+      if (this.consentedPluginNames) await this.revalidateActivatedPlugins();
       const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
       return this.persistent.stage(sessionId, content, opts, session, senderOpts);
     }

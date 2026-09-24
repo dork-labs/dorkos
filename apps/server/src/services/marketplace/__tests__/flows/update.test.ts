@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { applyAsShown } from '../apply-as-shown.js';
+import { shippedContentHash } from '../../lib/content-hash.js';
 import type { MarketplaceJson, PluginPackageManifest, SourceKey } from '@dorkos/marketplace';
 import { UPDATE_CHECK_CONCURRENCY, UPDATE_MEMO_TTL_MS, UpdateFlow } from '../../flows/update.js';
 import {
@@ -230,7 +231,9 @@ async function buildDeps(opts: {
     update: ReturnType<typeof vi.fn>;
     resolveLatest: ReturnType<typeof vi.fn<ResolveLatestImpl>>;
     preview: ReturnType<
-      typeof vi.fn<(req: InstallRequest) => Promise<{ preview: PermissionPreview }>>
+      typeof vi.fn<
+        (req: InstallRequest) => Promise<{ preview: PermissionPreview; packagePath: string }>
+      >
     >;
   };
   fetcher: {
@@ -249,7 +252,11 @@ async function buildDeps(opts: {
       buildInstallResult(req.name, '2.0.0', path.join(dorkHome, 'plugins', req.name))
     ),
     resolveLatest,
-    preview: vi.fn(async (_req: InstallRequest) => ({ preview: buildEmptyPreview() })),
+    // Staged into a real (empty) directory: a check hashes the staged files.
+    preview: vi.fn(async (_req: InstallRequest) => ({
+      preview: buildEmptyPreview(),
+      packagePath: dorkHome,
+    })),
   } satisfies InstallerLike;
   const sources = opts.sources ?? [buildSource()];
   const fetcher = {
@@ -1111,6 +1118,40 @@ describe('UpdateFlow', () => {
 
     const HOOKED = buildEmptyPreview({ hooks: [{ event: 'Stop', command: 'echo new' }] });
 
+    it('hashes the staged new version and says what the installed one runs now (DOR-2306)', async () => {
+      // Purpose: an apply is refused when the staged files move, and a confirm
+      // step shows what is new against what is installed.
+      const ctx = await setup({
+        marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }]),
+        latest: { alpha: '2.0.0' },
+      });
+      const staged = await mkdtemp(path.join(tmpdir(), 'update-flow-staged-'));
+      cleanupDirs.push(staged);
+      await writeFile(path.join(staged, 'fmt.sh'), 'echo new');
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED, packagePath: staged });
+      const alpha = await stageInstalledPlugin({
+        dorkHome: ctx.dorkHome,
+        manifest: buildPluginManifest({ name: 'alpha', version: '1.0.0' }),
+      });
+      await mkdir(path.join(alpha, 'hooks'), { recursive: true });
+      await writeFile(
+        path.join(alpha, 'hooks', 'hooks.json'),
+        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo old' }] }] } })
+      );
+
+      const plan = await new UpdateFlow(ctx.deps).planInstallations({
+        installations: await scanInstallationRecords(ctx.dorkHome, { agents: [] }),
+        disclose: true,
+      });
+
+      expect(plan.checks[0]).toMatchObject({
+        contentHash: await shippedContentHash(staged),
+        installedDisclosed: expect.objectContaining({
+          hooks: [expect.objectContaining({ command: 'echo old' })],
+        }),
+      });
+    });
+
     it('says what each new version would run, and previews nothing that is current', async () => {
       // Purpose: the card for an apply must show what the new version runs,
       // read from the version that would be installed, in its own scope.
@@ -1118,7 +1159,7 @@ describe('UpdateFlow', () => {
         marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
         latest: { alpha: '2.0.0', beta: '1.0.0' },
       });
-      ctx.installer.preview.mockResolvedValue({ preview: HOOKED });
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED, packagePath: ctx.dorkHome });
       const { alpha, installations } = await stageTwo(ctx);
 
       const plan = await new UpdateFlow(ctx.deps).planInstallations({
@@ -1193,7 +1234,7 @@ describe('UpdateFlow', () => {
         marketplaceJson: buildMarketplaceJson([{ name: 'alpha' }, { name: 'beta' }]),
         latest: { alpha: '2.0.0', beta: '2.0.0' },
       });
-      ctx.installer.preview.mockResolvedValue({ preview: HOOKED });
+      ctx.installer.preview.mockResolvedValue({ preview: HOOKED, packagePath: ctx.dorkHome });
       const { alpha, installations } = await stageTwo(ctx);
       const flow = new UpdateFlow(ctx.deps);
 

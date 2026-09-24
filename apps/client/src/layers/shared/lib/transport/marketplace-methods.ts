@@ -126,6 +126,14 @@ export function createMarketplaceMethods(baseUrl: string) {
       return result;
     },
 
+    async reviewHeldBackPackage(name: string): Promise<void> {
+      await fetchJSON<{ status: string }>(
+        baseUrl,
+        `/marketplace/held-back/${encodeURIComponent(name)}/review`,
+        { method: 'POST' }
+      );
+    },
+
     // --- Installed packages ---
 
     listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]> {
