@@ -605,3 +605,31 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   requires: [],
   conflicts: [],
 };
+
+/**
+ * What verification says about {@link MOCK_INSTALLED_FOR_UPDATES} (DOR-2197):
+ * Release Bot's flow has files changed since install and an update waiting,
+ * python-skills was installed by an older DorkOS, obsidian-sync is a linked
+ * working copy, and the rest are as installed.
+ */
+export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UPDATES.map((pkg) => {
+  if (pkg.installPath === '/Users/kai/work/release-bot/.dork/plugins/flow') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'modified' as const,
+        changed: ['skills/triage/SKILL.md', 'commands/ship.md'],
+        missing: [],
+        added: ['skills/my-notes/SKILL.md'],
+        customized: [],
+      },
+    };
+  }
+  if (pkg.name === 'python-skills') {
+    return { ...pkg, integrity: { status: 'unknown' as const, reason: 'no-record' as const } };
+  }
+  if (pkg.name === 'obsidian-sync') {
+    return { ...pkg, integrity: { status: 'unknown' as const, reason: 'linked' as const } };
+  }
+  return { ...pkg, integrity: { status: 'clean' as const, customized: [] } };
+});
