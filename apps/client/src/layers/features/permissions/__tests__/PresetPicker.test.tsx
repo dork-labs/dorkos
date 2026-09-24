@@ -24,7 +24,13 @@ const OVERVIEW: PermissionsResponse = {
   preset: 'balanced',
   defaults: { areas: {}, actions: {} },
   changeCount: 0,
-  filesAndCommands: { stop: 'act', presetStop: 'act', runtimes: [], exceptions: [] },
+  filesAndCommands: {
+    stop: 'act',
+    presetStop: 'act',
+    runtimes: [],
+    exceptions: [],
+    followingCount: 0,
+  },
   areas: [],
   exceptions: [],
   agentCount: 4,
@@ -142,7 +148,13 @@ describe('PresetPicker', () => {
     renderPicker({
       ...OVERVIEW,
       preset: 'full',
-      filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
+      filesAndCommands: {
+        stop: 'autonomy',
+        presetStop: 'autonomy',
+        runtimes: [],
+        exceptions: [],
+        followingCount: 0,
+      },
     });
     await waitFor(() => expect(scopeNote()).toBeInTheDocument());
     expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);

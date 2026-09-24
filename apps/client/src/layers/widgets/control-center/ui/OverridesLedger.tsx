@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
+import { PermissionWhy } from '@/layers/features/permissions';
 import { useOverridesLedger, type OverrideKind } from '../model/use-overrides-ledger';
 
 /** One glyph per surface a row can open. */
@@ -68,13 +69,24 @@ export function OverridesLedger() {
                   className="focus-ring hover:bg-accent/60 flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors disabled:pointer-events-none disabled:opacity-60"
                 >
                   <Icon className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{row.name}</span>
-                  <span className="text-muted-foreground shrink-0">{row.detail}</span>
+                  {/* Both halves may shorten, the name never below a few
+                      letters: a permission row also carries its "Why?", and a
+                      long detail must not squeeze the name to one letter. */}
+                  <span className="min-w-16 flex-1 truncate">{row.name}</span>
+                  <span className="text-muted-foreground min-w-0 truncate">{row.detail}</span>
                   <ChevronRight
                     className="text-muted-foreground/60 size-3.5 shrink-0"
                     aria-hidden
                   />
                 </button>
+                {row.why ? (
+                  <PermissionWhy
+                    question={row.why.question}
+                    sentence={row.why.sentence}
+                    {...(row.why.lastChange ? { lastChange: row.why.lastChange } : {})}
+                    className="shrink-0 px-1"
+                  />
+                ) : null}
                 {row.onReset ? (
                   <Button
                     variant="ghost"

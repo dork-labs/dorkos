@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import type {
-  AgentPermissionsResponse,
-  PermissionAreaEntry,
-  PermissionState,
-  PermissionsResponse,
+import {
+  describeAffectedAgents,
+  type AgentPermissionsResponse,
+  type PermissionAreaEntry,
+  type PermissionState,
+  type PermissionsResponse,
 } from '@dorkos/shared/permissions';
 import {
+  useAffectedAgentCount,
   useAgentPermissions,
   useOverridingAgents,
   usePermissions,
@@ -14,8 +16,10 @@ import {
 } from '@/layers/entities/permissions';
 import { Skeleton } from '@/layers/shared/ui';
 import { STATE_LABEL, defaultSourceText } from '../lib/permission-copy';
+import { stateWhy } from '../lib/permission-why';
 import { reportPermissionFailure } from '../lib/report-failure';
 import { PermissionRow } from './PermissionRow';
+import { PermissionWhy } from './PermissionWhy';
 import { ExceptionsChip } from './ExceptionsChip';
 import { ApplyToOverridesDialog } from './ApplyToOverridesDialog';
 import { ActionOverrides } from './ActionOverrides';
@@ -46,6 +50,7 @@ function DefaultAreaRow({
 }) {
   const write = useSetPermission({ kind: 'default' });
   const overriding = useOverridingAgents(area.id);
+  const affected = useAffectedAgentCount({ kind: 'area', area: area.id }) ?? 0;
   const [pending, setPending] = useState<PermissionState | null>(null);
 
   const commit = (next: PermissionState, applyToAgents?: string[]) => {
@@ -74,11 +79,32 @@ function DefaultAreaRow({
         description={area.description}
         floor={area.floor}
         value={area.resolved.state}
-        sourceText={defaultSourceText(area.resolved.source, overview.preset)}
+        // Where it comes from, and the honest preview of what changing it
+        // reaches, before the switch is touched.
+        sourceText={[
+          defaultSourceText(area.resolved.source, overview.preset),
+          describeAffectedAgents(affected),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        why={
+          <PermissionWhy
+            question={`Why is ${area.label} set to ${STATE_LABEL[area.resolved.state]}?`}
+            sentence={stateWhy({ ...area.resolved, preset: overview.preset })}
+            {...(area.lastChange ? { lastChange: area.lastChange } : {})}
+          />
+        }
         onChange={onChange}
         disabled={write.isPending}
         footer={<ExceptionsChip area={area.id} areaLabel={area.label} agents={overriding} />}
-        details={<ActionOverrides scope={{ kind: 'default' }} area={area} surface="settings" />}
+        details={
+          <ActionOverrides
+            scope={{ kind: 'default' }}
+            area={area}
+            surface="settings"
+            preset={overview.preset}
+          />
+        }
       />
       <ApplyToOverridesDialog
         open={pending !== null}
@@ -90,7 +116,7 @@ function DefaultAreaRow({
           agentName: e.agentName,
           detail: `${STATE_LABEL[e.state]}${e.action ? ' (one action)' : ''}`,
         }))}
-        affectedCount={Math.max(0, overview.agentCount - overriding.length)}
+        affectedCount={affected}
         onKeep={() => pending && commit(pending)}
         onUpdate={(ids) => pending && commit(pending, ids)}
         pending={write.isPending}
@@ -102,11 +128,14 @@ function DefaultAreaRow({
 /** One agent-layer row: the agent's own state, or the default it follows. */
 function AgentAreaRow({
   agentId,
+  agentName,
   area,
 }: {
   agentId: string;
+  agentName: string;
   area: AgentPermissionsResponse['areas'][number];
 }) {
+  const preset = usePermissions().data?.preset ?? null;
   const write = useSetPermission({ kind: 'agent', agentId });
   const changed = area.resolved.source === 'agent-area' || area.resolved.source === 'agent-action';
   const inheritedText = changed
@@ -131,6 +160,13 @@ function AgentAreaRow({
       floor={area.floor}
       value={area.resolved.state}
       sourceText={sourceText}
+      why={
+        <PermissionWhy
+          question={`Why is ${area.label} set to ${STATE_LABEL[area.resolved.state]} for ${agentName}?`}
+          sentence={stateWhy({ ...area.resolved, preset })}
+          {...(area.lastChange ? { lastChange: area.lastChange } : {})}
+        />
+      }
       changed={changed}
       onChange={(next) => {
         if (next !== area.resolved.state) save(next);
@@ -138,7 +174,13 @@ function AgentAreaRow({
       onReset={() => save(null)}
       disabled={write.isPending}
       details={
-        <ActionOverrides scope={{ kind: 'agent', agentId }} area={area} surface="agent-page" />
+        <ActionOverrides
+          scope={{ kind: 'agent', agentId }}
+          area={area}
+          surface="agent-page"
+          preset={preset}
+          agentName={agentName}
+        />
       }
     />
   );
@@ -176,9 +218,18 @@ export function PermissionList({ scope }: PermissionListProps) {
   if (!agent.data) return <Skeleton className="h-20 w-full" />;
   return (
     <div className="divide-border divide-y" data-testid="permission-list-agent">
-      <AgentFilesAndCommandsRow agentId={scope.agentId} files={agent.data.filesAndCommands} />
+      <AgentFilesAndCommandsRow
+        agentId={scope.agentId}
+        agentName={agent.data.agentName}
+        files={agent.data.filesAndCommands}
+      />
       {stateAreas(agent.data.areas).map((area) => (
-        <AgentAreaRow key={area.id} agentId={scope.agentId} area={area} />
+        <AgentAreaRow
+          key={area.id}
+          agentId={scope.agentId}
+          agentName={agent.data.agentName}
+          area={area}
+        />
       ))}
     </div>
   );

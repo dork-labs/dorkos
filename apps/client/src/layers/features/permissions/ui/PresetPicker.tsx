@@ -5,7 +5,11 @@ import type {
   PermissionSurface,
   PermissionsResponse,
 } from '@dorkos/shared/permissions';
-import { PERMISSION_PRESETS } from '@dorkos/shared/permissions';
+import {
+  PERMISSION_PRESETS,
+  countAgentsFollowing,
+  describeAffectedAgents,
+} from '@dorkos/shared/permissions';
 import {
   isAutonomyAckRefusal,
   usePermissions,
@@ -23,6 +27,7 @@ import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { PRESET_LABEL, PRESET_SUMMARY } from '../lib/permission-copy';
 import { useAutonomyConsent } from '../model/use-autonomy-consent';
 import { ApplyToOverridesDialog, type DifferingAgent } from './ApplyToOverridesDialog';
+import { PermissionWhy } from './PermissionWhy';
 
 /** Props for {@link PresetPicker}. */
 export interface PresetPickerProps {
@@ -99,6 +104,9 @@ export function PresetPicker({ surface }: PresetPickerProps) {
     );
   }
   const data = overview.data;
+  // What choosing a preset reaches, said before anything is chosen.
+  const affected = countAgentsFollowing(data, { kind: 'preset' });
+  const preview = `${data.preset === null ? 'Choosing one' : 'Changing it'} ${describeAffectedAgents(affected)}`;
 
   const send = (preset: PermissionPreset, applyToAgents?: string[]) => {
     const once = (acknowledgeAutonomy?: true) =>
@@ -144,14 +152,25 @@ export function PresetPicker({ surface }: PresetPickerProps) {
 
       {data.preset === null ? (
         <p className="text-muted-foreground text-sm" data-testid="permissions-preset">
-          Not chosen yet. Your agents work as they did before.
+          Not chosen yet. Your agents work as they did before.{' '}
+          <span className="text-xs">{preview}.</span>
         </p>
       ) : (
         <div className="flex flex-col gap-1 @lg:flex-row @lg:items-center @lg:justify-between">
-          <p className="text-sm" data-testid="permissions-preset">
-            <span className="font-medium">{presetHeadline(data.preset, data.changeCount)}</span>
-            <span className="text-muted-foreground"> · {PRESET_SUMMARY[data.preset]}</span>
-          </p>
+          <div className="space-y-0.5">
+            <p className="text-sm" data-testid="permissions-preset">
+              <span className="font-medium">{presetHeadline(data.preset, data.changeCount)}</span>
+              <span className="text-muted-foreground"> · {PRESET_SUMMARY[data.preset]}</span>
+            </p>
+            <p className="text-muted-foreground text-xs" data-testid="permissions-preset-preview">
+              {preview} ·{' '}
+              <PermissionWhy
+                question={`Why is the preset set to ${PRESET_LABEL[data.preset]}?`}
+                sentence={`${PRESET_LABEL[data.preset]} is the preset every agent starts from.`}
+                {...(data.presetLastChange ? { lastChange: data.presetLastChange } : {})}
+              />
+            </p>
+          </div>
           {data.changeCount > 0 ? (
             <Button
               variant="ghost"
@@ -180,7 +199,7 @@ export function PresetPicker({ surface }: PresetPickerProps) {
         title={pending ? `Switch everyone to ${PRESET_LABEL[pending]}?` : undefined}
         next={pending ? PRESET_LABEL[pending] : ''}
         agents={differing}
-        affectedCount={Math.max(0, data.agentCount - differing.length)}
+        affectedCount={affected}
         onKeep={() => {
           if (pending) send(pending);
           setPending(null);
