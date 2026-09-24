@@ -1,6 +1,9 @@
 ---
 covers:
   - 'feat(marketplace): the Installed view says what is out of date and updates it (DOR-2196)'
+  - "fix(marketplace): spell the update copy's apostrophes the house way (DOR-2196)"
+  - "fix(marketplace): settle every apply's toast, report failures once, keep focus (DOR-2196)"
+  - 'fix(marketplace): give the approval refusal a next step (DOR-2196)'
 ---
 
 ### Changed
