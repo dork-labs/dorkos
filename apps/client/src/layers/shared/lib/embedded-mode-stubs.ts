@@ -204,6 +204,8 @@ import type {
   PermissionHistoryResponse,
   PermissionsResponse,
   SetPermissionPresetBody,
+  UndoPermissionChangeBody,
+  UndoPermissionChangeResponse,
 } from '@dorkos/shared/permissions';
 import type { PermissionWriteResult } from '@dorkos/shared/transport';
 import type {
@@ -569,6 +571,10 @@ export const approvalStubs = {
   async denyApproval(_approvalId: string, _reason?: string): Promise<ApprovalDecisionResponse> {
     throw new Error('Approvals are not supported in Obsidian plugin mode.');
   },
+
+  async dismissAlwaysSuggestion(_approvalId: string): Promise<{ ok: true; approvalId: string }> {
+    throw new Error('Approvals are not supported in Obsidian plugin mode.');
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -613,6 +619,12 @@ export const permissionStubs = {
     limit?: number;
   }): Promise<PermissionHistoryResponse> {
     return { items: [], nextCursor: null };
+  },
+  async undoPermissionChange(
+    _eventId: string,
+    _body?: UndoPermissionChangeBody
+  ): Promise<UndoPermissionChangeResponse> {
+    throw new Error(PERMISSIONS_IN_APP);
   },
 };
 

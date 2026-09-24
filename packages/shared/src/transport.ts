@@ -130,6 +130,8 @@ import type {
   PatchPermissionDefaultsBody,
   PermissionChange,
   PermissionHistoryResponse,
+  UndoPermissionChangeBody,
+  UndoPermissionChangeResponse,
   PermissionsResponse,
   SetPermissionPresetBody,
 } from './permissions/index.js';
@@ -2462,6 +2464,14 @@ export interface Transport
    */
   denyApproval(approvalId: string, reason?: string): Promise<ApprovalDecisionResponse>;
 
+  /**
+   * "Not now" on a card that suggests Always allow: the suggestion never comes
+   * back for this agent and action. Only a person can call this.
+   *
+   * @param approvalId - The approval whose card suggested it.
+   */
+  dismissAlwaysSuggestion(approvalId: string): Promise<{ ok: true; approvalId: string }>;
+
   // --- Permissions (spec `agent-permissions`) ---
 
   /**
@@ -2521,6 +2531,19 @@ export interface Transport
     before?: string;
     limit?: number;
   }): Promise<PermissionHistoryResponse>;
+
+  /**
+   * Undo one change from the permission history, as a new change. Rejects with
+   * `code: 'UNDO_CONFLICT'` (409, the conflicts on the error's `body`) when a
+   * key changed since; `force` sets it back anyway. Only a person can call this.
+   *
+   * @param eventId - The `permission.changed` event, from the history.
+   * @param body - `force`, and the Full autonomy acknowledgement when needed.
+   */
+  undoPermissionChange(
+    eventId: string,
+    body?: UndoPermissionChangeBody
+  ): Promise<UndoPermissionChangeResponse>;
 
   // --- The Inbox (spec `notification-system`) ---
 

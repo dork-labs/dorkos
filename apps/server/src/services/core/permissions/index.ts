@@ -41,6 +41,7 @@ export {
   type StandingGrantLicence,
 } from './ended-standing-grants.js';
 export { PermissionObserver } from './permission-observer.js';
+export { createAlwaysSuggestion } from './always-suggestion.js';
 export { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
 export {
   listPermissionHistory,
@@ -149,6 +150,12 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
           });
         }
         wiring.config.setDot('runtimes.defaultTrustStop', stop);
+      },
+      setRuntimeTrustStop: (runtime, stop) => {
+        const path = RUNTIME_TRUST_STOP_PATHS[runtime];
+        if (!path) return false;
+        wiring.config.setDot(path, stop);
+        return true;
       },
       hasAutonomyAck: hasStandingAutonomyAck,
       recordAutonomyAck: () =>

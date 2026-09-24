@@ -1,0 +1,84 @@
+/**
+ * The small pieces every permission write shares: the refusal type, the Full
+ * autonomy sentence, and the reads and writes of stored override maps that
+ * never reach the prototype. Kept apart from the service so the Undo
+ * (`permission-undo.ts`) and the service can both use them without importing
+ * each other.
+ *
+ * @module services/core/permissions/permission-values
+ */
+import {
+  PERMISSION_STATES,
+  type AgentPermissions,
+  type PermissionState,
+} from '@dorkos/shared/permissions';
+
+/** A permission write the service refused, with the HTTP status that fits it. */
+export class PermissionError extends Error {
+  /** Marks this class across module instances. */
+  override readonly name = 'PermissionError';
+
+  /**
+   * Construct the refusal.
+   *
+   * @param code - Machine-readable refusal code.
+   * @param message - One plain sentence a person can act on.
+   * @param status - The HTTP status the route answers with.
+   * @param details - Extra fields the route adds to the body (an Undo's conflicts).
+   */
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: number = 400,
+    readonly details?: Record<string, unknown>
+  ) {
+    super(message);
+  }
+}
+
+/** The sentence a Full-autonomy write without an acknowledgement is refused with. */
+export const AUTONOMY_ACK_MESSAGE =
+  'Full autonomy lets agents edit files and run commands without asking. Confirm that in the ' +
+  'app first, then try again.';
+
+/**
+ * True for a real state value.
+ *
+ * @param value - Anything read off a stored map.
+ */
+export function isState(value: unknown): value is PermissionState {
+  return typeof value === 'string' && (PERMISSION_STATES as readonly string[]).includes(value);
+}
+
+/**
+ * Drop empty maps so an agent with no overrides writes no `permissions` at all.
+ *
+ * @param permissions - The agent's overrides.
+ * @returns The same overrides without empty maps, or `undefined` for none.
+ */
+export function compact(permissions: AgentPermissions): AgentPermissions | undefined {
+  const areas = permissions.areas && Object.keys(permissions.areas).length > 0;
+  const actions = permissions.actions && Object.keys(permissions.actions).length > 0;
+  const next: AgentPermissions = {
+    ...(areas ? { areas: permissions.areas } : {}),
+    ...(actions ? { actions: permissions.actions } : {}),
+    ...(permissions.filesAndCommands ? { filesAndCommands: permissions.filesAndCommands } : {}),
+  };
+  return Object.keys(next).length === 0 ? undefined : next;
+}
+
+/**
+ * An own-key read that never reaches the prototype.
+ *
+ * @param record - A stored map of states.
+ * @param key - The area or action id.
+ * @returns The state, or `null` for not set (or not a state).
+ */
+export function ownState(
+  record: Record<string, unknown> | undefined,
+  key: string
+): PermissionState | null {
+  if (!record || !Object.hasOwn(record, key)) return null;
+  const value = record[key];
+  return isState(value) ? value : null;
+}

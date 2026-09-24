@@ -28,7 +28,10 @@ import {
   type PermissionChange,
   type PermissionChangedMetadata,
   type PermissionHistoryEntry,
+  type PermissionAreaId,
   type PermissionHistoryResponse,
+  type PermissionLastChange,
+  type PermissionSource,
   type PermissionSurface,
 } from '@dorkos/shared/permissions';
 import type { ActorType } from '@dorkos/shared/activity-schemas';
@@ -200,6 +203,8 @@ export interface PermissionChangeRecord {
   presetSnapshot?: PermissionChangedMetadata['presetSnapshot'];
   /** The approval an agent request was answered through (phase 2). */
   approvalId?: string;
+  /** The `permission.changed` event this write undid. */
+  undoOf?: string;
   /** A sentence the history shows beside the change, when it alone would mislead. */
   note?: string;
 }
@@ -233,6 +238,7 @@ export async function recordPermissionChange(
     surface: record.surface,
     attribution: record.writer.attribution,
     ...(record.approvalId ? { approvalId: record.approvalId } : {}),
+    ...(record.undoOf ? { undoOf: record.undoOf } : {}),
     ...(record.presetSnapshot ? { presetSnapshot: record.presetSnapshot } : {}),
     ...(record.note ? { note: record.note } : {}),
   };
@@ -245,7 +251,10 @@ export async function recordPermissionChange(
     resourceType: onlyAgent ? 'agent' : 'permissions',
     resourceId: onlyAgent ?? null,
     resourceLabel: onlyAgent && firstAgent?.kind === 'agent' ? firstAgent.agentName : 'Everyone',
-    summary: describePermissionChanges(record.changes, record.actionTitle),
+    summary:
+      record.surface === 'undo' && record.undoOf
+        ? `Undo: ${describePermissionChanges(record.changes, record.actionTitle)}`
+        : describePermissionChanges(record.changes, record.actionTitle),
     linkPath: null,
     metadata: metadata as unknown as Record<string, unknown>,
   });
@@ -396,4 +405,116 @@ function touchesAgent(
 ): boolean {
   if (resourceId === agentId) return true;
   return metadata.changes.some((c) => c.target.kind === 'agent' && c.target.agentId === agentId);
+}
+
+/**
+ * The key a recorded change is about, as one string: `default:preset`,
+ * `default:area:rooms`, `default:action:rooms.create`, `default:files`,
+ * `default:files:codex`, `agent:<id>:area:rooms`, `agent:<id>:action:<id>`,
+ * `agent:<id>:files`.
+ *
+ * @param change - The recorded change.
+ */
+function permissionKeyOf(change: PermissionChange): string {
+  const layer = change.target.kind === 'agent' ? `agent:${change.target.agentId}` : 'default';
+  switch (change.key.kind) {
+    case 'preset':
+      return `${layer}:preset`;
+    case 'area':
+      return `${layer}:area:${change.key.area}`;
+    case 'action':
+      return `${layer}:action:${change.key.action}`;
+    case 'files':
+      return change.key.runtime ? `${layer}:files:${change.key.runtime}` : `${layer}:files`;
+  }
+}
+
+/** How many recent permission events the "why?" lines look through. */
+export const LAST_CHANGE_DEPTH = 200;
+
+/**
+ * The most recent change to every setting in the recent history, keyed by
+ * {@link permissionKeyOf}: what every "why?" line names as its last change.
+ *
+ * One read of the history per page, never one per row. A setting whose last
+ * change is older than {@link LAST_CHANGE_DEPTH} events has no entry, and its
+ * "why?" line names only where the state comes from.
+ *
+ * @param activity - The Activity reader, absent in a process with none.
+ */
+export async function readLastChanges(
+  activity: Pick<ActivityService, 'list'> | undefined
+): Promise<Map<string, PermissionLastChange>> {
+  const found = new Map<string, PermissionLastChange>();
+  if (!activity) return found;
+  const history = await listPermissionHistory(activity, { limit: LAST_CHANGE_DEPTH });
+  for (const entry of history.items) {
+    for (const change of entry.metadata.changes) {
+      const key = permissionKeyOf(change);
+      if (found.has(key)) continue;
+      found.set(key, {
+        eventId: entry.id,
+        occurredAt: entry.occurredAt,
+        actorLabel: entry.actorLabel,
+        attribution: entry.metadata.attribution,
+        surface: entry.metadata.surface,
+      });
+    }
+  }
+  return found;
+}
+
+/** The last changes by {@link permissionKeyOf}, as `readLastChanges` returns them. */
+export type LastChanges = ReadonlyMap<string, PermissionLastChange>;
+
+/**
+ * The newest of the recorded changes under any of `keys`, or `undefined`.
+ *
+ * @param index - The last change per key.
+ * @param keys - Every key whose change could have decided the state.
+ */
+export function newestOf(
+  index: LastChanges,
+  keys: readonly string[]
+): PermissionLastChange | undefined {
+  let best: PermissionLastChange | undefined;
+  for (const key of keys) {
+    const found = index.get(key);
+    if (found && (!best || found.occurredAt > best.occurredAt)) best = found;
+  }
+  return best;
+}
+
+/**
+ * The last change behind one resolved state: the newest recorded change to any
+ * setting the resolver reads for it (the agent's own action and area, the
+ * default action and area, and the preset). A newer key that is no longer set
+ * was put back, which is exactly the change that made the state fall through
+ * to where it comes from now, so it is the one to name.
+ *
+ * @param index - The last change per key.
+ * @param entry - The area, the action (absent for the area as a whole), the
+ *   agent (absent at the default layer), and where the state came from.
+ */
+export function lastChangeFor(
+  index: LastChanges,
+  entry: { area: PermissionAreaId; actionId?: string; agentId?: string; source: PermissionSource }
+): PermissionLastChange | undefined {
+  if (entry.source === 'inactive') return undefined;
+  const keys: string[] = [];
+  if (entry.agentId) {
+    if (entry.actionId) keys.push(`agent:${entry.agentId}:action:${entry.actionId}`);
+    keys.push(`agent:${entry.agentId}:area:${entry.area}`);
+  }
+  if (entry.actionId) keys.push(`default:action:${entry.actionId}`);
+  keys.push(`default:area:${entry.area}`, 'default:preset');
+  return newestOf(index, keys);
+}
+
+/** Add `lastChange` to an object when there is one. */
+export function withLastChange<T extends object>(
+  value: T,
+  lastChange: PermissionLastChange | undefined
+): T & { lastChange?: PermissionLastChange } {
+  return lastChange ? { ...value, lastChange } : value;
 }

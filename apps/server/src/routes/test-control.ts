@@ -665,12 +665,38 @@ testControlRouter.get('/connect-approved', (_req, res) => {
 
 const seedAgentSchema = z
   .object({
-    slot: z.enum(['shared', 'denied-access', 'permission-requester']).default('shared'),
+    slot: z
+      .enum(['shared', 'denied-access', 'permission-requester', 'suggestion-requester'])
+      .default('shared'),
   })
   .default({ slot: 'shared' });
 
 /** A fixed, enum-bounded test identity slot. */
 type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
+
+/**
+ * Each slot's name and description. The requesters are agents of their own so
+ * the permission specs' changes, their per-agent request limits and the
+ * Always allow suggestion's count never touch DorkBot or each other.
+ */
+const SEED_AGENT_COPY: Record<SeedAgentSlot, { name: string; description: string }> = {
+  shared: {
+    name: 'E2E Test Agent',
+    description: 'Seeded by test setup — runs on the server default runtime',
+  },
+  'denied-access': {
+    name: 'E2E Denied Agent',
+    description: 'Requests access that the owner denies.',
+  },
+  'permission-requester': {
+    name: 'E2E Permission Requester',
+    description: 'Asks for permissions a person answers on the request card.',
+  },
+  'suggestion-requester': {
+    name: 'E2E Suggestion Requester',
+    description: 'Asks for the same thing until the card suggests Always allow.',
+  },
+};
 
 /**
  * Fixture directory for a seeded test agent, derived from the RESOLVED
@@ -764,7 +790,7 @@ function fixtureAgentId(agentDir: string): string {
 const FIXTURE_AGENT_RUNTIME = 'codex';
 
 /**
- * Seed a test agent in one of three fixed slots inside the directory boundary —
+ * Seed a test agent in one of four fixed slots inside the directory boundary —
  * on disk AND in the mesh registry.
  *
  * Overwrites any existing manifest so tests always start with a clean agent.
@@ -791,7 +817,7 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * uses for a manifest already written by hand: it adopts the id on disk, adds
  * exactly one registry row, and announces nothing.
  *
- * **No cleanup is owed, because none accumulates.** Each of the three slots maps
+ * **No cleanup is owed, because none accumulates.** Each of the four slots maps
  * to one fixed directory and stable id. Re-seeding replaces that slot's row
  * rather than stacking rows. `POST /api/test/reset` does not touch mesh, and
  * does not need to.
@@ -817,22 +843,9 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   const { slot } = input.data;
   const agentDir = e2eAgentDir(slot);
   const fixtureId = fixtureAgentId(agentDir);
-  const deniedAccess = slot === 'denied-access';
-  // Its own agent, so the request-card spec's permission changes and its
-  // per-agent request limits never touch DorkBot, which other specs drive.
-  const requester = slot === 'permission-requester';
   const manifest: AgentManifest = {
     id: fixtureId,
-    name: deniedAccess
-      ? 'E2E Denied Agent'
-      : requester
-        ? 'E2E Permission Requester'
-        : 'E2E Test Agent',
-    description: deniedAccess
-      ? 'Requests access that the owner denies.'
-      : requester
-        ? 'Asks for permissions a person answers on the request card.'
-        : 'Seeded by test setup — runs on the server default runtime',
+    ...SEED_AGENT_COPY[slot],
     runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
     // A fixture agent wears a face for the same reason a real one does: no

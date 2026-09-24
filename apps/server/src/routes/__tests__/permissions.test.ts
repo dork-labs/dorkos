@@ -185,6 +185,81 @@ describe('permission routes', () => {
     });
   });
 
+  describe('undo', () => {
+    /** One change to undo, made through the route. */
+    async function oneChange(app: Server, world: ReturnType<typeof createPermissionWorld>) {
+      await request(app)
+        .patch('/api/permissions/defaults')
+        .send({ areas: { rooms: 'ask' }, surface: 'settings' });
+      return world.events[0]!.id;
+    }
+
+    it('undoes a change for a person, as a new change', async () => {
+      const { app, world } = build();
+      const eventId = await oneChange(app, world);
+      const res = await request(app).post(`/api/permissions/history/${eventId}/undo`);
+      expect(res.status).toBe(200);
+      expect(res.body.skipped).toEqual([]);
+      expect(world.config.defaults.areas).toEqual({});
+      expect(world.events[1]!.metadata).toMatchObject({ surface: 'undo', undoOf: eventId });
+    });
+
+    it('refuses an agent, and an approval-token holder, and writes nothing', async () => {
+      const { app, world } = build();
+      const eventId = await oneChange(app, world);
+      const agent = await request(app)
+        .post(`/api/permissions/history/${eventId}/undo`)
+        .set(AGENT_IDENTITY_HEADER, 'dork_unverifiable');
+      const token = await request(app)
+        .post(`/api/permissions/history/${eventId}/undo`)
+        .set(APPROVAL_TOKEN_HEADER, 'tok');
+      expect(agent.status).toBe(403);
+      expect(token.status).toBe(403);
+      expect(world.events).toHaveLength(1);
+      expect(world.config.defaults.areas).toEqual({ rooms: 'ask' });
+    });
+
+    it('with login on, refuses a per-user API key', async () => {
+      const { app, world } = build({
+        loginEnabled: true,
+        user: { userId: 'user_program', credential: 'api-key' },
+      });
+      await world.service.setDefaults(
+        { areas: { rooms: 'ask' }, surface: 'settings' },
+        { attribution: 'signed-in', actorType: 'user', actorLabel: 'You' }
+      );
+      const res = await request(app).post(`/api/permissions/history/${world.events[0]!.id}/undo`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('operator_cookie_required');
+    });
+
+    it('answers a conflict with 409 and its conflicts, and force sets it back', async () => {
+      const { app, world } = build();
+      const eventId = await oneChange(app, world);
+      await request(app)
+        .patch('/api/permissions/defaults')
+        .send({ areas: { rooms: 'blocked' }, surface: 'settings' });
+      const refused = await request(app).post(`/api/permissions/history/${eventId}/undo`);
+      expect(refused.status).toBe(409);
+      expect(refused.body).toMatchObject({
+        code: 'UNDO_CONFLICT',
+        conflicts: [{ current: 'blocked', reason: 'changed-since' }],
+      });
+      const forced = await request(app)
+        .post(`/api/permissions/history/${eventId}/undo`)
+        .send({ force: true });
+      expect(forced.status).toBe(200);
+      expect(world.config.defaults.areas).toEqual({});
+    });
+
+    it('404s an unknown event', async () => {
+      const { app } = build();
+      const res = await request(app).post('/api/permissions/history/nope/undo');
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('UNKNOWN_EVENT');
+    });
+  });
+
   describe('reads', () => {
     it('lists the default layer and the agents that differ', async () => {
       const { app } = build();

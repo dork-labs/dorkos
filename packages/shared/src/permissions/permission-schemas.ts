@@ -264,3 +264,39 @@ export type PermissionAnsweredMetadata = z.infer<typeof PermissionAnsweredMetada
 
 /** The Activity event type every request-card answer lands as. */
 export const PERMISSION_ANSWERED_EVENT = 'permission.answered';
+
+// === The gentle suggestion (`permission.suggestion_dismissed`) ===
+
+/**
+ * The metadata a `permission.suggestion_dismissed` Activity event carries: a
+ * person tapped "Not now" on a request card that was suggesting Always allow
+ * (spec `agent-permissions`, User Experience). The suggestion never comes back
+ * for that agent and action.
+ */
+export const PermissionSuggestionDismissedMetadataSchema = z.object({
+  /** The agent the card was for, when DorkOS knows its id. */
+  agentId: z.string().optional(),
+  /** The agent's project directory: the key the suggestion is matched on. */
+  agentPath: z.string(),
+  /** The capability id or hand-registered tool name. */
+  action: z.string(),
+  /** The approval whose card was dismissed. */
+  approvalId: z.string(),
+});
+
+/** The metadata of a `permission.suggestion_dismissed` Activity event. */
+export type PermissionSuggestionDismissedMetadata = z.infer<
+  typeof PermissionSuggestionDismissedMetadataSchema
+>;
+
+/** The Activity event type a dismissed Always allow suggestion lands as. */
+export const PERMISSION_SUGGESTION_DISMISSED_EVENT = 'permission.suggestion_dismissed';
+
+/**
+ * How many one-time Allows for the same agent and action, inside
+ * {@link ALWAYS_SUGGESTION_WINDOW_MS}, make the next card suggest Always allow.
+ */
+export const ALWAYS_SUGGESTION_THRESHOLD = 3;
+
+/** The window the one-time Allows are counted in: seven days. */
+export const ALWAYS_SUGGESTION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

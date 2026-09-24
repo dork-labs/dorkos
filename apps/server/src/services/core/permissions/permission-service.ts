@@ -16,7 +16,6 @@
 import {
   PERMISSION_AREAS,
   PERMISSION_AREA_IDS,
-  PERMISSION_STATES,
   isFloorArea,
   resolvePermission,
   type AgentPermissions,
@@ -32,6 +31,7 @@ import {
   type PermissionSurface,
   type PermissionsResponse,
   type ResolvedPermission,
+  type UndoPermissionChangeResponse,
   PERMISSION_PRESET_TABLES,
   presetTableFor,
   resolveFilesAndCommands,
@@ -42,33 +42,27 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { z } from 'zod';
 
 import {
+  lastChangeFor,
   listPermissionHistory,
+  newestOf,
+  readLastChanges,
+  withLastChange,
+  type LastChanges,
   recordPermissionChange,
   type PermissionChangeRecord,
   type PermissionWriter,
 } from './permission-history.js';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { undoPermissionChange } from './permission-undo.js';
+import {
+  AUTONOMY_ACK_MESSAGE,
+  PermissionError,
+  compact,
+  isState,
+  ownState,
+} from './permission-values.js';
 
-/** A permission write the service refused, with the HTTP status that fits it. */
-export class PermissionError extends Error {
-  /** Marks this class across module instances. */
-  override readonly name = 'PermissionError';
-
-  /**
-   * Construct the refusal.
-   *
-   * @param code - Machine-readable refusal code.
-   * @param message - One plain sentence a person can act on.
-   * @param status - The HTTP status the route answers with.
-   */
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status: number = 400
-  ) {
-    super(message);
-  }
-}
+export { AUTONOMY_ACK_MESSAGE, PermissionError } from './permission-values.js';
 
 /** One action as the permission pages list it. */
 export interface PermissionActionInfo {
@@ -98,6 +92,9 @@ export interface PermissionAgentRef {
   runtime?: string;
 }
 
+/** One agent with a Files & commands stop of its own, as the overview lists it. */
+type DefaultFilesException = PermissionsResponse['filesAndCommands']['exceptions'][number];
+
 /** The stored Files & commands stops: the global one, and each runtime's own. */
 export interface StoredTrustStops {
   /** `runtimes.defaultTrustStop`. */
@@ -105,11 +102,6 @@ export interface StoredTrustStops {
   /** Each runtime's own stop, by runtime id (`claude-code`, `codex`, `opencode`). */
   perRuntime: Readonly<Record<string, PermissionStop | null>>;
 }
-
-/** The sentence a Full-autonomy write without an acknowledgement is refused with. */
-export const AUTONOMY_ACK_MESSAGE =
-  'Full autonomy lets agents edit files and run commands without asking. Confirm that in the ' +
-  'app first, then try again.';
 
 /** Everything the service reads and writes through. */
 export interface PermissionServiceDeps {
@@ -120,10 +112,16 @@ export interface PermissionServiceDeps {
     /** The stored Files & commands stops. */
     trustStops: () => StoredTrustStops;
     /**
-     * Write the global Files & commands stop, recording the person's
-     * acknowledgement of Full autonomy in the same write when `acknowledge`.
+     * Write the global Files & commands stop (`null` = not set), recording the
+     * person's acknowledgement of Full autonomy in the same write when
+     * `acknowledge`.
      */
-    setGlobalTrustStop: (stop: PermissionStop, acknowledge: boolean) => void;
+    setGlobalTrustStop: (stop: PermissionStop | null, acknowledge: boolean) => void;
+    /**
+     * Write one runtime's own Files & commands stop (`null` = not set). Returns
+     * false for a runtime this build does not know, which writes nothing.
+     */
+    setRuntimeTrustStop: (runtime: string, stop: PermissionStop | null) => boolean;
     /** Whether an acknowledgement of Full autonomy is on file. */
     hasAutonomyAck: () => boolean;
     /** Record the acknowledgement on its own (an agent's own stop set to Full autonomy). */
@@ -140,7 +138,7 @@ export interface PermissionServiceDeps {
   /** Every action an agent can reach, with its area. Read per call. */
   actions: () => PermissionActionInfo[];
   /** The Activity log, absent in a process with none. */
-  activity?: Pick<ActivityService, 'emit' | 'list'>;
+  activity?: Pick<ActivityService, 'emit' | 'list' | 'get'>;
 }
 
 /** A per-key request: a state to set, or `null` to remove the change. */
@@ -174,36 +172,9 @@ const OUTSIDE_HISTORY_DEPTH = 50;
 /** An area-level resolution: the action id no action entry ever names. */
 const AREA_PROBE_ACTION = '';
 
-/** True for a real state value. */
-function isState(value: unknown): value is PermissionState {
-  return typeof value === 'string' && (PERMISSION_STATES as readonly string[]).includes(value);
-}
-
 /** The agent's name as a person reads it. */
 function agentName(agent: PermissionAgentRef): string {
   return agent.displayName || agent.name;
-}
-
-/** Drop empty maps so an agent with no overrides writes no `permissions` at all. */
-function compact(permissions: AgentPermissions): AgentPermissions | undefined {
-  const areas = permissions.areas && Object.keys(permissions.areas).length > 0;
-  const actions = permissions.actions && Object.keys(permissions.actions).length > 0;
-  const next: AgentPermissions = {
-    ...(areas ? { areas: permissions.areas } : {}),
-    ...(actions ? { actions: permissions.actions } : {}),
-    ...(permissions.filesAndCommands ? { filesAndCommands: permissions.filesAndCommands } : {}),
-  };
-  return Object.keys(next).length === 0 ? undefined : next;
-}
-
-/** An own-key read that never reaches the prototype. */
-function ownState(
-  record: Record<string, unknown> | undefined,
-  key: string
-): PermissionState | null {
-  if (!record || !Object.hasOwn(record, key)) return null;
-  const value = record[key];
-  return isState(value) ? value : null;
 }
 
 /**
@@ -634,6 +605,35 @@ export class PermissionService {
   }
 
   /**
+   * Undo one recorded permission change as a new change (spec
+   * `agent-permissions` D14). The rules live in `permission-undo.ts`.
+   *
+   * @param eventId - The `permission.changed` event to undo.
+   * @param input - `force`, and the Full autonomy acknowledgement when needed.
+   * @param writer - Who is undoing it.
+   * @returns What the Undo changed, and what it left alone.
+   * @throws {PermissionError} See {@link undoPermissionChange}.
+   */
+  async undo(
+    eventId: string,
+    input: { force?: boolean; acknowledgeAutonomy?: boolean },
+    writer: PermissionWriter
+  ): Promise<UndoPermissionChangeResponse> {
+    const actions = this.actionIndex();
+    return undoPermissionChange(
+      {
+        deps: this.deps,
+        actions,
+        agentTarget: (agent) => this.agentTarget(agent),
+        record: (record) => this.record(record, this.titleFor(actions)),
+      },
+      eventId,
+      input,
+      writer
+    );
+  }
+
+  /**
    * The registered agent whose project directory this is, when there is one.
    *
    * @param agentPath - The agent's project directory.
@@ -654,34 +654,52 @@ export class PermissionService {
   }
 
   /**
-   * Every state area with its actions, resolved for one layer.
+   * Every state area with its actions, resolved for one layer, each with the
+   * last change behind it.
    *
-   * @param agent - The agent's overrides, or `undefined` for the default layer.
+   * @param lastChanges - The last change per key.
+   * @param agent - The agent's id and overrides, or `undefined` for the default layer.
    */
   private areaEntries(
     config: PermissionConfigInput,
     actions: PermissionActionInfo[],
-    agent?: AgentPermissions
+    lastChanges: LastChanges,
+    agent?: { id: string; permissions: AgentPermissions }
   ) {
+    const own = agent?.permissions;
+    const agentId = agent?.id;
     return PERMISSION_AREAS.filter((a) => a.kind === 'state').map((area) => {
       const id = area.id as PermissionAreaId;
-      const resolved = this.resolveDefault(config, id, AREA_PROBE_ACTION, 'act', agent);
-      return {
-        id,
-        label: area.label,
-        description: area.description,
-        floor: area.floor,
-        kind: area.kind,
-        actions: actions
-          .filter((a) => a.area === id)
-          .map((a): z.infer<typeof PermissionActionEntrySchema> => ({
-            id: a.id,
-            title: a.title,
-            tier: a.tier,
-            resolved: this.resolveDefault(config, id, a.id, a.tier, agent),
-          })),
-        resolved: { state: resolved.state, source: resolved.source, layer: resolved.layer },
-      };
+      const resolved = this.resolveDefault(config, id, AREA_PROBE_ACTION, 'act', own);
+      return withLastChange(
+        {
+          id,
+          label: area.label,
+          description: area.description,
+          floor: area.floor,
+          kind: area.kind,
+          actions: actions
+            .filter((a) => a.area === id)
+            .map((a): z.infer<typeof PermissionActionEntrySchema> => {
+              const actionResolved = this.resolveDefault(config, id, a.id, a.tier, own);
+              return withLastChange(
+                { id: a.id, title: a.title, tier: a.tier, resolved: actionResolved },
+                lastChangeFor(lastChanges, {
+                  area: id,
+                  actionId: a.id,
+                  ...(agentId ? { agentId } : {}),
+                  source: actionResolved.source,
+                })
+              );
+            }),
+          resolved: { state: resolved.state, source: resolved.source, layer: resolved.layer },
+        },
+        lastChangeFor(lastChanges, {
+          area: id,
+          ...(agentId ? { agentId } : {}),
+          source: resolved.source,
+        })
+      );
     });
   }
 
@@ -695,8 +713,11 @@ export class PermissionService {
     const actions = this.deps.actions().filter((a) => a.area !== null);
     const byId = new Map(actions.map((a) => [a.id, a]));
     const agents = this.deps.agents.list();
+    const lastChanges = await readLastChanges(this.deps.activity);
+    const stops = this.deps.config.trustStops();
     const exceptions: PermissionException[] = [];
-    const filesExceptions: { agentId: string; agentName: string; stop: PermissionStop }[] = [];
+    const filesExceptions: DefaultFilesException[] = [];
+    let followingCount = 0;
     for (const agent of agents) {
       let stored: AgentPermissions | undefined;
       try {
@@ -706,35 +727,42 @@ export class PermissionService {
         // listed as differing, since nothing about it can be read.
         continue;
       }
+      const agentKey = `agent:${agent.id}`;
       if (stored?.filesAndCommands) {
-        filesExceptions.push({
-          agentId: agent.id,
-          agentName: agentName(agent),
-          stop: stored.filesAndCommands,
-        });
+        filesExceptions.push(
+          withLastChange(
+            { agentId: agent.id, agentName: agentName(agent), stop: stored.filesAndCommands },
+            lastChanges.get(`${agentKey}:files`)
+          )
+        );
+      } else if (!(agent.runtime && stops.perRuntime[agent.runtime])) {
+        followingCount += 1;
       }
       for (const [area, state] of Object.entries(stored?.areas ?? {})) {
         if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area) || !isState(state)) continue;
-        exceptions.push({
-          agentId: agent.id,
-          agentName: agentName(agent),
-          area: area as PermissionAreaId,
-          state,
-        });
+        exceptions.push(
+          withLastChange(
+            {
+              agentId: agent.id,
+              agentName: agentName(agent),
+              area: area as PermissionAreaId,
+              state,
+            },
+            lastChanges.get(`${agentKey}:area:${area}`)
+          )
+        );
       }
       for (const [id, state] of Object.entries(stored?.actions ?? {})) {
         const area = byId.get(id)?.area;
         if (!area || !isState(state)) continue;
-        exceptions.push({
-          agentId: agent.id,
-          agentName: agentName(agent),
-          area,
-          action: id,
-          state,
-        });
+        exceptions.push(
+          withLastChange(
+            { agentId: agent.id, agentName: agentName(agent), area, action: id, state },
+            lastChanges.get(`${agentKey}:action:${id}`)
+          )
+        );
       }
     }
-    const stops = this.deps.config.trustStops();
     const presetStop = presetTableFor(config.preset).filesStop;
     const runtimeStops = Object.entries(stops.perRuntime).flatMap(([runtime, stop]) =>
       stop ? [{ runtime, stop }] : []
@@ -750,20 +778,26 @@ export class PermissionService {
         ? 0
         : (stops.global !== presetStop ? 1 : 0) +
           runtimeStops.filter((entry) => entry.stop !== presetStop).length;
+    const presetLastChange = lastChanges.get('default:preset');
     return {
       preset: config.preset,
+      ...(presetLastChange ? { presetLastChange } : {}),
       defaults: config.defaults,
       changeCount:
         Object.keys(config.defaults.areas).length +
         Object.keys(config.defaults.actions).length +
         stopChanges,
-      filesAndCommands: {
-        stop: stops.global,
-        presetStop,
-        runtimes: runtimeStops,
-        exceptions: filesExceptions,
-      },
-      areas: this.areaEntries(config, actions),
+      filesAndCommands: withLastChange(
+        {
+          stop: stops.global,
+          presetStop,
+          runtimes: runtimeStops,
+          exceptions: filesExceptions,
+          followingCount,
+        },
+        lastChanges.get('default:files')
+      ),
+      areas: this.areaEntries(config, actions, lastChanges),
       exceptions,
       agentCount: agents.length,
     };
@@ -780,8 +814,12 @@ export class PermissionService {
     const config = this.deps.config.get();
     const actions = this.deps.actions().filter((a) => a.area !== null);
     const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
-    const own = this.areaEntries(config, actions, stored);
-    const inherited = this.areaEntries(config, actions);
+    const lastChanges = await readLastChanges(this.deps.activity);
+    const own = this.areaEntries(config, actions, lastChanges, {
+      id: agent!.id,
+      permissions: stored,
+    });
+    const inherited = this.areaEntries(config, actions, lastChanges);
     const outside = await this.changedOutsideAt(agent!.id);
     const stops = this.deps.config.trustStops();
     const perRuntime = agent!.runtime ? (stops.perRuntime[agent!.runtime] ?? null) : null;
@@ -791,6 +829,13 @@ export class PermissionService {
       perRuntime,
       global: stops.global,
     });
+    // Every stop the resolver reads for this agent, the newest change first:
+    // its own, its runtime's, and the one everyone has.
+    const filesKeys = [
+      `agent:${agent!.id}:files`,
+      ...(agent!.runtime ? [`default:files:${agent!.runtime}`] : []),
+      'default:files',
+    ];
     return {
       agentId: agent!.id,
       agentName: agentName(agent!),
@@ -800,7 +845,13 @@ export class PermissionService {
         inherited: inherited[i]!.resolved,
         changedOutsideAt: outside.get(entry.id) ?? null,
       })),
-      filesAndCommands: { ...files, inherited: inheritedFiles },
+      filesAndCommands: withLastChange(
+        {
+          ...files,
+          inherited: withLastChange(inheritedFiles, newestOf(lastChanges, filesKeys.slice(1))),
+        },
+        newestOf(lastChanges, filesKeys)
+      ),
     };
   }
 
