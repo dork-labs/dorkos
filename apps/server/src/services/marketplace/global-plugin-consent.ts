@@ -86,12 +86,7 @@ import {
   storedHookDecisions,
   type HookDecisions,
 } from '../harness/hook-consent.js';
-import {
-  disclosedEffectsOf,
-  sameDisclosedEffects,
-  type DisclosedEffects,
-} from './disclosed-effects.js';
-import { readInstallMetadata } from './installed-metadata.js';
+import { disclosedEffectsOf, type DisclosedEffects } from './disclosed-effects.js';
 import { listEnabledPluginNames } from './installed-scanner.js';
 import {
   isRuntimeStatePath,
