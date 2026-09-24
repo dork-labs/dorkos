@@ -224,15 +224,13 @@ async function rewriteTaskFile(
       ok: false,
       status: 409,
       error: refusedGrant
-        ? `This schedule came with an installed package, so DorkOS did not change how much it ` +
-          `may do — its settings live in the package's own folder, and the next update of that ` +
-          `package would wipe the change out. You can still approve it as it stands, and it will ` +
-          `run at the level the package asks for. To give it more, edit the package or make your ` +
-          `own copy of the skill.`
-        : `This file lives inside an installed package's folder, so DorkOS did not change it — ` +
-          `the next update of that package would wipe the change out. You can switch this ` +
-          `schedule on or off, or change when it runs, here; to change what it does, edit the ` +
-          `package or make your own copy of the skill.`,
+        ? `This schedule came with an installed package, so DorkOS didn't change how much it ` +
+          `may do: the package's next update would put its own setting back. You can still ` +
+          `approve it as it stands, and it will run at the level the package asks for. To give ` +
+          `it more, make your own copy.`
+        : `This schedule came with an installed package, so DorkOS didn't change it: the ` +
+          `package's next update would put its own version back. You can switch it on or off, ` +
+          `or change when it runs, here. To change what it does, make your own copy.`,
       code: 'schedule_package_owned',
     };
   }

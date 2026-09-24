@@ -411,7 +411,7 @@ describe('a schedule that came with an installed package', () => {
 
     expect(refused.ok).toBe(false);
     expect(refused.code).toBe('schedule_package_owned');
-    expect(refused.error).toContain('did not change how much it may do');
+    expect(refused.error).toContain("didn't change how much it may do");
     expect(refused.error).toContain('You can still approve it as it stands');
     // Whole-request refusal: the approval did not half-land either.
     const row = store.getTask(task.id)!;
