@@ -288,11 +288,23 @@ export function HostAdministration() {
                       {community.deletionState ? ` · Cleanup ${community.deletionState}` : ''}
                     </p>
                     {community.legalHold && (
-                      <p className="small">
-                        Legal hold since {new Date(community.legalHold.since).toLocaleDateString()}
-                        {community.legalHold.reference ? ` (${community.legalHold.reference})` : ''}
-                        . This community can’t be deleted until the hold is released.
-                      </p>
+                      <div className="small">
+                        <p>
+                          Legal hold since{' '}
+                          {new Date(community.legalHold.since).toLocaleDateString()}
+                          {community.legalHold.reference
+                            ? ` (${community.legalHold.reference})`
+                            : ''}
+                          .{' '}
+                          {community.lifecycle === 'deletion_pending'
+                            ? 'Its deletion is paused until the hold is released.'
+                            : 'This community can’t be deleted until the hold is released.'}
+                        </p>
+                        <p className="muted">
+                          The hold doesn’t stop single messages or files being removed, or a person
+                          erasing their own data. See “Legal holds” in OPERATIONS.md.
+                        </p>
+                      </div>
                     )}
                     <div className="row flex-wrap gap-2">
                       {pending && (

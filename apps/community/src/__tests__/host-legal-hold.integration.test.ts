@@ -3,21 +3,24 @@
  * `community-host-operator-api`, "Holding a suspended community" and "Legal hold"; ADR
  * `260924-215422`; DOR-2299).
  *
- * Tests run in order on one host with an injected clock. A is the operator's own community; P is
- * an unclaimed one used for abandon.
+ * Every test builds its own community and can run alone. The host operator's session is shared.
+ * After each test every deletion job is parked far in the future, so one test's deletion never
+ * reaches another test's worker pass.
  */
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
+import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { BlobStore } from '../storage/index.js';
 import {
   TENANCY_PASSWORD,
+  admit,
   bootstrapHost,
   claimAsNewAccount,
+  createChannel,
   createPendingCommunity,
   expectStatus,
   pairInstall,
-  admit,
   startTenancyHarness,
   waitForLockWaiters,
   type TenancyHarness,
@@ -27,17 +30,33 @@ import {
 const DAY = 24 * 60 * 60_000;
 const REFERENCE = 'Case 2026-0042 preservation order';
 let h: TenancyHarness;
-let clockOffsetMs = 0;
-const clock = () => new Date(Date.now() + clockOffsetMs);
 let operator: TenancyMember;
-let a = '';
-let channelA = '';
-let p = '';
 
 const tenant = (communityId: string) => `/api/v1/communities/${communityId}`;
-const inDays = (days: number) => new Date(clock().getTime() + days * DAY).toISOString();
+const inDays = (days: number) => new Date(Date.now() + days * DAY).toISOString();
 
-async function state(communityId = a) {
+/** A claimed community of its own, with an owner and a channel the owner can upload to. */
+interface Community {
+  id: string;
+  name: string;
+  owner: TenancyMember;
+  channelId: string;
+}
+
+async function community(): Promise<Community> {
+  const name = `Place ${randomUUID().slice(0, 8)}`;
+  const pending = await createPendingCommunity(h, operator.cookie, name);
+  const owner = await claimAsNewAccount(
+    h,
+    pending.token,
+    `${name} Owner`,
+    `${randomUUID()}@legal.test`
+  );
+  const channelId = await createChannel(h, pending.communityId, owner.cookie, 'files');
+  return { id: pending.communityId, name, owner, channelId };
+}
+
+async function state(communityId: string) {
   return (
     await h.pool.query<{
       lifecycle: string;
@@ -57,7 +76,7 @@ async function state(communityId = a) {
   ).rows[0];
 }
 
-async function host(action: string, extra: Record<string, unknown> = {}, communityId = a) {
+async function host(communityId: string, action: string, extra: Record<string, unknown> = {}) {
   return h.call(`/api/v1/host/communities/${communityId}/lifecycle`, {
     method: 'PATCH',
     cookie: operator.cookie,
@@ -65,7 +84,7 @@ async function host(action: string, extra: Record<string, unknown> = {}, communi
   });
 }
 
-async function audit(action: string, communityId = a) {
+async function audit(communityId: string, action: string) {
   return (
     await h.pool.query<{
       prior_state: string | null;
@@ -92,8 +111,8 @@ async function issueKey(scopes: string[]): Promise<string> {
 
 function legalHold(
   method: 'PUT' | 'DELETE',
-  auth: { bearer?: string; cookie?: string },
-  communityId = a,
+  communityId: string,
+  auth: { bearer?: string; cookie?: string } = { cookie: operator.cookie },
   reference: string | null = REFERENCE
 ) {
   return h.call(`/api/v1/host/communities/${communityId}/legal-hold`, {
@@ -103,21 +122,53 @@ function legalHold(
   });
 }
 
-function upload(key: string) {
-  return h.call(`${tenant(a)}/channels/${channelA}/attachments`, {
-    method: 'POST',
-    cookie: operator.cookie,
-    headers: {
-      'content-type': 'text/plain',
-      'x-file-name': `${key}.txt`,
-      'x-file-size': '4',
-      'idempotency-key': key,
-    },
-    raw: Buffer.from('file'),
-  });
+async function upload(c: Community, key: string) {
+  await expectStatus(
+    await h.call(`${tenant(c.id)}/channels/${c.channelId}/attachments`, {
+      method: 'POST',
+      cookie: c.owner.cookie,
+      headers: {
+        'content-type': 'text/plain',
+        'x-file-name': `${key}.txt`,
+        'x-file-size': '4',
+        'idempotency-key': key,
+      },
+      raw: Buffer.from('file'),
+    }),
+    201,
+    `upload ${key}`
+  );
 }
 
-async function blobKeys(communityId = a): Promise<string[]> {
+/** The owner asks to delete their community, and the deletion is made due at once. */
+async function ownerDeletesAndItIsDue(c: Community): Promise<Response> {
+  const response = await expectStatus(
+    await h.call(`${tenant(c.id)}/owner/deletion`, {
+      cookie: c.owner.cookie,
+      body: {
+        lifecycleVersion: (await state(c.id)).lifecycle_version,
+        password: TENANCY_PASSWORD,
+        confirmName: c.name,
+        confirmIdSuffix: c.id.slice(-8),
+      },
+    }),
+    200,
+    'owner requests deletion'
+  );
+  await h.pool.query(
+    `UPDATE communities SET delete_requested_at=now()-interval '8 days',
+       delete_after=now()-interval '1 day' WHERE id=$1`,
+    [c.id]
+  );
+  await h.pool.query(
+    `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',next_attempt_at=now()
+     WHERE community_id=$1`,
+    [c.id]
+  );
+  return response;
+}
+
+async function blobKeys(communityId: string): Promise<string[]> {
   return (
     await h.pool.query<{ blob_key: string }>(
       'SELECT blob_key FROM managed_blobs WHERE community_id=$1 ORDER BY blob_key',
@@ -139,14 +190,40 @@ async function storedKeys(keys: string[]): Promise<string[]> {
   return present;
 }
 
+/** A blob store that stops inside the `nth` delete until released, and records each delete. */
+function barrierStore(nth: number) {
+  let entered!: () => void;
+  let release!: () => void;
+  const inside = new Promise<void>((resolve) => (entered = resolve));
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const signals: (AbortSignal | undefined)[] = [];
+  const store: BlobStore = {
+    put: (input) => h.blobStore.put(input),
+    get: (key, options) => h.blobStore.get(key, options),
+    listNamespace: (options) => h.blobStore.listNamespace(options),
+    delete: async (key, options) => {
+      signals.push(options?.signal);
+      if (signals.length === nth) {
+        entered();
+        await gate;
+      }
+      return h.blobStore.delete(key, options);
+    },
+  };
+  return { store, inside, release: () => release(), signals };
+}
+
 beforeAll(async () => {
-  h = await startTenancyHarness('host_legal_hold', { now: clock });
+  h = await startTenancyHarness('host_legal_hold');
   const first = await bootstrapHost(h, 'Operator', 'operator@legal.test');
   operator = { cookie: first.cookie, memberId: first.memberId };
-  a = first.communityId;
-  channelA = first.channelId;
-  p = (await createPendingCommunity(h, operator.cookie, 'Unclaimed P')).communityId;
 }, 60_000);
+
+afterEach(async () => {
+  await h.pool.query(
+    "UPDATE community_deletion_jobs SET next_attempt_at=now()+interval '100 years'"
+  );
+});
 
 afterAll(async () => {
   await h?.close();
@@ -154,82 +231,96 @@ afterAll(async () => {
 
 it('holds a suspended active community in one call, reviving nothing', async () => {
   // Purpose: before DOR-2299 a suspended community had to be resumed (made live) and then held,
-  // two calls with a live window between them; hold now refuses nothing and never resumes.
-  const member = await admit(h, a, operator.cookie, { name: 'Member', email: 'member@legal.test' });
-  const grant = await pairInstall(h, a, member.cookie);
-  await expectStatus(await host('suspend'), 200, 'suspend');
+  // two calls with a live window between them. Fails if hold refuses a suspended community or
+  // goes through a resume.
+  const c = await community();
+  const member = await admit(h, c.id, c.owner.cookie, {
+    name: 'Member',
+    email: `${randomUUID()}@legal.test`,
+  });
+  const grant = await pairInstall(h, c.id, member.cookie);
+  await expectStatus(await host(c.id, 'suspend'), 200, 'suspend');
   const held = await expectStatus(
-    await host('hold', { deletionNoticeAt: null }),
+    await host(c.id, 'hold', { deletionNoticeAt: null }),
     200,
     'hold from suspended'
   );
   expect(await held.json()).toMatchObject({ lifecycle: 'held' });
-  expect(await state()).toMatchObject({
+  const after = await state(c.id);
+  expect(after).toMatchObject({
     lifecycle: 'held',
     held_from_state: 'active',
     suspended_from_state: null,
     suspended_at: null,
   });
-  expect((await state()).held_at).not.toBeNull();
-  expect(await audit('community.hold')).toEqual([
+  expect(after.held_at).not.toBeNull();
+  expect(await audit(c.id, 'community.hold')).toEqual([
     {
       prior_state: 'suspended',
       next_state: 'held',
       changed_fields: ['lifecycle', 'suspended_from_state'],
     },
   ]);
-  // No resume happened on the way, and the grant the suspension revoked stays revoked.
-  expect(await audit('community.resume')).toEqual([]);
-  expect((await h.call(`${tenant(a)}/channels`, { bearer: grant })).status).toBe(401);
-  await expectStatus(await host('release'), 200, 'release');
-  expect(await state()).toMatchObject({ lifecycle: 'active', held_from_state: null });
+  expect(await audit(c.id, 'community.resume')).toEqual([]);
+  expect((await h.call(`${tenant(c.id)}/channels`, { bearer: grant })).status).toBe(401);
+  await expectStatus(await host(c.id, 'release'), 200, 'release');
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'active', held_from_state: null });
+});
+
+it('revokes again on hold from suspended, so a credential that slipped through never survives', async () => {
+  // Purpose: suspension revokes everything; if anything were left live, the hold must end it.
+  const c = await community();
+  const member = await admit(h, c.id, c.owner.cookie, {
+    name: 'Member',
+    email: `${randomUUID()}@legal.test`,
+  });
+  await pairInstall(h, c.id, member.cookie);
+  await expectStatus(await host(c.id, 'suspend'), 200, 'suspend');
+  await h.pool.query('UPDATE connection_grants SET revoked_at=NULL WHERE community_id=$1', [c.id]);
+  await expectStatus(await host(c.id, 'hold', { deletionNoticeAt: null }), 200, 'hold');
+  const live = await h.pool.query(
+    'SELECT 1 FROM connection_grants WHERE community_id=$1 AND revoked_at IS NULL',
+    [c.id]
+  );
+  expect(live.rowCount).toBe(0);
 });
 
 it('holds a suspended archived community, returning to archived on release', async () => {
   // Purpose: fails if the hold records the wrong state to return to.
+  const c = await community();
   await expectStatus(
-    await h.call(`${tenant(a)}/owner/lifecycle`, {
-      cookie: operator.cookie,
+    await h.call(`${tenant(c.id)}/owner/lifecycle`, {
+      cookie: c.owner.cookie,
       body: {
         action: 'archive',
-        lifecycleVersion: (await state()).lifecycle_version,
+        lifecycleVersion: (await state(c.id)).lifecycle_version,
         password: TENANCY_PASSWORD,
-        confirmName: 'Operator Community',
+        confirmName: c.name,
       },
     }),
     200,
     'owner archives'
   );
-  await expectStatus(await host('suspend'), 200, 'suspend archived');
-  await expectStatus(await host('hold', { deletionNoticeAt: null }), 200, 'hold from suspended');
-  expect(await state()).toMatchObject({ lifecycle: 'held', held_from_state: 'archived' });
-  await expectStatus(await host('release'), 200, 'release');
-  expect(await state()).toMatchObject({ lifecycle: 'archived' });
-  await expectStatus(
-    await h.call(`${tenant(a)}/owner/lifecycle`, {
-      cookie: operator.cookie,
-      body: {
-        action: 'restore',
-        lifecycleVersion: (await state()).lifecycle_version,
-        password: TENANCY_PASSWORD,
-      },
-    }),
-    200,
-    'owner restores'
-  );
+  await expectStatus(await host(c.id, 'suspend'), 200, 'suspend archived');
+  await expectStatus(await host(c.id, 'hold', { deletionNoticeAt: null }), 200, 'hold');
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'held', held_from_state: 'archived' });
+  await expectStatus(await host(c.id, 'release'), 200, 'release');
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'archived' });
 });
 
 it('holds a community suspended from a hold, keeping the original hold and taking a new notice', async () => {
-  // Purpose: fails if holding from a suspended hold forgets where the hold began or restarts it,
-  // or cannot publish the notice the suspension withdrew.
-  await expectStatus(await host('hold', { deletionNoticeAt: null }), 200, 'hold');
-  const heldAt = (await state()).held_at;
-  clockOffsetMs += DAY;
-  await expectStatus(await host('suspend'), 200, 'suspend the hold');
-  expect(await state()).toMatchObject({ lifecycle: 'suspended', suspended_from_state: 'held' });
+  // Purpose: fails if holding from a suspended hold forgets where the hold began, restarts it,
+  // or cannot publish the notice the suspension withdrew; a too-short notice is still refused.
+  const c = await community();
+  await expectStatus(await host(c.id, 'hold', { deletionNoticeAt: null }), 200, 'hold');
+  const heldAt = (await state(c.id)).held_at;
+  await expectStatus(await host(c.id, 'suspend'), 200, 'suspend the hold');
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'suspended', suspended_from_state: 'held' });
+  expect((await host(c.id, 'hold', { deletionNoticeAt: inDays(1) })).status).toBe(409);
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'suspended' });
   const notice = inDays(20);
-  await expectStatus(await host('hold', { deletionNoticeAt: notice }), 200, 'hold again');
-  const after = await state();
+  await expectStatus(await host(c.id, 'hold', { deletionNoticeAt: notice }), 200, 'hold again');
+  const after = await state(c.id);
   expect(after).toMatchObject({
     lifecycle: 'held',
     held_from_state: 'active',
@@ -237,53 +328,48 @@ it('holds a community suspended from a hold, keeping the original hold and takin
   });
   expect(after.held_at).toEqual(heldAt);
   expect(after.deletion_notice_at?.toISOString()).toBe(notice);
-  // Too short a notice is still refused on this path.
-  await expectStatus(await host('suspend'), 200, 'suspend again');
-  expect((await host('hold', { deletionNoticeAt: inDays(1) })).status).toBe(409);
-  expect(await state()).toMatchObject({ lifecycle: 'suspended' });
-  await expectStatus(await host('hold', { deletionNoticeAt: null }), 200, 'hold without notice');
-  await expectStatus(await host('release'), 200, 'release');
-  expect(await state()).toMatchObject({ lifecycle: 'active' });
 });
 
 it('lets only communities:legal_hold (or a host person) place and release a legal hold, audited without the reference', async () => {
   // Purpose: fails if any other scope, including lifecycle, can lift the preservation that
   // stops a deletion, or if the host's reference leaks into the audit.
+  const c = await community();
   const everythingElse = await issueKey([
     'communities:read',
     'communities:write',
     'communities:lifecycle',
     'communities:import',
   ]);
-  expect((await legalHold('PUT', { bearer: everythingElse })).status).toBe(403);
+  expect((await legalHold('PUT', c.id, { bearer: everythingElse })).status).toBe(403);
   const legalKey = await issueKey(['communities:legal_hold']);
-  const placed = await expectStatus(await legalHold('PUT', { bearer: legalKey }), 200, 'place');
+  const placed = await expectStatus(
+    await legalHold('PUT', c.id, { bearer: legalKey }),
+    200,
+    'place'
+  );
   const projection = await placed.json();
   expect(projection.legalHold).toMatchObject({ reference: REFERENCE });
-  expect(Date.parse(projection.legalHold.since)).not.toBeNaN();
   await expectStatus(
-    await legalHold('PUT', { bearer: legalKey }, a, 'Updated reference'),
+    await legalHold('PUT', c.id, { bearer: legalKey }, 'Updated reference'),
     200,
     'update'
   );
-  expect((await state()).legal_hold_at?.toISOString()).toBe(projection.legalHold.since);
-  expect((await legalHold('DELETE', { bearer: everythingElse })).status).toBe(403);
-  await expectStatus(
-    await legalHold('DELETE', { cookie: operator.cookie }),
-    200,
-    'person releases'
-  );
-  expect((await legalHold('DELETE', { bearer: legalKey })).status).toBe(409);
-  expect((await state()).legal_hold_at).toBeNull();
-  expect((await audit('community.legal_hold.set'))[0].changed_fields).toEqual([
+  expect((await state(c.id)).legal_hold_at?.toISOString()).toBe(projection.legalHold.since);
+  expect((await legalHold('DELETE', c.id, { bearer: everythingElse })).status).toBe(403);
+  await expectStatus(await legalHold('DELETE', c.id), 200, 'person releases');
+  expect((await legalHold('DELETE', c.id, { bearer: legalKey })).status).toBe(409);
+  expect((await state(c.id)).legal_hold_at).toBeNull();
+  expect((await audit(c.id, 'community.legal_hold.set'))[0].changed_fields).toEqual([
     'legal_hold_at',
     'legal_hold_by_host_actor',
     'legal_hold_reference',
   ]);
-  expect(await audit('community.legal_hold.update')).toHaveLength(1);
-  expect(await audit('community.legal_hold.release')).toHaveLength(1);
+  expect(await audit(c.id, 'community.legal_hold.update')).toHaveLength(1);
+  expect(await audit(c.id, 'community.legal_hold.release')).toHaveLength(1);
   const rows = await h.pool.query<{ row: string }>(
-    `SELECT to_jsonb(e)::text AS row FROM host_audit_events e WHERE action LIKE 'community.legal_hold.%'`
+    `SELECT to_jsonb(e)::text AS row FROM host_audit_events e
+     WHERE community_id=$1 AND action LIKE 'community.legal_hold.%'`,
+    [c.id]
   );
   expect(rows.rows).toHaveLength(3);
   for (const { row } of rows.rows) {
@@ -292,238 +378,217 @@ it('lets only communities:legal_hold (or a host person) place and release a lega
   }
 });
 
+it('shows the reference only to a host person and a key with communities:legal_hold', async () => {
+  // Purpose: a reference may name a case. A read-only provisioning key learns only that a hold
+  // exists and since when, which explains a paused deletion.
+  const c = await community();
+  await expectStatus(await legalHold('PUT', c.id), 200, 'place');
+  const read = async (auth: { bearer?: string; cookie?: string }) =>
+    (
+      await (
+        await expectStatus(await h.call(`/api/v1/host/communities/${c.id}`, auth), 200, 'read')
+      ).json()
+    ).legalHold;
+  const readOnly = await issueKey(['communities:read']);
+  const readAndLegal = await issueKey(['communities:read', 'communities:legal_hold']);
+  expect(await read({ bearer: readOnly })).toMatchObject({ reference: null });
+  expect((await read({ bearer: readOnly })).since).toEqual(expect.any(String));
+  expect(await read({ bearer: readAndLegal })).toMatchObject({ reference: REFERENCE });
+  expect(await read({ cookie: operator.cookie })).toMatchObject({ reference: REFERENCE });
+  const list = await (
+    await expectStatus(await h.call('/api/v1/host/communities', { bearer: readOnly }), 200, 'list')
+  ).json();
+  expect(
+    (list.communities as { id: string; legalHold: unknown }[]).find((row) => row.id === c.id)
+      ?.legalHold
+  ).toMatchObject({ reference: null });
+});
+
 it('refuses to abandon an unclaimed community under a legal hold', async () => {
   // Purpose: abandon deletes a community outright; a legal hold must stop it too.
-  // Revoke P's owner claim first, so the legal hold is the only thing that stops the abandon.
+  const pending = await createPendingCommunity(h, operator.cookie, 'Unclaimed');
   const grant = await h.pool.query<{ id: string }>(
     'SELECT id FROM bootstrap_grants WHERE community_id=$1 AND revoked_at IS NULL',
-    [p]
+    [pending.communityId]
   );
   await expectStatus(
-    await h.call(`/api/v1/host/communities/${p}/owner-claims/${grant.rows[0].id}/revoke`, {
-      cookie: operator.cookie,
-      body: {},
-    }),
+    await h.call(
+      `/api/v1/host/communities/${pending.communityId}/owner-claims/${grant.rows[0].id}/revoke`,
+      { cookie: operator.cookie, body: {} }
+    ),
     204,
-    'revoke the owner claim'
+    'revoke the owner claim, so only the legal hold can stop the abandon'
   );
-  await expectStatus(await legalHold('PUT', { cookie: operator.cookie }, p), 200, 'hold P');
-  const refused = await h.call(`/api/v1/host/communities/${p}`, {
-    method: 'DELETE',
-    cookie: operator.cookie,
-  });
+  await expectStatus(await legalHold('PUT', pending.communityId), 200, 'hold');
+  const abandon = () =>
+    h.call(`/api/v1/host/communities/${pending.communityId}`, {
+      method: 'DELETE',
+      cookie: operator.cookie,
+    });
+  const refused = await abandon();
   expect(refused.status).toBe(409);
   expect((await refused.json()).code).toBe('LEGAL_HOLD_ACTIVE');
-  expect(await state(p)).toBeDefined();
-  await expectStatus(await legalHold('DELETE', { cookie: operator.cookie }, p), 200, 'release P');
-  await expectStatus(
-    await h.call(`/api/v1/host/communities/${p}`, { method: 'DELETE', cookie: operator.cookie }),
-    204,
-    'abandon after release'
-  );
+  await expectStatus(await legalHold('DELETE', pending.communityId), 200, 'release');
+  await expectStatus(await abandon(), 204, 'abandon after release');
 });
 
 it('refuses host-started deletion under a legal hold, even after the notice date', async () => {
   // Purpose: fails if the host's own deletion path ignores its legal hold.
-  await expectStatus(await host('hold', { deletionNoticeAt: inDays(15) }), 200, 'hold with notice');
-  clockOffsetMs += 16 * DAY;
-  await expectStatus(await legalHold('PUT', { cookie: operator.cookie }), 200, 'legal hold');
-  const refused = await h.call(`/api/v1/host/communities/${a}/deletion`, {
+  const c = await community();
+  await expectStatus(await host(c.id, 'hold', { deletionNoticeAt: inDays(15) }), 200, 'hold');
+  await h.pool.query(
+    "UPDATE communities SET deletion_notice_at=now()-interval '1 minute' WHERE id=$1",
+    [c.id]
+  );
+  await expectStatus(await legalHold('PUT', c.id), 200, 'legal hold');
+  const refused = await h.call(`/api/v1/host/communities/${c.id}/deletion`, {
     cookie: operator.cookie,
-    body: { lifecycleVersion: (await state()).lifecycle_version, confirmIdSuffix: a.slice(-8) },
+    body: {
+      lifecycleVersion: (await state(c.id)).lifecycle_version,
+      confirmIdSuffix: c.id.slice(-8),
+    },
   });
   expect(refused.status).toBe(409);
   expect((await refused.json()).code).toBe('LEGAL_HOLD_ACTIVE');
-  expect(await state()).toMatchObject({ lifecycle: 'held' });
-  await expectStatus(await host('release'), 200, 'release the lifecycle hold');
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'held' });
+});
+
+it('refuses, in the database itself, to delete a legally held community’s rows', async () => {
+  // Purpose: the trigger is the last line of defence, including for code older than the
+  // migration after a rollback. A purge that ends by deleting the community row rolls back
+  // whole, so none of the tenant's rows go.
+  const c = await community();
+  await expectStatus(await legalHold('PUT', c.id), 200, 'place');
+  const client = await h.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM channel_members WHERE community_id=$1', [c.id]);
+    await expect(client.query('DELETE FROM communities WHERE id=$1', [c.id])).rejects.toMatchObject(
+      { code: '23514', message: expect.stringContaining('legal hold') }
+    );
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+  }
+  const members = await h.pool.query('SELECT 1 FROM channel_members WHERE community_id=$1', [c.id]);
+  expect(members.rowCount).toBeGreaterThan(0);
+  expect(await state(c.id)).toBeDefined();
 });
 
 it('accepts the owner’s deletion under a legal hold without telling them, and the worker purges nothing', async () => {
   // Purpose: the owner must not learn of the hold (no tenant response mentions it), people lose
   // access as the owner asked, and no byte or row is removed while it stands.
-  for (const key of ['one', 'two', 'three'])
-    await expectStatus(await upload(key), 201, `upload ${key}`);
-  const before = await blobKeys();
-  expect(before.length).toBeGreaterThanOrEqual(3);
-  const tenantBodies: string[] = [];
-  tenantBodies.push(
-    await (await h.call(`${tenant(a)}/community`, { cookie: operator.cookie })).text()
-  );
-  const deletion = await expectStatus(
-    await h.call(`${tenant(a)}/owner/deletion`, {
-      cookie: operator.cookie,
-      body: {
-        lifecycleVersion: (await state()).lifecycle_version,
-        password: TENANCY_PASSWORD,
-        confirmName: 'Operator Community',
-        confirmIdSuffix: a.slice(-8),
-      },
-    }),
-    200,
-    'owner requests deletion'
-  );
-  tenantBodies.push(await deletion.text());
-  tenantBodies.push(
-    await (await h.call(`${tenant(a)}/owner/deletion`, { cookie: operator.cookie })).text()
-  );
-  expect(await state()).toMatchObject({ lifecycle: 'deletion_pending' });
-  for (const body of tenantBodies) {
+  const c = await community();
+  for (const key of ['one', 'two', 'three']) await upload(c, key);
+  const before = await blobKeys(c.id);
+  await expectStatus(await legalHold('PUT', c.id), 200, 'place');
+  const bodies = [
+    await (await h.call(`${tenant(c.id)}/community`, { cookie: c.owner.cookie })).text(),
+    await (await ownerDeletesAndItIsDue(c)).text(),
+    await (await h.call(`${tenant(c.id)}/owner/deletion`, { cookie: c.owner.cookie })).text(),
+  ];
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'deletion_pending' });
+  for (const body of bodies) {
     expect(body.toLowerCase()).not.toContain('legal');
     expect(body).not.toContain('Case 2026');
   }
-  await h.pool.query(
-    `UPDATE communities SET delete_requested_at=now()-interval '8 days',
-       delete_after=now()-interval '1 day' WHERE id=$1`,
-    [a]
-  );
-  await h.pool.query(
-    `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',next_attempt_at=now()
-     WHERE community_id=$1`,
-    [a]
-  );
   expect(await sweepCommunityDeletions(h.pool, h.blobStore, 100)).toMatchObject({
     claimed: 0,
     deletedBlobs: 0,
     completed: 0,
   });
   expect(await storedKeys(before)).toEqual(before);
-  expect(await state()).toMatchObject({ lifecycle: 'deletion_pending' });
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'deletion_pending' });
 });
 
 it('never lets a held deletion stall the queue for other communities', async () => {
   // Purpose: the worker takes one due job at a time. If it picked the held one and gave up,
   // every other community's deletion would wait behind it for as long as the hold lasts.
-  const pending = await createPendingCommunity(h, operator.cookie, 'Tenant Q');
-  const owner = await claimAsNewAccount(h, pending.token, 'Q Owner', 'q-owner@legal.test');
-  await expectStatus(
-    await h.call(`${tenant(pending.communityId)}/owner/deletion`, {
-      cookie: owner.cookie,
-      body: {
-        lifecycleVersion: (await state(pending.communityId)).lifecycle_version,
-        password: TENANCY_PASSWORD,
-        confirmName: 'Tenant Q',
-        confirmIdSuffix: pending.communityId.slice(-8),
-      },
-    }),
-    200,
-    'Q owner requests deletion'
-  );
+  const held = await community();
+  const other = await community();
+  await expectStatus(await legalHold('PUT', held.id), 200, 'place');
+  await ownerDeletesAndItIsDue(held);
+  await ownerDeletesAndItIsDue(other);
+  // The held job is due first, so a worker that picked it would never reach the other.
   await h.pool.query(
-    `UPDATE communities SET delete_requested_at=now()-interval '8 days',
-       delete_after=now()-interval '1 day' WHERE id=$1`,
-    [pending.communityId]
-  );
-  // A's job is due first, so a worker that picked it would never reach Q's.
-  await h.pool.query(
-    `UPDATE community_deletion_jobs SET delete_after=now()-interval '1 day',
-       next_attempt_at=CASE WHEN community_id=$1 THEN now()-interval '1 hour' ELSE now() END
-     WHERE community_id IN ($1,$2)`,
-    [a, pending.communityId]
+    "UPDATE community_deletion_jobs SET next_attempt_at=now()-interval '1 hour' WHERE community_id=$1",
+    [held.id]
   );
   expect(await sweepCommunityDeletions(h.pool, h.blobStore, 100)).toMatchObject({ claimed: 1 });
   const jobs = await h.pool.query<{ community_id: string; state: string }>(
     'SELECT community_id,state FROM community_deletion_jobs WHERE community_id IN ($1,$2)',
-    [a, pending.communityId]
+    [held.id, other.id]
   );
-  expect(jobs.rows.find((job) => job.community_id === a)?.state).toBe('waiting');
-  expect(await state()).toMatchObject({ lifecycle: 'deletion_pending' });
+  expect(jobs.rows.find((job) => job.community_id === held.id)?.state).toBe('waiting');
+  expect(await state(held.id)).toMatchObject({ lifecycle: 'deletion_pending' });
 });
 
-it('stops a purge already under way before its next blob when a legal hold is placed', async () => {
-  // Purpose: the worker deletes blobs outside any long transaction; a hold placed mid-purge
-  // must still stop it. A barrier holds the worker inside its first blob deletion.
-  await expectStatus(await legalHold('DELETE', { cookie: operator.cookie }), 200, 'release');
-  const before = await blobKeys();
-  let entered!: () => void;
-  let release!: () => void;
-  const inFirstDelete = new Promise<void>((resolve) => (entered = resolve));
-  const gate = new Promise<void>((resolve) => (release = resolve));
-  let deletes = 0;
-  const barrier: BlobStore = {
-    put: (input) => h.blobStore.put(input),
-    get: (key, options) => h.blobStore.get(key, options),
-    listNamespace: (options) => h.blobStore.listNamespace(options),
-    delete: async (key, options) => {
-      if (deletes++ === 0) {
-        entered();
-        await gate;
-      }
-      return h.blobStore.delete(key, options);
-    },
-  };
-  const sweeping = sweepCommunityDeletions(h.pool, barrier, 100);
-  await inFirstDelete;
-  const placing = legalHold('PUT', { cookie: operator.cookie });
-  // The hold waits for the blob deletion in progress, which holds the row FOR SHARE.
+it('stops a purge already under way before its next file when a legal hold is placed', async () => {
+  // Purpose: the worker deletes files outside any long transaction; a hold placed mid-purge must
+  // still stop it. Each storage delete also carries a timeout signal, so one slow file cannot
+  // hold the community row (and a hold being placed) for long.
+  const c = await community();
+  for (const key of ['one', 'two', 'three']) await upload(c, key);
+  const before = await storedKeys(await blobKeys(c.id));
+  await ownerDeletesAndItIsDue(c);
+  const barrier = barrierStore(1);
+  const sweeping = sweepCommunityDeletions(h.pool, barrier.store, 100);
+  await barrier.inside;
+  const placing = legalHold('PUT', c.id);
+  // The hold waits for the file deletion in progress, which holds the row FOR SHARE.
   await waitForLockWaiters(h, 1, 'legal_hold_at');
-  release();
+  barrier.release();
   const [swept, placed] = await Promise.all([sweeping, placing]);
   expect(placed.status).toBe(200);
   expect(swept).toMatchObject({ claimed: 1, deletedBlobs: 1, completed: 0 });
-  expect(deletes).toBe(1);
+  expect(barrier.signals).toHaveLength(1);
+  expect(barrier.signals[0]).toBeInstanceOf(AbortSignal);
   expect(await storedKeys(before)).toHaveLength(before.length - 1);
-  expect(await state()).toMatchObject({ lifecycle: 'deletion_pending' });
-  // Later passes, however many, touch nothing while it stands.
   await h.pool.query(
     'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
-    [a]
+    [c.id]
   );
   expect(await sweepCommunityDeletions(h.pool, h.blobStore, 100)).toMatchObject({ claimed: 0 });
   expect(await storedKeys(before)).toHaveLength(before.length - 1);
 });
 
-it('keeps the community’s rows when a hold lands during the last blob deletion', async () => {
-  // Purpose: once the last blob is gone the worker deletes the tenant's rows in one final step.
-  // A hold placed while that last blob was being deleted must stop the final step too.
-  await expectStatus(await legalHold('DELETE', { cookie: operator.cookie }), 200, 'release');
-  const remaining = await storedKeys(await blobKeys());
-  expect(remaining.length).toBeGreaterThan(0);
-  let entered!: () => void;
-  let release!: () => void;
-  const inLastDelete = new Promise<void>((resolve) => (entered = resolve));
-  const gate = new Promise<void>((resolve) => (release = resolve));
-  let deletes = 0;
-  const barrier: BlobStore = {
-    put: (input) => h.blobStore.put(input),
-    get: (key, options) => h.blobStore.get(key, options),
-    listNamespace: (options) => h.blobStore.listNamespace(options),
-    delete: async (key, options) => {
-      if (++deletes === remaining.length) {
-        entered();
-        await gate;
-      }
-      return h.blobStore.delete(key, options);
-    },
-  };
-  await h.pool.query(
-    'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
-    [a]
-  );
-  const sweeping = sweepCommunityDeletions(h.pool, barrier, 100);
-  await inLastDelete;
-  const placing = legalHold('PUT', { cookie: operator.cookie });
+it('keeps the community’s rows when a hold lands during the last file deletion', async () => {
+  // Purpose: once the last file is gone the worker deletes the tenant's rows in one final step.
+  // A hold placed while that last file was being deleted must stop the final step too.
+  const c = await community();
+  for (const key of ['one', 'two']) await upload(c, key);
+  const files = await storedKeys(await blobKeys(c.id));
+  await ownerDeletesAndItIsDue(c);
+  const barrier = barrierStore(files.length);
+  const sweeping = sweepCommunityDeletions(h.pool, barrier.store, 100);
+  await barrier.inside;
+  const placing = legalHold('PUT', c.id);
   await waitForLockWaiters(h, 1, 'legal_hold_at');
-  release();
+  barrier.release();
   const [swept, placed] = await Promise.all([sweeping, placing]);
   expect(placed.status).toBe(200);
   expect(swept).toMatchObject({ completed: 0 });
-  expect(await storedKeys(remaining)).toEqual([]);
-  expect(await state()).toMatchObject({ lifecycle: 'deletion_pending' });
+  expect(await storedKeys(files)).toEqual([]);
+  expect(await state(c.id)).toMatchObject({ lifecycle: 'deletion_pending' });
   expect(
-    (await h.pool.query('SELECT 1 FROM members WHERE community_id=$1', [a])).rowCount
+    (await h.pool.query('SELECT 1 FROM members WHERE community_id=$1', [c.id])).rowCount
   ).toBeGreaterThan(0);
 });
 
 it('finishes the owner’s deletion once the legal hold is released', async () => {
   // Purpose: a release must let the deletion the owner asked for proceed, not drop it.
-  await expectStatus(await legalHold('DELETE', { cookie: operator.cookie }), 200, 'release');
-  for (let pass = 0; pass < 10; pass++) {
+  const c = await community();
+  await upload(c, 'one');
+  await expectStatus(await legalHold('PUT', c.id), 200, 'place');
+  await ownerDeletesAndItIsDue(c);
+  expect(await sweepCommunityDeletions(h.pool, h.blobStore, 100)).toMatchObject({ claimed: 0 });
+  await expectStatus(await legalHold('DELETE', c.id), 200, 'release');
+  for (let pass = 0; pass < 10 && (await state(c.id)); pass++) {
     await h.pool.query(
       'UPDATE community_deletion_jobs SET next_attempt_at=now() WHERE community_id=$1',
-      [a]
+      [c.id]
     );
-    const result = await sweepCommunityDeletions(h.pool, h.blobStore, 100);
-    if (result.completed) break;
+    await sweepCommunityDeletions(h.pool, h.blobStore, 100);
   }
-  expect(await state()).toBeUndefined();
+  expect(await state(c.id)).toBeUndefined();
 });

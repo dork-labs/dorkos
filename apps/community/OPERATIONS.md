@@ -143,7 +143,9 @@ When you must preserve a community, for example under a court order or while lit
 
 A legal hold does not stop someone removing their own messages or asking to be erased. If you must keep specific content, take a copy through your own database and file backups while the hold stands.
 
-Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state. Release every legal hold first too: an older release would carry out a deletion that the legal hold was stopping.
+Before you roll back to a release without holds, release every hold and cancel every deletion you started. Older releases do not know the held state. Release every legal hold first too: an older release would start a deletion that the legal hold was stopping. The database still refuses to delete the community's own records, but the older release would already have deleted its files by then.
+
+Only you (signed in) and keys with the legal-holds permission see a hold's note. Other keys see only that a hold exists and since when.
 
 ## Web addresses
 

@@ -121,9 +121,10 @@ export function registerHostLifecycleRoutes(
       } else if (body.action === 'hold' && row.lifecycle === 'suspended') {
         // Hold a suspended community in one step (DOR-2299). Resuming and then holding in two
         // calls left it live if the second failed; here the only states anyone can observe are
-        // suspended before and held after. Suspension already revoked every credential, and a
-        // hold revives none. From a suspension of a hold, the kept held_from_state and held_at
-        // stand; the suspension withdrew the old notice, so a new one may be published now.
+        // suspended before and held after. Suspension already revoked every credential; revoking
+        // again is cheap and makes sure the hold never inherits one that slipped through. From a
+        // suspension of a hold, the kept held_from_state and held_at stand; the suspension
+        // withdrew the old notice, so a new one may be published now.
         if (!row.suspended_from_state) {
           throw new ApiError(409, 'STATE_CONFLICT', 'This community cannot be held.');
         }
@@ -131,6 +132,7 @@ export function registerHostLifecycleRoutes(
         next = 'held';
         changedFields.push('suspended_from_state');
         if (notice) changedFields.push('deletion_notice_at');
+        await revokeTenantAccess(client, row.id);
         await client.query(
           `UPDATE communities SET lifecycle='held',
              held_from_state=CASE WHEN suspended_from_state='held' THEN held_from_state
@@ -195,7 +197,7 @@ export function registerHostLifecycleRoutes(
       });
       return readHostCommunity(client, row.id);
     });
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community, actor));
   });
 
   app.post('/host/communities/:id/deletion', async (c) => {
@@ -270,7 +272,7 @@ export function registerHostLifecycleRoutes(
       });
       return readHostCommunity(client, row.id);
     });
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community, actor));
   });
 
   app.delete('/host/communities/:id/deletion', async (c) => {
@@ -310,6 +312,6 @@ export function registerHostLifecycleRoutes(
       });
       return readHostCommunity(client, row.id);
     });
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community, actor));
   });
 }

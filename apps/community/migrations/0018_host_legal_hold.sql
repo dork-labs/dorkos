@@ -6,8 +6,9 @@
 -- Only the new host key scope communities:legal_hold (or a host person) sets or releases it.
 --
 -- Backout: release every legal hold first (DELETE /host/communities/:id/legal-hold). Code that
--- predates this migration ignores the columns, so it would purge a community the host must
--- preserve. This migration stays applied.
+-- predates this migration ignores the columns. The trigger below still refuses to delete a
+-- legally held community's row, which rolls back the older worker's final step, but that worker
+-- deletes files before it gets there. This migration stays applied.
 
 ALTER TABLE communities
   ADD COLUMN legal_hold_at timestamptz,
@@ -29,3 +30,16 @@ ALTER TABLE host_api_keys ADD CONSTRAINT host_api_keys_scopes CHECK (
     'communities:legal_hold'
   ]::text[]
 );
+
+-- The last line of defence: no path, including code older than this migration after a
+-- rollback, can delete a legally held community's row. Deleting a tenant happens in one
+-- transaction that ends with this row, so the refusal rolls back the whole purge of rows.
+CREATE FUNCTION refuse_legally_held_community_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'community is under a legal hold' USING ERRCODE = 'check_violation';
+END $$;
+
+CREATE TRIGGER communities_legal_hold_delete
+  BEFORE DELETE ON communities
+  FOR EACH ROW WHEN (OLD.legal_hold_at IS NOT NULL)
+  EXECUTE FUNCTION refuse_legally_held_community_delete();

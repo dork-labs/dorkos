@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { ApiError } from '../http.js';
+import type { HostActor } from './authority.js';
 
 /** One community row as the host plane reads it: metadata and state, never content. */
 export interface HostCommunityRow {
@@ -22,8 +23,17 @@ export interface HostCommunityRow {
   legal_hold_reference: string | null;
 }
 
-/** The host projection of one community row. */
-export function projectCommunity(row: HostCommunityRow) {
+/**
+ * Whether an actor may read a legal hold's reference: a host person, or a key with
+ * `communities:legal_hold`. Anyone else who can read the record sees that a hold exists and
+ * since when (it explains a paused deletion) but never the reference, which may name a case.
+ */
+export function canReadLegalHoldReference(actor: HostActor): boolean {
+  return actor.kind === 'person' || actor.scopes.includes('communities:legal_hold');
+}
+
+/** The host projection of one community row, as `actor` may see it. */
+export function projectCommunity(row: HostCommunityRow, actor: HostActor) {
   return {
     id: row.id,
     name: row.name,
@@ -37,7 +47,10 @@ export function projectCommunity(row: HostCommunityRow) {
     deletionRequestedBy: row.deletion_requested_by,
     shortName: row.short_name,
     legalHold: row.legal_hold_at
-      ? { since: row.legal_hold_at.toISOString(), reference: row.legal_hold_reference }
+      ? {
+          since: row.legal_hold_at.toISOString(),
+          reference: canReadLegalHoldReference(actor) ? row.legal_hold_reference : null,
+        }
       : null,
     createdAt: row.created_at.toISOString(),
   };

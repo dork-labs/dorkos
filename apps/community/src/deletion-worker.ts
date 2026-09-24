@@ -64,6 +64,11 @@ export async function prepareCommunityDeletionInventory(
   return (await countMissingDeletionInventory(pool, communityId)) === 0;
 }
 
+/** How long a file deletion waits for the community row lock before it counts as failed. */
+const BLOB_LOCK_TIMEOUT_MS = 5_000;
+/** How long one storage delete may take while the community row is held. */
+const BLOB_DELETE_TIMEOUT_MS = 60_000;
+
 /**
  * Delete one due tenant in bounded, restart-safe object and database phases.
  *
@@ -153,13 +158,19 @@ export async function sweepCommunityDeletions(
       // Each blob is deleted while the community row is held FOR SHARE, after checking for a
       // legal hold. Placing a legal hold takes that row FOR UPDATE, so once it commits no
       // further byte is removed; one already being deleted finishes first.
+      // Both halves are bounded so one slow file never holds the row, and with it a legal hold
+      // being placed, for long: the lock read by a statement timeout, the storage call by an
+      // abort signal. Either failing counts as a failed attempt and is retried with backoff.
       const legallyHeld = await transaction(pool, async (client) => {
+        await client.query(`SET LOCAL statement_timeout = '${BLOB_LOCK_TIMEOUT_MS}'`);
         const current = await client.query<{ legal_hold_at: Date | null }>(
           'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
           [job.community_id]
         );
         if (!current.rows[0] || current.rows[0].legal_hold_at) return true;
-        await blobStore.delete(candidate.blob_key);
+        await blobStore.delete(candidate.blob_key, {
+          signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+        });
         return false;
       });
       if (legallyHeld) return { claimed: 1, deletedBlobs, completed: 0, failed };

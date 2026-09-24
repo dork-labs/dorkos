@@ -46,7 +46,7 @@ const SCOPES: { scope: Scope; label: string; detail: string }[] = [
     scope: 'communities:legal_hold',
     label: 'Legal holds',
     detail:
-      'Place or release a legal hold, which stops a community from being deleted. Owners are not told.',
+      'Place or release a legal hold, which stops a community from being deleted, and see its note. It doesn’t stop single messages or files being removed, or a person erasing their own data. Owners are not told. See “Legal holds” in OPERATIONS.md.',
   },
 ];
 

@@ -82,7 +82,7 @@ export function registerHostLegalHoldRoutes(
         await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [communityId])
       ).rows[0];
     });
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community, actor));
   });
 
   app.delete('/host/communities/:id/legal-hold', async (c) => {
@@ -115,6 +115,6 @@ export function registerHostLegalHoldRoutes(
         await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [communityId])
       ).rows[0];
     });
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community, actor));
   });
 }

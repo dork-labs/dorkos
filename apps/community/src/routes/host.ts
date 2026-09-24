@@ -178,25 +178,25 @@ export function registerHostRoutes(
   };
 
   app.get('/host/communities', async (c) => {
-    await authority.require(c, 'communities:read');
+    const actor = await authority.require(c, 'communities:read');
     const communities = await pool.query<HostCommunityRow>(
       `${hostProjectionSql} ORDER BY c.created_at,c.id`
     );
     return c.json({
-      communities: communities.rows.map(projectCommunity),
+      communities: communities.rows.map((row) => projectCommunity(row, actor)),
       // The least notice this host allows before deleting a held community, for its own page.
       deletionNoticeDays: config.limits.hostDeletionNoticeDays,
     });
   });
 
   app.get('/host/communities/:id', async (c) => {
-    await authority.require(c, 'communities:read');
+    const actor = await authority.require(c, 'communities:read');
     const communityId = parseHostCommunityId(c.req.param('id'));
     const community = await pool.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [
       communityId,
     ]);
     if (!community.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Community not found.');
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community.rows[0]));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community.rows[0], actor));
   });
 
   app.post('/host/communities', async (c) => {
@@ -243,7 +243,7 @@ export function registerHostRoutes(
       c,
       CommunityAdminCreateResponseSchema,
       {
-        community: projectCommunity(result.row),
+        community: projectCommunity(result.row, actor),
         ownerClaimGrantId: result.grantId,
         ownerClaimToken: result.replayed ? null : token,
         expiresAt: result.expiresAt.toISOString(),

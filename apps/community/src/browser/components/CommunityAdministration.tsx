@@ -441,9 +441,15 @@ export function CommunityAdministration({
                 {deletion.returnsTo ? RETURNS_TO[deletion.returnsTo] : ''} Cancelling does not
                 restore old credentials.
               </p>
-              <button className="button" onClick={() => setDialog('cancel-delete')}>
-                Cancel deletion
-              </button>
+              {/* The server refuses a cancel once the deletion date has passed, so the button
+                  goes too; the deletion may start at any moment from then on. */}
+              {deletion.deleteAfter && Date.parse(deletion.deleteAfter) > clock ? (
+                <button className="button" onClick={() => setDialog('cancel-delete')}>
+                  Cancel deletion
+                </button>
+              ) : (
+                <p className="small muted">The deletion date has passed. It can’t be cancelled.</p>
+              )}
             </>
           )}
         </section>
