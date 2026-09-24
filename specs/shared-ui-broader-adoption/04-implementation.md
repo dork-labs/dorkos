@@ -6,8 +6,8 @@
 
 ## Progress
 
-**Status:** In Progress
-**Tasks Completed:** 19 / 23
+**Status:** Complete
+**Tasks Completed:** 23 / 23
 
 ## Tasks Completed
 
@@ -36,7 +36,17 @@
 
 - Final archive refresh after independent quality review: seven inaccurate portal comments now describe caller-owned hosts and the body fallback. Runtime behavior is unchanged. Candidate SHA256 is `e47b82eaa8d96db6deb2cde25d57fc739303279b36b5e8bf9576d776f790934a` (55,142 archive bytes, 234,382 unpacked bytes, 117 files). Package tests (73), typecheck, clean independent npm install/dependency tree, build, all 11 browser checks and the moving recordings were repeated against these final bytes. The earlier task 4.3 hash above records the initial reviewed candidate.
 
-- Task 5.2 completed — fresh independent reviewers /root/public_compliance and /root/public_quality both PASS on pushed head `a01d0bb9f5f49db970119851c2524438035a252f` against pinned base `6ca1e5b8410f2a2b4f73beb3fcf4a15d70187e9a`, using REVIEW.md and the frozen specification. No blocking findings. Seven nonblocking stale portal comments were corrected, independently re-reviewed, and the changed archive repeated installed and private candidate checks. Public source, API, CSS and dependency contracts remain verified; delivery/registry tasks remain pending.
+- Task 5.2 completed — fresh independent reviewers /root/public_compliance and /root/public_quality both PASS on pushed head `a01d0bb9f5f49db970119851c2524438035a252f` against pinned base `6ca1e5b8410f2a2b4f73beb3fcf4a15d70187e9a`, using REVIEW.md and the frozen specification. No blocking findings. Seven nonblocking stale portal comments were corrected, independently re-reviewed, and the changed archive repeated installed and private candidate checks. Public source, API, CSS and dependency contracts remain verified; delivery/registry tasks were pending at that review.
+
+- Task 5.3 completed — [public PR #2082](https://github.com/dork-labs/dorkos/pull/2082) merged at `2cb0b41fe0d67e1633d808c18d2f1b4f9c5d9b94` with all PR and merge-queue gates passing, including all three browser shards. Independent preservation review and automated re-review reported no blocking findings on final head `9790aa83f344e9d55a9374970f6e7bfa4b5f6fc2`. The merged package source is byte-identical to the verified final candidate.
+- Delivery regression fix: an earlier queue run caught a phone touch-target assertion sampling a dialog during its entrance zoom after accessibility checks restored normal motion. The test now polls the same size assertion until the animation settles; target floors and component dimensions are unchanged. All four affected connections browser cases passed locally, followed by the complete queue browser gate.
+- Incoming development was preserved when rebasing onto `b108252de874254a9e0aba883294c56497ec3bb5`. The portal ADR is registered beside the related package ADR rather than competing for the manifest tail. Combined typechecks (12 tasks), ADR checks (22 tests), and Community build/browser checks (6 cases) passed. Independent review confirmed all incoming changes and package source were preserved.
+- Final local verification detail: 45 build/typecheck/lint tasks and 631 script tests passed. One unchanged five-second ESLint-configuration-load test timed out during the final full client run; its isolated five-test rerun passed, and all 21 remaining affected test tasks passed. The earlier complete client run passed 16,063 tests in 1,278 files. Subsequent PR and queue CI passed on the delivered source.
+
+- Task 5.4 completed — [`@dork-labs/ui@0.2.0`](https://www.npmjs.com/package/@dork-labs/ui/v/0.2.0) was published after the implementation merged. The registry tarball is byte-for-byte identical to the verified archive, SHA256 `e47b82eaa8d96db6deb2cde25d57fc739303279b36b5e8bf9576d776f790934a`, integrity `sha512-qcIAuCCii6nzzS1Q4Q0Aw2pX/AT1rjgkk4zRq6K4vbS54Rd/m/kkwHRHedfWa/vJzNfRmGk5m7AN35v40JpkBw==`. A fresh exact-version registry install followed by clean `npm ci` in the independent consumer passed typecheck, build, all 30 export paths, one-React verification, public file/source-map boundary inspection, and all 11 built-browser checks. No workspace source or local archive dependency supplies this proof.
+
+- Task 5.5 completed — the independent consumer now pins the actual published `0.2.0` registry release and its verified integrity. Its upgrade merged after independent compliance and quality reviews passed and all required CI checks were green. Frozen installation, full verification, production build, script suites, 37 seeded browser cases, and four built-page theme/viewport checks passed. The redundant animation import and direct dependency were removed; one React instance and the application CSS boundary are preserved. Implementation and delivery details remain in the consumer's own records.
+- Task 5.6 completed — this final record reconciles all 23 canonical tasks, marks the specification implemented, and links the merged public delivery, exact registry artifact and repeated installed-package evidence. It is delivered through its own reviewed documentation PR; the tracker closes when that record merges. No private source, paths, URLs, business details or tracker identifiers are included.
 
 Public moving proof and settled screenshots: [installed-package evidence](evidence/README.md).
 
@@ -46,8 +56,8 @@ Ideation, specification, discovery inventory, tasks, portal ADR and manifest reg
 
 ## Known Issues
 
-No current implementation blocker. A fresh worktree needed shared/cloud-api distributions built before client tests could start; prerequisite build resolved startup.
+No remaining shared-UI implementation or delivery blocker. Embedded verification covers build, types and the CSS boundary; it does not claim runtime platform verification.
 
 ## Implementation Notes
 
-All writes use the isolated codex/shared-ui-broader-adoption worktree. Pinned base: 6ca1e5b8410f2a2b4f73beb3fcf4a15d70187e9a. The previous project is complete; DOR-2315 owns roadmap phases 4 and 5. No Task API is available; 03-tasks.json is canonical. Flow’s configured opus/sonnet workers are unavailable, so the existing gpt-6-sol workhorse workers are continued explicitly. Public/private consumer implementation remains separated.
+Implementation writes used the isolated codex/shared-ui-broader-adoption worktree; the completion record uses codex/shared-ui-02-completion-record in the same isolated checkout. Original pinned base: 6ca1e5b8410f2a2b4f73beb3fcf4a15d70187e9a; delivered merge: 2cb0b41fe0d67e1633d808c18d2f1b4f9c5d9b94. The previous project is complete; DOR-2315 owns roadmap phases 4 and 5. No Task API is available; 03-tasks.json is canonical. Flow’s configured opus/sonnet workers are unavailable, so the existing gpt-6-sol workhorse workers are continued explicitly. Public/private consumer implementation remains separated.
