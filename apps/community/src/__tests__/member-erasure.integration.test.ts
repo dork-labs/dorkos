@@ -469,7 +469,9 @@ describe('residue scan (AC-1, AC-10)', () => {
       { cookie: q.cookie, body: { text: before.qThanks.text, idempotencyKey: before.qThanks.key } }
     );
     expect(retry.status).toBe(200);
-    // Every changed entry of P and of Q has exactly one redaction row for the feed.
+    // Every changed entry of P and of Q has exactly one redaction row for the feed, and P's
+    // file post one more: erasing its file changed its file list before it was tombstoned
+    // (an intended difference since removal moved erasure onto content-removal.ts).
     const redactions = await h.pool.query<{ entry_id: string }>(
       'SELECT entry_id FROM entry_redactions WHERE community_id=$1',
       [communityA]
@@ -482,6 +484,7 @@ describe('residue scan (AC-1, AC-10)', () => {
         before.qAgentMention,
         // Today's resolver read `bob@handle` as a mention; its row went, so the entry changed.
         before.qEmailShaped,
+        seededA.fileEntryId,
       ].sort()
     );
   });

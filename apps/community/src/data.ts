@@ -37,7 +37,8 @@ export interface Principal {
   historyOnly?: boolean;
 }
 
-function lifecycleError(lifecycle: string): ApiError {
+/** The refusal a member request gets in a community lifecycle that does not allow it. */
+export function lifecycleError(lifecycle: string): ApiError {
   if (lifecycle === 'archived')
     return new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
   if (lifecycle === 'held') return communityHeld();
@@ -74,7 +75,11 @@ export function communityHeld(): ApiError {
   );
 }
 
-function bearer(c: Context): string | null {
+/**
+ * The member bearer credential on a request, if any. A host API key is refused with 401 here,
+ * before any tenant or credential lookup.
+ */
+export function bearer(c: Context): string | null {
   const header = c.req.header('authorization');
   // A host API key is never a member credential, whatever its hash would match.
   if (isHostApiKeyBearer(header)) {
