@@ -125,12 +125,13 @@ describe('update (uninstall then install, DOR-2245 §6)', () => {
     const name = path.join(FIXTURES_DIR, 'valid-plugin');
     const { installPath: root } = await harness.installer.install({ name });
     await put(root, 'config/mine.json', 'mine');
-    const realInstall = harness.installer.install.bind(harness.installer);
-    let calls = 0;
-    harness.installer.install = async (req) => {
-      calls++;
-      if (calls === 1) throw new Error('install half failed');
-      return realInstall(req);
+    // Since DOR-2195 the update installs the version it staged and checked,
+    // through the private installStaged, so that is where the failure goes.
+    const installer = harness.installer as unknown as {
+      installStaged: (...args: unknown[]) => Promise<unknown>;
+    };
+    installer.installStaged = async () => {
+      throw new Error('install half failed');
     };
     await expect(harness.installer.update({ name })).rejects.toThrow('install half failed');
     expect(await readFile(path.join(root, 'config', 'mine.json'), 'utf8')).toBe('mine');
