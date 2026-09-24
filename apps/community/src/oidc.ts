@@ -119,21 +119,6 @@ export function communityOidc(
   { now = () => new Date() }: { now?: () => Date } = {}
 ): BetterAuthPlugin {
   const discoveryUrl = `${oidc.issuer}/.well-known/openid-configuration`;
-  const inner = genericOAuth({
-    config: [
-      {
-        providerId: OIDC_PROVIDER_ID,
-        name: oidc.label,
-        discoveryUrl,
-        clientId: oidc.clientId,
-        clientSecret: oidc.clientSecret,
-        scopes: oidc.scopes,
-        pkce: true,
-        // Refuse the provider unless discovery yields an issuer and JWKS to verify ID tokens.
-        requireIdTokenVerification: true,
-      },
-    ],
-  });
   let context: AuthContext | null = null;
   let resolved: Provider | null = null;
   let pending: Promise<Provider> | null = null;
@@ -151,13 +136,40 @@ export function communityOidc(
     ]);
 
   const discover = async (): Promise<Provider> => {
-    if (!context || !inner.init) throw new Error('OIDC used before Better Auth started');
+    if (!context) throw new Error('OIDC used before Better Auth started');
     const response = await fetch(discoveryUrl, {
       signal: AbortSignal.timeout(OIDC_DISCOVERY_TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`OIDC discovery answered ${response.status}`);
-    const problem = discoveryProblem(oidc.issuer, await response.json());
+    const document = (await response.json()) as unknown;
+    const problem = discoveryProblem(oidc.issuer, document);
     if (problem) throw new Error(`OIDC discovery document ${problem}`);
+    const checked = document as Record<string, string | undefined>;
+    // The endpoints people and codes go to are the ones checked above, passed explicitly, so
+    // Better Auth's own second read of the document cannot swap them. That read still supplies
+    // the issuer (held to the configured one below) and `jwks_uri`, the keys ID tokens are
+    // verified against; a document that changed its keys between the two reads is trusted as
+    // the issuer's own, as any key rotation would be.
+    const inner = genericOAuth({
+      config: [
+        {
+          providerId: OIDC_PROVIDER_ID,
+          name: oidc.label,
+          discoveryUrl,
+          authorizationUrl: checked.authorization_endpoint,
+          tokenUrl: checked.token_endpoint,
+          userInfoUrl: checked.userinfo_endpoint,
+          endSessionEndpoint: checked.end_session_endpoint,
+          clientId: oidc.clientId,
+          clientSecret: oidc.clientSecret,
+          scopes: oidc.scopes,
+          pkce: true,
+          // Refuse the provider unless discovery yields an issuer and JWKS to verify ID tokens.
+          requireIdTokenVerification: true,
+        },
+      ],
+    });
+    if (!inner.init) throw new Error('Better Auth genericOAuth has no setup step');
     const setup = await withTimeout(Promise.resolve(inner.init(context)));
     const providers = (setup as { context?: { socialProviders?: Provider[] } } | undefined)?.context
       ?.socialProviders;

@@ -13,9 +13,12 @@ import { recordHostAudit } from './authority.js';
  *
  * - has an unverified email,
  * - signs in only with a password (no Google, GitHub or single sign-on link), and
- * - has no membership in any community, active or ended, and has never operated the host.
+ * - has no membership in any community, active or ended, and has never operated the host, and
+ * - is not in the middle of joining one (a live join attempt bound to it).
  *
- * Its sessions, its password and any unused join attempts bound to it go with it. One host audit
+ * An account that already finished joining is a member, and leaves through member erasure or
+ * removal by an owner, not this command. Its sessions, its password and any expired join attempts
+ * bound to it go with it. One host audit
  * row with the offline actor records that it ran; the email is not written to the log.
  */
 export async function releaseUnverifiedAccount(pool: Pool, email: string): Promise<void> {
@@ -48,6 +51,17 @@ export async function releaseUnverifiedAccount(pool: Pool, email: string): Promi
     const { memberships, operator, uses } = ties.rows[0];
     if (memberships || uses) throw new Error('That account has joined a community, so it is kept.');
     if (operator) throw new Error('That account has operated this host, so it is kept.');
+    // A join attempt bound to this account and still live is someone joining right now; release
+    // could race it. Expired ones are only leftovers.
+    const joining = await client.query(
+      `SELECT 1 FROM pending_admissions
+       WHERE account_id=$1 AND consumed_at IS NULL AND expires_at>now()`,
+      [user.id]
+    );
+    if (joining.rowCount)
+      throw new Error(
+        'That account is joining a community right now. Wait 10 minutes for the join attempt to expire, then try again.'
+      );
     await client.query(
       'DELETE FROM pending_admissions WHERE account_id=$1 AND consumed_at IS NULL',
       [user.id]

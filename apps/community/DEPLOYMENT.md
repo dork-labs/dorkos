@@ -88,7 +88,7 @@ The Community does not check email addresses when someone signs up with a passwo
 docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/host/release-unverified-account.js <email>
 ```
 
-It removes the account only if its email was never verified, it signs in only with a password, it has no membership in any community (current or ended), and it has never operated this host. Otherwise it changes nothing and says why. The host audit log records that it ran, without the email address.
+It removes the account only if its email was never verified, it signs in only with a password, it has no membership in any community (current or ended), it is not in the middle of joining one, and it has never operated this host. If it is joining right now, wait 10 minutes and run it again. If the account has already joined a community, this command keeps it: the person can erase their own membership or account, or the community's owner can remove them, and then the account can be released. Otherwise it changes nothing and says why. The host audit log records that it ran, without the email address.
 
 Email and password sign-in always stays on. Someone who joined through single sign-on can add a password (at least 12 characters) under Settings, Account, within five minutes of signing in, so they can still get in when your provider is down. Exporting, leaving, transferring ownership, and other careful actions still ask for a password. Until someone adds one, those actions say "Set a password in your account to do this." Confirming these actions through your provider instead is planned as a separate change.
 

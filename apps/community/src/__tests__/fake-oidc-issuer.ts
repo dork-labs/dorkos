@@ -23,6 +23,8 @@ export interface FakeIssuer {
   down: boolean;
   /** Fields merged over the discovery document, to serve a wrong or unsafe one. */
   discovery: Record<string, unknown>;
+  /** Fields merged over every discovery document after the first, to change it between reads. */
+  discoveryLater: Record<string, unknown>;
   /** Leave the email out of the ID token, so the profile comes from `/userinfo`. */
   idTokenWithoutEmail: boolean;
   /** Answer the token request with no ID token at all. */
@@ -75,6 +77,7 @@ export async function startFakeIssuer(): Promise<FakeIssuer> {
     },
     down: false,
     discovery: {},
+    discoveryLater: {},
     idTokenWithoutEmail: false,
     omitIdToken: false,
     userinfo: {},
@@ -115,6 +118,9 @@ export async function startFakeIssuer(): Promise<FakeIssuer> {
           userinfo_endpoint: `${state.issuer}/userinfo`,
           code_challenge_methods_supported: ['S256'],
           ...state.discovery,
+          ...(state.requests.filter((line) => line.endsWith('/openid-configuration')).length > 1
+            ? state.discoveryLater
+            : {}),
         });
       }
       if (url.pathname === '/userinfo') {

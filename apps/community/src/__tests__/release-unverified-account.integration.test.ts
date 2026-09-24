@@ -94,4 +94,56 @@ describe('releaseUnverifiedAccount', () => {
     for (const id of ['verified', 'linked', 'member', 'operator'])
       expect(await exists(id), id).toBe(true);
   });
+
+  it('waits while the account is bound to a live join attempt, and clears expired ones', async () => {
+    // Purpose: fails if release can race a join in progress, or if a stale attempt blocks it.
+    await user('joining');
+    await user('joining-owner', { verified: true });
+    // A claimed community needs its owner in the same transaction that activates it.
+    const client = await pool.connect();
+    let community: string;
+    let issuer: string;
+    try {
+      await client.query('BEGIN');
+      community = (
+        await client.query("INSERT INTO communities(name) VALUES('Joining') RETURNING id")
+      ).rows[0].id as string;
+      issuer = (
+        await client.query(
+          `INSERT INTO members(community_id,user_id,display_name,handle,role)
+           VALUES($1,'joining-owner','Owner','owner','owner') RETURNING id`,
+          [community]
+        )
+      ).rows[0].id as string;
+      await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [community]);
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    const invite = (
+      await pool.query(
+        `INSERT INTO invites(community_id,issuer_member_id,token_hash,expires_at,seat_limit)
+         VALUES($1,$2,'invite-hash',now()+interval '1 day',1) RETURNING id`,
+        [community, issuer]
+      )
+    ).rows[0].id as string;
+    await pool.query(
+      `INSERT INTO pending_admissions(community_id,invite_id,token_hash,account_id,bound_at,expires_at)
+       VALUES($1,$2,'attempt-hash','joining',now(),now()+interval '10 minutes')`,
+      [community, invite]
+    );
+    await expect(releaseUnverifiedAccount(pool, 'joining@example.com')).rejects.toThrow(
+      'joining a community right now'
+    );
+    expect(await exists('joining')).toBe(true);
+    await pool.query(
+      `UPDATE pending_admissions SET expires_at=now()-interval '1 minute' WHERE token_hash='attempt-hash'`
+    );
+    await releaseUnverifiedAccount(pool, 'joining@example.com');
+    expect(await exists('joining')).toBe(false);
+    expect(
+      (await pool.query(`SELECT 1 FROM pending_admissions WHERE token_hash='attempt-hash'`))
+        .rowCount
+    ).toBe(0);
+  });
 });

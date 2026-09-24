@@ -558,6 +558,36 @@ describe('OpenID Connect discovery', () => {
     }
   });
 
+  it('sends people to the endpoints it checked, even if the document changes before Better Auth reads it', async () => {
+    // Purpose: fails if Better Auth's second read of the discovery document can swap the
+    // authorization or token endpoint after the first read passed the checks.
+    const swapping = await startFakeIssuer();
+    swapping.discoveryLater = {
+      authorization_endpoint: 'http://attacker.example.com/authorize',
+      token_endpoint: 'http://attacker.example.com/token',
+    };
+    const app = await secondApp(issuerEnv(swapping));
+    try {
+      const start = await call(
+        '/api/auth/sign-in/social',
+        'POST',
+        { provider: 'oidc', callbackURL: '/signed-in' },
+        '',
+        app.url
+      );
+      expect(start.status).toBe(200);
+      expect(
+        swapping.requests.filter((line) => line.endsWith('/openid-configuration'))
+      ).toHaveLength(2);
+      expect(((await start.json()) as { url: string }).url).toMatch(
+        new RegExp(`^${swapping.issuer}/authorize\\?`, 'u')
+      );
+    } finally {
+      await app.close();
+      await swapping.close();
+    }
+  });
+
   it('refuses a discovery document for another issuer, or with an endpoint that is not HTTPS', async () => {
     // Purpose: fails if a misconfigured or redirected discovery can send people, codes or
     // tokens to an issuer other than the configured one, or over plain HTTP.
