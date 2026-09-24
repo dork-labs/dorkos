@@ -15,15 +15,24 @@ import type { ImportFailureCode } from './store.js';
 export const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
 /** The largest file one attachment may be: the ceiling of `COMMUNITY_ATTACHMENT_BYTES`. */
 export const MAX_IMPORT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-/** The longest channel name an import keeps, in characters, the same cap as a community's. */
+/** The longest channel name an import keeps (`.length`), the same cap as a community's. */
 export const MAX_IMPORT_CHANNEL_NAME = 80;
-/** The longest channel description an import keeps, in characters, as for a community. */
+/** The longest channel description an import keeps (`.length`), as for a community. */
 export const MAX_IMPORT_CHANNEL_DESCRIPTION = 1_000;
 
-/** Cut `text` to at most `max` characters, ending in an ellipsis when anything was cut. */
-function shorten(text: string, max: number): string {
-  const characters = Array.from(text);
-  return characters.length <= max ? text : `${characters.slice(0, max - 1).join('')}…`;
+/**
+ * Cut `text` to at most `max` UTF-16 units (JavaScript's `.length`, which the app's own length
+ * checks use), ending in an ellipsis when anything was cut. It cuts between whole characters,
+ * so an emoji is never split in half.
+ */
+export function shorten(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let kept = '';
+  for (const character of text) {
+    if (kept.length + character.length > max - 1) break;
+    kept += character;
+  }
+  return `${kept}…`;
 }
 
 /**

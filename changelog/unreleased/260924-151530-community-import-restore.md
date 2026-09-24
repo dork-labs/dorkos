@@ -4,6 +4,7 @@ covers:
   - 'fix(community): hold imports to the member API and this host's content limits (DOR-2259)'
   - 'fix(community): shorten over-long imported channel names instead of refusing (DOR-2259)'
   - 'fix(community): renumber imported history and retry provider outages (DOR-2259)'
+  - 'fix(community): measure shortened channel names the way the app does (DOR-2259)'
 ---
 
 ### Added
