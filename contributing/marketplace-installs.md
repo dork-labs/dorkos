@@ -629,36 +629,39 @@ The router is mounted in `apps/server/src/index.ts` under the conditional `if (e
 
 ## 11. CLI command reference
 
-All marketplace CLI subcommands are thin HTTP clients that talk to a running DorkOS server via the API above. Server URL precedence: `DORKOS_PORT` env var → `~/.dork/config.json` → default 4242.
+All marketplace CLI subcommands are thin HTTP clients that talk to a running DorkOS server via the API above. Server URL precedence: `DORKOS_PORT` env var → `~/.dork/config.json` → default 4242. None of them starts a server; an unreachable one is an error (`Cannot reach DorkOS server at …`).
+
+**One home: `dorkos marketplace <verb>`.** Package management and source management share the `marketplace` namespace (`commands/marketplace-dispatcher.ts`), matching every other multi-verb domain in the CLI (`cache`, `agent`, `connections`, …) and keeping a bare `dorkos update` from reading as "update DorkOS". The top-level `dorkos install`, `dorkos update` and `dorkos uninstall` are permanent shorthand: `cli.ts` hands them to the same dispatcher, so both spellings run one handler and print one help text (`__tests__/marketplace-shorthand.test.ts` pins that). Usage and error lines name the canonical form. There is no top-level shorthand for `installed` or `outdated`.
 
 ```bash
-# Install
-dorkos install <name>                         # Latest from any configured marketplace
-dorkos install <name>@<marketplace>           # Specific marketplace
-dorkos install <name>@<source>                # Direct git URL
-dorkos install github:user/repo               # Git shorthand
-dorkos install ./local/path                   # Local directory
-dorkos install --type plugin <name>           # Force install flow type (rare)
-dorkos install --force <name>                 # Override conflict warnings
-dorkos install --yes <name>                   # Skip confirmation prompt (CI / non-TTY)
-dorkos install --project ./apps/web <name>    # Project-local install
+# Install (shorthand: dorkos install)
+dorkos marketplace install <name>                         # Latest from any configured marketplace
+dorkos marketplace install <name>@<marketplace>           # Specific marketplace
+dorkos marketplace install <name> --source <url>          # Direct git or marketplace.json URL
+dorkos marketplace install --force <name>                 # Override conflict warnings
+dorkos marketplace install --yes <name>                   # Skip confirmation prompt (CI / non-TTY)
+dorkos marketplace install --project ./apps/web <name>    # Project-local install
 
-# Uninstall
-dorkos uninstall <name>                       # Remove package, preserve secrets/data
-dorkos uninstall --purge <name>               # Remove everything including data
-dorkos uninstall --project ./apps/web <name>  # Project-local uninstall
+# Uninstall (shorthand: dorkos uninstall)
+dorkos marketplace uninstall <name>                       # Remove package, preserve secrets/data
+dorkos marketplace uninstall --purge <name>               # Remove everything including data
+dorkos marketplace uninstall --project ./apps/web <name>  # Project-local uninstall
 
-# Update
-dorkos update                                 # Notify of all available updates
-dorkos update <name>                          # Notify of update for specific package
-dorkos update --apply <name>                  # Actually update (advisory off)
-dorkos update --apply                         # Apply every available update (one request)
+# Update (shorthand: dorkos update)
+dorkos marketplace update                                 # Check every installation (one request)
+dorkos marketplace update <name>                          # Check one package
+dorkos marketplace update --apply <name>                  # Actually update (advisory off)
+dorkos marketplace update --apply                         # Apply every available update (one request)
+
+# What is installed, and what is behind
+dorkos marketplace installed [--project <p>] [--json]     # GET /installed: one row per installation
+dorkos marketplace outdated [--project <p>] [--json]      # GET /updates: stale + unchecked only; exit 0/1/2
 
 # Marketplace source management
-dorkos marketplace add <url> [--name=<n>]     # Add a marketplace source
-dorkos marketplace remove <name>              # Remove a source
-dorkos marketplace list                       # List configured sources
-dorkos marketplace refresh [<name>]           # Force-refetch marketplace.json
+dorkos marketplace add <url> [--name=<n>]                 # Add a marketplace source
+dorkos marketplace remove <name>                          # Remove a source
+dorkos marketplace list                                   # List configured sources
+dorkos marketplace refresh [<name>]                       # Force-refetch marketplace.json
 
 # Cache management
 dorkos cache list                             # Show cache counts and total size
@@ -673,7 +676,11 @@ dorkos cache clear -y                         # Wipe the entire cache (requires 
 
 `dorkos marketplace add <url>` derives a default name from the URL's last path segment (minus `.git`); pass `--name` as the explicit escape hatch. `dorkos marketplace refresh` without a name iterates every configured source via `Promise.allSettled`, so a single failing source never aborts the batch.
 
-`dorkos update` without a package name is one request to the all-packages door: `GET /updates` to check, `POST /updates { apply: true }` with `--apply`, forwarding `--project` either way. A line for a non-global installation names where it lives (`flow [Alpha]  0.7.2 → 0.7.3`), so the same package in two places reads as two lines. `--apply` lists what it reinstalled and what it could not, and exits 1 when anything failed. A named `dorkos update <name>` still uses the per-package route.
+`dorkos marketplace update` without a package name is one request to the all-packages door: `GET /updates` to check, `POST /updates { apply: true }` with `--apply`, forwarding `--project` either way. A line for a non-global installation names where it lives (`flow [Alpha]  0.7.2 → 0.7.3`), so the same package in two places reads as two lines. `--apply` lists what it reinstalled and what it could not, and exits 1 when anything failed. A named `dorkos marketplace update <name>` still uses the per-package route.
+
+`dorkos marketplace installed` renders `GET /installed` (`?projectPath=` for `--project`) as NAME / VERSION / TYPE / WHERE, where WHERE is `global` or the agent's name (else its project path). A NOTES column appears only when some row has a note: `linked` (the row carries `linked: true`, a symlinked working copy the update flow never reinstalls), `overrides global` (`scope: 'override'`), or `libraries incomplete` (`dependencyWarnings`). `--json` prints the server's `packages` array untouched.
+
+`dorkos marketplace outdated` is one `GET /updates` (`?projectPath=` for `--project`). It prints the `update-available` checks with the same line `update` uses (`lib/installation-label.ts`), then the `unknown` ones under `Could not check:`, and never applies anything. Its exit code follows `diff`: **0** every installation checked and current (or none installed); **1** at least one `update-available`, which wins over unknowns because it is the actionable fact; **2** could not tell, meaning nothing known stale but at least one `unknown` (a linked install included), or the request failed (server down, 4xx/5xx, bad arguments; the dispatcher maps its parse errors to 2, not the generic 1). `--json` prints `{ outdated, unknown }`, each the server's own `InstallationUpdateCheck` objects; current ones are left out, and stdout stays empty on failure.
 
 ## 12. Telemetry hook
 
