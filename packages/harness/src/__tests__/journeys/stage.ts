@@ -176,12 +176,20 @@ export function scrubbedSnapshot(root: string): Record<string, string> {
     else if (entry.kind === 'symlink') {
       out[path] = `link:${scrubbedLinkText(root, real, entry.linkText ?? '')}`;
     } else {
-      const text = readFileSync(join(root, path), 'utf8');
-      out[path] =
-        `sha:${sha256Of(Buffer.from(text.split(real).join('<ROOT>').split(root).join('<ROOT>')))}`;
+      let text = readFileSync(join(root, path), 'utf8');
+      // Every spelling the root can take in a generated file: native, and the
+      // forward-slash one hook commands use on Windows (`pluginRootText`).
+      for (const spelling of rootSpellings(real, root)) text = text.split(spelling).join('<ROOT>');
+      out[path] = `sha:${sha256Of(Buffer.from(text))}`;
     }
   }
   return Object.fromEntries(Object.entries(out).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/** A root's spellings, longest first so one never leaves part of another behind. */
+function rootSpellings(real: string, root: string): string[] {
+  const all = new Set([real, root, real.split(sep).join('/'), root.split(sep).join('/')]);
+  return [...all].sort((a, b) => b.length - a.length);
 }
 
 /** Replace a fixture-local absolute junction target with its stable root-relative identity. */

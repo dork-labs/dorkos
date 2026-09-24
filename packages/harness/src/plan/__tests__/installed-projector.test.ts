@@ -1018,15 +1018,19 @@ describe('${CLAUDE_PLUGIN_DATA} (DOR-2245)', () => {
   });
 
   // Purpose: the prefix survives a path with a quote in it, and a real shell
-  // then sees exactly the two paths.
-  it('quotes the prefix so a real shell exports the exact paths', () => {
-    const installDir = "/tmp/o'brien/.dork/plugins/acme";
-    const out = execFileSync('/bin/sh', [
-      '-c',
-      `${pluginEnvPrefix(installDir, 'darwin')}printf '%s|%s' "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA"`,
-    ]).toString();
-    expect(out).toBe(`${installDir}|${installDir}/.dork/data`);
-  });
+  // then sees exactly the two paths. Needs /bin/sh, which Windows runners lack
+  // (Claude Code there runs hooks through Git Bash, not this path).
+  it.skipIf(process.platform === 'win32')(
+    'quotes the prefix so a real shell exports the exact paths',
+    () => {
+      const installDir = "/tmp/o'brien/.dork/plugins/acme";
+      const out = execFileSync('/bin/sh', [
+        '-c',
+        `${pluginEnvPrefix(installDir, 'darwin')}printf '%s|%s' "$CLAUDE_PLUGIN_ROOT" "$CLAUDE_PLUGIN_DATA"`,
+      ]).toString();
+      expect(out).toBe(`${installDir}|${installDir}/.dork/data`);
+    }
+  );
 
   // Purpose: Windows spells both paths with forward slashes, like the root token.
   it('spells the data dir with forward slashes on Windows', () => {
