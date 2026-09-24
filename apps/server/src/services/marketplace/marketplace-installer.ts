@@ -348,9 +348,26 @@ export class MarketplaceInstaller implements InstallerLike {
         throw new ConflictError(preview.conflicts);
       }
 
+      // A `skillRef` schedule is written into the package's own SKILL.md in the
+      // staged tree, before the installed-files record is computed, so the
+      // record holds the file as installed: an untouched update then reports
+      // nothing and an uninstall removes it (DOR-2318). Warnings wait for the
+      // result, and a rolled-back install says nothing.
+      const stagedScheduleWarnings: string[] = [];
       const result = await this.dispatchFlow(staged.packagePath, staged.manifest, {
         ...req,
         ownership: {
+          prepareStaged: async (stagingDir: string) => {
+            const injected = await materializePackageSchedules({
+              manifest: staged.manifest,
+              installPath: stagingDir,
+              forms: 'skillRef',
+              dorkHome: this.deps.dorkHome,
+              projectPath: req.projectPath,
+              logger: this.deps.logger,
+            });
+            stagedScheduleWarnings.splice(0, Infinity, ...injected.warnings);
+          },
           rebuildLegacy: (liveRoot: string, stagedTree: string) =>
             rebuildInstalledFiles(
               liveRoot,
@@ -364,12 +381,12 @@ export class MarketplaceInstaller implements InstallerLike {
         },
       });
 
-      // Turn the package's declared schedules into files. Type-agnostic and
+      // Turn the package's inline schedules into files. Type-agnostic and
       // therefore here rather than in each flow: a schedule means the same thing
       // whichever of the four types shipped it, and three copies of this call
       // would be three chances to drift. It runs AFTER the flow because it
-      // writes into the activated install root (for `skillRef` entries) and into
-      // the skills root the install is scoped to (for inline ones).
+      // writes into the skills root the install is scoped to. (`skillRef`
+      // entries were written into the staged tree above.)
       //
       // Failures warn rather than fail: the package is already installed and
       // working, and the schedule problems that genuinely justify refusing an
@@ -378,11 +395,12 @@ export class MarketplaceInstaller implements InstallerLike {
       const materialized = await materializePackageSchedules({
         manifest: staged.manifest,
         installPath: result.installPath,
+        forms: 'inline',
         dorkHome: this.deps.dorkHome,
         projectPath: req.projectPath,
         logger: this.deps.logger,
       });
-      result.warnings.push(...materialized.warnings);
+      result.warnings.push(...stagedScheduleWarnings, ...materialized.warnings);
 
       // Persist install provenance to `.dork/install-metadata.json` so the
       // update flow can scope its marketplace lookups, the routes layer can

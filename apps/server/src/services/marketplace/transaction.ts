@@ -223,6 +223,12 @@ export interface TransactionOwnership {
    */
   rebuildLegacy?: (liveRoot: string, stagedTree: string) => Promise<InstalledFiles | null>;
   /**
+   * Finish the staged tree before its record is computed (DOR-2318): anything
+   * the installer writes into the package's own files belongs in the record as
+   * installed, or it reads as a person's edit on the next update.
+   */
+  prepareStaged?: (stagingDir: string) => Promise<void>;
+  /**
    * Told, once the install has committed, what happened to files the person
    * may have changed, and any warning to show. Flows copy both onto their result.
    */
@@ -516,6 +522,7 @@ async function prepareOwnership(
   target: string,
   ownership: TransactionOwnership
 ): Promise<CarriedOver> {
+  await ownership.prepareStaged?.(stagingDir);
   const rNew = await computeInstalledFiles(stagingDir, {
     identity: ownership.identity,
     userEditable: ownership.userEditable,
