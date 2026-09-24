@@ -78,6 +78,12 @@ describe('applyGuardedConfigWrite', () => {
   }
 
   describe('the permissions section (spec `agent-permissions` D10)', () => {
+    it('keeps the refusal code `dorkos config set` compares as a literal', async () => {
+      // If you are changing this, change `packages/cli/src/config-write.ts` too.
+      const { USE_PERMISSIONS_API_CODE } = await import('../config-write.js');
+      expect(USE_PERMISSIONS_API_CODE).toBe('USE_PERMISSIONS_API');
+    });
+
     it('refuses any permissions key from every door, even the operator, and writes nothing', () => {
       // Only the permission routes write it, because only they carry a person's
       // yes AND an audit event. The operator authority is the strongest one this

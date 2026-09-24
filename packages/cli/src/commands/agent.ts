@@ -12,6 +12,8 @@
  * - `agent update`         → `PATCH /api/agents/current?path=` (self-edit
  *   fields; the server enforces its agent-write policy and the system-agent
  *   guards).
+ * - `agent permissions`    → `commands/permissions.ts` (one agent's
+ *   permissions, through the permission routes).
  *
  * Every verb accepts `--json` for raw machine output. Handlers return an exit
  * code rather than calling `process.exit` so `cli.ts` stays the single source of
@@ -34,6 +36,7 @@ Subcommands:
   show <path-or-id>                 Show one agent by Mesh id or project path
   create --name <slug> --path <dir> Create a new agent
   update --path <dir> [fields]      Edit an agent's self-editable fields
+  permissions <agent> [set|reset]   See or change what one agent may do
 
 Options (all subcommands):
       --json   Print raw JSON instead of a table
@@ -369,6 +372,10 @@ export async function runAgentDispatcher(rawArgs: string[]): Promise<number> {
     }
     if (subcommand === 'update') {
       return await runAgentUpdate(parseAgentUpdateArgs(rawArgs.slice(1)));
+    }
+    if (subcommand === 'permissions') {
+      const { runAgentPermissions } = await import('./permissions.js');
+      return await runAgentPermissions(rawArgs.slice(1));
     }
   } catch (err) {
     printError(err);
