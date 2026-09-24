@@ -17739,6 +17739,13 @@
                           },
                           "agentName": {
                             "type": "string"
+                          },
+                          "linked": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
                           }
                         },
                         "required": [
@@ -17851,6 +17858,13 @@
                           },
                           "agentName": {
                             "type": "string"
+                          },
+                          "linked": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
                           },
                           "provides": {
                             "type": "object",
@@ -19462,6 +19476,13 @@
                           "agentName": {
                             "type": "string"
                           },
+                          "linked": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
+                          },
                           "applied": {
                             "type": "object",
                             "properties": {
@@ -19720,6 +19741,13 @@
                           },
                           "agentName": {
                             "type": "string"
+                          },
+                          "linked": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
                           },
                           "applied": {
                             "type": "object",

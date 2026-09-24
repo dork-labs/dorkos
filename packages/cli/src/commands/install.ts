@@ -1,5 +1,6 @@
 /**
- * CLI handler for `dorkos install <name>`.
+ * CLI handler for `dorkos marketplace install <name>` (and its shorthand,
+ * `dorkos install <name>`).
  *
  * Talks to a running DorkOS server via the marketplace HTTP API:
  *
@@ -20,6 +21,7 @@ import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
 import { confirm } from '../lib/confirm-prompt.js';
 import { hasBlockingConflicts, renderPreview, type PreviewPayload } from '../lib/preview-render.js';
+import { resolveProjectFlag } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runInstall}. */
@@ -34,7 +36,7 @@ export interface InstallArgs {
   force?: boolean;
   /** Skip the interactive confirmation prompt. */
   yes?: boolean;
-  /** Project path for project-local installs. */
+  /** Absolute project path for project-local installs, resolved against the caller's cwd. */
   projectPath?: string;
 }
 
@@ -57,11 +59,11 @@ interface PreviewResponseBody {
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
-  'Usage: dorkos install <name> [--marketplace <name>] [--source <url>] ' +
+  'Usage: dorkos marketplace install <name> [--marketplace <name>] [--source <url>] ' +
   '[--force] [--yes] [--project <path>]';
 
 /**
- * Parse the raw argv slice that follows `dorkos install`. Splits the
+ * Parse the raw argv slice that follows `dorkos marketplace install`. Splits the
  * positional name on `@` to support the `<name>@<marketplace>` shorthand
  * documented in the spec.
  *
@@ -84,7 +86,7 @@ export function parseInstallArgs(rawArgs: string[]): InstallArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'install', USAGE_LINE);
+    rethrowUnknownOption(err, 'marketplace install', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;
@@ -111,12 +113,12 @@ export function parseInstallArgs(rawArgs: string[]): InstallArgs {
     source: typeof values.source === 'string' ? values.source : undefined,
     force: Boolean(values.force),
     yes: Boolean(values.yes),
-    projectPath: typeof values.project === 'string' ? values.project : undefined,
+    projectPath: resolveProjectFlag(values.project),
   };
 }
 
 /**
- * Implements `dorkos install <name>`.
+ * Implements `dorkos marketplace install <name>`.
  *
  * @param args - Parsed install arguments.
  * @returns The intended process exit code (`0` success, `1` error).
