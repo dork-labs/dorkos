@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { TaskFileWatcher } from '../task-file-watcher.js';
@@ -12,6 +12,12 @@ import { TASK_TEMPLATES_DIRNAME } from '../task-templates.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../lib/logger.js';
 import type { Db } from '@dorkos/db';
+import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
+import {
+  computeInstalledFiles,
+  readInstalledFiles,
+  writeInstalledFiles,
+} from '../../marketplace/lib/installed-files.js';
 
 // Mocked wholesale rather than spied on, matching `task-file-watcher.test.ts`:
 // one case here reads the watcher's own failure lines to tell a broken watch
@@ -232,6 +238,61 @@ describe('TaskFileWatcher (real chokidar)', () => {
       'the watch delivered nothing and reported no descriptor failure — that is a fault in the wiring, not machine load'
     ).toMatch(/EMFILE|ENOSPC/);
     ctx.skip('watch descriptors exhausted (EMFILE/ENOSPC); the reconciler is what covers this');
+  });
+
+  it("writes a kept OFF switch into a file that has just stopped being a package's (DOR-2272)", async () => {
+    // The watcher's half of the lapse rule the reconciler test pins: a change
+    // event on a file whose install no longer lists it must not switch the
+    // person's schedule back on, and must leave the file saying it is off.
+    const agentDir = path.join(dorkHome, 'repo', '.dork', 'agents', 'helper');
+    const agentSkills = path.join(agentDir, '.agents', 'skills');
+    const shipped = path.join(agentSkills, 'nightly', 'SKILL.md');
+    await mkdir(path.dirname(shipped), { recursive: true });
+    await writeFile(shipped, skillFile('nightly'), 'utf-8');
+    await mkdir(path.join(agentDir, '.dork'), { recursive: true });
+    await writeFile(path.join(agentDir, '.dork', 'manifest.json'), '{}', 'utf-8');
+    await writeInstalledFiles(
+      agentDir,
+      await computeInstalledFiles(agentDir, {
+        identity: { name: 'helper', type: 'agent' },
+        userEditable: [],
+        npmRan: false,
+      })
+    );
+    watcher.watch(skillsRoot(agentSkills, 'project', agentDir, 'agent-helper'));
+    await waitUntil(() => store.getByFilePath(shipped)?.packageOwned === 'record', 'discovery');
+    const meshCore = { getProjectPath: () => agentDir };
+    const edit = async (data: Record<string, unknown>) => {
+      const existing = store.getByFilePath(shipped)!;
+      const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, {
+        existing,
+        data: data as never,
+      });
+      if (!outcome.ok) throw new Error(outcome.error);
+      store.updateTask(existing.id, data as never, { timingLandsOn: outcome.timingLandsOn });
+    };
+    await edit({ status: 'active' });
+    await edit({ enabled: false });
+
+    const record = (await readInstalledFiles(agentDir))!;
+    const { ['.agents/skills/nightly/SKILL.md']: _released, ...files } = record.files;
+    await writeInstalledFiles(agentDir, { ...record, files });
+    // A change the approval does not cover, so only the ownership lapse is new.
+    await writeFile(
+      shipped,
+      skillFile('nightly').replace('A task named', 'The task named'),
+      'utf-8'
+    );
+
+    await waitUntil(() => store.getByFilePath(shipped)?.packageOwned === null, 'the lapse');
+    expect(store.getByFilePath(shipped)!.enabled).toBe(false);
+    await vi.waitFor(
+      async () => expect(await readFile(shipped, 'utf-8')).toContain('enabled: false'),
+      {
+        timeout: 5000,
+      }
+    );
+    expect(store.getByFilePath(shipped)!.enabled).toBe(false);
   });
 
   it('still syncs the templates the container legitimately holds, as templates', async () => {

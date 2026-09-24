@@ -23,6 +23,7 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     defaultCron: '0 9 * * *',
     defaultTimezone: null,
     timingOverridden: false,
+    packageOwned: null,
     agentId: null,
     enabled: true,
     sticky: false,

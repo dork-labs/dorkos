@@ -39,7 +39,7 @@ import {
   taskRootShape,
 } from './skills-root-discovery.js';
 import { pluginsRootFor, type TaskRoot } from './skills-roots.js';
-import { isPackageOwnedInRoot } from './task-file-update.js';
+import { carrySwitchIntoReleasedFile, packageOwnershipInRoot } from './task-file-update.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { UNWATCHED_ROOT_SWEEP_SECONDS, type TaskWatchHealth } from './task-file-watcher.js';
 import { resolveParkedScheduleRemoved } from '../notifications/emitters/schedule-park.js';
@@ -566,18 +566,24 @@ export class TaskReconciler {
         seenFilePaths.add(discovered.def.filePath);
         if (!this.identities.claim(discovered.def.filePath, root.dir, result.filePath)) continue;
         try {
+          const packageOwned = await packageOwnershipInRoot(discovered.def.filePath, root);
           const task = this.store.upsertFromFile(discovered.def, root.agentId, {
             source: 'discovery',
             problem: discovered.problem,
             // See the watcher's call: the same rule, on the pass that catches
-            // what the watcher missed (FB-26).
-            packageOwned: await isPackageOwnedInRoot(discovered.def.filePath, root),
+            // what the watcher missed (FB-26, DOR-2272).
+            packageOwned,
           });
           // Carry the repair through to the clock. This pass exists to catch
           // what the watcher missed, and what the watcher missed was never only
           // the row.
           this.registrar.syncTask(task.id);
           upserted++;
+          // A file that just stopped being a package's gets the switch the row
+          // kept for it (DOR-2272). After the clock sync so a failed write does
+          // not skip it; the row keeps its ownership until the file agrees, so a
+          // write that fails here is retried by the next pass.
+          await carrySwitchIntoReleasedFile(task, discovered.def, root);
         } catch (err) {
           this.report('error', `[TaskReconciler] Failed to sync ${discovered.def.filePath}`, err);
         }

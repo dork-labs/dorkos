@@ -190,3 +190,35 @@ export function changedUpdateFields(
     Object.entries(after).filter(([field, next]) => next !== before[field])
   ) as UpdateTaskRequest;
 }
+
+/** The longest name the schedule form accepts. */
+export const MAX_NAME_LENGTH = 100;
+
+/**
+ * The form values for a person's own copy of a schedule: everything in the
+ * form, under the original's name with `-copy` on the end, or `-copy-2`,
+ * `-copy-3` and so on when that name is already taken (DOR-2272).
+ *
+ * Offered for a schedule that came with an installed package. The copy is a
+ * new schedule beside the original, under the same agent, so it needs a name
+ * nothing there uses; the create door would refuse a taken one. The original's
+ * name is cut, never the suffix, so the result stays within
+ * {@link MAX_NAME_LENGTH}. Names compare without regard to case, as the folder
+ * names they become do on a case-insensitive disk.
+ *
+ * @param values - The values to copy.
+ * @param takenNames - The names of the schedules already filed under the same agent.
+ * @returns The same values, renamed.
+ */
+export function copyFormValues(
+  values: ScheduleFormValues,
+  takenNames: Iterable<string> = []
+): ScheduleFormValues {
+  const taken = new Set([...takenNames].map((name) => name.toLowerCase()));
+  const base = values.name.trim();
+  for (let n = 1; ; n++) {
+    const suffix = n === 1 ? '-copy' : `-copy-${n}`;
+    const name = `${base.slice(0, MAX_NAME_LENGTH - suffix.length)}${suffix}`;
+    if (!taken.has(name.toLowerCase())) return { ...values, name };
+  }
+}

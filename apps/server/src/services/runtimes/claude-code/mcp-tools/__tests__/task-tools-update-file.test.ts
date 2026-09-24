@@ -278,6 +278,9 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
 
     expect(isError).toBe(true);
     expect(payload.code).toBe('schedule_package_owned');
+    // No record in this install, so the answer is the legacy one, and the
+    // agent is told which (DOR-2272).
+    expect(payload.ownedBy).toBe('legacy');
     expect(store.getTask(task.id)!.prompt).toBe('packaged prompt');
     expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
   });

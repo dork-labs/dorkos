@@ -34,14 +34,17 @@ export interface FileSyncSource {
   /** The validation complaint to park with, when there is one. */
   problem?: string | null;
   /**
-   * Whether an installed package owns this file — `isPackageOwnedInRoot`, asked
-   * by whoever found it.
+   * Whether an installed package owns this file, and how that is known —
+   * `packageOwnershipInRoot`, asked by whoever found it. `null` means the file
+   * is the person's; absent means nobody asked.
    *
    * Answered by the caller rather than here because it is a question about the
    * filesystem and this is a synchronous gate. Discovery asks it; a route or an
    * install does not need to, because the write it is making is a person's.
+   * The store keeps the answer on the row (`package_owned`), which is how the
+   * next sync sees a file STOP being a package's (DOR-2272).
    */
-  packageOwned?: boolean;
+  packageOwned?: 'record' | 'legacy' | null;
 }
 
 /** What the gates decided about one incoming file. */
@@ -66,6 +69,11 @@ export interface FileSyncVerdict {
    * is no longer a package's (DOR-2302). See {@link FileSyncGates.dropsTimingOverride}.
    */
   dropsTimingOverride: boolean;
+  /**
+   * The ownership to record on the row, or `undefined` to leave it alone (a
+   * write that did not ask). See {@link FileSyncGates.packageOwnedToWrite}.
+   */
+  packageOwned: 'record' | 'legacy' | 'unknown' | null | undefined;
 }
 
 /**
@@ -139,12 +147,41 @@ export class FileSyncGates {
         ? resolveFileArmStatus(approved, incoming, options.problem)
         : null;
 
+    const keepsRowEnabled = this.keepsRowEnabled(existing, arm, options);
     return {
       permissionMode,
       arm,
-      keepsRowEnabled: this.keepsRowEnabled(existing, arm, options),
+      keepsRowEnabled,
       dropsTimingOverride,
+      packageOwned: this.packageOwnedToWrite(def, existing, keepsRowEnabled, options),
     };
+  }
+
+  /**
+   * The ownership to record on the row after this sync.
+   *
+   * Discovery's answer, with one exception that makes the release of a file
+   * TWO-PHASE (DOR-2272). While the row keeps a switch the file does not say
+   * yet, the row keeps its previous ownership, so every later sync, from the
+   * watcher or the reconciler, in any order, still sees a file being released
+   * and keeps the switch too. Only once the file says what the row does (the
+   * caller wrote it, `carrySwitchIntoReleasedFile`) is `null` recorded. A write
+   * that fails, or two syncs that interleave, therefore cost a retry, never the
+   * person's switch.
+   */
+  private packageOwnedToWrite(
+    def: TaskDefinition,
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    keepsRowEnabled: boolean,
+    options?: FileSyncSource
+  ): FileSyncVerdict['packageOwned'] {
+    if (options?.packageOwned === undefined) return undefined;
+    const switchNotInFile =
+      options.packageOwned === null &&
+      existing?.packageOwned != null &&
+      keepsRowEnabled &&
+      existing.enabled !== def.meta.schedule.enabled;
+    return switchNotInFile ? existing.packageOwned : options.packageOwned;
   }
 
   /**
@@ -173,8 +210,8 @@ export class FileSyncGates {
     existing: typeof pulseSchedules.$inferSelect | undefined,
     options?: FileSyncSource
   ): boolean {
-    // `packageOwned` is only ever answered by discovery; absent is not `false`.
-    if (options?.packageOwned !== false) return false;
+    // `packageOwned` is only ever answered by discovery; absent is not `null`.
+    if (options?.packageOwned !== null) return false;
     return (
       existing !== undefined &&
       (existing.cronOverride !== null || existing.timezoneOverride !== null)
@@ -211,6 +248,20 @@ export class FileSyncGates {
    * package's schedule `active` and switched off with no card and no
    * notification: the FB-26 symptom back, quieter.
    *
+   * **The moment a file stops being a package's, the row's switch still
+   * stands** (DOR-2272). Until then the row was the only place the person's
+   * switch could live, so it disagrees with the file on purpose; copying the
+   * file's value over it then would switch back ON a schedule the person had
+   * switched off. So on that one sync the row keeps an OFF switch outright, and
+   * an ON switch under the same approval rule as above, and the caller writes
+   * the kept switch into the file, which is now the person's to write
+   * (`carrySwitchIntoReleasedFile`). A lapse is reachable: a later version
+   * that stops shipping the file, a legacy record rebuilt without proof of it,
+   * a record edited by hand, or a row older than the column (`unknown`), which
+   * may have been a package's under the old rule; for that last one only an OFF
+   * switch is kept, since the file may be the person's own choice. The release lasts until the
+   * file agrees ({@link FileSyncGates.packageOwnedToWrite}).
+   *
    * @param existing - The row the file is landing on, when there is one.
    * @param arm - What the arm gate decided, or `null` for an operator write.
    * @param options - Where the write came from, and whether a package owns it.
@@ -221,8 +272,14 @@ export class FileSyncGates {
     arm: FileArmVerdict | null,
     options?: FileSyncSource
   ): boolean {
-    if (options?.packageOwned !== true || existing === undefined) return false;
-    return arm?.status === 'active';
+    if (existing === undefined || options?.packageOwned === undefined) return false;
+    if (options.packageOwned !== null) return arm?.status === 'active';
+    if (existing.packageOwned === null) return false;
+    // A row older than the column (`unknown`) may have been the person's all
+    // along, whose file then says what they last chose; only an OFF row is kept
+    // against it, the safe direction, never an ON one (DOR-2272 review, T4).
+    if (existing.packageOwned === 'unknown') return existing.enabled === false;
+    return existing.enabled === false || arm?.status === 'active';
   }
 
   /** Forget what was said about a path, because its file went away. */

@@ -6388,6 +6388,20 @@
         "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts",
         "apps/client/src/layers/features/marketplace/ui/ConfirmUpdatesDialog.tsx"
       ]
+    },
+    {
+      "id": "260924-163130",
+      "slug": "schedule-ownership-reads-the-installed-files-record",
+      "title": "Whether DorkOS may edit a schedule inside an install root is read from the installed-files record",
+      "status": "draft",
+      "created": "2026-09-24",
+      "extractedFrom": "marketplace-agent-schedules",
+      "specSlug": "marketplace-agent-schedules",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/tasks/task-file-update.ts",
+        "apps/server/src/services/tasks/lifecycle/create-task.ts"
+      ]
     }
   ]
 }

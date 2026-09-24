@@ -351,6 +351,7 @@ export function createTasksRouter(
       return res.status(outcome.status).json({
         error: outcome.error,
         ...(outcome.code !== undefined && { code: outcome.code }),
+        ...(outcome.ownedBy !== undefined && { ownedBy: outcome.ownedBy }),
         ...(outcome.details !== undefined && { details: outcome.details }),
       });
     }
@@ -486,6 +487,7 @@ export function createTasksRouter(
       return res.status(fileOutcome.status).json({
         error: fileOutcome.error,
         ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
+        ...(fileOutcome.ownedBy !== undefined && { ownedBy: fileOutcome.ownedBy }),
       });
     }
     const { changesFile, timingLandsOn } = fileOutcome;

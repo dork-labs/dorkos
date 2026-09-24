@@ -56,6 +56,9 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     defaultCron: row.cron,
     defaultTimezone: row.timezone,
     timingOverridden: row.cronOverride !== null || row.timezoneOverride !== null,
+    // `unknown` is the sync's own bookkeeping for a row older than the column,
+    // not something to show anyone.
+    packageOwned: row.packageOwned === 'unknown' ? null : (row.packageOwned ?? null),
     agentId: row.agentId ?? null,
     enabled: row.enabled,
     sticky: row.sticky,

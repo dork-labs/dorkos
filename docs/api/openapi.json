@@ -5864,6 +5864,19 @@
             "type": "boolean",
             "default": false
           },
+          "packageOwned": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "record",
+              "legacy",
+              null
+            ],
+            "default": null,
+            "description": "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own)."
+          },
           "agentId": {
             "type": [
               "string",

@@ -30,6 +30,22 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * (DOR-2307).
    */
   timezoneOverride: text('timezone_override'),
+  /**
+   * Whether an installed package owns this schedule's file, as discovery last
+   * found it (DOR-2272). `record`: the install's installed-files record lists
+   * the file, so the package's next update puts its own copy back. `legacy`:
+   * the install predates records, and the location-and-marker answer claimed
+   * it. `unknown`: the row existed before this column (migration 0109), so it
+   * may have been a package's; the first sync treats it like one it is
+   * releasing. NULL: the file is the person's.
+   *
+   * A cache, like every column here, rewritten by every discovery sync. It is
+   * kept on the row for two readers: the sync itself, which has to see the
+   * moment a file STOPS being a package's (the person's switch, held on the row
+   * while the file was unwritable, is then written into the file), and the
+   * app, which shows ownership before a person tries an edit.
+   */
+  packageOwned: text('package_owned', { enum: ['record', 'legacy', 'unknown'] }),
   prompt: text('prompt').notNull(),
   agentId: text('agent_id'),
   /**

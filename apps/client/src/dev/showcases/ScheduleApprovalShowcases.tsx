@@ -40,6 +40,7 @@ function proposal(overrides: Partial<Task> = {}): Task {
     defaultCron: '0 9 * * 1-5',
     defaultTimezone: 'America/Chicago',
     timingOverridden: false,
+    packageOwned: null,
     agentId: '/Users/dev/agents/dorkbot',
     enabled: false,
     sticky: false,

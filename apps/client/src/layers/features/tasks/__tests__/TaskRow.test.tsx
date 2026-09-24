@@ -46,6 +46,7 @@ const activeSchedule: Task = {
   defaultCron: '0 9 * * *',
   defaultTimezone: null,
   timingOverridden: false,
+  packageOwned: null,
   maxRuntime: null,
   permissionMode: 'acceptEdits',
   runtime: null,
@@ -662,6 +663,7 @@ describe('ScheduleRow', () => {
       defaultCron: '0 * * * *',
       defaultTimezone: 'UTC',
       timingOverridden: true,
+      packageOwned: null,
       filePath: '/home/user/.dork/plugins/flow/skills/flow-drain/SKILL.md',
     };
 

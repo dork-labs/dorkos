@@ -4,6 +4,7 @@ import {
   useCreateTask,
   useUpdateTask,
   useDeleteTask,
+  useTasks,
   useTaskTemplateDialog,
 } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
@@ -23,12 +24,19 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  Checkbox,
+  Label,
   Switch,
 } from '@/layers/shared/ui';
 import type { Task } from '@dorkos/shared/types';
 import { TaskTemplateGallery } from './TaskTemplateGallery';
 import { ScheduleForm } from './TaskFormInner';
-import { buildFormValues, type ScheduleFormValues, type DialogStep } from './task-form-values';
+import {
+  buildFormValues,
+  copyFormValues,
+  type ScheduleFormValues,
+  type DialogStep,
+} from './task-form-values';
 import type { TaskAgentRoster } from './TaskAgentField';
 import { useAgentRuntime } from './use-task-execution';
 
@@ -134,6 +142,18 @@ export function CreateTaskDialog({
   // Local shadow of enabled state — allows the Switch to respond immediately
   // while the mutation + refetch catches up.
   const [localEnabled, setLocalEnabled] = useState(editTask?.enabled ?? true);
+  // True once a refused edit to a package's schedule becomes the person's own
+  // copy (DOR-2272): the dialog is then a New Schedule on the copied values, and
+  // the task it opened on is left exactly as it is. Every other way of loading
+  // the form clears it, through `applyFormValues`.
+  const [isCopy, setIsCopy] = useState(false);
+  const formTask = isCopy ? undefined : editTask;
+  // Whether creating the copy also switches the package's own schedule off, so
+  // the same work does not run twice. On by default: running both is the rare
+  // want, and it is one click away.
+  const [switchOffOriginal, setSwitchOffOriginal] = useState(true);
+  // Every schedule's name, so a copy can be named clear of them all.
+  const { data: allTasks } = useTasks();
 
   // formValues drives ScheduleForm defaultValues. Changing this + incrementing
   // formKey causes ScheduleForm to remount with fresh form state.
@@ -146,9 +166,10 @@ export function CreateTaskDialog({
   // Incrementing this key remounts ScheduleForm so useAppForm gets fresh defaultValues.
   const [formKey, setFormKey] = useState(0);
 
-  function applyFormValues(values: ScheduleFormValues) {
+  function applyFormValues(values: ScheduleFormValues, copy = false) {
     setFormValues(values);
     setFormKey((k) => k + 1);
+    setIsCopy(copy);
   }
 
   // Reset when dialog opens/closes or edit target changes.
@@ -199,6 +220,25 @@ export function CreateTaskDialog({
     setStep('form');
   }
 
+  function handleMakeCopy(values: ScheduleFormValues) {
+    const siblings = (allTasks ?? [])
+      .filter((task) => (task.agentId ?? '') === values.agentId)
+      .map((task) => task.name);
+    setSwitchOffOriginal(true);
+    applyFormValues(copyFormValues(values, siblings), true);
+  }
+
+  function handleSubmitSuccess() {
+    // A copy was just created; the package's own schedule is switched off if
+    // the person left that ticked. A switch is one of the two things a
+    // package's schedule takes on the row, so this cannot be refused as an
+    // edit, and a failure still reaches the shared toast.
+    if (isCopy && switchOffOriginal && editTask) {
+      updateTask.mutate({ id: editTask.id, enabled: false });
+    }
+    onOpenChange(false);
+  }
+
   function handleDelete() {
     if (!editTask) return;
     deleteTask.mutate(editTask.id, {
@@ -245,7 +285,7 @@ export function CreateTaskDialog({
       <ResponsiveDialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 p-0">
         <ResponsiveDialogHeader className="shrink-0 border-b px-4 py-3">
           <div className="flex items-center gap-2">
-            {step === 'form' && !editTask && (
+            {step === 'form' && !formTask && !isCopy && (
               <button
                 type="button"
                 onClick={() => setStep('preset-picker')}
@@ -257,9 +297,9 @@ export function CreateTaskDialog({
               </button>
             )}
             <ResponsiveDialogTitle>
-              {editTask ? 'Edit Schedule' : 'New Schedule'}
+              {formTask ? 'Edit Schedule' : 'New Schedule'}
             </ResponsiveDialogTitle>
-            {editTask && (
+            {formTask && (
               <Switch
                 className="ml-auto"
                 checked={localEnabled}
@@ -274,7 +314,7 @@ export function CreateTaskDialog({
             )}
           </div>
           <ResponsiveDialogDescription className="sr-only">
-            {editTask ? 'Edit an existing schedule' : 'Create a new schedule'}
+            {formTask ? 'Edit an existing schedule' : 'Create a new schedule'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -304,11 +344,31 @@ export function CreateTaskDialog({
             key={formKey}
             defaultValues={formValues}
             roster={roster}
-            editTask={editTask}
-            onSubmitSuccess={() => onOpenChange(false)}
+            editTask={formTask}
+            onSubmitSuccess={handleSubmitSuccess}
             onCancel={() => onOpenChange(false)}
             onDeleteClick={() => setDeleteConfirmOpen(true)}
             isPending={isPending}
+            onMakeCopy={handleMakeCopy}
+            leading={
+              isCopy && editTask ? (
+                <div className="flex items-start gap-2 rounded-md border px-3 py-2">
+                  <Checkbox
+                    id="copy-switch-off-original"
+                    checked={switchOffOriginal}
+                    onCheckedChange={(checked) => setSwitchOffOriginal(checked === true)}
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="copy-switch-off-original" className="text-sm font-normal">
+                      Switch off the package’s schedule
+                    </Label>
+                    <p className="text-muted-foreground text-xs">
+                      So “{editTask.name}” and your copy don’t both run.
+                    </p>
+                  </div>
+                </div>
+              ) : undefined
+            }
           />
         )}
       </ResponsiveDialogContent>

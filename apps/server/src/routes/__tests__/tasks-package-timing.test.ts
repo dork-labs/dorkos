@@ -68,7 +68,7 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
         projectPath: undefined,
       },
       undefined,
-      { source: 'discovery', packageOwned: true }
+      { source: 'discovery', packageOwned: 'record' }
     );
   }
 

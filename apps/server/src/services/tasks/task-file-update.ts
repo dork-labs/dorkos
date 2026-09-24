@@ -42,14 +42,19 @@ import {
   scheduleToFrontmatter,
   ScheduleBlockSchema,
   type ScheduleBlock,
+  type TaskDefinition,
 } from '@dorkos/skills';
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
+import { writeSkillFile } from '@dorkos/skills/writer';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
+import { matchesUserEditable } from '@dorkos/marketplace';
 import { installRootsUnder, projectScopeRoot } from '../marketplace/lib/install-roots.js';
 import { INSTALL_METADATA_PATH } from '../marketplace/installed-metadata.js';
+import { readInstalledFiles, type InstalledFiles } from '../marketplace/lib/installed-files.js';
 import { mergeTaskFrontmatter, type TaskFrontmatterWrite } from './task-frontmatter-merge.js';
 import type { TaskRoot } from './skills-roots.js';
+import { readTaskRootFile } from './skills-root-discovery.js';
 import { describeScheduleProblem } from './cron-validation.js';
 
 /**
@@ -202,22 +207,25 @@ export function landsOnRowAlone(changed: readonly string[]): boolean {
 }
 
 /**
- * Everything {@link isPackageOwned} needs to answer for one task's file.
+ * Everything {@link packageOwnershipOf} needs to find the install roots a task's
+ * file might sit in.
  *
- * Three limbs, because a package reaches a schedule three ways and no one of
- * them subsumes the others. Each is additive: any limb answering yes is enough,
- * and a limb that cannot answer (no mesh, no such root on disk) costs a `false`
- * rather than an exemption.
+ * Three ways to reach an install root, because a package reaches a schedule
+ * three ways and no one of them subsumes the others. Each only NAMES a
+ * candidate install root; the root's own installed-files record then decides
+ * (DOR-2272). A way that cannot answer (no mesh, no such root on disk) names
+ * nothing, rather than exempting anything.
  */
 export interface PackageOwnershipContext {
   /**
-   * Directories where being inside one is the whole answer — the `plugins/` and
-   * `shapes/` install roots of every scope in view.
+   * Directories holding only installs — the `plugins/` and `shapes/` install
+   * roots of every scope in view. For an install here with no record, being
+   * inside it is the whole legacy answer.
    */
   packageOnlyRoots: string[];
   /**
-   * The `agents/` install roots — shared with the agents a person makes, so a
-   * hit here is only ownership when the install directory carries a marker.
+   * The `agents/` install roots — shared with the agents a person makes, so an
+   * install here with no record is only a package when it carries a marker.
    */
   sharedInstallRoots: string[];
   /**
@@ -237,7 +245,7 @@ export interface PackageOwnershipContext {
  * from a package, that directory IS the install: `<dorkHome>/agents/<name>` for a
  * global install, `<repo>/.dork/agents/<name>` for a project-scoped one.
  *
- * ## Why all three limbs, and why neither alone
+ * ## Why all three, and why neither alone
  *
  * The FIRST version of this fix asked only whether the file sat under an
  * `agents/` root. That misses a project-scoped agent package entirely: the scope
@@ -256,10 +264,7 @@ export interface PackageOwnershipContext {
  * it. A protection that evaporates when a dependency is missing is worse than a
  * narrower one that does not (DOR-1789 re-review).
  *
- * So the marker-gated `agents/` walk is back BESIDE the probe rather than
- * instead of it. It cannot reintroduce the project-scope gap: that gap was a
- * root the derivation never produced, not a present root giving a wrong answer,
- * and adding a root back can only turn `false` into `true`.
+ * So the `agents/` walk stays BESIDE the probe rather than instead of it.
  *
  * @param dorkHome - The resolved data directory.
  * @param agentDir - The owning agent's own directory, when mesh named one.
@@ -315,91 +320,144 @@ export function rootPackageOwnershipContext(root: TaskRoot): PackageOwnershipCon
 }
 
 /**
- * Whether a file discovered in a skills root belongs to an installed package —
- * {@link isPackageOwned}, asked the way discovery can ask it.
+ * Whether a file discovered in a skills root belongs to an installed package,
+ * and how that is known — {@link packageOwnershipOf}, asked the way discovery
+ * can ask it.
  *
  * Discovery asks because ownership decides more than whether DorkOS may WRITE
  * the file: a file DorkOS refuses to write can never record a person's decision
  * to switch its schedule on, so that decision lives on the row and the sync must
- * not overwrite it (FB-26, `file-sync-gates.ts`).
+ * not overwrite it (FB-26, `file-sync-gates.ts`); and the row keeps the answer,
+ * so the sync sees the moment a file stops being a package's, and the app can
+ * show it (DOR-2272).
  *
  * @param filePath - The schedule's file, already resolved by discovery.
  * @param root - The skills root it was discovered in.
- * @returns True when an installed package owns it.
+ * @returns How a package owns it, or `null` when the file is the person's.
  */
-export async function isPackageOwnedInRoot(filePath: string, root: TaskRoot): Promise<boolean> {
-  return isPackageOwned(filePath, rootPackageOwnershipContext(root));
+export async function packageOwnershipInRoot(
+  filePath: string,
+  root: TaskRoot
+): Promise<PackageOwnershipKind | null> {
+  const ownership = await packageOwnershipOf(filePath, rootPackageOwnershipContext(root));
+  return ownership.owned ? ownership.by : null;
 }
 
 /**
- * The files whose presence in a directory say an install put it there.
+ * The files whose presence in a directory say an install put it there, asked
+ * only of an install root that has no installed-files record.
  *
  * `.dork/manifest.json` is the marketplace's own marker for a package on disk —
  * what `scanPackageDirectory` looks for and what the installed scanner reads.
  * `.dork/install-metadata.json` is the install's provenance sidecar, written
- * after every successful install.
- *
- * Belt and braces rather than two necessary limbs: for the `agentDir` probe the
- * manifest alone would almost certainly do, since the one documented way to
- * install without a `.dork/manifest.json` is a Claude-Code-native package, and
- * `synthesizeFromCcManifest` hardcodes `type: 'plugin'`, so such a package lands
- * in `plugins/` and is never an agent. The sidecar costs one `access` and covers
- * whatever that reasoning has not thought of; the manifest covers an install
- * whose best-effort sidecar write failed.
- *
- * Existence is the test, not readability: a manifest DorkOS cannot parse still
- * means an install lives here, and the conservative answer is to leave it alone.
+ * after every successful install. Either is enough; existence is the test, not
+ * readability: a manifest DorkOS cannot parse still means an install lives here.
  */
 const PACKAGE_MARKERS = [PACKAGE_MANIFEST_PATH, INSTALL_METADATA_PATH];
 
+/** How a package's ownership of a file is known: its record, or the legacy answer. */
+export type PackageOwnershipKind = 'record' | 'legacy';
+
 /**
- * Whether this file belongs to an installed marketplace package.
+ * Who a schedule's file belongs to, and how DorkOS knows.
  *
- * A skill installed from a package lives inside that package's checkout and is
- * reachable from an agent's `.agents/skills/` as a symlink. Editing it through
- * that link writes into the checkout: the change is invisible in the app's
- * provenance, it is shared by every agent that installed the package, and the
- * next package update overwrites it. So DorkOS does not do it. Approving such a
- * schedule is row state, which the caller reaches without a write at all.
+ * `record`: the install root's installed-files record lists it. `legacy`: the
+ * install predates records and the location-and-marker answer claimed it.
+ * `packageName` and `agentOwned` exist so a refusal can name the right owner: a
+ * path under an agent can lead, through a Harness Sync link, into a plugin that
+ * is not that agent's package at all.
+ */
+export type PackageOwnership =
+  | { owned: false }
+  | {
+      owned: true;
+      by: PackageOwnershipKind;
+      /** The owning package's name, from its record or manifest. */
+      packageName: string;
+      /** True when the owning install is the schedule's own agent directory. */
+      agentOwned: boolean;
+    };
+
+/** An install root a file sits in, and how to answer for it without a record. */
+interface CandidateInstall {
+  /** The install root, resolved. */
+  installRoot: string;
+  /** With no record: `location` claims the file outright; `marker` needs a marker. */
+  legacy: 'location' | 'marker';
+  /** Whether this install root is the owning agent's own directory. */
+  agentOwned: boolean;
+}
+
+/**
+ * Whether this file belongs to an installed marketplace package, and how that
+ * is known.
  *
- * Three ways a package owns a schedule, asked in cost order and ORed together:
+ * A file DorkOS writes inside a package's install root is kept or undone by the
+ * package's next update, and the installed-files record says which (DOR-2245):
+ * a file the record lists is replaced by the package's own copy unless the
+ * package marked it `userEditable`, and every file it does not list survives.
+ * So a file is the package's exactly when its install's record lists it (in
+ * `files` or under `ownedPaths`) and it does not match `userEditable`.
  *
- * 1. **The file sits in a plugin's or a Shape's checkout** — a `skillRef`
- *    schedule written into a skill the package ships
- *    (`materialize-schedules.ts`). Those roots hold nothing a person put there,
- *    so location settles it, with no marker read at all.
- * 2. **The file sits in an `agents/` root under an install that carries a
- *    marker.** Shared ground: that root also holds every agent a person makes,
- *    DorkBot included, so location alone would claim their schedules — the same
- *    bug pointed the other way. A hand-made agent has `.dork/agent.json` and no
- *    {@link PACKAGE_MARKERS} file; an agent package has `.dork/agent.json` AND a
- *    marker, because the install scaffolds the workspace on top of the package
- *    it just unpacked.
- * 3. **The owning AGENT is itself an installed package** — its whole directory
- *    is the checkout, so every schedule filed under it (shipped, generated, or
- *    created later through DorkOS, which writes to `agentSkillsRoot(agentDir)`)
- *    sits inside something the next update replaces.
+ * **The bytes are deliberately not compared.** `isProvenPackageFile` also
+ * requires them to match, which answers "may DorkOS delete this?" — a different
+ * question. An edited shipped file fails that test and is still replaced by the
+ * next update, so writing it would lose the edit to a `.dork-old` copy. The same
+ * holds for a `skillRef` schedule rewritten after its record was taken.
  *
- * **Limb 3 is the only one that reaches a project-scoped agent package**, whose
- * `<repo>/.dork/agents` root no derivation from the route's inputs produces.
- * **Limbs 1 and 2 are the only ones that survive without mesh** — `agentDir`
- * comes from `meshCore.getProjectPath`, which answers nothing when mesh failed
- * to initialize or when the agent has left the registry, and does not contain a
- * file some OTHER agent's skills root symlinks into the package. Neither set
- * covers the other, so both are asked (DOR-1789 re-review).
+ * A record left by an uninstall (`uninstalledAt`) lists only the edited files
+ * it kept, with no package left to put anything back: it claims nothing.
  *
- * Containment is required by limb 3 as well as by 1 and 2: an agent's row can
- * point at a file outside its own directory, and the agent being a package says
- * nothing about that file.
+ * **An install with no record** (made before DOR-2245, not yet updated) keeps
+ * the DOR-1789 answer, asked per install: a plugin or Shape install claims every
+ * file in it by location, and an `agents/` install or the owning agent's own
+ * directory claims every file in it when it carries a {@link PACKAGE_MARKERS}
+ * file. That fallback shrinks to nothing as installs are updated, because an
+ * update writes a record.
  *
- * Both sides are resolved before comparing — the file because the link is the
- * whole point, and the roots because a data directory or a checkout under a
- * symlinked parent is ordinary rather than exotic (every macOS temp directory is
- * one). An earlier version tested for a `plugins` path SEGMENT instead, which
- * both missed real installs and would have claimed any file under any directory
- * a person happened to name `plugins` (DOR-1485 review, residual 5).
+ * Candidates come from the three ways in {@link PackageOwnershipContext}, and any
+ * one claiming the file is enough: a plugin installed at project scope inside an
+ * agent package's directory is claimed by the plugin's record even though the
+ * agent's record does not list it.
  *
- * @param filePath - The file the route is about to edit.
+ * Paths are resolved before comparing — the file because a link from a skills
+ * root into a package is the ordinary case, and the roots because a data
+ * directory under a symlinked parent is ordinary too (every macOS temp
+ * directory is one). A file that does not exist yet (the create door asks
+ * before writing) is resolved through its deepest existing ancestor.
+ *
+ * @param filePath - The file the caller is about to write.
+ * @param ctx - Roots and agent directory, from {@link packageOwnershipContext}.
+ * @returns Whether a package owns it, and whether a record or the legacy
+ *   answer said so.
+ */
+export async function packageOwnershipOf(
+  filePath: string,
+  ctx: PackageOwnershipContext
+): Promise<PackageOwnership> {
+  const resolvedFile = await resolveThroughExisting(filePath);
+  for (const candidate of await candidateInstalls(resolvedFile, ctx)) {
+    const record = await readInstalledFiles(candidate.installRoot);
+    const { agentOwned } = candidate;
+    if (record) {
+      if (recordClaims(record, toPosix(path.relative(candidate.installRoot, resolvedFile)))) {
+        return { owned: true, by: 'record', packageName: record.package.name, agentOwned };
+      }
+      continue;
+    }
+    if (candidate.legacy === 'location' || (await hasPackageMarker(candidate.installRoot))) {
+      const packageName = await legacyPackageName(candidate.installRoot);
+      return { owned: true, by: 'legacy', packageName, agentOwned };
+    }
+  }
+  return { owned: false };
+}
+
+/**
+ * Whether this file belongs to an installed marketplace package and must not be
+ * written by DorkOS — {@link packageOwnershipOf}, as a yes or no.
+ *
+ * @param filePath - The file the caller is about to write.
  * @param ctx - Roots and agent directory, from {@link packageOwnershipContext}.
  * @returns True when the file is package-owned and must not be written.
  */
@@ -407,33 +465,74 @@ export async function isPackageOwned(
   filePath: string,
   ctx: PackageOwnershipContext
 ): Promise<boolean> {
-  const resolvedFile = await resolveOrSelf(filePath);
-  // 1 — location alone.
-  for (const root of ctx.packageOnlyRoots) {
-    if (await containsFile(root, resolvedFile)) return true;
-  }
-  // 2 — location plus a marker on the install the file sits in.
-  for (const root of ctx.sharedInstallRoots) {
-    const resolvedRoot = await resolveOrSelf(root);
-    if (!resolvedFile.startsWith(resolvedRoot + path.sep)) continue;
-    // The install's own directory is the first segment below the root; anything
-    // deeper is that install's contents. `path.relative` cannot escape here —
-    // the prefix test above already proved containment.
-    const [installDir] = path.relative(resolvedRoot, resolvedFile).split(path.sep);
-    if (installDir && (await hasPackageMarker(path.join(resolvedRoot, installDir)))) return true;
-  }
-  // 3 — the owning agent is the install.
-  if (ctx.agentDir === undefined) return false;
-  return (
-    (await containsFile(ctx.agentDir, resolvedFile)) &&
-    (await hasPackageMarker(await resolveOrSelf(ctx.agentDir)))
-  );
+  return (await packageOwnershipOf(filePath, ctx)).owned;
 }
 
-/** Whether `dir`, once resolved, is an ancestor of an already-resolved file. */
-async function containsFile(dir: string, resolvedFile: string): Promise<boolean> {
-  const resolvedDir = await resolveOrSelf(dir);
-  return resolvedFile.startsWith(resolvedDir + path.sep);
+/**
+ * The name an install without a record goes by: its DorkOS manifest's, else its
+ * Claude Code manifest's, else its directory's.
+ */
+async function legacyPackageName(installRoot: string): Promise<string> {
+  for (const manifest of [PACKAGE_MANIFEST_PATH, '.claude-plugin/plugin.json']) {
+    try {
+      const parsed = JSON.parse(await fs.readFile(path.join(installRoot, manifest), 'utf-8')) as {
+        name?: unknown;
+      };
+      if (typeof parsed.name === 'string' && parsed.name.trim() !== '') return parsed.name;
+    } catch {
+      // Missing or unreadable; the next source may still name it.
+    }
+  }
+  return path.basename(installRoot);
+}
+
+/** Whether a record says its package's next install puts its own copy of `rel` back. */
+function recordClaims(record: InstalledFiles, rel: string): boolean {
+  if (record.uninstalledAt !== undefined) return false;
+  const listed =
+    Object.hasOwn(record.files, rel) ||
+    record.ownedPaths.some((owned) => rel === owned || rel.startsWith(`${owned}/`));
+  return listed && !matchesUserEditable(rel, record.userEditable);
+}
+
+/**
+ * The install roots an already-resolved file sits in, de-duplicated, in the
+ * order the context names them.
+ */
+async function candidateInstalls(
+  resolvedFile: string,
+  ctx: PackageOwnershipContext
+): Promise<CandidateInstall[]> {
+  const found = new Map<string, CandidateInstall>();
+  const resolvedAgent = ctx.agentDir === undefined ? undefined : await resolveOrSelf(ctx.agentDir);
+  const add = (installRoot: string, legacy: CandidateInstall['legacy']) => {
+    if (found.has(installRoot)) return;
+    found.set(installRoot, { installRoot, legacy, agentOwned: installRoot === resolvedAgent });
+  };
+  for (const [roots, legacy] of [
+    [ctx.packageOnlyRoots, 'location'],
+    [ctx.sharedInstallRoots, 'marker'],
+  ] as const) {
+    for (const root of roots) {
+      const resolvedRoot = await resolveOrSelf(root);
+      if (!resolvedFile.startsWith(resolvedRoot + path.sep)) continue;
+      // The install's own directory is the first segment below the root;
+      // anything deeper is that install's contents. `path.relative` cannot
+      // escape here — the prefix test above already proved containment.
+      const [installDir, ...inside] = path.relative(resolvedRoot, resolvedFile).split(path.sep);
+      // A file standing directly in the root is in no install at all.
+      if (inside.length > 0) add(path.join(resolvedRoot, installDir), legacy);
+    }
+  }
+  if (resolvedAgent !== undefined && resolvedFile.startsWith(resolvedAgent + path.sep)) {
+    add(resolvedAgent, 'marker');
+  }
+  return [...found.values()];
+}
+
+/** A native relative path in the record's POSIX spelling. */
+function toPosix(relative: string): string {
+  return relative.split(path.sep).join('/');
 }
 
 /** Whether a directory carries one of the {@link PACKAGE_MARKERS}. */
@@ -450,17 +549,69 @@ async function hasPackageMarker(dir: string): Promise<boolean> {
 }
 
 /**
- * Whether an agent's own directory is an installed package's checkout.
- *
- * The CREATE-side half of {@link isPackageOwned}'s question 2, asked before a
- * new schedule is written rather than after. Exported because `create-task.ts`
- * has the agent directory and no file yet, so it cannot ask the other one.
- *
- * @param agentDir - The agent's own directory, from `meshCore.getProjectPath`.
- * @returns True when schedules filed under this agent belong to a package.
+ * `fs.realpath` of a path that may not exist yet: the deepest ancestor that
+ * does exist is resolved, and the rest is joined back on. A bare unresolved
+ * path would never match a resolved root under a symlinked parent.
  */
-export async function isPackageOwnedAgent(agentDir: string): Promise<boolean> {
-  return hasPackageMarker(await resolveOrSelf(agentDir));
+async function resolveThroughExisting(target: string): Promise<string> {
+  try {
+    return await fs.realpath(target);
+  } catch {
+    const parent = path.dirname(target);
+    if (parent === target) return target;
+    return path.join(await resolveThroughExisting(parent), path.basename(target));
+  }
+}
+
+/**
+ * Write the row's switch into a schedule file that has just stopped being a
+ * package's, when the two disagree (DOR-2272).
+ *
+ * While a package owned the file, DorkOS kept the person's switch on the row
+ * because it would not write the file (FB-26). The sync that finds the file is
+ * the person's now keeps that switch rather than copying the file's over it,
+ * and keeps the row's ownership until the file agrees
+ * (`FileSyncGates.packageOwnedToWrite`); this is the write that makes it agree.
+ * A failed write is therefore retried by the next sync, never lost.
+ *
+ * It writes only when all three still hold at the moment of writing, and
+ * otherwise leaves the file for the next sync to look at again:
+ *
+ * - the row and the file disagree about the switch;
+ * - no package owns the file NOW (asked again, not taken from the sync that
+ *   called: a package can be reinstalled in between);
+ * - the file still says what discovery parsed (read again and compared), so a
+ *   person's edit made since is never overwritten with a stale switch.
+ *
+ * A file DorkOS cannot fully read is left alone, as every other write does.
+ *
+ * @param task - The row as the sync just left it.
+ * @param def - The file as discovery parsed it.
+ * @param root - The skills root discovery found it in.
+ * @returns True when the file was rewritten.
+ */
+export async function carrySwitchIntoReleasedFile(
+  task: { enabled: boolean },
+  def: TaskDefinition,
+  root: TaskRoot
+): Promise<boolean> {
+  if (task.enabled === def.meta.schedule.enabled) return false;
+  if ((await packageOwnershipOf(def.filePath, rootPackageOwnershipContext(root))).owned) {
+    return false;
+  }
+  const content = await fs.readFile(def.filePath, 'utf-8');
+  const now = await readTaskRootFile(def.filePath, content, root);
+  if (now.kind !== 'schedule' || !sameContent(now.discovered.def, def)) return false;
+  const plan = planTaskFileUpdate(def.filePath, content, { enabled: task.enabled });
+  if (plan.kind === 'refuse') return false;
+  const dirPath = path.dirname(def.filePath);
+  await writeSkillFile(path.dirname(dirPath), path.basename(dirPath), plan.frontmatter, plan.body);
+  return true;
+}
+
+/** Whether two parses of a schedule file say the same thing (where it was walked in on aside). */
+function sameContent(a: TaskDefinition, b: TaskDefinition): boolean {
+  return JSON.stringify([a.meta, a.body]) === JSON.stringify([b.meta, b.body]);
 }
 
 /** `fs.realpath`, falling back to the path itself when it cannot be resolved. */

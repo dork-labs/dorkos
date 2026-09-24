@@ -12,6 +12,12 @@
  *   renders the failure itself (e.g. an inline form error), or the user sees
  *   the same problem reported twice in two different voices.
  *
+ *   A surface that renders ONE specific failure itself (with a way out) opts
+ *   out of that failure alone via `meta.isShownInline(error)`, asked when the
+ *   failure lands. It must answer false once the surface is gone (closed
+ *   before the server answered), or nobody sees the failure at all; every other
+ *   failure of the same mutation still toasts.
+ *
  *   Prefer `meta.errorLabel` over opting out. This handler is the only failure
  *   report that always reaches the user: it runs on the mutation itself
  *   (`mutation.js:148`), whereas a `mutate(…, { onError })` callback is
@@ -143,6 +149,9 @@ export function createQueryClientConfig(): QueryClientConfig {
           `${String(mutation.options?.mutationKey?.[0] ?? 'mutation')}: ${error.message}`
         );
         if (mutation.meta?.suppressErrorToast) return;
+        const isShownInline = mutation.meta?.isShownInline as
+          ((error: Error) => boolean) | undefined;
+        if (isShownInline?.(error)) return;
         // `errorLabel` names the action in the user's terms; the server's own
         // sentence says why. The authored line is the HEADLINE and the raw text
         // is the description under it (DOR-1755): they used to be joined with an

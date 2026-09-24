@@ -111,6 +111,7 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     defaultCron: '0 9 * * 1-5',
     defaultTimezone: null,
     timingOverridden: false,
+    packageOwned: null,
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     runtime: null,
