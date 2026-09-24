@@ -200,6 +200,33 @@ export function ScheduleApprovalShowcases() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
+        Waiting again after an agent changed how it runs — the card lists old → new (DOR-2323)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg">
+          <ScheduleApprovalCard
+            task={proposal({
+              id: 'task-settings-changed',
+              proposedBySessionId: null,
+              proposedByAgentPath: null,
+              proposedByName: null,
+              reasonSource: 'dorkos',
+              reason:
+                'An agent changed how this schedule runs, so it is waiting for you again. Check what changed, then approve it or change it back.',
+              runtime: 'codex',
+              model: 'gpt-5',
+              maxRuntime: 7_200_000,
+              approvalChanges: [
+                { field: 'runtime', from: null, to: 'codex' },
+                { field: 'model', from: 'claude-sonnet-4', to: 'gpt-5' },
+                { field: 'maxRuntime', from: 600_000, to: 7_200_000 },
+              ],
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
         In a narrow panel — the Inbox popover and the Pulse rail are both about this wide
       </ShowcaseLabel>
       <ShowcaseDemo>
