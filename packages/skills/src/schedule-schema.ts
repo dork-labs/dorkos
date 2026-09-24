@@ -368,8 +368,8 @@ export function scheduleProblem<T extends { schedule?: ScheduleField }>(meta: T)
  * exactly that size across any number of round trips.
  *
  * **It always returns a mapping, never `undefined`.** An all-default block
- * writes as `schedule: {}`, which round-trips exactly — gray-matter emits
- * `schedule: {}` and reads it back as `{}` — and, which matters more, keeps the
+ * writes as `schedule: {}`, which round-trips exactly — the frontmatter writer
+ * emits `schedule: {}` and reads it back as `{}` — and, which matters more, keeps the
  * key present: presence is what makes the file a scheduled task, so dropping it
  * would silently un-schedule the skill. Returning `undefined` would be worse
  * still, because the spread this helper is written for

@@ -50,11 +50,12 @@ const SUPERTEST_BAN = {
 
 // gray-matter `eval`s any frontmatter block that opens with `---js`, so reading
 // a package's markdown with it let the package run code in the server
-// (DOR-2308). Its one owner lives outside this package: `@dorkos/skills/
-// frontmatter`, which refuses those blocks. No server directory owns it, so no
-// `confineDirectory` call below filters it back out — it is banned everywhere
-// here, tests included. scripts/__tests__/gray-matter-import-boundary.test.ts
-// holds the same line across the whole repo.
+// (DOR-2308), and its comment-stripping regular expression is quadratic
+// (DOR-2311). Frontmatter is read by `@dorkos/skills/frontmatter`, which does
+// not use gray-matter at all. No directory owns it, so no `confineDirectory`
+// call below filters it back out: it is banned everywhere here, tests
+// included. scripts/__tests__/gray-matter-import-boundary.test.ts holds the
+// same line across the whole repo.
 const GRAY_MATTER_BAN = {
   group: ['gray-matter', 'gray-matter/*'],
   message:

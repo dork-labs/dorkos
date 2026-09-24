@@ -36,11 +36,11 @@ This is the shape to recognize, because the error never points at the cause: **a
 
 **Transient security pins** — the only reason is an unpatched advisory reachable through a transitive dependency we do not control. **Drop each one as soon as the dependency that pulls it in ships a version that resolves past it**; `pnpm audit` is the check.
 
-`lodash-es`, `dompurify`, `hono`, `@hono/node-server`, `axios`, `fast-uri`, `undici`, `form-data`, `tar`, `tmp`, `@xmldom/xmldom`, `brace-expansion@1|2|5`, `js-yaml@3|4`, `fflate@0.4`, `nanoid@5`, `uuid@11`, `linkify-it`, `ip-address`, `qs`, `body-parser`, `@babel/core`.
+`lodash-es`, `dompurify`, `hono`, `@hono/node-server`, `axios`, `fast-uri`, `undici`, `form-data`, `tar`, `tmp`, `@xmldom/xmldom`, `brace-expansion@1|2|5`, `js-yaml@4`, `fflate@0.4`, `nanoid@5`, `uuid@11`, `linkify-it`, `ip-address`, `qs`, `body-parser`, `@babel/core`.
 
 Two shapes worth copying when you add to this group:
 
-- **Per-major scoping.** `js-yaml@3` and `js-yaml@4` are separate entries because `gray-matter` needs the 3.x line and a blanket `^4` would break it. Same for `brace-expansion` and `uuid@11` (the direct `uuid` 13 dependency must not move), and for `fflate@0.4`: a bare `fflate` entry would drag the 0.8.x consumers down to the 0.4 line.
+- **Per-major scoping.** `brace-expansion@1`, `@2` and `@5` are separate entries because each line has consumers a blanket range would break (`js-yaml@3` had its own entry the same way until `gray-matter`, its only consumer, was removed in DOR-2311). Same for `uuid@11` (the direct `uuid` 13 dependency must not move), and for `fflate@0.4`: a bare `fflate` entry would drag the 0.8.x consumers down to the 0.4 line.
 - **Transitive-only.** `uuid@11` pins a transitive copy; the workspace's own `uuid` stays on 13.
 
 ## Version holds that are not overrides

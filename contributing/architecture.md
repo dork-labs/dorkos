@@ -877,7 +877,7 @@ Standard Vite React build. Server compiled separately via `tsc`.
 - **Target**: `node18` (Electron has Node.js runtime)
 - **Format**: CJS (Obsidian requires `module.exports`)
 - **External**: Obsidian API, CodeMirror, Lezer, all Node.js built-ins
-- **Bundled**: Claude Agent SDK, gray-matter, React, TanStack Query, all npm deps
+- **Bundled**: Claude Agent SDK, React, TanStack Query, all npm deps
 - **Output**: Single `main.js` file with `inlineDynamicImports`
 - CSS extracted to `styles.css` (auto-loaded by Obsidian)
 - **Build plugins**: `copyManifest`, `safeRequires`, `fixDirnamePolyfill`, `patchElectronCompat`

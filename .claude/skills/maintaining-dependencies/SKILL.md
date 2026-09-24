@@ -49,9 +49,10 @@ finding — if the parent has shipped a version that resolves past the
 advisory, bump the parent instead (ledger rule 1).
 
 **Scope the override to the major line that exists.** When the lockfile holds
-both `js-yaml@3` (for `gray-matter`) and `js-yaml@4`, a bare `js-yaml`
-override forces one version on both and breaks the consumer that needed the
-other line. Write `js-yaml@3` and `js-yaml@4` as separate entries. The same
+two major lines of one package (`brace-expansion@1`, `@2` and `@5` today; once
+`js-yaml@3` for `gray-matter` beside `js-yaml@4`), a bare override forces one
+version on all of them and breaks the consumer that needed another line. Write
+one entry per line. The same
 holds for 0.x lines — `fflate@0.4` beside an untouched `fflate@0.8`. After
 the relock, list the resolved lines again: the vulnerable one is gone and
 every other line is still there.

@@ -46,7 +46,7 @@
  * ## Why there is no regex fast-reject
  *
  * The spec allows skipping full validation on files with no `schedule:` key.
- * The saving is a `gray-matter` parse of a small file, measured in
+ * The saving is a frontmatter parse of a small file, measured in
  * microseconds, on tens of files every five minutes — and the cost of getting
  * it wrong is the failure the ADR names as this design's worst case: a schedule
  * that silently does not exist because a scanner misread the frontmatter. The
