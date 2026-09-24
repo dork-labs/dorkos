@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  FRONTMATTER_ENGINES,
+  FRONTMATTER_PARSERS,
+  FRONTMATTER_LIMITS,
   NonMappingFrontmatterError,
+  OversizedFrontmatterError,
   UnsupportedFrontmatterError,
   parseFrontmatter,
   stringifyFrontmatter,
@@ -149,14 +151,11 @@ describe('stringifyFrontmatter', () => {
 });
 
 describe('each layer holds on its own', () => {
-  // Purpose: layer 2 in isolation. Reaching the engines directly skips the
-  // language check, so this fails if the `eval` engine is ever un-replaced.
-  it.each(['javascript', 'js'] as const)('the `%s` engine refuses without running', (name) => {
-    const engine = FRONTMATTER_ENGINES[name];
-    expect(() => engine.parse(`{ a: (globalThis.${SENTINEL} = 1, 2) }`)).toThrow(
-      UnsupportedFrontmatterError
-    );
-    expect(sentinel()).toBeUndefined();
+  // Purpose: layer 2. There is no code engine to reach: the only parsers are
+  // the two data languages, so a spelling that slipped past the language
+  // check would still have nothing to run it.
+  it('has a parser for YAML and JSON and nothing else', () => {
+    expect(Object.keys(FRONTMATTER_PARSERS).sort()).toEqual(['json', 'yaml']);
   });
 
   // Purpose: layer 3. js-yaml v3's full-schema `load` builds these types; the
@@ -164,7 +163,7 @@ describe('each layer holds on its own', () => {
   it.each(['!!js/undefined ~', '!!js/regexp /x/', '!!js/function "function () {}"'])(
     'the YAML engine refuses `%s`',
     (tagged) => {
-      expect(() => FRONTMATTER_ENGINES.yaml.parse(`a: ${tagged}`)).toThrow();
+      expect(() => FRONTMATTER_PARSERS.yaml(`a: ${tagged}`)).toThrow();
     }
   );
 
@@ -207,5 +206,245 @@ describe('stringifyFrontmatter refuses values YAML cannot hold', () => {
     ['in a list', { name: 'a', tags: ['x', undefined] }],
   ])('throws on `undefined` at the %s', (_label, data) => {
     expect(() => stringifyFrontmatter('body', data)).toThrow(/undefined/);
+  });
+});
+
+/**
+ * A YAML alias bomb: nine levels, each a list of nine aliases to the level
+ * below, so a few hundred bytes describe 9^9 leaves once expanded (DOR-2311).
+ */
+function aliasBomb(levels = 9, width = 9): string {
+  const names = 'abcdefghijklmnop';
+  const lines = [`a: &a [${Array(width).fill('"x"').join(', ')}]`];
+  for (let i = 1; i < levels; i++) {
+    lines.push(
+      `${names[i]}: &${names[i]} [${Array(width)
+        .fill(`*${names[i - 1]}`)
+        .join(', ')}]`
+    );
+  }
+  return `---\n${lines.join('\n')}\n---\nbody\n`;
+}
+
+describe('frontmatter has a size budget (DOR-2311)', () => {
+  // Purpose: the reviewer's repro. A ~540-byte block that expands
+  // exponentially is refused while parsing, before any caller walks or
+  // serialises it, and quickly.
+  it('refuses a YAML alias bomb, fast', () => {
+    const content = aliasBomb();
+    expect(content.length).toBeLessThan(700);
+    const started = Date.now();
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  // Purpose: aliases to one long string amplify by characters, not nodes. The
+  // budget counts expanded characters too.
+  it('refuses a long string repeated through aliases', () => {
+    const long = 'y'.repeat(20_000);
+    const refs = Array(200).fill('*s').join(', ');
+    const content = `---\ns: &s "${long}"\nt: [${refs}]\n---\n`;
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+  });
+
+  // Purpose: nesting depth is bounded, so a recursive walker downstream cannot
+  // overflow its stack. (js-yaml stops at 100 on its own; 80 sits between
+  // that and this limit, so it is this check that refuses it.)
+  it.each([
+    ['YAML', `---\na: ${'['.repeat(80)}${']'.repeat(80)}\n---\n`],
+    ['JSON', `---json\n{"a": ${'['.repeat(200)}${']'.repeat(200)}}\n---\n`],
+  ])('refuses %s nested deeper than the limit', (_label, content) => {
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+  });
+
+  // Purpose: the walk after parsing alone. js-yaml limits nesting in the
+  // text, but an alias placed deep inside another deep list stacks the two
+  // depths once expanded; the walk counts the expanded depth.
+  it('refuses nesting that aliases stack past the limit', () => {
+    const deep = (inner: string) => `${'['.repeat(40)}${inner}${']'.repeat(40)}`;
+    const content = `---\na: &a ${deep('1')}\nb: ${deep('*a')}\n---\n`;
+    expect(() => parseFrontmatter(content)).toThrow(/nested more than 64 levels/);
+  });
+
+  // Purpose: the raw block has a byte cap, whatever it contains.
+  it.each([
+    ['YAML', (n: string) => `---\nnote: "${n}"\n---\n`],
+    ['JSON', (n: string) => `---json\n{"note": "${n}"}\n---\n`],
+  ])('refuses a %s block over the byte cap', (_label, make) => {
+    const content = make('z'.repeat(FRONTMATTER_LIMITS.maxBlockBytes));
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+  });
+
+  // Purpose: the budget sits at the engine, so it holds even with the
+  // language check and gray-matter out of the way.
+  it('bounds the YAML engine itself', () => {
+    expect(() => FRONTMATTER_PARSERS.yaml(aliasBomb().split('---')[1])).toThrow(
+      OversizedFrontmatterError
+    );
+  });
+
+  // Purpose: ordinary anchors and aliases, and a long body, are unaffected.
+  it('still reads small anchors and aliases, and ignores body length', () => {
+    const content = `---\nbase: &b { model: fast, tags: [a, b] }\nother: *b\n---\n${'long body '.repeat(20_000)}`;
+    expect(parseFrontmatter(content).data).toEqual({
+      base: { model: 'fast', tags: ['a', 'b'] },
+      other: { model: 'fast', tags: ['a', 'b'] },
+    });
+  });
+
+  // Purpose: the refusal reads as plain words a package author can act on.
+  it('says what is wrong in plain words', () => {
+    expect(() => parseFrontmatter(aliasBomb())).toThrow(/too large/i);
+  });
+});
+
+describe('nothing costs much before a limit refuses it (DOR-2311 review)', () => {
+  /** A generous bound for a slow CI runner; each case takes milliseconds. */
+  const FAST_MS = 2_000;
+
+  /** Time one call that must throw an OversizedFrontmatterError. */
+  function refusedWithin(content: string): number {
+    const started = Date.now();
+    expect(() => parseFrontmatter(content)).toThrow(OversizedFrontmatterError);
+    return Date.now() - started;
+  }
+
+  // Purpose: gray-matter stripped comments with a quadratic regular expression
+  // before any engine ran, so a blank or comment-only block over the cap cost
+  // seconds to minutes and never reached a size check. The cap now comes first.
+  it.each([
+    ['blank lines', '---\n' + ' \n'.repeat(500_000) + '---\n'],
+    ['comment lines', '---\n' + '# note\n'.repeat(150_000) + '---\n'],
+    ['blank lines, no closing fence', '---\n' + ' \n'.repeat(500_000)],
+  ])('refuses a %s block over the cap quickly', (_label, content) => {
+    expect(refusedWithin(content)).toBeLessThan(FAST_MS);
+  });
+
+  // Purpose: the cap counts UTF-8 bytes, not UTF-16 code units: 12,000 CJK
+  // characters are 36 KB.
+  it('measures the cap in UTF-8 bytes', () => {
+    refusedWithin(`---\na: "${'漢'.repeat(12_000)}"\n---\n`);
+  });
+
+  // Purpose: a flow list used as a key is turned into a string by js-yaml
+  // while it parses, joining every aliased value in it. The alias charge stops
+  // the parse before that join, inside the byte cap.
+  it('refuses an aliased list used as a mapping key, quickly', () => {
+    const content = `---\ns: &s "${'x'.repeat(20_000)}"\nl: &l [${Array(90).fill('*s').join(',')}]\nm: {[*l]: 1}\n---\n`;
+    expect(Buffer.byteLength(content)).toBeLessThan(FRONTMATTER_LIMITS.maxBlockBytes);
+    expect(refusedWithin(content)).toBeLessThan(FAST_MS);
+  });
+
+  // Purpose: the per-collection size check alone. An alias used as a mapping
+  // key is joined into one string while js-yaml parses, before any walk after
+  // the parse could refuse it; sizing each list as it finishes stops the chain
+  // at the first level that grows too large.
+  it('refuses an alias chain used as a mapping key, quickly', () => {
+    const content = aliasBomb().replace('\n---\nbody', '\nz: {*i : 1}\n---\nbody');
+    expect(refusedWithin(content)).toBeLessThan(FAST_MS);
+  }, 10_000);
+
+  // Purpose: merge keys copy every key of the aliased mapping.
+  it('refuses repeated merges of a large mapping', () => {
+    const keys = Array.from({ length: 1_500 }, (_, i) => `k${i}: 0`).join(', ');
+    const content = `---\na: &a {${keys}}\nb: [${Array(99).fill('{<<: *a}').join(',')}]\n---\n`;
+    expect(Buffer.byteLength(content)).toBeLessThan(FRONTMATTER_LIMITS.maxBlockBytes);
+    expect(refusedWithin(content)).toBeLessThan(FAST_MS);
+  });
+
+  // Purpose: an explicit `? ` key naming a large aliased list is joined into
+  // a string while js-yaml parses. Sizing each list as it finishes refuses it,
+  // with no special rule for `? ` keys.
+  it('refuses aliased lists used as explicit keys, quickly', () => {
+    const content = `---\ns: &s "${'x'.repeat(25_000)}"\nl: &l [${Array(39).fill('*s').join(',')}]\nm: [${Array(60).fill('{? *l : 1}').join(',')}]\n---\n`;
+    expect(Buffer.byteLength(content)).toBeLessThan(FRONTMATTER_LIMITS.maxBlockBytes);
+    expect(refusedWithin(content)).toBeLessThan(FAST_MS);
+    expect(() => parseFrontmatter(content)).toThrow(/expands to more than/);
+  });
+
+  // Purpose: ordinary explicit keys, and `?` in quoted values and block
+  // scalars, read as they always did.
+  it.each([
+    ['an explicit key', '? a\n: 1', { a: 1 }],
+    ['a quoted value', 'q: "What, ? really"', { q: 'What, ? really' }],
+    ['a block scalar line', 'd: |\n  ? not a key\n  more', { d: '? not a key\nmore\n' }],
+  ])('reads %s', (_label, block, data) => {
+    expect(parseFrontmatter(`---\n${block}\n---\n`).data).toEqual(data);
+  });
+
+  // Purpose: a typed collection such as `!!pairs` builds new values after its
+  // children close; sizing it must not mistake them for a recursive alias.
+  it('reads !!pairs', () => {
+    expect(parseFrontmatter('---\na: !!pairs [ {x: 1}, {y: 2} ]\n---\n').data).toEqual({
+      a: [
+        ['x', 1],
+        ['y', 2],
+      ],
+    });
+  });
+
+  // Purpose: a typed collection's built values are sized too, so a large one
+  // is refused. (Counting them as 1 would still be refused by the walk after
+  // parsing; this pins that the size is right, not only that a net exists.)
+  it('refuses a !!pairs that expands past the budget', () => {
+    const content = `---\ns: &s "${'x'.repeat(25_000)}"\nl: &l [${Array(30).fill('*s').join(',')}]\np: !!pairs [ {a: *l}, {b: *l} ]\n---\n`;
+    expect(() => parseFrontmatter(content)).toThrow(/expands to more than/);
+  });
+
+  // Purpose: a mapping whose first key is an alias is not itself an alias.
+  it('reads an alias used as a key in a list item', () => {
+    expect(parseFrontmatter('---\nl: &l [a, b]\nm:\n  - *l : 1\n---\n').data).toEqual({
+      l: ['a', 'b'],
+      m: [{ 'a,b': 1 }],
+    });
+  });
+
+  // Purpose: a question mark in prose is not a key.
+  it('reads a question mark inside a value', () => {
+    expect(parseFrontmatter('---\ndescription: What is it? A test.\n---\n').data).toEqual({
+      description: 'What is it? A test.',
+    });
+  });
+
+  // Purpose: the alias count is capped on its own, even for tiny values.
+  it('refuses more than the allowed number of aliases', () => {
+    const refs = Array(FRONTMATTER_LIMITS.maxAliases + 1)
+      .fill('*a')
+      .join(',');
+    expect(() => parseFrontmatter(`---\na: &a 1\nb: [${refs}]\n---\n`)).toThrow(
+      /more than 100 YAML aliases/
+    );
+    const ok = Array(FRONTMATTER_LIMITS.maxAliases).fill('*a').join(',');
+    expect(parseFrontmatter(`---\na: &a 1\nb: [${ok}]\n---\n`).data.b).toHaveLength(100);
+  });
+
+  // Purpose: a `*` inside a comment is not an alias.
+  it('does not count a star in a comment as an alias', () => {
+    expect(parseFrontmatter('---\n# see *important*\na: 1\n---\n').data).toEqual({ a: 1 });
+  });
+
+  // Purpose: an alias to a collection that contains it would expand forever.
+  it('refuses a recursive alias', () => {
+    expect(() => parseFrontmatter('---\na: &a [1, *a]\n---\n')).toThrow(
+      /refers to a value that contains it/
+    );
+  });
+});
+
+describe('fences split the way gray-matter split them', () => {
+  // Purpose: parity with the rules every existing file was written against.
+  it.each([
+    ['no frontmatter', 'hello\n', {}, 'hello\n'],
+    ['empty content', '', {}, ''],
+    ['byte-order mark', '﻿---\na: 1\n---\nbody', { a: 1 }, 'body'],
+    ['CRLF', '---\r\na: 1\r\n---\r\nbody\r\n', { a: 1 }, 'body\r\n'],
+    ['four dashes is not a fence', '----\na: 1\n', {}, '----\na: 1\n'],
+    ['no closing fence', '---\na: 1\n', { a: 1 }, ''],
+    ['empty block', '---\n---\nbody', {}, 'body'],
+    ['dashes later in the body', '---\na: 1\n---\nx\n---\ny', { a: 1 }, 'x\n---\ny'],
+    ['closing line with text after it', '---\na: 1\n---more\nbody', { a: 1 }, 'more\nbody'],
+    ['language tag', '---yaml\na: 1\n---\nbody', { a: 1 }, 'body'],
+  ])('%s', (_label, content, data, body) => {
+    expect(parseFrontmatter(content)).toEqual({ data, content: body });
   });
 });

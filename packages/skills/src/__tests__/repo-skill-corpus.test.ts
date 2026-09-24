@@ -3,8 +3,8 @@
  *
  * `.agents/skills/writing-for-humans/SKILL.md` sat unparseable for two months
  * (DOR-1828): its `description:` held `read: changelog …`, and an unquoted
- * `: ` inside a plain YAML scalar is a nested-mapping error. gray-matter gave
- * the schema an empty object, the scanner logged "name: expected string,
+ * `: ` inside a plain YAML scalar is a nested-mapping error. The reader then
+ * gave the schema an empty object, the scanner logged "name: expected string,
  * received undefined" once per project the skill was projected into, and the
  * skill quietly did not exist for any agent. Nothing red, nothing failing,
  * one warning line in a server log nobody reads.
@@ -16,6 +16,7 @@ import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { OversizedFrontmatterError, parseFrontmatter } from '../frontmatter.js';
 import { parseSkillFile } from '../parser.js';
 import { SkillFrontmatterSchema } from '../schema.js';
 
@@ -44,5 +45,32 @@ describe('every SKILL.md in the repo parses with the production schema', () => {
       }
     );
     expect(result.ok, result.ok ? '' : result.error).toBe(true);
+  });
+});
+
+describe('every markdown file in the repo reads within the frontmatter limits (DOR-2311)', () => {
+  const trackedMarkdown = execFileSync('git', ['ls-files', '--', '*.md'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+    .split('\n')
+    .filter((line) => line.length > 0);
+
+  // Purpose: the limits must sit well above anything real. Across the repo,
+  // the marketplace, dork-plugins and installed Claude Code plugins (7,181
+  // files, checked by hand when the limits were set) no header was refused
+  // and old and new readers agreed on every file. This keeps that true for
+  // everything this repo tracks as it grows.
+  it('refuses no tracked file for size, aliases or explicit keys', () => {
+    expect(trackedMarkdown.length).toBeGreaterThan(1_000);
+    const refused = trackedMarkdown.filter((relativePath) => {
+      try {
+        parseFrontmatter(readFileSync(path.join(repoRoot, relativePath), 'utf8'));
+        return false;
+      } catch (err) {
+        return err instanceof OversizedFrontmatterError;
+      }
+    });
+    expect(refused).toEqual([]);
   });
 });

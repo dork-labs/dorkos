@@ -123,7 +123,6 @@ const config: KnipConfig = {
         'conf',
         'cors',
         'express',
-        'gray-matter',
         'uuid',
       ],
       // No `ignoreUnresolved: [/^\.\.\/server\//]` any more. The CLI still

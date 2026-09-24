@@ -7,33 +7,35 @@ import { describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 15_000 });
 
 /**
- * The one file allowed to import gray-matter. gray-matter `eval`s any
- * frontmatter block that opens with `---js`, so reading a package's markdown
- * with it directly let the package run code in the server (DOR-2308). The
- * wrapper refuses those blocks; everything else, tests included, goes through
- * it. There is no test allowlist on purpose: a test that parses fixtures with
- * raw gray-matter teaches the next reader that raw gray-matter is fine.
+ * gray-matter is not used anywhere in the repo, and must not come back. It
+ * `eval`s any frontmatter block that opens with `---js` (DOR-2308), and before
+ * any parser runs it strips comments with a regular expression that is
+ * quadratic in the block's length (DOR-2311). `@dorkos/skills/frontmatter`
+ * reads frontmatter itself instead. No file is allowed, tests included: a test
+ * that parses fixtures with raw gray-matter teaches the next reader that raw
+ * gray-matter is fine.
  *
- * ESLint enforces the same boundary in the packages that can resolve the
- * dependency (apps/server, packages/skills); this scan covers every other file,
- * including packages that could add the dependency later.
+ * ESLint bans the same import in apps/server and packages/skills; this scan
+ * covers every other file, including packages that could add the dependency
+ * later.
  */
-const GRAY_MATTER_OWNER = 'packages/skills/src/frontmatter.ts';
 
 /**
- * Detect every import spelling of gray-matter or any path inside it: static,
- * side-effect, dynamic, re-export and CommonJS, with a quoted or
- * template-literal specifier.
+ * Detect every load of gray-matter or any path inside it, however it is
+ * written: `import ... from` or a bare `import '...'`, or the name as the first
+ * argument of any call, which covers `require(...)`, `import(...)`,
+ * `createRequire(...)(...)` and `require.resolve(...)`. Any quote style,
+ * template literals included.
  */
 function importsGrayMatter(source: string): boolean {
   const packageName = ['gray', 'matter'].join('-');
   return new RegExp(
-    String.raw`(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)(['"\x60])${packageName}(?:/[^'"\x60]*)?\1`
+    String.raw`(?:\b(?:from|import)\s*|\(\s*)(['"\x60])${packageName}(?:/[^'"\x60]*)?\1`
   ).test(source);
 }
 
-describe('gray-matter import boundary (DOR-2308)', () => {
-  it('confines every repository import to the safe frontmatter wrapper', () => {
+describe('gray-matter import boundary (DOR-2308, DOR-2311)', () => {
+  it('finds no import of gray-matter anywhere in the repository', () => {
     const files = execFileSync(
       'git',
       [
@@ -56,10 +58,9 @@ describe('gray-matter import boundary (DOR-2308)', () => {
       .split('\n')
       .filter((path) => path.length > 0 && existsSync(path));
     expect(files.length).toBeGreaterThan(100);
-    expect(files).toContain(GRAY_MATTER_OWNER);
 
     const importers = files.filter((path) => importsGrayMatter(readFileSync(path, 'utf8')));
-    expect(importers).toEqual([GRAY_MATTER_OWNER]);
+    expect(importers).toEqual([]);
   });
 
   it('recognises each import spelling the scan must catch', () => {
@@ -77,6 +78,9 @@ describe('gray-matter import boundary (DOR-2308)', () => {
     // A template-literal specifier is still a static string.
     expect(importsGrayMatter('const m = require(`' + name + '`);')).toBe(true);
     expect(importsGrayMatter('const m = await import(`' + name + '/lib/parse.js`);')).toBe(true);
+    // Indirect loaders pass the name as a call's first argument.
+    expect(importsGrayMatter(`const m = createRequire(import.meta.url)('${name}');`)).toBe(true);
+    expect(importsGrayMatter(`const where = require.resolve('${name}');`)).toBe(true);
     // Mentions that are not imports, and look-alike packages, do not match.
     expect(importsGrayMatter(`// see ${name} docs`)).toBe(false);
     expect(importsGrayMatter(`import x from '${name}-extra';`)).toBe(false);

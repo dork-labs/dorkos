@@ -52,11 +52,9 @@ export interface ParseSkillFileOptions {
 /**
  * Split content into frontmatter and body, trimming the body.
  *
- * Goes through {@link parseFrontmatter}, which refuses executable frontmatter
- * (`---js`, DOR-2308) and skips gray-matter's cache. The cache matters here
- * too: gray-matter caches a placeholder BEFORE it parses, so a malformed
- * SKILL.md used to fail one way on the first read in a process and another way
- * on every later one.
+ * Goes through {@link parseFrontmatter}, which refuses executable and
+ * oversized frontmatter (DOR-2308, DOR-2311) and keeps no cache, so the answer
+ * depends on the content alone.
  *
  * @param content - Raw file content (UTF-8).
  * @returns The frontmatter mapping and the trimmed body.

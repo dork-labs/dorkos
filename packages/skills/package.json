@@ -71,7 +71,6 @@
   },
   "dependencies": {
     "@dorkos/shared": "workspace:*",
-    "gray-matter": "^4.0.3",
     "js-yaml": "^4.3.2",
     "zod": "^4.6.2"
   },
