@@ -86,6 +86,21 @@ describe('formatDisclosureChanges', () => {
       'unknown',
     ]);
   });
+
+  it('carries the installed value beside a changed row, and only there (M-2)', () => {
+    const next = {
+      ...NOTHING,
+      hooks: [hook('curl new | sh')],
+      mcpServers: [server('db', 'db-mcp --v2')],
+    };
+    const now = { ...NOTHING, mcpServers: [server('db', 'db-mcp')] };
+
+    const [added, changed] = formatDisclosureChanges(next, now, 'global');
+
+    expect(added?.previous).toBeUndefined();
+    expect(changed?.row.label).toBe('"db-mcp --v2"');
+    expect(changed?.previous?.label).toBe('"db-mcp"');
+  });
 });
 
 describe('summarizeUpdateDisclosures', () => {
@@ -134,5 +149,23 @@ describe('ConfirmUpdatesDialog', () => {
 
     await user.click(within(dialog).getByRole('button', { name: 'Update Fmt' }));
     expect(onConfirm).toHaveBeenCalledWith([item]);
+  });
+
+  it('shows what the installed version runs next to a changed row (M-2)', async () => {
+    const item = stale(
+      'db',
+      { ...NOTHING, mcpServers: [server('db', 'db-mcp --serve-everything')] },
+      { ...NOTHING, mcpServers: [server('db', 'db-mcp')] }
+    );
+
+    render(<ConfirmUpdatesDialog stale={[item]} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Changed')).toBeInTheDocument();
+    const before = within(dialog).getByRole('list', {
+      name: 'What the installed version runs instead',
+    });
+    expect(before).toHaveTextContent('db-mcp');
+    expect(before).not.toHaveTextContent('--serve-everything');
   });
 });

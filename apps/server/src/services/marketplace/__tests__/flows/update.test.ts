@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { applyAsShown } from '../apply-as-shown.js';
-import { shippedContentHash } from '../../lib/content-hash.js';
+import { packageContentHash } from '../../lib/content-hash.js';
 import type { MarketplaceJson, PluginPackageManifest, SourceKey } from '@dorkos/marketplace';
 import { UPDATE_CHECK_CONCURRENCY, UPDATE_MEMO_TTL_MS, UpdateFlow } from '../../flows/update.js';
 import {
@@ -1145,7 +1145,7 @@ describe('UpdateFlow', () => {
       });
 
       expect(plan.checks[0]).toMatchObject({
-        contentHash: await shippedContentHash(staged),
+        contentHash: await packageContentHash(staged),
         installedDisclosed: expect.objectContaining({
           hooks: [expect.objectContaining({ command: 'echo old' })],
         }),

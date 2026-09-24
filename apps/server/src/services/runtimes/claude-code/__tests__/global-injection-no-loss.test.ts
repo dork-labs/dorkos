@@ -37,6 +37,7 @@ import { join } from 'node:path';
 import { buildClaudeAgentSdkPluginsArray } from '../messaging/plugin-activation.js';
 import { listEnabledPluginNames } from '../../../marketplace/installed-scanner.js';
 import {
+  bindingOf,
   globalActivationEntry,
   partitionGlobalPlugins,
   readActivationState,
@@ -87,6 +88,18 @@ function installGlobalPackage(name: string): void {
     join(dir, '.mcp.json'),
     JSON.stringify({ mcpServers: { thing: { command: 'thing-server' } } })
   );
+  // The record the installer writes when a package lands: an approval binds
+  // this hash (DOR-2306). A fixed value is enough here; nothing re-hashes it.
+  writeFileSync(
+    join(dir, '.dork', 'install-metadata.json'),
+    JSON.stringify({
+      name,
+      version: '1.0.0',
+      type: 'plugin',
+      installedAt: '2026-09-24T00:00:00Z',
+      contentHash: `sha256:${'a'.repeat(64)}`,
+    })
+  );
 }
 
 beforeEach(() => {
@@ -110,9 +123,11 @@ describe('case 10: global SDK injection survives the user tier', () => {
       (await partitionGlobalPlugins(dorkHome, { approved: [], refused: [] })).activate
     ).toEqual([]);
     const reading = await readActivationState(join(dorkHome, 'plugins', 'globex'));
-    if (!('effects' in reading)) throw new Error('the staged package should be readable');
+    if (!('effects' in reading) || !reading.subject) {
+      throw new Error('the installed package should be readable and recorded');
+    }
     const { activate: enabled } = await partitionGlobalPlugins(dorkHome, {
-      approved: [globalActivationEntry('globex', reading.effects, reading.contentHash)],
+      approved: [globalActivationEntry('globex', reading.effects, bindingOf(reading.subject))],
       refused: [],
     });
     expect(enabled).toContain('globex');

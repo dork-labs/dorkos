@@ -2341,13 +2341,14 @@ const InstalledPackageSchema = z.object({
     ),
   heldBack: z
     .object({
-      reason: z.enum(['unasked', 'refused', 'unreadable', 'unreadable-config']),
+      reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
       note: z.string(),
       reviewable: z.boolean(),
+      linkedPath: z.string().optional(),
     })
     .optional()
     .describe(
-      'Present only on a global installation held back from every session until a person approves it as it is (DOR-2306).'
+      'Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder.'
     ),
 });
 
@@ -2964,14 +2965,15 @@ registry.registerPath({
 
 const LocalHeldBackPackageSchema = z.object({
   name: z.string(),
-  reason: z.enum(['unasked', 'refused', 'unreadable', 'unreadable-config']),
+  reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
   note: z.string(),
   reviewable: z.boolean(),
+  linkedPath: z.string().optional(),
   version: z.string().optional(),
   source: z.string().optional(),
   changedSinceApproval: z.boolean(),
   effects: DisclosedEffectsSchema.optional(),
-  contentHash: z.string().optional(),
+  bindsTo: z.string().optional(),
 });
 
 registry.registerPath({
@@ -2981,8 +2983,9 @@ registry.registerPath({
   summary: 'List global packages held back from every session',
   description:
     'A globally installed package that runs things on its own loads into sessions only when a ' +
-    'person approved it exactly as it is (its files and what it runs). Each entry says why it is ' +
-    'held back, what it runs, and the content hash a decision is bound to.',
+    'person approved the install that put it there (the content hash recorded when it landed) ' +
+    'and what it runs. A linked install is approved by its folder instead. Each entry says why ' +
+    'it is held back, what it runs, and `bindsTo`: what a decision is bound to.',
   responses: {
     200: {
       description: 'Every held-back package',
@@ -3017,15 +3020,21 @@ registry.registerPath({
   tags: ['Marketplace'],
   summary: "Record the person's allow or refuse for a held-back package",
   description:
-    'The person only: an agent is refused. Bound to the content hash the person was shown; a ' +
-    'package that changed since is not decided by it.',
+    'The person only: the same bar as deciding an approval card. An agent is refused, and with ' +
+    'sign-in on, so is anything but a signed-in session (decide on the Review card instead). ' +
+    'Send back `effects` and `bindsTo` exactly as listed; a package that changed since is not ' +
+    'decided by it.',
   request: {
     params: z.object({ name: z.string() }),
     body: {
       content: {
         'application/json': {
           schema: z
-            .object({ decision: z.enum(['allow', 'refuse']), contentHash: z.string().min(1) })
+            .object({
+              decision: z.enum(['allow', 'refuse']),
+              effects: DisclosedEffectsSchema,
+              bindsTo: z.string().min(1),
+            })
             .strict(),
         },
       },
@@ -3034,7 +3043,9 @@ registry.registerPath({
   responses: {
     204: { description: 'Recorded' },
     403: {
-      description: 'Not the person',
+      description:
+        'Not the person (`operator_only`), or sign-in is on and this is not a signed-in ' +
+        'session (`operator_cookie_required`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {

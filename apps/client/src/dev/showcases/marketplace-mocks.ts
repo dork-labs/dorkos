@@ -354,11 +354,16 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     scope: 'global',
     installPath: '/Users/kai/.dork/plugins/obsidian-sync',
     installedAt: '2026-03-01T14:30:00Z',
-    // Held back from every session: its files changed since it was approved.
+    linked: true,
+    // A linked install nobody approved yet: held back from every session, and
+    // its note says an approval covers whatever is in its folder (DOR-2306).
     heldBack: {
       reason: 'unasked',
       reviewable: true,
-      note: 'Held back: its files changed since you approved it. Review it to decide.',
+      linkedPath: '/Users/kai/src/obsidian-sync',
+      note:
+        'Held back: you have not approved it as it is now. Linked: it runs whatever is in ' +
+        '/Users/kai/src/obsidian-sync. Review it to decide.',
     },
   },
   {

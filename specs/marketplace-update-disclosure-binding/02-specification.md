@@ -37,8 +37,9 @@ See `01-ideation.md` §1 and §3. In short: `marketplace.install` is tier `act`,
 - Extensions approved by id (`extension-load-policy.ts`). Same class, documented there, and gated by a separate person-approval (`approvedToRun`). A follow-up.
 - Project installs' hooks: already gated at projection (`project-with-consent.ts`); unchanged.
 - Files outside the package that a hook's script reads at run time (the package's own bytes are bound; see D3).
+- **A local process editing an installed package's files on disk.** An approval binds what arrives through DorkOS's install and update channel (code fetched from a source, by the app, the CLI, or an agent's MCP or HTTP call). Anything running as the person, an agent's shell included, can already write `~/.claude/settings.json` hooks or any script directly, so re-hashing the install folder buys no real boundary. The hash is recorded at the install event and never recomputed from the live folder (round 2 below).
 - Shapes and agents installed by an agent: they are not loaded into sessions by the SDK, so the agent-install card (D2b) covers plugins, skill-packs and adapters only.
-- Any change to `marketplace-installer.ts` (DOR-2245 is rebasing onto it).
+- Changes to `marketplace-installer.ts` beyond two lines and one helper (DOR-2245 is rebasing onto it): `installStaged` records the landed hash in the install metadata, `stageAndValidate` refuses a package that ships DorkOS's runtime state, and the new module helper `recordableContentHash`.
 
 ## Technical Dependencies
 
@@ -140,13 +141,13 @@ Unit tests for the partition order, the entry form, the card wait loop (grant/de
 
 ## Performance Considerations
 
-A check now builds a preview for each stale installation (the MCP apply already does). Activation reads a few small files per global plugin at boot and on each package change.
+A check now builds a preview for each stale installation (the MCP apply already does). Activation reads a few small files per global plugin (its declarations and its install metadata) at boot and on each package change, and hashes nothing. Hashing happens once per install, preview and update check.
 
 ## Security Considerations
 
 - The trust line is `trustedCaller`, the same one every gated route uses; with login off a caller that omits its agent header counts as the person (DOR-505), a residual shared with every such route. Require login closes it.
 - `harness.approvedHooks` is operator-only through every DorkOS write path; a raw shell can still edit `config.json`, the residual `hook-consent.ts` states.
-- A hook's script content is not bound (stated limit, as in `hook-consent.ts`).
+- A global package's script content is bound as it arrived (its install's recorded hash); a later local edit is outside the boundary (Non-Goals).
 
 ## Documentation
 
@@ -180,3 +181,19 @@ The adversarial review (CHANGES_REQUIRED) proved that binding an approval to a p
 - **M3.** An older CLI's apply is answered with a 400 `client_outdated` telling the person to update the CLI.
 - **UX.** The confirm marks each thing a new version runs as New or Changed against the installed version (`installedDisclosed` on each check), folds unchanged ones behind a count, and opens with a summary line. Commands wrap at `/` and quotes, and paths wrap instead of truncating.
 - **Content hashing and DOR-2245 / DOR-2197.** DOR-2245 (not merged) hashes files for ownership (`lib/installed-files.ts`: per-file SHA-256 in a record). Sharing its helper would couple this security fix to an unmerged branch, so `lib/content-hash.ts` is written to be adopted: `hashTree(root, { skip })` and `TreeHashCache`. DOR-2197 can store `hashTree` in `InstallMetadata`; when DOR-2245 lands, its `userEditable` matcher belongs in the installed-hash skip.
+
+## Review delta (round 2, 2026-09-24): bind to the install event
+
+The delta review confirmed C1 closed and corrected the design; this section is the decision, and supersedes round 1's I1 and the live-tree hashing in its D3.
+
+- **Threat boundary.** See Non-Goals: approval binds what arrives through the install and update channel, not a local process editing files.
+- **Bind to the install event.** After a successful install or update, the installer records the landed tree's content hash in the install metadata (`InstallMetadata.contentHash`, `lib/content-hash.ts` `packageContentHash`, the same function the preview, the update check and the update target use). Activation compares the stored approval against that recorded hash plus the declarations read at refresh. The per-turn re-check, the `lstat` fingerprint cache (`TreeHashCache`) and `installedContentHash` are removed. The runtime refreshes at boot and after every marketplace change. The preview (`POST /packages/:name/preview`) and the detail (`GET /packages/:name`) now return `contentHash`, which the app and CLI send back as `approvedContentHash`.
+- **Unrecorded.** A package whose install metadata has no hash is held back with reason `unrecorded` ("installed before approvals were recorded; review it"), which leads to the Review card. The card shows it as it is now; a decision on the card or in the terminal writes that hash into its metadata, then records the decision. A package with no metadata file at all says to reinstall it.
+- **I-1, fail closed.** An error reading one package holds that package back as `unreadable` with the error. If the whole partition throws, the runtime loads no global plugin; it never keeps the previous list.
+- **I-2, withdrawn plugins.** A plugin reload can add a plugin but never unload one (it re-reads the launched paths). So when the wanted plugin set drops a plugin a warm process loaded, `compareLaunchFingerprints` answers relaunch (`changed` includes `plugins`), before the next turn. The fan-out reload after a shrinking refresh is never held for cache cost.
+- **I-3, unhashed paths.** Chosen: refuse, not strip. A staged package that ships any runtime-state path (`.dork/data`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`) is refused at stage (`assertShipsNoRuntimeState`, 400 with the path) by preview, install and update alike. Stripping would silently install something other than what the author published, and a shipped install record could otherwise stand in for the installer's own if its write failed. A declaration whose command, arguments or executable point into one of those paths (matched as whole segments after folding `//` and `/./`) makes the package `unreadable`, never approvable.
+- **I-4, deciding outside a card.** `POST /held-back/:name/decision` takes the same bar as the approvals decide route: `trustedCaller`, which under sign-in requires a session cookie. An agent gets `operator_only`; an API key under sign-in gets `operator_cookie_required` with a message pointing to the app's Review button, which `dorkos marketplace held-back --allow|--refuse` prints in plain words.
+- **I-6, linked installs.** Chosen: approve by path. A linked global install (the folder is a symbolic link to a developer's working copy) has no install event; pinning bytes a developer edits all day would teach them to click yes. Its approval binds its name, declarations and real path (`linked:<realpath>`); retargeting the link, or changing what it declares, asks again. Its card, row and CLI say "Linked: it runs whatever is in <path>".
+- **Decision binding.** A held-back decision is bound to an opaque `bindsTo` (`sha256:…` or `linked:<path>`) plus the `effects` the listing showed, both sent back exactly as listed.
+- **M-2.** A Changed row in the update confirm shows the installed value beside the new one ("Installed now").
+- **Mobile.** On a phone the held-back row's Review button sits on its own line under the note.

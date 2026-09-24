@@ -25,7 +25,7 @@
  *
  * @module services/marketplace-mcp/tool-install
  */
-import { shippedContentHash } from '../marketplace/lib/content-hash.js';
+import { packageContentHash } from '../marketplace/lib/content-hash.js';
 import { z } from 'zod';
 
 import {
@@ -206,7 +206,7 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
     // the installed copy must hash the same as to be recorded (DOR-2306).
     let contentHash: string;
     try {
-      contentHash = await shippedContentHash(preview.packagePath);
+      contentHash = await packageContentHash(preview.packagePath);
     } catch (err) {
       return errorContent(err, 'INSTALL_FAILED');
     }

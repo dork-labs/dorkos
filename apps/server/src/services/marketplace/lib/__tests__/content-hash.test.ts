@@ -1,16 +1,19 @@
 /**
  * Tests for the package content hash (DOR-2306): what it binds, what it skips,
- * and the cache that re-hashes only when a tree was written.
+ * and the refusal of a package that ships DorkOS's runtime state.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmod, mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
+  assertShipsNoRuntimeState,
   hashTree,
   isRuntimeStatePath,
-  shippedContentHash,
-  TreeHashCache,
+  packageContentHash,
+  RUNTIME_STATE_PATHS,
+  ShipsRuntimeStateError,
   TreeUnhashableError,
 } from '../content-hash.js';
 
@@ -63,56 +66,69 @@ describe('hashTree', () => {
 
   it('skips DorkOS runtime state, and nothing else by default', async () => {
     // Purpose: saving settings or secrets must not look like a changed package.
-    const base = await hashTree(root, { skip: isRuntimeStatePath });
+    const base = await hashTree(root, isRuntimeStatePath);
     await mkdir(path.join(root, '.dork', 'data'), { recursive: true });
     await writeFile(path.join(root, '.dork', 'data', 'settings.json'), '{}');
     await writeFile(path.join(root, '.dork', 'secrets.json'), '{}');
     await writeFile(path.join(root, '.dork', 'install-metadata.json'), '{}');
-    expect(await hashTree(root, { skip: isRuntimeStatePath })).toBe(base);
+    expect(await hashTree(root, isRuntimeStatePath)).toBe(base);
 
     await writeFile(path.join(root, '.dork', 'manifest.json'), '{}');
-    expect(await hashTree(root, { skip: isRuntimeStatePath })).not.toBe(base);
+    expect(await hashTree(root, isRuntimeStatePath)).not.toBe(base);
   });
 
-  it('records an in-tree link by its target, and refuses one that leaves the tree', async () => {
+  it('leaves links out, in the tree or out of it (the install strips them)', async () => {
+    const base = await hashTree(root);
     await symlink('fmt.sh', path.join(root, 'hooks', 'alias'));
-    await expect(hashTree(root)).resolves.toMatch(/^sha256:/);
-
     await symlink('/etc/hosts', path.join(root, 'hooks', 'escape'));
+    expect(await hashTree(root)).toBe(base);
+  });
+
+  it('refuses a tree holding something that is not a file, a folder or a link', async () => {
+    execFileSync('mkfifo', [path.join(root, 'hooks', 'pipe')]);
     await expect(hashTree(root)).rejects.toBeInstanceOf(TreeUnhashableError);
   });
 });
 
-describe('shippedContentHash', () => {
-  it('ignores what the install writes itself: node_modules, the lockfile, .npmrc and links', async () => {
+describe('packageContentHash', () => {
+  it('ignores what the install writes itself: node_modules, the lockfile, .npmrc and .git', async () => {
     // Purpose: a preview of the staged package and its installed copy must
     // hash the same when the package is the same.
-    const staged = await shippedContentHash(root);
+    const staged = await packageContentHash(root);
     await mkdir(path.join(root, 'node_modules', 'x'), { recursive: true });
     await writeFile(path.join(root, 'node_modules', 'x', 'index.js'), '1');
     await writeFile(path.join(root, 'package-lock.json'), '{}');
     await writeFile(path.join(root, '.npmrc'), 'x');
-    await symlink('fmt.sh', path.join(root, 'hooks', 'alias'));
+    await mkdir(path.join(root, '.git'));
+    await writeFile(path.join(root, '.git', 'HEAD'), 'ref');
 
-    expect(await shippedContentHash(root)).toBe(staged);
+    expect(await packageContentHash(root)).toBe(staged);
+  });
+
+  it('still covers a nested node_modules, which the install did not write', async () => {
+    const base = await packageContentHash(root);
+    await mkdir(path.join(root, 'hooks', 'node_modules'), { recursive: true });
+    await writeFile(path.join(root, 'hooks', 'node_modules', 'x.js'), '1');
+    expect(await packageContentHash(root)).not.toBe(base);
   });
 });
 
-describe('TreeHashCache', () => {
-  it('re-hashes only when the tree was written, and sees a same-size rewrite with the old mtime', async () => {
-    // Purpose: activation checks every turn, cheaply, and a hostile rewrite
-    // that restores size and mtime still changes ctime, so it is caught.
-    const file = path.join(root, 'hooks', 'fmt.sh');
-    // A whole-second mtime, so restoring it later is exact.
-    await utimes(file, 1_700_000_000, 1_700_000_000);
-    const cache = new TreeHashCache();
-    const first = await cache.hash(root, 'k');
-    expect(await cache.hash(root, 'k')).toBe(first);
+describe('assertShipsNoRuntimeState (the I-3 refusal)', () => {
+  it('passes a package that ships none of it', async () => {
+    await mkdir(path.join(root, '.dork'));
+    await writeFile(path.join(root, '.dork', 'manifest.json'), '{}');
+    await expect(assertShipsNoRuntimeState(root)).resolves.toBeUndefined();
+  });
 
-    // Same size, same inode, same mtime: only ctime tells.
-    await writeFile(file, 'echo evil\n');
-    await utimes(file, 1_700_000_000, 1_700_000_000);
-
-    expect(await cache.hash(root, 'k')).not.toBe(first);
+  it.each(RUNTIME_STATE_PATHS)('refuses a package that ships %s', async (kept) => {
+    // Purpose: files there are left out of the hash an approval binds, so a
+    // package must not be able to arrive with code (or a forged install
+    // record) in them.
+    const target = path.join(root, ...kept.split('/'));
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, '{}');
+    const refused = assertShipsNoRuntimeState(root);
+    await expect(refused).rejects.toBeInstanceOf(ShipsRuntimeStateError);
+    await expect(refused).rejects.toThrow(kept);
   });
 });

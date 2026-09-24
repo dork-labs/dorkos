@@ -50,6 +50,7 @@ import { skillFileProblems, type SkillPackInstallFlow } from './flows/install-sk
 import type { UninstallFlow } from './flows/uninstall.js';
 import { reportInstallEvent, type InstallEvent } from './telemetry-hook.js';
 import { writeInstallMetadata } from './installed-metadata.js';
+import { assertShipsNoRuntimeState, packageContentHash } from './lib/content-hash.js';
 import { locateInstallRoot } from './lib/locate-install.js';
 import {
   deriveSourceProvenance,
@@ -440,6 +441,10 @@ export class MarketplaceInstaller implements InstallerLike {
           ...(materialized.generatedPaths.length > 0 && {
             generatedSchedulePaths: materialized.generatedPaths,
           }),
+          // What landed, hashed at the install event: what a person's approval
+          // of a global package binds (DOR-2306). Left out if it cannot be
+          // hashed, which holds the package back until someone reviews it.
+          ...(await recordableContentHash(result.installPath)),
         });
       } catch (metaErr) {
         this.deps.logger.warn('[marketplace-installer] failed to write install-metadata.json', {
@@ -766,6 +771,10 @@ export class MarketplaceInstaller implements InstallerLike {
         .map((i) => i.message);
       throw new InvalidPackageError(errorMessages);
     }
+    // A package may not ship DorkOS's runtime state (settings, secrets, install
+    // records): files there are left out of the content hash an approval binds,
+    // and a shipped install record must never stand in for ours (DOR-2306).
+    await assertShipsNoRuntimeState(staged.path);
 
     return {
       resolved,
@@ -1058,4 +1067,19 @@ function recordSourceOf(
   }
   if (resolved.localPath) return { localPath: path.resolve(resolved.localPath) };
   return undefined;
+}
+
+/**
+ * The landed package's content hash for the install metadata, or nothing when
+ * it cannot be hashed (DOR-2306).
+ *
+ * @param installPath - The landed install root.
+ * @internal
+ */
+async function recordableContentHash(installPath: string): Promise<{ contentHash?: string }> {
+  try {
+    return { contentHash: await packageContentHash(installPath) };
+  } catch {
+    return {};
+  }
 }

@@ -292,10 +292,7 @@ import { onProjectorTurnBoundary } from './services/session/session-state-projec
 import { subscribeRuntimeTurns } from './services/session/runtime-turns/runtime-turn.js';
 import { DEFAULT_CWD } from './lib/resolve-root.js';
 import { describeHookProjectionCapability } from './services/harness/hook-approval.js';
-import {
-  globalConsentRecorder,
-  listConsentedPluginNames,
-} from './services/marketplace/global-plugin-consent.js';
+import { globalConsentRecorder } from './services/marketplace/global-plugin-consent.js';
 import {
   askAboutWithheldGlobalPlugins,
   describeGlobalActivationCapability,
@@ -1289,10 +1286,6 @@ async function start() {
     claudeRuntime.warmup().catch((err) => {
       logger.warn('[Startup] Model warm-up failed (will retry on first API call)', { err });
     });
-
-    // Every turn re-checks that each global package it loads is still one a
-    // person approved as it is now (DOR-2306).
-    claudeRuntime.setConsentedPluginNames(() => listConsentedPluginNames(dorkHome));
 
     // Non-blocking plugin scan — populates activatedPlugins cache so the first
     // session picks up any previously installed marketplace plugins (ADR-0239).

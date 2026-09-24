@@ -37,7 +37,8 @@ import { initBoundary } from '../../../lib/boundary.js';
 import { disclosedEffectsOf } from '../disclosed-effects.js';
 import { globalConsentRecorder, partitionGlobalPlugins } from '../global-plugin-consent.js';
 import { buildInstallerForTests } from './installer-harness.js';
-import { shippedContentHash } from '../lib/content-hash.js';
+import { packageContentHash, ShipsRuntimeStateError } from '../lib/content-hash.js';
+import { readInstallMetadata } from '../installed-metadata.js';
 
 const FIXTURE = path.join(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -99,10 +100,12 @@ describe('global activation consent, through the real installer', () => {
 
     // The staged files the person saw, as the preview hashes them.
     const { packagePath } = await installer.preview({ name: source });
-    const contentHash = await shippedContentHash(packagePath);
+    const contentHash = await packageContentHash(packagePath);
 
     // Held back until someone approves it...
     const result = await installer.install({ name: source, approvedDisclosure: shown });
+    // ...with the install event recorded: the landed copy hashes as staged.
+    expect((await readInstallMetadata(result.installPath))?.contentHash).toBe(contentHash);
     expect((await partitionGlobalPlugins(dorkHome)).withheld.map((w) => w.reason)).toEqual([
       'unasked',
     ]);
@@ -118,4 +121,27 @@ describe('global activation consent, through the real installer', () => {
       withheld: [],
     });
   });
+
+  it.each(['.dork/data/run.sh', '.dork/secrets.json', '.dork/install-metadata.json'])(
+    'refuses, before writing anything, a package that ships %s (I-3)',
+    async (shipped) => {
+      // Purpose: those paths are left out of the hash an approval binds, so a
+      // package that arrives with code, secrets or its own install record in
+      // them is refused at the preview and at the install alike.
+      await mkdir(path.dirname(path.join(source, shipped)), { recursive: true });
+      await writeFile(
+        path.join(source, shipped),
+        '{"contentHash":"sha256:' + '0'.repeat(64) + '"}'
+      );
+      const { installer } = buildInstallerForTests(dorkHome);
+
+      await expect(installer.preview({ name: source })).rejects.toBeInstanceOf(
+        ShipsRuntimeStateError
+      );
+      await expect(installer.install({ name: source })).rejects.toBeInstanceOf(
+        ShipsRuntimeStateError
+      );
+      expect((await partitionGlobalPlugins(dorkHome)).withheld).toEqual([]);
+    }
+  );
 });

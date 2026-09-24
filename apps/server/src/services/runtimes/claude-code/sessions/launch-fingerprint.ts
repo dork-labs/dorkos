@@ -330,8 +330,13 @@ export interface RelaunchDecision {
   readonly action: 'relaunch';
   readonly from: LaunchFingerprint;
   readonly to: LaunchFingerprint;
-  /** Every pin that moved, in {@link PIN_DISPOSITIONS} order. Never empty. */
-  readonly changed: readonly RelaunchPin[];
+  /**
+   * Every pin that moved, in {@link PIN_DISPOSITIONS} order. Never empty.
+   * `plugins` appears only when the wanted set DROPS a plugin the process
+   * loaded ({@link withdrawnPlugins}); a plugin set that only grows is still
+   * applied live.
+   */
+  readonly changed: readonly (RelaunchPin | 'plugins')[];
   /** A log-safe sentence naming the pins. Carries no secret. */
   readonly reason: string;
 }
@@ -442,6 +447,30 @@ function describePlugins(plugins: readonly SdkPluginConfig[] | undefined): strin
     .map((plugin) => `${plugin.type}:${plugin.path}`)
     .sort()
     .join(FIELD_SEP);
+}
+
+/**
+ * The plugins a running process loaded that the wanted launch no longer hands
+ * it: a package withdrawn from global activation, or uninstalled (DOR-2306).
+ *
+ * The `plugins` pin is otherwise live, but `reloadPlugins` re-reads the plugin
+ * paths the process was LAUNCHED with, so it can add what a new path brings
+ * and can never take a launched plugin away. A process that loaded a plugin
+ * nobody approves any more has to be relaunched before its next turn, and the
+ * relaunch is never held for what it costs the prompt cache.
+ *
+ * @param live - The plugins the running process was launched with
+ * @param wanted - The plugins this dispatch would launch with
+ * @returns The descriptors of every live plugin missing from `wanted`
+ */
+function withdrawnPlugins(
+  live: readonly SdkPluginConfig[] | undefined,
+  wanted: readonly SdkPluginConfig[] | undefined
+): string[] {
+  const kept = new Set((wanted ?? []).map((plugin) => `${plugin.type}:${plugin.path}`));
+  return (live ?? [])
+    .map((plugin) => `${plugin.type}:${plugin.path}`)
+    .filter((descriptor) => !kept.has(descriptor));
 }
 
 /** The identity pin as a comparable descriptor. */
@@ -659,14 +688,19 @@ export function compareLaunchFingerprints(
     }
     if (live.pins[pin] !== wanted.pins[pin]) changed.add(pin);
   }
-  if (changed.size > 0) {
-    const moved = RELAUNCH_PINS.filter((pin) => changed.has(pin));
+  const withdrawn = withdrawnPlugins(live.live.plugins, wanted.live.plugins);
+  if (changed.size > 0 || withdrawn.length > 0) {
+    const moved: (RelaunchPin | 'plugins')[] = RELAUNCH_PINS.filter((pin) => changed.has(pin));
+    if (withdrawn.length > 0) moved.push('plugins');
     return {
       action: 'relaunch',
       from: live,
       to: wanted,
       changed: moved,
-      reason: `relaunching: ${moved.join(', ')} changed since this process was launched`,
+      reason:
+        changed.size > 0
+          ? `relaunching: ${moved.join(', ')} changed since this process was launched`
+          : 'relaunching: a plugin this process loaded was withdrawn',
     };
   }
   return {

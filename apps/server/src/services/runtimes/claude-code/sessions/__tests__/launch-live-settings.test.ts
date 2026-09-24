@@ -262,6 +262,33 @@ describe('prepareDispatch', () => {
     expect(decision.action === 'relaunch' && decision.changed).toEqual(['cwd']);
   });
 
+  it('relaunches when a plugin the process loaded is dropped, and says so (DOR-2306)', () => {
+    const both = [
+      { type: 'local' as const, path: '/plugins/kept' },
+      { type: 'local' as const, path: '/plugins/withdrawn' },
+    ];
+    const decision = prepareDispatch(
+      capture({ options: options({ plugins: both }) }),
+      capture({ options: options({ plugins: [both[0]!] }) })
+    );
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['plugins']);
+    expect(decision.action === 'relaunch' && decision.reason).toMatch(/withdrawn/);
+    expect(
+      decideProcessReuse(
+        capture({ options: options({ plugins: both }) }),
+        capture({ options: options({ plugins: [] }) })
+      ).action
+    ).toBe('replace');
+  });
+
+  it('names both a moved pin and a withdrawn plugin', () => {
+    const decision = prepareDispatch(
+      capture({ options: options({ plugins: [{ type: 'local', path: '/plugins/gone' }] }) }),
+      capture({ options: options({ cwd: '/elsewhere' }) })
+    );
+    expect(decision.action === 'relaunch' && decision.changed).toEqual(['cwd', 'plugins']);
+  });
+
   it('never answers reuse across accounts', () => {
     const decision = prepareDispatch(
       capture(),

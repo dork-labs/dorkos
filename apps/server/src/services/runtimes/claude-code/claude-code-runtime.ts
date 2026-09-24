@@ -209,23 +209,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private activatedPlugins: Array<{ type: 'local'; path: string }> = [];
 
   /**
-   * The global packages a person approved as they are now
-   * (`marketplace/global-plugin-consent.ts`), re-read at the start of every
-   * turn (DOR-2306). Injected at boot by {@link setConsentedPluginNames}; a
-   * runtime built without it (tests) re-checks only on a refresh.
-   */
-  private consentedPluginNames: (() => Promise<string[]>) | undefined;
-
-  /**
-   * Re-check the consented global packages at the start of every turn.
-   *
-   * @param list - Lists the global packages that may load right now.
-   */
-  setConsentedPluginNames(list: () => Promise<string[]>): void {
-    this.consentedPluginNames = list;
-  }
-
-  /**
    * cwds with a command-cache warm probe currently in flight. Dedupes
    * concurrent `getCommands` calls so one cold cwd spawns at most one probe.
    */
@@ -607,7 +590,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     let observedEvent = false;
     let sawRuntimeError = false;
     try {
-      if (this.consentedPluginNames) await this.revalidateActivatedPlugins();
       const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
       const stream = this.persistent.shouldDispatch(sessionId)
         ? this.persistent.dispatch({
@@ -701,38 +683,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * broadcast fires unconditionally so a freshly-loaded palette (cold cache)
    * still re-fetches and the install's effect is visible.
    *
-   * Best-effort throughout — filesystem scan or reload failures leave the
-   * previous value in place so a single misbehaving plugin never blocks
-   * sessions.
+   * A reload can add a plugin but never take one away, so a warm process that
+   * loaded a plugin the new set drops is relaunched before its next turn
+   * instead (`sessions/launch-fingerprint.ts`, DOR-2306); for the same reason a
+   * reload after the set SHRANK is never held for what it costs the prompt
+   * cache.
+   *
+   * Fails closed: a scan that cannot say which global packages a person
+   * approved leaves every global plugin out. Reload failures are per session
+   * and never block the others.
    */
   async refreshActivatedPlugins(changedProjectPath?: string): Promise<void> {
-    return this.refreshActivatedPluginsNow(changedProjectPath);
-  }
-
-  /**
-   * Re-check, at the start of a turn, that every global package the SDK is
-   * handed is still one a person approved as it is now (DOR-2306). A package
-   * edited on disk since the last refresh is caught here rather than running
-   * until the next install. Cheap: each package's content hash is re-computed
-   * only when an `lstat` walk sees something in it written. When the set
-   * changed, it runs the full refresh, which also reloads live sessions.
-   *
-   * Best-effort like the refresh: a failed check leaves the list as it was.
-   */
-  private async revalidateActivatedPlugins(): Promise<void> {
-    if (!this.consentedPluginNames) return;
-    try {
-      const now = await this.consentedPluginNames();
-      const current = this.activatedPlugins.map((p) => p.path.split(/[\\/]/).pop());
-      const same = now.length === current.length && now.every((name, i) => name === current[i]);
-      if (!same) await this.refreshActivatedPluginsNow();
-    } catch {
-      // Best-effort; the next refresh or turn checks again.
-    }
-  }
-
-  /** The body of {@link refreshActivatedPlugins}. */
-  private async refreshActivatedPluginsNow(changedProjectPath?: string): Promise<void> {
+    const before = this.activatedPlugins.map((plugin) => plugin.path);
     try {
       const { resolveDorkHome } = await import('../../../lib/dork-home.js');
       const { listConsentedPluginNames } =
@@ -753,13 +715,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         });
       }
     } catch {
-      // Best-effort; leave the previous value in place.
+      // Fail closed (DOR-2306): a refresh that cannot say which global packages
+      // a person approved loads none of them, rather than keeping a list that
+      // may hold one nobody approves any more.
+      this.activatedPlugins = [];
     }
 
     // Hot-reload every live session so its cached command list reflects the
     // new plugin set instantly, then tell clients to re-fetch. Isolated from
     // the plugin-array swap above so a reload failure never reverts it.
-    await this.reloadCommandsForLiveSessions();
+    const kept = new Set(this.activatedPlugins.map((plugin) => plugin.path));
+    await this.reloadCommandsForLiveSessions({
+      mayHold: before.every((pluginPath) => kept.has(pluginPath)),
+    });
 
     // A PROJECT-scoped install/uninstall changes which commands that project's
     // sessions report, but only sessions launched after the change see the new
@@ -789,8 +757,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * each session's reload goes through the cost check rather than paying a
    * cache rebuild on all of them at the same moment. A reload the person
    * triggered by hand does not come through here; see {@link reloadPlugins}.
+   *
+   * @param options.mayHold - False when the new set dropped a plugin: nothing
+   *   waits on the cache then (the process itself is relaunched before its
+   *   next turn, since a reload cannot unload a plugin).
    */
-  private async reloadCommandsForLiveSessions(): Promise<void> {
+  private async reloadCommandsForLiveSessions({ mayHold }: { mayHold: boolean }): Promise<void> {
     const reloadable = this.sessionStore.getReloadableSessions();
     if (reloadable.length === 0) return;
     await Promise.all(
@@ -798,6 +770,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         const queryObj = session.activeQuery ?? session.lastQuery;
         if (!queryObj) return;
         const contextTokens = conversationTokens(session);
+        if (!mayHold) {
+          // A plugin was withdrawn: never wait on the cache for it.
+          try {
+            await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd);
+          } catch (err) {
+            logger.debug('[refreshActivatedPlugins] session hot-reload failed', {
+              sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return;
+        }
         try {
           const asked = await this.cache.reloadPlugins(queryObj, session.cwd, this.cwd, {
             holdOnCacheImpact: true,
@@ -1158,7 +1142,6 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         this.cwd
       );
       const cwdKey = session.cwd || this.cwd;
-      if (this.consentedPluginNames) await this.revalidateActivatedPlugins();
       const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
       return this.persistent.stage(sessionId, content, opts, session, senderOpts);
     }

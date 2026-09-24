@@ -1060,14 +1060,24 @@ export interface InstalledPackage {
 }
 
 /** Why a global package is held back from sessions. */
-export type HeldBackReason = 'unasked' | 'refused' | 'unreadable' | 'unreadable-config';
+export type HeldBackReason =
+  'unasked' | 'refused' | 'unrecorded' | 'unreadable' | 'unreadable-config';
 
 /** A global package held back from every session, and what a person can do about it. */
 export interface HeldBackState {
-  /** Why it is held back. */
+  /**
+   * Why it is held back. `unrecorded`: it was installed before DorkOS recorded
+   * what an approval binds, so a person reviews it as it is now.
+   */
   reason: HeldBackReason;
   /** One plain sentence saying why, and what to do. */
   note: string;
+  /**
+   * Set for a LINKED install (the install folder is a link to a developer's
+   * working copy): the folder it runs from. Its approval covers whatever is in
+   * that folder, so the listing and the card say so.
+   */
+  linkedPath?: string;
   /**
    * Whether an approval card can be raised for it. False when it cannot be
    * shown in full: something in it could not be read, the settings file could
@@ -1079,7 +1089,7 @@ export interface HeldBackState {
 
 /**
  * One held-back global package as `GET /api/marketplace/held-back` lists it:
- * everything a person needs to decide, and the content hash a decision binds.
+ * everything a person needs to decide, and what a decision binds.
  */
 export interface HeldBackPackage extends HeldBackState {
   /** The package's directory name. */
@@ -1088,12 +1098,16 @@ export interface HeldBackPackage extends HeldBackState {
   version?: string;
   /** Where it was installed from, when recorded. */
   source?: string;
-  /** Whether an earlier approval exists for other bytes: it changed since then. */
+  /** Whether an earlier approval exists for another install: it changed since then. */
   changedSinceApproval: boolean;
-  /** What it runs, when it could be read. */
+  /** What it runs, when it could be read. Sent back with a decision. */
   effects?: DisclosedEffects;
-  /** The content hash an allow or refuse is bound to, when it could be read. */
-  contentHash?: string;
+  /**
+   * What an allow or refuse is bound to, when it can be decided: the content
+   * hash its install recorded (`sha256:…`), or `linked:<path>` for a linked
+   * install. Opaque: send it back with {@link effects} exactly as listed.
+   */
+  bindsTo?: string;
 }
 
 // ---------------------------------------------------------------------------

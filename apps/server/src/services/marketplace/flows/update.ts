@@ -50,7 +50,7 @@
 import { isRealCommitSha } from '@dorkos/marketplace';
 import type { InstallRequest, InstallResult } from '../types.js';
 import { disclosedEffectsOf, type DisclosedEffects } from '../disclosed-effects.js';
-import { shippedContentHash } from '../lib/content-hash.js';
+import { packageContentHash } from '../lib/content-hash.js';
 import { readRunnableDeclarations } from '../permission-preview.js';
 import type { InstallationRecord } from '../installed-scanner.js';
 import { Slots } from '../lib/slots.js';
@@ -341,7 +341,7 @@ export class UpdateFlow {
       // files moved after a person saw it; and what the installed version runs
       // now, so a confirm step can say what is new (DOR-2306).
       const [contentHash, installedDisclosed] = await Promise.all([
-        shippedContentHash(packagePath),
+        packageContentHash(packagePath),
         readRunnableDeclarations(record.package.installPath).then((declared) =>
           disclosedEffectsOf(
             declared.unreadableHooks.length + declared.unreadableDeclarations.length > 0

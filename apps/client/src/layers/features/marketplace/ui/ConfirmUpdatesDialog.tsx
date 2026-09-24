@@ -107,13 +107,29 @@ function ChangeBadge({ change }: { change: DisclosureRow['change'] }) {
   );
 }
 
-/** A row with its mark beside it. */
-function MarkedRow({ row, change }: DisclosureRow) {
+/**
+ * A row with its mark beside it. A changed row also shows what the installed
+ * version runs in its place, muted and labelled, so the person compares the
+ * two values instead of taking "Changed" on trust.
+ */
+function MarkedRow({ row, change, previous }: DisclosureRow) {
   return (
     <div className="flex items-start gap-2">
-      <ul className="min-w-0 flex-1">
-        <PermissionItem item={row} />
-      </ul>
+      <div className="min-w-0 flex-1">
+        <ul>
+          <PermissionItem item={row} />
+        </ul>
+        {previous && (
+          <div className="mt-1 pl-6 opacity-70">
+            <p className="text-muted-foreground text-3xs mb-0.5 font-medium tracking-wide uppercase">
+              Installed now
+            </p>
+            <ul aria-label="What the installed version runs instead">
+              <PermissionItem item={previous} />
+            </ul>
+          </div>
+        )}
+      </div>
       <ChangeBadge change={change} />
     </div>
   );

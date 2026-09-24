@@ -87,6 +87,10 @@ import { ApprovalService } from '../../services/core/approvals/index.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { noopLogger } from '@dorkos/shared/logger';
 import { initConfigManager } from '../../services/core/config-manager.js';
+import {
+  packageContentHash,
+  ShipsRuntimeStateError,
+} from '../../services/marketplace/lib/content-hash.js';
 import type { MarketplaceMcpDeps } from '../../services/marketplace-mcp/marketplace-mcp-tools.js';
 import { TokenConfirmationProvider } from '../../services/marketplace-mcp/confirmation-provider.js';
 import type { DisclosedEffects } from '../../services/marketplace/disclosed-effects.js';
@@ -950,14 +954,12 @@ describe('Marketplace Routes', () => {
   });
 
   describe('GET /packages/:name', () => {
-    it('returns manifest, preview, and packagePath from installer.preview', async () => {
+    it('returns manifest, preview, packagePath and the content hash an approval binds', async () => {
       const manifest = buildSamplePluginManifest();
       const preview = buildEmptyPermissionPreview();
-      installer.preview.mockResolvedValue({
-        manifest,
-        preview,
-        packagePath: '/tmp/fake/pkg',
-      });
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      writeFileSync(join(pkgDir, 'run.sh'), 'echo hi');
+      installer.preview.mockResolvedValue({ manifest, preview, packagePath: pkgDir });
 
       const res = await request(fixtureServer)
         .get('/api/marketplace/packages/sample-plugin')
@@ -965,7 +967,9 @@ describe('Marketplace Routes', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.manifest.name).toBe('sample-plugin');
-      expect(res.body.packagePath).toBe('/tmp/fake/pkg');
+      expect(res.body.packagePath).toBe(pkgDir);
+      // The detail sheet sends this back as `approvedContentHash` (DOR-2306).
+      expect(res.body.contentHash).toBe(await packageContentHash(pkgDir));
       expect(installer.preview).toHaveBeenCalledTimes(1);
       expect(installer.preview.mock.calls[0][0]).toEqual({
         name: 'sample-plugin',
@@ -1096,14 +1100,23 @@ describe('Marketplace Routes', () => {
   });
 
   describe('POST /packages/:name/preview', () => {
+    it('refuses a package that ships DorkOS runtime state with a 400 naming the path (DOR-2306)', async () => {
+      installer.preview.mockRejectedValue(new ShipsRuntimeStateError('.dork/secrets.json'));
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/sample-plugin/preview')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('.dork/secrets.json');
+    });
+
     it('returns the preview shape on success', async () => {
       const manifest = buildSamplePluginManifest();
       const preview = buildEmptyPermissionPreview();
-      installer.preview.mockResolvedValue({
-        manifest,
-        preview,
-        packagePath: '/tmp/fake/pkg',
-      });
+      const pkgDir = mkdtempSync(join(dorkHome, 'staged-'));
+      writeFileSync(join(pkgDir, 'run.sh'), 'echo hi');
+      installer.preview.mockResolvedValue({ manifest, preview, packagePath: pkgDir });
 
       const res = await request(fixtureServer)
         .post('/api/marketplace/packages/sample-plugin/preview')
@@ -1123,6 +1136,7 @@ describe('Marketplace Routes', () => {
         executables: [],
         skillTools: [],
       });
+      expect(res.body.contentHash).toBe(await packageContentHash(pkgDir));
       expect(installer.preview.mock.calls[0][0]).toEqual({
         name: 'sample-plugin',
         marketplace: 'dorkos-community',
@@ -2545,8 +2559,8 @@ describe('Marketplace Routes', () => {
   });
 
   describe('held-back global packages (DOR-2306, I2)', () => {
-    /** Install a global plugin that runs one hook nobody approved. */
-    function installHeldBack(name: string): string {
+    /** Install a global plugin that runs one hook nobody approved, recorded as the installer does. */
+    async function installHeldBack(name: string): Promise<string> {
       const root = join(dorkHome, 'plugins', name);
       writePackageManifest(root, { ...buildSamplePluginManifest(), name });
       mkdirSync(join(root, 'hooks'), { recursive: true });
@@ -2554,24 +2568,39 @@ describe('Marketplace Routes', () => {
         join(root, 'hooks', 'hooks.json'),
         JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo hi' }] }] } })
       );
+      writeFileSync(
+        join(root, '.dork', 'install-metadata.json'),
+        JSON.stringify({
+          name,
+          version: '1.0.0',
+          type: 'plugin',
+          installedAt: '2026-09-24T00:00:00Z',
+          contentHash: await packageContentHash(root),
+        })
+      );
       return root;
     }
 
     it('lists it, and marks its Installed row so it never vanishes without a word', async () => {
-      installHeldBack('held');
+      await installHeldBack('held');
 
       const listed = await request(fixtureServer).get('/api/marketplace/held-back');
       const installed = await request(fixtureServer).get('/api/marketplace/installed');
 
       expect(listed.body.packages).toEqual([
-        expect.objectContaining({ name: 'held', reason: 'unasked', reviewable: true }),
+        expect.objectContaining({
+          name: 'held',
+          reason: 'unasked',
+          reviewable: true,
+          bindsTo: expect.stringMatching(/^sha256:/),
+        }),
       ]);
       const row = installed.body.packages.find((p: { name: string }) => p.name === 'held');
       expect(row.heldBack).toMatchObject({ reason: 'unasked', reviewable: true });
     });
 
     it('raises its card on request, and says why when there is nothing to review', async () => {
-      installHeldBack('held');
+      await installHeldBack('held');
 
       const asked = await request(fixtureServer).post('/api/marketplace/held-back/held/review');
       const missing = await request(fixtureServer).post('/api/marketplace/held-back/nope/review');
@@ -2584,30 +2613,66 @@ describe('Marketplace Routes', () => {
       expect(missing.body.error).toBe('nope is not held back.');
     });
 
-    it('takes a decision only from the person, bound to the hash they were shown', async () => {
-      installHeldBack('held');
+    it('takes a decision only from the person, bound to what they were shown (login off)', async () => {
+      await installHeldBack('held');
       const [shown] = (await request(fixtureServer).get('/api/marketplace/held-back')).body
         .packages;
+      const decide = (body: object) =>
+        request(fixtureServer).post('/api/marketplace/held-back/held/decision').send(body);
 
       agentHeader = 'agent-token';
-      const byAgent = await request(fixtureServer)
-        .post('/api/marketplace/held-back/held/decision')
-        .send({ decision: 'allow', contentHash: shown.contentHash });
+      const byAgent = await decide({
+        decision: 'allow',
+        effects: shown.effects,
+        bindsTo: shown.bindsTo,
+      });
       expect(byAgent.status).toBe(403);
+      expect(byAgent.body.code).toBe('operator_only');
 
       agentHeader = undefined;
-      const stale = await request(fixtureServer)
-        .post('/api/marketplace/held-back/held/decision')
-        .send({ decision: 'allow', contentHash: 'sha256:other' });
+      const stale = await decide({
+        decision: 'allow',
+        effects: shown.effects,
+        bindsTo: 'sha256:other',
+      });
       expect(stale.status).toBe(409);
 
-      const ok = await request(fixtureServer)
-        .post('/api/marketplace/held-back/held/decision')
-        .send({ decision: 'allow', contentHash: shown.contentHash });
+      const ok = await decide({
+        decision: 'allow',
+        effects: shown.effects,
+        bindsTo: shown.bindsTo,
+      });
       expect(ok.status).toBe(204);
       expect(
         (await request(fixtureServer).get('/api/marketplace/held-back')).body.packages
       ).toEqual([]);
+    });
+
+    it('with login on, takes a decision only from a signed-in session, and points anything else at the Review card (I-4)', async () => {
+      // Purpose: the same bar as deciding an approval card. An API key is in an
+      // agent's hands legitimately under login, so it cannot decide.
+      await installHeldBack('held');
+      const [shown] = (await request(fixtureServer).get('/api/marketplace/held-back')).body
+        .packages;
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('auth', { enabled: true });
+      const decide = () =>
+        request(fixtureServer)
+          .post('/api/marketplace/held-back/held/decision')
+          .send({ decision: 'allow', effects: shown.effects, bindsTo: shown.bindsTo });
+
+      signedInUser = { userId: 'user_cli', credential: 'api-key' };
+      const byKey = await decide();
+      expect(byKey.status).toBe(403);
+      expect(byKey.body.code).toBe('operator_cookie_required');
+      expect(byKey.body.error).toContain('press Review on the package');
+      expect(
+        (configManager.get('harness') as { approvedHooks?: string[] } | undefined)?.approvedHooks ??
+          []
+      ).toEqual([]);
+
+      signedInUser = { userId: 'user_owner', credential: 'cookie' };
+      expect((await decide()).status).toBe(204);
     });
   });
 

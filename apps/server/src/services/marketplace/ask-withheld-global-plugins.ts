@@ -18,15 +18,18 @@
  *   done, for `GET /api/marketplace/held-back`, the Installed rows, the CLI,
  *   and the startup notice.
  * - {@link decideHeldBackPackage} records a decision made in the terminal
- *   (`dorkos marketplace held-back --allow|--refuse`), bound to the content
- *   hash the terminal showed.
+ *   (`dorkos marketplace held-back --allow|--refuse`), bound to what the
+ *   terminal showed.
  *
- * Cards are bound to the package's content hash as well as what it declares,
- * and the grant is re-checked against the tree before it is recorded: a
- * package that changed while the card was open is not approved by it. There
- * is at most one open card per package NAME, and a package that keeps changing
- * raises at most one card per {@link CARD_COOLDOWN_MS}, so churning a package
- * cannot bury a person in cards.
+ * Cards are bound to what the package declares and what its approval binds
+ * (`global-plugin-consent.ts` `bindingOf`: the content hash its install
+ * recorded, or a linked install's folder), and the grant is re-checked before
+ * it is recorded: a package reinstalled while the card was open is not
+ * approved by it. A package installed before the hash was recorded is shown
+ * as it is now, and a decision records that hash. There is at most one open
+ * card per package NAME, and a package that keeps changing raises at most one
+ * card per {@link CARD_COOLDOWN_MS}, so churning a package cannot bury a
+ * person in cards.
  *
  * A package whose declarations cannot be read, or whose list is too long for
  * a card, is never put on one: what cannot be shown in full cannot be
@@ -44,9 +47,8 @@ import { logger } from '../../lib/logger.js';
 import { describeEffectsInFull, type DisclosedEffects } from './disclosed-effects.js';
 import {
   partitionGlobalPlugins,
-  readActivationState,
-  recordGlobalActivationApproval,
-  recordGlobalActivationRefusal,
+  recordHeldBackDecision,
+  reviewBindingOf,
   type WithheldGlobalPlugin,
 } from './global-plugin-consent.js';
 import { readInstallMetadata } from './installed-metadata.js';
@@ -136,13 +138,24 @@ export function summariseGlobalActivation(name: string, effects: DisclosedEffect
  * @returns The detail text.
  */
 export function describeGlobalActivationInFull(
-  plugin: Pick<WithheldGlobalPlugin, 'changedSinceApproval'> & { effects: DisclosedEffects },
+  plugin: Pick<WithheldGlobalPlugin, 'changedSinceApproval' | 'reason' | 'subject'> & {
+    effects: DisclosedEffects;
+  },
   origin: Origin
 ): string {
+  const linked = plugin.subject?.kind === 'linked' ? plugin.subject.path : undefined;
   return [
     plugin.changedSinceApproval
-      ? 'Its files changed since it was last approved. DorkOS cannot tell who changed them.'
-      : 'Nobody has approved it as it is now, so it is held back from every session.',
+      ? 'It was reinstalled or changed what it runs since it was last approved.'
+      : plugin.reason === 'unrecorded'
+        ? 'It was installed before DorkOS recorded what an approval covers, so it is shown as it is now.'
+        : 'Nobody has approved it as it is now, so it is held back from every session.',
+    ...(linked !== undefined
+      ? [
+          `Linked: it runs whatever is in ${JSON.stringify(linked)}. DorkOS does not check ` +
+            'the files there, so a change to them runs without asking again.',
+        ]
+      : []),
     `Version ${JSON.stringify(origin.version ?? 'not recorded')}, from ${JSON.stringify(origin.source ?? 'a source that was not recorded')}.`,
     '',
     ...describeEffectsInFull(plugin.effects, 'in every session'),
@@ -174,8 +187,8 @@ export const _internal = {
   },
 };
 
-/** A held-back package that can be put on a card. */
-type Askable = WithheldGlobalPlugin & { effects: DisclosedEffects; contentHash: string };
+/** A held-back package that can be put on a card, and what a decision on it binds. */
+type Askable = WithheldGlobalPlugin & { effects: DisclosedEffects; bindsTo: string };
 
 /**
  * Ask a person about one held-back package, wait for the answer, and record
@@ -184,18 +197,19 @@ type Askable = WithheldGlobalPlugin & { effects: DisclosedEffects; contentHash: 
  * @returns True only when a person granted it and it was recorded.
  */
 async function askForGlobalActivation(
-  gateway: HookApprovalGateway,
+  opts: AskAboutWithheldGlobalPluginsOptions,
   plugin: Askable,
   origin: Origin
 ): Promise<boolean> {
+  const gateway = opts.approvals;
   const binding: ApprovalBinding = {
     capabilityId: GLOBAL_ACTIVATION_CAPABILITY_ID,
     // Bound to the same facts the stored entry digests, so a card granted for
-    // one package's bytes can never be spent on another's.
+    // one install can never be spent on another.
     inputHash: hashApprovalInput({
       packageName: plugin.name,
       effects: plugin.effects,
-      contentHash: plugin.contentHash,
+      bindsTo: plugin.bindsTo,
     }),
   };
   const ticket = gateway.request({
@@ -208,20 +222,18 @@ async function askForGlobalActivation(
     approvalId: ticket.approvalId,
   });
 
+  const shown = { effects: plugin.effects, bindsTo: plugin.bindsTo };
   const deadline = new Date(ticket.expiresAt).getTime();
   for (;;) {
     const result = gateway.consume(ticket.token, binding);
     if (result.outcome === 'granted') {
-      // The card was about these bytes. If the package changed while it was
+      // The card was about this install. If it was replaced while the card was
       // open, this yes covers nothing on disk now: it asks again next time.
-      const now = await readActivationState(plugin.packageDir);
-      if ('unreadable' in now || now.contentHash !== plugin.contentHash) return false;
-      recordGlobalActivationApproval(plugin.name, plugin.effects, plugin.contentHash);
-      return true;
+      return recordHeldBackDecision(opts.dorkHome, plugin.name, shown, 'allow');
     }
     if (result.outcome !== 'pending') {
       if (result.outcome === 'denied') {
-        recordGlobalActivationRefusal(plugin.name, plugin.effects, plugin.contentHash);
+        await recordHeldBackDecision(opts.dorkHome, plugin.name, shown, 'refuse');
       }
       logger.info('[Marketplace] A global package was not allowed in every session', {
         packageName: plugin.name,
@@ -262,7 +274,7 @@ function raiseCard(
 ): Promise<void> {
   askingNow.add(plugin.name);
   lastAsked.set(plugin.name, _internal.now());
-  return askForGlobalActivation(opts.approvals, plugin, origin)
+  return askForGlobalActivation(opts, plugin, origin)
     .then(async (granted) => {
       if (granted) await opts.onGranted();
     })
@@ -299,15 +311,13 @@ export async function askAboutWithheldGlobalPlugins(
       });
       continue;
     }
-    if (plugin.reason !== 'unasked' || !plugin.effects || !plugin.contentHash) continue;
+    if (plugin.reason === 'refused' || !plugin.effects) continue;
     if (askingNow.has(plugin.name)) continue;
     const last = lastAsked.get(plugin.name);
     if (last !== undefined && _internal.now() - last < CARD_COOLDOWN_MS) continue;
-    const askable: Askable = {
-      ...plugin,
-      effects: plugin.effects,
-      contentHash: plugin.contentHash,
-    };
+    const bindsTo = await reviewBindingOf(plugin);
+    if (bindsTo === undefined) continue;
+    const askable: Askable = { ...plugin, effects: plugin.effects, bindsTo };
     const origin = await originOf(plugin.packageDir);
     if (!fitsOnCard(askable, origin)) {
       logger.warn(
@@ -351,15 +361,16 @@ export async function reviewHeldBackPackage(
   const { withheld } = await partitionGlobalPlugins(opts.dorkHome);
   const plugin = withheld.find((w) => w.name === name);
   if (!plugin) throw new HeldBackReviewError(`${name} is not held back.`);
-  const state = heldBackStateOf(plugin, await originOf(plugin.packageDir));
-  if (!state.reviewable || !plugin.effects || !plugin.contentHash) {
+  const origin = await originOf(plugin.packageDir);
+  const state = heldBackStateOf(plugin, origin);
+  const bindsTo = await reviewBindingOf(plugin);
+  if (!state.reviewable || !plugin.effects || bindsTo === undefined) {
     throw new HeldBackReviewError(state.note);
   }
   if (askingNow.has(name)) return;
   // A refused package is asked again as it is: a yes on this card replaces the
   // refusal (`recordApprovedEntry` clears it); an expired card leaves it.
-  const askable: Askable = { ...plugin, effects: plugin.effects, contentHash: plugin.contentHash };
-  void raiseCard(opts, askable, await originOf(plugin.packageDir));
+  void raiseCard(opts, { ...plugin, effects: plugin.effects, bindsTo }, origin);
 }
 
 /**
@@ -369,14 +380,27 @@ export async function reviewHeldBackPackage(
  * @param origin - Its recorded version and source.
  */
 function heldBackStateOf(plugin: WithheldGlobalPlugin, origin: Origin): HeldBackState {
+  const linkedPath = plugin.subject?.kind === 'linked' ? plugin.subject.path : undefined;
+  const linked = linkedPath !== undefined ? { linkedPath } : {};
+  const linkedNote =
+    linkedPath !== undefined ? ` Linked: it runs whatever is in ${linkedPath}.` : '';
+  // Whether its whole list fits on a card; a package that runs too much is
+  // decided in the terminal, which can show all of it.
+  const fits = plugin.effects
+    ? fitsOnCard({ ...plugin, effects: plugin.effects, bindsTo: '' }, origin)
+    : false;
+  const reviewInTerminal =
+    'it runs too much to show on one card. Review it in a terminal with ' +
+    `\`dorkos marketplace held-back --allow ${plugin.name}\`.`;
   switch (plugin.reason) {
     case 'unreadable':
       return {
         reason: 'unreadable',
         reviewable: false,
         note:
-          `Held back: DorkOS could not read part of it (${(plugin.unreadable ?? []).join(', ')}), ` +
-          'so it cannot show you what it runs. Reinstall it, or uninstall it.',
+          `Held back: DorkOS could not read part of it, or it runs something from a folder ` +
+          `DorkOS never checks (${(plugin.unreadable ?? []).join(', ')}), so it cannot show ` +
+          'you what it runs. Reinstall it, or uninstall it.',
       };
     case 'unreadable-config':
       return {
@@ -389,52 +413,84 @@ function heldBackStateOf(plugin: WithheldGlobalPlugin, origin: Origin): HeldBack
     case 'refused':
       return {
         reason: 'refused',
-        reviewable: true,
-        note: 'Held back: you turned it down. Review it to decide again.',
+        reviewable: fits,
+        ...linked,
+        note: fits
+          ? `Held back: you turned it down.${linkedNote} Review it to decide again.`
+          : `Held back: you turned it down, and ${reviewInTerminal}`,
       };
+    case 'unrecorded': {
+      if (!plugin.hasMetadata) {
+        return {
+          reason: 'unrecorded',
+          reviewable: false,
+          note:
+            'Held back: installed before approvals were recorded, and it has no install ' +
+            'record to review it against. Reinstall it to review it.',
+        };
+      }
+      return fits
+        ? {
+            reason: 'unrecorded',
+            reviewable: true,
+            note: 'Held back: installed before approvals were recorded; review it.',
+          }
+        : {
+            reason: 'unrecorded',
+            reviewable: false,
+            note: `Held back: installed before approvals were recorded, and ${reviewInTerminal}`,
+          };
+    }
     case 'unasked': {
-      const askable =
-        plugin.effects && plugin.contentHash
-          ? fitsOnCard(
-              { ...plugin, effects: plugin.effects, contentHash: plugin.contentHash },
-              origin
-            )
-          : false;
       const why = plugin.changedSinceApproval
-        ? 'its files changed since you approved it'
+        ? 'it was reinstalled or changed what it runs since you approved it'
         : 'you have not approved it as it is now';
-      return askable
-        ? { reason: 'unasked', reviewable: true, note: `Held back: ${why}. Review it to decide.` }
+      return fits
+        ? {
+            reason: 'unasked',
+            reviewable: true,
+            ...linked,
+            note: `Held back: ${why}.${linkedNote} Review it to decide.`,
+          }
         : {
             reason: 'unasked',
             reviewable: false,
-            note:
-              `Held back: ${why}, and it runs too much to show on one card. Review it in a ` +
-              `terminal with \`dorkos marketplace held-back --allow ${plugin.name}\`.`,
+            ...linked,
+            note: `Held back: ${why}, and ${reviewInTerminal}`,
           };
     }
   }
 }
 
 /**
- * Every held-back global package, with why, what it runs, and the content hash
- * a decision about it binds.
+ * Every held-back global package, with why, what it runs, and what a decision
+ * about it binds.
  *
  * @param dorkHome - The resolved DorkOS data directory.
+ * @param options.bindings - Work out {@link HeldBackPackage.bindsTo}, which
+ *   hashes a package installed before hashes were recorded. Off for a caller
+ *   that only shows why (the Installed rows), so a listing never hashes.
  * @returns One entry per held-back package, in scan order.
  */
-export async function listHeldBackPackages(dorkHome: string): Promise<HeldBackPackage[]> {
+export async function listHeldBackPackages(
+  dorkHome: string,
+  { bindings = true }: { bindings?: boolean } = {}
+): Promise<HeldBackPackage[]> {
   const { withheld } = await partitionGlobalPlugins(dorkHome);
   return Promise.all(
     withheld.map(async (plugin) => {
       const origin = await originOf(plugin.packageDir);
+      const bindsTo =
+        bindings && plugin.reason !== 'unreadable-config'
+          ? await reviewBindingOf(plugin)
+          : undefined;
       return {
         name: plugin.name,
         ...heldBackStateOf(plugin, origin),
         ...origin,
         changedSinceApproval: plugin.changedSinceApproval === true,
         ...(plugin.effects && { effects: plugin.effects }),
-        ...(plugin.contentHash && { contentHash: plugin.contentHash }),
+        ...(bindsTo !== undefined && { bindsTo }),
       };
     })
   );
@@ -455,36 +511,33 @@ export class HeldBackDecisionError extends Error {
 
 /**
  * Record a person's decision about one held-back package, made after seeing
- * it somewhere other than a card (the terminal). Bound to the content hash
- * they were shown: a package that changed since is not decided by it.
+ * it somewhere other than a card (the terminal). Bound to what they were
+ * shown: its declarations and {@link HeldBackPackage.bindsTo}. A package that
+ * changed since is not decided by it.
  *
  * @param dorkHome - The resolved DorkOS data directory.
  * @param name - The package's directory name.
  * @param decision - `allow` or `refuse`.
- * @param contentHash - The content hash the person was shown.
- * @throws {HeldBackDecisionError} When it is not held back, cannot be read, or
- *   changed since it was shown.
+ * @param shown - The `effects` and `bindsTo` the listing showed.
+ * @throws {HeldBackDecisionError} When it is not held back, cannot be decided,
+ *   or changed since it was shown.
  */
 export async function decideHeldBackPackage(
   dorkHome: string,
   name: string,
   decision: 'allow' | 'refuse',
-  contentHash: string
+  shown: { effects: DisclosedEffects; bindsTo: string }
 ): Promise<void> {
   const { withheld } = await partitionGlobalPlugins(dorkHome);
   const plugin = withheld.find((w) => w.name === name);
   if (!plugin) throw new HeldBackDecisionError(`${name} is not held back.`);
-  if (!plugin.effects || !plugin.contentHash || plugin.reason === 'unreadable-config') {
+  const bindsTo = await reviewBindingOf(plugin);
+  if (!plugin.effects || bindsTo === undefined || plugin.reason === 'unreadable-config') {
     throw new HeldBackDecisionError(heldBackStateOf(plugin, {}).note);
   }
-  if (plugin.contentHash !== contentHash) {
+  if (!(await recordHeldBackDecision(dorkHome, name, shown, decision))) {
     throw new HeldBackDecisionError(
       `${name} changed since it was shown to you, so nothing was recorded. Look at it again.`
     );
-  }
-  if (decision === 'allow') {
-    recordGlobalActivationApproval(name, plugin.effects, plugin.contentHash);
-  } else {
-    recordGlobalActivationRefusal(name, plugin.effects, plugin.contentHash);
   }
 }

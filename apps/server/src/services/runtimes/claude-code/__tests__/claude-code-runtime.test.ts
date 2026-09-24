@@ -1604,10 +1604,9 @@ describe('ClaudeCodeRuntime', () => {
       );
     });
 
-    it('re-checks at the start of a turn, and drops a package edited on disk since (DOR-2306, I1)', async () => {
-      // Purpose: a hand edit to an approved global package must not run until
-      // the next install; the next turn leaves it out.
-      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+    it('drops every global plugin when the approval check itself fails, never keeping the old list (DOR-2306, I-1)', async () => {
+      // Purpose: a refresh that cannot say which packages are approved must not
+      // leave the previous approved set loading into every session.
       _mockListConsentedPluginNames.mockResolvedValue(['approved']);
       _mockBuildPluginsArray.mockImplementation(async ({ enabledPluginNames }) =>
         (enabledPluginNames as string[]).map((name) => ({
@@ -1615,36 +1614,24 @@ describe('ClaudeCodeRuntime', () => {
           path: `/h/plugins/${name}`,
         }))
       );
-      agentManager.setConsentedPluginNames(() => _mockListConsentedPluginNames('/h'));
       await agentManager.refreshActivatedPlugins();
-      _mockBuildPluginsArray.mockClear();
-
-      // Edited on disk: no longer what was approved.
-      _mockListConsentedPluginNames.mockResolvedValue([]);
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('')));
-      agentManager.ensureSession('revalidate-1', { permissionMode: 'default' });
-      for await (const _ of agentManager.sendMessage('revalidate-1', 'hello')) {
-        // drain
-      }
-
-      const options = (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]?.options;
-      expect(options?.plugins ?? []).toEqual([]);
-    });
-
-    it('does not rebuild the plugin list at the start of a turn when nothing changed', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-      _mockListConsentedPluginNames.mockResolvedValue([]);
-      agentManager.setConsentedPluginNames(() => _mockListConsentedPluginNames('/h'));
-      await agentManager.refreshActivatedPlugins();
-      _mockListEnabledPluginNames.mockClear();
-      _mockBuildPluginsArray.mockClear();
-      (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('')));
-      agentManager.ensureSession('revalidate-2', { permissionMode: 'default' });
-      for await (const _ of agentManager.sendMessage('revalidate-2', 'hello')) {
-        // drain
-      }
+      const optionsOfLastTurn = async (sessionId: string) => {
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('')));
+        agentManager.ensureSession(sessionId, { permissionMode: 'default' });
+        for await (const _ of agentManager.sendMessage(sessionId, 'hello')) {
+          // drain
+        }
+        return (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]?.options;
+      };
+      expect((await optionsOfLastTurn('partition-ok'))?.plugins).toEqual([
+        { type: 'local', path: '/h/plugins/approved' },
+      ]);
 
-      expect(_mockBuildPluginsArray).not.toHaveBeenCalled();
+      _mockListConsentedPluginNames.mockRejectedValue(new Error('settings unreadable'));
+      await agentManager.refreshActivatedPlugins();
+
+      expect((await optionsOfLastTurn('partition-threw'))?.plugins ?? []).toEqual([]);
     });
 
     it('broadcasts commands_changed so clients re-fetch the registry', async () => {

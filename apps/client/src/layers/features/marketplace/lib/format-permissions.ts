@@ -696,6 +696,12 @@ export interface DisclosureRow {
    * be read.
    */
   change: DisclosureChange;
+  /**
+   * For a `changed` row: the same named item as the installed version runs
+   * it, formatted the same way, so the person sees the old value beside the
+   * new one rather than only being told it changed.
+   */
+  previous?: FormattedPermission;
 }
 
 /** A disclosure with nothing in it, to hold one item at a time. */
@@ -745,12 +751,19 @@ export function formatDisclosureChanges(
   scope: DisclosureScope
 ): DisclosureRow[] {
   const rows: DisclosureRow[] = [];
+  const formatOne = (kind: (typeof DISCLOSURE_KINDS)[number], item: unknown) =>
+    formatDisclosedEffects({ ...NOTHING_DISCLOSED, [kind]: [item] } as DisclosedEffects, scope)[0];
   for (const kind of DISCLOSURE_KINDS) {
     for (const item of next[kind] as unknown[]) {
-      const piece = { ...NOTHING_DISCLOSED, [kind]: [item] } as DisclosedEffects;
-      const [row] = formatDisclosedEffects(piece, scope);
+      const row = formatOne(kind, item);
       if (!row) continue;
-      rows.push({ row, change: changeOf(kind, item, installed) });
+      const change = changeOf(kind, item, installed);
+      const before =
+        change === 'changed'
+          ? (installed![kind] as unknown[]).find((old) => nameOf(kind, old) === nameOf(kind, item))
+          : undefined;
+      const previous = before === undefined ? undefined : formatOne(kind, before);
+      rows.push({ row, change, ...(previous && { previous }) });
     }
   }
   return rows;

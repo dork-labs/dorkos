@@ -78,14 +78,19 @@ function HeldBackNotice({
   isRaisingReview: boolean;
 }) {
   return (
-    <div className="mt-1.5 flex flex-wrap items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
-      <ShieldAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
-      <span className="min-w-0 break-words">{heldBack.note}</span>
+    // On a phone the note takes the row and Review sits on its own line under
+    // it, lined up with the text; from `sm` up they share one line.
+    <div className="mt-1.5 flex flex-col items-start gap-1.5 text-xs text-amber-700 sm:flex-row sm:gap-2 dark:text-amber-300">
+      <div className="flex min-w-0 items-start gap-2">
+        <ShieldAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
+        {/* A linked install's note names a folder path, which must wrap. */}
+        <span className="min-w-0 [overflow-wrap:anywhere]">{heldBack.note}</span>
+      </div>
       {heldBack.reviewable && (
         <Button
           size="sm"
           variant="outline"
-          className="h-6 px-2 text-xs"
+          className="ml-5 h-6 shrink-0 px-2 text-xs sm:ml-0"
           onClick={onReviewClick}
           disabled={isRaisingReview}
           aria-label={`Review ${label}`}

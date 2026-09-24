@@ -40,7 +40,7 @@ const HELD = {
   note: 'Held back: its files changed since you approved it. Review it to decide.',
   changedSinceApproval: true,
   effects: EFFECTS,
-  contentHash: 'sha256:abc',
+  bindsTo: 'sha256:abc',
 };
 
 let logSpy: MockInstance<typeof console.log>;
@@ -86,10 +86,11 @@ describe('runMarketplaceHeldBack', () => {
     expect(await runMarketplaceHeldBack({ allow: 'fmt', yes: true })).toBe(0);
 
     expect(printed()).toContain('curl -s https://x.example | sh');
-    expect(printed()).toContain('changed since you last approved it');
+    expect(printed()).toContain('changed what it runs since you last approved it');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
       decision: 'allow',
-      contentHash: 'sha256:abc',
+      effects: EFFECTS,
+      bindsTo: 'sha256:abc',
     });
   });
 
@@ -102,7 +103,7 @@ describe('runMarketplaceHeldBack', () => {
             ...HELD,
             name: 'broken',
             effects: undefined,
-            contentHash: undefined,
+            bindsTo: undefined,
             note: 'Held back: DorkOS could not read part of it.',
           },
         ],
@@ -136,6 +137,45 @@ describe('runMarketplaceHeldBack', () => {
     expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
       'changed since it was shown'
     );
+  });
+});
+
+describe('runMarketplaceHeldBack with sign-in on (I-4)', () => {
+  it('points to the Review button in the app when the server wants a signed-in person', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(mockResponse(200, { packages: [HELD] }))
+        .mockResolvedValueOnce(
+          mockResponse(403, {
+            error: 'DorkOS requires sign-in, so this has to be decided by a person signed in.',
+            code: 'operator_cookie_required',
+          })
+        )
+    );
+
+    expect(await runMarketplaceHeldBack({ allow: 'fmt', yes: true })).toBe(1);
+    const said = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(said).toContain('decide this in the app');
+    expect(said).toContain('press Review on fmt');
+  });
+
+  it('says a linked install runs whatever is in its folder', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse(200, {
+            packages: [{ ...HELD, linkedPath: '/work/fmt', bindsTo: 'linked:/work/fmt' }],
+          })
+        )
+        .mockResolvedValueOnce(mockResponse(204, undefined))
+    );
+
+    expect(await runMarketplaceHeldBack({ allow: 'fmt', yes: true })).toBe(0);
+    expect(printed()).toContain('Linked: it runs whatever is in /work/fmt.');
   });
 });
 

@@ -48,7 +48,11 @@ import {
   type ApprovedPackage,
   type GlobalConsentRecorder,
 } from '../services/marketplace/global-plugin-consent.js';
-import { shippedContentHash } from '../services/marketplace/lib/content-hash.js';
+import {
+  packageContentHash,
+  ShipsRuntimeStateError,
+  TreeUnhashableError,
+} from '../services/marketplace/lib/content-hash.js';
 import {
   decideHeldBackPackage,
   HeldBackDecisionError,
@@ -120,7 +124,7 @@ import {
 } from '../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
-import { readCallerAuthority } from '../lib/caller-authority.js';
+import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../lib/caller-authority.js';
 import {
   OPERATOR_ONLY_MARKETPLACE_SOURCE_CODE,
   describeMarketplaceSourceRefusal,
@@ -287,7 +291,10 @@ const ApplyUpdatesBodySchema = z
 const HeldBackDecisionBodySchema = z
   .object({
     decision: z.enum(['allow', 'refuse']),
-    contentHash: z.string().min(1),
+    // Exactly as `GET /held-back` listed them: what it runs, and what the
+    // decision binds (an install's recorded hash, or `linked:<path>`).
+    effects: DisclosedEffectsSchema,
+    bindsTo: z.string().min(1),
   })
   .strict();
 
@@ -348,6 +355,13 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
   }
   if (err instanceof ConflictError) {
     return { status: 409, body: { error: err.message, conflicts: err.conflicts } };
+  }
+  // A package that ships DorkOS's own settings, secrets or records path, or a file
+  // whose bytes cannot be pinned: refused before anything is written, and the
+  // message says which path (DOR-2306). Package-relative, so nothing about
+  // where it was staged leaks.
+  if (err instanceof ShipsRuntimeStateError || err instanceof TreeUnhashableError) {
+    return { status: 400, body: { error: err.message } };
   }
   // The package that resolved for the install is not the one the person was
   // shown. Nothing was written; the next move is to look again.
@@ -839,9 +853,14 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       // A global package held back from every session says so on its row, so
       // it never just vanishes from sessions without a word (DOR-2306).
       const heldBack = new Map(
-        (await listHeldBackPackages(dorkHome)).map((held) => [
+        (await listHeldBackPackages(dorkHome, { bindings: false })).map((held) => [
           globalPackageDir(dorkHome, held.name),
-          { reason: held.reason, note: held.note, reviewable: held.reviewable },
+          {
+            reason: held.reason,
+            note: held.note,
+            reviewable: held.reviewable,
+            ...(held.linkedPath !== undefined && { linkedPath: held.linkedPath }),
+          },
         ])
       );
       return res.json({
@@ -987,6 +1006,10 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         packagePath,
         preview,
         disclosed: disclosedEffectsOf(preview),
+        // What a global install's approval binds: sent back as
+        // `approvedContentHash`, and compared with the hash the installer
+        // records when the package lands (DOR-2306).
+        contentHash: await packageContentHash(packagePath),
         ...(readme !== undefined && { readme }),
       });
     } catch (err) {
@@ -1020,9 +1043,16 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         ...parsed.data,
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
-      // `disclosed` is what an install is held to: the caller shows it and
-      // sends it back as `approvedDisclosure` (DOR-2306).
-      return res.json({ preview, manifest, packagePath, disclosed: disclosedEffectsOf(preview) });
+      // `disclosed` is what an install is held to and `contentHash` the files
+      // it binds: the caller shows them and sends them back as
+      // `approvedDisclosure` and `approvedContentHash` (DOR-2306).
+      return res.json({
+        preview,
+        manifest,
+        packagePath,
+        disclosed: disclosedEffectsOf(preview),
+        contentHash: await packageContentHash(packagePath),
+      });
     } catch (err) {
       logger.error(`[Marketplace] Failed to preview package ${req.params.name}`, err);
       const mapped = mapErrorToStatus(err);
@@ -1352,7 +1382,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     const runs = disclosesAnything(activationEffectsOf(previewed ?? null));
     if (!activated || (!replaces && !runs)) return { previewed };
 
-    const contentHash = await shippedContentHash(staged.packagePath);
+    const contentHash = await packageContentHash(staged.packagePath);
     const identity = getRequestAgentIdentity(res);
     const confirmation: ConfirmationRequest = {
       packageName: name,
@@ -1455,14 +1485,25 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   });
 
   // POST /held-back/:name/decision -- a person's allow or refuse, made in the
-  // terminal after seeing everything the package runs, bound to the content
-  // hash they saw. The person's only, like the source routes: an agent or a
-  // caller holding an approval token is refused.
+  // terminal after seeing everything the package runs, bound to what they saw.
+  // The same bar as deciding an approval card (`routes/approvals.ts`): a
+  // trusted caller, which under login means a person's session cookie. An
+  // agent, a caller holding an approval token, and an API key under login are
+  // all refused; under login the terminal is pointed at the app's Review card.
   router.post('/held-back/:name/decision', async (req, res) => {
-    if (!resolveDecisionAuthority(readCallerAuthority(req, res)).allowed) {
+    const authority = readCallerAuthority(req, res);
+    if (!trustedCaller(authority)) {
+      if (!resolveDecisionAuthority(authority).allowed) {
+        return res.status(403).json({
+          error: 'Only you can decide whether a held-back package runs, not an agent.',
+          code: 'operator_only',
+        });
+      }
       return res.status(403).json({
-        error: 'Only you can decide whether a held-back package runs, not an agent.',
-        code: 'operator_only',
+        error:
+          'DorkOS requires sign-in, so this has to be decided by a person signed in to the app. ' +
+          'Open DorkOS, go to Marketplace, then Installed, and press Review on the package.',
+        code: OPERATOR_COOKIE_REQUIRED_CODE,
       });
     }
     const parsed = HeldBackDecisionBodySchema.safeParse(req.body);
@@ -1472,12 +1513,10 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
     try {
-      await decideHeldBackPackage(
-        dorkHome,
-        String(req.params.name),
-        parsed.data.decision,
-        parsed.data.contentHash
-      );
+      await decideHeldBackPackage(dorkHome, String(req.params.name), parsed.data.decision, {
+        effects: parsed.data.effects,
+        bindsTo: parsed.data.bindsTo,
+      });
       if (parsed.data.decision === 'allow') await heldBackCards.onGranted();
       return res.status(204).send();
     } catch (err) {

@@ -7,10 +7,12 @@
  *
  * - lists every held-back package, why, and what to do (no flags);
  * - `--allow <name>` prints everything it runs, asks (skip with `--yes`), and
- *   records your yes, bound to the files it just showed you;
+ *   records your yes, bound to the install it just showed you;
  * - `--refuse <name>` records your no the same way.
  *
- * Deciding is yours: the server refuses a decision from an agent. A package
+ * Deciding is yours: the server refuses a decision from an agent, and with
+ * sign-in on it takes one only from a signed-in session in the app, so this
+ * command then points you to the package's Review button there. A package
  * that runs too much to show on one approval card can still be reviewed here,
  * because a terminal can print the whole list. One that DorkOS could not read
  * cannot be approved anywhere; the listing says what to do instead.
@@ -33,6 +35,9 @@ export interface MarketplaceHeldBackArgs {
   /** Do not ask before recording a yes (it still prints what runs). */
   yes?: boolean;
 }
+
+/** The code the server answers a decision with when only a signed-in session may make it. */
+const OPERATOR_COOKIE_REQUIRED = 'operator_cookie_required';
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE = 'Usage: dorkos marketplace held-back [--allow <name> [--yes] | --refuse <name>]';
@@ -94,7 +99,10 @@ export function describeHeldBack(packages: readonly HeldBackPackage[]): string[]
     const version = pkg.version ? ` ${pkg.version}` : '';
     lines.push(`  ${pkg.name}${version}: ${pkg.note}`);
   }
-  lines.push('Review one with `dorkos marketplace held-back --allow <name>`.');
+  lines.push(
+    'Review one in the app (Marketplace, then Installed) or with ' +
+      '`dorkos marketplace held-back --allow <name>`.'
+  );
   return lines;
 }
 
@@ -136,7 +144,7 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
     console.error(`${name} is not held back.`);
     return 1;
   }
-  if (!pkg.effects || !pkg.contentHash) {
+  if (!pkg.effects || !pkg.bindsTo) {
     console.error(pkg.note);
     return 1;
   }
@@ -146,8 +154,11 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
     `${pkg.name}${pkg.version ? ` ${pkg.version}` : ''}${pkg.source ? `, from ${pkg.source}` : ''}`
   );
   if (pkg.changedSinceApproval) {
+    console.log('It was reinstalled or changed what it runs since you last approved it.');
+  }
+  if (pkg.linkedPath) {
     console.log(
-      'Its files changed since you last approved it. DorkOS cannot tell who changed them.'
+      `Linked: it runs whatever is in ${pkg.linkedPath}. A change there runs without asking again.`
     );
   }
   console.log('It runs, in every session:');
@@ -166,9 +177,18 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
     await apiCall<void>(
       'POST',
       `/api/marketplace/held-back/${encodeURIComponent(pkg.name)}/decision`,
-      { decision, contentHash: pkg.contentHash }
+      { decision, effects: pkg.effects, bindsTo: pkg.bindsTo }
     );
   } catch (err) {
+    if (err instanceof ApiError && err.body.code === OPERATOR_COOKIE_REQUIRED) {
+      // Sign-in is on: a terminal holds an API key, which an agent may hold too,
+      // so the decision belongs to a person signed in to the app.
+      console.error(
+        `Nothing was recorded. DorkOS requires sign-in, so decide this in the app: open ` +
+          `Marketplace, then Installed, and press Review on ${pkg.name}.`
+      );
+      return 1;
+    }
     if (err instanceof ApiError) {
       console.error(`Nothing was recorded: ${err.message}`);
       return 1;
@@ -178,7 +198,7 @@ export async function runMarketplaceHeldBack(args: MarketplaceHeldBackArgs): Pro
   console.log(
     decision === 'allow'
       ? `Allowed. ${pkg.name} loads into sessions from the next message on.`
-      : `Turned down. ${pkg.name} stays held back until it changes or you allow it here.`
+      : `Turned down. ${pkg.name} stays held back until it is reinstalled or you allow it here.`
   );
   return 0;
 }
