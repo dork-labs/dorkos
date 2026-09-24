@@ -81,11 +81,19 @@ export class UnsafeFileError extends Error {
   }
 }
 
-/** Open flags: read-only, and never block on a pipe or device. */
-const READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0);
+/**
+ * Open flags: read-only, and never block on a pipe or device. Read when a
+ * file is opened rather than when this module loads, so code that replaces
+ * `node:fs` in a test (and never reads a file) can still import it.
+ */
+function readFlags(): number {
+  return constants.O_RDONLY | (constants.O_NONBLOCK ?? 0);
+}
 
-/** {@link READ_FLAGS}, also refusing a symbolic link as the last component. */
-const READ_NOFOLLOW_FLAGS = READ_FLAGS | (constants.O_NOFOLLOW ?? 0);
+/** {@link readFlags}, also refusing a symbolic link as the last component. */
+function readNoFollowFlags(): number {
+  return readFlags() | (constants.O_NOFOLLOW ?? 0);
+}
 
 /**
  * Read an opened file within `maxBytes`, refusing anything but a regular file.
@@ -146,7 +154,7 @@ export async function readTextFileWithin(
   maxBytes: number,
   what: string
 ): Promise<string> {
-  const handle = await open(filePath, READ_FLAGS);
+  const handle = await open(filePath, readFlags());
   try {
     return await readOpenedWithin(handle, maxBytes, what);
   } finally {
@@ -209,7 +217,7 @@ export async function readPackageFileWithin(
   await readPackageFileHooks.beforeOpen?.();
   let handle: FileHandle;
   try {
-    handle = await open(current, READ_NOFOLLOW_FLAGS);
+    handle = await open(current, readNoFollowFlags());
   } catch (err) {
     // A link swapped in for the file after the check above.
     if ((err as NodeJS.ErrnoException).code === 'ELOOP') throw linked();
@@ -262,7 +270,7 @@ export async function readPackageFileWithin(
  * @throws The underlying error, unchanged, otherwise (for example `ENOENT`).
  */
 export function readTextFileWithinSync(filePath: string, maxBytes: number, what: string): string {
-  const fd = openSync(filePath, READ_FLAGS);
+  const fd = openSync(filePath, readFlags());
   try {
     const stats = fstatSync(fd);
     if (!stats.isFile()) {
