@@ -8,6 +8,7 @@ import {
 } from '../confirmation-provider.js';
 import { ApprovalService, APPROVAL_TTL_MS } from '../../core/approvals/index.js';
 import type { PermissionPreview } from '../../marketplace/types.js';
+import type { ApprovableUpdate } from '../../marketplace/flows/update-installed.js';
 
 /** Build an empty PermissionPreview useful for plumbing tests. */
 function buildPreview(): PermissionPreview {
@@ -16,6 +17,12 @@ function buildPreview(): PermissionPreview {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -470,6 +477,235 @@ describe('TokenConfirmationProvider', () => {
       expect(
         (await provider.resolveToken(issued.token, buildRequest({ preview: reResolved }))).status
       ).toBe('approved');
+    });
+  });
+});
+
+describe('TokenConfirmationProvider — updates', () => {
+  let provider: TokenConfirmationProvider;
+  let approvals: ApprovalService;
+
+  beforeEach(() => {
+    approvals = new ApprovalService(createTestDb());
+    provider = new TokenConfirmationProvider(approvals);
+  });
+
+  const NOTHING = {
+    hooks: [],
+    schedules: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+  };
+
+  /** One reinstall, as the door hands it to the gate. */
+  function update(overrides: Partial<ApprovableUpdate> = {}): ApprovableUpdate {
+    return {
+      packageName: 'flow',
+      installPath: '/home/.dork/plugins/flow',
+      type: 'plugin',
+      scope: 'global',
+      installedVersion: '1.0.0',
+      latestVersion: '1.2.0',
+      disclosed: NOTHING,
+      ...overrides,
+    };
+  }
+
+  /** An update request over the given reinstalls. */
+  function updateRequest(updates: ApprovableUpdate[]) {
+    return {
+      packageName: [...new Set(updates.map((u) => u.packageName))].join(', '),
+      operation: 'update' as const,
+      updates,
+    };
+  }
+
+  function grantAll(): void {
+    for (const pending of approvals.listPending()) approvals.grant(pending.approvalId);
+  }
+
+  it('puts every reinstall on the card in full: place, versions, and everything it would run', async () => {
+    // Purpose: an update installs new code. The person must be able to read
+    // every command, scheduled job and MCP server the new versions bring.
+    await provider.requestInstallConfirmation(
+      updateRequest([
+        update({
+          disclosed: {
+            ...NOTHING,
+            hooks: [{ event: 'Stop', matcher: null, command: 'echo "new hook"' }],
+            schedules: [
+              {
+                name: 'nightly',
+                cron: '0 3 * * *',
+                permissionMode: 'default',
+                startsEnabled: true,
+              },
+            ],
+            mcpServers: [
+              { name: 'db', transport: 'stdio', command: 'npx', args: ['-y', 'db-mcp'], url: null },
+            ],
+          },
+        }),
+        update({
+          packageName: 'flow',
+          installPath: '/work/alpha/.dork/plugins/flow',
+          scope: 'override',
+          projectPath: '/work/alpha',
+          agentName: 'Alpha',
+        }),
+      ])
+    );
+
+    const [pending] = approvals.listPending();
+    expect(pending!.capabilityId).toBe('marketplace.update');
+    expect(pending!.summary).toContain('2 installed packages');
+    const detail = pending!.detail!;
+    expect(detail).toContain('"flow" (plugin, installed globally): "1.0.0" → "1.2.0"');
+    expect(detail).toContain('runs "echo \\"new hook\\"" when the agent finishes');
+    expect(detail).toContain('scheduled job "nightly": runs on "0 3 * * *"');
+    expect(detail).toContain('MCP server "db" (in every session): "npx" "-y" "db-mcp"');
+    expect(detail).toContain('installed in "/work/alpha" for "Alpha"');
+    expect(detail).toContain('runs nothing on its own');
+  });
+
+  it('says a project copy does not start its programs, and lists language servers, monitors and bin commands', async () => {
+    // Purpose: "in every session" is only true of a global plugin; a project
+    // install is projected as files and none of these start.
+    await provider.requestInstallConfirmation(
+      updateRequest([
+        update({
+          installPath: '/work/alpha/.dork/plugins/flow',
+          scope: 'agent-local',
+          projectPath: '/work/alpha',
+          disclosed: {
+            ...NOTHING,
+            lspServers: [{ name: 'go', command: 'gopls', args: ['serve'], when: null }],
+            monitors: [{ name: 'watch', command: './w.sh', args: [], when: 'always' }],
+            executables: ['git'],
+          },
+        }),
+      ])
+    );
+
+    const detail = approvals.listPending()[0]!.detail!;
+    expect(detail).toContain(
+      'language server "go" (declared, but not started for a project install): "gopls" "serve"'
+    );
+    expect(detail).toContain('background monitor "watch"');
+    expect(detail).toContain(`adds the command "git" to the agent's PATH`);
+    expect(detail).not.toContain('in every session');
+  });
+
+  it('shows a hidden direction-changing character instead of letting it rewrite the card', async () => {
+    // Purpose: U+202E can make a command read as something else entirely.
+    await provider.requestInstallConfirmation(
+      updateRequest([
+        update({
+          disclosed: {
+            ...NOTHING,
+            hooks: [{ event: 'Stop', matcher: null, command: 'echo \u202Egnp.exe' }],
+          },
+        }),
+      ])
+    );
+
+    const detail = approvals.listPending()[0]!.detail!;
+    expect(detail).toContain('<U+202E>');
+    expect(detail).not.toContain('\u202E');
+  });
+
+  it('asks again when the version a new approval would install has moved on', async () => {
+    // Purpose: the card named a version; a newer one arriving before the retry
+    // is not what the person said yes to, even if it declares the same things.
+    const issued = await provider.requestInstallConfirmation(updateRequest([update()]));
+    if (issued.status !== 'pending') throw new Error('expected pending');
+    grantAll();
+
+    const drifted = await provider.resolveToken(
+      issued.token,
+      updateRequest([update({ latestVersion: '1.3.0' })])
+    );
+    expect(drifted.status).toBe('pending');
+  });
+
+  it('refuses, rather than cutting, a list too long for one card', async () => {
+    // Purpose: a truncated card is an approval for commands nobody saw.
+    const many = Array.from({ length: 60 }, (_, i) =>
+      update({
+        packageName: `pkg-${i}`,
+        installPath: `/home/.dork/plugins/pkg-${i}`,
+        disclosed: {
+          ...NOTHING,
+          hooks: [{ event: 'Stop', matcher: null, command: 'x'.repeat(40) }],
+        },
+      })
+    );
+
+    const result = await provider.requestInstallConfirmation(updateRequest(many));
+
+    expect(result.status).toBe('declined');
+    if (result.status !== 'declined') throw new Error('unreachable');
+    expect(result.reason).toContain('Update fewer at a time');
+    expect(approvals.listPending()).toEqual([]);
+  });
+
+  it('does not let an approval for one installation reinstall another of the same name', async () => {
+    // Purpose: a global plugin and a global agent can share a name. Binding the
+    // name would let an approval for one stretch over both.
+    const plugin = update({ installPath: '/home/.dork/plugins/foo', packageName: 'foo' });
+    const agent = update({
+      installPath: '/home/.dork/agents/foo',
+      packageName: 'foo',
+      type: 'agent',
+    });
+    const issued = await provider.requestInstallConfirmation(updateRequest([plugin]));
+    if (issued.status !== 'pending') throw new Error('expected pending');
+    grantAll();
+
+    const widened = await provider.resolveToken(issued.token, updateRequest([plugin, agent]));
+    expect(widened.status).toBe('pending');
+    if (widened.status !== 'pending') throw new Error('unreachable');
+    expect(widened.reason).toContain('does not cover this update');
+
+    // Nor swapped for the other installation of that name.
+    const swapped = await provider.resolveToken(issued.token, updateRequest([agent]));
+    expect(swapped.status).toBe('pending');
+  });
+
+  it('asks again when a new version now runs something the person was not shown', async () => {
+    // Purpose: DOR-647 for updates. The yes was about what the card listed.
+    const issued = await provider.requestInstallConfirmation(updateRequest([update()]));
+    if (issued.status !== 'pending') throw new Error('expected pending');
+    grantAll();
+
+    const changed = await provider.resolveToken(
+      issued.token,
+      updateRequest([
+        update({
+          disclosed: {
+            ...NOTHING,
+            mcpServers: [{ name: 'x', transport: 'stdio', command: 'curl', args: [], url: null }],
+          },
+        }),
+      ])
+    );
+    expect(changed.status).toBe('pending');
+  });
+
+  it('binds the set, not the order a scan happened to list it in', async () => {
+    // Purpose: two scans of the same machine can list installations in a
+    // different order; that is the same batch and must not re-ask.
+    const a = update({ packageName: 'a', installPath: '/p/a' });
+    const b = update({ packageName: 'b', installPath: '/p/b' });
+    const issued = await provider.requestInstallConfirmation(updateRequest([a, b]));
+    if (issued.status !== 'pending') throw new Error('expected pending');
+    grantAll();
+
+    expect(await provider.resolveToken(issued.token, updateRequest([b, a]))).toEqual({
+      status: 'approved',
     });
   });
 });

@@ -215,6 +215,12 @@ function buildEmptyPermissionPreview(): PermissionPreview {
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -2139,6 +2145,37 @@ describe('Marketplace Routes', () => {
         packageName: 'sample-plugin',
         action: 'install',
       });
+    });
+
+    it('authorizes every distinct reinstall as marketplace.install, with its own scope', async () => {
+      // Purpose: the route loops the tier gate over the whole batch the door
+      // hands it. Asking only about the first would let the rest run unasked.
+      await request(fixtureServer).post('/api/marketplace/updates').send({ apply: true });
+
+      expect(installGateInputs()).toEqual([
+        { name: 'other-plugin' },
+        { name: 'sample-plugin' },
+        { name: 'sample-plugin', projectPath: agentDir },
+      ]);
+    });
+
+    it('stops at a refusal of a LATER reinstall, and runs nothing', async () => {
+      // Purpose: a yes for the first package is not a yes for the batch.
+      // Once-only, so the next test gets the real gate back.
+      vi.mocked(authorizeCapability)
+        .mockImplementationOnce(vi.mocked(authorizeCapability).getMockImplementation()!)
+        .mockReturnValueOnce({
+          outcome: 'denied',
+          payload: { error: 'no' },
+        } as unknown as ReturnType<typeof authorizeCapability>);
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/updates')
+        .send({ apply: true });
+
+      expect(res.status).toBe(403);
+      expect(installGateInputs()).toHaveLength(2);
+      expect(updateFlow.checkInstallations).not.toHaveBeenCalled();
     });
 
     it('lets an agent apply a batch, as install is tier act', async () => {

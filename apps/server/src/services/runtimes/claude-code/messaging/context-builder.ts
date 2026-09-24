@@ -331,11 +331,11 @@ Read-only lookups:
   ${T}marketplace_search(query?, type?, category?, tags?, marketplace?, limit?) -- search every enabled source (limit defaults to 20)
   ${T}marketplace_get(name, marketplace?) -- full manifest + README for one package
   ${T}marketplace_list_marketplaces() -- configured sources (name, source, enabled, package count)
-  ${T}marketplace_list_installed(type?) -- what is installed, one entry per scope (global | agent-local | override)
+  ${T}marketplace_list_installed(type?, checkUpdates?) -- what is installed, one entry per scope (global | agent-local | override); checkUpdates adds update.status/latestVersion (slower: fetches each marketplace)
   ${T}marketplace_recommend(context, type?, limit?) -- keyword/tag-matched suggestions for a free-text need (limit defaults to 5)
 
-Mutations -- ${T}marketplace_install, ${T}marketplace_uninstall, ${T}marketplace_create_package --
-all require explicit user confirmation through the SAME two-call protocol:
+Mutations -- ${T}marketplace_install, ${T}marketplace_update (with apply), ${T}marketplace_uninstall,
+${T}marketplace_create_package -- all require explicit user confirmation through the SAME two-call protocol:
   1. Call the tool without confirmationToken. A requires_confirmation response means the user
      has not approved yet -- show them the preview and STOP. Do not assume approval and do not
      retry in a loop; nothing resumes this for you.
@@ -345,6 +345,8 @@ all require explicit user confirmation through the SAME two-call protocol:
      changing any of those on the retry invalidates it.
 
   ${T}marketplace_install(name, marketplace?, projectPath?, confirmationToken?)
+  ${T}marketplace_update(names?, installPaths?, projectPath?, apply?, confirmationToken?) -- without apply, only checks
+     what has a newer version and changes nothing; with apply, reinstalls the stale ones where they are installed
   ${T}marketplace_uninstall(name, purge?, projectPath?, confirmationToken?)
   ${T}marketplace_create_package(name, type, description, author?, categories?, confirmationToken?)
 </marketplace_tools>`;

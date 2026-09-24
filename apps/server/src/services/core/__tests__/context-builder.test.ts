@@ -69,6 +69,7 @@ import { GetInputSchema } from '../../marketplace-mcp/tool-get.js';
 import { ListInstalledInputSchema } from '../../marketplace-mcp/tool-list-installed.js';
 import { RecommendInputSchema } from '../../marketplace-mcp/tool-recommend.js';
 import { InstallInputSchema } from '../../marketplace-mcp/tool-install.js';
+import { UpdateInputSchema } from '../../marketplace-mcp/tool-update.js';
 import { UninstallInputSchema } from '../../marketplace-mcp/tool-uninstall.js';
 import { CreatePackageInputSchema } from '../../marketplace-mcp/tool-create-package.js';
 
@@ -914,6 +915,7 @@ describe('buildMarketplaceToolsBlock', () => {
       ['marketplace_list_installed', ListInstalledInputSchema],
       ['marketplace_recommend', RecommendInputSchema],
       ['marketplace_install', InstallInputSchema],
+      ['marketplace_update', UpdateInputSchema],
       ['marketplace_uninstall', UninstallInputSchema],
       ['marketplace_create_package', CreatePackageInputSchema],
     ];
