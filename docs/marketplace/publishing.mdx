@@ -115,7 +115,7 @@ People fill in settings, and agents write notes, inside an installed package's f
 
   Each entry is an exact path, or a folder followed by `/**`. Older DorkOS versions ignore the field, so set `minDorkosVersion` if your package depends on it.
 
-  Files that decide what your package runs can't be marked this way: `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, `.dork/extensions/`, `.dork/tasks/`, `skills/`, `commands/`, a root `SKILL.md`, `package.json`, and any other place your `plugin.json` points these at. When someone updates your package, they approve exactly what the new version runs, so an edited copy of one of these files must never be kept in its place.
+  Files that decide what your package runs can't be marked this way: `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/`, `.dork/extensions/`, `.dork/tasks/`, `skills/`, `commands/`, `agents/`, `output-styles/`, a root `SKILL.md`, `package.json`, and any other place your `plugin.json` points these at. When someone updates your package, they approve exactly what the new version runs, so an edited copy of one of these files must never be kept in its place.
 
 - **Don't ship these paths.** They belong to the person or to DorkOS, and validation refuses a package that includes them: `.dork/data/`, `.dork/secrets.json`, `.dork/install-metadata.json`, `.dork/installed-files.json`, `.dork/uninstalled-agent.json`, and any file ending in `.dork-old` or `.dork-new`.
 - **Dependencies** you declare in `package.json` are already installed into your package's own `node_modules`, so you don't need to install them into the data folder yourself.

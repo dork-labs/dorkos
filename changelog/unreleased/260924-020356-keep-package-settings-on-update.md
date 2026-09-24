@@ -30,6 +30,7 @@ covers:
   - 'feat(marketplace): nothing that decides what a package runs can be user-editable (DOR-2245)'
   - 'fix(server): refuse an uninstall journal whose paths leave the install root (DOR-2245)'
   - "fix(server): an uninstall's own settle registers a restored agent again (DOR-2245)"
+  - "feat(marketplace): subagents and output styles can't be user-editable either (DOR-2245)"
 ---
 
 ### Fixed
@@ -43,5 +44,5 @@ covers:
 ### Changed
 
 - Uninstalling a marketplace agent now removes it from your team, and the confirmation says what that takes away: its rooms, schedules, sign-ins and access. Reinstalling brings back its identity but not those (DOR-2245)
-- Package authors can't mark files that decide what a package runs (hooks, servers, commands, skills, extensions) as yours to edit, so an update always runs exactly what you approved (DOR-2245)
+- Package authors can't mark files that decide what a package runs (hooks, servers, commands, skills, subagents, extensions) as yours to edit, so an update always runs exactly what you approved (DOR-2245)
 - Plugins written for Claude Code can keep their own state with `${CLAUDE_PLUGIN_DATA}`, which DorkOS points at a folder inside each install (DOR-2245)

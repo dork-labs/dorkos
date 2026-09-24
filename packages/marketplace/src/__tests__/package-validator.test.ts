@@ -423,6 +423,8 @@ describe('validatePackage', () => {
       [{ commands: ['./cmds'] }, 'cmds/**'],
       [{ skills: './my-skills' }, 'my-skills/a/SKILL.md'],
       [{ experimental: { monitors: './watch/m.json' } }, 'watch/**'],
+      [{ agents: ['./subagents'] }, 'subagents/**'],
+      [{ outputStyles: './styles' }, 'styles/terse.md'],
     ])(
       'refuses userEditable reaching a path plugin.json declares (%j)',
       async (pluginJson, pattern) => {

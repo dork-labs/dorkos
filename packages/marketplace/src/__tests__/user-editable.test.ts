@@ -141,12 +141,16 @@ describe('manifest userEditable', () => {
     'commands/**',
     'SKILL.md',
     'package.json',
+    'agents/**',
+    'agents/reviewer.md',
+    'output-styles/**',
+    'output-styles/terse.md',
   ])('refuses the effect-bearing path %s', (value) => {
     expect(UserEditablePathSchema.safeParse(value).success).toBe(false);
   });
 
   // Purpose: near-miss names beside an effect-bearing path stay editable.
-  it.each(['config/**', 'binder/x.json', 'skillset/**', 'hooks.md', 'commands.md'])(
+  it.each(['config/**', 'binder/x.json', 'skillset/**', 'hooks.md', 'commands.md', 'agents.md'])(
     'still accepts %s',
     (value) => {
       expect(UserEditablePathSchema.safeParse(value).success).toBe(true);

@@ -367,6 +367,8 @@ const DECLARED_EFFECT_FIELDS = [
   'monitors',
   'skills',
   'commands',
+  'agents',
+  'outputStyles',
 ];
 
 /** Every package-relative path a plugin.json field names (a string, or strings in an array). */

@@ -90,6 +90,11 @@ export const EFFECT_BEARING_PATHS = {
   rootSkill: 'SKILL.md',
   commands: 'commands',
   npmManifest: 'package.json',
+  // Subagent and output-style files: their frontmatter sets which tools run
+  // (`tools`), the same reason skills and commands are here. The preview does
+  // not list them yet, so no reader takes these two from here.
+  agents: 'agents',
+  outputStyles: 'output-styles',
 } as const;
 
 /**
