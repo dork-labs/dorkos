@@ -120,8 +120,9 @@ export function registerAgentRoutes(
   });
 
   app.get('/agents', async (c) => {
+    // Listing is read-only, so a kept grant can still see its agents while the host holds.
     const grant = c.req.header('authorization')
-      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent', { allowHeld: true })
       : undefined;
     const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const rows = await pool.query<AgentRow>(

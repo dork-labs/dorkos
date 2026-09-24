@@ -520,7 +520,26 @@ it('lets a kept grant and a kept agent read history and files, and nothing else 
     200,
     'G reads history'
   );
-  expect(JSON.stringify(await history.json())).toContain('Before the hold');
+  const page = await history.json();
+  expect(JSON.stringify(page)).toContain('Before the hold');
+  // Reading is not growth: the read position still saves, and the grant still lists agents.
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/read-cursor`, {
+      method: 'PUT',
+      bearer: memberGrant,
+      body: { cursor: page.entries.at(-1).cursor },
+    }),
+    200,
+    'G saves its read position'
+  );
+  const agents = await expectStatus(
+    await h.call(`${tenant(a)}/agents`, { bearer: memberGrant }),
+    200,
+    'G lists its agents'
+  );
+  expect((await agents.json()).agents).toEqual(
+    expect.arrayContaining([expect.objectContaining({ memberId: agentId })])
+  );
   const file = await expectStatus(
     await h.call(`${tenant(a)}/attachments/${attachmentId}`, { bearer: memberGrant }),
     200,

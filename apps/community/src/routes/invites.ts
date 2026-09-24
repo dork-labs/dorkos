@@ -350,7 +350,8 @@ export function registerInviteRoutes(
     const pending = admissionCookie(c, config);
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     const tenant = await resolveCommunityContext(c, pool);
-    // A hold ends every join attempt; say why rather than that it expired.
+    // A hold pauses every join attempt without ending it: say why, and the same attempt
+    // completes after release if it has not expired.
     if (tenant.lifecycle === 'held') throw communityHeld();
     const result = await pool.query<{
       expires_at: Date;

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(community): keep connections, agents, and invitations through a host hold'
+  - 'fix(community): let a kept grant list its agents while held, and document removals and read positions'
 ---
 
 ### Changed
