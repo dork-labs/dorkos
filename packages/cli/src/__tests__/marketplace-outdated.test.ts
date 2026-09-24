@@ -262,6 +262,19 @@ describe('runMarketplaceOutdated', () => {
     );
   });
 
+  it('says the server is older than the CLI when it has no updates door', async () => {
+    // Purpose: a DorkOS started before this CLI was installed answers 404 for
+    // the route; "Not found" alone tells a person nothing they can act on.
+    fetchMock.mockResolvedValueOnce(mockResponse(404, { error: 'Not found' }));
+
+    const code = await runMarketplaceOutdated({ json: false });
+
+    expect(code).toBe(2);
+    expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+      /older than this CLI.*Restart DorkOS/s
+    );
+  });
+
   describe('--json', () => {
     /** The single JSON document written to stdout. */
     function written(): unknown {

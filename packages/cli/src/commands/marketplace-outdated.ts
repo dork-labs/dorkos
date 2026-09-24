@@ -23,7 +23,7 @@ import type {
   InstallationUpdateCheck,
   InstallationUpdatesResult,
 } from '@dorkos/shared/marketplace-schemas';
-import { apiCall } from '../lib/api-client.js';
+import { ApiError, apiCall } from '../lib/api-client.js';
 import { formatUpdateLine, labelOf } from '../lib/installation-label.js';
 import { printError, printJson } from '../lib/operator-output.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
@@ -98,7 +98,16 @@ export async function runMarketplaceOutdated(args: MarketplaceOutdatedArgs): Pro
     const query = args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : '';
     result = await apiCall<InstallationUpdatesResult>('GET', `/api/marketplace/updates${query}`);
   } catch (err) {
-    printError(err);
+    // The route has no 404 of its own, so a 404 is a DorkOS started before this
+    // CLI was installed: say that, rather than the router's bare "Not found".
+    if (err instanceof ApiError && err.status === 404) {
+      console.error(
+        'Error: the running DorkOS is older than this CLI and cannot check for updates ' +
+          'this way. Restart DorkOS, then try again.'
+      );
+    } else {
+      printError(err);
+    }
     return OUTDATED_EXIT.unknown;
   }
 
