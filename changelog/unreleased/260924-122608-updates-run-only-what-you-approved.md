@@ -4,6 +4,7 @@ covers:
   - 'feat(marketplace): bind the HTTP update apply to what a person was shown, and ask before a global plugin runs (DOR-2306)'
   - 'fix(marketplace): bind global plugin approval to its bytes, ask before an agent replaces one, re-check every turn, and show what is held back (DOR-2306)'
   - 'feat(client): show what each update runs before you confirm it (DOR-2306)'
+  - 'feat(client): fold unchanged runs, wrap commands between their parts, and let Review sit beside a held-back note (DOR-2306)'
 ---
 
 ### Security
