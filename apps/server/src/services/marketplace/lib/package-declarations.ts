@@ -20,8 +20,9 @@
  *
  * @module services/marketplace/lib/package-declarations
  */
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, realpath } from 'node:fs/promises';
 import { isAbsolute, join, normalize, relative, sep } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 
 /** Where a Claude Code plugin's own manifest lives, package-relative. */
 export const PLUGIN_JSON = '.claude-plugin/plugin.json';
@@ -61,7 +62,10 @@ export async function readPackageText(
     if (stats.isSymbolicLink() || !stats.isFile()) return { kind: 'unreadable' };
     const [realRoot, realFile] = await Promise.all([realpath(packagePath), realpath(full)]);
     if (!staysInside(relative(realRoot, realFile))) return { kind: 'unreadable' };
-    return { kind: 'ok', text: await readFile(full, 'utf-8') };
+    return {
+      kind: 'ok',
+      text: await readTextFileWithin(full, PACKAGE_TEXT_MAX_BYTES, `The package's ${path}`),
+    };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'absent' };
     return { kind: 'unreadable' };

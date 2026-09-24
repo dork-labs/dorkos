@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+import { PACKAGE_TEXT_MAX_BYTES } from '@dorkos/shared/bounded-read';
 import { readDeclaredVersion, validatePackage } from '../package-validator.js';
 import {
   AGENT_MANIFEST_PATH,
@@ -1060,4 +1061,49 @@ describe('readDeclaredVersion', () => {
     // Purpose: the function is documented total; callers rely on that.
     await expect(readDeclaredVersion('/definitely/not/here')).resolves.toBeUndefined();
   });
+});
+
+describe('package files larger than DorkOS reads (DOR-2319)', () => {
+  const dirs: string[] = [];
+  afterEach(async () => {
+    for (const d of dirs.splice(0)) await fs.rm(d, { recursive: true, force: true });
+  });
+
+  /** A skill-pack package, with one file replaced by `oversized`. */
+  async function packageWith(oversized: string): Promise<string> {
+    const dir = await makeTempDir();
+    dirs.push(dir);
+    await writeJson(path.join(dir, '.dork', 'manifest.json'), {
+      schemaVersion: 1,
+      name: path.basename(dir),
+      version: '1.0.0',
+      type: 'skill-pack',
+      description: 'x',
+      license: 'MIT',
+      tags: [],
+      layers: ['skills'],
+    });
+    await writeJson(path.join(dir, '.claude-plugin', 'plugin.json'), {
+      name: path.basename(dir),
+      version: '1.0.0',
+    });
+    await writeText(
+      path.join(dir, 'skills', 'a', 'SKILL.md'),
+      '---\nname: a\ndescription: x\n---\nbody\n'
+    );
+    await writeText(path.join(dir, oversized), ' '.repeat(PACKAGE_TEXT_MAX_BYTES + 1));
+    return dir;
+  }
+
+  // Purpose: an oversized manifest is refused by name, never mistaken for a
+  // missing one (which would fall back to plugin.json and pass).
+  it.each(['.dork/manifest.json', '.claude-plugin/plugin.json', 'skills/a/SKILL.md'])(
+    'refuses a %s larger than the limit, by name',
+    async (file) => {
+      const result = await validatePackage(await packageWith(file));
+      expect(result.ok).toBe(false);
+      expect(result.issues.map((i) => i.message).join('\n')).toMatch(/larger than 1 MB/);
+      expect(result.issues.some((i) => i.path === file)).toBe(true);
+    }
+  );
 });

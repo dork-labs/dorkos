@@ -62,8 +62,9 @@
  * @module services/marketplace/lib/npm-dependencies
  */
 import { spawn } from 'node:child_process';
-import { lstat, readdir, readFile, realpath, rm } from 'node:fs/promises';
+import { lstat, readdir, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { Logger } from '@dorkos/shared/logger';
 import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
@@ -76,6 +77,20 @@ export const NPM_INSTALL_TIMEOUT_MS = 120_000;
  * code-execution primitive rather than a preference.
  */
 export const PACKAGE_NPMRC = '.npmrc';
+
+/**
+ * The most of each npm output stream the runner keeps, in characters. A
+ * package's install scripts decide what npm prints, so the rest is dropped;
+ * the start is kept because its first line is the one the warning shows
+ * (DOR-2319).
+ */
+export const NPM_OUTPUT_MAX_CHARS = 64 * 1024;
+
+/** Append `chunk` to `kept`, stopping at {@link NPM_OUTPUT_MAX_CHARS}. */
+function keepStart(kept: string, chunk: Buffer): string {
+  if (kept.length >= NPM_OUTPUT_MAX_CHARS) return kept;
+  return (kept + chunk.toString()).slice(0, NPM_OUTPUT_MAX_CHARS);
+}
 
 /** A single npm dependency a package declares, as written in its package.json. */
 export interface NpmDependency {
@@ -181,7 +196,11 @@ export async function readNpmDependencies(packageRoot: string): Promise<NpmDepen
   let parsed: unknown;
   try {
     parsed = JSON.parse(
-      await readFile(path.join(packageRoot, EFFECT_BEARING_PATHS.npmManifest), 'utf-8')
+      await readTextFileWithin(
+        path.join(packageRoot, EFFECT_BEARING_PATHS.npmManifest),
+        PACKAGE_TEXT_MAX_BYTES,
+        "The package's package.json"
+      )
     );
   } catch {
     return [];
@@ -450,8 +469,15 @@ function formatDependencyWarning(
  * `ENOENT` on spawn is reported as `npm-not-found` rather than as a generic
  * failure, because "you have no npm" and "npm tried and failed" need different
  * things said to the person reading the warning.
+ *
+ * Only the start of each output stream is kept ({@link NPM_OUTPUT_MAX_CHARS}),
+ * since a package's install scripts decide how much npm prints.
+ *
+ * @param command - The npm command to run.
+ * @returns How the install went.
+ * @internal Exported for tests; installs reach it as the default runner.
  */
-async function spawnNpmInstall(command: NpmInstallCommand): Promise<NpmInstallOutcome> {
+export async function spawnNpmInstall(command: NpmInstallCommand): Promise<NpmInstallOutcome> {
   return new Promise<NpmInstallOutcome>((resolve) => {
     let stderr = '';
     let stdout = '';
@@ -470,10 +496,10 @@ async function spawnNpmInstall(command: NpmInstallCommand): Promise<NpmInstallOu
     });
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
+      stdout = keepStart(stdout, chunk);
     });
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
+      stderr = keepStart(stderr, chunk);
     });
 
     child.once('error', (err: NodeJS.ErrnoException) => {

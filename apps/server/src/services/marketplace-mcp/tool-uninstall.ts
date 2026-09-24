@@ -17,9 +17,9 @@
  *
  * @module services/marketplace-mcp/tool-uninstall
  */
-import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import { PackageNameSchema } from '@dorkos/marketplace';
 
 import { PackageNotInstalledError, type UninstallResult } from '../marketplace/flows/uninstall.js';
@@ -250,7 +250,11 @@ async function installedPackageType(
   if (!root) return undefined;
   try {
     const manifest = JSON.parse(
-      await readFile(path.join(root, '.dork', 'manifest.json'), 'utf-8')
+      await readTextFileWithin(
+        path.join(root, '.dork', 'manifest.json'),
+        PACKAGE_TEXT_MAX_BYTES,
+        'The manifest'
+      )
     ) as { type?: unknown };
     return typeof manifest.type === 'string' ? manifest.type : undefined;
   } catch {

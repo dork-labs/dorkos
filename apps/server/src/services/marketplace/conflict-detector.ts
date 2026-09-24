@@ -9,8 +9,9 @@
  *
  * @module services/marketplace/conflict-detector
  */
-import { readFile, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
@@ -521,7 +522,7 @@ function dropSelfInstall<T extends { kind: InstallRootDir; packageName: string }
 async function readSlotBindings(manifestPath: string): Promise<SlotBinding[]> {
   let raw: string;
   try {
-    raw = await readFile(manifestPath, 'utf-8');
+    raw = await readTextFileWithin(manifestPath, PACKAGE_TEXT_MAX_BYTES, 'The manifest');
   } catch {
     return [];
   }
@@ -553,7 +554,7 @@ async function readSlotBindings(manifestPath: string): Promise<SlotBinding[]> {
 async function readSkillCron(skillPath: string): Promise<string | null | undefined> {
   let raw: string;
   try {
-    raw = await readFile(skillPath, 'utf-8');
+    raw = await readTextFileWithin(skillPath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
   } catch {
     return undefined;
   }

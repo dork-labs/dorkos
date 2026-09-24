@@ -2,6 +2,7 @@ import { type Dirent } from 'node:fs';
 import fsPromises from 'node:fs/promises';
 import path from 'node:path';
 import type { z } from 'zod';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import { noopLogger, type Logger } from '@dorkos/shared/logger';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { SKILL_FILENAME, WIDGET_TEMPLATE_SUFFIX } from './constants.js';
@@ -51,7 +52,11 @@ export async function scanUiTemplates(skillDirPath: string): Promise<UiTemplateS
 
     let raw: string;
     try {
-      raw = await fsPromises.readFile(path.join(uiDir, entry.name), 'utf-8');
+      raw = await readTextFileWithin(
+        path.join(uiDir, entry.name),
+        PACKAGE_TEXT_MAX_BYTES,
+        `The widget template ${relPath}`
+      );
     } catch (err) {
       errors.push(`Failed to read widget template "${relPath}": ${(err as Error).message}`);
       continue;
@@ -167,7 +172,11 @@ export async function scanSkillDirectory<T>(
 
     let content: string;
     try {
-      content = await fsPromises.readFile(skillPath, 'utf-8');
+      content = await readTextFileWithin(
+        skillPath,
+        PACKAGE_TEXT_MAX_BYTES,
+        `The ${SKILL_FILENAME}`
+      );
     } catch (err) {
       const code = (err as NodeJS.ErrnoException).code;
       if (code === 'ENOENT' || code === 'ENOTDIR') {

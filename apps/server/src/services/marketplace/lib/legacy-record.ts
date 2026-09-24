@@ -27,9 +27,10 @@
  *
  * @module services/marketplace/lib/legacy-record
  */
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { Logger } from '@dorkos/shared/logger';
 import {
   AGENT_IDENTITY_FILES,
@@ -79,7 +80,13 @@ async function exists(p: string): Promise<boolean> {
 /** A manifest's `userEditable`, read loosely (an old tree may predate the field). */
 async function userEditableOf(tree: string): Promise<string[]> {
   try {
-    const manifest = JSON.parse(await readFile(fsPath(tree, '.dork/manifest.json'), 'utf-8')) as {
+    const manifest = JSON.parse(
+      await readTextFileWithin(
+        fsPath(tree, '.dork/manifest.json'),
+        PACKAGE_TEXT_MAX_BYTES,
+        'The manifest'
+      )
+    ) as {
       userEditable?: unknown;
     };
     return Array.isArray(manifest.userEditable)
@@ -198,7 +205,13 @@ async function injectInstalledSchedules(tree: string, logger: Logger): Promise<v
   let manifest: MarketplacePackageManifest;
   try {
     const parsed = MarketplacePackageManifestSchema.safeParse(
-      JSON.parse(await readFile(fsPath(tree, '.dork/manifest.json'), 'utf-8'))
+      JSON.parse(
+        await readTextFileWithin(
+          fsPath(tree, '.dork/manifest.json'),
+          PACKAGE_TEXT_MAX_BYTES,
+          'The manifest'
+        )
+      )
     );
     if (!parsed.success) return;
     manifest = parsed.data;

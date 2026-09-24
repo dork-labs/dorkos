@@ -29,6 +29,11 @@ import {
   MarketplacePackageManifestSchema,
   type MarketplacePackageManifest,
 } from './manifest-schema.js';
+import {
+  PACKAGE_TEXT_MAX_BYTES,
+  TooLargeError,
+  readTextFileWithin,
+} from '@dorkos/shared/bounded-read';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
@@ -148,6 +153,51 @@ const SCHEDULE_SKILL_SOURCE_DIRS = [
 const PermissiveSkillFrontmatterSchema = z.unknown();
 
 /**
+ * Thrown by {@link readPackageFile} for a package file larger than DorkOS
+ * reads. It carries the file's package-relative path so the validator can
+ * report it by name, and it passes through the "missing or unreadable reads
+ * as absent" catches below, so an oversized manifest is never mistaken for a
+ * missing one (DOR-2319).
+ */
+class OversizedPackageFileError extends Error {
+  /**
+   * Wrap one oversized read.
+   *
+   * @param relPath - The file's path, relative to the package root.
+   * @param cause - The size refusal.
+   */
+  constructor(
+    readonly relPath: string,
+    cause: TooLargeError
+  ) {
+    super(cause.message, { cause });
+    this.name = 'OversizedPackageFileError';
+  }
+}
+
+/**
+ * Read one package file as text, within {@link PACKAGE_TEXT_MAX_BYTES}.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param relPath - The file's path, relative to the package root.
+ * @returns The file's text.
+ * @throws {OversizedPackageFileError} When the file is larger than the limit.
+ * @throws The read error, unchanged, otherwise (for example `ENOENT`).
+ */
+async function readPackageFile(packagePath: string, relPath: string): Promise<string> {
+  try {
+    return await readTextFileWithin(
+      path.join(packagePath, relPath),
+      PACKAGE_TEXT_MAX_BYTES,
+      `The package's ${relPath}`
+    );
+  } catch (err) {
+    if (err instanceof TooLargeError) throw new OversizedPackageFileError(relPath, err);
+    throw err;
+  }
+}
+
+/**
  * The version a package tree states about itself: `plugin.json`'s `version`
  * when that file declares one, else `.dork/manifest.json`'s. Reads the two
  * files directly and NEVER gates on validity, so an install whose files
@@ -179,7 +229,9 @@ export async function readDeclaredVersion(packagePath: string): Promise<string |
  */
 async function readVersionField(filePath: string): Promise<string | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    const parsed: unknown = JSON.parse(
+      await readTextFileWithin(filePath, PACKAGE_TEXT_MAX_BYTES, 'The file')
+    );
     if (parsed === null || typeof parsed !== 'object') return undefined;
     const version = (parsed as Record<string, unknown>).version;
     return typeof version === 'string' && version !== '' ? version : undefined;
@@ -213,6 +265,31 @@ export async function validatePackage(
   packagePath: string,
   options: ValidatePackageOptions = {}
 ): Promise<ValidatePackageResult> {
+  try {
+    return await validatePackageFiles(packagePath, options);
+  } catch (err) {
+    if (!(err instanceof OversizedPackageFileError)) throw err;
+    return {
+      ok: false,
+      issues: [{ level: 'error', code: 'FILE_TOO_LARGE', message: err.message, path: err.relPath }],
+      declaredVersion: await readDeclaredVersion(packagePath),
+    };
+  }
+}
+
+/**
+ * The body of {@link validatePackage}. An oversized package file anywhere in
+ * it throws {@link OversizedPackageFileError}, which the caller turns into
+ * one issue naming the file.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param options - What kind of tree this is.
+ * @returns The validation result.
+ */
+async function validatePackageFiles(
+  packagePath: string,
+  options: ValidatePackageOptions
+): Promise<ValidatePackageResult> {
   const issues: ValidationIssue[] = [];
   // Read before any gate, so every result — failed ones included — says what
   // version the tree states. The update check relies on that for trees that
@@ -224,11 +301,11 @@ export async function validatePackage(
   let manifestRaw: unknown;
   let manifestSource: string;
 
-  const dorkManifestPath = path.join(packagePath, PACKAGE_MANIFEST_PATH);
   let dorkManifestContent: string | null = null;
   try {
-    dorkManifestContent = await fs.readFile(dorkManifestPath, 'utf-8');
-  } catch {
+    dorkManifestContent = await readPackageFile(packagePath, PACKAGE_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof OversizedPackageFileError) throw err;
     // File not found — will attempt CC fallback below.
   }
 
@@ -403,11 +480,12 @@ async function checkUserEditableDeclaredPaths(
   let pluginJson: Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(
-      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
+      await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH)
     );
     if (typeof parsed !== 'object' || parsed === null) return;
     pluginJson = parsed as Record<string, unknown>;
-  } catch {
+  } catch (err) {
+    if (err instanceof OversizedPackageFileError) throw err;
     return;
   }
   const experimental = pluginJson.experimental as Record<string, unknown> | undefined;
@@ -503,10 +581,9 @@ async function checkVersionAgreement(
 ): Promise<void> {
   let plugin: unknown;
   try {
-    plugin = JSON.parse(
-      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
-    );
-  } catch {
+    plugin = JSON.parse(await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH));
+  } catch (err) {
+    if (err instanceof OversizedPackageFileError) throw err;
     return;
   }
   if (plugin === null || typeof plugin !== 'object') return;
@@ -682,12 +759,11 @@ async function checkPackagedMcpServers(
   packagePath: string,
   issues: ValidationIssue[]
 ): Promise<void> {
-  const agentManifestPath = path.join(packagePath, AGENT_MANIFEST_PATH);
-
   let content: string;
   try {
-    content = await fs.readFile(agentManifestPath, 'utf-8');
-  } catch {
+    content = await readPackageFile(packagePath, AGENT_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof OversizedPackageFileError) throw err;
     return; // No shipped agent.json — nothing to guard.
   }
 
@@ -896,11 +972,11 @@ export function validateDorkosSidecar(raw: string): MarketplaceValidationIssue[]
 async function synthesizeFromCcManifest(
   packagePath: string
 ): Promise<Record<string, unknown> | null> {
-  const ccPath = path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
   let content: string;
   try {
-    content = await fs.readFile(ccPath, 'utf-8');
-  } catch {
+    content = await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof OversizedPackageFileError) throw err;
     return null;
   }
 
