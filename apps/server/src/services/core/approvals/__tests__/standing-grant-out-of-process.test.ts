@@ -61,6 +61,7 @@ const ACTION = defineCapability({
   title: 'Demo destructive',
   description: 'A destructive capability used by the out-of-process posture tests.',
   tier: 'destructive',
+  area: null,
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   approvalDisplayFields: ['name'],
@@ -128,6 +129,7 @@ describe('a standing permission and an out-of-process settings round trip', () =
   /** Run the gate for the identified caller. */
   function enforce(): TierEnforcementDecision {
     return enforceCapabilityTier({
+      permission: null,
       action: ACTION,
       input: INPUT,
       identity: IDENTITY,

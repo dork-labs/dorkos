@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRelayEnabled } from '@/layers/entities/relay';
 import { useTasksEnabled } from '@/layers/entities/tasks';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import { useToolNamesForGroup } from '@/layers/entities/capability';
 import { FieldCard, FieldCardContent, SettingRow } from '@/layers/shared/ui';
 import { useDeepLinkScroll, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
 import {
@@ -69,9 +68,6 @@ export function ToolsTab() {
   });
 
   const { data: agentsData } = useRegisteredAgents();
-  // The tool names behind the grant, derived from the live registry rather than
-  // listed here — the fourth hand-kept copy is the one that drifts (DOR-499).
-  const roomsManageTools = useToolNamesForGroup('roomsManage');
   const scheduler = serverConfig?.scheduler;
 
   const overrideCounts = useMemo(() => {
@@ -172,41 +168,6 @@ export function ToolsTab() {
               }
             />
           ))}
-        </FieldCardContent>
-      </FieldCard>
-      {/* Its own card, apart from the four above, because it is a different
-          mechanism and one paragraph cannot honestly describe both. No switch
-          here on purpose: there is no global default for this grant (spec §D5),
-          and inventing one would be a second, weaker path to the same
-          permission. */}
-      <FieldCard>
-        <FieldCardContent className="space-y-2">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">Manage rooms</span>
-                {roomsManageTools.length > 0 ? <ToolCountBadge tools={roomsManageTools} /> : null}
-              </div>
-              <p className="text-muted-foreground text-sm">
-                Create channels and direct messages, add and remove members, rename a channel, and
-                leave a channel.
-              </p>
-            </div>
-            <span className="text-muted-foreground shrink-0 text-xs">Granted per agent</span>
-          </div>
-          {/* NO COUNT HERE, and that is a correction rather than a gap
-              (DOR-1611 review). This screen reads `GET /api/mesh/agents`, whose
-              rows come from the SQLite cache — and that cache has no
-              `enabled_tool_groups` column, so `rowToEntry` hardcodes `{}` and
-              every agent reads as ungranted. A "0 agents can manage rooms" that
-              is wrong on a machine where three of them can is worse than no
-              number at all, and the honest number needs a manifest-backed
-              surface this row does not justify building. What the row owes the
-              person is where to go, and it says that. */}
-          <p className="text-muted-foreground text-sm">
-            Unlike the groups above, this one blocks: an agent without it is refused and told to ask
-            you. Turn it on for an agent in that agent’s own Tools settings.
-          </p>
         </FieldCardContent>
       </FieldCard>
       <BackgroundSystemsCard

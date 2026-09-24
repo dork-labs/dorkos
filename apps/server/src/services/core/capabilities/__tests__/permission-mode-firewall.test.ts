@@ -85,6 +85,7 @@ const DESTROY = defineCapability({
   title: 'Delete a thing permanently',
   description: 'A destructive capability used by the permission-mode firewall guard.',
   tier: 'destructive',
+  area: null,
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_destroy', servers: ['external'] } },
@@ -129,6 +130,7 @@ describe('no permission mode switches off the destructive gate', () => {
       // field for it. If somebody adds one, this cast stops compiling and the author
       // has to come here and explain themselves.
       const decision = enforceCapabilityTier({
+        permission: null,
         action: DESTROY,
         input: { name: 'production' },
         identity: IDENTITY,

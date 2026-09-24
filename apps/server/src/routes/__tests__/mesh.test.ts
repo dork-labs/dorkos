@@ -757,25 +757,39 @@ describe('Mesh routes', () => {
       expect(JSON.stringify(res.body)).not.toContain('Fix or remove the file');
     });
 
-    it('is the ONE way the rooms-management grant is set (DOR-1611, spec §D6)', async () => {
-      // The other half of the asymmetry. `updateAgentManifest` — the
-      // agent-reachable path behind `PATCH /api/agents/current` and the
-      // `update_agent` MCP tool — refuses a patch that names `roomsManage`,
-      // because a grant the governed agent can set for itself is not a grant.
-      // The operator's route does not come through there, and must keep working:
-      // otherwise the switch has no way in at all.
-      meshCore.update.mockReturnValue({
-        ...MOCK_MANIFEST,
-        enabledToolGroups: { roomsManage: true },
-      });
+    it('refuses a body carrying permissions, since this route has no caller guard', async () => {
+      // Spec `agent-permissions` D10: any local program can reach this route, so
+      // it must never write what an agent may do. The permission routes are the
+      // one way in, behind a person and with an audit event.
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ permissions: { areas: { rooms: 'allowed' } } });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('USE_PERMISSIONS_API');
+      expect(meshCore.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses the retired roomsManage grant rather than silently dropping it', async () => {
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ enabledToolGroups: { tasks: false, roomsManage: true } });
+
+      expect(res.status).toBe(400);
+      expect(res.body.fields).toEqual(['enabledToolGroups.roomsManage']);
+      expect(meshCore.update).not.toHaveBeenCalled();
+    });
+
+    it('still writes the four documentation tool groups', async () => {
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, enabledToolGroups: { tasks: false } });
 
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
-        .send({ enabledToolGroups: { roomsManage: true } });
+        .send({ enabledToolGroups: { tasks: false } });
 
       expect(res.status).toBe(200);
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', {
-        enabledToolGroups: { roomsManage: true },
+        enabledToolGroups: { tasks: false },
       });
     });
 

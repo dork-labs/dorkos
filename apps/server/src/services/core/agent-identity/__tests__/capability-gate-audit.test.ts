@@ -60,6 +60,7 @@ const DESTROY = defineCapability({
   title: 'Destroy a thing',
   description: 'Cannot be undone.',
   tier: 'destructive',
+  area: null,
   input: z.object({}),
   output: z.object({ ok: z.boolean() }),
   surfaces: {},
@@ -108,6 +109,7 @@ describe('the gate records a call a standing permission let through', () => {
   /** Reach the gate the way the hand-registered MCP tools do: directly. */
   function gateDirectly() {
     return enforceCapabilityTier({
+      permission: null,
       action: DESTROY,
       input: {},
       identity: IDENTITY,
@@ -161,6 +163,7 @@ describe('the gate records a call a standing permission let through', () => {
     expect(action.tier, 'this case only says anything while the tool is gated').toBe('destructive');
 
     const decision = enforceCapabilityTier({
+      permission: null,
       action,
       input: { id: 'task_01' },
       identity: IDENTITY,

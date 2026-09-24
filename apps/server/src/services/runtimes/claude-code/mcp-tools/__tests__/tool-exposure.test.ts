@@ -411,8 +411,12 @@ describe('in-session tool exposure', () => {
     // person saying "this is broken, can you report it" — a turn with room for a
     // search, unlike a room reply with somebody waiting. Both counts move by the
     // same one.
-    expect(tools).toHaveLength(104);
-    expect(deferred).toHaveLength(95);
+    //
+    // 104 -> 105 for `archive_room` (spec `agent-permissions` D12), DEFERRED: an
+    // agent archives a channel rarely, once its work is done, which is a turn
+    // with room for a search. Both counts move by the same one.
+    expect(tools).toHaveLength(105);
+    expect(deferred).toHaveLength(96);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

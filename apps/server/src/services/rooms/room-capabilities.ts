@@ -97,46 +97,43 @@
  * budget for a post, {@link ReactionBudget} for a reaction. `I2` — bounds are
  * mechanisms, never prompts, and never tiers pretending to be one.
  *
- * ## The CONVERSATION verbs still have no toggle, and the five that arrange
- * rooms have one with teeth
+ * ## The CONVERSATION verbs have no switch; the verbs that arrange rooms sit in
+ * the Rooms permission area
  *
  * `EnabledToolGroupsSchema` still gains no `rooms` key (spec `room-participation`
  * §10.2), and the reasoning behind that has not moved: a togglable rooms group
  * reproduces OpenClaw's documented footgun exactly — an agent that "will listen
  * to room events and can never speak" — in a place where the toggle is one
  * person's per-agent setting and the consequence shows up in somebody else's
- * room. Nothing can mute an agent that is already in a conversation.
+ * room. Nothing can mute an agent that is already in a conversation, so
+ * `rooms.post` and `rooms.react` declare `area: null`.
  *
- * The five MANAGEMENT verbs are a different question and carry a different
- * answer: `toolGroup: 'roomsManage'` (DOR-1611, ADR 260828-123331). That is not
- * the `rooms` key §10.2 forbids and does not reproduce its footgun — it is
- * visibly a separate key, it covers no conversation verb, and an agent whose
- * owner has not turned it on can still read, post, react and look rooms up
- * exactly as before. What it withholds is the ability to REARRANGE, which is
- * the part that touches other people's rooms.
+ * The verbs that REARRANGE rooms — create, add and remove members, rename, leave,
+ * merge, archive — declare `area: 'rooms'` (spec `agent-permissions` D2). The
+ * capability gate resolves that area on every call, fresh off the agent's
+ * manifest and the install's defaults: Blocked refuses the call, Ask raises the
+ * approval card, Allowed runs. An agent cannot change its own setting — only the
+ * permission routes, behind a person, write it. What the area withholds is the
+ * ability to rearrange, which is the part that touches other people's rooms; an
+ * agent with Rooms Blocked can still read, post, react and look rooms up.
  *
- * **It is the product's first tool group that actually refuses.** The four keys
- * beside it in `mcp-tool-groups.ts` shape documentation only; this one is read
- * fresh off the agent's manifest at `registry.invoke` and the call does not run
- * without it. Off by default, and the agent cannot turn it on for itself — the
- * agent-reachable manifest write path refuses the field.
+ * ## Who reaches the Rooms area
  *
- * ## Agent-only by construction
- *
- * A person never reaches these five. The gate lets a `trustedCaller` past, and
- * that marker is minted at four routes none of which is the invoke route — so
- * the only caller who can pass the grant check is an identified agent that holds
- * it. That is correct rather than a gap: a person manages rooms in the app, over
- * the HTTP room routes, which are unchanged. It also means `callerAuthor` below
- * always takes its `context.identity` branch for these five, and the login-off
- * owner fallback is unreachable from them.
+ * A person never reaches these through the capability surface: the gate lets a
+ * `trustedCaller` past, and that marker is minted at routes none of which is the
+ * invoke route. A person manages rooms in the app, over the HTTP room routes.
+ * An identified agent reaches them when its resolved Rooms permission allows it.
+ * A caller that presents no identity resolves against the install's defaults
+ * only (spec `agent-permissions` D11), and `callerAuthor` below then gives it the
+ * same author the HTTP routes would: an error with login on, the operator with
+ * login off, which is the `local-trust` residual those routes already carry.
  *
  * ## The runtime constraint (§10.2.1), dissolved
  *
  * It used to be that only claude-code declared `supportsMcp: true`, so only a
  * claude-code agent got these in-session and the other two kept text-as-reply.
  * DOR-1613's wiring removed the premise, and DOR-2099 removed the switch in
- * front of it: Codex and OpenCode sessions reach the same fifteen verbs over
+ * front of it: Codex and OpenCode sessions reach the same verbs over
  * this server's own `/mcp`, with per-agent identity. Whether a given session actually carries them is now a
  * property of that SESSION rather than of its runtime, which is what the reply
  * mode reads (spec `tool-only-room-replies` §D2) — and a session that does not is
@@ -724,6 +721,8 @@ export const roomsDomain: CapabilityDomain = {
         'path in attachments; it has to be a file in your own working directory. ' +
         'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary.',
       tier: 'act',
+      area: null,
+      areaNote: 'conversation verbs never get a switch',
       input: z.object({
         roomId: z
           .string()
@@ -853,6 +852,8 @@ export const roomsDomain: CapabilityDomain = {
         'You have a limited number of these per room per hour, so spend them where a word would ' +
         'otherwise be noise — and when something needs saying, say it.',
       tier: 'act',
+      area: null,
+      areaNote: 'conversation verbs never get a switch',
       input: z.object({
         roomId: z.string().describe('The room the message is in, by its id — not its #name.'),
         entryId: z
@@ -910,6 +911,11 @@ export const roomsDomain: CapabilityDomain = {
         'When it lands, the room gets one line saying what you merged — you do not need to ' +
         'announce it as well.',
       tier: 'act',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'summary'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -961,6 +967,8 @@ export const roomsDomain: CapabilityDomain = {
         'anyone is sitting on work nobody has merged. ' +
         'It reads only — it changes nothing and merges nothing.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         roomId: z
           .string()
@@ -991,6 +999,8 @@ export const roomsDomain: CapabilityDomain = {
         `A page is at most ${HISTORY_PAGE_MAX} messages; ask for more by passing the lowest seq ` +
         'you got back as `before`.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         ...historyScope,
         limit: z
@@ -1041,6 +1051,8 @@ export const roomsDomain: CapabilityDomain = {
         'Something said in the last few minutes may not be findable yet; read the room back ' +
         'instead for the recent end of a conversation.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         ...historyScope,
         query: z.string().min(1).describe('The words to look for.'),
@@ -1087,6 +1099,8 @@ export const roomsDomain: CapabilityDomain = {
         `At most ${MEMBER_ROOMS_PAGE_MAX} come back; there is no next page, because a list ` +
         'longer than that is a directory rather than an answer.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -1134,6 +1148,8 @@ export const roomsDomain: CapabilityDomain = {
         'instead for the recent end of a conversation. ' +
         'It does not search your own past sessions — only rooms.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         query: z.string().min(1).describe('The words to look for.'),
         limit: z
@@ -1182,6 +1198,8 @@ export const roomsDomain: CapabilityDomain = {
         'you are in, and outside one you can list the rooms you are in or find a room by its ' +
         'name to get an id. You must be a member of the room.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         roomId: z
           .string()
@@ -1221,6 +1239,8 @@ export const roomsDomain: CapabilityDomain = {
         'the answer looks cut off. It only searches rooms you belong to: a room you are not ' +
         'in is not findable.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         name: z
           .string()
@@ -1297,7 +1317,10 @@ export const roomsDomain: CapabilityDomain = {
         'Ask before reorganising somebody else\u2019s work: opening a room is a message to ' +
         'everyone you put in it.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['kind', 'title', 'members'],
       input: z.object({
         kind: z
           .enum(['channel', 'dm'])
@@ -1407,7 +1430,11 @@ export const roomsDomain: CapabilityDomain = {
         'Members are applied one at a time and it does not stop at the first refusal: the ' +
         'result lists who was added and who was not, with the reason for each.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'members'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1453,7 +1480,11 @@ export const roomsDomain: CapabilityDomain = {
         'Members are applied one at a time and it does not stop at the first refusal: the ' +
         'result lists who was removed and who was not, with the reason for each.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'members'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1501,7 +1532,11 @@ export const roomsDomain: CapabilityDomain = {
         'this install can rename it. ' +
         'A name somebody chose is theirs; ask before you change it.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId', 'title', 'topic'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1562,7 +1597,11 @@ export const roomsDomain: CapabilityDomain = {
         'Say goodbye before you go if people are still working in there \u2014 leaving without a ' +
         'word reads as a colleague vanishing mid-conversation.',
       tier: 'act',
-      toolGroup: 'roomsManage',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
       input: z.object({
         roomId: z
           .string()
@@ -1584,6 +1623,43 @@ export const roomsDomain: CapabilityDomain = {
       },
     }),
     defineCapability({
+      id: 'rooms.archive',
+      title: 'Archive a channel',
+      description:
+        'Put away a channel you are in, once the work it was opened for is finished. ' +
+        'Archiving is not deleting: the channel and everything said in it are kept, it leaves ' +
+        'the sidebar and every list, and the person can bring it back whenever they want. ' +
+        'Anything the channel was still waiting for ends. ' +
+        'It only works on channels: a direct message stays until the person archives it. ' +
+        'You cannot archive the home channel, or a channel connected to an outside chat. ' +
+        'Say so in the channel first if people are still working in there.',
+      tier: 'act',
+      area: 'rooms',
+      // A person may set Rooms to Ask, so this can raise a card: these are
+      // the arguments it shows (spec `agent-permissions` D2).
+      approvalDisplayFields: ['roomId'],
+      approvalSubject: { field: 'roomId', kind: 'room' },
+      input: z.object({
+        roomId: z
+          .string()
+          .describe('The channel to archive, by its id \u2014 not its #name. You must be in it.'),
+      }),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'archive_room',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: (deps, input, context) => {
+        const rooms = requireRoomDeps(deps);
+        const caller = callerAuthor(rooms, context);
+        answering(() => rooms.archiveRoomFromTool(input.roomId, caller.id));
+        return Promise.resolve({ archived: true, roomId: input.roomId });
+      },
+    }),
+    defineCapability({
       id: 'rooms.read_canvas',
       title: "Read the room's canvas",
       description:
@@ -1596,6 +1672,8 @@ export const roomsDomain: CapabilityDomain = {
         'A document that names a file you could not open yourself comes back as its name and ' +
         'who opened it, without the contents.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         roomId: z
           .string()

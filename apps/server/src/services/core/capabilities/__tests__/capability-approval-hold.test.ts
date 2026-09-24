@@ -69,6 +69,7 @@ function domain(ran: { input: unknown; context: CapabilityHandlerContext }[]): C
         title: 'Destroy the thing',
         description: 'Deletes the named thing. Cannot be undone.',
         tier: 'destructive',
+        area: null,
         input: z.object({ name: z.string() }),
         output: z.object({ deleted: z.string() }),
         surfaces: { mcp: { toolName: 'gated_destroy', servers: ['in-session'] } },

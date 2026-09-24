@@ -160,8 +160,14 @@ import {
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
 import type { ApprovalOrigin, ApprovalSubject } from '@dorkos/shared/approval-schemas';
+import type { PermissionAreaId, PermissionSource } from '@dorkos/shared/permissions';
 
 import { isTrustedCaller } from './trusted-caller.js';
+import {
+  blockedPermissionMessage,
+  resolveCallPermission,
+  type CallPermission,
+} from './permission-enforcement.js';
 // Type-only, so the value-level dependency stays one-directional: `registry.ts`
 // imports the gate, never the reverse.
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
@@ -216,6 +222,12 @@ export interface GatedAction {
   title: string;
   /** Permission tier. This, and nothing about the caller, decides whether to gate. */
   tier: CapabilityTier;
+  /**
+   * The permission area the action belongs to, or `null` when its tier alone
+   * decides (spec `agent-permissions` D2). Required, so an action cannot reach
+   * the gate without somebody having decided it.
+   */
+  area: PermissionAreaId | null;
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
   /**
@@ -357,9 +369,9 @@ export interface ApprovalRequiredPayload {
  * - `input_not_bindable` — the input cannot be canonicalized without losing
  *   information, so no approval could honestly cover it. Refused, because an
  *   approval bound to a hash that ignores part of the action is worse than none.
- * - `tool_group_disabled` — the capability declares a per-agent tool group and
- *   this caller does not hold it (`tool-group-enforcement.ts`). Not a tier answer
- *   at all; it shares this union so every surface that already renders a refusal
+ * - `permission_blocked` — the action's permission area (or the action itself)
+ *   resolved to Blocked for this caller (spec `agent-permissions` D3). Not a tier
+ *   answer; it shares this union so every surface that already renders a refusal
  *   renders this one too, with no second shape to teach anybody.
  */
 export type TierDeniedReason =
@@ -367,7 +379,7 @@ export type TierDeniedReason =
   | 'operator_denied'
   | 'enforcement_unavailable'
   | 'input_not_bindable'
-  | 'tool_group_disabled';
+  | 'permission_blocked';
 
 /** The result a refused caller receives instead of the capability's output. */
 export interface TierDeniedPayload {
@@ -407,7 +419,12 @@ export type GrantedApproval =
   /** A person decided THIS call, and the approval was spent to allow it. */
   | { via: 'approval'; approvalId: string; authorityBindingDigest?: string }
   /** A standing permission the operator opened earlier allowed it, with no card. */
-  | { via: 'standing-grant'; grantId: string };
+  | { via: 'standing-grant'; grantId: string }
+  /**
+   * The action's permission resolved to Allowed, so it ran without a card. The
+   * source says which layer allowed it (spec `agent-permissions` D6).
+   */
+  | { via: 'permission'; source: PermissionSource };
 
 /**
  * What the gate needs to honor a standing permission: whether the operator
@@ -445,7 +462,8 @@ export type TierEnforcementDecision =
   | { outcome: 'denied'; payload: TierDeniedPayload };
 
 /**
- * A destructive call a standing permission allowed without asking anyone.
+ * A destructive call a standing permission, or an action-level Allowed
+ * permission, allowed without asking anyone.
  *
  * The one `allowed` decision that reaches the audit hook. Every other allowed call
  * is recorded by the registry's attribution observer instead, so reporting them
@@ -456,8 +474,8 @@ export type TierEnforcementDecision =
 export interface AutoApprovedAttempt {
   /** Discriminator. Always `allowed`. */
   outcome: 'allowed';
-  /** The permission that allowed it. */
-  approval: Extract<GrantedApproval, { via: 'standing-grant' }>;
+  /** What allowed it. */
+  approval: Extract<GrantedApproval, { via: 'standing-grant' } | { via: 'permission' }>;
 }
 
 /** One gated attempt, for the audit trail. */
@@ -480,6 +498,11 @@ export interface TierEnforcementAttempt {
   decision:
     | Extract<TierEnforcementDecision, { outcome: 'approval_required' | 'denied' }>
     | AutoApprovedAttempt;
+  /**
+   * The permission the gate resolved for this call, when the action has an area.
+   * Recorded on the audit line so "why was this refused" names the layer.
+   */
+  permission?: { state: CallPermission['state']; source: PermissionSource };
 }
 
 /** Everything the gate needs to decide one invocation. */
@@ -495,6 +518,14 @@ export interface TierEnforcementRequest {
   input: unknown;
   /** The calling agent, when the surface resolved one. */
   identity?: AgentIdentity;
+  /**
+   * The permission that applies to this call, from {@link resolveCallPermission},
+   * or `null` when the action has no area and its tier alone decides.
+   *
+   * REQUIRED, so each of the three callers resolves it (fresh, per call) before
+   * reaching the gate: a caller that forgets does not compile.
+   */
+  permission: CallPermission | null;
   /** The approval token the caller presented, when it presented one. */
   approvalToken?: string;
   /** Which channel a retry should carry its token on, for the instructions. */
@@ -863,11 +894,27 @@ function retryGuidance(
   };
 }
 
-/** The plain sentence explaining why a destructive call is waiting. */
-function approvalMessage(reason: ApprovalRequiredReason, title: string): string {
+/**
+ * Why a call needs a person, by tier: a destructive call because it cannot be
+ * undone, an `act` call because its permission is set to Ask.
+ *
+ * @param tier - The action's tier.
+ */
+function needsApprovalClause(tier: CapabilityTier): string {
+  return tier === 'destructive' ? 'cannot be undone' : 'is set to ask a person first';
+}
+
+/** The plain sentence explaining why a gated call is waiting. */
+function approvalMessage(
+  reason: ApprovalRequiredReason,
+  title: string,
+  tier: CapabilityTier
+): string {
   switch (reason) {
     case 'no_approval':
-      return `"${title}" cannot be undone, so a person has to approve it first. DorkOS has asked them.`;
+      return tier === 'destructive'
+        ? `"${title}" cannot be undone, so a person has to approve it first. DorkOS has asked them.`
+        : `"${title}" is set to ask a person first. DorkOS has asked them.`;
     case 'awaiting_decision':
       return `"${title}" is still waiting on a person. Present the same token again once they have answered.`;
     case 'expired':
@@ -982,6 +1029,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     subject,
     origin,
     requestingSession,
+    permission,
   } = request;
 
   // The TIER decides whether to gate — never whether the caller identified
@@ -989,15 +1037,35 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // dropping its own token (see the module TSDoc).
   const tier = action.tier;
 
-  /** Attribution for the audit trail, omitted rather than nulled when anonymous. */
-  const attributed = identity ? { identity } : {};
+  /**
+   * Attribution for the audit trail, omitted rather than nulled when anonymous,
+   * plus the permission the call resolved to when the action has an area.
+   */
+  const attributed = {
+    ...(identity ? { identity } : {}),
+    ...(permission ? { permission: { state: permission.state, source: permission.source } } : {}),
+  };
 
-  // Reading is free, and a ceiling never blocks reading.
+  // Blocked refuses every tier, reads included: a person turned the area (or the
+  // action) off for this caller, and there is no approval that unlocks it in this
+  // phase. Checked before the read early-return below for exactly that reason.
+  if (permission?.state === 'blocked') {
+    const payload = denied(action, 'permission_blocked', blockedPermissionMessage(permission), {
+      approvable: false,
+    });
+    audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
+    return { outcome: 'denied', payload };
+  }
+
+  // Reading is free, and a ceiling never blocks reading. Ask lets reads through
+  // too: only a call that changes something raises a card.
   if (tier === 'observe') return { outcome: 'allowed' };
 
   // EVERY caller has a ceiling. An unidentified one gets the anonymous default,
   // so dropping a credential cannot move a caller onto a more permissive path
-  // (see "the ceiling is not an escape hatch either" in the module TSDoc).
+  // (see "the ceiling is not an escape hatch either" in the module TSDoc). The
+  // ceiling is checked BEFORE the permission: an Allowed permission never lifts
+  // a ceiling.
   const ceiling = effectiveCeiling(identity);
   if (TIER_RANK[tier] > TIER_RANK[ceiling]) {
     const limitedParty = identity
@@ -1021,20 +1089,41 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     return { outcome: 'denied', payload };
   }
 
+  // Allowed runs. An `act` call is audited by the attribution observer on
+  // invoke, like any other allowed call. A `destructive` call can only resolve
+  // Allowed from an ACTION-level setting (the resolver turns an area-level
+  // Allowed on a destructive action into Ask), and it gets one Activity line
+  // saying no card was shown, for the reason the standing-grant branch below
+  // gives: a window in which DorkOS goes quiet must not also be one in which it
+  // goes blind.
+  if (permission?.state === 'allowed') {
+    const approval: GrantedApproval = { via: 'permission', source: permission.source };
+    if (tier === 'destructive') {
+      audit({ action, ...attributed, decision: { outcome: 'allowed', approval } });
+    }
+    return { outcome: 'allowed', approval };
+  }
+
+  // Ask on an `act` call raises a card. A standing permission never covers it:
+  // standing grants are the destructive tier's mechanism and retire with the
+  // permission model's own Always allow (phase 2).
+  const askingForAct = tier === 'act' && permission?.state === 'ask';
+
   // A standing permission, resolved here and nowhere else. AFTER the ceiling
   // above, so it can never lift one; BEFORE the `act` early-return below, so the
   // marketplace's own confirmation step honors the same answer (see the module
   // TSDoc).
-  const standingGrant = standingGrantEligible ? resolveStandingGrant(action, identity) : undefined;
+  const standingGrant =
+    standingGrantEligible && !askingForAct ? resolveStandingGrant(action, identity) : undefined;
 
-  // `act` is allowed and audited — by the attribution observer on invoke, so
-  // exactly one Activity record describes the call. A permission changes nothing
-  // about WHETHER it runs; it only rides along so a handler that would have asked
-  // its own question does not.
+  // `act` with no area is allowed and audited — by the attribution observer on
+  // invoke, so exactly one Activity record describes the call. A permission
+  // changes nothing about WHETHER it runs; it only rides along so a handler that
+  // would have asked its own question does not.
   //
   // `standingGrant` is always undefined here TODAY: permissions key on the
-  // `requestedByPath` only `ask()` writes, and `ask()` is destructive-only, so no
-  // `act` action can have one minted. Forward-looking on purpose — see "The `act`
+  // `requestedByPath` only `ask()` writes for a destructive call, so no `act`
+  // action can have one minted. Forward-looking on purpose — see "The `act`
   // half is FORWARD-LOOKING" in the module TSDoc for why it is kept and what would
   // make it fire.
   //
@@ -1042,7 +1131,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // call regardless, so a line saying a permission let it through would credit a
   // permission for a decision it did not make. The attribution observer records the
   // invocation and names the permission in its metadata, which is the honest shape.
-  if (tier === 'act') {
+  if (tier === 'act' && !askingForAct) {
     return { outcome: 'allowed', ...(standingGrant ? { approval: standingGrant } : {}) };
   }
 
@@ -1058,7 +1147,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     const payload = denied(
       action,
       'enforcement_unavailable',
-      `"${action.title}" cannot be undone and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
+      `"${action.title}" ${needsApprovalClause(tier)} and DorkOS cannot ask anyone to approve it right now, so it was refused.`,
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
@@ -1096,7 +1185,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     });
     return refuse(
       'input_not_bindable',
-      `"${action.title}" cannot be undone, and DorkOS cannot describe this exact call well enough ` +
+      `"${action.title}" ${needsApprovalClause(tier)}, and DorkOS cannot describe this exact call well enough ` +
         `to ask anyone about it, so it was refused.`
     );
   }
@@ -1115,7 +1204,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     const payload = denied(
       action,
       'enforcement_unavailable',
-      `"${action.title}" cannot be undone and DorkOS could not record an approval request for it, so it was refused.`,
+      `"${action.title}" ${needsApprovalClause(tier)} and DorkOS could not record an approval request for it, so it was refused.`,
       { approvable: false }
     );
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
@@ -1148,8 +1237,12 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         // The raw path alongside the display label, because a standing
         // permission keys on the agent and a label is not a key. An anonymous
         // caller records none, which is what makes its approval ineligible to be
-        // made standing.
-        ...(identity && standingGrantEligible ? { requestedByPath: identity.agentPath } : {}),
+        // made standing. Neither does an `act` call raised by an Ask permission:
+        // a standing permission never covers one (see `askingForAct`), so the card
+        // must not offer to make it standing.
+        ...(identity && standingGrantEligible && tier === 'destructive'
+          ? { requestedByPath: identity.agentPath }
+          : {}),
         // Where to tell the answer, when the surface had a session at all. Not
         // read by any decision here — see the field's own docblock.
         ...(requestingSession ? { requestingSession } : {}),
@@ -1167,7 +1260,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       approvalToken: ticket.token,
       expiresAt: ticket.expiresAt,
       reason,
-      message: approvalMessage(reason, action.title),
+      message: approvalMessage(reason, action.title, tier),
       retry: retryGuidance(retryChannel, interactive),
     };
     audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
@@ -1208,7 +1301,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         approvalToken,
         expiresAt: result.expiresAt,
         reason: 'awaiting_decision',
-        message: approvalMessage('awaiting_decision', action.title),
+        message: approvalMessage('awaiting_decision', action.title, tier),
         retry: retryGuidance(retryChannel, interactive),
       };
       audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });
@@ -1292,12 +1385,12 @@ export class CapabilityGateRefusal extends Error {
  * @throws If no capability is registered under `id`, or if `input` fails schema
  *   validation (a `ZodError`).
  */
-export function authorizeCapability(
+export async function authorizeCapability(
   registry: CapabilityRegistry,
   id: string,
   input: unknown,
   context: CapabilityInvocationContext
-): TierEnforcementDecision {
+): Promise<TierEnforcementDecision> {
   const capability = registry.get(id);
   if (!capability) {
     throw new Error(`Capability registry: no capability registered for id "${id}".`);
@@ -1326,9 +1419,15 @@ export function authorizeCapability(
     }
     return { outcome: 'allowed' };
   }
+  const parsed = capability.input.parse(input);
+  const permission = await resolveCallPermission({
+    action: capability,
+    ...(context.identity ? { identity: context.identity } : {}),
+  });
   return enforceCapabilityTier({
     action: capability,
-    input: capability.input.parse(input),
+    input: parsed,
+    permission,
     ...(context.identity ? { identity: context.identity } : {}),
     ...(context.approvalToken ? { approvalToken: context.approvalToken } : {}),
     retryChannel: context.retryChannel ?? 'http-header',

@@ -5,7 +5,7 @@
  * name is operator-only and is what the routes, the community adapter and the
  * team-room hook use; the `FromTool` twin swaps that one gate for
  * {@link RoomAuthority.requireRosterWriteAllowed} and is reachable only from
- * the rooms capability domain, itself gated on the `roomsManage` grant. Every
+ * the rooms capability domain, itself gated on the Rooms permission. Every
  * refusal BELOW the gate is shared, because each is a field check — what the
  * roster will look like afterwards — and widening the caller cannot widen any
  * of them. A surface added tomorrow gets the operator-only method by default,
@@ -108,7 +108,7 @@ export class RoomMembership {
    * cannot widen any of them.
    *
    * **A separate method rather than a parameter, and that is the point of it.**
-   * The grant that makes this safe (`roomsManage`) is enforced at
+   * The permission that makes this safe (Rooms) is enforced at
    * `registry.invoke` and nowhere else, so it protects the CAPABILITY and not the
    * method. Keeping the widened caller check on a method only the capability
    * calls is what stops the grant from being walked around: `addMember` stays
@@ -297,7 +297,7 @@ export class RoomMembership {
    * exist only for this caller. Everything below them is shared and unchanged.
    *
    * **A separate method rather than a parameter**, for the reason
-   * {@link RoomService.addMemberFromTool} gives in full: the `roomsManage` grant
+   * {@link RoomService.addMemberFromTool} gives in full: the Rooms permission
    * guards the CAPABILITY, not the method, so the widened caller check has to
    * live somewhere only the capability can reach.
    *

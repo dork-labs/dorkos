@@ -451,7 +451,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 103 -> 104 for `feedback_draft` (DOR-2056), on the same terms: no prompt
     // block names it, so it stays deferred and unprefixed too.
-    expect(advertised.size).toBe(104);
+    //
+    // 104 -> 105 for `archive_room` (spec `agent-permissions` D12), on the same
+    // terms: deferred and unprefixed.
+    expect(advertised.size).toBe(105);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

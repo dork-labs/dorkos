@@ -131,6 +131,18 @@ export type RoomErrorCode =
    */
   | 'TOOL_LEAVE_NOT_IN_DM'
   /**
+   * `archive_room` was asked to archive something that is not a channel (spec
+   * `agent-permissions` D12). A direct message stays until the person archives
+   * it, the same rule `leave_room` follows.
+   */
+  | 'TOOL_ARCHIVE_NOT_IN_DM'
+  /**
+   * `archive_room` was asked to archive a channel connected to an outside chat.
+   * Its archive is the disconnect the person makes, which also closes the
+   * bridge; archiving it alone would leave the bridge believing it is live.
+   */
+  | 'TOOL_ARCHIVE_BRIDGED'
+  /**
    * `update_room` was asked to rename a direct message (spec
    * `rooms-management-tools` §D12 amendment, DOR-1611).
    *

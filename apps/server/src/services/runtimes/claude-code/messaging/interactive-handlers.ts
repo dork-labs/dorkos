@@ -145,14 +145,16 @@ export const DORKOS_AGENT_TOOLS = new Set(
     // is narrowed further still — a document whose tree this reader could not
     // already read comes back as its name and nothing more.
     'read_canvas',
-    // The five that ARRANGE rooms (DOR-1611). They carry everything above them
-    // plus one bound none of the others has: the `roomsManage` grant, which is
-    // off until a person turns it on for THIS agent. See IDENTITY_SCOPED_TOOLS.
+    // The verbs that ARRANGE rooms (DOR-1611; `archive_room` from spec
+    // `agent-permissions` D12). They carry everything above them plus one bound
+    // none of the others has: the Rooms permission, resolved for THIS agent at
+    // the capability gate on every call. See IDENTITY_SCOPED_TOOLS.
     'create_room',
     'add_room_members',
     'remove_room_members',
     'update_room',
     'leave_room',
+    'archive_room',
     'relay_notify_user',
     'relay_send',
     'relay_inbox',
@@ -241,24 +243,26 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * rooms rather than every room on the machine, and that is still an ordinary
  * coding session reading somebody's private conversations without being asked.
  *
- * **The five that ARRANGE rooms carry one bound more than any verb above them**
- * (DOR-1611). `create_room`, `add_room_members`, `remove_room_members`,
- * `update_room` and `leave_room` are the only entries in this whole set that a
- * person has to switch ON before they run at all: `registry.invoke` reads the
- * `roomsManage` grant off the agent's manifest, fresh, on every call, and
- * refuses without it — and the agent-reachable write path refuses to set it for
- * itself (ADR `260828-123331`). So the auto-allow here is strictly narrower than
- * the eight above: those need only an identity, these need an identity AND a
- * deliberate act by the person, naming this agent.
+ * **The verbs that ARRANGE rooms carry one bound more than any verb above
+ * them** (DOR-1611, spec `agent-permissions`). `create_room`,
+ * `add_room_members`, `remove_room_members`, `update_room`, `leave_room` and
+ * `archive_room` sit in the Rooms permission area: `registry.invoke` resolves it
+ * for this agent, fresh, on every call — Blocked refuses, Ask raises the gate's
+ * own card inside the call, Allowed runs — and no agent can write its own
+ * permissions. So the auto-allow here is strictly narrower than the eight
+ * above: those need only an identity, these need an identity AND a Rooms
+ * permission a person set or chose a preset for.
  *
- * They must not raise a card for the domain's standing reason, and it is
+ * They must not raise a SESSION card for the domain's standing reason, and it is
  * sharper for these than for the reads. An agent opens a channel or pulls a
  * colleague in DURING a room turn — that is the moment the work needs it — and
  * DOR-1229 measured what a card costs there: eleven minutes, then an auto-deny.
- * A card would also be asking the person a question she has already answered, in
- * the one place built for it. Without an identity the grant refuses the call
- * anyway; the gate still asks rather than inferring harmlessness from another
- * layer's refusal, which is the same posture `memory_write` takes below.
+ * A card would also be asking the person a question she has already answered, on
+ * the Permissions page built for it; where she chose Ask, the capability gate
+ * raises its own card and holds the call. Without an identity the call resolves
+ * against the install's defaults only; this gate still asks rather than
+ * inferring harmlessness from another layer, which is the same posture
+ * `memory_write` takes below.
  *
  * ## Why `relay_notify_user` is here too (DOR-1265)
  *
@@ -392,6 +396,7 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'remove_room_members',
     'update_room',
     'leave_room',
+    'archive_room',
     'relay_notify_user',
     'memory_write',
   ].map(inSessionToolName)

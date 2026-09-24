@@ -28,10 +28,10 @@ import {
   resetCapabilityTierGate,
 } from '../tier-enforcement.js';
 import {
-  enforceToolGroupGrant,
-  initToolGroupGate,
-  resetToolGroupGate,
-} from '../tool-group-enforcement.js';
+  initPermissionGate,
+  resetPermissionGate,
+  resolveCallPermission,
+} from '../permission-enforcement.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import {
@@ -66,6 +66,7 @@ const UNINSTALL = defineCapability({
   title: 'Uninstall a package',
   description: 'A destructive capability used to probe the ceiling.',
   tier: 'destructive',
+  area: null,
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_uninstall', servers: ['external'] } },
@@ -78,6 +79,7 @@ const RENAME = defineCapability({
   title: 'Rename a thing',
   description: 'An act capability used to probe what revocation takes away.',
   tier: 'act',
+  area: null,
   input: z.object({ name: z.string() }),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_rename', servers: ['external'] } },
@@ -90,19 +92,20 @@ const READ = defineCapability({
   title: 'Read a thing',
   description: 'An observe capability used to prove reading survives revocation.',
   tier: 'observe',
+  area: null,
   input: z.object({}),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_read', servers: ['external'] } },
   invoke: async () => ({ ok: true }),
 });
 
-/** A capability behind the one per-agent tool group, for the grant drill. */
+/** A capability in the Rooms permission area, for the permission drill. */
 const MANAGE_ROOMS = defineCapability({
   id: 'demo.manage_rooms',
   title: 'Manage rooms',
-  description: 'A capability gated on the rooms-management grant.',
+  description: 'A capability in the Rooms permission area.',
   tier: 'act',
-  toolGroup: 'roomsManage',
+  area: 'rooms',
   input: z.object({}),
   output: z.unknown(),
   surfaces: { mcp: { toolName: 'demo_manage_rooms', servers: ['external'] } },
@@ -127,6 +130,7 @@ async function askTheGate() {
   return {
     identity,
     decision: enforceCapabilityTier({
+      permission: null,
       action: UNINSTALL,
       identity,
       input: { name: 'sentry-monitor' },
@@ -148,7 +152,7 @@ beforeEach(async () => {
 afterEach(async () => {
   resetAgentIdentityService();
   resetCapabilityTierGate();
-  resetToolGroupGate();
+  resetPermissionGate();
   vi.restoreAllMocks();
   await rm(agentPath, { recursive: true, force: true });
 });
@@ -226,6 +230,7 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
     await updateAgentManifest({ agentPath, body: { tierCeiling: 'act' } });
     await spawnAndResolve();
     const before = enforceCapabilityTier({
+      permission: null,
       action: RENAME,
       identity: await service.describeAgent(agentPath),
       input: { name: 'x' },
@@ -236,6 +241,7 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
 
     await service.revoke(agentPath);
     const after = enforceCapabilityTier({
+      permission: null,
       action: RENAME,
       identity: await service.describeAgent(agentPath),
       input: { name: 'x' },
@@ -259,6 +265,7 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
     expect(identity?.inactive).toBe('revoked');
     expect(
       enforceCapabilityTier({
+        permission: null,
         action: RENAME,
         identity,
         input: { name: 'x' },
@@ -273,6 +280,7 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
     await service.revoke(agentPath);
 
     const decision = enforceCapabilityTier({
+      permission: null,
       action: READ,
       identity: await service.describeAgent(agentPath),
       input: {},
@@ -282,22 +290,40 @@ describe('revoking a capped agent shuts it off, and never widens it', () => {
     expect(decision.outcome).toBe('allowed');
   });
 
-  it('takes every tool-group grant away with it', async () => {
-    // The seam that would have quietly INVERTED the other way: this gate keyed
-    // on identity presence, and revoked identities used to be absent. Naming
-    // them would have handed a revoked agent every grant on its manifest.
-    initToolGroupGate({ grants: { holds: async () => true } });
+  it('takes every Allowed permission away with it', async () => {
+    // The seam that would have quietly INVERTED the other way: revoked
+    // identities used to be absent, and are named now. Without the inactive
+    // rule, naming them would hand a revoked agent every permission its
+    // manifest allows.
+    initPermissionGate({
+      readConfig: () => ({ preset: 'full', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => ({ areas: { rooms: 'allowed' } }),
+    });
     await spawnAndResolve();
     const live = await service.describeAgent(agentPath);
-    expect((await enforceToolGroupGrant({ action: MANAGE_ROOMS, identity: live })).outcome).toBe(
-      'allowed'
-    );
+    const liveDecision = enforceCapabilityTier({
+      action: MANAGE_ROOMS,
+      identity: live,
+      permission: await resolveCallPermission({ action: MANAGE_ROOMS, identity: live }),
+      input: {},
+      retryChannel: 'mcp-argument',
+    });
+    expect(liveDecision.outcome).toBe('allowed');
 
     await service.revoke(agentPath);
     const revoked = await service.describeAgent(agentPath);
 
-    const decision = await enforceToolGroupGrant({ action: MANAGE_ROOMS, identity: revoked });
-    expect(decision.outcome).toBe('denied');
+    const decision = enforceCapabilityTier({
+      action: MANAGE_ROOMS,
+      identity: revoked,
+      permission: await resolveCallPermission({ action: MANAGE_ROOMS, identity: revoked }),
+      input: {},
+      retryChannel: 'mcp-argument',
+    });
+    expect(decision).toMatchObject({
+      outcome: 'denied',
+      payload: { reason: 'permission_blocked', approvable: false },
+    });
   });
 
   it('gives a fresh spawn its identity back', async () => {
@@ -340,6 +366,7 @@ describe('a token that has aged out cannot spend what the live agent was granted
     expect(identity?.inactive).toBe('expired');
 
     const decision = enforceCapabilityTier({
+      permission: null,
       action: UNINSTALL,
       identity,
       input: { name: 'sentry-monitor' },
@@ -362,6 +389,7 @@ describe('a token that has aged out cannot spend what the live agent was granted
     const identity = await service.resolve(env[AGENT_TOKEN_ENV_VAR]!);
 
     const decision = enforceCapabilityTier({
+      permission: null,
       action: UNINSTALL,
       identity,
       input: { name: 'sentry-monitor' },

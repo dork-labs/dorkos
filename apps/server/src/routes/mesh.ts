@@ -223,6 +223,32 @@ function enrichAgent(
 }
 
 /**
+ * The permission fields a mesh agent PATCH names, which this route refuses: the
+ * `permissions` object, and the retired `enabledToolGroups.roomsManage` grant it
+ * replaced. The other four `enabledToolGroups` keys and `tierCeiling` stay
+ * writable here until the permission model absorbs them.
+ *
+ * @param body - The raw request body.
+ * @returns The refused field paths, empty when the body names none.
+ */
+function retiredPermissionFields(body: unknown): string[] {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
+  const record = body as Record<string, unknown>;
+  const refused: string[] = [];
+  if (Object.hasOwn(record, 'permissions')) refused.push('permissions');
+  const groups = record.enabledToolGroups;
+  if (
+    groups &&
+    typeof groups === 'object' &&
+    !Array.isArray(groups) &&
+    Object.hasOwn(groups, 'roomsManage')
+  ) {
+    refused.push('enabledToolGroups.roomsManage');
+  }
+  return refused;
+}
+
+/**
  * Create the Mesh router with discovery, registration, and denial endpoints.
  *
  * @param deps - MeshCore plus optional cross-subsystem dependencies for topology enrichment
@@ -552,6 +578,20 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
 
   // PATCH /agents/:id — Update agent fields
   router.patch('/agents/:id', async (req, res) => {
+    // What an agent may do is never written here (spec `agent-permissions` D10).
+    // This route has no caller guard of its own, so any local program can reach
+    // it; the permission routes are the one way in, behind a person and with an
+    // audit event. Refused by name rather than stripped by the schema, so the
+    // caller learns where to go instead of getting a 200 that changed nothing.
+    const refused = retiredPermissionFields(req.body);
+    if (refused.length > 0) {
+      return res.status(400).json({
+        error:
+          'Only a person can change permissions, from the Permissions page. Agents can ask the person.',
+        code: 'USE_PERMISSIONS_API',
+        fields: refused,
+      });
+    }
     const result = UpdateAgentRequestSchema.safeParse(req.body);
     if (!result.success) {
       return res

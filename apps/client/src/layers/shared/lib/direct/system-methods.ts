@@ -774,7 +774,7 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       };
     },
 
-    async getCapabilityCatalog(_opts?: { toolGroup?: string }): Promise<CapabilityCatalog> {
+    async getCapabilityCatalog(_opts?: { area?: string }): Promise<CapabilityCatalog> {
       // The embed runs no Capability Registry: it holds a runtime and a search
       // index, not the server's composed domains. An EMPTY catalog is the honest
       // answer, and it is the one the Tools tabs already handle — a grant with no

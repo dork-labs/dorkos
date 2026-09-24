@@ -242,11 +242,11 @@ describe('trusted XOR identity', () => {
     expect(removed).toBe(false);
   });
 
-  it('`authorizeCapability` refuses the same pair, so the invariant holds in BOTH seams', () => {
+  it('`authorizeCapability` refuses the same pair, so the invariant holds in BOTH seams', async () => {
     // Unreachable from its only caller today, which cannot assemble the pair. It
     // is asserted anyway: an invariant that holds at one of two entry points is
     // not an invariant, and this is the seam a future caller will reach for.
-    expect(() =>
+    await expect(
       authorizeCapability(
         registry(),
         'demo.destroy',
@@ -256,7 +256,7 @@ describe('trusted XOR identity', () => {
           identity: IDENTITY,
         }
       )
-    ).toThrow(/both a trusted-caller marker and an agent identity/);
+    ).rejects.toThrow(/both a trusted-caller marker and an agent identity/);
     expect(removed).toBe(false);
   });
 

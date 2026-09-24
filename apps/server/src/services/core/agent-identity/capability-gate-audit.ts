@@ -63,24 +63,22 @@ import type { TierEnforcementAttempt } from '../capabilities/index.js';
  * Build the audit hook the pre-invoke gates call for every attempt they did not
  * allow.
  *
- * **Boot wires the same observer to BOTH gates** — `initCapabilityTierGate` for
- * the tier answer, and `initToolGroupGate` for the per-agent tool-group grant
- * (DOR-1611). One hook rather than two because the operator's question is one
- * question: what did something try to do and not get. A `tool_group_disabled`
+ * Boot wires it to `initCapabilityTierGate`, which now answers both the tier and
+ * the permission question (spec `agent-permissions` D6). A `permission_blocked`
  * denial arrives here in the same `TierEnforcementAttempt` shape as a ceiling
  * refusal, and takes the same `capability.denied` branch below with no special
- * case.
+ * case, carrying the resolved `permission` in its metadata.
  *
- * `emit` is fire-and-forget and never throws, and both gates swallow anything
+ * `emit` is fire-and-forget and never throws, and the gate swallows anything
  * this hook throws anyway, so a broken feed can never turn into a broken gate.
  *
  * @param activityService - The Activity feed writer.
- * @returns The `onAttempt` hook both gates call.
+ * @returns The gate's `onAttempt` hook.
  */
 export function createCapabilityGateAuditObserver(
   activityService: ActivityService
 ): (attempt: TierEnforcementAttempt) => void {
-  return ({ action, identity, decision }) => {
+  return ({ action, identity, decision, permission }) => {
     // One naming of an actor, shared with the attribution observer next door and
     // the extension write routes (`services/activity/activity-actor.ts`).
     const actor = activityActorForIdentity(identity);
@@ -105,7 +103,13 @@ export function createCapabilityGateAuditObserver(
     // "Unidentified caller" with no `actorId`. Deriving the whole actor together
     // removes that latent mismatch: the type, the id and the label now cannot
     // disagree about who acted.
+    //
+    // The second way here is a destructive call an ACTION-level Allowed
+    // permission let through (spec `agent-permissions` D6): a person named this
+    // exact action as allowed, so there was no card, and the line says which
+    // layer allowed it.
     if (decision.outcome === 'allowed') {
+      const approval = decision.approval;
       void activityService.emit({
         ...actor,
         category: 'agent',
@@ -113,11 +117,17 @@ export function createCapabilityGateAuditObserver(
         resourceType: 'capability',
         resourceId: action.id,
         resourceLabel: action.title,
-        summary: `${label} ran ${action.title} under a standing permission you granted`,
+        summary:
+          approval.via === 'permission'
+            ? `${label} ran ${action.title} because its permission is set to Allowed`
+            : `${label} ran ${action.title} under a standing permission you granted`,
         metadata: {
           capabilityId: action.id,
           tier: action.tier,
-          grantId: decision.approval.grantId,
+          ...(approval.via === 'permission'
+            ? { via: 'permission', source: approval.source }
+            : { grantId: approval.grantId }),
+          ...(permission ? { permission } : {}),
         },
       });
       return;
@@ -149,6 +159,9 @@ export function createCapabilityGateAuditObserver(
         // anything" over a refusal citing a limit (DOR-486).
         ...(identity?.inactive ? { identityState: identity.inactive } : {}),
         reason: decision.payload.reason,
+        // The permission the call resolved to, when the action has an area, so
+        // "why was this refused / why did it ask" names the layer that decided.
+        ...(permission ? { permission } : {}),
         ...(pending ? { approvalId: pending.approvalId } : {}),
       },
     });
