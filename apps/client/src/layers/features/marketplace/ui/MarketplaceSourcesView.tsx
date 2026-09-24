@@ -33,6 +33,31 @@ function sentence(reason: string): string {
   return `${reason.replace(/\.+$/, '')}.`;
 }
 
+/** When a cached copy of a listing was fetched, the way the rows show dates. */
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+/**
+ * What went wrong with a source's listing on this visit: it didn't load at all
+ * (`failed`), or the source couldn't be reached and the last copy is still
+ * what's shown (`stale`). The server fetches on add and on refresh and says
+ * why at the time; it keeps no record of it, so neither does the page.
+ */
+interface ListingStatus {
+  kind: 'failed' | 'stale';
+  /** The sentence shown on the row and announced, reason included. */
+  message: string;
+}
+
+/** The status dot's label: an accurate one, not "Enabled" over a problem. */
+function statusLabel(enabled: boolean, listing: ListingStatus | null): string {
+  if (!enabled) return 'Disabled';
+  if (listing?.kind === 'failed') return "Enabled, but its packages didn't load";
+  if (listing?.kind === 'stale') return 'Enabled, but showing an older copy of its packages';
+  return 'Enabled';
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
@@ -42,8 +67,8 @@ interface SourceCardProps {
   source: string;
   enabled: boolean;
   addedAt: string;
-  /** Why this source's packages aren't loaded, when a fetch of them just failed. */
-  listingNote: string | null;
+  /** What went wrong with this source's listing on this visit, if anything. */
+  listing: ListingStatus | null;
   onRefresh: () => void;
   isRefreshing: boolean;
   onRemove: () => void;
@@ -55,16 +80,18 @@ function SourceCard({
   source,
   enabled,
   addedAt,
-  listingNote,
+  listing,
   onRefresh,
   isRefreshing,
   onRemove,
   isRemoving,
 }: SourceCardProps) {
-  const addedDate = new Date(addedAt).toLocaleString(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  });
+  const addedDate = formatWhen(addedAt);
+  const dotColor = !enabled
+    ? 'text-muted-foreground'
+    : listing
+      ? 'text-amber-500'
+      : 'text-emerald-500';
 
   return (
     <div
@@ -73,16 +100,28 @@ function SourceCard({
     >
       <div className="flex min-w-0 items-start gap-3">
         <Circle
-          className={`mt-0.5 size-3 shrink-0 fill-current ${enabled ? 'text-emerald-500' : 'text-muted-foreground'}`}
-          aria-label={enabled ? 'Enabled' : 'Disabled'}
+          className={`mt-0.5 size-3 shrink-0 fill-current ${dotColor}`}
+          aria-label={statusLabel(enabled, listing)}
         />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{name}</p>
           <p className="text-muted-foreground truncate text-xs">{source}</p>
           <p className="text-muted-foreground mt-1 text-xs">Added {addedDate}</p>
-          {listingNote && (
-            <p role="status" className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-              {listingNote}
+          {/* Not a live region itself: the page announces it once, through
+              its one persistent announcer, so a row appearing with a note
+              already in it is still heard. */}
+          {listing && (
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+              {listing.message}{' '}
+              <Button
+                variant="link"
+                size="sm"
+                onClick={onRefresh}
+                aria-busy={isRefreshing}
+                className="h-auto p-0 text-xs text-amber-700 underline dark:text-amber-400"
+              >
+                Try again
+              </Button>
             </p>
           )}
         </div>
@@ -92,7 +131,9 @@ function SourceCard({
           variant="ghost"
           size="sm"
           onClick={onRefresh}
-          disabled={isRefreshing}
+          // Busy, not disabled: a disabled button drops keyboard focus mid-action.
+          // A click while busy is ignored by the page.
+          aria-busy={isRefreshing}
           aria-label={`Refresh ${name}`}
         >
           <RefreshCw className={`size-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -214,12 +255,17 @@ export function MarketplaceSourcesView() {
   const removeSource = useRemoveMarketplaceSource();
   const refreshSource = useRefreshMarketplaceSource();
   const [dialogOpen, setDialogOpen] = useState(false);
-  // Why a source's packages didn't load, by source name. Kept only for this
-  // visit: the server fetches on add and on refresh, and says why at the time.
-  const [listingNotes, setListingNotes] = useState<Record<string, string>>({});
+  // What went wrong with each source's listing on this visit, by name.
+  const [listingStatuses, setListingStatuses] = useState<Record<string, ListingStatus>>({});
+  // The last listing news, written into ONE persistent live region: a region
+  // that mounts together with its text is not reliably announced.
+  const [announcement, setAnnouncement] = useState('');
 
-  const setListingNote = (name: string, note: string | null) => {
-    setListingNotes(({ [name]: _dropped, ...rest }) => (note ? { ...rest, [name]: note } : rest));
+  const setListingStatus = (name: string, status: ListingStatus | null) => {
+    setListingStatuses(({ [name]: _dropped, ...rest }) =>
+      status ? { ...rest, [name]: status } : rest
+    );
+    if (status) setAnnouncement(`${name}: ${status.message}`);
   };
 
   // Adding a source fetches its listing once (DOR-2304). A failed fetch still
@@ -232,33 +278,58 @@ export function MarketplaceSourcesView() {
         onSuccess: (added) => {
           setDialogOpen(false);
           if (added.listing.fetched) {
-            setListingNote(added.name, null);
+            setListingStatus(added.name, null);
             toast.success(`Added ${added.name}. ${packagesReady(added.listing.packageCount)}`);
           } else {
-            setListingNote(
-              added.name,
-              `Added, but its packages didn't load: ${sentence(added.listing.reason)} Try Refresh.`
-            );
+            setListingStatus(added.name, {
+              kind: 'failed',
+              message: `Added, but its packages didn't load: ${sentence(added.listing.reason)}`,
+            });
+            toast.warning(`Added ${added.name}, but its packages didn't load.`);
           }
         },
       }
     );
   };
 
+  const isRefreshing = (name: string) =>
+    refreshSource.isPending && refreshSource.variables === name;
+
+  // A refresh is "check now". When the source can't be reached but a copy is
+  // cached, the server says so (`stale`) and the row says which copy is shown.
   const handleRefresh = (name: string) => {
+    if (isRefreshing(name)) return;
     refreshSource.mutate(name, {
       onSuccess: (refreshed) => {
-        setListingNote(name, null);
-        toast.success(`Refreshed ${name}. ${packagesReady(refreshed.marketplace.plugins.length)}`);
+        if (refreshed.stale) {
+          setListingStatus(name, {
+            kind: 'stale',
+            message:
+              `Couldn't reach it: ${sentence(refreshed.reason ?? 'no reason given')} ` +
+              `Still showing the last copy, from ${formatWhen(refreshed.fetchedAt)}.`,
+          });
+          toast.warning(`Couldn't reach ${name}. Still showing the last copy.`);
+          return;
+        }
+        const ready = packagesReady(refreshed.marketplace.plugins.length);
+        setListingStatus(name, null);
+        // Replaces the old news in the announcer, so it never reads a fixed
+        // problem back as current.
+        setAnnouncement(`${name}: ${ready}`);
+        toast.success(`Refreshed ${name}. ${ready}`);
       },
       onError: (err) => {
-        setListingNote(name, `Its packages didn't load: ${sentence(err.message)} Try Refresh.`);
+        setListingStatus(name, {
+          kind: 'failed',
+          message: `Its packages didn't load: ${sentence(err.message)}`,
+        });
+        toast.warning(`Couldn't refresh ${name}.`);
       },
     });
   };
 
   const handleRemove = (name: string) => {
-    removeSource.mutate(name, { onSuccess: () => setListingNote(name, null) });
+    removeSource.mutate(name, { onSuccess: () => setListingStatus(name, null) });
   };
 
   // Closing the dialog drops the last refusal with it — reopening to try again
@@ -324,15 +395,19 @@ export function MarketplaceSourcesView() {
               source={s.source}
               enabled={s.enabled}
               addedAt={s.addedAt}
-              listingNote={listingNotes[s.name] ?? null}
+              listing={listingStatuses[s.name] ?? null}
               onRefresh={() => handleRefresh(s.name)}
-              isRefreshing={refreshSource.isPending && refreshSource.variables === s.name}
+              isRefreshing={isRefreshing(s.name)}
               onRemove={() => handleRemove(s.name)}
               isRemoving={removeSource.isPending}
             />
           ))}
         </div>
       )}
+
+      <div data-slot="listing-announcer" role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </div>
 
       {/* Add dialog */}
       <AddSourceDialog
