@@ -11,10 +11,10 @@
  * MCP adapters re-wrap it).
  *
  * The confirmation-token trust boundary for the mutation capabilities
- * (`marketplace.install`, `marketplace.uninstall`, `marketplace.create_package`)
- * is preserved exactly: the approval state machine lives inside the handler on
- * `deps.confirmationProvider`, unchanged by the migration. The five read-only
- * lookups carry `readOnlyCarveOut: true`; the three mutations do not.
+ * (`marketplace.install`, `marketplace.update`, `marketplace.uninstall`,
+ * `marketplace.create_package`) is preserved exactly: the approval state machine
+ * lives inside the handler on `deps.confirmationProvider`. The five read-only
+ * lookups carry `readOnlyCarveOut: true`; the four mutations do not.
  *
  * ## Cooperating with the tier gate
  *
@@ -45,6 +45,7 @@ import { createListMarketplacesHandler } from './tool-list-marketplaces.js';
 import { createListInstalledHandler, ListInstalledInputSchema } from './tool-list-installed.js';
 import { createRecommendHandler, RecommendInputSchema } from './tool-recommend.js';
 import { createInstallHandler, InstallInputSchema } from './tool-install.js';
+import { createUpdateHandler, UpdateInputSchema } from './tool-update.js';
 import { createUninstallHandler, UninstallInputSchema } from './tool-uninstall.js';
 import { createCreatePackageHandler, CreatePackageInputSchema } from './tool-create-package.js';
 
@@ -99,7 +100,7 @@ function callerContext(context: CapabilityHandlerContext): MarketplaceConfirmati
 }
 
 /**
- * The marketplace domain: read-only lookups first, then the three
+ * The marketplace domain: read-only lookups first, then the four
  * confirmation-gated mutations. This is the registration order on both MCP
  * servers.
  */
@@ -180,7 +181,10 @@ export const marketplaceDomain: CapabilityDomain = {
         'List packages currently installed in this DorkOS instance, one entry per installation across scopes. ' +
         'A package installed globally and on two agents returns three entries, each tagged with scope ' +
         '(global | agent-local | override) and, for agent installs, the owning agent id and name. ' +
-        'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance.',
+        'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance. ' +
+        'Pass checkUpdates:true to also get, per entry, update.status (update-available | current | unknown), ' +
+        "update.latestVersion and a note. That checks each package's marketplace, so it is slower; " +
+        'without it nothing is fetched.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
@@ -191,7 +195,8 @@ export const marketplaceDomain: CapabilityDomain = {
           toolName: 'marketplace_list_installed',
           servers: ['in-session', 'external'],
           readOnlyCarveOut: true,
-          annotations: { idempotentHint: true },
+          // `checkUpdates` reads each package's (possibly remote) marketplace.
+          annotations: { idempotentHint: true, openWorldHint: true },
         },
       },
       invoke: async (deps, input) =>
@@ -243,6 +248,40 @@ export const marketplaceDomain: CapabilityDomain = {
       invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
           await createInstallHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+        ),
+    }),
+    defineCapability({
+      id: 'marketplace.update',
+      title: 'Update packages',
+      description:
+        'Check installed marketplace packages for newer versions, and install them. ' +
+        'By default it only checks: one entry per installation, with status (update-available | current | unknown), ' +
+        'installedVersion, latestVersion, a note saying why when it could not tell, and where it is installed ' +
+        '(installPath, scope, agentPath). Nothing changes. ' +
+        'Narrow it with names (every copy of those packages) and/or installPaths (exact copies, as a check reported them). ' +
+        'Pass apply:true to reinstall every selected package that has a newer version, each where it is installed. ' +
+        'Requires user confirmation: the first apply call checks, then returns status:requires_confirmation with a token ' +
+        'and the updates it would make (versions, and every command, scheduled job, server, monitor and skill tool the new versions bring). ' +
+        'After the user approves in DorkOS, re-call with the same arguments plus confirmationToken. If a new version changed ' +
+        'in between, it asks again. Too many updates for one approval are refused: apply fewer, by installPaths. ' +
+        'A linked (symlinked) install is never reinstalled.',
+      tier: 'act',
+      // Same area as install: an applied update is an install of a new version.
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
+      input: z.object(UpdateInputSchema),
+      output: z.unknown(),
+      surfaces: {
+        mcp: {
+          toolName: 'marketplace_update',
+          servers: ['in-session', 'external'],
+          // Reads each package's (possibly remote) marketplace, and fetches it on apply.
+          annotations: { openWorldHint: true },
+        },
+      },
+      invoke: async (deps, input, context) =>
+        unwrapMcpEnvelope(
+          await createUpdateHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
         ),
     }),
     defineCapability({

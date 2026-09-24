@@ -50,11 +50,12 @@ import {
   GitRefNotFoundError,
   GitRemoteUnreachableError,
 } from '../services/marketplace/lib/git-tree.js';
+import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import {
+  installationUpdateName,
   PackageNotInstalledForUpdateError,
   pickInstallation,
-  type UpdateFlow,
-} from '../services/marketplace/flows/update.js';
+} from '../services/marketplace/flows/update-selection.js';
 import {
   applyInstalledUpdates,
   callerSpelling,
@@ -79,7 +80,6 @@ import {
   computeProvides,
   type AgentScopeRef,
 } from '../services/marketplace/installed-scanner.js';
-import { installationUpdateName } from '../services/marketplace/flows/update.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import {
   APPROVAL_TOKEN_HEADER,

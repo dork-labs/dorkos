@@ -459,7 +459,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // `agent-permissions` D8, D9). No claude-code prompt block names either bare:
     // the Blocked-area line names the request tool by its ENDING, the form that
     // survives every runtime's prefix.
-    expect(advertised.size).toBe(107);
+    //
+    // 107 -> 108 for `marketplace_update` (DOR-2195). `<marketplace_tools>` names
+    // it, prefixed, like every marketplace tool.
+    expect(advertised.size).toBe(108);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [
@@ -532,7 +535,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // only one, and it names `post_to_room` once more than the first did — in
     // the sentence that says the answer you worked out is the thing you post,
     // which is the line DOR-1643 measured as the one that closes the gap.
-    expect(prefixed.length).toBe(97);
+    //
+    // 97 -> 99 for `marketplace_update` (DOR-2195): `<marketplace_tools>` names it
+    // twice, once among the confirmation-gated mutations and once for its
+    // signature, as it does every other mutation.
+    expect(prefixed.length).toBe(99);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {

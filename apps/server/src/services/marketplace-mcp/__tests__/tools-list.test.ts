@@ -34,6 +34,7 @@ const EXPECTED_TOOLS = [
   'marketplace_list_installed',
   'marketplace_recommend',
   'marketplace_install',
+  'marketplace_update',
   'marketplace_uninstall',
   'marketplace_create_package',
 ] as const;
@@ -95,6 +96,9 @@ function buildStubDeps(): MarketplaceMcpDeps {
     uninstallFlow: {
       uninstall: vi.fn(explode('uninstallFlow.uninstall')),
     } as unknown as MarketplaceMcpDeps['uninstallFlow'],
+    updateFlow: {
+      checkInstallations: vi.fn(explode('updateFlow.checkInstallations')),
+    } as unknown as MarketplaceMcpDeps['updateFlow'],
     confirmationProvider: {
       requestInstallConfirmation: vi.fn(explode('confirmationProvider.requestInstallConfirmation')),
       resolve: vi.fn(explode('confirmationProvider.resolve')),

@@ -129,6 +129,12 @@ const emptyPreview = {
   extensions: [],
   hooks: [],
   unreadableHooks: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+  unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
   secrets: [],
@@ -175,6 +181,11 @@ const marketplaceDeps = {
       uninstallReached = true;
       throw new Error('uninstall must not be reached in conformance (gated at pending)');
     },
+  },
+  // The sandbox has nothing installed, so an advisory `marketplace.update`
+  // checks nothing; an apply would find nothing to reinstall either.
+  updateFlow: {
+    checkInstallations: async () => ({ checks: [] }),
   },
   confirmationProvider: {
     requestInstallConfirmation: async () => ({ status: 'pending' as const, token: 'conformance' }),

@@ -13,6 +13,12 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     extensions: [],
     hooks: [],
     unreadableHooks: [],
+    mcpServers: [],
+    lspServers: [],
+    monitors: [],
+    executables: [],
+    skillTools: [],
+    unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
     secrets: [],
@@ -329,5 +335,74 @@ describe('summarizePermissionPreview', () => {
     });
 
     expect(summarizePermissionPreview(preview)).toBe('Changes no files. Declares 2 commands.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Programs a plugin starts on its own (DOR-2195)
+// ---------------------------------------------------------------------------
+
+describe('formatPermissionPreview → commands → programs', () => {
+  it('lists every program the package starts, each argument quoted, with where it runs', () => {
+    // Purpose: MCP and language servers, monitors and bin/ commands run without
+    // being asked for by name, so they belong beside the hook commands.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        mcpServers: [
+          { name: 'db', transport: 'stdio', command: 'npx', args: ['-y', 'db mcp'] },
+          { name: 'web', transport: 'http', url: 'https://mcp.example.test' },
+        ],
+        lspServers: [{ name: 'go', command: 'gopls', args: ['serve'] }],
+        monitors: [{ name: 'deploy', command: './poll.sh', when: 'always' }],
+        executables: ['git'],
+        unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
+      })
+    );
+
+    expect(commands.map((row) => row.label)).toEqual([
+      '"npx" "-y" "db mcp"',
+      '"https://mcp.example.test"',
+      '"gopls" "serve"',
+      '"./poll.sh"',
+      '"git"',
+      'This package sets up a program to run, but we could not read it',
+    ]);
+    expect(commands[0]!.description).toContain('MCP server "db"');
+    // Never "in your sessions" flatly: a project install does not start these.
+    expect(commands[0]!.description).toContain('does not start them');
+  });
+
+  it("names a skill's hook as the skill's, and lists the tools a skill may use without asking", () => {
+    // Purpose: both run on the model's choice of skill, not the person's.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        hooks: [{ event: 'Stop', command: 'echo hi', source: 'skills/all/SKILL.md' }],
+        skillTools: [
+          { source: 'skills/all/SKILL.md', skill: 'all', tools: ['Bash(curl:*)', 'Read'] },
+        ],
+      })
+    );
+    expect(commands[0]!.description).toContain('while skills/all/SKILL.md is in use');
+    expect(commands[1]).toMatchObject({
+      label: '"Bash(curl:*)", "Read"',
+      description: 'Skill "all" may use these without asking you',
+    });
+  });
+
+  it('shows a hidden direction-changing character in a command', () => {
+    const { commands } = formatPermissionPreview(
+      makePreview({ hooks: [{ event: 'Stop', command: 'echo \u202Egnp.exe' }] })
+    );
+    expect(commands[0]!.label).toBe('echo <U+202E>gnp.exe');
+  });
+
+  it('counts only the programs it could read in the summary', () => {
+    const preview = makePreview({
+      mcpServers: [{ name: 'db', transport: 'stdio', command: 'npx', args: [] }],
+      unreadableDeclarations: [{ path: '.lsp.json', kind: 'lsp-server' }],
+    });
+    expect(summarizePermissionPreview(preview)).toBe(
+      'Changes no files. Declares no commands. Declares 1 program of its own.'
+    );
   });
 });

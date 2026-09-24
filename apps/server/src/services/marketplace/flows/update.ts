@@ -40,26 +40,32 @@
  *
  * @module services/marketplace/flows/update
  */
-import { gt as semverGt, valid as semverValid } from 'semver';
+import { isRealCommitSha } from '@dorkos/marketplace';
+import type { InstallRequest, InstallResult } from '../types.js';
+import { disclosedEffectsOf, type DisclosedEffects } from '../disclosed-effects.js';
+import type { InstallationRecord } from '../installed-scanner.js';
+import { Slots } from '../lib/slots.js';
 import {
-  isRealCommitSha,
-  resolvePackageVersion,
-  type MarketplaceJson,
-  type MarketplaceJsonEntry,
-  type PackageType,
-  type ResolvedPackageVersion,
-  type VersionSource,
-} from '@dorkos/marketplace';
-import type { Logger } from '@dorkos/shared/logger';
-import { updateNameOf } from '../lib/install-roots.js';
+  compareVersions,
+  installedVersionOf,
+  joinNotes,
+  notInScope,
+  realCommitOf,
+  unknownCheck,
+  withIdentity,
+} from './update-compare.js';
+import { installationUpdateName } from './update-selection.js';
+import { TtlMemo } from './update-memo.js';
+import { UpdateTargets } from './update-targets.js';
 import type {
-  InstallRequest,
-  InstallResult,
-  LatestResolution,
-  MarketplaceSource,
-  ResolveLatestOptions,
-} from '../types.js';
-import type { InstallationRecord, PackageScope } from '../installed-scanner.js';
+  InstallationUpdatesRequest,
+  InstallationUpdatesResult,
+  UpdateCheckResult,
+  UpdateFlowDeps,
+  UpdatePlan,
+  UpdateRequest,
+  UpdateResult,
+} from './update-types.js';
 
 /**
  * How long a commit lookup or a marketplace index fetch is shared between
@@ -91,305 +97,13 @@ const FULL_SHA_RE = /^[0-9a-f]{40}$/i;
 /** The note on a check of a symlinked install, which is never reinstalled. */
 export const LINKED_INSTALL_NOTE = 'linked install — update its source instead';
 
-/** The note on a check whose installed side names no version at all. */
-const INSTALLED_UNKNOWN_NOTE = 'reinstall this package to enable update checks';
-
-/** The note on a direct install checked against its default branch. */
-const DEFAULT_BRANCH_NOTE =
-  'checked against the default branch: this package was installed before DorkOS recorded which branch it came from';
-
-/**
- * Structural interface for the forward-declared `MarketplaceInstaller`.
- * Declared here so the update flow can be wired against either the real
- * installer or a test double without a circular import.
- */
-export interface InstallerLike {
-  /**
-   * Update an installed package by uninstalling (without purging
-   * `.dork/data/` or `.dork/secrets.json`) and reinstalling fresh.
-   * Preserves user secrets and persisted state across version bumps.
-   */
-  update(req: InstallRequest): Promise<InstallResult>;
-  /**
-   * Work out what installing a package now would give, without installing.
-   * Never throws: a failure is an `unresolved` result with a reason.
-   */
-  resolveLatest(req: InstallRequest, opts: ResolveLatestOptions): Promise<LatestResolution>;
-}
-
-/**
- * Structural interface for {@link import('../marketplace-source-manager.js').MarketplaceSourceManager}.
- * Declared locally so tests can mock with `vi.fn()` without constructing
- * the concrete class.
- */
-export interface UpdateSourceManagerLike {
-  list(): Promise<MarketplaceSource[]>;
-  get(name: string): Promise<MarketplaceSource | null>;
-}
-
-/**
- * Structural interface for the parts of
- * {@link import('../package-fetcher.js').PackageFetcher} the update check uses.
- */
-export interface UpdateFetcherLike {
-  fetchMarketplaceJson(source: MarketplaceSource): Promise<MarketplaceJson>;
-  /** `git ls-remote` for one ref; a `tmp-<ms>` placeholder when it fails. */
-  lookupCommitSha(cloneUrl: string, ref: string): Promise<string>;
-}
-
-/** The outcome of checking one package. */
-export type UpdateStatus = 'current' | 'update-available' | 'unknown';
-
-/** A single comparison result for one installed package. */
-export interface UpdateCheckResult {
-  packageName: string;
-  /** The installed version, or the full commit SHA when its source is `'commit'`. */
-  installedVersion: string;
-  /** What installing now would give; `''` when `status === 'unknown'`. */
-  latestVersion: string;
-  /** Always `status === 'update-available'`. */
-  hasUpdate: boolean;
-  /** The marketplace the package was checked against; `''` for direct installs and unknowns. */
-  marketplace: string;
-  status: UpdateStatus;
-  /** Which step of Claude Code's chain the installed version came from. */
-  installedVersionSource?: VersionSource;
-  /** Which step of Claude Code's chain the latest version came from. */
-  latestVersionSource?: VersionSource;
-  /** Why a check is `unknown`, or a caveat on a known answer (a rollback, a default branch). */
-  note?: string;
-}
-
-/** A request to check one package (and optionally apply its update). */
-export interface UpdateRequest {
-  /** The package name, as the update check names it (`updateNameOf`). */
-  name: string;
-  /**
-   * The installation of that name the caller resolved ({@link pickInstallation}),
-   * or `undefined` when the name is not installed in the caller's scope. The
-   * caller resolves it so it can authorize and notify against the installation
-   * that will actually change.
-   */
-  installation: InstallationRecord | undefined;
-  /** Apply the update (default: advisory only). */
-  apply?: boolean;
-}
-
-/** The composite result of a one-package update check. */
-export interface UpdateResult {
-  checks: UpdateCheckResult[];
-  /** Populated only when `apply: true`; one entry per successful reinstall. */
-  applied: InstallResult[];
-}
-
-/**
- * One installation's check, with the installation's identity and, after an
- * apply, what happened to it. The identity fields are the installed list's own
- * (`GET /api/marketplace/installed`), so `installPath` joins the two.
- */
-export interface InstallationUpdateCheck extends UpdateCheckResult {
-  /** Absolute path to the installation; unique per installation, unlike the name. */
-  installPath: string;
-  /** The installed package's type. */
-  type: PackageType;
-  /** `global`, or `agent-local` / `override` for a project or agent install. */
-  scope: PackageScope;
-  /** The project directory holding a non-global installation. */
-  agentPath?: string;
-  /** Registered agent id owning `agentPath`, when the scan knew it. */
-  agentId?: string;
-  /** Registered agent display name owning `agentPath`, when the scan knew it. */
-  agentName?: string;
-  /**
-   * The installation is a symbolic link to a developer's working copy. Present,
-   * and `true`, only then: its check is always `unknown` with
-   * {@link LINKED_INSTALL_NOTE}, and it is never reinstalled, so a reader can
-   * tell "never checked, by design" from "the check failed".
-   */
-  linked?: true;
-  /** Set when an apply reinstalled this installation: what is installed now. */
-  applied?: InstallResult;
-  /** Set when an apply tried to reinstall this installation and failed: why. */
-  applyError?: string;
-}
-
-/** A request to check (and optionally apply) a set of scanned installations. */
-export interface InstallationUpdatesRequest {
-  /** The installations to check, from one `scanInstallationRecords` call. */
-  installations: InstallationRecord[];
-  /** Reinstall every installation whose check is `update-available`. */
-  apply?: boolean;
-}
-
-/** The result of {@link UpdateFlow.checkInstallations}. */
-export interface InstallationUpdatesResult {
-  /** One per installation, in the order the installations were given. */
-  checks: InstallationUpdateCheck[];
-}
-
-/** Constructor dependencies for {@link UpdateFlow}. */
-export interface UpdateFlowDeps {
-  /** Resolved DorkOS data directory (see `.claude/rules/dork-home.md`). */
-  dorkHome: string;
-  /** Installer orchestrator: resolves the latest version, and reinstalls on apply. */
-  installer: InstallerLike;
-  /** Source manager used to resolve marketplace names to sources. */
-  sourceManager: UpdateSourceManagerLike;
-  /** Package fetcher used for marketplace.json documents and commit lookups. */
-  fetcher: UpdateFetcherLike;
-  /** Logger for diagnostic output. */
-  logger: Logger;
-  /** Clock for the memo TTL; defaults to `Date.now`. */
-  now?: () => number;
-}
-
 /** One check, plus the request that would apply it. */
 interface PlannedCheck {
   check: UpdateCheckResult;
   /** The reinstall request, present only when the check can be applied. */
   request?: InstallRequest;
-}
-
-/** A memoized in-flight or settled promise, and when it stops being shared. */
-interface MemoEntry<T> {
-  promise: Promise<T>;
-  expiresAt: number;
-}
-
-/**
- * Where an installed package would be reinstalled from: the marketplace that
- * lists it, its own recorded source (a direct install), or nowhere.
- */
-type UpdateTarget =
-  | { kind: 'marketplace'; marketplaceName: string }
-  | { kind: 'direct'; source: string; note?: string }
-  | { kind: 'none'; note: string };
-
-/**
- * A requested package or installation is not installed anywhere the caller can
- * see: a name in no scope at all for the per-package route (which can see every
- * scope, while {@link UpdateFlow.run} answers "not installed in this scope"), or
- * a name or install path not among the installations in view for
- * {@link selectInstallations}. Both routes answer it as a 404 carrying the
- * unmatched names and paths as fields.
- */
-export class PackageNotInstalledForUpdateError extends Error {
-  /** Every package name that could not be found, in the order the caller gave them. */
-  public readonly packageNames: string[];
-  /** Every install path that could not be found, in the order the caller gave them. */
-  public readonly installPaths: string[];
-
-  /**
-   * Build a `PackageNotInstalledForUpdateError`.
-   *
-   * @param names - The package name, or names, that could not be located.
-   * @param installPaths - Install paths that matched no installation in view.
-   */
-  constructor(names: string | string[], installPaths: string[] = []) {
-    const packageNames = typeof names === 'string' ? [names] : names;
-    const parts = [
-      packageNames.length > 0 &&
-        `${packageNames.length === 1 ? 'Package' : 'Packages'} not installed: ${packageNames.join(', ')}`,
-      installPaths.length > 0 && `No installation at: ${installPaths.join(', ')}`,
-    ].filter(Boolean);
-    super(parts.join('. '));
-    this.name = 'PackageNotInstalledForUpdateError';
-    this.packageNames = packageNames;
-    this.installPaths = installPaths;
-  }
-}
-
-/**
- * The name an installation is checked and applied under ({@link updateNameOf}):
- * its manifest name when that is a valid package name, else its directory name.
- *
- * @param record - A scanned installation.
- * @returns The installation's update name.
- */
-export function installationUpdateName(record: InstallationRecord): string {
-  return updateNameOf(record.package.name, record.package.installPath);
-}
-
-/** Which scanned installations to keep; an absent or empty list keeps them all. */
-export interface InstallationSelector {
-  /** Package names: every installation in view that goes by one of them. */
-  names?: readonly string[];
-  /**
-   * Exact installations, by the `installPath` a check reported — what a
-   * confirm step showed, so an apply touches exactly that.
-   */
-  installPaths?: readonly string[];
-}
-
-/**
- * Narrow scanned installations. A name matches every installation in view that
- * goes by it ({@link installationUpdateName}), so the same package in two scopes
- * is two installations; an install path matches exactly one. Given both, an
- * installation must match both.
- *
- * @param records - The installations one scan found.
- * @param selector - The names and install paths to keep.
- * @returns The matching installations, in scan order.
- * @throws {PackageNotInstalledForUpdateError} Naming every name and path that
- *   matched nothing in view, before anything is checked.
- */
-export function selectInstallations(
-  records: InstallationRecord[],
-  selector: InstallationSelector = {}
-): InstallationRecord[] {
-  const names = selector.names?.length ? new Set(selector.names) : undefined;
-  const paths = selector.installPaths?.length ? new Set(selector.installPaths) : undefined;
-  const missingNames = names
-    ? [...names].filter((n) => !records.some((r) => installationUpdateName(r) === n))
-    : [];
-  const missingPaths = paths
-    ? [...paths].filter((p) => !records.some((r) => r.package.installPath === p))
-    : [];
-  if (missingNames.length > 0 || missingPaths.length > 0) {
-    throw new PackageNotInstalledForUpdateError(missingNames, missingPaths);
-  }
-  return records.filter(
-    (r) =>
-      (!names || names.has(installationUpdateName(r))) &&
-      (!paths || paths.has(r.package.installPath))
-  );
-}
-
-/**
- * The installation a name means within one scope's view: the project's own
- * installation when there is one (it shadows the global package for that
- * project, even in another install root), else the first in scan order.
- *
- * @param records - One scope's view (`scanInstallationRecords`).
- * @param name - The package name, as the update check names it.
- * @returns The installation, or `undefined` when the name is not in view.
- */
-export function pickInstallation(
-  records: InstallationRecord[],
-  name: string
-): InstallationRecord | undefined {
-  const named = records.filter((record) => installationUpdateName(record) === name);
-  return named.find((record) => record.package.agentPath !== undefined) ?? named[0];
-}
-
-/** A first-in, first-out counting semaphore. @internal */
-class Slots {
-  private readonly waiting: (() => void)[] = [];
-
-  constructor(private free: number) {}
-
-  /** Run `task` once a slot is free, releasing the slot when it settles. */
-  async run<T>(task: () => Promise<T>): Promise<T> {
-    if (this.free > 0) this.free -= 1;
-    else await new Promise<void>((resolve) => this.waiting.push(resolve));
-    try {
-      return await task();
-    } finally {
-      const next = this.waiting.shift();
-      if (next) next();
-      else this.free += 1;
-    }
-  }
+  /** What the new version would run, when the check was planned with `disclose`. */
+  disclosed?: DisclosedEffects | null;
 }
 
 /**
@@ -402,12 +116,22 @@ class Slots {
  * commit-lookup and index memos (see {@link UPDATE_MEMO_TTL_MS}).
  */
 export class UpdateFlow {
-  private readonly commitMemo = new Map<string, MemoEntry<string>>();
-  private readonly indexMemo = new Map<string, MemoEntry<MarketplaceJson>>();
+  private readonly commitMemo: TtlMemo<string>;
+  /** Where each package would be reinstalled from; holds the index memo. */
+  private readonly targets: UpdateTargets;
   /** The server-wide cap on concurrent checks ({@link UPDATE_CHECK_CONCURRENCY}). */
   private readonly checkSlots = new Slots(UPDATE_CHECK_CONCURRENCY);
 
-  constructor(private readonly deps: UpdateFlowDeps) {}
+  /**
+   * Build the server's one update flow.
+   *
+   * @param deps - The installer, sources, fetcher and logger it works through.
+   */
+  constructor(private readonly deps: UpdateFlowDeps) {
+    const now = deps.now ?? Date.now;
+    this.commitMemo = new TtlMemo(UPDATE_MEMO_TTL_MS, now);
+    this.targets = new UpdateTargets(deps, new TtlMemo(UPDATE_MEMO_TTL_MS, now));
+  }
 
   /**
    * Check one package — the per-package route's door. The caller resolves which
@@ -459,33 +183,80 @@ export class UpdateFlow {
    * @returns One check per installation.
    */
   async checkInstallations(req: InstallationUpdatesRequest): Promise<InstallationUpdatesResult> {
-    const planned = await Promise.all(req.installations.map((record) => this.checkSafely(record)));
-    const checks = planned.map(({ check }, i) =>
-      withIdentity(check, req.installations[i]!.package)
+    const plan = await this.planInstallations(req);
+    return req.apply ? this.applyPlan(plan) : { checks: plan.checks };
+  }
+
+  /**
+   * Check the installations handed in, without applying anything: the first
+   * half of {@link checkInstallations}, for a caller that must show the checks
+   * to a person and apply only what they approved. With `disclose`, each
+   * `update-available` check also says what its new version would run.
+   *
+   * @param req - The scanned installations, and whether to disclose.
+   * @returns The checks, and what an apply of them would reinstall.
+   */
+  async planInstallations(
+    req: Pick<InstallationUpdatesRequest, 'installations' | 'disclose'>
+  ): Promise<UpdatePlan> {
+    const planned = await Promise.all(
+      req.installations.map((record) => this.checkSafely(record, req.disclose ?? false))
     );
+    return {
+      checks: planned.map(({ check, disclosed }, i) => ({
+        ...withIdentity(check, req.installations[i]!.package),
+        ...(disclosed !== undefined && { disclosed }),
+      })),
+      steps: planned.map(({ request }, i) => ({
+        record: req.installations[i]!,
+        ...(request && { request }),
+      })),
+    };
+  }
 
-    if (req.apply) {
-      try {
-        for (const [i, { check, request }] of planned.entries()) {
-          if (check.status !== 'update-available' || !request) continue;
-          const record = req.installations[i]!;
-          try {
-            checks[i]!.applied = await this.reinstall(record, request);
-          } catch (err) {
-            const reason = err instanceof Error ? err.message : String(err);
-            this.deps.logger.warn('update-flow: reinstall failed', {
-              packageName: check.packageName,
-              installPath: record.package.installPath,
-              error: reason,
-            });
-            checks[i]!.applyError = reason;
-          }
+  /**
+   * Reinstall a plan's `update-available` installations one at a time, in
+   * order, each in its own scope. A failed reinstall is recorded on that
+   * installation as `applyError` and the rest carry on.
+   *
+   * With `approved`, only the installations it names (by `installPath`) are
+   * reinstalled, and each is held to the disclosure it maps to: the installer
+   * refuses a new version that now declares something else
+   * (`DisclosureChangedError`), before it removes anything.
+   *
+   * @param plan - A plan from {@link planInstallations}.
+   * @param approved - The approved installations and what each was shown to run.
+   * @returns One check per installation, each with its `applied` or `applyError`.
+   */
+  async applyPlan(
+    plan: UpdatePlan,
+    approved?: ReadonlyMap<string, DisclosedEffects | null>
+  ): Promise<InstallationUpdatesResult> {
+    const checks = plan.checks.map((c) => ({ ...c }));
+    try {
+      for (const [i, { record, request }] of plan.steps.entries()) {
+        const check = checks[i]!;
+        if (check.status !== 'update-available' || !request) continue;
+        const path = record.package.installPath;
+        if (approved && !approved.has(path)) continue;
+        try {
+          check.applied = await this.reinstall(
+            record,
+            approved ? { ...request, approvedDisclosure: approved.get(path) ?? null } : request
+          );
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          this.deps.logger.warn('update-flow: reinstall failed', {
+            packageName: check.packageName,
+            installPath: path,
+            error: reason,
+          });
+          check.applyError = reason;
         }
-      } finally {
-        this.clearMemos();
       }
+    } finally {
+      this.clearMemos();
     }
-
     return { checks };
   }
 
@@ -496,7 +267,7 @@ export class UpdateFlow {
    */
   clearMemos(): void {
     this.commitMemo.clear();
-    this.indexMemo.clear();
+    this.targets.clearMemo();
   }
 
   /**
@@ -523,9 +294,12 @@ export class UpdateFlow {
    *
    * @internal
    */
-  private async checkSafely(record: InstallationRecord): Promise<PlannedCheck> {
+  private async checkSafely(record: InstallationRecord, disclose = false): Promise<PlannedCheck> {
     try {
-      return await this.checkSlots.run(() => this.checkRecord(record));
+      return await this.checkSlots.run(async () => {
+        const planned = await this.checkRecord(record);
+        return disclose ? this.discloseSafely(record, planned) : planned;
+      });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       this.deps.logger.warn('update-flow: check failed', {
@@ -537,6 +311,53 @@ export class UpdateFlow {
           installationUpdateName(record),
           installedVersionOf(record),
           `couldn't check this package: ${reason}`
+        ),
+      };
+    }
+  }
+
+  /**
+   * Add what an `update-available` check's new version would run, read from
+   * the version a reinstall would install, in the installation's own scope. A
+   * new version that cannot be read becomes `unknown` with the reason and
+   * loses its reinstall request, so nobody can approve it unseen.
+   *
+   * @internal
+   */
+  private async discloseSafely(
+    record: InstallationRecord,
+    planned: PlannedCheck
+  ): Promise<PlannedCheck> {
+    if (planned.check.status !== 'update-available' || !planned.request) return planned;
+    try {
+      const { preview } = await this.deps.installer.preview({
+        ...planned.request,
+        projectPath: record.package.agentPath,
+      });
+      // Whatever could not be read cannot be shown, so it cannot be approved:
+      // offer nothing rather than a card that silently leaves it out.
+      const unread = [
+        ...preview.unreadableHooks.map((h) => (h.event ? `${h.path} (${h.event})` : h.path)),
+        ...preview.unreadableDeclarations.map((d) => (d.entry ? `${d.path} (${d.entry})` : d.path)),
+      ];
+      if (unread.length > 0) {
+        return {
+          check: unknownCheck(
+            planned.check.packageName,
+            installedVersionOf(record),
+            `the new version declares something DorkOS could not read (${unread.join(', ')}), ` +
+              `so it can't be approved from here; nothing was changed`
+          ),
+        };
+      }
+      return { ...planned, disclosed: disclosedEffectsOf(preview) };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return {
+        check: unknownCheck(
+          planned.check.packageName,
+          installedVersionOf(record),
+          `couldn't read what the new version would run: ${reason}`
         ),
       };
     }
@@ -558,7 +379,7 @@ export class UpdateFlow {
     // fresh fetch. No request is returned, so no apply can ever reach it.
     if (record.linked) return { check: unknownCheck(name, installed, LINKED_INSTALL_NOTE) };
 
-    const target = await this.findTarget(name, recorded);
+    const target = await this.targets.find(name, recorded);
     if (target.kind === 'none') {
       this.deps.logger.warn('update-flow: no marketplace entry found for package', {
         packageName: name,
@@ -589,86 +410,6 @@ export class UpdateFlow {
   }
 
   /**
-   * Decide where a package would be reinstalled from.
-   *
-   * A direct install (`name@url`, `github:`; no `installedFrom`, a recorded
-   * `sourceRepo`) is checked against its own source, rebuilt from its recorded
-   * `sourceKey` when there is one. Everything else searches the marketplaces:
-   * `installedFrom` first if it is enabled, then every enabled source. The
-   * MATCHED source is what the installer receives, never `installedFrom`
-   * blindly, so a bare-name lookup cannot hit `AmbiguousPackageError` when
-   * two sources list the package, and a disabled source is never used.
-   *
-   * @internal
-   */
-  private async findTarget(
-    name: string,
-    recorded: InstallationRecord['metadata']
-  ): Promise<UpdateTarget> {
-    if (!recorded?.installedFrom && recorded?.sourceRepo) {
-      // No "apply reinstalls from the default branch" note: both direct forms
-      // (`name@url`, `github:`) resolve to a ref-less url source, so a recorded
-      // key is always the default branch (`ref: 'HEAD'`; `'main'` in sidecars
-      // written before DOR-2248), `subpath: ''`, and apply matches it.
-      return recorded.sourceKey
-        ? { kind: 'direct', source: recorded.sourceKey.cloneUrl }
-        : { kind: 'direct', source: recorded.sourceRepo, note: DEFAULT_BRANCH_NOTE };
-    }
-
-    const unreachable: string[] = [];
-    const candidates: MarketplaceSource[] = [];
-    if (recorded?.installedFrom) {
-      const source = await this.deps.sourceManager.get(recorded.installedFrom);
-      if (source?.enabled) candidates.push(source);
-    }
-    for (const source of await this.deps.sourceManager.list()) {
-      if (source.enabled && !candidates.some((c) => c.name === source.name)) {
-        candidates.push(source);
-      }
-    }
-
-    for (const source of candidates) {
-      const entry = await this.findEntry(source, name, unreachable);
-      if (entry) return { kind: 'marketplace', marketplaceName: source.name };
-    }
-    return {
-      kind: 'none',
-      note:
-        unreachable.length > 0
-          ? `couldn't read the marketplace list from ${unreachable.join(', ')}`
-          : 'no enabled marketplace lists this package',
-    };
-  }
-
-  /**
-   * Find a package's entry in one marketplace's index (memoized per source).
-   * A fetch failure records the source as unreachable and reads as "not
-   * listed here", so one unreachable marketplace never blocks the others —
-   * but the check still says it could not read it.
-   *
-   * @internal
-   */
-  private async findEntry(
-    source: MarketplaceSource,
-    packageName: string,
-    unreachable: string[]
-  ): Promise<MarketplaceJsonEntry | undefined> {
-    try {
-      const json = await this.memoized(this.indexMemo, source.name, () =>
-        this.deps.fetcher.fetchMarketplaceJson(source)
-      );
-      return json.plugins.find((entry) => entry.name === packageName);
-    } catch (err) {
-      this.deps.logger.warn('update-flow: failed to fetch marketplace.json', {
-        marketplaceName: source.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      unreachable.push(source.name);
-      return undefined;
-    }
-  }
-
-  /**
    * The memoized commit lookup handed to the installer. A ref that is already
    * a full SHA is its own commit and is returned without `ls-remote`, which
    * matches ref names only and would report a pinned package unreachable. A
@@ -678,178 +419,10 @@ export class UpdateFlow {
    */
   private lookupCommit(cloneUrl: string, ref: string): Promise<string> {
     if (FULL_SHA_RE.test(ref)) return Promise.resolve(ref);
-    return this.memoized(
-      this.commitMemo,
+    return this.commitMemo.get(
       `${cloneUrl}\n${ref}`,
       () => this.deps.fetcher.lookupCommitSha(cloneUrl, ref),
       isRealCommitSha
     );
   }
-
-  /**
-   * Share one promise per key for {@link UPDATE_MEMO_TTL_MS}. The in-flight
-   * promise is stored, so concurrent checks (the CLI and the app together)
-   * share one request. A rejection, or a value `keep` refuses, is dropped as
-   * soon as it settles, so a failure is never served from the memo.
-   *
-   * @internal
-   */
-  private memoized<T>(
-    memo: Map<string, MemoEntry<T>>,
-    key: string,
-    load: () => Promise<T>,
-    keep: (value: T) => boolean = () => true
-  ): Promise<T> {
-    const now = (this.deps.now ?? Date.now)();
-    const hit = memo.get(key);
-    if (hit && hit.expiresAt > now) return hit.promise;
-
-    const promise = load();
-    memo.set(key, { promise, expiresAt: now + UPDATE_MEMO_TTL_MS });
-    const forget = () => {
-      if (memo.get(key)?.promise === promise) memo.delete(key);
-    };
-    promise.then((value) => {
-      if (!keep(value)) forget();
-    }, forget);
-    return promise;
-  }
-}
-
-/**
- * Compare an installed package with what installing it now would give, by
- * Claude Code's chain, in order:
- *
- * 1. `unresolved` → unknown, with the reason.
- * 2. The installed side names no version, entry version or real commit →
- *    unknown (file:// marketplaces, pre-DOR-147 sidecars, placeholder SHAs).
- * 3. `unchanged` → current.
- * 4. The latest side names nothing → unknown.
- * 5. Both are versions (`package` or `index`) and both valid semver → an
- *    update only when the latest is strictly newer; a lower one is current
- *    with a rollback note, never offered as an "update".
- * 6. Both are versions but one is not semver → an update when they differ.
- * 7. Either is a commit → an update when they differ, as Claude Code does for
- *    a package that declares no version.
- *
- * @internal
- */
-function compareVersions(
-  packageName: string,
-  marketplace: string,
-  installed: ResolvedPackageVersion | undefined,
-  latest: LatestResolution
-): UpdateCheckResult {
-  if (latest.kind === 'unresolved') return unknownCheck(packageName, installed, latest.reason);
-  // `unchanged` needs a real recorded commit, so its installed side is always
-  // known; checking this first only keeps the types honest.
-  if (!installed) return unknownCheck(packageName, installed, INSTALLED_UNKNOWN_NOTE);
-  if (latest.kind === 'unchanged') {
-    return knownCheck(packageName, marketplace, installed, installed, 'current');
-  }
-
-  const latestVersion = resolvePackageVersion(latest);
-  if (!latestVersion) {
-    return unknownCheck(packageName, installed, "couldn't tell which version the marketplace has");
-  }
-
-  const bothVersions = installed.source !== 'commit' && latestVersion.source !== 'commit';
-  if (bothVersions && semverValid(installed.version) && semverValid(latestVersion.version)) {
-    if (semverGt(latestVersion.version, installed.version)) {
-      return knownCheck(packageName, marketplace, installed, latestVersion, 'update-available');
-    }
-    const check = knownCheck(packageName, marketplace, installed, latestVersion, 'current');
-    if (semverGt(installed.version, latestVersion.version)) {
-      check.note =
-        `rollback: the marketplace has ${latestVersion.version}, older than the installed ` +
-        `${installed.version}; a downgrade is never offered as an update`;
-    }
-    return check;
-  }
-
-  const status = latestVersion.version !== installed.version ? 'update-available' : 'current';
-  return knownCheck(packageName, marketplace, installed, latestVersion, status);
-}
-
-/** The install's recorded commit, when it is a real one. @internal */
-function realCommitOf(record: InstallationRecord): string | undefined {
-  const sha = record.metadata?.commitSha;
-  return isRealCommitSha(sha) ? sha : undefined;
-}
-
-/** The installed side of Claude Code's version chain, from one scanned record. @internal */
-function installedVersionOf(record: InstallationRecord): ResolvedPackageVersion | undefined {
-  return resolvePackageVersion({
-    declaredVersion: record.declaredVersion,
-    entryVersion: record.metadata?.entryVersion,
-    commitSha: realCommitOf(record),
-  });
-}
-
-/** A check whose both sides are known. @internal */
-function knownCheck(
-  packageName: string,
-  marketplace: string,
-  installed: ResolvedPackageVersion,
-  latest: ResolvedPackageVersion,
-  status: 'current' | 'update-available'
-): UpdateCheckResult {
-  return {
-    packageName,
-    installedVersion: installed.version,
-    latestVersion: latest.version,
-    hasUpdate: status === 'update-available',
-    marketplace,
-    status,
-    installedVersionSource: installed.source,
-    latestVersionSource: latest.source,
-  };
-}
-
-/** A check that could not be answered, and why. @internal */
-function unknownCheck(
-  packageName: string,
-  installed: ResolvedPackageVersion | undefined,
-  note: string
-): UpdateCheckResult {
-  return {
-    packageName,
-    installedVersion: installed?.version ?? '',
-    latestVersion: '',
-    hasUpdate: false,
-    marketplace: '',
-    status: 'unknown',
-    ...(installed && { installedVersionSource: installed.source }),
-    note,
-  };
-}
-
-/** The one result for a named package missing from the requested scope. @internal */
-function notInScope(packageName: string): UpdateCheckResult {
-  return unknownCheck(packageName, undefined, 'not installed in this scope');
-}
-
-/** Join two optional notes into one sentence list. @internal */
-function joinNotes(first: string, second: string | undefined): string {
-  return second ? `${first}; ${second}` : first;
-}
-
-/**
- * A check plus the installation it belongs to, in the installed list's own
- * field names so `installPath` joins the two. @internal
- */
-function withIdentity(
-  check: UpdateCheckResult,
-  installed: InstallationRecord['package']
-): InstallationUpdateCheck {
-  return {
-    ...check,
-    installPath: installed.installPath,
-    type: installed.type,
-    scope: installed.scope ?? 'global',
-    ...(installed.agentPath !== undefined && { agentPath: installed.agentPath }),
-    ...(installed.agentId !== undefined && { agentId: installed.agentId }),
-    ...(installed.agentName !== undefined && { agentName: installed.agentName }),
-    ...(installed.linked && { linked: true as const }),
-  };
 }

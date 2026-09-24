@@ -1,6 +1,6 @@
 /**
  * Confirmation provider — gates marketplace mutation tools (install,
- * uninstall, create-package) behind explicit user approval.
+ * uninstall, update, create-package) behind explicit user approval.
  *
  * Two implementations cover the contexts in which an MCP marketplace tool may be
  * invoked:
@@ -47,9 +47,11 @@ import {
   type DisclosedEffects,
 } from '../marketplace/disclosed-effects.js';
 import { logger } from '../../lib/logger.js';
+import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
+import { describeUpdatesInFull, UPDATE_DETAIL_MAX_LENGTH } from './update-approval-detail.js';
 
 /** The kind of mutation a confirmation request is gating. */
-export type ConfirmationOperation = 'install' | 'uninstall' | 'create-package';
+export type ConfirmationOperation = 'install' | 'uninstall' | 'update' | 'create-package';
 
 /**
  * Result of a confirmation request, discriminated by `status`.
@@ -77,6 +79,11 @@ export type ConfirmationResult =
  * let a retry change the effect the user approved.
  */
 export interface ConfirmationRequest {
+  /**
+   * The package the operation is about. For an update, which can cover several,
+   * the distinct names in order, joined with `, ` — a label; {@link updates}
+   * carries the exact reinstalls.
+   */
   packageName: string;
   /**
    * Which marketplace to act in. Absent means "search every enabled
@@ -105,6 +112,19 @@ export interface ConfirmationRequest {
    * about itself, not what happens to the user's machine.
    */
   packageType?: string;
+  /**
+   * Update only: every reinstall the apply would make — the installation, its
+   * versions, and everything its new version would run (DOR-2195).
+   *
+   * Bound as a set of `{ installPath, latestVersion, disclosed }`: the installation by its path
+   * (unique, where a name is not — a plugin and an agent can share one), and the
+   * hooks, scheduled jobs and MCP servers of the new version the person was
+   * shown. Order does not matter, since two scans may list the same
+   * installations differently. So an approval cannot be stretched over one more
+   * installation, or over a new version that runs something else. Every field is
+   * listed in full on the card's detail; a list too long for it is refused.
+   */
+  updates?: readonly ApprovableUpdate[];
   /**
    * Install only: everything the install would do, as the person was shown it.
    *
@@ -198,6 +218,7 @@ export interface ConfirmationProvider {
 const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
   install: 'marketplace.install',
   uninstall: 'marketplace.uninstall',
+  update: 'marketplace.update',
   'create-package': 'marketplace.create_package',
 };
 
@@ -241,7 +262,10 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
   return {
     capabilityId: CAPABILITY_IDS[req.operation],
     inputHash: hashApprovalInput({
-      packageName: req.packageName,
+      // An update's name is only a label over `updates`, which is bound below as
+      // a set; binding the label too would re-ask whenever a scan listed the same
+      // packages in another order.
+      packageName: req.updates ? null : req.packageName,
       // Absence is bound as absence: an unnamed marketplace searches every
       // enabled source, which is not the same effect as a pinned one.
       marketplace: req.marketplace ?? null,
@@ -249,11 +273,50 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
       purge: req.purge ?? false,
       projectPath: req.projectPath ?? null,
       packageType: req.packageType ?? null,
+      updates: req.updates ? canonicalUpdates(req.updates) : null,
       // Absence is bound as absence here too: an operation that previews nothing
       // must not hash the same as one whose package declares nothing.
       disclosed,
     }),
     disclosed,
+  };
+}
+
+/**
+ * What an update approval binds: each installation, the version it would move
+ * to, and what that version would run, in one canonical order (by install path), so the binding is the
+ * set and not the order a scan listed it in.
+ *
+ * @param updates - The reinstalls, in whatever order the scan listed them.
+ * @returns The bound pairs, sorted by install path.
+ */
+function canonicalUpdates(
+  updates: readonly ApprovableUpdate[]
+): Pick<ApprovableUpdate, 'installPath' | 'latestVersion' | 'disclosed'>[] {
+  return updates
+    .map((u) => ({
+      installPath: u.installPath,
+      latestVersion: u.latestVersion,
+      disclosed: u.disclosed,
+    }))
+    .sort((a, b) => a.installPath.localeCompare(b.installPath));
+}
+
+/**
+ * Refuse an update whose full list will not fit on one card. The detail is the
+ * one place a person reads every command in full, so a cut list would be an
+ * approval for commands nobody saw. Fails closed: nothing runs.
+ *
+ * @param count - How many reinstalls the request carried.
+ * @returns A declined result saying how to ask for fewer at a time.
+ */
+function tooManyUpdatesRefusal(count: number): ConfirmationResult {
+  return {
+    status: 'declined',
+    reason:
+      `These ${count} updates, and everything their new versions would run, are too much to show ` +
+      `on one approval card, so DorkOS did not ask. Nothing was changed. Update fewer at a time: ` +
+      `check first, then apply with the installPaths of a few of them.`,
   };
 }
 
@@ -319,6 +382,10 @@ function summaryOf(req: ConfirmationRequest): string {
       return req.purge
         ? `Uninstall ${name}${scopeOf(req)} and delete its saved data and secrets`
         : `Uninstall ${name}${scopeOf(req)}, keeping its saved data`;
+    case 'update': {
+      const count = req.updates?.length ?? 0;
+      return `Update ${count} installed ${count === 1 ? 'package' : 'packages'} to a newer version, each where it is installed. What each new version runs is listed below.`;
+    }
     case 'create-package':
       return `Create the ${req.packageType ? quoteSummaryValue(req.packageType) : 'new'} package ${name} in ${marketplace ?? 'your personal marketplace'}`;
   }
@@ -328,6 +395,7 @@ function summaryOf(req: ConfirmationRequest): string {
 const OPERATION_NOUNS: Record<ConfirmationOperation, string> = {
   install: 'install',
   uninstall: 'uninstall',
+  update: 'update',
   'create-package': 'package creation',
 };
 
@@ -396,6 +464,9 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The confirmation request payload.
    */
   async requestInstallConfirmation(req: ConfirmationRequest): Promise<ConfirmationResult> {
+    if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
+      return tooManyUpdatesRefusal(req.updates.length);
+    }
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
@@ -421,6 +492,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       capabilityId: binding.capabilityId,
       inputHash: binding.inputHash,
       summary: summaryOf(req),
+      ...(req.updates ? { detail: describeUpdatesInFull(req.updates) } : {}),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return ticket.token;
@@ -444,6 +516,9 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
    * @param req - The operation the caller is about to run.
    */
   async resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult> {
+    if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
+      return tooManyUpdatesRefusal(req.updates.length);
+    }
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);

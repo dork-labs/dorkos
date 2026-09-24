@@ -233,6 +233,19 @@ export interface PreviewResult {
   packagePath: string;
 }
 
+/** A resolved package, staged on disk and validated, ready to install. @internal */
+interface StagedPackage {
+  resolved: ResolvedPackageSource;
+  manifest: MarketplacePackageManifest;
+  packagePath: string;
+  /** Resolved commit SHA (DOR-147), when the staging fetch resolved a real one. */
+  commitSha?: string;
+  /** Where the package was fetched from; absent for local and `file://` sources. */
+  sourceKey?: SourceKey;
+  /** The version the staged tree declares (`readDeclaredVersion`). */
+  declaredVersion?: string;
+}
+
 /**
  * Top-level orchestrator for marketplace installs. One instance is
  * constructed per server runtime and shared across every install path
@@ -275,12 +288,29 @@ export class MarketplaceInstaller implements InstallerLike {
    * @throws {ConflictError} When error-level conflicts are present and `req.force` is false.
    */
   async install(req: InstallRequest): Promise<InstallResult> {
+    return this.installStaged(req);
+  }
+
+  /**
+   * {@link install}, optionally from a package an update already resolved,
+   * staged and checked, so the install writes exactly what was checked instead
+   * of resolving a second time (DOR-2195).
+   *
+   * @param req - The install request.
+   * @param prestaged - The update's own resolve and stage, when there is one.
+   * @returns The populated {@link InstallResult}.
+   * @internal
+   */
+  private async installStaged(
+    req: InstallRequest,
+    prestaged?: StagedPackage
+  ): Promise<InstallResult> {
     const startTime = Date.now();
     let resolved: ResolvedPackageSource | null = null;
     let packageType: PackageType | null = null;
 
     try {
-      const staged = await this.resolveAndValidate(req);
+      const staged = prestaged ?? (await this.resolveAndValidate(req));
       resolved = staged.resolved;
       packageType = staged.manifest.type;
 
@@ -537,6 +567,27 @@ export class MarketplaceInstaller implements InstallerLike {
     const wasActiveShape =
       this.deps.shapeUpdateHooks?.getActiveShapeName() === resolved.packageName;
 
+    // Stage the new version BEFORE anything is removed, and install exactly
+    // that one below (DOR-2195). A failed resolve or fetch now leaves the old
+    // version in place, and nothing can land between the check and the install.
+    const staged = await this.stageAndValidate(resolved, req);
+
+    // An approved update: check what the new version declares against what
+    // the person approved, still before the uninstall, so a refusal leaves the
+    // package untouched rather than removed.
+    if (req.approvedDisclosure !== undefined) {
+      const preview = await this.deps.previewBuilder.build(staged.packagePath, staged.manifest, {
+        projectPath: req.projectPath,
+      });
+      const resolvedDisclosure = disclosedEffectsOf(preview);
+      if (!sameDisclosedEffects(req.approvedDisclosure, resolvedDisclosure)) {
+        throw new DisclosureChangedError(
+          describeDisclosedEffects(req.approvedDisclosure),
+          describeDisclosedEffects(resolvedDisclosure)
+        );
+      }
+    }
+
     // 2. Uninstall WITHOUT purge: the package is removed, but `.dork/data/`
     //    and `.dork/secrets.json` stay behind in the install root. Step 3
     //    copies them aside and removes that data-only root, so
@@ -582,7 +633,7 @@ export class MarketplaceInstaller implements InstallerLike {
     //    onto an empty parent.
     let installResult: InstallResult;
     try {
-      installResult = await this.install({ ...req, force: true });
+      installResult = await this.installStaged({ ...req, force: true }, staged);
     } catch (err) {
       // If the install fails after we removed the data-only install root,
       // restore preserved data to the original location so the user does
@@ -736,18 +787,20 @@ export class MarketplaceInstaller implements InstallerLike {
    *
    * @internal
    */
-  private async resolveAndValidate(req: InstallRequest): Promise<{
-    resolved: ResolvedPackageSource;
-    manifest: MarketplacePackageManifest;
-    packagePath: string;
-    /** Resolved commit SHA (DOR-147), when the staging fetch resolved a real one. */
-    commitSha?: string;
-    /** Where the package was fetched from; absent for local and `file://` sources. */
-    sourceKey?: SourceKey;
-    /** The version the staged tree declares (`readDeclaredVersion`). */
-    declaredVersion?: string;
-  }> {
-    const resolved = await this.deps.resolver.resolve(buildResolverInput(req));
+  private async resolveAndValidate(req: InstallRequest): Promise<StagedPackage> {
+    return this.stageAndValidate(await this.deps.resolver.resolve(buildResolverInput(req)), req);
+  }
+
+  /**
+   * Stage an already-resolved package and validate it: the second half of
+   * {@link resolveAndValidate}, for an update that resolved first.
+   *
+   * @internal
+   */
+  private async stageAndValidate(
+    resolved: ResolvedPackageSource,
+    req: InstallRequest
+  ): Promise<StagedPackage> {
     const staged = await this.stagePackage(resolved, req);
 
     const validation = await validatePackage(staged.path);
