@@ -18141,7 +18141,7 @@
           "Marketplace"
         ],
         "summary": "Add a marketplace source (operator only)",
-        "description": "Only the person running DorkOS may add a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it.",
+        "description": "Only the person running DorkOS may add a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it. After saving, the server fetches the new source's listing once, the same way the refresh route does but without falling back to a cached copy; a failed fetch is reported in `listing` and never fails the add.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -18151,7 +18151,9 @@
                   "name": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 128
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                    "description": "Letters, numbers, dots, dashes and underscores, starting with a letter or number. Checked by the server on add; names saved before the check still load."
                   },
                   "source": {
                     "type": "string",
@@ -18171,7 +18173,7 @@
         },
         "responses": {
           "201": {
-            "description": "Source added",
+            "description": "Source added, with how the first fetch of its listing went",
             "content": {
               "application/json": {
                 "schema": {
@@ -18188,20 +18190,63 @@
                     },
                     "addedAt": {
                       "type": "string"
+                    },
+                    "listing": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fetched": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "packageCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "fetched",
+                            "packageCount"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fetched": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "fetched",
+                            "reason"
+                          ]
+                        }
+                      ],
+                      "description": "The first fetch of the new source's listing. `fetched: true` means fetched just now from this source, never an older cached copy. `fetched: false` never undoes the add: the source is saved, `reason` says in plain words why the listing is not there yet (including a source added with `enabled: false`, which is not fetched), and a refresh tries again."
                     }
                   },
                   "required": [
                     "name",
                     "source",
                     "enabled",
-                    "addedAt"
+                    "addedAt",
+                    "listing"
                   ]
                 }
               }
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "Validation error, a name DorkOS cannot use, or an address it will not fetch",
             "content": {
               "application/json": {
                 "schema": {
@@ -18258,7 +18303,7 @@
           "Marketplace"
         ],
         "summary": "Remove a marketplace source (operator only)",
-        "description": "Only the person running DorkOS may remove a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it.",
+        "description": "Only the person running DorkOS may remove a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it. The source's cached listing is removed with it, so a later source given the same name starts clean.",
         "parameters": [
           {
             "schema": {
@@ -18311,6 +18356,7 @@
           "Marketplace"
         ],
         "summary": "Force refetch of a source marketplace.json",
+        "description": "Checks the source now. When it cannot be reached but a copy is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. With nothing cached, answers 502.",
         "parameters": [
           {
             "schema": {
@@ -18323,7 +18369,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Refreshed marketplace document",
+            "description": "The listing, fetched now or (when `stale`) the last cached copy",
             "content": {
               "application/json": {
                 "schema": {
@@ -18368,12 +18414,22 @@
                       "additionalProperties": {}
                     },
                     "fetchedAt": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "When this copy of the listing was fetched"
+                    },
+                    "stale": {
+                      "type": "boolean",
+                      "description": "True when the source could not be reached"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the source could not be reached; present only when `stale`"
                     }
                   },
                   "required": [
                     "marketplace",
-                    "fetchedAt"
+                    "fetchedAt",
+                    "stale"
                   ]
                 }
               }

@@ -51,7 +51,7 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
-import { assertContainedIn } from './lib/package-paths.js';
+import { assertContainedIn, PathEscapeError } from './lib/package-paths.js';
 import { isFullCommitSha } from './lib/git-tree.js';
 import { directorySize } from './lib/directory-size.js';
 
@@ -219,7 +219,16 @@ export class MarketplaceCache {
    * @param marketplaceName - The configured marketplace identifier (e.g. `dorkos-community`).
    */
   async readMarketplace(marketplaceName: string): Promise<CachedMarketplace | null> {
-    const dir = this.marketplaceDir(marketplaceName);
+    let dir: string;
+    try {
+      dir = this.marketplaceDir(marketplaceName);
+    } catch (err) {
+      // A name that cannot be a cache key was never cached. Sources saved
+      // before names were checked (DOR-2304) can still hold one, and every
+      // read that walks the configured sources must survive it.
+      if (err instanceof PathEscapeError) return null;
+      throw err;
+    }
     const jsonPath = join(dir, MARKETPLACE_FILENAME);
     const stampPath = join(dir, LAST_FETCHED_FILENAME);
 
@@ -264,6 +273,25 @@ export class MarketplaceCache {
 
     await writeFile(join(dir, MARKETPLACE_FILENAME), `${JSON.stringify(json, null, 2)}\n`);
     await writeFile(join(dir, LAST_FETCHED_FILENAME), new Date().toISOString());
+  }
+
+  /**
+   * Forget one marketplace's cached `marketplace.json`. No-op when nothing is
+   * cached under that name.
+   *
+   * A listing is keyed by the source's NAME, not its address, so a listing
+   * that outlives its source is inherited by the next source given that name:
+   * its old packages would be listed, resolved and installed from a source
+   * that never published them (DOR-2304). Removing a source calls this, and
+   * adding one calls it again before the first fetch, to clear what removals
+   * made before this method existed left on disk.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @throws {PathEscapeError} When the name would place the directory outside
+   *   the cache.
+   */
+  async removeMarketplace(marketplaceName: string): Promise<void> {
+    await rm(this.marketplaceDir(marketplaceName), { recursive: true, force: true });
   }
 
   /**
