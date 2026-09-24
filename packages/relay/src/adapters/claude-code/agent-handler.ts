@@ -498,6 +498,10 @@ export async function handleAgentMessage(
         // → its own default, and a runtime whose sessions are not held in
         // memory sees this call and not the one above.
         ...executionSettings,
+        // A message started this turn, not a person watching the app, so an
+        // approval card is answered from the inbox and the verdict wakes the
+        // session; the turn does not hold for it (spec `agent-permissions` D6).
+        unattendedApprovals: true,
       });
 
   let eventCount = 0,

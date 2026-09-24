@@ -378,6 +378,9 @@ export async function handleTasksMessage(
       permissionMode,
       cwd: effectiveCwd,
       ...executionSettings,
+      // Only a scheduled fire, for the reason `unattended` above gives: a person
+      // who pressed Run now is watching and can answer a card in the turn.
+      unattendedApprovals: payload.trigger === 'scheduled',
       // Built server-side by `buildTaskAppend` and carried on the wire, because
       // the pieces it is made of (the task's agent, the run's trigger) do not
       // otherwise reach this process. Without it a relay-dispatched run was

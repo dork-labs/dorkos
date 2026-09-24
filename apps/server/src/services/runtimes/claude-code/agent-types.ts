@@ -41,6 +41,12 @@ export interface AgentSession {
   /** Connector authority for the active DorkOS turn, never the warm process. */
   connectorTurn?: ClaudeConnectorTurnContext;
   /**
+   * Whether nobody can answer an approval card inside the CURRENT turn
+   * (`MessageOpts.unattendedApprovals`). Assigned on every send, so it always
+   * describes the turn in flight; the in-session hold reads it at call time.
+   */
+  unattendedApprovals?: boolean;
+  /**
    * The Claude Code account this session belongs to: the absolute Claude CONFIG
    * directory its transcript lives under (`~/.claude`, `~/.claude2`, …). Not
    * `cwd`, which is the working directory — the two are unrelated paths.

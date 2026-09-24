@@ -52,6 +52,11 @@ export interface InSessionCapabilityHold {
     ApprovalService,
     'awaitDecision' | 'getPending' | 'claimVerdictDelivery' | 'releaseVerdictDelivery'
   >;
+  /**
+   * Whether nobody can answer a card inside the current turn, read per call
+   * (spec `agent-permissions` D6). Handed on to the hold, which then does not.
+   */
+  unattended?: () => boolean;
 }
 
 /**
@@ -102,6 +107,7 @@ export function capabilityMcpTools(
           ? {
               approvals: hold.approvals,
               session: hold.session,
+              ...(hold.unattended ? { unattended: hold.unattended } : {}),
               ...(signal ? { signal } : {}),
             }
           : undefined;
@@ -176,6 +182,7 @@ export function registerClaudeConnectorCapabilityTools(
           ? {
               approvals: hold.approvals,
               session: hold.session,
+              ...(hold.unattended ? { unattended: hold.unattended } : {}),
               ...(signal ? { signal } : {}),
             }
           : undefined;
