@@ -6,6 +6,7 @@ covers:
   - 'feat(client): the request card has three answers, and shows in the room that asked'
   - 'test(e2e): the request card end to end, with docs'
   - 'fix(permissions): close the review round 1 gaps in the request card'
+  - "fix(permissions): an Always allow's undo never takes back another answer's setting"
 ---
 
 ### Added
