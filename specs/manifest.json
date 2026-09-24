@@ -28,6 +28,15 @@
       "linearIssue": "DOR-2196"
     },
     {
+      "id": "260924-002702",
+      "slug": "package-schedule-timing",
+      "title": "Let a person change when a package's schedule runs",
+      "created": "2026-09-24",
+      "status": "specified",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2302"
+    },
+    {
       "id": "260923-193637",
       "slug": "marketplace-cache-retention",
       "title": "Keep the marketplace package cache small without losing what installs need",

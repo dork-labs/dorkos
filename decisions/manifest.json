@@ -6243,6 +6243,26 @@
         "packages/shared/src/community-wire.ts",
         "packages/cloud-api/src/communities.ts"
       ]
+    },
+    {
+      "id": "260924-002908",
+      "slug": "package-schedule-timing-lives-on-the-row",
+      "title": "A person's timing for a package's schedule lives on the row",
+      "status": "draft",
+      "created": "2026-09-24",
+      "extractedFrom": "package-schedule-timing",
+      "specSlug": "package-schedule-timing",
+      "supersedes": null,
+      "affects": [
+        "packages/db/src/schema/tasks.ts",
+        "apps/server/src/services/tasks/schedule-timing.ts",
+        "apps/server/src/services/tasks/task-row-mappers.ts",
+        "apps/server/src/services/tasks/task-store.ts",
+        "apps/server/src/services/tasks/file-sync-gates.ts",
+        "apps/server/src/services/tasks/task-file-update.ts",
+        "apps/server/src/routes/tasks.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts"
+      ]
     }
   ]
 }
