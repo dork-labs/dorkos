@@ -248,6 +248,7 @@ import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.
 import {
   legacySweepDirs,
   rebuildLegacyRecords,
+  removeRecordTempLeftovers,
   type LegacySweepSummary,
 } from './services/marketplace/lib/integrity/legacy-record-sweep.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
@@ -639,6 +640,8 @@ function flushRestoredAgents(): void {
  * is rebuilt, and reads the same projects.
  */
 let projectInstallRecovery: Promise<unknown> = Promise.resolve();
+/** Aborted on shutdown, so the legacy record sweep stops between installs. */
+const legacyRecordSweep = new AbortController();
 let sweptProjects: string[] = [];
 
 /**
@@ -4231,11 +4234,13 @@ async function start() {
     // never blocks startup and writes nothing it cannot prove; what it cannot
     // rebuild waits for the next boot or the "Prepare" action.
     void projectInstallRecovery
+      .then(() => removeRecordTempLeftovers())
       .then(() =>
-        rebuildLegacyRecords(legacySweepDirs(dorkHome, sweptProjects), {
-          fetcher: marketplaceFetcher,
-          logger,
-        })
+        rebuildLegacyRecords(
+          legacySweepDirs(dorkHome, sweptProjects),
+          { fetcher: marketplaceFetcher, logger },
+          { signal: legacyRecordSweep.signal }
+        )
       )
       .then(logLegacySweep)
       .catch((err: unknown) => {
@@ -5111,6 +5116,7 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
   remoteCommunitySubscriptions = undefined;
   setRemoteCommunitySubscriptionProbe(undefined);

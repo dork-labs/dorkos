@@ -13,13 +13,18 @@
  *
  * @module services/marketplace/lib/integrity/legacy-record-sweep
  */
-import { lstat, readdir } from 'node:fs/promises';
+import { lstat, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { INSTALLED_FILES_PATH } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { installRootsUnder, projectScopeRoot } from '../install-roots.js';
 import { hasPackageIdentity } from '../locate-install.js';
-import { rebuildRecordStrict, type StrictRecordDeps } from './strict-record.js';
+import {
+  rebuildRecordStrict,
+  STRICT_RECORD_TEMP_PREFIX,
+  type StrictRecordDeps,
+} from './strict-record.js';
 
 /** The install folders a sweep rebuilt, or could not, by reason. */
 export interface LegacySweepSummary {
@@ -81,15 +86,20 @@ async function legacyInstallsIn(dir: string): Promise<string[]> {
  *
  * @param dirs - Install roots to read ({@link legacySweepDirs}); each is read once, not walked.
  * @param deps - The fetcher and a logger.
+ * @param opts - `signal`: aborted when DorkOS shuts down; the sweep stops before the next install.
  * @returns Which installs were rebuilt, and which were not and why.
  */
 export async function rebuildLegacyRecords(
   dirs: readonly string[],
-  deps: StrictRecordDeps
+  deps: StrictRecordDeps,
+  opts: { signal?: AbortSignal } = {}
 ): Promise<LegacySweepSummary> {
   const summary: LegacySweepSummary = { rebuilt: [], mismatch: [], noSource: [], fetchFailed: [] };
   for (const dir of dirs) {
     for (const root of await legacyInstallsIn(dir)) {
+      // Shutting down: stop between installs, never mid-write (each rebuild
+      // writes only its own record, atomically).
+      if (opts.signal?.aborted) return summary;
       try {
         const result = await rebuildRecordStrict(root, deps);
         switch (result.outcome) {
@@ -123,4 +133,35 @@ export async function rebuildLegacyRecords(
     }
   }
   return summary;
+}
+
+/** Scratch folders the record rebuilds stage into, strict and tolerant. */
+const RECORD_TEMP_PREFIXES = [STRICT_RECORD_TEMP_PREFIX, 'dorkos-legacy-record-'];
+
+/** How old a leftover scratch folder must be before boot removes it. */
+export const RECORD_TEMP_STALE_MS = 60 * 60 * 1000;
+
+/**
+ * Remove scratch folders a record rebuild left behind when DorkOS crashed or
+ * was killed mid-rebuild. Only folders older than {@link RECORD_TEMP_STALE_MS}
+ * go: another DorkOS on this machine may be using a fresh one. Best-effort;
+ * never throws.
+ *
+ * @param tempRoot - The temp directory to clean; `os.tmpdir()` by default.
+ */
+export async function removeRecordTempLeftovers(tempRoot: string = tmpdir()): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(tempRoot);
+  } catch {
+    return;
+  }
+  const cutoff = Date.now() - RECORD_TEMP_STALE_MS;
+  for (const name of names) {
+    if (!RECORD_TEMP_PREFIXES.some((prefix) => name.startsWith(prefix))) continue;
+    const full = path.join(tempRoot, name);
+    const stats = await lstat(full).catch(() => undefined);
+    if (!stats?.isDirectory() || stats.mtimeMs > cutoff) continue;
+    await rm(full, { recursive: true, force: true }).catch(() => undefined);
+  }
 }

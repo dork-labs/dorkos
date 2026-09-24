@@ -4,11 +4,15 @@
  * record, one at a time, and one failure never stops the rest.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { noopLogger } from '@dorkos/shared/logger';
-import { rebuildLegacyRecords, legacySweepDirs } from '../legacy-record-sweep.js';
+import {
+  rebuildLegacyRecords,
+  legacySweepDirs,
+  removeRecordTempLeftovers,
+} from '../legacy-record-sweep.js';
 import * as strict from '../strict-record.js';
 
 const dirs: string[] = [];
@@ -114,6 +118,49 @@ describe('rebuildLegacyRecords', () => {
       logger: noopLogger,
     });
     expect(most).toBe(1);
+  });
+});
+
+describe('rebuildLegacyRecords cancellation (review 8)', () => {
+  // Purpose: the sweep stops between installs once DorkOS is shutting down,
+  // so it never starts a fetch or a write after shutdown began.
+  it('stops before the next install once its signal is aborted', async () => {
+    const plugins = path.join(await tmp(), 'plugins');
+    for (const name of ['a', 'b', 'c']) await put(plugins, `${name}/.dork/manifest.json`, '{}');
+    const controller = new AbortController();
+    const spy = vi.spyOn(strict, 'rebuildRecordStrict').mockImplementation(async () => {
+      controller.abort();
+      return { outcome: 'rebuilt', files: 1 };
+    });
+
+    const summary = await rebuildLegacyRecords(
+      [plugins],
+      { fetcher: { fetchAtCommit: vi.fn() }, logger: noopLogger },
+      { signal: controller.signal }
+    );
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(summary.rebuilt).toHaveLength(1);
+  });
+});
+
+describe('removeRecordTempLeftovers (review 8)', () => {
+  // Purpose: a crash mid-rebuild leaves a scratch folder in the temp dir; boot
+  // removes old ones, and never one a running rebuild may still be using.
+  it('removes old rebuild scratch folders and keeps recent and unrelated ones', async () => {
+    const temp = await tmp();
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    for (const name of ['dorkos-strict-record-old', 'dorkos-legacy-record-old']) {
+      await mkdir(path.join(temp, name, 'installed'), { recursive: true });
+      await utimes(path.join(temp, name), old, old);
+    }
+    await mkdir(path.join(temp, 'dorkos-strict-record-fresh'));
+    await mkdir(path.join(temp, 'someone-else'));
+    await utimes(path.join(temp, 'someone-else'), old, old);
+
+    await removeRecordTempLeftovers(temp);
+
+    expect((await readdir(temp)).sort()).toEqual(['dorkos-strict-record-fresh', 'someone-else']);
   });
 });
 
