@@ -67,7 +67,7 @@ export function createCommunityApp({
   blobStore?: BlobStore;
 }) {
   const app = new Hono();
-  const auth = createCommunityAuth(pool, config);
+  const auth = createCommunityAuth(pool, config, { now: hooks?.now });
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));

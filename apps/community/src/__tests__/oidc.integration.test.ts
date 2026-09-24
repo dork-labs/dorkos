@@ -244,8 +244,14 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
     });
 
     expect(
-      (await call('/api/v1/account/password', 'POST', { newPassword: 'short' }, signedIn.cookie))
-        .status
+      (
+        await call(
+          '/api/v1/account/password',
+          'POST',
+          { newPassword: 'eleven-char' },
+          signedIn.cookie
+        )
+      ).status
     ).toBe(400);
     const set = await call(
       '/api/v1/account/password',
@@ -316,7 +322,134 @@ describe('OpenID Connect sign-in against a fake issuer', () => {
     );
     expect(set.status).toBe(403);
     expect(((await set.json()) as { code: string }).code).toBe('REAUTH_REQUIRED');
+    // Replaying a valid ID token cannot mint the fresh session the rule asks for.
+    const replay = await call(
+      '/api/auth/sign-in/social',
+      'POST',
+      { provider: 'oidc', idToken: { token: issuer.mintIdToken(issuer.identity) } },
+      signedIn.cookie
+    );
+    expect(replay.status).toBe(400);
+    expect(replay.headers.getSetCookie()).toEqual([]);
+    expect(
+      (
+        await call(
+          '/api/v1/account/password',
+          'POST',
+          { newPassword: 'new-password-1234' },
+          signedIn.cookie
+        )
+      ).status
+    ).toBe(403);
     expect(await providersOf('stale@example.com')).toEqual(['oidc']);
+  });
+});
+
+describe('only the redirect signs anyone in', () => {
+  it('refuses a replayed ID token for single sign-on and for Google, and sets no session', async () => {
+    // Purpose: fails if a bare ID token (read from anywhere, or once handed out) can mint a
+    // fresh session without the issuer, which would pass every "signed in recently" rule.
+    const token = issuer.mintIdToken({
+      sub: 'invited',
+      email: 'invited@example.com',
+      email_verified: true,
+      name: 'Invited',
+    });
+    for (const body of [
+      { provider: 'oidc', idToken: { token } },
+      { provider: 'oidc', idToken: { token }, callbackURL: '/signed-in' },
+    ]) {
+      const replay = await call('/api/auth/sign-in/social', 'POST', body);
+      expect(replay.status).toBe(400);
+      expect(((await replay.json()) as { code: string }).code).toBe('id_token_sign_in_disabled');
+      expect(replay.headers.getSetCookie()).toEqual([]);
+    }
+    const google = await secondApp({
+      COMMUNITY_GOOGLE_CLIENT_ID: 'google-client',
+      COMMUNITY_GOOGLE_CLIENT_SECRET: 'google-secret',
+    });
+    try {
+      const replay = await call(
+        '/api/auth/sign-in/social',
+        'POST',
+        { provider: 'google', idToken: { token: 'header.payload.signature' } },
+        '',
+        google.url
+      );
+      expect(replay.status).toBe(400);
+      expect(((await replay.json()) as { code: string }).code).toBe('id_token_sign_in_disabled');
+      const linkReplay = await call(
+        '/api/auth/link-social',
+        'POST',
+        { provider: 'google', idToken: { token: 'header.payload.signature' } },
+        ownerCookie,
+        google.url
+      );
+      expect(linkReplay.status).toBe(400);
+    } finally {
+      await google.close();
+    }
+  });
+
+  it('never hands a stored provider token to a session', async () => {
+    // Purpose: fails if any signed-in session can read the ID, access or refresh token a
+    // provider issued, which is where a replayable ID token would come from.
+    const signIn = await call('/api/auth/sign-in/email', 'POST', {
+      email: 'invited@example.com',
+      password: 'new-password-1234',
+    });
+    expect(signIn.status).toBe(200);
+    const cookie = cookieOf(signIn);
+    for (const [path, method] of [
+      ['/api/auth/get-access-token', 'POST'],
+      ['/api/auth/refresh-token', 'POST'],
+      ['/api/auth/account-info', 'GET'],
+    ] as const)
+      expect(
+        (await call(path, method, method === 'POST' ? { providerId: 'oidc' } : undefined, cookie))
+          .status,
+        path
+      ).toBe(404);
+  });
+
+  it('refuses a token response without an ID token, and profile data about someone else', async () => {
+    // Purpose: fails if an identity no signed ID token vouched for can sign up, including a
+    // userinfo answer whose subject differs from the ID token's.
+    try {
+      issuer.identity = {
+        sub: 'no-token',
+        email: 'no-token@example.com',
+        email_verified: true,
+        name: 'N',
+      };
+      issuer.omitIdToken = true;
+      const noToken = await oidcSignIn(await invitation());
+      expect(noToken.location.searchParams.get('error')).toBe('unable_to_get_user_info');
+      expect(await userIdFor('no-token@example.com')).toBeNull();
+      issuer.omitIdToken = false;
+
+      // The email comes from /userinfo when the ID token leaves it out.
+      issuer.idTokenWithoutEmail = true;
+      issuer.identity = {
+        sub: 'profile',
+        email: 'profile@example.com',
+        email_verified: true,
+        name: 'P',
+      };
+      issuer.userinfo = { sub: 'someone-else' };
+      const mismatch = await oidcSignIn(await invitation());
+      expect(mismatch.location.searchParams.get('error')).toBe('unable_to_get_user_info');
+      expect(await userIdFor('profile@example.com')).toBeNull();
+      // The same profile about the ID token's own subject is accepted.
+      issuer.userinfo = {};
+      const matching = await oidcSignIn(await invitation());
+      expect(matching.location.pathname).toBe('/signed-in');
+      expect(await providersOf('profile@example.com')).toEqual(['oidc']);
+    } finally {
+      issuer.omitIdToken = false;
+      issuer.idTokenWithoutEmail = false;
+      issuer.userinfo = {};
+    }
   });
 });
 
@@ -367,44 +500,90 @@ describe('linking single sign-on from the account page', () => {
   });
 });
 
+/** Serve a second Community app against the shared database, for one configuration. */
+async function secondApp(env: Record<string, unknown>, now?: () => Date) {
+  const app = createCommunityApp({
+    config: parseConfig({ ...baseEnv, ...env }),
+    pool,
+    ...(now ? { hooks: { now } } : {}),
+  });
+  const second = serve({ fetch: app.fetch, port: 0 });
+  await new Promise<void>((resolve) => second.once('listening', resolve));
+  const address = second.address();
+  if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
+  return {
+    url: `http://localhost:${address.port}`,
+    close: () => new Promise<void>((resolve) => second.close(() => resolve())),
+  };
+}
+
+const issuerEnv = (fake: FakeIssuer) => ({
+  COMMUNITY_OIDC_ISSUER_URL: fake.issuer,
+  COMMUNITY_OIDC_CLIENT_ID: fake.clientId,
+  COMMUNITY_OIDC_CLIENT_SECRET: fake.clientSecret,
+});
+
 describe('OpenID Connect discovery', () => {
-  it('retries after an issuer outage instead of disabling sign-in until a restart', async () => {
-    // Purpose: fails if one failed discovery is cached, as Better Auth does at startup.
+  it('waits 30 seconds after an issuer outage, then retries instead of staying off until a restart', async () => {
+    // Purpose: fails if one failed discovery disables sign-in for good (as Better Auth does at
+    // startup), or if every sign-in attempt during an outage hits the issuer again.
     const down = await startFakeIssuer();
     down.down = true;
-    const config = parseConfig({
-      ...baseEnv,
-      COMMUNITY_OIDC_ISSUER_URL: down.issuer,
-      COMMUNITY_OIDC_CLIENT_ID: down.clientId,
-      COMMUNITY_OIDC_CLIENT_SECRET: down.clientSecret,
-    });
-    const app = createCommunityApp({ config, pool });
-    const second = serve({ fetch: app.fetch, port: 0 });
-    await new Promise<void>((resolve) => second.once('listening', resolve));
-    const address = second.address();
-    if (!address || typeof address === 'string') throw new Error('Missing HTTP address');
-    const url = `http://localhost:${address.port}`;
+    let clock = Date.parse('2026-09-24T12:00:00Z');
+    const app = await secondApp(issuerEnv(down), () => new Date(clock));
     const start = () =>
       call(
         '/api/auth/sign-in/social',
         'POST',
         { provider: 'oidc', callbackURL: '/signed-in' },
         '',
-        url
+        app.url
       );
     try {
       expect(down.requests).toEqual([]);
-      const unavailable = await start();
-      expect(unavailable.status).toBe(503);
+      expect((await start()).status).toBe(503);
       down.down = false;
+      clock += 29_000;
+      expect((await start()).status).toBe(503);
+      expect(down.requests).toEqual(['GET /.well-known/openid-configuration']);
+      clock += 2_000;
       const available = await start();
       expect(available.status).toBe(200);
       expect(((await available.json()) as { url: string }).url).toContain(
         `${down.issuer}/authorize`
       );
     } finally {
-      await new Promise<void>((resolve) => second.close(() => resolve()));
+      await app.close();
       await down.close();
+    }
+  });
+
+  it('refuses a discovery document for another issuer, or with an endpoint that is not HTTPS', async () => {
+    // Purpose: fails if a misconfigured or redirected discovery can send people, codes or
+    // tokens to an issuer other than the configured one, or over plain HTTP.
+    const cases: Record<string, unknown>[] = [
+      { issuer: 'https://id.example.com' },
+      { token_endpoint: 'http://token.example.com/token' },
+      { jwks_uri: 'http://keys.example.com/jwks' },
+    ];
+    for (const discovery of cases) {
+      const wrong = await startFakeIssuer();
+      wrong.discovery = discovery;
+      const app = await secondApp(issuerEnv(wrong));
+      try {
+        const start = await call(
+          '/api/auth/sign-in/social',
+          'POST',
+          { provider: 'oidc', callbackURL: '/signed-in' },
+          '',
+          app.url
+        );
+        expect(start.status, JSON.stringify(discovery)).toBe(503);
+        expect(wrong.requests).not.toContain('GET /authorize');
+      } finally {
+        await app.close();
+        await wrong.close();
+      }
     }
   });
 

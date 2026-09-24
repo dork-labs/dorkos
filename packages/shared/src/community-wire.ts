@@ -100,12 +100,19 @@ export const CommunityWireBootstrapPreflightResponseSchema = z.strictObject({
   granted: z.boolean(),
   expiresAt: timestamp,
 });
+/**
+ * The shortest new password a Community accepts, wherever one is set: sign-up, first-install
+ * setup, adding a password to a provider account, and offline recovery. Signing in with an older,
+ * shorter password still works.
+ */
+export const COMMUNITY_PASSWORD_MIN_LENGTH = 12;
+
 /** First-install setup creates the host account and initial tenant in one transaction. */
 export const CommunityWireBootstrapCompleteRequestSchema = z.strictObject({
   secret: id,
   accountName: z.string().trim().min(1).max(128),
   email: z.email(),
-  password: z.string().min(8).max(128),
+  password: z.string().min(COMMUNITY_PASSWORD_MIN_LENGTH).max(128),
   communityName: z.string().trim().min(1).max(120),
   channelName: z.string().trim().min(1).max(80),
 });
@@ -279,7 +286,7 @@ export type CommunityWireAccountSignInMethods = z.infer<
 >;
 /** Add a first password to an account that signs in only through a provider. */
 export const CommunityWireAccountPasswordRequestSchema = z.strictObject({
-  newPassword: z.string().min(8).max(128),
+  newPassword: z.string().min(COMMUNITY_PASSWORD_MIN_LENGTH).max(128),
 });
 
 /** Public channel projection. `joined` is for the current caller only. */

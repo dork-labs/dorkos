@@ -21,6 +21,16 @@ export interface FakeIssuer {
   identity: FakeIdentity;
   /** While true, discovery answers 503, as an issuer that is down. */
   down: boolean;
+  /** Fields merged over the discovery document, to serve a wrong or unsafe one. */
+  discovery: Record<string, unknown>;
+  /** Leave the email out of the ID token, so the profile comes from `/userinfo`. */
+  idTokenWithoutEmail: boolean;
+  /** Answer the token request with no ID token at all. */
+  omitIdToken: boolean;
+  /** Fields merged over the identity `/userinfo` returns, to disagree with the ID token. */
+  userinfo: Partial<FakeIdentity>;
+  /** Sign a valid ID token for `identity` directly, as one stolen or replayed would be. */
+  mintIdToken(identity: FakeIdentity, nonce?: string | null): string;
   close(): Promise<void>;
 }
 
@@ -51,6 +61,7 @@ export async function startFakeIssuer(): Promise<FakeIssuer> {
     string,
     { identity: FakeIdentity; nonce: string | null; challenge: string; redirectUri: string }
   >();
+  const tokens = new Map<string, { accessToken: string; identity: FakeIdentity }>();
   const state: FakeIssuer = {
     issuer: '',
     clientId: 'community-test-client',
@@ -63,6 +74,11 @@ export async function startFakeIssuer(): Promise<FakeIssuer> {
       name: 'Person',
     },
     down: false,
+    discovery: {},
+    idTokenWithoutEmail: false,
+    omitIdToken: false,
+    userinfo: {},
+    mintIdToken: () => '',
     close: async () => undefined,
   };
   const idToken = (identity: FakeIdentity, nonce: string | null) => {
@@ -74,6 +90,7 @@ export async function startFakeIssuer(): Promise<FakeIssuer> {
       exp: now + 300,
       ...(nonce ? { nonce } : {}),
       ...identity,
+      ...(state.idTokenWithoutEmail ? { email: undefined, email_verified: undefined } : {}),
     })}`;
     return `${input}.${sign('sha256', Buffer.from(input), privateKey).toString('base64url')}`;
   };
@@ -95,8 +112,17 @@ export async function startFakeIssuer(): Promise<FakeIssuer> {
           response_types_supported: ['code'],
           subject_types_supported: ['public'],
           id_token_signing_alg_values_supported: ['RS256'],
+          userinfo_endpoint: `${state.issuer}/userinfo`,
           code_challenge_methods_supported: ['S256'],
+          ...state.discovery,
         });
+      }
+      if (url.pathname === '/userinfo') {
+        const grant = [...tokens.values()].find(
+          (candidate) => request.headers.authorization === `Bearer ${candidate.accessToken}`
+        );
+        if (!grant) return reply(401, { error: 'invalid_token' });
+        return reply(200, { ...grant.identity, ...state.userinfo });
       }
       if (url.pathname === '/jwks') return reply(200, { keys: [jwk] });
       if (url.pathname === '/authorize') {
@@ -141,16 +167,19 @@ export async function startFakeIssuer(): Promise<FakeIssuer> {
           createHash('sha256').update(verifier).digest('base64url') !== grant.challenge
         )
           return reply(400, { error: 'invalid_grant' });
+        const accessToken = randomBytes(16).toString('hex');
+        tokens.set(accessToken, { accessToken, identity: grant.identity });
         return reply(200, {
-          access_token: randomBytes(16).toString('hex'),
+          access_token: accessToken,
           token_type: 'Bearer',
           expires_in: 300,
-          id_token: idToken(grant.identity, grant.nonce),
+          ...(state.omitIdToken ? {} : { id_token: idToken(grant.identity, grant.nonce) }),
         });
       }
       return reply(404, { error: 'not_found' });
     })();
   });
+  state.mintIdToken = (identity, nonce = null) => idToken(identity, nonce);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('No fake issuer port');

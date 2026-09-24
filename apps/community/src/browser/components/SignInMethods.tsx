@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { KeyRound, Link2 } from 'lucide-react';
 import {
+  COMMUNITY_PASSWORD_MIN_LENGTH,
   communitySettingsPath,
   type CommunityWireAccountSignInMethods,
 } from '@dorkos/shared/community-wire';
@@ -103,13 +104,13 @@ export function SignInMethodsPanel({ communityId }: { communityId: string }) {
               id="new-account-password"
               type="password"
               autoComplete="new-password"
-              minLength={8}
+              minLength={COMMUNITY_PASSWORD_MIN_LENGTH}
               maxLength={128}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               required
             />
-            <span className="hint">At least 8 characters.</span>
+            <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
           </div>
           <button className="button" disabled={busy}>
             <KeyRound size={16} aria-hidden="true" /> Add password

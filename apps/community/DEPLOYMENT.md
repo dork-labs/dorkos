@@ -78,11 +78,19 @@ Register this redirect URI with your provider. The service also prints it when i
 https://community.example.com/api/auth/callback/oidc
 ```
 
-The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. It uses PKCE and checks the signed ID token against the provider's published keys.
+The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. That document must name exactly the issuer you set, and every address in it must be `https://`. If the provider does not answer within 10 seconds, or the document fails those checks, the button says single sign-on is unavailable, and the service asks again 30 seconds later. Sign-in uses PKCE, and every sign-in needs an ID token signed with the provider's published keys. People sign in only through the provider's own page; the service never accepts an ID token handed to it directly.
 
-Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified, or sign-in is refused. If someone's email already belongs to an account here, single sign-on does not attach to it on its own: they sign in with their password, then choose **Link** under Settings, Account.
+Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused. If someone's email already belongs to an account here, single sign-on does not attach to it on its own: they sign in with their password, then choose **Link** under Settings, Account.
 
-Email and password sign-in always stays on. Someone who joined through single sign-on can add a password under Settings, Account, within five minutes of signing in, so they can still get in when your provider is down. Exporting, leaving, transferring ownership, and other careful actions still ask for a password. Until someone adds one, those actions say "Set a password in your account to do this." Confirming these actions through your provider instead is planned as a separate change.
+The Community does not check email addresses when someone signs up with a password. So a person holding an invitation could create a password account with someone else's email, and the real owner of that email would then be refused by single sign-on. If that happens, and the password account has not joined any community, remove it with this command, then ask the real owner to sign in again:
+
+```bash
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/host/release-unverified-account.js <email>
+```
+
+It removes the account only if its email was never verified, it signs in only with a password, it has no membership in any community (current or ended), and it has never operated this host. Otherwise it changes nothing and says why. The host audit log records that it ran, without the email address.
+
+Email and password sign-in always stays on. Someone who joined through single sign-on can add a password (at least 12 characters) under Settings, Account, within five minutes of signing in, so they can still get in when your provider is down. Exporting, leaving, transferring ownership, and other careful actions still ask for a password. Until someone adds one, those actions say "Set a password in your account to do this." Confirming these actions through your provider instead is planned as a separate change.
 
 To turn single sign-on off, unset the variables. Accounts made through it stay, and can sign in with a password if they added one.
 

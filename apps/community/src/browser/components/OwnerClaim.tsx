@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, Crown, KeyRound, ShieldCheck } from 'lucide-react';
-import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
+import {
+  COMMUNITY_PASSWORD_MIN_LENGTH,
+  type CommunityWireMembershipSummary,
+} from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
 import { rememberCommunity } from '../remembered-community.js';
 import {
@@ -385,15 +388,18 @@ export function OwnerClaim() {
                   id="owner-claim-password"
                   type="password"
                   autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  minLength={8}
+                  // Only a new password must meet today's length; an older one still signs in.
+                  minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
                 />
-                {mode === 'signin' && (
+                {mode === 'signin' ? (
                   <span className="hint">
                     Forgot your password? Ask the person running this host for help.
                   </span>
+                ) : (
+                  <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
                 )}
               </div>
               <button className="button primary w-full" disabled={busy}>

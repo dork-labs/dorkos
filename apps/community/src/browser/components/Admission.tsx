@@ -1,5 +1,6 @@
 import { Button, Field, FieldLabel, Input, Notice } from '@dork-labs/ui';
 import { useEffect, useRef, useState } from 'react';
+import { COMMUNITY_PASSWORD_MIN_LENGTH } from '@dorkos/shared/community-wire';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, KeyRound, UsersRound } from 'lucide-react';
 import { describeError, RequestError, request } from '../api.js';
@@ -435,15 +436,18 @@ export function Admission({
                 id="password"
                 type="password"
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                minLength={8}
+                // Only a new password must meet today's length; an older, shorter one still signs in.
+                minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
               />
-              {mode === 'signin' && (
+              {mode === 'signin' ? (
                 <span className="hint">
                   Forgot your password? Ask the person running this community for help.
                 </span>
+              ) : (
+                <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
               )}
             </Field>
             {isOwner && (
