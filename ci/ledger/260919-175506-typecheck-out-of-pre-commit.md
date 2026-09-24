@@ -6,7 +6,7 @@ status: active
 actor: agent
 gates:
   - lefthook.pre-commit.lint
-prs: []
+prs: [2077]
 hypothesis:
   metric: 'hook.pre-commit.duration_p90'
   slo: 'local-commit'
