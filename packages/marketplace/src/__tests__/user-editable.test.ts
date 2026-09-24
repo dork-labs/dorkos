@@ -24,6 +24,22 @@ describe('isReservedPackagePath', () => {
     expect(isReservedPackagePath(p)).toBe(true);
   });
 
+  // Purpose (code review 2): a case-insensitive volume (APFS, NTFS) treats these
+  // as the reserved paths themselves, so they must be reserved as well,
+  // including a compatibility spelling (U+017F folds to "s").
+  it.each([
+    '.dork/Secrets.json',
+    '.DORK/secrets.json',
+    '.dork/Data',
+    '.dork/DATA/seed.json',
+    '.dork/Installed-Files.json',
+    'x.DORK-OLD',
+    'x.Dork-New.2',
+    '.dork/\u017Fecrets.json',
+  ])('reserves the case variant %s', (p) => {
+    expect(isReservedPackagePath(p)).toBe(true);
+  });
+
   // Purpose: near-misses must stay shippable, or a real package file is dropped.
   it.each([
     '.dork/database.json',
@@ -93,6 +109,15 @@ describe('manifest userEditable', () => {
         .userEditable
     ).toEqual(['config/x.json']);
   });
+
+  // Purpose (code review 2): a case variant of an identity or reserved path
+  // is that path on a case-insensitive volume, so it can't be user-editable.
+  it.each(['.dork/Manifest.json', '.claude-plugin/Plugin.json', '.DORK/**', '.dork/Secrets.json'])(
+    'refuses the case variant %s',
+    (value) => {
+      expect(UserEditablePathSchema.safeParse(value).success).toBe(false);
+    }
+  );
 
   // Purpose: a bad pattern makes the manifest invalid, not silently dropped.
   it('rejects a manifest whose userEditable names an identity file', () => {

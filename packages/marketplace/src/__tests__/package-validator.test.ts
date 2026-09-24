@@ -432,6 +432,21 @@ describe('validatePackage', () => {
       expect(found[0]).toMatchObject({ level: 'error', path: reserved });
     });
 
+    // Purpose (code review 2): on a case-insensitive volume these ARE the
+    // reserved paths, so a case variant is refused like the real name.
+    it.each(['.dork/Secrets.json', '.dork/Data/seed.json'])(
+      'refuses a package shipping the case variant %s',
+      async (reserved) => {
+        const pkg = path.join(await tempDir(), 'case-reserver');
+        await writeAgent(pkg);
+        await writeText(path.join(pkg, ...reserved.split('/')), 'x');
+
+        const result = await validatePackage(pkg);
+
+        expect(result.issues.filter((i) => i.code === 'RESERVED_PATH_SHIPPED')).toHaveLength(1);
+      }
+    );
+
     // Purpose: near-miss names and anything under node_modules stay allowed.
     it('allows near-miss names and ignores node_modules', async () => {
       const pkg = path.join(await tempDir(), 'nearmiss');

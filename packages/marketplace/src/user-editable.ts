@@ -35,8 +35,18 @@ const RESERVED_FILES: readonly string[] = [
   UNINSTALLED_AGENT_PATH,
 ];
 
-/** A basename ending `.dork-old` or `.dork-new`, optionally numbered (`.dork-old.2`). */
-const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/;
+/** A basename ending `.dork-old` or `.dork-new`, optionally numbered (`.dork-old.2`), any case. */
+const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/i;
+
+/**
+ * A path folded the way a case-insensitive volume compares names. APFS and
+ * NTFS treat `.dork/Secrets.json` as `.dork/secrets.json`, so every ownership
+ * comparison here runs on folded paths: compatibility forms first (`ſ` is
+ * `s`), then lower case.
+ */
+function fold(posixPath: string): string {
+  return posixPath.normalize('NFKC').toLowerCase();
+}
 
 /** The package identity files; a package's identity is never the person's to keep. */
 const IDENTITY_FILES: readonly string[] = [PACKAGE_MANIFEST_PATH, CLAUDE_PLUGIN_MANIFEST_PATH];
@@ -48,9 +58,10 @@ const IDENTITY_FILES: readonly string[] = [PACKAGE_MANIFEST_PATH, CLAUDE_PLUGIN_
  * @param posixPath - A path relative to the package root, `/`-separated.
  */
 export function isReservedPackagePath(posixPath: string): boolean {
-  if (posixPath === PACKAGE_DATA_DIR || posixPath.startsWith(`${PACKAGE_DATA_DIR}/`)) return true;
-  if (RESERVED_FILES.includes(posixPath)) return true;
-  const basename = posixPath.slice(posixPath.lastIndexOf('/') + 1);
+  const p = fold(posixPath);
+  if (p === PACKAGE_DATA_DIR || p.startsWith(`${PACKAGE_DATA_DIR}/`)) return true;
+  if (RESERVED_FILES.includes(p)) return true;
+  const basename = p.slice(p.lastIndexOf('/') + 1);
   return KEPT_COPY_BASENAME.test(basename);
 }
 
@@ -70,8 +81,9 @@ function covers(pattern: string, target: string): boolean {
   return target.startsWith(`${prefix}/`) || `${target}/`.startsWith(`${prefix}/`);
 }
 
-/** Whether a pattern reaches any reserved path or package identity file. */
-function coversOwnedPath(pattern: string): 'reserved' | 'identity' | undefined {
+/** Whether a pattern reaches any reserved path or package identity file, in any case. */
+function coversOwnedPath(value: string): 'reserved' | 'identity' | undefined {
+  const pattern = fold(value);
   const prefix = prefixOf(pattern);
   if (prefix === undefined) {
     if (IDENTITY_FILES.includes(pattern)) return 'identity';

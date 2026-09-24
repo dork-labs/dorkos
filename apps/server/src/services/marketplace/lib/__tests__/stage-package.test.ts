@@ -196,4 +196,23 @@ describe('stagePackageContents', () => {
     // `.dork/data` is dropped as one subtree, so six files plus one directory.
     expect(warned).toHaveLength(reserved.length);
   });
+
+  // Purpose (code review 2): APFS and NTFS ignore case, so `.dork/Secrets.json`
+  // IS the person's secrets file there; a case variant must be stripped too.
+  it('strips case variants of reserved paths', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+    for (const rel of ['.dork/Secrets.json', '.dork/Data/seed.json', 'a.md.DORK-OLD']) {
+      await mkdir(path.dirname(path.join(src, rel)), { recursive: true });
+      await writeFile(path.join(src, rel), rel, 'utf-8');
+    }
+
+    await stagePackageContents(src, dest, buildLogger());
+
+    expect(await exists(path.join(dest, '.dork', 'Secrets.json'))).toBe(false);
+    expect(await exists(path.join(dest, '.dork', 'Data'))).toBe(false);
+    expect(await exists(path.join(dest, 'a.md.DORK-OLD'))).toBe(false);
+  });
 });
