@@ -46,6 +46,8 @@ export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 
 export { useRemoveMarketplaceSource } from './model/use-remove-marketplace-source';
 
+export { useRefreshMarketplaceSource } from './model/use-refresh-marketplace-source';
+
 // No UI. `SkillPacksList` drew the profile's Skills page until the harness
 // status arrived: it listed installed skill-packs and told a person with
 // thirty-one skills they had none, because a skill-pack is one of the ways a

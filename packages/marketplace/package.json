@@ -45,6 +45,10 @@
       "types": "./src/slug.ts",
       "default": "./dist/slug.js"
     },
+    "./package-links": {
+      "types": "./src/package-links.ts",
+      "default": "./dist/package-links.js"
+    },
     "./package-validator": {
       "types": "./src/package-validator.ts",
       "default": "./dist/package-validator.js"

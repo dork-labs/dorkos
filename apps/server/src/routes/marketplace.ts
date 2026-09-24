@@ -28,7 +28,10 @@ import {
   type PackageCacheRetention,
 } from '../services/marketplace/package-cache-retention.js';
 import { directorySize } from '../services/marketplace/lib/directory-size.js';
-import type { MarketplaceSourceManager } from '../services/marketplace/marketplace-source-manager.js';
+import {
+  InvalidSourceNameError,
+  type MarketplaceSourceManager,
+} from '../services/marketplace/marketplace-source-manager.js';
 import type { PackageFetcher } from '../services/marketplace/package-fetcher.js';
 import type { InstallerLike } from '../services/marketplace/marketplace-installer.js';
 import {
@@ -75,6 +78,10 @@ import {
   type UninstallFlow,
 } from '../services/marketplace/flows/uninstall.js';
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
+import {
+  fetchNewSourceListing,
+  refreshSourceListing,
+} from '../services/marketplace/source-listing.js';
 import {
   GitCommitNotFoundError,
   GitFetchError,
@@ -510,7 +517,7 @@ function updateRefusalResponse(res: Response, refusal: UpdateRefusal): Response 
  * (typically `/api/marketplace`):
  *
  * - `GET /sources` — list configured marketplace sources
- * - `POST /sources` — add a new source (operator-only; agents are refused)
+ * - `POST /sources` — add a new source and fetch its listing once (operator-only; agents are refused)
  * - `DELETE /sources/:name` — remove a source (operator-only; agents are refused)
  * - `POST /sources/:name/refresh` — force refetch of a source's marketplace.json
  * - `GET /installed` — list installed packages across scopes (or one project via `?projectPath`)
@@ -795,15 +802,18 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
+    let created: MarketplaceSource;
     try {
-      const created = await sourceManager.add(parsed.data);
-      return res.status(201).json(created);
+      created = await sourceManager.add(parsed.data);
     } catch (err) {
       // An address DorkOS will not fetch from. Answered here rather than left
       // to the 500 below: this is the caller's input, and the message names the
       // forms that do work. The address itself is logged rather than echoed —
       // the operator knows what they typed, and the log is where a support
       // question gets answered.
+      if (err instanceof InvalidSourceNameError) {
+        return res.status(400).json({ error: err.message });
+      }
       if (err instanceof UnsupportedSourceUrlError) {
         logger.warn('[Marketplace] Refused an unsupported source address', {
           name: parsed.data.name,
@@ -818,6 +828,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       logger.error('[Marketplace] Failed to add source', err);
       return res.status(500).json({ error: 'Failed to add marketplace source' });
     }
+
+    // One best-effort fetch of the new listing, the way refresh fetches it, so
+    // the first install does not need a refresh first (DOR-2304). It never
+    // throws: a failure is reported in `listing`, and the source stays saved.
+    const listing = await fetchNewSourceListing({ fetcher, cache }, created);
+    return res.status(201).json({ ...created, listing });
   });
 
   // DELETE /sources/:name -- remove a marketplace source (operator-only, DOR-502)
@@ -827,11 +843,21 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
 
     try {
       await sourceManager.remove(req.params.name);
-      res.status(204).send();
     } catch (err) {
       logger.error(`[Marketplace] Failed to remove source ${req.params.name}`, err);
-      res.status(500).json({ error: 'Failed to remove marketplace source' });
+      return res.status(500).json({ error: 'Failed to remove marketplace source' });
     }
+    // Its listing goes with it: listings are cached by name, and one left
+    // behind would pass for the listing of the next source given that name
+    // (DOR-2304). The source is already gone, so a failure here is logged
+    // rather than answered — adding a source clears the name again anyway.
+    updateFlow.clearMemos();
+    try {
+      await cache.removeMarketplace(req.params.name);
+    } catch (err) {
+      logger.warn(`[Marketplace] Removed source ${req.params.name} but kept its listing`, err);
+    }
+    return res.status(204).send();
   });
 
   // POST /sources/:name/refresh -- force refetch of a source's marketplace.json
@@ -842,11 +868,13 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         return res.status(404).json({ error: `Marketplace source '${req.params.name}' not found` });
       }
 
-      const marketplace = await fetcher.fetchMarketplaceJson(source);
+      // "Check now": an unreachable source answers with its last copy marked
+      // `stale`, never the old copy passed off as new (DOR-2304).
+      const refreshed = await refreshSourceListing({ fetcher, cache }, source);
       // "I just pushed; check again": the update check shares commit lookups
       // for a minute, and a refresh is how the operator asks it to look now.
       updateFlow.clearMemos();
-      return res.json({ marketplace, fetchedAt: new Date().toISOString() });
+      return res.json(refreshed);
     } catch (err) {
       logger.error(`[Marketplace] Failed to refresh source ${req.params.name}`, err);
       const message = err instanceof Error ? err.message : 'Failed to refresh marketplace source';

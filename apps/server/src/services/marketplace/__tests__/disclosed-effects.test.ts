@@ -18,6 +18,7 @@ function preview(overrides: Partial<PermissionPreview> = {}): PermissionPreview 
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],

@@ -41,6 +41,10 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./bounded-read": {
+      "types": "./src/bounded-read.ts",
+      "default": "./dist/bounded-read.js"
+    },
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"

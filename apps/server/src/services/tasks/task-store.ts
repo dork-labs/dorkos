@@ -37,6 +37,7 @@ import {
 } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 import {
+  AGENT_CONTENT_CHANGE_REASON,
   AGENT_TIMING_CHANGE_REASON,
   effectiveContentKey,
   effectiveTiming,
@@ -203,10 +204,10 @@ export type UntimedTaskUpdate = Omit<UpdateTaskRequest, 'cron' | 'timezone' | 'r
 };
 
 /**
- * What {@link TaskStore.settleTimingChange} did about a schedule whose timing
- * changed on its row alone.
+ * What {@link TaskStore.settleApprovedWorkChange} did about a schedule whose
+ * approved work changed.
  */
-export type TimingSettlement = 'unchanged' | 'rekeyed' | 'parked';
+export type WorkChangeSettlement = 'unchanged' | 'rekeyed' | 'parked';
 
 /** Fields that can be updated on a run. */
 interface RunUpdate {
@@ -472,39 +473,46 @@ export class TaskStore {
   }
 
   /**
-   * Keep a schedule's approval honest after its timing changed on the row
-   * alone — a package's schedule, whose file DorkOS never writes (DOR-2302).
-   *
-   * A timing change is a change to the approved work (`[prompt, cron, timezone]`), and
-   * nothing else will notice this one: no file was written, so no watcher
-   * fires, and the next sync is up to five minutes away. So it is settled here,
-   * in the request that made it, one of two ways:
+   * Keep a schedule's approval honest after the work it approved changed: its
+   * prompt, cron or timezone (`scheduleContentKey`), in the request that
+   * changed it rather than at the next sync.
    *
    * - **A person** (the caller cleared the agent bar) changing the timing of a
    *   schedule they approved re-approves it in the same act: the grant moves to
-   *   the new timing. Keyed on the grant covering the OLD timing rather than on
+   *   the new timing. Keyed on the grant covering the OLD content rather than on
    *   `status`, so a switched-off or paused schedule the person approved is
    *   still approved when it comes back, and a schedule nobody approved yet is
-   *   not approved by a timing edit.
-   * - **Anyone else** — an agent — gets an `active` schedule parked at once,
-   *   with DorkOS's own sentence saying what happened. Left to the sync, the
-   *   registrar would run the agent's new timing on an approved schedule until
-   *   the next sweep, and the sync would then say the FILE changed. A schedule
-   *   that is not active keeps its status; its grant no longer matches what
-   *   would run, so nothing can arm it again without a person.
+   *   not approved by an edit. Routes only ask this for a change no file carried
+   *   (a package's row-only timing, DOR-2302); a person's file-backed edit is
+   *   re-approved by the route itself.
+   * - **An agent** gets an `active` schedule parked at once, with DorkOS's own
+   *   sentence saying what it changed: {@link AGENT_CONTENT_CHANGE_REASON} when
+   *   the prompt changed, {@link AGENT_TIMING_CHANGE_REASON} otherwise. Left to
+   *   the sync, the agent's new work would run on an approved schedule until
+   *   the watcher or the five-minute sweep caught up (DOR-2313), and the sync
+   *   would say the FILE changed. A sync that landed mid-request, between the
+   *   file write and this call, has already parked the row with its own
+   *   sentence; the schedule was active before this request, so the agent's
+   *   sentence replaces it. A schedule that was not active keeps its status; its
+   *   grant no longer matches what would run, so nothing can arm it again
+   *   without a person.
    *
-   * @param id - The schedule whose timing just changed.
-   * @param previousKey - {@link effectiveContentKey} of the row before the update.
+   * It never touches `enabled`: a park stops a schedule, it never starts one.
+   *
+   * @param id - The schedule whose approved work may just have changed.
+   * @param before - What would have run before the update, and the status the
+   *   schedule had then.
    * @param caller - Whether the caller cleared the agent bar.
    * @returns What was done, so a caller can tell the agent or raise the park.
    */
-  settleTimingChange(
+  settleApprovedWorkChange(
     id: string,
-    previousKey: string,
+    before: { prompt: string; cron: string; timezone: string; status: string },
     caller: { trusted: boolean }
-  ): TimingSettlement {
+  ): WorkChangeSettlement {
     const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!row) return 'unchanged';
+    const previousKey = scheduleContentKey(before);
     const key = effectiveContentKey(row);
     if (key === previousKey) return 'unchanged';
 
@@ -518,13 +526,15 @@ export class TaskStore {
       return 'rekeyed';
     }
 
-    if (row.status !== 'active') return 'unchanged';
+    const parkedMidRequest = before.status === 'active' && row.status === 'pending_approval';
+    if (row.status !== 'active' && !parkedMidRequest) return 'unchanged';
     this.db
       .update(pulseSchedules)
       .set({
         status: 'pending_approval',
         approvedContentKey: null,
-        reason: AGENT_TIMING_CHANGE_REASON,
+        reason:
+          row.prompt !== before.prompt ? AGENT_CONTENT_CHANGE_REASON : AGENT_TIMING_CHANGE_REASON,
         reasonSource: 'dorkos',
         updatedAt: new Date().toISOString(),
       })

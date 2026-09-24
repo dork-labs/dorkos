@@ -22,10 +22,7 @@ import type { EffortLevel, PermissionMode, UpdateTaskRequest } from '@dorkos/sha
 import { slugify } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
-import {
-  clampSchedulePermissionMode,
-  scheduleContentKey,
-} from '../../../tasks/schedule-permission-clamp.js';
+import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -88,43 +85,36 @@ export const PARKED_SCHEDULE_NOTE =
   'were done.';
 
 /**
- * What `tasks_update` tells an agent when its edit costs the schedule its
- * approval (DOR-1625 review).
+ * What `tasks_update` tells an agent whose edit to what an approved schedule
+ * does has stopped it (DOR-1625 review, DOR-2313).
  *
  * A person's approval is keyed on the schedule's CONTENT — the prompt, the
  * cron and, since DOR-2307, the timezone (`scheduleContentKey`) — so changing
- * any of them means nobody has read this piece of work. The next sync therefore parks the task at `pending_approval`,
- * within seconds via the file watcher and within five minutes regardless.
+ * any of them means nobody has read this piece of work. DorkOS parks the
+ * schedule in the same call (`TaskStore.settleApprovedWorkChange`), so the
+ * schedule this tool hands back already says `pending_approval`. An agent that
+ * read only the status could still report "updated the schedule" and end the
+ * turn, leaving a person to discover a stopped schedule on their own, so the
+ * reply says what the edit cost. Re-issuing the approval here instead is not an
+ * option: only a caller that cleared the agent bar may do that.
  *
- * That is the right behavior and it is NOT what the reply looked like. The row
- * is written before any of that happens, so the schedule this tool hands back
- * still says `status: 'active'` — an agent read it, reported "updated the
- * schedule", and ended the turn, leaving a person to discover a stopped cron on
- * their own. Re-issuing the approval here instead is not an option: only a
- * caller that cleared the agent bar may do that (`routes/tasks.ts` re-approves
- * for a trusted caller alone), and doing it from an MCP tool would be exactly
- * the substitution the bypass clamp exists to refuse.
- *
- * So the edit lands, and the reply says what it cost. Worded like
- * {@link PARKED_SCHEDULE_NOTE}, and for the same reason: DorkOS raises the
- * approval on its own, and the one thing only the agent can do is say so out
- * loud.
+ * Worded like {@link PARKED_SCHEDULE_NOTE}, and for the same reason: DorkOS
+ * raises the approval on its own, and the one thing only the agent can do is
+ * say so out loud. {@link TIMING_REAPPROVAL_NOTE} is its sibling for a change
+ * to when the schedule runs alone.
  */
 export const REAPPROVAL_NOTE =
-  'This edit changed what the schedule does or when it runs, so the person has to approve it again. Within a ' +
-  'few minutes DorkOS will stop the schedule and put it back in front of them — your change is ' +
-  'saved, it just will not run until they say yes. Tell them so in your reply: name the ' +
-  'scheduled task and say it is waiting on them. Do not end the turn as if the work were done.';
+  'This changed what an approved schedule does, so the person has to approve it again. DorkOS ' +
+  'has already stopped it and put it in front of them — your change is saved, it just will not ' +
+  'run until they say yes. Tell them so in your reply: name the scheduled task and say it is ' +
+  'waiting on them. Do not end the turn as if the work were done.';
 
 /**
- * What `tasks_update` tells an agent whose change to WHEN a package's schedule
- * runs has already stopped it (DOR-2302).
+ * What `tasks_update` tells an agent whose change to WHEN an approved schedule
+ * runs has stopped it (DOR-2302, DOR-2313).
  *
- * A sibling of {@link REAPPROVAL_NOTE} rather than a reuse, because the timing
- * differs and the agent repeats it to a person. A package's schedule takes a
- * new cron on its row alone — its file is the package's and DorkOS never writes
- * it — so no sync is coming to park it later: DorkOS parks it in the same
- * call, and "within a few minutes" would be wrong in the other direction.
+ * A sibling of {@link REAPPROVAL_NOTE} rather than a reuse, because the agent
+ * repeats it to a person and it should name what changed.
  */
 export const TIMING_REAPPROVAL_NOTE =
   'This changed when an approved schedule runs, so the person has to approve it again. DorkOS ' +
@@ -694,11 +684,9 @@ export function createUpdateScheduleHandler(
     // here leaves the row untouched too, and the call is refused WHOLE.
     //
     // One consequence worth naming: the approval grant is keyed on the schedule's
-    // CONTENT, so a live schedule whose prompt, cron or name an agent rewrites is
-    // re-parked by the next sync of the file this writes — the same thing that
-    // happens when an agent edits the SKILL.md by hand, and what the REST route
-    // means by re-issuing the grant for a TRUSTED caller only. An agent's edit
-    // still goes back to a person; it just no longer un-happens.
+    // CONTENT, so a live schedule whose prompt, cron or timezone an agent
+    // rewrites goes back to a person, parked below in this same call rather than
+    // at the next sync of the file this writes (DOR-2313).
     const fileOutcome = await applyTaskFileUpdate(
       { dorkHome: deps.dorkHome, ...(deps.meshCore && { meshCore: deps.meshCore }) },
       { existing, data: patch, clampTo }
@@ -721,21 +709,21 @@ export function createUpdateScheduleHandler(
     });
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
 
-    // A timing change that wrote no file — a package's schedule, whose timing
-    // lives on its row (DOR-2302) — has no sync coming to park it, so it is
-    // settled here: this is an agent, so an approved schedule stops at once and
-    // goes back to a person, exactly as the REST route does for an agent.
-    const settled = fileOutcome.changesFile
-      ? 'unchanged'
-      : deps.taskStore!.settleTimingChange(
-          updated.id,
-          scheduleContentKey({
-            prompt: existing.prompt,
-            cron: existing.cron ?? '',
-            timezone: existing.timezone ?? 'UTC',
-          }),
-          { trusted: false }
-        );
+    // This is an agent, so a change to approved work stops an approved
+    // schedule at once and puts it back in front of a person, file written or
+    // not, exactly as the REST route does for an agent (DOR-2313). Left to the
+    // sync, the agent's new work would run approved until the watcher or the
+    // sweep caught up.
+    const settled = deps.taskStore!.settleApprovedWorkChange(
+      updated.id,
+      {
+        prompt: existing.prompt,
+        cron: existing.cron ?? '',
+        timezone: existing.timezone ?? 'UTC',
+        status: existing.status,
+      },
+      { trusted: false }
+    );
     if (settled === 'parked') {
       updated = deps.taskStore!.getTask(updated.id) ?? updated;
       // The standing condition and its escalation clock start here, as they do
@@ -770,23 +758,20 @@ export function createUpdateScheduleHandler(
       });
     }
 
-    // The row this hands back still says `active`, and within minutes it will
-    // not be — so say so here rather than let an agent report a live schedule
-    // that is about to stop. Only a task that HELD an approval can lose one; a
-    // schedule already parked, or paused, has nothing to disclose. A package's
-    // schedule parked above has already stopped, and is told so in its own words.
+    // Say what the edit cost, so an agent does not report a live schedule that
+    // has just stopped. Only a schedule that was running can be stopped; one
+    // already parked, or paused, has nothing to disclose.
     if (settled === 'parked') {
       return jsonContent({
         schedule: updated,
         needsReapproval: true,
-        note: TIMING_REAPPROVAL_NOTE,
+        note:
+          args.prompt !== undefined && args.prompt !== existing.prompt
+            ? REAPPROVAL_NOTE
+            : TIMING_REAPPROVAL_NOTE,
       });
     }
-    const losesApproval = changesApprovedContent && existing.status === 'active';
-    return jsonContent({
-      schedule: updated,
-      ...(losesApproval && { needsReapproval: true, note: REAPPROVAL_NOTE }),
-    });
+    return jsonContent({ schedule: updated });
   };
 }
 

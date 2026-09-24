@@ -179,6 +179,7 @@ function buildEmptyPreview(overrides: Partial<PermissionPreview> = {}): Permissi
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],

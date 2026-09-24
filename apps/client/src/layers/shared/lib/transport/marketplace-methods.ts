@@ -23,6 +23,8 @@ import type {
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
+  AddedMarketplaceSource,
+  RefreshedMarketplaceSource,
 } from '@dorkos/shared/marketplace-schemas';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 
@@ -173,11 +175,19 @@ export function createMarketplaceMethods(baseUrl: string) {
       );
     },
 
-    addMarketplaceSource(input: AddSourceInput): Promise<MarketplaceSource> {
-      return fetchJSON<MarketplaceSource>(baseUrl, '/marketplace/sources', {
+    addMarketplaceSource(input: AddSourceInput): Promise<AddedMarketplaceSource> {
+      return fetchJSON<AddedMarketplaceSource>(baseUrl, '/marketplace/sources', {
         method: 'POST',
         body: JSON.stringify(input),
       });
+    },
+
+    refreshMarketplaceSource(name: string): Promise<RefreshedMarketplaceSource> {
+      return fetchJSON<RefreshedMarketplaceSource>(
+        baseUrl,
+        `/marketplace/sources/${encodeURIComponent(name)}/refresh`,
+        { method: 'POST' }
+      );
     },
 
     /**

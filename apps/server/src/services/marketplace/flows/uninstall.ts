@@ -33,8 +33,9 @@
  *
  * @module services/marketplace/flows/uninstall
  */
-import { copyFile, lstat, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
+import { copyFile, lstat, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { Logger } from '@dorkos/shared/logger';
 import { isManifestGitTracked } from '@dorkos/mesh';
 import type { AgentRemovedSummary } from '@dorkos/shared/marketplace-schemas';
@@ -897,7 +898,11 @@ async function readManifestIfPresent(
   installRoot: string
 ): Promise<MarketplacePackageManifest | null> {
   try {
-    const raw = await readFile(path.join(installRoot, PACKAGE_MANIFEST_PATH), 'utf-8');
+    const raw = await readTextFileWithin(
+      path.join(installRoot, PACKAGE_MANIFEST_PATH),
+      PACKAGE_TEXT_MAX_BYTES,
+      'The manifest'
+    );
     return JSON.parse(raw) as MarketplacePackageManifest;
   } catch {
     return null;

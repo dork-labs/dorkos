@@ -17,6 +17,96 @@ export const CommunityAdminLifecycleSchema = z.enum([
 /** Community admission policy. */
 export const CommunityAdminAdmissionPolicySchema = z.enum(['invite_only', 'closed']);
 
+/** The grammar of a community short name: 3-32 lowercase ASCII letters, digits, and hyphens. */
+export const COMMUNITY_SHORT_NAME_PATTERN = /^[a-z](?:[a-z0-9]|-(?=[a-z0-9])){2,31}$/;
+/**
+ * A community short name: a mutable address alias, never identity. Input is trimmed and
+ * lowercased before the grammar applies, so `Acme` and ` acme ` both mean `acme`. ASCII only,
+ * so no two names can look alike.
+ */
+export const CommunityShortNameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(COMMUNITY_SHORT_NAME_PATTERN);
+/**
+ * Top-level paths the Community server or its browser already owns or may soon own. No
+ * community can take one as its short name; a host can add more by configuration.
+ */
+export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
+  'api',
+  'assets',
+  'c',
+  'claim',
+  'host',
+  'join',
+  'pairing',
+  'health',
+  'auth',
+  'login',
+  'logout',
+  'signin',
+  'signup',
+  'settings',
+  'admin',
+  'static',
+  'public',
+  'www',
+  'help',
+  'docs',
+  'status',
+  'well-known',
+  'favicon',
+  'robots',
+  'sitemap',
+  'new',
+  'import',
+  'invite',
+  'deletion',
+  // First-host setup is reached through the browser app, and a host would expect the word kept.
+  'setup',
+  // Pages a host is likely to publish, and words that would let a community pose as the host.
+  'terms',
+  'privacy',
+  'abuse',
+  'report',
+  'legal',
+  'security',
+  'account',
+  'recovery',
+  'oauth',
+  'callback',
+  'verify',
+  'reset',
+  'communities',
+  'community',
+  'support',
+  'billing',
+  'official',
+  'dorkos',
+];
+/** Set, change, or clear (`null`) a community's short name. */
+export const CommunityAdminShortNameUpdateRequestSchema = z.strictObject({
+  shortName: CommunityShortNameSchema.nullable(),
+});
+/** A community's current short name and the retired ones that still lead to it. */
+export const CommunityAdminShortNamesSchema = z.strictObject({
+  communityId: id,
+  current: CommunityShortNameSchema.nullable(),
+  retired: z.array(z.strictObject({ shortName: CommunityShortNameSchema, retiredAt: timestamp })),
+});
+/**
+ * Whether a short name could be given to a community now. `cooling_off` is a released name
+ * still held back from reuse until `availableAt`, given as the next UTC midnight after the hold
+ * ends so it never dates the release to the second; the public lookup cannot tell it from an
+ * unknown name, by design, so a host needs this to explain a refusal.
+ */
+export const CommunityAdminShortNameAvailabilitySchema = z.strictObject({
+  shortName: z.string(),
+  availability: z.enum(['available', 'taken', 'cooling_off', 'reserved', 'invalid']),
+  availableAt: timestamp.nullable(),
+});
+
 /** Host-visible metadata without membership or content details. */
 export const CommunityAdminHostProjectionSchema = z.strictObject({
   id,
@@ -31,6 +121,8 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
   deletionNoticeAt: timestamp.nullable(),
   /** Who asked for a pending deletion; the host cannot cancel or speed an owner's. */
   deletionRequestedBy: z.enum(['owner', 'host']).nullable(),
+  /** The current short name, if the community has one. */
+  shortName: CommunityShortNameSchema.nullable(),
   createdAt: timestamp,
 });
 
@@ -93,6 +185,8 @@ export const CommunityAdminCreateRequestSchema = z.strictObject({
   admissionPolicy: CommunityAdminAdmissionPolicySchema.optional(),
   /** Set in the same transaction and part of the idempotency key's payload. */
   limits: CommunityAdminLimitsUpdateRequestSchema.omit({ limitsVersion: true }).optional(),
+  /** Set in the same transaction and part of the idempotency key's payload. */
+  shortName: CommunityShortNameSchema.optional(),
 });
 /** Private creation handoff. A retry returns the receipt without replaying its one-time secret. */
 export const CommunityAdminCreateResponseSchema = z.strictObject({

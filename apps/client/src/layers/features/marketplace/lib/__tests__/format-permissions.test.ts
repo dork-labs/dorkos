@@ -18,6 +18,7 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
@@ -355,6 +356,7 @@ describe('formatPermissionPreview → commands → programs', () => {
         lspServers: [{ name: 'go', command: 'gopls', args: ['serve'] }],
         monitors: [{ name: 'deploy', command: './poll.sh', when: 'always' }],
         executables: ['git'],
+        skippedLinks: [],
         unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'odd' }],
       })
     );
@@ -399,10 +401,29 @@ describe('formatPermissionPreview → commands → programs', () => {
   it('counts only the programs it could read in the summary', () => {
     const preview = makePreview({
       mcpServers: [{ name: 'db', transport: 'stdio', command: 'npx', args: [] }],
+      skippedLinks: [],
       unreadableDeclarations: [{ path: '.lsp.json', kind: 'lsp-server' }],
     });
     expect(summarizePermissionPreview(preview)).toBe(
       'Changes no files. Declares no commands. Declares 1 program of its own.'
+    );
+  });
+});
+
+describe('shortcuts that will not be installed (DOR-2319)', () => {
+  // Purpose: each skipped shortcut is a warning row carrying the server's sentence.
+  it('shows each skipped shortcut as a warning', () => {
+    const message =
+      "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.";
+    const { effects } = formatPermissionPreview(
+      makePreview({ skippedLinks: [{ path: 'skills/neon-postgres', message }] })
+    );
+    expect(effects).toContainEqual(
+      expect.objectContaining({
+        label: "Part of this package won't be installed",
+        description: message,
+        severity: 'warning',
+      })
     );
   });
 });

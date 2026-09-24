@@ -691,6 +691,7 @@ describe('PermissionPreviewBuilder', () => {
         monitors: [],
         executables: [],
         skillTools: [],
+        skippedLinks: [],
         unreadableDeclarations: [],
       });
     });

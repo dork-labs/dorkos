@@ -129,6 +129,7 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],

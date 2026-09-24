@@ -24,6 +24,16 @@ describe('Community settings paths', () => {
       expect(parseCommunitySettingsPath(path)).toBeNull();
   });
 
+  it('reads a settings path under a short-name base, and only under that base', () => {
+    // Purpose: `/<name>/settings[/<section>]` must open settings like the canonical path.
+    expect(parseCommunitySettingsPath('/acme/settings', '/acme')).toEqual({ section: null });
+    expect(parseCommunitySettingsPath('/acme/settings/account', '/acme')).toEqual({
+      section: 'account',
+    });
+    expect(parseCommunitySettingsPath('/other/settings', '/acme')).toBeNull();
+    expect(parseCommunitySettingsPath(`/c/${ID}/settings`, '/acme')).toBeNull();
+  });
+
   it('encodes the id so it cannot add a path segment', () => {
     expect(communitySettingsPath('a/b', 'account')).toBe('/c/a%2Fb/settings/account');
   });

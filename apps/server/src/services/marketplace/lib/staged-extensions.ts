@@ -12,8 +12,9 @@
  *
  * @module services/marketplace/lib/staged-extensions
  */
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import type { Logger } from '@dorkos/shared/logger';
@@ -150,7 +151,11 @@ export async function readExtensionManifest(
   manifestPath: string
 ): Promise<ExtensionManifest | null> {
   try {
-    const raw = await readFile(manifestPath, 'utf-8');
+    const raw = await readTextFileWithin(
+      manifestPath,
+      PACKAGE_TEXT_MAX_BYTES,
+      'The extension.json'
+    );
     const parsed = ExtensionManifestSchema.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : null;
   } catch {

@@ -60,7 +60,11 @@ import {
 import { MarketplaceSourceManager } from '../../services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from '../../services/marketplace/package-cache-retention.js';
-import type { PackageFetcher } from '../../services/marketplace/package-fetcher.js';
+import {
+  MARKETPLACE_JSON_TIMEOUT_MS,
+  PackageFetcher,
+} from '../../services/marketplace/package-fetcher.js';
+import type { GitTreeSource } from '../../services/marketplace/lib/git-tree.js';
 import {
   ConflictError,
   DisclosureChangedError,
@@ -241,6 +245,7 @@ function buildEmptyPermissionPreview(): PermissionPreview {
     monitors: [],
     executables: [],
     skillTools: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
@@ -305,6 +310,15 @@ describe('Marketplace Routes', () => {
     approvals = new ApprovalService(createTestDb());
     initCapabilityTierGate({ approvals });
 
+    mountRouter(fetcher as unknown as PackageFetcher);
+  });
+
+  /**
+   * Build the app around a given fetcher and mount it. The fake fetcher is the
+   * default; the listing-fetch tests (DOR-2304) remount with a real
+   * `PackageFetcher`, so the add is proved through the very path refresh takes.
+   */
+  function mountRouter(routeFetcher: PackageFetcher): void {
     app = express();
     app.use(express.json());
     app.use((req, res, next) => {
@@ -327,7 +341,7 @@ describe('Marketplace Routes', () => {
           listAgentScopes: () => agentScopes,
           logger: noopLogger,
         }),
-        fetcher: fetcher as unknown as PackageFetcher,
+        fetcher: routeFetcher,
         installer,
         uninstallFlow: uninstallFlow as unknown as UninstallFlow,
         updateFlow: updateFlow as unknown as UpdateFlow,
@@ -342,7 +356,7 @@ describe('Marketplace Routes', () => {
     );
 
     fixtureTarget.mount(app);
-  });
+  }
 
   afterEach(() => {
     rmSync(dorkHome, { recursive: true, force: true });
@@ -411,7 +425,304 @@ describe('Marketplace Routes', () => {
     });
   });
 
+  describe('POST /sources fetches the new source listing (DOR-2304)', () => {
+    it('fetches the listing once, through the refresh path, and says how many packages it names', async () => {
+      // Purpose: without this fetch the first install from a new source fails
+      // with "no cached document" until someone runs a refresh by hand.
+      fetcher.fetchMarketplaceJson.mockResolvedValueOnce({
+        ...SAMPLE_MARKETPLACE_JSON,
+        plugins: [
+          ...SAMPLE_MARKETPLACE_JSON.plugins,
+          { name: 'second-plugin', source: 'https://github.com/dorkos/second-plugin' },
+        ],
+      });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'fresh', source: 'https://example.com/fresh' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.listing).toEqual({ fetched: true, packageCount: 2 });
+      expect(fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
+      expect(fetcher.fetchMarketplaceJson.mock.calls[0][0]).toMatchObject({
+        name: 'fresh',
+        source: 'https://example.com/fresh',
+        enabled: true,
+      });
+      // "fetched" must mean fetched now, never an old copy served from disk.
+      expect(fetcher.fetchMarketplaceJson.mock.calls[0][1]).toEqual({ staleFallback: false });
+    });
+
+    it('does not fetch a source added turned off, and says so', async () => {
+      // Purpose: a source added disabled is one the operator chose not to use
+      // yet, so DorkOS does not reach out to it.
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'parked', source: 'https://example.com/parked', enabled: false });
+
+      expect(res.status).toBe(201);
+      expect(res.body.enabled).toBe(false);
+      expect(res.body.listing).toEqual({
+        fetched: false,
+        reason: "it was added turned off, so DorkOS didn't fetch its listing",
+      });
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
+    });
+
+    it('keeps the source when the fetch fails, and says why the listing is not there yet', async () => {
+      // Purpose: a server that is down right now must not cost the operator
+      // the add — the source is saved and a refresh can try again later.
+      fetcher.fetchMarketplaceJson.mockRejectedValueOnce(
+        new Error("there's no marketplace listing at that address")
+      );
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'offline', source: 'https://example.com/offline' });
+
+      expect(res.status).toBe(201);
+      expect(res.body.name).toBe('offline');
+      expect(res.body.listing).toEqual({
+        fetched: false,
+        reason: "there's no marketplace listing at that address",
+      });
+      const list = await request(fixtureServer).get('/api/marketplace/sources');
+      expect(list.body.sources.map((s: { name: string }) => s.name)).toContain('offline');
+    });
+
+    it('refuses a name that could not be a cache key, in plain words, and saves nothing', async () => {
+      // Purpose: the name keys the listing cache, and `x/..` named the cache
+      // root, so removing that source would have deleted every listing.
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'x/..', source: 'https://example.com/m' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/letters, numbers, dots, dashes and underscores/);
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
+      const list = await request(fixtureServer).get('/api/marketplace/sources');
+      expect(list.body.sources.map((s: { name: string }) => s.name)).not.toContain('x/..');
+    });
+
+    it('fetches nothing for an address it refuses to save', async () => {
+      // Purpose: the URL policy runs before anything is fetched, so a refused
+      // address never reaches the network.
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'hostile', source: 'ext::sh -c id' });
+
+      expect(res.status).toBe(400);
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
+    });
+
+    it('fetches nothing for a duplicate name', async () => {
+      // Purpose: a refused add must not refetch (and so overwrite the cache of)
+      // the source that already holds that name.
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'dup', source: 'https://example.com/one' });
+      fetcher.fetchMarketplaceJson.mockClear();
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'dup', source: 'https://example.com/two' });
+
+      expect(res.status).toBe(409);
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
+    });
+
+    describe('with the real fetcher', () => {
+      beforeEach(() => {
+        mountRouter(new PackageFetcher(cache, {} as GitTreeSource, noopLogger));
+      });
+
+      afterEach(() => {
+        vi.unstubAllGlobals();
+      });
+
+      it('reads a file:// source from disk and caches it, so an install can resolve at once', async () => {
+        // Purpose: a local marketplace is read in place — no network — and the
+        // cache holds the listing afterwards, which is what install reads.
+        const root = join(dorkHome, 'local-mp');
+        mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+        writeFileSync(
+          join(root, '.claude-plugin', 'marketplace.json'),
+          JSON.stringify({
+            name: 'local-mp',
+            owner: { name: 'Me' },
+            plugins: [{ name: 'sample-plugin', source: './packages/sample-plugin' }],
+          })
+        );
+        const fetchSpy = vi.fn();
+        vi.stubGlobal('fetch', fetchSpy);
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'local-mp', source: `file://${root}` });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing).toEqual({ fetched: true, packageCount: 1 });
+        expect(fetchSpy).not.toHaveBeenCalled();
+        const cached = await cache.readMarketplace('local-mp');
+        expect(cached?.json.plugins.map((p) => p.name)).toEqual(['sample-plugin']);
+      });
+
+      it("never reports an old source's cached listing as the new one's (DOR-2304)", async () => {
+        // Purpose: listings are cached by NAME. A cache left behind by a source
+        // removed before removal cleared it must not pass for the new source's
+        // listing — neither as `fetched: true` nor to a later install.
+        await cache.writeMarketplace('mine', {
+          name: 'mine',
+          owner: { name: 'Old owner' },
+          plugins: ['old-a', 'old-b', 'old-c'].map((name) => ({
+            name,
+            source: `./plugins/${name}`,
+          })),
+        });
+        expect((await cache.readMarketplace('mine'))?.json.plugins).toHaveLength(3);
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response('nope', { status: 404, statusText: 'Not Found' }))
+        );
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'mine', source: 'https://github.com/new/other' });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing).toEqual({
+          fetched: false,
+          reason: "there's no marketplace listing at that address",
+        });
+        expect(await cache.readMarketplace('mine')).toBeNull();
+      });
+
+      it('forgets an old listing under the name even when the new source is added turned off', async () => {
+        // Purpose: the cleanup must not depend on whether the listing is then
+        // fetched, or a later browse would serve the old source's packages.
+        await cache.writeMarketplace('mine', {
+          name: 'mine',
+          owner: { name: 'Old owner' },
+          plugins: [{ name: 'old-a', source: './plugins/old-a' }],
+        });
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'mine', source: 'https://github.com/new/other', enabled: false });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing.fetched).toBe(false);
+        expect(await cache.readMarketplace('mine')).toBeNull();
+      });
+
+      it('refresh says plainly when it could only show the last copy', async () => {
+        // Purpose: a Refresh that quietly answered with the cached copy read
+        // as success while the server was down. It says it is stale, why, and
+        // when the copy it shows was fetched.
+        const lastCopy = {
+          name: 'mine',
+          owner: { name: 'Owner' },
+          plugins: [
+            { name: 'a', source: './plugins/a' },
+            { name: 'b', source: './plugins/b' },
+          ],
+        };
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(JSON.stringify(lastCopy), { status: 200 }))
+        );
+        await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'mine', source: 'https://github.com/me/mine' });
+        const cachedAt = (await cache.readMarketplace('mine'))!.fetchedAt.toISOString();
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockRejectedValue(
+            new TypeError('fetch failed', {
+              cause: Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }),
+            })
+          )
+        );
+
+        const res = await request(fixtureServer).post('/api/marketplace/sources/mine/refresh');
+
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({
+          stale: true,
+          reason: 'the server at that address refused the connection',
+          fetchedAt: cachedAt,
+        });
+        expect(res.body.marketplace.plugins).toHaveLength(2);
+      });
+
+      it('refresh answers 502 with the reason when there is no copy to fall back on', async () => {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response('nope', { status: 404, statusText: 'Not Found' }))
+        );
+        await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'gone', source: 'https://github.com/me/gone' });
+
+        const res = await request(fixtureServer).post('/api/marketplace/sources/gone/refresh');
+
+        expect(res.status).toBe(502);
+        expect(res.body.error).toBe("there's no marketplace listing at that address");
+      });
+
+      it('gives up after the marketplace timeout and still saves the source', async () => {
+        // Purpose: the add waits no longer than refresh does (DOR-2194), and a
+        // silent server surfaces as a plain reason rather than a failed add.
+        const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'))
+        );
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'slow', source: 'https://github.com/slow/marketplace' });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing).toEqual({
+          fetched: false,
+          reason: `the marketplace server didn't answer within ${MARKETPLACE_JSON_TIMEOUT_MS / 1000} seconds`,
+        });
+        expect(timeoutSpy).toHaveBeenCalledWith(MARKETPLACE_JSON_TIMEOUT_MS);
+        timeoutSpy.mockRestore();
+        expect(await cache.readMarketplace('slow')).toBeNull();
+        const list = await request(fixtureServer).get('/api/marketplace/sources');
+        expect(list.body.sources.map((s: { name: string }) => s.name)).toContain('slow');
+      });
+    });
+  });
+
   describe('DELETE /sources/:name', () => {
+    it("forgets the removed source's listing, so a new source by that name starts clean (DOR-2304)", async () => {
+      // Purpose: listings are cached by name; one that outlives its source
+      // would be listed and installed from as if the next source published it.
+      await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'removable', source: 'https://example.com/r' });
+      const listing = {
+        name: 'cached',
+        owner: { name: 'Owner' },
+        plugins: [{ name: 'a', source: './plugins/a' }],
+      };
+      await cache.writeMarketplace('removable', listing);
+      await cache.writeMarketplace('bystander', listing);
+      expect(await cache.readMarketplace('removable')).not.toBeNull();
+      updateFlow.clearMemos.mockClear();
+
+      const res = await request(fixtureServer).delete('/api/marketplace/sources/removable');
+
+      expect(res.status).toBe(204);
+      expect(await cache.readMarketplace('removable')).toBeNull();
+      expect(await cache.readMarketplace('bystander')).not.toBeNull();
+      // The update check remembers each source's listing for a minute too.
+      expect(updateFlow.clearMemos).toHaveBeenCalledTimes(1);
+    });
+
     it('removes a source and returns 204', async () => {
       await request(fixtureServer)
         .post('/api/marketplace/sources')
@@ -431,13 +742,18 @@ describe('Marketplace Routes', () => {
       await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'refreshable', source: 'https://example.com/refresh' });
+      // The add fetched the listing once already (DOR-2304); count the refresh alone.
+      fetcher.fetchMarketplaceJson.mockClear();
 
       const res = await request(fixtureServer).post('/api/marketplace/sources/refreshable/refresh');
 
       expect(res.status).toBe(200);
       expect(res.body.marketplace).toEqual(SAMPLE_MARKETPLACE_JSON);
       expect(typeof res.body.fetchedAt).toBe('string');
+      expect(res.body.stale).toBe(false);
       expect(fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
+      // A refresh is "check now": it never quietly answers with the old copy.
+      expect(fetcher.fetchMarketplaceJson.mock.calls[0][1]).toEqual({ staleFallback: false });
       const arg = fetcher.fetchMarketplaceJson.mock.calls[0][0];
       expect(arg.name).toBe('refreshable');
       expect(arg.source).toBe('https://example.com/refresh');

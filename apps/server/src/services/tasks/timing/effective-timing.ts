@@ -193,3 +193,14 @@ export function conflictingTimingRequest(request: TimingRequest): string | null 
 export const AGENT_TIMING_CHANGE_REASON =
   'An agent changed when this schedule runs, so it is waiting for you again. ' +
   'Check the new timing, then approve it or change it back.';
+
+/**
+ * Why a schedule is waiting again after an agent changed what it does, its
+ * prompt, with or without its timing (DOR-2313).
+ *
+ * The sibling of {@link AGENT_TIMING_CHANGE_REASON}, chosen whenever the prompt
+ * changed, because the prompt is the part a person most needs to read.
+ */
+export const AGENT_CONTENT_CHANGE_REASON =
+  'An agent changed what this schedule does, so it is waiting for you again. ' +
+  'Read what it does now, then approve it or change it back.';

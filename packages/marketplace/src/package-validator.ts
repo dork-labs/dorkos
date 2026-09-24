@@ -29,6 +29,13 @@ import {
   MarketplacePackageManifestSchema,
   type MarketplacePackageManifest,
 } from './manifest-schema.js';
+import {
+  PACKAGE_TEXT_MAX_BYTES,
+  TooLargeError,
+  UnsafeFileError,
+  readPackageFileWithin,
+} from '@dorkos/shared/bounded-read';
+import { describePackageLink, findPackageLinks } from './package-links.js';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
@@ -152,6 +159,77 @@ const SCHEDULE_SKILL_SOURCE_DIRS = [
 const PermissiveSkillFrontmatterSchema = z.unknown();
 
 /**
+ * Thrown by {@link readPackageFile} for a package file DorkOS refuses to read:
+ * larger than it reads, reached through a symbolic link, or not a regular
+ * file. It carries the file's package-relative path so the validator can
+ * report it by name, and it passes through the "missing or unreadable reads
+ * as absent" catches below, so a refused manifest is never mistaken for a
+ * missing one (DOR-2319).
+ */
+class RefusedPackageFileError extends Error {
+  /** The issue code: `FILE_TOO_LARGE` or `FILE_REFUSED`. */
+  readonly code: 'FILE_TOO_LARGE' | 'FILE_REFUSED';
+
+  /**
+   * Wrap one refused read.
+   *
+   * @param relPath - The file's path, relative to the package root.
+   * @param cause - The refusal.
+   */
+  constructor(
+    readonly relPath: string,
+    cause: TooLargeError | UnsafeFileError
+  ) {
+    super(cause.message, { cause });
+    this.name = 'RefusedPackageFileError';
+    this.code = cause instanceof TooLargeError ? 'FILE_TOO_LARGE' : 'FILE_REFUSED';
+  }
+}
+
+/**
+ * Read one package file as text, within {@link PACKAGE_TEXT_MAX_BYTES} and
+ * never through a symbolic link.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param relPath - The file's path, relative to the package root.
+ * @returns The file's text.
+ * @throws {RefusedPackageFileError} When the file is too large, reached
+ *   through a symbolic link, or not a regular file.
+ * @throws The read error, unchanged, otherwise (for example `ENOENT`).
+ */
+async function readPackageFile(packagePath: string, relPath: string): Promise<string> {
+  try {
+    return await readPackageFileWithin(
+      packagePath,
+      relPath,
+      PACKAGE_TEXT_MAX_BYTES,
+      `The package's ${relPath}`
+    );
+  } catch (err) {
+    if (err instanceof TooLargeError || err instanceof UnsafeFileError) {
+      throw new RefusedPackageFileError(relPath, err);
+    }
+    throw err;
+  }
+}
+
+/**
+ * Whether any directory from `packagePath` down to `relDir` is a symbolic link.
+ *
+ * @param packagePath - Absolute path to the package root.
+ * @param relDir - A directory, relative to the package root.
+ * @returns `true` when one of them is a link.
+ */
+async function reachedThroughLink(packagePath: string, relDir: string): Promise<boolean> {
+  let current = packagePath;
+  for (const part of path.normalize(relDir).split(path.sep)) {
+    current = path.join(current, part);
+    if ((await fs.lstat(current)).isSymbolicLink()) return true;
+  }
+  return false;
+}
+
+/**
  * The version a package tree states about itself: `plugin.json`'s `version`
  * when that file declares one, else `.dork/manifest.json`'s. Reads the two
  * files directly and NEVER gates on validity, so an install whose files
@@ -168,8 +246,8 @@ const PermissiveSkillFrontmatterSchema = z.unknown();
  */
 export async function readDeclaredVersion(packagePath: string): Promise<string | undefined> {
   return (
-    (await readVersionField(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH))) ??
-    (await readVersionField(path.join(packagePath, PACKAGE_MANIFEST_PATH)))
+    (await readVersionField(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH)) ??
+    (await readVersionField(packagePath, PACKAGE_MANIFEST_PATH))
   );
 }
 
@@ -178,12 +256,15 @@ export async function readDeclaredVersion(packagePath: string): Promise<string |
  * unreadable file, invalid JSON, a non-object, or a missing, empty or
  * non-string `version` all read as "declares none". Never throws.
  *
- * @param filePath - Absolute path to the JSON file.
+ * @param packagePath - Absolute path to the package root.
+ * @param relPath - The JSON file, relative to the package root.
  * @internal
  */
-async function readVersionField(filePath: string): Promise<string | undefined> {
+async function readVersionField(packagePath: string, relPath: string): Promise<string | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+    const parsed: unknown = JSON.parse(
+      await readPackageFileWithin(packagePath, relPath, PACKAGE_TEXT_MAX_BYTES, 'The file')
+    );
     if (parsed === null || typeof parsed !== 'object') return undefined;
     const version = (parsed as Record<string, unknown>).version;
     return typeof version === 'string' && version !== '' ? version : undefined;
@@ -217,6 +298,31 @@ export async function validatePackage(
   packagePath: string,
   options: ValidatePackageOptions = {}
 ): Promise<ValidatePackageResult> {
+  try {
+    return await validatePackageFiles(packagePath, options);
+  } catch (err) {
+    if (!(err instanceof RefusedPackageFileError)) throw err;
+    return {
+      ok: false,
+      issues: [{ level: 'error', code: err.code, message: err.message, path: err.relPath }],
+      declaredVersion: await readDeclaredVersion(packagePath),
+    };
+  }
+}
+
+/**
+ * The body of {@link validatePackage}. A refused package file anywhere in it
+ * throws {@link RefusedPackageFileError}, which the caller turns into one
+ * issue naming the file.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param options - What kind of tree this is.
+ * @returns The validation result.
+ */
+async function validatePackageFiles(
+  packagePath: string,
+  options: ValidatePackageOptions
+): Promise<ValidatePackageResult> {
   const issues: ValidationIssue[] = [];
   // Read before any gate, so every result — failed ones included — says what
   // version the tree states. The update check relies on that for trees that
@@ -228,11 +334,11 @@ export async function validatePackage(
   let manifestRaw: unknown;
   let manifestSource: string;
 
-  const dorkManifestPath = path.join(packagePath, PACKAGE_MANIFEST_PATH);
   let dorkManifestContent: string | null = null;
   try {
-    dorkManifestContent = await fs.readFile(dorkManifestPath, 'utf-8');
-  } catch {
+    dorkManifestContent = await readPackageFile(packagePath, PACKAGE_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     // File not found — will attempt CC fallback below.
   }
 
@@ -316,6 +422,17 @@ export async function validatePackage(
     await checkVersionAgreement(packagePath, manifest.version, issues);
   }
 
+  // 4b. Every shortcut (symbolic link) in the package: staging drops them, so
+  //     each is said out loud rather than silently missing once installed.
+  for (const link of await findPackageLinks(packagePath)) {
+    issues.push({
+      level: 'warning',
+      code: 'LINK_SKIPPED',
+      message: describePackageLink(link),
+      path: link.path,
+    });
+  }
+
   // 5. Validate any bundled SKILL.md files
   for (const dir of SKILL_SOURCE_DIRS) {
     const fullDir = path.join(packagePath, dir);
@@ -324,6 +441,11 @@ export async function validatePackage(
     } catch {
       continue; // Directory doesn't exist — skip silently
     }
+    // A skill directory reached through a symbolic link is not the package's
+    // own: staging drops the link, and following it could read files outside
+    // the package. It is never read; the LINK_SKIPPED warning below says it
+    // will not be installed (DOR-2319).
+    if (await reachedThroughLink(packagePath, dir)) continue;
     await validateSkillsInDirectory(fullDir, packagePath, issues);
   }
 
@@ -384,11 +506,12 @@ async function checkUserEditableDeclaredPaths(
   let pluginJson: Record<string, unknown>;
   try {
     const parsed: unknown = JSON.parse(
-      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
+      await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH)
     );
     if (typeof parsed !== 'object' || parsed === null) return;
     pluginJson = parsed as Record<string, unknown>;
-  } catch {
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     return;
   }
   const declared = declaredEffectPaths(pluginJson);
@@ -480,10 +603,9 @@ async function checkVersionAgreement(
 ): Promise<void> {
   let plugin: unknown;
   try {
-    plugin = JSON.parse(
-      await fs.readFile(path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8')
-    );
-  } catch {
+    plugin = JSON.parse(await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH));
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     return;
   }
   if (plugin === null || typeof plugin !== 'object') return;
@@ -659,12 +781,11 @@ async function checkPackagedMcpServers(
   packagePath: string,
   issues: ValidationIssue[]
 ): Promise<void> {
-  const agentManifestPath = path.join(packagePath, AGENT_MANIFEST_PATH);
-
   let content: string;
   try {
-    content = await fs.readFile(agentManifestPath, 'utf-8');
-  } catch {
+    content = await readPackageFile(packagePath, AGENT_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     return; // No shipped agent.json — nothing to guard.
   }
 
@@ -721,6 +842,7 @@ async function validateSkillsInDirectory(
   let scanResults;
   try {
     scanResults = await scanSkillDirectory(fullDir, PermissiveSkillFrontmatterSchema, {
+      packageTree: true,
       includeMissing: false,
       requireNameMatch: false,
     });
@@ -873,11 +995,11 @@ export function validateDorkosSidecar(raw: string): MarketplaceValidationIssue[]
 async function synthesizeFromCcManifest(
   packagePath: string
 ): Promise<Record<string, unknown> | null> {
-  const ccPath = path.join(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
   let content: string;
   try {
-    content = await fs.readFile(ccPath, 'utf-8');
-  } catch {
+    content = await readPackageFile(packagePath, CLAUDE_PLUGIN_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
     return null;
   }
 

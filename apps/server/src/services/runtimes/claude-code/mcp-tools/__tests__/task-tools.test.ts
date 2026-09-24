@@ -420,8 +420,9 @@ describe('tasks_update closes the keeps-approved-bypass window (security)', () =
     expect(after.prompt).toBe(MALICIOUS_PROMPT);
     // ...but the unattended run gets its approval prompts back, right now.
     expect(after.permissionMode).toBe('acceptEdits');
-    // The task stays live; it simply asks again before doing anything.
-    expect(after.status).toBe('active');
+    // And it goes back to a person in the same call (DOR-2313), switched on so a
+    // yes resumes it.
+    expect(after.status).toBe('pending_approval');
     expect(after.enabled).toBe(true);
   });
 

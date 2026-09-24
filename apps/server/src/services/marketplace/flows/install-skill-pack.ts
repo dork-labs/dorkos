@@ -10,8 +10,9 @@
  *
  * @module services/marketplace/flows/install-skill-pack
  */
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { SkillPackPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { SkillFrontmatterSchema } from '@dorkos/skills';
@@ -237,7 +238,7 @@ export async function skillFileProblems(packagePath: string): Promise<string[]> 
  * @internal
  */
 async function validateSkillFile(absFile: string): Promise<void> {
-  const content = await readFile(absFile, 'utf8');
+  const content = await readTextFileWithin(absFile, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
   const result = parseSkillFile(absFile, content, SkillFrontmatterSchema);
   if (!result.ok) {
     throw new Error(`Invalid SKILL.md at ${absFile}: ${result.error}`);

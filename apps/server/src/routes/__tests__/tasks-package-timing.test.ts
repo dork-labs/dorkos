@@ -165,6 +165,12 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     );
     // The parked preview reads the timing that would run.
     expect(vi.mocked(scheduler.previewNextRuns)).toHaveBeenLastCalledWith('* * * * *', 'UTC', 3);
+    // And the next sync keeps DorkOS's sentence rather than saying the schedule
+    // was "found in a file" (DOR-2313).
+    expect(await resync()).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_TIMING_CHANGE_REASON,
+    });
   });
 
   it('lets an agent retime a full-power package schedule, parking it rather than refusing', async () => {

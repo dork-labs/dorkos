@@ -302,6 +302,17 @@ dorkos marketplace list
 dorkos marketplace remove my-team
 ```
 
+Adding a source also fetches its listing, so you can install from it straight away. If DorkOS can't
+reach it right then, the source is still added: `dorkos marketplace add` tells you why the listing
+isn't there yet, and `dorkos marketplace refresh my-team` tries again. On the sources page in the
+app, the same reason shows on the source's row, with a **Try again** button beside it.
+
+A refresh always checks the source again. If DorkOS can't reach it but has an earlier copy of its
+listing, it says so and tells you when that copy is from, rather than calling it refreshed.
+
+A source's name can use letters, numbers, dots, dashes and underscores, and starts with a letter or
+number.
+
 A source address is either an `https://` link to a git repository, or a folder on this machine
 written as `file:///path/to/folder`. Nothing else works: DorkOS reads a marketplace's listing over
 the web, so SSH-style addresses like `git@github.com:org/repo` have no listing to read. Anything

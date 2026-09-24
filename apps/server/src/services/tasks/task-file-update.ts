@@ -180,7 +180,7 @@ export function fileBackedChanges(
  *   file's timing stays the default the sync keeps writing, and the person's
  *   wins (`timing/effective-timing.ts`). A change to either is still a change
  *   to when the approved work runs, which the caller settles
- *   (`TaskStore.settleTimingChange`).
+ *   (`TaskStore.settleApprovedWorkChange`).
  *
  * Everything else in {@link FILE_BACKED_COLUMN} describes what the schedule
  * DOES, which is the package's to say and stays refused.

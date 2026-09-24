@@ -542,6 +542,11 @@ export interface PermissionPreview {
   skillTools: PreviewSkillTools[];
   /** Program declarations that could not be read or point outside the package. */
   unreadableDeclarations: UnreadableDeclaration[];
+  /**
+   * Shortcuts (symbolic links) in the package, each with a sentence saying it
+   * will not be installed: staging drops every link (DOR-2319).
+   */
+  skippedLinks: { path: string; message: string }[];
   /** Scheduled jobs that will be created, and what each may do unattended. */
   schedules: PreviewSchedule[];
   /** Secrets the package will request from the user. */
@@ -1222,6 +1227,55 @@ export interface AddSourceInput {
   name: string;
   source: string;
   enabled?: boolean;
+}
+
+/**
+ * What happened when DorkOS fetched a just-added source's listing (its
+ * `marketplace.json`) — the one fetch `POST /api/marketplace/sources` makes
+ * right after saving, through the same path `POST /sources/:name/refresh` takes.
+ *
+ * A failed fetch never undoes the add: the source stays saved, and `reason`
+ * says why the listing isn't there yet so a refresh can be tried later.
+ */
+export type SourceListingOutcome =
+  | {
+      /** The listing was fetched and cached; the source's packages can be installed now. */
+      fetched: true;
+      /** How many packages the listing names. */
+      packageCount: number;
+    }
+  | {
+      /** The listing could not be fetched; the source is saved all the same. */
+      fetched: false;
+      /** Why, in the fetcher's words (a status code, a timeout, a missing file). */
+      reason: string;
+    };
+
+/**
+ * What `POST /api/marketplace/sources/:name/refresh` reports. A refresh is
+ * "check now": when the source can't be reached but a copy is cached, the
+ * answer is that copy with `stale: true`, the reason, and when the copy was
+ * fetched — never the old copy passed off as new. Only the package count is
+ * read by its callers, so the listing is typed down to that part.
+ */
+export interface RefreshedMarketplaceSource {
+  /** The source's listing: fetched just now, or the last copy when `stale`. */
+  marketplace: { plugins: unknown[] };
+  /** When this copy of the listing was fetched, as an ISO timestamp. */
+  fetchedAt: string;
+  /** True when the source couldn't be reached and this is the last cached copy. */
+  stale: boolean;
+  /** Why the source couldn't be reached. Present only when `stale`. */
+  reason?: string;
+}
+
+/**
+ * Response body of `POST /api/marketplace/sources`: the saved source plus how
+ * the first fetch of its listing went.
+ */
+export interface AddedMarketplaceSource extends MarketplaceSource {
+  /** The outcome of the one best-effort listing fetch made after saving. */
+  listing: SourceListingOutcome;
 }
 
 // ---------------------------------------------------------------------------

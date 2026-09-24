@@ -5,6 +5,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
+import { PACKAGE_TEXT_MAX_BYTES } from '@dorkos/shared/bounded-read';
 import { readDeclaredVersion, validatePackage } from '../package-validator.js';
 import {
   AGENT_MANIFEST_PATH,
@@ -1059,5 +1060,142 @@ describe('readDeclaredVersion', () => {
   it('never throws for a path that does not exist', async () => {
     // Purpose: the function is documented total; callers rely on that.
     await expect(readDeclaredVersion('/definitely/not/here')).resolves.toBeUndefined();
+  });
+});
+
+describe('package files larger than DorkOS reads (DOR-2319)', () => {
+  const dirs: string[] = [];
+  afterEach(async () => {
+    for (const d of dirs.splice(0)) await fs.rm(d, { recursive: true, force: true });
+  });
+
+  /** A skill-pack package, with one file replaced by `oversized`. */
+  async function packageWith(oversized: string): Promise<string> {
+    const dir = await makeTempDir();
+    dirs.push(dir);
+    await writeJson(path.join(dir, '.dork', 'manifest.json'), {
+      schemaVersion: 1,
+      name: path.basename(dir),
+      version: '1.0.0',
+      type: 'skill-pack',
+      description: 'x',
+      license: 'MIT',
+      tags: [],
+      layers: ['skills'],
+    });
+    await writeJson(path.join(dir, '.claude-plugin', 'plugin.json'), {
+      name: path.basename(dir),
+      version: '1.0.0',
+    });
+    await writeText(
+      path.join(dir, 'skills', 'a', 'SKILL.md'),
+      '---\nname: a\ndescription: x\n---\nbody\n'
+    );
+    await writeText(path.join(dir, oversized), ' '.repeat(PACKAGE_TEXT_MAX_BYTES + 1));
+    return dir;
+  }
+
+  // Purpose: an oversized manifest is refused by name, never mistaken for a
+  // missing one (which would fall back to plugin.json and pass).
+  it.each(['.dork/manifest.json', '.claude-plugin/plugin.json', 'skills/a/SKILL.md'])(
+    'refuses a %s larger than the limit, by name',
+    async (file) => {
+      const result = await validatePackage(await packageWith(file));
+      expect(result.ok).toBe(false);
+      expect(result.issues.map((i) => i.message).join('\n')).toMatch(/larger than 1 MB/);
+      expect(result.issues.some((i) => i.path === file)).toBe(true);
+    }
+  );
+});
+
+describe('symbolic links in a package (DOR-2319)', () => {
+  const SECRET = 'host-secret-9c21';
+  const dirs: string[] = [];
+  afterEach(async () => {
+    for (const d of dirs.splice(0)) await fs.rm(d, { recursive: true, force: true });
+  });
+
+  /** A valid skill-pack package plus a host file that must never be read. */
+  async function packageAndHostFile(): Promise<{ pkg: string; host: string }> {
+    const root = await makeTempDir();
+    dirs.push(root);
+    const pkg = path.join(root, 'pkg');
+    const host = path.join(root, 'host-secret');
+    await writeText(host, `---\nname: ${SECRET}\nversion: ${SECRET}\n---\n`);
+    await writeJson(path.join(pkg, '.dork', 'manifest.json'), {
+      schemaVersion: 1,
+      name: 'pkg',
+      version: '1.0.0',
+      type: 'skill-pack',
+      description: 'x',
+      license: 'MIT',
+      tags: [],
+      layers: ['skills'],
+    });
+    await writeJson(path.join(pkg, '.claude-plugin', 'plugin.json'), {
+      name: 'pkg',
+      version: '1.0.0',
+    });
+    await writeText(
+      path.join(pkg, 'skills', 'a', 'SKILL.md'),
+      '---\nname: a\ndescription: x\n---\nbody\n'
+    );
+    return { pkg, host };
+  }
+
+  // Purpose: a package cannot point the validator at a host file. Each link is
+  // refused by name, the host file's text appears nowhere in the result, and a
+  // linked manifest is never mistaken for a missing one.
+  it.each([
+    ['a SKILL.md', 'skills/a/SKILL.md'],
+    ['the manifest', '.dork/manifest.json'],
+    ['plugin.json', '.claude-plugin/plugin.json'],
+  ])('refuses %s that is a symbolic link to a host file', async (_label, rel) => {
+    const { pkg, host } = await packageAndHostFile();
+    await fs.rm(path.join(pkg, rel));
+    await fs.symlink(host, path.join(pkg, rel));
+    const result = await validatePackage(pkg);
+    expect(result.ok).toBe(false);
+    expect(result.issues.some((i) => i.path === rel && /symbolic link/.test(i.message))).toBe(true);
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  // Purpose: a skill directory that is itself a link out of the package is
+  // never read, and the person is told it will not be installed.
+  it('skips a skills directory that is a symbolic link, with a warning', async () => {
+    const { pkg, host } = await packageAndHostFile();
+    const elsewhere = path.join(path.dirname(host), 'elsewhere');
+    await writeText(path.join(elsewhere, 'a', 'SKILL.md'), `---\nname: ${SECRET}\n---\n`);
+    await fs.rm(path.join(pkg, 'skills'), { recursive: true });
+    await fs.symlink(elsewhere, path.join(pkg, 'skills'));
+    const result = await validatePackage(pkg);
+    expect(result.issues).toContainEqual({
+      level: 'warning',
+      code: 'LINK_SKIPPED',
+      message: "skills is a shortcut to a folder outside the package, so it won't be installed.",
+      path: 'skills',
+    });
+    expect(JSON.stringify(result)).not.toContain(SECRET);
+  });
+
+  // Purpose: a linked skill folder inside a real skills directory (as some
+  // official plugins ship) is named in a warning, not dropped silently.
+  it('warns about a linked skill folder', async () => {
+    const { pkg, host } = await packageAndHostFile();
+    const shared = path.join(path.dirname(host), 'shared', 'neon-postgres');
+    await writeText(
+      path.join(shared, 'SKILL.md'),
+      '---\nname: neon-postgres\ndescription: x\n---\n'
+    );
+    await fs.symlink(shared, path.join(pkg, 'skills', 'neon-postgres'));
+    const result = await validatePackage(pkg);
+    expect(result.ok).toBe(true);
+    expect(result.issues).toContainEqual({
+      level: 'warning',
+      code: 'LINK_SKIPPED',
+      message:
+        "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.",
+      path: 'skills/neon-postgres',
+    });
   });
 });

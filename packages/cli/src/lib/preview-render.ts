@@ -114,6 +114,7 @@ export interface PreviewPayload {
   executables: string[];
   skillTools: PreviewSkillTools[];
   unreadableDeclarations: UnreadableDeclaration[];
+  skippedLinks: { path: string; message: string }[];
   npmDependencies: PreviewNpmDependency[];
   schedules: PreviewSchedule[];
   secrets: { key: string; required: boolean; description?: string }[];
@@ -250,6 +251,14 @@ export function renderPreview(
         ? `${declaration.path} (${declaration.entry})`
         : declaration.path;
       lines.push(`  ${YELLOW}⚠ ${revealHiddenCharacters(where)}${RESET}`);
+    }
+    lines.push('');
+  }
+
+  if (preview.skippedLinks.length > 0) {
+    lines.push(`${YELLOW}Shortcuts that won't be installed:${RESET}`);
+    for (const link of preview.skippedLinks) {
+      lines.push(`  ${YELLOW}⚠ ${revealHiddenCharacters(link.message)}${RESET}`);
     }
     lines.push('');
   }
