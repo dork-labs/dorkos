@@ -6167,6 +6167,82 @@
         "packages/shared/src/permissions/permission-areas.ts",
         "apps/server/src/services/core/permissions/permission-service.ts"
       ]
+    },
+    {
+      "id": "260923-214401",
+      "slug": "host-hold-keeps-connections",
+      "title": "A host hold keeps connections, agents, and invitations; only suspension and deletion revoke",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-hold-keeps-access",
+      "specSlug": "community-hold-keeps-access",
+      "supersedes": null,
+      "amends": ["260923-121712"],
+      "affects": [
+        "apps/community/src/routes/host-lifecycle.ts",
+        "apps/community/src/data.ts",
+        "apps/community/src/routes/pairings.ts",
+        "apps/community/src/routes/events.ts",
+        "apps/community/src/routes/invites.ts",
+        "apps/server/src/services/communities/remote/pairing-service.ts",
+        "apps/server/src/services/communities/remote/community-adapter-outbox-delivery.ts"
+      ]
+    },
+    {
+      "id": "260923-214411",
+      "slug": "content-removal-tombstones-in-place",
+      "title": "Removing a message or file tombstones it in place through one shared module",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-single-item-delete",
+      "specSlug": "community-single-item-delete",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/content-removal.ts",
+        "apps/community/src/erasure.ts",
+        "apps/community/src/routes/entries.ts",
+        "apps/community/src/routes/attachments.ts",
+        "packages/shared/src/community-wire.ts"
+      ]
+    },
+    {
+      "id": "260923-214421",
+      "slug": "host-takedown-by-id-with-evidence-outside-the-api",
+      "title": "A host takes down content by id and preserves evidence outside the API",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-host-takedown",
+      "specSlug": "community-host-takedown",
+      "supersedes": null,
+      "amends": ["260923-121712", "260920-201101"],
+      "affects": [
+        "apps/community/src/routes/host-takedowns.ts",
+        "apps/community/src/takedown-worker.ts",
+        "apps/community/src/evidence/sink.ts",
+        "apps/community/src/content-removal.ts",
+        "apps/community/src/deletion-worker.ts",
+        "apps/community/src/erasure-worker.ts",
+        "packages/shared/src/community-admin-wire.ts"
+      ]
+    },
+    {
+      "id": "260923-214431",
+      "slug": "exports-are-segmented-zip64-jobs",
+      "title": "Exports are resumable background jobs that write one segmented ZIP64 archive with a version 2 manifest",
+      "status": "accepted",
+      "created": "2026-09-23",
+      "extractedFrom": "community-export-any-size",
+      "specSlug": "community-export-any-size",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/routes/exports.ts",
+        "apps/community/src/export-worker.ts",
+        "apps/community/src/archive/zip64-writer.ts",
+        "apps/community/src/archive/zip-reader.ts",
+        "apps/community/src/storage/blob-store.ts",
+        "packages/shared/src/community-wire.ts",
+        "packages/cloud-api/src/communities.ts"
+      ]
     }
   ]
 }

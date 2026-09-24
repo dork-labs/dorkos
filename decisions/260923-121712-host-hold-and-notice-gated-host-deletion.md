@@ -14,6 +14,8 @@ superseded-by: null
 
 Accepted (extracted from spec `community-host-operator-api`; approved by the operator on 2026-09-23). Amends `260920-201101` only in the sentence "Host authority cannot delete an active tenant": a host may start deletion of a `held` community after its published notice date. Everything else in that ADR stands, including that the host cannot cancel or speed up an owner-requested deletion. The operator approved both halves, the hold and the host-started deletion, on 2026-09-23.
 
+Amended by `260923-214401` (a hold no longer revokes credentials, invitations, or agents) and by `260923-214421` (a host takedown may start a deletion without a noticed hold).
+
 ## Context
 
 A host's only tool against a problem community is suspension, which blocks every member request, including the owner's export. Hosts also need a way to reclaim a community they can no longer serve, and today that means acting on the database by hand, with no audit, notice, or export window for the owner.
