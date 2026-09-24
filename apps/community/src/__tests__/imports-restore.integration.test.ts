@@ -7,6 +7,7 @@
  * exported once; each test imports that archive (or a tampered copy) into a new community.
  */
 import { randomUUID } from 'node:crypto';
+import { strFromU8, unzipSync } from 'fflate';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommunityExportManifestV1 } from '@dorkos/shared/community-wire';
 import { CommunityExportManifestV1Schema } from '@dorkos/shared/community-wire';
@@ -56,7 +57,7 @@ async function runImports(hooks: ImportWorkerHooks = {}): Promise<void> {
       clock,
     ]);
     await drainCleanup(h);
-    const result = await sweepImports(h.pool, h.blobStore, clock, hooks);
+    const result = await sweepImports(h.pool, h.blobStore, h.config.limits, clock, hooks);
     if (!result.claimed) return;
   }
   throw new Error('Import work did not settle');
@@ -75,6 +76,14 @@ async function importArchive(
   );
   await runImports();
   return created;
+}
+
+/**
+ * The worker's connection dropping mid-job, the transient failure a crash looks like to the
+ * job: it is retried, unlike a fault that would only repeat.
+ */
+function connectionLost(): Error {
+  return Object.assign(new Error('connection lost'), { code: 'ECONNRESET' });
 }
 
 async function commit(importId: string): Promise<void> {
@@ -517,9 +526,9 @@ it('resumes a restore after a crash without storing a file twice', async () => {
     clock,
     importId,
   ]);
-  await sweepImports(h.pool, h.blobStore, clock, {
+  await sweepImports(h.pool, h.blobStore, h.config.limits, clock, {
     afterFile: async (stored) => {
-      if (stored === 2) throw new Error('worker stopped');
+      if (stored === 2) throw connectionLost();
     },
   });
   expect((await readImport(h, importId, key)).state).toBe('restoring');
@@ -550,9 +559,9 @@ it('shows nothing when stopped between the last file and the rows', async () => 
   // Check, then restore every file and stop before the row transaction.
   for (let run = 0; run < 2; run++) {
     await h.pool.query('UPDATE community_imports SET next_attempt_at=$1', [clock]);
-    await sweepImports(h.pool, h.blobStore, clock, {
+    await sweepImports(h.pool, h.blobStore, h.config.limits, clock, {
       beforeRows: async () => {
-        throw new Error('stopped before rows');
+        throw connectionLost();
       },
     });
   }
@@ -814,4 +823,384 @@ it('abandons a ready, unclaimed import with all of its content', async () => {
   expect(abandoned.status).toBe(202);
   await expectNothingLeft(communityId);
   expect((await readImport(h, importId, key)).state).toBe('cancelled');
+});
+
+/** A hand-built owner export: one owner, one channel, and whatever `change` adds. */
+function handBuilt(
+  change: (manifest: CommunityExportManifestV1, files: Map<string, Uint8Array>) => void
+): Buffer {
+  const owner = randomUUID();
+  const manifest: CommunityExportManifestV1 = {
+    version: 1,
+    scope: 'owner',
+    requesterMemberId: owner,
+    community: { id: randomUUID(), lifecycle: 'active', lifecycleVersion: 2, settingsVersion: 1 },
+    auditEvents: [],
+    channels: [
+      {
+        id: randomUUID(),
+        name: 'c'.repeat(80),
+        description: 'd'.repeat(1_000),
+        visibility: 'public',
+        archived: false,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ],
+    members: [
+      {
+        id: owner,
+        display_name: 'O',
+        handle: 'oo',
+        role: 'owner',
+        active: true,
+        created_at: '2026-01-01T00:00:00.000Z',
+        removed_at: null,
+        email: null,
+      },
+    ],
+    agents: [],
+    entries: [],
+    attachments: [],
+  };
+  const files = new Map<string, Uint8Array>();
+  change(manifest, files);
+  return buildArchive(manifest, files);
+}
+
+// Purpose: an import is held to exactly what the member API can serve. An export at every
+// limit at once (eight files on one message, text at COMMUNITY_TEXT_BYTES, a sequence at
+// 2^53-1, a one-letter author, the longest channel name and description) restores, and every
+// read a member makes of it (channels, history, the thread, thread summaries) answers 200.
+it('restores content at every limit and serves it through the member API', async () => {
+  const archive = handBuilt((manifest, files) => {
+    const channel = manifest.channels[0].id;
+    const owner = manifest.requesterMemberId;
+    const root = randomUUID();
+    const reply = randomUUID();
+    const base = {
+      channel_id: channel,
+      author_member_id: owner,
+      author_agent_id: null,
+      author_display_name: 'O',
+      mentions: [owner],
+      created_at: '2026-01-02T00:00:00.000Z',
+    };
+    manifest.entries.push(
+      {
+        ...base,
+        id: root,
+        seq: '9007199254740990',
+        text: 'é'.repeat(h.config.limits.textBytes / 2),
+        parent_entry_id: null,
+        thread_root_entry_id: null,
+      },
+      {
+        ...base,
+        id: reply,
+        seq: '9007199254740991',
+        text: 'reply',
+        parent_entry_id: root,
+        thread_root_entry_id: root,
+      }
+    );
+    for (let n = 0; n < 8; n++) {
+      const id = randomUUID();
+      const bytes = Buffer.from(`file ${n}`);
+      files.set(id, bytes);
+      manifest.attachments.push({
+        id,
+        channelId: channel,
+        entryId: root,
+        uploaderMemberId: owner,
+        uploaderAgentId: null,
+        name: `f${n}.txt`,
+        contentType: 'text/plain',
+        byteSize: bytes.length,
+        checksum: sha256(bytes),
+        uploadedAt: '2026-01-02T00:00:00.000Z',
+        archivePath: `attachments/${id}`,
+      });
+    }
+  });
+  const { importId, communityId } = await importArchive(archive, { autoCommit: true });
+  expect((await readImport(h, importId, key)).state).toBe('ready');
+  const owner = await claim(communityId, 'Extreme Owner', `extreme-${randomUUID()}@e.test`);
+  const base = `/api/v1/communities/${communityId}`;
+  const channels = await expectStatus(
+    await h.call(`${base}/channels`, { cookie: owner.cookie }),
+    200,
+    'channels'
+  );
+  const [channel] = (await channels.json()).channels;
+  const history = await expectStatus(
+    await h.call(`${base}/channels/${channel.id}/entries?limit=50`, { cookie: owner.cookie }),
+    200,
+    'history'
+  );
+  const entries = (await history.json()).entries;
+  const root = entries.find((entry: { parentEntryId: string | null }) => !entry.parentEntryId);
+  expect(root.attachments).toHaveLength(8);
+  expect(root.seq).toBe(9007199254740990);
+  await expectStatus(
+    await h.call(`${base}/channels/${channel.id}/entries?limit=50&thread=${root.id}`, {
+      cookie: owner.cookie,
+    }),
+    200,
+    'thread'
+  );
+  const threads = await expectStatus(
+    await h.call(`${base}/channels/${channel.id}/threads?roots=${root.id}`, {
+      cookie: owner.cookie,
+    }),
+    200,
+    'thread summaries'
+  );
+  expect((await threads.json()).threads[0].lastReplySeq).toBe(9007199254740991);
+});
+
+describe('an export past a member-API or host limit fails and leaves nothing', () => {
+  const past: [string, (m: CommunityExportManifestV1) => void, string][] = [
+    [
+      'a sequence past 2^53',
+      (m) => {
+        m.entries.push({
+          id: randomUUID(),
+          channel_id: m.channels[0].id,
+          seq: '9007199254740993',
+          author_member_id: m.requesterMemberId,
+          author_agent_id: null,
+          author_display_name: 'O',
+          text: 'x',
+          mentions: [],
+          parent_entry_id: null,
+          thread_root_entry_id: null,
+          created_at: '2026-01-02T00:00:00.000Z',
+        });
+      },
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      'an empty author name',
+      (m) => {
+        m.entries.push({
+          id: randomUUID(),
+          channel_id: m.channels[0].id,
+          seq: '1',
+          author_member_id: m.requesterMemberId,
+          author_agent_id: null,
+          author_display_name: '',
+          text: 'x',
+          mentions: [],
+          parent_entry_id: null,
+          thread_root_entry_id: null,
+          created_at: '2026-01-02T00:00:00.000Z',
+        });
+      },
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      'a channel name over 80 characters',
+      (m) => void (m.channels[0].name = 'c'.repeat(81)),
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+    [
+      'a message newer than the upload',
+      (m) => {
+        m.entries.push({
+          id: randomUUID(),
+          channel_id: m.channels[0].id,
+          seq: '1',
+          author_member_id: m.requesterMemberId,
+          author_agent_id: null,
+          author_display_name: 'O',
+          text: 'x',
+          mentions: [],
+          parent_entry_id: null,
+          thread_root_entry_id: null,
+          created_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+        });
+      },
+      'IMPORT_ARCHIVE_INVALID',
+    ],
+  ];
+  for (const [label, change, code] of past) {
+    it(label, async () => {
+      const { importId, communityId } = await importArchive(handBuilt(change), {
+        autoCommit: true,
+      });
+      expect(await readImport(h, importId, key)).toMatchObject({
+        state: 'failed',
+        failureCode: code,
+      });
+      await expectNothingLeft(communityId);
+    });
+  }
+});
+
+describe('a hostile archive fails before anything is stored', () => {
+  // Purpose: the entry count is bounded before the central directory is read, so a file
+  // declaring more entries than an export can hold is refused as too large.
+  it('an entry-count bomb', async () => {
+    const entries: [string, Uint8Array][] = [
+      ['manifest.json', Buffer.from(JSON.stringify(source.manifest))],
+      ...Array.from({ length: 10_001 }, (): [string, Uint8Array] => [
+        `attachments/${randomUUID()}`,
+        new Uint8Array(1),
+      ]),
+    ];
+    const { importId, communityId } = await importArchive(buildArchive(null, undefined, entries), {
+      autoCommit: true,
+    });
+    expect(await readImport(h, importId, key)).toMatchObject({ failureCode: 'IMPORT_TOO_LARGE' });
+    await expectNothingLeft(communityId);
+  });
+
+  // Purpose: a small deflated entry that declares a huge size is refused from the directory
+  // alone, before a byte is inflated.
+  it('a deflate bomb', async () => {
+    const id = randomUUID();
+    const zeros = new Uint8Array(30 * 1024 * 1024);
+    const archive = handBuilt((manifest, files) => {
+      files.set(id, zeros);
+      manifest.attachments.push({
+        id,
+        channelId: manifest.channels[0].id,
+        entryId: randomUUID(),
+        uploaderMemberId: manifest.requesterMemberId,
+        uploaderAgentId: null,
+        name: 'z',
+        contentType: 'text/plain',
+        byteSize: zeros.length,
+        checksum: sha256(zeros),
+        uploadedAt: '2026-01-02T00:00:00.000Z',
+        archivePath: `attachments/${id}`,
+      });
+    });
+    const zipped = buildArchive(
+      JSON.parse(strFromU8(unzipSync(archive)['manifest.json'])),
+      new Map([[id, zeros]]),
+      undefined,
+      { deflate: true }
+    );
+    expect(zipped.length).toBeLessThan(1024 * 1024);
+    const { importId, communityId } = await importArchive(zipped, { autoCommit: true });
+    expect(await readImport(h, importId, key)).toMatchObject({ failureCode: 'IMPORT_TOO_LARGE' });
+    await expectNothingLeft(communityId);
+  });
+
+  // Purpose: the archive holds exactly the files its manifest names: an extra file, or one
+  // file twice, is refused.
+  it('an extra file, and a file stored twice', async () => {
+    const extra = buildArchive(null, undefined, [
+      ['manifest.json', Buffer.from(JSON.stringify(source.manifest))],
+      ...[...source.files].map(([id, bytes]): [string, Uint8Array] => [`attachments/${id}`, bytes]),
+      [`attachments/${randomUUID()}`, Buffer.from('smuggled')],
+    ]);
+    const [firstId, firstBytes] = [...source.files][0];
+    const twice = buildArchive(null, undefined, [
+      ['manifest.json', Buffer.from(JSON.stringify(source.manifest))],
+      ...[...source.files].map(([id, bytes]): [string, Uint8Array] => [`attachments/${id}`, bytes]),
+      [`attachments/${firstId}`, firstBytes],
+    ]);
+    for (const bytes of [extra, twice]) {
+      const { importId, communityId } = await importArchive(bytes, { autoCommit: true });
+      expect(await readImport(h, importId, key)).toMatchObject({
+        failureCode: 'IMPORT_ARCHIVE_INVALID',
+      });
+      await expectNothingLeft(communityId);
+    }
+  });
+});
+
+// Purpose: restored audit events carry their own mark, so an event an export claims can never
+// pass for one this host wrote; this host's own import event is native.
+it('marks restored audit events as imported', async () => {
+  const { communityId } = await importArchive(archive, { autoCommit: true });
+  const origins = await h.pool.query<{ origin: string; action: string }>(
+    'SELECT origin,action FROM audit_events WHERE community_id=$1',
+    [communityId]
+  );
+  expect(origins.rows.filter((row) => row.action === 'community.import')).toEqual([
+    { origin: 'native', action: 'community.import' },
+  ]);
+  expect(
+    origins.rows
+      .filter((row) => row.action !== 'community.import')
+      .every((row) => row.origin === 'imported')
+  ).toBe(true);
+  expect(origins.rows.length).toBe(source.manifest.auditEvents!.length + 1);
+});
+
+// Purpose: a fault that would repeat (a missing piece of the job, not storage going away)
+// ends the import at once instead of retrying it eight times as a storage failure.
+it('fails at once when the uploaded export is gone, instead of retrying', async () => {
+  const created = await createImport(h, { bearer: key }, { autoCommit: true });
+  await expectStatus(
+    await uploadArchive(h, created.importId, archive, { bearer: created.uploadToken }),
+    200,
+    'upload'
+  );
+  const staging = await h.pool.query<{ staging_blob_key: string }>(
+    'SELECT staging_blob_key FROM community_imports WHERE id=$1',
+    [created.importId]
+  );
+  await h.blobStore.delete(staging.rows[0].staging_blob_key);
+  await h.pool.query('UPDATE community_imports SET next_attempt_at=$1 WHERE id=$2', [
+    clock,
+    created.importId,
+  ]);
+  await sweepImports(h.pool, h.blobStore, h.config.limits, clock);
+  const row = await h.pool.query(
+    'SELECT state,attempts,failure_code FROM community_imports WHERE id=$1',
+    [created.importId]
+  );
+  expect(row.rows[0]).toEqual({
+    state: 'failed',
+    attempts: 0,
+    failure_code: 'IMPORT_STORAGE_UNAVAILABLE',
+  });
+  await expectNothingLeft(created.communityId);
+});
+
+// Purpose: if the community stops being unclaimed before the rows are written, the import
+// ends as cancelled instead of retrying forever, and its own files go while the community,
+// which is no longer the import's to remove, stays.
+it('cancels an import whose community moved on, and keeps that community', async () => {
+  const created = await createImport(h, { bearer: key }, { autoCommit: true });
+  await expectStatus(
+    await uploadArchive(h, created.importId, archive, { bearer: created.uploadToken }),
+    200,
+    'upload'
+  );
+  const user = (await h.pool.query<{ id: string }>('SELECT id FROM "user" LIMIT 1')).rows[0].id;
+  await runImports({
+    beforeRows: async () => {
+      const client = await h.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `INSERT INTO members(community_id,user_id,display_name,handle,role)
+           VALUES($1,$2,'Someone','someone','owner')`,
+          [created.communityId, user]
+        );
+        await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [
+          created.communityId,
+        ]);
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
+    },
+  });
+  expect(await readImport(h, created.importId, key)).toMatchObject({ state: 'cancelled' });
+  const settled = await h.pool.query('SELECT settled_at FROM community_imports WHERE id=$1', [
+    created.importId,
+  ]);
+  expect(settled.rows[0].settled_at).not.toBeNull();
+  expect(await count('SELECT 1 FROM communities WHERE id=$1', [created.communityId])).toBe(1);
+  expect(
+    await count("SELECT 1 FROM managed_blobs WHERE community_id=$1 AND state<>'pending_delete'", [
+      created.communityId,
+    ])
+  ).toBe(0);
 });

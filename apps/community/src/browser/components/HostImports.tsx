@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RequestError, describeError, request } from '../api.js';
+import { sha256OfFile } from '../sha256.js';
 
 type ImportState =
   'awaiting_upload' | 'validating' | 'validated' | 'restoring' | 'ready' | 'failed' | 'cancelled';
@@ -42,17 +43,12 @@ const STATES: Record<ImportState, string> = {
   cancelled: 'Cancelled',
 };
 
-async function sha256Hex(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
 /** Send an export file to an import with this browser's host session. */
 async function uploadExport(importId: string, file: File): Promise<void> {
   const response = await fetch(`/api/v1/imports/${importId}/archive`, {
     method: 'PUT',
     credentials: 'same-origin',
-    headers: { 'content-type': 'application/zip', 'x-archive-sha256': await sha256Hex(file) },
+    headers: { 'content-type': 'application/zip', 'x-archive-sha256': await sha256OfFile(file) },
     body: file,
   });
   if (!response.ok) {
