@@ -466,6 +466,21 @@ export function registerInviteRoutes(
           'STATE_CONFLICT',
           'This account is being erased here. Try again later.'
         );
+      // Lock order: the invitation's channel before any member row, as every channel write
+      // (posting, uploading, issuing a channel invitation) takes them. The channel_members insert
+      // below needs the channel row; taking it only after the issuer's member row let the
+      // issuer's own upload (channel, then member) deadlock with this join (DOR-2277). An
+      // invitation's channel never changes, so reading it before the invitation lock is safe.
+      const target = await client.query<{ channel_id: string | null }>(
+        'SELECT channel_id FROM invites WHERE id=$1 AND community_id=$2',
+        [grant.invite_id, grant.community_id]
+      );
+      const channelId = target.rows[0]?.channel_id ?? null;
+      if (channelId)
+        await client.query('SELECT 1 FROM channels WHERE id=$1 AND community_id=$2 FOR KEY SHARE', [
+          channelId,
+          grant.community_id,
+        ]);
       const inviteResult = await client.query<InviteRow>(
         `SELECT i.* FROM invites i
          JOIN members issuer ON issuer.id=i.issuer_member_id AND issuer.community_id=i.community_id
@@ -475,7 +490,7 @@ export function registerInviteRoutes(
         [grant.invite_id, grant.community_id]
       );
       const invite = inviteResult.rows[0];
-      if (!invite) throw invalidInvitation();
+      if (!invite || invite.channel_id !== channelId) throw invalidInvitation();
       const previous = await client.query(
         'SELECT 1 FROM invite_uses WHERE invite_id=$1 AND user_id=$2',
         [invite.id, user.id]
