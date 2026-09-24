@@ -16,8 +16,8 @@ You set them once for everyone. If one agent needs to be different, you set that
 Every permission is in one of three states:
 
 - **Allowed**: the agent does it without asking.
-- **Ask**: the agent asks first. An approval card appears, and the action runs only after you say yes.
-- **Blocked**: the agent cannot do it. It does not even see the tool, and it is told to ask you if it needs it.
+- **Ask**: the agent asks first. A request card appears, and the action runs only after you say yes.
+- **Blocked**: the agent cannot do it. It does not even see the tool. It is told the area is blocked, and that it can ask you with a request if it really needs something there.
 
 <Callout type="warn">
   Blocked stops an agent that plays by the rules; it isn't a sandbox. An agent that can run terminal
@@ -48,6 +48,20 @@ If you have not picked yet, your agents keep working exactly as they did before 
 
 Three areas are never Allowed, whatever preset you pick: safety limits, permissions themselves, and reach and secrets. The most they can be is Ask. These show a lock.
 
+## The request card
+
+When an agent does something set to **Ask**, or asks for something that is **Blocked**, a card appears. It shows in the top bar's inbox, at the top of Home, in the conversation the agent is having with you, and, when one of your rooms caused it, inside that room. It says what the agent wants to do, in DorkOS's own words, and has three answers:
+
+- **Allow**: this one time.
+- **Always allow**: this time, and from now on for this agent and this one action. It becomes that agent's own setting for that action, which you can see and reset on the agent's Permissions page.
+- **Deny**: no.
+
+After a yes, the agent carries on by itself. If it was waiting in the conversation, it continues in the same reply; if nobody was watching (a scheduled run, say), DorkOS tells it your answer and it picks up from there.
+
+Safety limits, permissions, and reach and secrets never offer **Always allow**. Their cards show Allow and Deny, and one line: "Always allow isn't offered here. Changing this needs your yes every time."
+
+When an agent asks for something that is Blocked, the card says so and quotes the reason the agent gave. An agent can only ask about one thing per area at a time, cannot ask for the same thing again for a day after you say no, and can ask at most five times an hour. [Action Approvals](/docs/guides/action-approvals#when-something-is-blocked) has the details.
+
 ## Change what everyone may do
 
 1. Open **Settings → Permissions**.
@@ -65,11 +79,13 @@ A **"2 agents differ"** link under a row lists who is set differently. Each has 
 
 A row that says **"Same as everyone (Allowed)"** follows your default. Once you change it, the row shows a dot and a **Reset to default** button.
 
+An action you answered **Always allow** for shows under its area, for example **"Except Open a room: Allowed"**, with its own **Reset**.
+
 If the agent runs on a program that cannot use DorkOS tools, the page says so: those settings do not change anything for it.
 
 ## Who can change them
 
-In DorkOS, only a person can: the permission pages are the one way in, and DorkOS refuses a change that an agent asks for through DorkOS itself.
+In DorkOS, only a person can: the permission pages and your answer on a request card are the ways in, and DorkOS refuses a change that an agent asks for through DorkOS itself. An agent can ask you; it cannot answer for you.
 
 ## What permissions can't stop
 
@@ -81,10 +97,12 @@ If an agent should never be able to do something, don't rely on its settings alo
 
 ## The history
 
-Every change DorkOS makes or notices is recorded, and the history is kept for good rather than for 30 days. Settings → Permissions shows all of them; an agent's Permissions page shows the ones that touched it. Each line says what changed, who changed it, and when.
+Every change DorkOS makes or notices is recorded, and the history is kept for good rather than for 30 days. So is every answer you give on a request card. Settings → Permissions shows all of them; an agent's Permissions page shows the ones that touched it. Each line says what changed, who changed it, and when.
 
 With login off, DorkOS cannot tell you apart from any other program running on your computer, so it records a change as made by **"Someone on this computer"** and says why. With login on, it names your account. Changes made when DorkOS upgraded itself are labelled **"Upgrade"**, and edits to an agent's settings file are labelled **"Changed outside DorkOS"**.
 
 ## After an upgrade
 
 If you already told DorkOS to run at full power, your agents get the Full power preset. If you chose to keep being asked, they get Careful. An agent you had switched **Manage rooms** on for keeps rooms; one you had switched it off for has Rooms blocked. The history records each of these as an upgrade.
+
+Standing permissions (the old "stop asking about this for 8 hours" answer) are gone; **Always allow** replaces them. Any that were still running when you upgraded were ended, not made permanent, and the history has a line for each.
