@@ -67,7 +67,7 @@ The wire type moves to `@dorkos/shared/marketplace-schemas` (`DisclosedEffects` 
 
 `names` and `installPaths` are retired from this body: every target now says exactly which installation, which version and which disclosure. The route calls `applyApprovedUpdates` with the targets' install paths, and a gate that:
 
-1. **Compares** each approvable update (recomputed now: plan with `disclose`) with its target. Any target whose installation's `latestVersion` or `disclosed` differs (same canonicalization as the approval hash, `sameDisclosedEffects`) refuses the whole batch with **409** `{ code: 'disclosure_changed', error, checks }` carrying the fresh checks. Nothing runs.
+1. **Compares** each approvable update (recomputed now: plan with `disclose`) with its target. Any target whose installation's `latestVersion` or `disclosed` differs (same canonicalization as the approval hash, `sameDisclosedEffects`) refuses the whole batch with **409** `{ code: 'disclosure_changed', error, changed }` naming the reinstalls that moved; the app refetches the check. Nothing runs.
 2. **Trusted caller** (`trustedCaller`, the person in the app or their own terminal): allowed. Records global consent (D4) for the batch's global installations.
 3. **Anyone else** (an agent): asks through the server's `ConfirmationProvider` exactly as `marketplace_update` does (`operation: 'update'`, `updates`), answering **202** `{ status: 'requires_confirmation', confirmationToken, updates, message }`; a retry carries `confirmationToken` in the body; `declined` is **403** `{ status: 'declined', reason }`. An approved card records global consent (D4). `preApproved` does not exist on this surface.
 
@@ -108,7 +108,7 @@ Recorded before `onPluginsChanged`, so the refresh it triggers sees the consent.
 - `ConfirmUpdatesDialog`: each item lists what its new version runs, under its name and versions, with the same row style as the install preview's commands group (verbatim commands, hidden characters revealed), and when programs start: "in every session" for a global install, "declared, not started for a project install" otherwise. An item whose new version runs nothing says so in one line.
 - A row's Update applies directly only when the new version runs nothing on its own (`disclosed` null or empty); otherwise it opens the dialog with that one item.
 - `ApplyUpdateTarget` is `{ installPath, latestVersion, disclosed }`, filled from the check the dialog rendered; the transport sends `targets`.
-- A 409 `disclosure_changed`: the updates query is refreshed from the answer's `checks` and the toast says the package changed what it runs since it was shown and to review it again.
+- A 409 `disclosure_changed`: the updates query is refetched and the toast says the package changed what it runs since it was shown and to review it again.
 - A 202 (only an agent gets one) is not reachable from the app.
 - Install: the preview response carries `disclosed`; `InstallConfirmationDialog` sends it as `approvedDisclosure`; the route passes it to the installer (which already compares its own resolve against it) and records global consent (D4). `InstallRequest.approvedDisclosure`'s note about never being in the body is rewritten: a caller can set it, and every value but the true one is refused.
 
