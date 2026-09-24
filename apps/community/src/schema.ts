@@ -976,7 +976,7 @@ export const exportArchives = pgTable(
     failures: integer('failures').notNull().default(0),
     claimedAt: timestamp('claimed_at', { withTimezone: true }),
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
-    deadlineAt: timestamp('deadline_at', { withTimezone: true }),
+    runMs: bigint('run_ms', { mode: 'number' }).notNull().default(0),
     readyAt: timestamp('ready_at', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
     failureCode: text('failure_code'),
@@ -1012,6 +1012,7 @@ export const exportArchives = pgTable(
     check('export_archives_failure_code', sql`${table.failureCode} ~ '^[A-Z][A-Z0-9_]{0,63}$'`),
     check('export_archives_rebuild_passes', sql`${table.rebuildPasses} >= 0`),
     check('export_archives_failures', sql`${table.failures} >= 0`),
+    check('export_archives_run_ms', sql`${table.runMs} >= 0`),
     check(
       'export_archives_progress',
       sql`${table.progressDone} >= 0 AND (${table.progressTotal} IS NULL OR ${table.progressTotal} >= 0)`

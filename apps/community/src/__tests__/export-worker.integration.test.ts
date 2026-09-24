@@ -114,6 +114,71 @@ describe('sharing the export worker', () => {
   });
 });
 
+describe('run time and turns', () => {
+  // Purpose (review): COMMUNITY_EXPORT_MAX_HOURS counts time spent working, not time spent
+  // waiting for a turn. Fails if a job that stepped aside is timed out by the hours it waited.
+  it('does not count time spent waiting for a turn toward the deadline', async () => {
+    const big = await exportCommunity(h, operatorCookie, 'Patient Place');
+    const other = await exportCommunity(h, operatorCookie, 'Waiting Place');
+    await seedEntries(h, big, { authorMemberId: big.owner.memberId, count: 3, textOf: long });
+    await seedEntries(h, other, { authorMemberId: other.owner.memberId, count: 1 });
+    const bigJob = await requestOwnerExport(h, big);
+    const otherJob = await requestOwnerExport(h, other);
+    const start = Date.now();
+    expect(
+      await runExport(h, {
+        segmentBytes: ONE_MESSAGE,
+        sliceMs: 0,
+        maxHours: 1,
+        now: () => new Date(start),
+      })
+    ).toBe(bigJob.export.id);
+    expect((await jobRow(h, bigJob.export.id)).state).toBe('building');
+    await h.pool.query("UPDATE export_archives SET state='cancelled',ended_at=now() WHERE id=$1", [
+      otherJob.export.id,
+    ]);
+    // Three hours later its turn comes round again, with a one-hour limit on work.
+    const later = new Date(start + 3 * 3_600_000);
+    expect(await runExport(h, { segmentBytes: ONE_MESSAGE, maxHours: 1, now: () => later })).toBe(
+      bigJob.export.id
+    );
+    expect(await jobRow(h, bigJob.export.id)).toMatchObject({ state: 'ready' });
+    const run = await h.pool.query<{ run_ms: string }>(
+      'SELECT run_ms::text FROM export_archives WHERE id=$1',
+      [bigJob.export.id]
+    );
+    expect(Number(run.rows[0].run_ms)).toBeLessThan(60_000);
+  });
+
+  // Purpose (review): a job steps aside only for a waiter that could run. Fails if a job gives
+  // up its turn to a community whose own export is already running (nobody could take it).
+  it('keeps running when the only waiter cannot be claimed', async () => {
+    const busy = await exportCommunity(h, operatorCookie, 'Busy Place');
+    const bob = await exportMember(h, busy, 'Bob Busy');
+    await seedEntries(h, busy, { authorMemberId: bob.memberId, count: 2, textOf: long });
+    await requestOwnerExport(h, busy);
+    let running = false;
+    void runExport(h, {
+      segmentBytes: ONE_MESSAGE,
+      hooks: {
+        afterSegment: () => {
+          running = true;
+          return forever();
+        },
+      },
+    });
+    for (let attempt = 0; attempt < 250 && !running; attempt++)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    await requestPersonalExport(h, busy, bob.cookie);
+    const solo = await exportCommunity(h, operatorCookie, 'Solo Place');
+    await seedEntries(h, solo, { authorMemberId: solo.owner.memberId, count: 3, textOf: long });
+    const soloJob = await requestOwnerExport(h, solo);
+    expect(await runExport(h, { segmentBytes: ONE_MESSAGE, sliceMs: 0 })).toBe(soloJob.export.id);
+    expect(await jobRow(h, soloJob.export.id)).toMatchObject({ state: 'ready' });
+    await settle();
+  });
+});
+
 describe('a worker whose database goes away', () => {
   // Purpose (review 5): recording an outcome can fail when the database is gone (at shutdown);
   // the background worker logs it and never leaves a rejected promise unhandled. Fails if a
@@ -130,11 +195,12 @@ describe('a worker whose database goes away', () => {
         return typeof value === 'function' ? value.bind(target) : value;
       },
     }) as Pool;
-    const start = Date.now();
-    let calls = 0;
-    // The claim sees the start; everything after it sees a time past the one-hour deadline, so
-    // the job fails at its first checkpoint and must record that in a transaction.
-    const now = () => new Date(calls++ === 0 ? start : start + 3 * 3600_000);
+    // Two hours of work already done against a one-hour limit: the job fails at its first
+    // checkpoint and must record that in a transaction.
+    await h.pool.query('UPDATE export_archives SET run_ms=$2 WHERE id=$1', [
+      requested.export.id,
+      2 * 3_600_000,
+    ]);
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on('unhandledRejection', onUnhandled);
@@ -146,7 +212,6 @@ describe('a worker whose database goes away', () => {
       settings: { segmentBytes: 256 * 1024 * 1024, ttlHours: 24, maxHours: 1 },
       concurrency: 1,
       pollMs: 10,
-      now,
     });
     try {
       for (let attempt = 0; attempt < 250; attempt++) {

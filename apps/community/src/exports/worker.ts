@@ -55,8 +55,7 @@ async function claimExport(options: ExportWorkerOptions, now: Date): Promise<Exp
   const claimed = await options.pool.query<ExportRow>(
     `UPDATE export_archives
      SET state='building',attempts=attempts+1,claimed_at=$1,
-         lease_until=$1::timestamptz + $2 * interval '1 millisecond',
-         deadline_at=COALESCE(deadline_at,$1::timestamptz + $3 * interval '1 hour')
+         lease_until=$1::timestamptz + $2 * interval '1 millisecond'
      WHERE id=(
        SELECT e.id FROM export_archives e
        WHERE e.state IN ('queued','building') AND e.next_attempt_at<=$1
@@ -67,7 +66,7 @@ async function claimExport(options: ExportWorkerOptions, now: Date): Promise<Exp
              AND other.state='building' AND other.lease_until>=$1)
        ORDER BY e.claimed_at NULLS FIRST,e.created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
      RETURNING ${EXPORT_COLUMNS}`,
-    [now, EXPORT_LEASE_MS, options.settings.maxHours]
+    [now, EXPORT_LEASE_MS]
   );
   return claimed.rows[0] ?? null;
 }
@@ -132,8 +131,8 @@ export function startExportWorker(
 
 /** One claimed job, run by this worker until it ends, is lost, or steps aside. */
 class ExportRun extends ExportJob {
-  /** When this claim started, for the time slice. */
-  private readonly claimedAt = this.now().getTime();
+  /** Renews the lease every minute while the job runs. */
+  private heartbeat: ReturnType<typeof setInterval> | undefined;
 
   /**
    * Run the job. Never rejects: every outcome (ready, failed, lost, stepped aside, retried
@@ -141,10 +140,10 @@ class ExportRun extends ExportJob {
    * worker stopping with the process leaves only a lease to expire.
    */
   async execute(): Promise<void> {
-    const heartbeat = setInterval(() => {
+    this.heartbeat = setInterval(() => {
       void this.renewLease().catch(() => undefined);
     }, HEARTBEAT_MS);
-    heartbeat.unref();
+    this.heartbeat.unref();
     try {
       await this.start();
       if ((await this.writeDataSegments()) === 'yielded') return;
@@ -165,7 +164,7 @@ class ExportRun extends ExportJob {
       }
       await this.retryLater(error).catch((cause: unknown) => logUnavailable(this.job.id, cause));
     } finally {
-      clearInterval(heartbeat);
+      clearInterval(this.heartbeat);
     }
   }
 
@@ -176,17 +175,26 @@ class ExportRun extends ExportJob {
   private async stepAside(): Promise<boolean> {
     const slice = this.options.sliceMs ?? EXPORT_SLICE_MS;
     if (this.now().getTime() - this.claimedAt < slice) return false;
+    // Only a job that could be claimed now counts: due, not leased, and not in a community
+    // whose other export is already running.
     const waiting = await this.pool.query(
-      `SELECT 1 FROM export_archives
-       WHERE state IN ('queued','building') AND community_id<>$1 AND next_attempt_at<=$2
-         AND (lease_until IS NULL OR lease_until<$2) LIMIT 1`,
+      `SELECT 1 FROM export_archives e
+       WHERE e.state IN ('queued','building') AND e.community_id<>$1 AND e.next_attempt_at<=$2
+         AND (e.lease_until IS NULL OR e.lease_until<$2)
+         AND NOT EXISTS (
+           SELECT 1 FROM export_archives other
+           WHERE other.community_id=e.community_id AND other.id<>e.id
+             AND other.state='building' AND other.lease_until>=$2)
+       LIMIT 1`,
       [this.job.community_id, this.now()]
     );
     if (!waiting.rowCount) return false;
+    // Stop renewing first, or a renewal in flight could take the lease back after its release.
+    clearInterval(this.heartbeat);
     const released = await this.pool.query(
-      `UPDATE export_archives SET lease_until=NULL
+      `UPDATE export_archives SET lease_until=NULL,run_ms=$3
        WHERE id=$1 AND state='building' AND attempts=$2`,
-      [this.job.id, this.fence]
+      [this.job.id, this.fence, this.runMs()]
     );
     if (released.rowCount !== 1) throw new JobLostError();
     return true;
@@ -231,10 +239,10 @@ class ExportRun extends ExportJob {
     // retry can be claimed as soon as it is due.
     const delay = Math.min(60_000 * 2 ** (failures - 1), 30 * 60_000);
     await this.pool.query(
-      `UPDATE export_archives SET lease_until=NULL,
+      `UPDATE export_archives SET lease_until=NULL,run_ms=$5,
          next_attempt_at=$3::timestamptz + $4 * interval '1 millisecond'
        WHERE id=$1 AND state='building' AND attempts=$2`,
-      [this.job.id, this.fence, this.now(), delay]
+      [this.job.id, this.fence, this.now(), delay, this.runMs()]
     );
   }
 

@@ -234,10 +234,16 @@ describe('consistency and rebuilds', () => {
     });
     expect(before).toHaveLength(2);
     const reset = await h.pool.query(
-      'SELECT state,data_complete,watermark FROM export_archives WHERE id=$1',
+      'SELECT state,data_complete,watermark,run_ms::text FROM export_archives WHERE id=$1',
       [requested.export.id]
     );
-    expect(reset.rows[0]).toEqual({ state: 'queued', data_complete: false, watermark: null });
+    // A restart starts the running-time clock again too.
+    expect(reset.rows[0]).toEqual({
+      state: 'queued',
+      data_complete: false,
+      watermark: null,
+      run_ms: '0',
+    });
     expect(await segmentsOf(h, requested.export.id)).toEqual([]);
     const states = await h.pool.query(
       'SELECT DISTINCT state FROM managed_blobs WHERE blob_key=ANY($1::text[])',
@@ -508,6 +514,59 @@ describe('the tail commit keeps erasure’s guarantee', () => {
     expect(await segmentsOf(h, requested.export.id)).toEqual([]);
     await cleanUp(community.communityId);
     expect(await exportBlobCount(community.communityId, requested.export.id)).toBe(0);
+  });
+});
+
+describe('the husk and a tail in progress', () => {
+  // Purpose (review finding, tail shape): an export that read its collections before a husk
+  // and reaches its final commit while the husk is under way never commits the member as they
+  // were. The husk is held after its leftover check (its handle row is locked) from inside the
+  // export's own beforeTailCommit; the tail must wait on the husk's lock, go round, and export
+  // the husk. With the husk bumping only at its end, the tail commits the real name.
+  it('never commits collections read before a husk that lands before the tail commits', async () => {
+    const community = await exportCommunity(h, operatorCookie, 'Tail Husk Place');
+    const yara = await exportMember(h, community, 'Yara Secretname');
+    await seedEntries(h, community, {
+      authorMemberId: yara.memberId,
+      count: 2,
+      textOf: (n) => `yara ${n}`,
+    });
+    const requested = await requestOwnerExport(h, community);
+    const blocker = await h.pool.connect();
+    let erasing: Promise<string> | undefined;
+    try {
+      const job = runExport(h, {
+        hooks: {
+          beforeTailCommit: async () => {
+            if (erasing) return;
+            await blocker.query('BEGIN');
+            await blocker.query(
+              'SELECT 1 FROM community_handles WHERE community_id=$1 AND member_id=$2 FOR UPDATE',
+              [community.communityId, yara.memberId]
+            );
+            erasing = erase(community, yara.memberId);
+            await waitForLockWaiters(h, 1, 'community_handles');
+          },
+        },
+      });
+      await waitForLockWaiters(h, 1, 'community_content_versions');
+      await blocker.query('COMMIT');
+      expect(await erasing).toBe('erased');
+      await job;
+    } finally {
+      await blocker.query('ROLLBACK').catch(() => undefined);
+      blocker.release();
+    }
+    while (await runExport(h)) {
+      // Run whatever the erasure sent back to the start until nothing is due.
+    }
+    expect(await jobRow(h, requested.export.id)).toMatchObject({ state: 'ready' });
+    const archive = await openArchive(await downloadArchive(h, community, requested.export.id));
+    expect(
+      archive
+        .rows<{ id: string; display_name: string; email: string | null }>('members')
+        .find((row) => row.id === yara.memberId)
+    ).toMatchObject({ display_name: 'Erased member', email: null });
   });
 });
 

@@ -30,14 +30,15 @@ export interface ExportRow {
   data_complete: boolean;
   attempts: number;
   failures: number;
-  deadline_at: Date | null;
+  /** Time workers have spent on the job before this claim, in milliseconds. */
+  run_ms: string;
 }
 
 /** The `export_archives` columns every read selects. */
 export const EXPORT_COLUMNS = `id,community_id,requester_member_id,scope,format_version,state,blob_key,
   byte_size::text,created_at,ready_at,expires_at,deleted_at,failure_code,progress_done::text,
   progress_total::text,watermark,last_checked_redaction_id::text,
-  verified_content_version::text,rebuild_passes,data_complete,attempts,failures,deadline_at`;
+  verified_content_version::text,rebuild_passes,data_complete,attempts,failures,run_ms::text`;
 
 /** Failure codes the wire names; anything else recorded reads as a storage failure. */
 const WIRE_FAILURES = new Set<string>([
@@ -170,7 +171,7 @@ export async function restartExportJobs(client: PoolClient, communityId: string)
     `UPDATE export_archives
      SET state='queued',lease_until=NULL,next_attempt_at=now(),watermark=NULL,
          last_checked_redaction_id=NULL,verified_content_version=NULL,rebuild_passes=0,
-         progress_done=0,progress_total=NULL,data_complete=false
+         progress_done=0,progress_total=NULL,data_complete=false,run_ms=0
      WHERE community_id=$1 AND id=ANY($2::uuid[])`,
     [communityId, open.rows.map((row) => row.id)]
   );

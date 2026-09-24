@@ -24,7 +24,9 @@ ALTER TABLE export_archives
   -- When a worker last took the job; the least recently served job is claimed first.
   ADD COLUMN claimed_at timestamptz,
   ADD COLUMN next_attempt_at timestamptz NOT NULL DEFAULT now(),
-  ADD COLUMN deadline_at timestamptz,
+  -- How long workers have spent on the job, across claims; waiting for a turn does not count.
+  -- COMMUNITY_EXPORT_MAX_HOURS is judged against it.
+  ADD COLUMN run_ms bigint NOT NULL DEFAULT 0,
   ADD COLUMN ready_at timestamptz,
   ADD COLUMN ended_at timestamptz,
   ADD COLUMN failure_code text;
@@ -45,6 +47,7 @@ ALTER TABLE export_archives
   ADD CONSTRAINT export_archives_failure_code CHECK (failure_code ~ '^[A-Z][A-Z0-9_]{0,63}$'),
   ADD CONSTRAINT export_archives_rebuild_passes CHECK (rebuild_passes >= 0),
   ADD CONSTRAINT export_archives_failures CHECK (failures >= 0),
+  ADD CONSTRAINT export_archives_run_ms CHECK (run_ms >= 0),
   ADD CONSTRAINT export_archives_progress CHECK (progress_done >= 0 AND (progress_total IS NULL OR progress_total >= 0));
 
 -- One job in progress per community (owner) and per member (personal). A ready archive that has

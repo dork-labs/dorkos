@@ -150,6 +150,15 @@ export class ExportJob {
     this.settings = options.settings;
     this.hooks = options.hooks ?? {};
     this.fence = job.attempts;
+    this.claimedAt = now().getTime();
+  }
+
+  /** When this claim started (the claim's clock), for run time and the time slice. */
+  readonly claimedAt: number;
+
+  /** Time spent on the job so far: earlier claims plus this one. */
+  runMs(): number {
+    return Number(this.job.run_ms) + Math.max(0, this.now().getTime() - this.claimedAt);
   }
 
   /** Target size of one segment, kept under the blob ceiling. */
@@ -159,10 +168,13 @@ export class ExportJob {
 
   /** Extend the lease; the job is lost when it is no longer building under this claim. */
   async renewLease(client: Pick<Pool | PoolClient, 'query'> = this.pool): Promise<void> {
+    // The run time is saved with each renewal, so a worker that dies loses at most a minute of
+    // it; time spent waiting for a turn is never added.
     const renewed = await client.query(
-      `UPDATE export_archives SET lease_until=$3::timestamptz + $4 * interval '1 millisecond'
+      `UPDATE export_archives SET lease_until=$3::timestamptz + $4 * interval '1 millisecond',
+         run_ms=$5
        WHERE id=$1 AND state='building' AND attempts=$2`,
-      [this.job.id, this.fence, this.now(), EXPORT_LEASE_MS]
+      [this.job.id, this.fence, this.now(), EXPORT_LEASE_MS, this.runMs()]
     );
     if (renewed.rowCount !== 1) throw new JobLostError();
   }
@@ -177,12 +189,13 @@ export class ExportJob {
   }
 
   /**
-   * Before every segment: the job is still ours (lease renewed), within its deadline, and its
+   * Before every segment: the job is still ours (lease renewed), within its running time
+   * (`COMMUNITY_EXPORT_MAX_HOURS` of work, not counting time waiting for a turn), and its
    * requester still has the authority it had when they asked.
    */
   async checkpoint(): Promise<void> {
     await this.renewLease();
-    if (this.job.deadline_at && this.now() >= this.job.deadline_at)
+    if (this.runMs() >= this.settings.maxHours * 3_600_000)
       throw new JobFailedError('EXPORT_TIMED_OUT');
     if (!(await hasExportAuthority(this.pool, this.requester)))
       throw new JobFailedError('EXPORT_ACCESS_ENDED');
