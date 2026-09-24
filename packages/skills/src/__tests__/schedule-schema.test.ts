@@ -568,8 +568,8 @@ describe('schedule block round trip through disk', () => {
   });
 
   // The documented call shape must survive the all-default case. Returning
-  // `undefined` here would hand js-yaml an undefined and throw
-  // "unacceptable kind of an object" at the moment of writing.
+  // `undefined` here would hand the frontmatter writer an undefined, which it
+  // refuses at the moment of writing.
   it('does not throw when the helper result is spread into frontmatter', async () => {
     await writeSkillFile(
       tmpDir,

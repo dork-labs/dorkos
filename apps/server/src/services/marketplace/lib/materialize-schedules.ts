@@ -40,7 +40,7 @@
  */
 import { lstat, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { PackageScheduleDecl } from '@dorkos/marketplace/manifest-schema';
 import { AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
@@ -224,9 +224,10 @@ function buildScheduleBlock(
   // apply to a declaration that went through a parse, and not every one does —
   // a manifest read off disk by an older build reaches here with keys missing.
   // The cost of assuming otherwise is not a wrong default but a THROW:
-  // `scheduleToFrontmatter` hands whatever it is given to js-yaml, which refuses
-  // an `undefined` with "unacceptable kind of an object to dump" and takes the
-  // whole schedule down. Its own TSDoc names that failure; this is the guard.
+  // `scheduleToFrontmatter` hands whatever it is given to the frontmatter
+  // writer, which refuses an `undefined` ("is undefined, which YAML cannot
+  // hold") rather than silently dropping the key, and takes the whole schedule
+  // down. Its own TSDoc names that failure; this is the guard.
   const { mode, clamped } = clampSchedulePermissionMode(schedule.permissionMode ?? 'acceptEdits');
   const block: ScheduleBlock = {
     ...(schedule.cron != null && { cron: schedule.cron }),
@@ -251,7 +252,7 @@ function buildScheduleBlock(
  * Write a `schedule:` block into the installed copy of a skill the package ships.
  *
  * Every frontmatter KEY AND VALUE the author wrote is carried across, which is
- * why this reads with `gray-matter` rather than through `SkillFrontmatterSchema`:
+ * why this reads with `parseFrontmatter` rather than through `SkillFrontmatterSchema`:
  * the schema strips keys it does not know, so parsing and re-writing through it
  * would quietly delete a Claude-Code-only key, a `metadata:` map, or anything
  * else the author put there. Only the `schedule` key is added or replaced.
@@ -284,7 +285,7 @@ async function injectScheduleIntoShippedSkill(
   }
 
   const filePath = path.join(skillDir, 'SKILL.md');
-  const parsed = matter(await readFile(filePath, 'utf-8'));
+  const parsed = parseFrontmatter(await readFile(filePath, 'utf-8'));
   const incoming = scheduleToFrontmatter(block);
 
   // An update reinstalls the package, which rewrites this block from the new
@@ -456,7 +457,7 @@ async function readScheduleOwner(
   }
 
   try {
-    const parsed = matter(content);
+    const parsed = parseFrontmatter(content);
     const schedule = parsed.data.schedule as Record<string, unknown> | undefined;
     if (!schedule || typeof schedule !== 'object') return { present: true, owner: null };
     const shape = schedule.shape;

@@ -12,7 +12,7 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
 import { ScheduleBlockSchema } from '@dorkos/skills/schedule-schema';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
@@ -71,7 +71,7 @@ async function shipSkill(name: string, frontmatter: string, body: string): Promi
 async function readSkill(
   filePath: string
 ): Promise<{ data: Record<string, unknown>; body: string }> {
-  const parsed = matter(await readFile(filePath, 'utf-8'));
+  const parsed = parseFrontmatter(await readFile(filePath, 'utf-8'));
   return { data: parsed.data, body: parsed.content.trim() };
 }
 
@@ -281,7 +281,7 @@ describe('skillRef declarations inject into the shipped skill', () => {
 
   it('keeps every frontmatter key and value the skill schema does not know', async () => {
     // Parsing through SkillFrontmatterSchema would strip all of these; reading
-    // with gray-matter is what keeps them. Each is a distinct shape the schema
+    // raw with parseFrontmatter is what keeps them. Each is a distinct shape the schema
     // has no field for, so a regression that reintroduces schema-parsing reddens
     // here rather than passing on a single lenient key.
     const filePath = await shipSkill(
@@ -668,8 +668,8 @@ describe('collisions and failures', () => {
     // Not every manifest reaching the materializer was parsed: one read off disk
     // by an older build arrives with the keys the schema would have defaulted
     // simply missing. Handing an `undefined` to `scheduleToFrontmatter` makes
-    // js-yaml throw ("unacceptable kind of an object to dump"), which took the
-    // whole schedule down before the fields were coalesced.
+    // the frontmatter writer throw ("is undefined, which YAML cannot hold"),
+    // which took the whole schedule down before the fields were coalesced.
     const raw = {
       schemaVersion: 1,
       name: 'nightly-tools',

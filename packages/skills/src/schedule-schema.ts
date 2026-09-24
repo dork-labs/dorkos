@@ -373,8 +373,9 @@ export function scheduleProblem<T extends { schedule?: ScheduleField }>(meta: T)
  * key present: presence is what makes the file a scheduled task, so dropping it
  * would silently un-schedule the skill. Returning `undefined` would be worse
  * still, because the spread this helper is written for
- * (`{...meta, schedule: scheduleToFrontmatter(block)}`) would hand js-yaml an
- * `undefined` and throw "unacceptable kind of an object".
+ * (`{...meta, schedule: scheduleToFrontmatter(block)}`) would hand the
+ * frontmatter writer an `undefined`, which it refuses rather than silently
+ * dropping the key.
  *
  * One thing it cannot preserve: a `true` the author typed by hand is
  * indistinguishable after parsing from one the schema supplied, so an explicit

@@ -11,7 +11,7 @@
  */
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../relay/adapter-manager.js';
@@ -407,7 +407,7 @@ export class ConflictDetector {
   /**
    * Read every `SKILL.md` under `${packageRoot}/.dork/tasks/*`. Returns
    * one record per skill, with the cron field (if any) extracted from
-   * the gray-matter frontmatter.
+   * the parsed frontmatter.
    */
   async #readPackageSkills(packageRoot: string, packageName: string): Promise<SkillRecord[]> {
     const tasksDir = join(packageRoot, '.dork', 'tasks');
@@ -568,7 +568,7 @@ async function readSkillCron(skillPath: string): Promise<string | null | undefin
   }
   let data: Record<string, unknown>;
   try {
-    data = matter(raw).data;
+    data = parseFrontmatter(raw).data;
   } catch {
     return null;
   }

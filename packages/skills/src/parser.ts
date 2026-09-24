@@ -1,7 +1,7 @@
-import matter from 'gray-matter';
 import path from 'node:path';
 import type { z } from 'zod';
 import { SKILL_FILENAME } from './constants.js';
+import { parseFrontmatter } from './frontmatter.js';
 import type { ParseResult } from './types.js';
 import type { WidgetTemplate } from './ui-template.js';
 
@@ -50,34 +50,23 @@ export interface ParseSkillFileOptions {
 }
 
 /**
- * Split content into frontmatter and body, WITHOUT gray-matter's cache.
+ * Split content into frontmatter and body, trimming the body.
  *
- * The one place in this package that calls `matter()`, because the cache is a
- * correctness trap and a second call site is how it came back. `gray-matter`
- * writes its cache entry BEFORE it parses (`matter.cache[content] = file`,
- * index.js:47), so a throw leaves the unparsed placeholder — `data: {}`,
- * `content: the whole raw file` — cached under that content forever. The same
- * malformed `SKILL.md` then fails one way on the first call in a process and a
- * completely different way on every later one: `readRawFrontmatter` answered
- * `null` and then `{ data: {} }`, and `parseSkillFile` said "Failed to parse
- * frontmatter" and then "Invalid frontmatter: expected string at name". Which
- * answer a caller got depended on which of this package's ten-odd readers
- * opened the file first.
- *
- * Passing any options object takes gray-matter's `if (!options)` branch and
- * skips the cache in both directions, which is the only way to make the answer
- * depend on the content alone. Route every new reader through here rather than
- * calling `matter()` again.
+ * Goes through {@link parseFrontmatter}, which refuses executable frontmatter
+ * (`---js`, DOR-2308) and skips gray-matter's cache. The cache matters here
+ * too: gray-matter caches a placeholder BEFORE it parses, so a malformed
+ * SKILL.md used to fail one way on the first read in a process and another way
+ * on every later one.
  *
  * @param content - Raw file content (UTF-8).
  * @returns The frontmatter mapping and the trimmed body.
- * @throws Whatever gray-matter throws on frontmatter it refuses to parse.
+ * @throws When the frontmatter is malformed or written in a refused language.
  */
-function parseFrontmatterUncached(content: string): {
+function parseFrontmatterTrimmed(content: string): {
   data: Record<string, unknown>;
   body: string;
 } {
-  const parsed = matter(content, {});
+  const parsed = parseFrontmatter(content);
   return { data: parsed.data, body: parsed.content.trim() };
 }
 
@@ -95,13 +84,13 @@ function parseFrontmatterUncached(content: string): {
  *
  * @param content - Raw file content (UTF-8).
  * @returns The frontmatter mapping and the trimmed body, or `null` when the
- *   content's frontmatter is malformed enough that gray-matter refuses it.
+ *   content's frontmatter is malformed or written in a refused language.
  */
 export function readRawFrontmatter(
   content: string
 ): { data: Record<string, unknown>; body: string } | null {
   try {
-    return parseFrontmatterUncached(content);
+    return parseFrontmatterTrimmed(content);
   } catch {
     return null;
   }
@@ -142,7 +131,7 @@ export function parseSkillFile<T>(
   let data: Record<string, unknown>;
   let body: string;
   try {
-    ({ data, body } = parseFrontmatterUncached(content));
+    ({ data, body } = parseFrontmatterTrimmed(content));
   } catch (err) {
     return {
       ok: false,
