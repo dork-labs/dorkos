@@ -40,6 +40,12 @@ CREATE TABLE community_imports (
   upload_expires_at timestamptz NOT NULL,
   archive_sha256 text,
   archive_bytes bigint,
+  -- When the export arrived. Nothing in it may claim to be newer than this.
+  archive_received_at timestamptz,
+  -- One upload at a time per import, across replicas: a short lease the receiving request
+  -- renews while bytes arrive, so a crashed request frees it within minutes.
+  upload_lease_until timestamptz,
+  upload_lease_token uuid,
   staging_blob_key text UNIQUE REFERENCES managed_blobs(blob_key) ON DELETE SET NULL,
   manifest_version integer,
   -- Counts and sizes only, never text or names.
@@ -53,7 +59,8 @@ CREATE TABLE community_imports (
   -- Set when the worker has nothing left to do: the import is ready, or a cancelled or failed
   -- import's leftovers are gone.
   settled_at timestamptz,
-  created_by_user_id text REFERENCES "user"(id),
+  -- A creator's account may be deleted later; the import keeps its history without them.
+  created_by_user_id text REFERENCES "user"(id) ON DELETE SET NULL,
   created_by_api_key_id uuid REFERENCES host_api_keys(id),
   validated_at timestamptz,
   -- The restored owner row the claimant adopts; set when the import is ready.
@@ -71,6 +78,7 @@ CREATE TABLE community_imports (
     AND (archive_sha256 IS NULL OR archive_sha256 ~ '^[a-f0-9]{64}$')
     AND (archive_bytes IS NULL OR archive_bytes > 0)
     AND (state IN ('awaiting_upload','cancelled','failed') OR archive_sha256 IS NOT NULL)
+    AND (archive_sha256 IS NULL) = (archive_received_at IS NULL)
   ),
   CONSTRAINT community_imports_manifest_version CHECK (manifest_version IS NULL OR manifest_version > 0),
   CONSTRAINT community_imports_report CHECK (
@@ -81,7 +89,7 @@ CREATE TABLE community_imports (
     AND (failure_code IS NULL OR failure_code ~ '^[A-Z][A-Z0-9_]{0,63}$')
   ),
   CONSTRAINT community_imports_attempts CHECK (attempts >= 0),
-  CONSTRAINT community_imports_creator CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) = 1),
+  CONSTRAINT community_imports_creator CHECK (num_nonnulls(created_by_user_id, created_by_api_key_id) <= 1),
   -- An unsettled import always has its community. A settled one outlives it: a cancelled or
   -- failed import removes its community, and a ready one's owner may later delete theirs.
   CONSTRAINT community_imports_community CHECK (community_id IS NOT NULL OR settled_at IS NOT NULL),
@@ -102,6 +110,12 @@ CREATE TABLE community_import_files (
   content_type text NOT NULL,
   PRIMARY KEY (import_id, source_attachment_id)
 );
+
+-- Audit events an import restored keep their own mark, so a forged event in an export can
+-- never pass for one this host wrote.
+ALTER TABLE audit_events
+  ADD COLUMN origin text NOT NULL DEFAULT 'native',
+  ADD CONSTRAINT audit_events_origin CHECK (origin IN ('native','imported'));
 
 -- The import worker acts on its own: its completions and failures are host audit rows whose
 -- actor is the system, not a person or a key.
