@@ -21,6 +21,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   Outlet,
   RouterProvider,
@@ -65,6 +66,11 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useInstalledPackages: vi.fn(),
   usePackageInstallations: vi.fn(),
   useUninstallPackage: vi.fn(),
+  // The Installed tab's update count; this flow never reaches a check.
+  useInstalledUpdates: vi
+    .fn()
+    .mockReturnValue({ data: undefined, isFetching: false, error: null, refetch: vi.fn() }),
+  marketplaceKeys: { updates: () => ['marketplace', 'updates'] },
 }));
 
 vi.mock('@/layers/entities/mesh', () => ({
@@ -122,7 +128,13 @@ function renderMarketplace() {
     routeTree,
     history: createMemoryHistory({ initialEntries: ['/marketplace'] }),
   });
-  return render(<RouterProvider router={router} />);
+  // The Marketplace marks its update check stale through the query client when
+  // the installed list changes, so the tree needs one even with the hooks mocked.
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  );
 }
 
 // ---------------------------------------------------------------------------

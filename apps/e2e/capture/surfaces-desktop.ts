@@ -139,6 +139,16 @@ async function shootMarketplaceInstalled(
 ): Promise<void> {
   await page.goto(url('/marketplace?view=installed'));
   await page.getByText('Overrides global', { exact: true }).first().waitFor({ timeout: WAIT_MS });
+  // The update check runs when the Installed view opens. Against the seed's
+  // file:// marketplace it settles deterministically, so wait for its answer
+  // rather than shooting every row mid-"Checking for updates…".
+  // Matched on the summary's settled headlines, so no other status region on
+  // the page (or the summary before its check starts) can satisfy the wait.
+  await page
+    .getByRole('status')
+    .filter({ hasText: /up to date|updates? available|No updates found|checked for updates/ })
+    .first()
+    .waitFor({ timeout: WAIT_MS });
   await shoot(page, 'marketplace-installed', theme, rec);
 }
 
