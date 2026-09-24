@@ -1,13 +1,13 @@
 import fs from 'fs/promises';
 import path from 'path';
-import matter from 'gray-matter';
 import type { CommandEntry, CommandRegistry } from '@dorkos/shared/types';
 import { CommandFrontmatterSchema } from '@dorkos/skills/command-schema';
+import { UnsupportedFrontmatterError, parseFrontmatter } from '@dorkos/skills/frontmatter';
 import { isUserInvocable, readYamlBoolean } from '@dorkos/skills';
 import { logger } from '../../../../lib/logger.js';
 
 /**
- * Fallback frontmatter parser for when gray-matter's YAML parser fails
+ * Fallback frontmatter parser for when the YAML parser fails
  * (e.g. unquoted values with brackets, colons, pipes).
  * Extracts simple key: value pairs from the frontmatter block.
  */
@@ -29,7 +29,7 @@ function parseFrontmatterFallback(content: string): Record<string, string> {
 /**
  * Scans `.claude/commands/` for slash command definitions.
  *
- * Parses YAML frontmatter via gray-matter with a fallback for malformed YAML,
+ * Parses YAML frontmatter via `parseFrontmatter` with a fallback for malformed YAML,
  * then validates against the shared CommandFrontmatterSchema. Results are cached
  * until `invalidateCache()`.
  *
@@ -116,13 +116,14 @@ class CommandRegistryService {
   }
 
   /**
-   * Parse a command `.md` file using gray-matter + CommandFrontmatterSchema validation.
+   * Parse a command `.md` file using `parseFrontmatter` + CommandFrontmatterSchema validation.
    *
-   * Falls back to a simple key:value parser when gray-matter's YAML parser fails
+   * Falls back to a simple key:value parser when the YAML parser fails
    * on unquoted special characters.
    *
    * @returns Partial command fields plus whether a person may see this
-   *   command in the palette, or `null` if the file could not be read.
+   *   command in the palette, or `null` if the file could not be read or its
+   *   frontmatter is written as code.
    */
   private async parseCommandFile(filePath: string): Promise<
     | (Pick<CommandEntry, 'description' | 'argumentHint' | 'allowedTools' | 'filePath'> & {
@@ -136,8 +137,11 @@ class CommandRegistryService {
 
       let frontmatter: Record<string, unknown>;
       try {
-        frontmatter = matter(content).data;
-      } catch {
+        frontmatter = parseFrontmatter(content).data;
+      } catch (err) {
+        // Frontmatter written as code (`---js`) is refused outright, never
+        // salvaged by the fallback: the outer catch skips the file (DOR-2308).
+        if (err instanceof UnsupportedFrontmatterError) throw err;
         // YAML parse failed (e.g. unquoted brackets/colons) — use simple fallback
         frontmatter = parseFrontmatterFallback(content);
       }

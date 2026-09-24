@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import matter from 'gray-matter';
 import { SKILL_FILENAME } from './constants.js';
+import { stringifyFrontmatter } from './frontmatter.js';
 
 /**
  * Write a SKILL.md file atomically inside a named directory.
@@ -25,7 +25,7 @@ export async function writeSkillFile(
   const skillDir = path.join(parentDir, name);
   await fs.mkdir(skillDir, { recursive: true });
 
-  const content = matter.stringify(body, frontmatter);
+  const content = stringifyFrontmatter(body, frontmatter);
   const targetPath = path.join(skillDir, SKILL_FILENAME);
   const tempPath = path.join(skillDir, `.skill-${randomUUID()}.tmp`);
 

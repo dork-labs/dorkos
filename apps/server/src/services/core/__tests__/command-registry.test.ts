@@ -243,4 +243,26 @@ describe('CommandRegistryService', () => {
 
     expect(result.commands[0].allowedTools).toEqual(['Read', 'Write', 'Bash']);
   });
+
+  it('skips a command whose frontmatter is written as code, without running it', async () => {
+    // Purpose (DOR-2308): a `---js` block used to go to gray-matter's eval
+    // engine. It must be refused, never salvaged by the key:value fallback,
+    // and the code in it must not run.
+    const sentinel = '__dorkosCommandPwned';
+    vi.mocked(fs.readdir).mockResolvedValueOnce([
+      makeDirent('evil.md', false),
+      makeDirent('fine.md', false),
+    ] as never);
+    vi.mocked(fs.readFile)
+      .mockResolvedValueOnce(
+        `---js\n{ description: (globalThis.${sentinel} = 1, 'evil') }\n---\n# Evil\n`
+      )
+      .mockResolvedValueOnce('---\ndescription: Fine\n---\n# Fine\n');
+
+    const registry = new CommandRegistryService('/vault');
+    const result = await registry.getCommands();
+
+    expect(result.commands.map((c) => c.fullCommand)).toEqual(['/fine']);
+    expect((globalThis as Record<string, unknown>)[sentinel]).toBeUndefined();
+  });
 });

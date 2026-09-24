@@ -48,6 +48,10 @@
       "types": "./src/duration.ts",
       "default": "./dist/duration.js"
     },
+    "./frontmatter": {
+      "types": "./src/frontmatter.ts",
+      "default": "./dist/frontmatter.js"
+    },
     "./parser": {
       "types": "./src/parser.ts",
       "default": "./dist/parser.js"
@@ -68,11 +72,13 @@
   "dependencies": {
     "@dorkos/shared": "workspace:*",
     "gray-matter": "^4.0.3",
+    "js-yaml": "^4.3.2",
     "zod": "^4.6.2"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^24",
     "vitest": "^4.1.11"
   }

@@ -48,6 +48,19 @@ const SUPERTEST_BAN = {
     'Import request and its types from @dorkos/test-utils/supertest so tests can target an already-listening Server.',
 };
 
+// gray-matter `eval`s any frontmatter block that opens with `---js`, so reading
+// a package's markdown with it let the package run code in the server
+// (DOR-2308). Its one owner lives outside this package: `@dorkos/skills/
+// frontmatter`, which refuses those blocks. No server directory owns it, so no
+// `confineDirectory` call below filters it back out — it is banned everywhere
+// here, tests included. scripts/__tests__/gray-matter-import-boundary.test.ts
+// holds the same line across the whole repo.
+const GRAY_MATTER_BAN = {
+  group: ['gray-matter', 'gray-matter/*'],
+  message:
+    'gray-matter runs `---js` frontmatter as code. Use parseFrontmatter/stringifyFrontmatter from @dorkos/skills/frontmatter.',
+};
+
 // Every dependency confined to exactly one directory. DERIVED from, rather
 // than restated alongside, both the global ban list and every per-directory
 // one below: each directory owns exactly one entry and bans the rest via
@@ -56,7 +69,14 @@ const SUPERTEST_BAN = {
 // updating N call sites by hand. This is the fix for DOR-689 (node-pty had
 // silently stopped being banned in three of five directories because
 // restating the list is exactly the kind of thing that drifts).
-const ALL_CONFINED = [CLAUDE_SDK_BAN, CODEX_SDK_BAN, OPENCODE_SDK_BAN, NODE_PTY_BAN, OTEL_BAN];
+const ALL_CONFINED = [
+  CLAUDE_SDK_BAN,
+  CODEX_SDK_BAN,
+  OPENCODE_SDK_BAN,
+  NODE_PTY_BAN,
+  OTEL_BAN,
+  GRAY_MATTER_BAN,
+];
 // os.homedir() ban (Hard Rule #3), half one. `no-restricted-imports` sees the
 // IMPORT: `import { homedir } from 'os'` and `import * as os from 'os'`. It is
 // blind to `import os from 'os'` — which is the spelling this server actually

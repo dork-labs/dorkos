@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import matter from 'gray-matter';
+import { stringifyFrontmatter } from '@dorkos/skills/frontmatter';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '../pack.js';
@@ -72,7 +72,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       // Each skill must serialize to a SKILL.md that the @dorkos/skills parser
       // accepts, with the frontmatter name matching its directory.
       const filePath = `/tmp/.agents/skills/${skill.name}/SKILL.md`;
-      const content = matter.stringify(skill.body, {
+      const content = stringifyFrontmatter(skill.body, {
         name: skill.name,
         description: skill.description,
       });
