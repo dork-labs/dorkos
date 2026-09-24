@@ -1,6 +1,6 @@
 ---
 covers:
-  - 'fix(security): put a size limit on frontmatter DorkOS reads (DOR-2311)'
+  - 'fix(security): put a size budget on frontmatter reads (DOR-2311)'
   - 'fix(security): read frontmatter without gray-matter, inside hard limits (DOR-2311)'
   - 'fix(security): size typed values and detect aliases exactly (DOR-2311)'
 ---
