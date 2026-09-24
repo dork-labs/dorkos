@@ -220,6 +220,62 @@ test "$3 $4 $5 $6 $7 $8" = "--project-id project-example --branch br-example --o
     );
   });
 
+  // A creation time is what later ties a project to the moment a run asked for it. A missing or
+  // unreadable one must read as absent, never as a time, and must not break the listing preflight uses.
+  it('reads a project creation time and treats a missing or unreadable one as absent', async () => {
+    const fixture = await readFile(
+      new URL('./fixtures/neon/projects.json', import.meta.url),
+      'utf8'
+    );
+    const executable = await fakeNeon(`printf '%s' "$FIXTURE_JSON"`);
+    await expect(
+      readNeonProjects(options(executable, { FIXTURE_JSON: fixture }), 'org_fixture_01')
+    ).resolves.toEqual([
+      expect.objectContaining({ id: 'project_fixture_01', createdAt: '2026-09-23T10:31:11Z' }),
+    ]);
+
+    for (const createdAt of [undefined, null, '', 'yesterday', 1_758_623_471]) {
+      const project = { ...(JSON.parse(fixture) as Record<string, unknown>[])[0] };
+      if (createdAt === undefined) delete project.created_at;
+      else project.created_at = createdAt;
+      const [read] = await readNeonProjects(
+        options(executable, { FIXTURE_JSON: JSON.stringify([project]) }),
+        'org_fixture_01'
+      );
+      expect(read, String(createdAt)).toEqual({
+        id: 'project_fixture_01',
+        organizationId: 'org_fixture_01',
+        name: 'Community Fixture',
+        regionId: 'aws-us-east-2',
+        postgresVersion: 17,
+      });
+    }
+  });
+
+  it('reads a marker role from the pinned roles fixture', async () => {
+    const roles = await readFile(
+      new URL('./fixtures/neon/roles-marker.json', import.meta.url),
+      'utf8'
+    );
+    const topology = await fakeNeon(`
+case "$1 $2" in
+  "databases list") printf '%s' '[{"id":"db_fixture_01","branch_id":"br-fixture-01","name":"community","owner_name":"community_7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a"}]' ;;
+  "roles list") printf '%s' "$ROLES_JSON" ;;
+  *) exit 9 ;;
+esac
+`);
+    await expect(
+      readNeonBranchTopology(
+        options(topology, { ROLES_JSON: roles }),
+        'project_fixture_01',
+        'br-fixture-01'
+      )
+    ).resolves.toMatchObject({
+      databases: [{ ownerName: 'community_7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a' }],
+      roles: [{ branchId: 'br-fixture-01', name: 'community_7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a' }],
+    });
+  });
+
   it('rejects every mutation of trusted project identity fields', async () => {
     const fixture = JSON.parse(
       await readFile(new URL('./fixtures/neon/projects.json', import.meta.url), 'utf8')

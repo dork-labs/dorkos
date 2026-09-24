@@ -35,6 +35,8 @@ dorkos community deploy \
 
 Remove `--dry-run` to start setup. The command creates a recovery journal under your DorkOS data directory and prints its path. If setup stops, it keeps every confirmed resource and prints its owner, possible charges and stored data, read-only inspection commands, provider pages, and a complete command with `--resume <run-id>`. It never deletes paid resources automatically. Pressing Control-C stops the current bounded operation before returning and saves the last confirmed state. List saved work with `dorkos community deploy --list-incomplete`.
 
+Before it creates each resource, setup saves a random code in the recovery journal and attaches it to what it creates. The Fly app gets its own private network named `dorkos-` plus that code, and the Neon database role is named `community_` plus a code of its own. The codes are not secret. They let DorkOS check later that a leftover resource came from your launch and not from someone else. Because of the separate network, the app cannot reach your other Fly apps over Fly's private network. Community does not need to.
+
 Fly may require you to accept the Tigris terms separately. The command checks the current terms state and pauses for an explicit second confirmation before creating the bucket. Owner signup remains in Community's own browser page. After signup, the command applies a replacement Setup secret and asks you to confirm one post and one private attachment round trip.
 
 An exact DorkOS release is available to this command only after its Community image and signed release manifest finish publishing. A not-ready version stops before the resource consent step. Use `--version X.Y.Z` to request an exact version; there is no mutable-tag fallback.

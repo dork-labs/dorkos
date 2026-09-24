@@ -15,6 +15,15 @@ import { runProviderCommand } from './provider-process.js';
 const NeonOrganizationSchema = z
   .object({ id: ExternalIdentifierSchema, name: ExternalLabelSchema })
   .passthrough();
+// A missing or unreadable creation time reads as absent rather than failing the whole listing:
+// preflight never needs it, and a project whose time cannot be read can never be proved.
+const NeonCreatedAtSchema = z
+  .unknown()
+  .optional()
+  .transform((value) => {
+    const parsed = z.iso.datetime({ offset: true }).safeParse(value);
+    return parsed.success ? parsed.data : undefined;
+  });
 const NeonProjectSchema = z
   .object({
     id: ExternalIdentifierSchema,
@@ -22,6 +31,7 @@ const NeonProjectSchema = z
     name: ExternalLabelSchema,
     region_id: ExternalIdentifierSchema,
     pg_version: z.number().int().positive(),
+    created_at: NeonCreatedAtSchema,
   })
   .passthrough();
 const NeonBranchSchema = z
@@ -117,6 +127,8 @@ export interface NeonProject {
   regionId: string;
   /** PostgreSQL major version. */
   postgresVersion: number;
+  /** Creation time Neon reported; absent when it reported none or an unreadable one. */
+  createdAt?: string;
 }
 
 /** Non-secret Neon branch identity. */
@@ -301,6 +313,7 @@ export async function readNeonProjects(
     name: project.name,
     regionId: project.region_id,
     postgresVersion: project.pg_version,
+    ...(project.created_at === undefined ? {} : { createdAt: project.created_at }),
   }));
 }
 

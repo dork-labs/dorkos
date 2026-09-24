@@ -5,12 +5,14 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  FLY_APP_PROVENANCE_QUERY,
   FLY_TIGRIS_CREATE_MUTATION,
   FLY_TIGRIS_DELETE_MUTATION,
   FLY_TIGRIS_READ_QUERY,
   FLY_TIGRIS_TERMS_QUERY,
   FlyGraphqlContractError,
   createTigrisVariables,
+  parseFlyAppProvenanceResponse,
   parseTigrisCreateResponse,
   parseTigrisDeleteResponse,
   parseTigrisReadResponse,
@@ -193,6 +195,8 @@ describe('Fly Tigris GraphQL contract', () => {
 
   it('keeps checked-in provider fixtures free of credential shapes and terminal controls', async () => {
     for (const name of [
+      'app-provenance.json',
+      'app-provenance-missing.json',
       'tigris-terms.json',
       'tigris-create.json',
       'tigris-read.json',
@@ -204,5 +208,101 @@ describe('Fly Tigris GraphQL contract', () => {
         fileURLToPath(new URL(name, fixtureDirectory))
       );
     }
+  });
+});
+
+describe('Fly app provenance GraphQL contract', () => {
+  it('parses the app, its private network and what it holds from the pinned fixture', async () => {
+    expect(parseFlyAppProvenanceResponse(await fixture('app-provenance.json'))).toEqual({
+      id: 'community-fixture-app',
+      internalNumericId: '4817203',
+      name: 'community-fixture-app',
+      network: 'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
+      createdAt: '2026-09-23T10:31:07Z',
+      organizationSlug: 'fixture-org',
+      machineCount: 0,
+      volumeCount: 0,
+      ipAddressCount: 0,
+      certificateCount: 0,
+      secretNames: [],
+    });
+  });
+
+  it('reports an unknown app name as null without reading the error text', async () => {
+    expect(parseFlyAppProvenanceResponse(await fixture('app-provenance-missing.json'))).toBeNull();
+  });
+
+  // A malformed success must never read as provenance: dropping or renaming any field the proof
+  // or the "nothing was added" check depends on fails the whole read.
+  it('rejects every missing or renamed trusted provenance field', async () => {
+    const source = await fixture('app-provenance.json');
+    const paths = [
+      ['id'],
+      ['internalNumericId'],
+      ['name'],
+      ['network'],
+      ['createdAt'],
+      ['organization'],
+      ['organization', 'slug'],
+      ['machines', 'totalCount'],
+      ['volumes', 'totalCount'],
+      ['ipAddresses', 'totalCount'],
+      ['certificates', 'totalCount'],
+      ['secrets'],
+    ];
+    for (const mutation of mutateTrustedProviderFields(
+      source,
+      paths.map((path) => ['data', 'app', ...path])
+    )) {
+      expect(() => parseFlyAppProvenanceResponse(mutation.value), mutation.label).toThrow(
+        FlyGraphqlContractError
+      );
+    }
+  });
+
+  it('rejects secret values, unreadable times and a found app that carries errors', async () => {
+    const withValue = await fixture('app-provenance.json');
+    objectAt(withValue, 'data', 'app').secrets = [
+      { name: 'AWS_SECRET_ACCESS_KEY', value: 'CANARY' },
+    ];
+    expect(() => parseFlyAppProvenanceResponse(withValue)).toThrowError(
+      expect.objectContaining({
+        code: 'INVALID_RESPONSE',
+        message: expect.not.stringContaining('CANARY'),
+      })
+    );
+
+    const badTime = await fixture('app-provenance.json');
+    objectAt(badTime, 'data', 'app').createdAt = 'yesterday';
+    expect(() => parseFlyAppProvenanceResponse(badTime)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+
+    const partial = (await fixture('app-provenance.json')) as Record<string, unknown>;
+    partial.errors = [{ message: 'CANARY_PARTIAL' }];
+    expect(() => parseFlyAppProvenanceResponse(partial)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+
+    expect(() => parseFlyAppProvenanceResponse({ errors: [{ message: 'x' }] })).toThrowError(
+      expect.objectContaining({ code: 'INVALID_RESPONSE' })
+    );
+  });
+
+  it('keeps an empty or missing network as reported, so it can never match a marker', async () => {
+    for (const network of ['', null]) {
+      const source = await fixture('app-provenance.json');
+      objectAt(source, 'data', 'app').network = network;
+      expect(parseFlyAppProvenanceResponse(source)?.network).toBe(network);
+    }
+  });
+
+  it('pins a minimal read that selects secret names only', () => {
+    expect(FLY_APP_PROVENANCE_QUERY).toContain('query DorkosReadAppProvenance($name: String!)');
+    expect(FLY_APP_PROVENANCE_QUERY).toContain('app(name: $name)');
+    expect(FLY_APP_PROVENANCE_QUERY).toContain('secrets { name }');
+    expect(FLY_APP_PROVENANCE_QUERY).not.toMatch(
+      /\b(password|environment|ssoLink|metadata|value|digest)\b/u
+    );
   });
 });

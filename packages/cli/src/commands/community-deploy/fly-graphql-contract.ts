@@ -61,6 +61,37 @@ const DeleteEnvelopeSchema = z
   })
   .strict();
 
+const TotalCountSchema = z.object({ totalCount: z.number().int().nonnegative() }).strict();
+const AppProvenanceSchema = z
+  .object({
+    id: SafeIdentifierSchema,
+    internalNumericId: z.number().int().nonnegative(),
+    name: SafeIdentifierSchema,
+    // Compared exactly; any printable value, including the empty one, is kept as reported.
+    network: z
+      .string()
+      .max(256)
+      .regex(/^[\x21-\x7e]*$/u)
+      .nullable(),
+    createdAt: z.iso.datetime({ offset: true }),
+    organization: z.object({ slug: SafeIdentifierSchema }).strict(),
+    machines: TotalCountSchema,
+    volumes: TotalCountSchema,
+    ipAddresses: TotalCountSchema,
+    certificates: TotalCountSchema,
+    secrets: z.array(
+      z.object({ name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u) }).strict()
+    ),
+  })
+  .strict();
+const AppProvenanceEnvelopeSchema = z
+  .object({
+    data: z.object({ app: AppProvenanceSchema.nullable() }).strict(),
+    // Fly answers an unknown app name with `app: null` plus an error entry; its text is never read.
+    errors: z.array(z.unknown()).optional(),
+  })
+  .strict();
+
 const ExpectedBindingSchema = z
   .object({
     addOnId: SafeIdentifierSchema,
@@ -129,6 +160,29 @@ export const FLY_TIGRIS_READ_QUERY = `
   }
 `;
 
+/**
+ * Minimal read of one app's provenance by name. flyctl's own app reads never select `network`, and
+ * `apps list --json` always reports it as `""`, so this is the only read that can see a run's marker.
+ * `secrets` selects names only, never values.
+ */
+export const FLY_APP_PROVENANCE_QUERY = `
+  query DorkosReadAppProvenance($name: String!) {
+    app(name: $name) {
+      id
+      internalNumericId
+      name
+      network
+      createdAt
+      organization { slug }
+      machines { totalCount }
+      volumes { totalCount }
+      ipAddresses { totalCount }
+      certificates { totalCount }
+      secrets { name }
+    }
+  }
+`;
+
 /** Minimal deletion mutation used only after exact journal binding is reverified. */
 export const FLY_TIGRIS_DELETE_MUTATION = `
   mutation DorkosDeleteTigris($name: String!, $provider: String!) {
@@ -182,6 +236,32 @@ export interface TigrisAddOnIdentity {
   appName: string;
   /** Whether provider readback reports public access. */
   public: boolean;
+}
+
+/** Sanitized, non-secret provenance of one Fly app as the service reports it. */
+export interface FlyAppProvenance {
+  /** GraphQL app ID, which Fly sets to the app name. */
+  id: string;
+  /** Numeric app ID Fly issues at creation; never reused for a later app with the same name. */
+  internalNumericId: string;
+  /** Globally unique app name. */
+  name: string;
+  /** Private network name, or `null` when Fly reports none. */
+  network: string | null;
+  /** Creation time the service reported. */
+  createdAt: string;
+  /** Owning organization slug. */
+  organizationSlug: string;
+  /** Number of Machines in the app. */
+  machineCount: number;
+  /** Number of volumes in the app. */
+  volumeCount: number;
+  /** Number of IP addresses assigned to the app. */
+  ipAddressCount: number;
+  /** Number of certificates on the app. */
+  certificateCount: number;
+  /** Secret names on the app, without values. */
+  secretNames: string[];
 }
 
 /** Expected Tigris identity and binding selected in the immutable plan. */
@@ -261,6 +341,38 @@ export function parseTigrisReadResponse(response: unknown): TigrisAddOnIdentity 
   }
   if (parsed.data.node === null) throw new FlyGraphqlContractError('ADD_ON_MISSING');
   return sanitizeAddOn(parsed.data.node);
+}
+
+/**
+ * Parse one app provenance read without retaining GraphQL error text or response metadata.
+ *
+ * @param response - Decoded response held in the bounded sensitive sink.
+ * @returns The app's provenance, or `null` when Fly reports no app with that name.
+ */
+export function parseFlyAppProvenanceResponse(response: unknown): FlyAppProvenance | null {
+  let parsed: z.infer<typeof AppProvenanceEnvelopeSchema>;
+  try {
+    parsed = AppProvenanceEnvelopeSchema.parse(response);
+  } catch {
+    throw invalidResponse();
+  }
+  const app = parsed.data.app;
+  if (app === null) return null;
+  // A found app must arrive without errors; a partial success is never read as provenance.
+  if (parsed.errors !== undefined && parsed.errors.length > 0) throw invalidResponse();
+  return {
+    id: app.id,
+    internalNumericId: String(app.internalNumericId),
+    name: app.name,
+    network: app.network,
+    createdAt: app.createdAt,
+    organizationSlug: app.organization.slug,
+    machineCount: app.machines.totalCount,
+    volumeCount: app.volumes.totalCount,
+    ipAddressCount: app.ipAddresses.totalCount,
+    certificateCount: app.certificates.totalCount,
+    secretNames: app.secrets.map((secret) => secret.name),
+  };
 }
 
 /** Parse Tigris deletion acknowledgement and bind it to the exact expected name. */
