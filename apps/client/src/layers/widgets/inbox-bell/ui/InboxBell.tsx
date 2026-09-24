@@ -24,14 +24,7 @@ import {
   useScheduleApprovalCards,
 } from '@/layers/features/schedule-approval';
 import { InboxList } from '@/layers/features/inbox';
-import {
-  ApprovalList,
-  ApprovalsUnavailable,
-  StandingPermissionList,
-  StandingPermissionsUnavailable,
-  useApprovalCards,
-  useStandingPermissions,
-} from '@/layers/features/approvals';
+import { ApprovalList, ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
 import { usePinnedDrainBeat } from '../model/use-pinned-drain-beat';
 import { InboxBellPill, type InboxBellGlyph } from './InboxBellPill';
 
@@ -112,20 +105,6 @@ function waitingSummary(approvals: number, schedules: number, asks: number): str
 }
 
 /**
- * The pill's accessible name when nothing is waiting but trust is live.
- *
- * A different sentence, not a variation on the one above: nobody is blocked and
- * nothing needs answering. It reports a state a person chose and can end.
- *
- * @param count - How many standing permissions are live.
- */
-function trustedLabel(count: number): string {
-  return count === 1
-    ? '1 standing permission is live. Open to see it or end it.'
-    : `${count} standing permissions are live. Open to see them or end them.`;
-}
-
-/**
  * The pill's accessible name when the only news is unread history.
  *
  * @param count - How many notifications are unread.
@@ -165,8 +144,7 @@ interface PillState {
  * ## The pill says one thing at a time
  *
  * Amber means exactly one thing and keeps meaning it: something is blocked on
- * you. Unread history, live standing permissions and a failed permission read
- * are all neutral, because spending the alarm on news that is not urgent is how
+ * you. Unread history is neutral, because spending the alarm on news that is not urgent is how
  * a marker stops being read. When several are true at once the pill reports the
  * one with a clock on it, and the popover shows them all.
  *
@@ -232,11 +210,6 @@ export function InboxBell() {
   useAskShortcut();
   const trayRequest = useAskTrayRequest();
   const inboxRequest = useInboxRequest();
-  const {
-    permissions,
-    isError: permissionsUnreadable,
-    retry: retryPermissions,
-  } = useStandingPermissions();
   const { connectionState } = useEventStream();
   const [open, setOpen] = useState(false);
   // The slice the Activity list is showing. Set when another surface asked for
@@ -274,7 +247,6 @@ export function InboxBell() {
   // re-summing the three lengths itself — one variable, not two arithmetic
   // expressions that happen to agree today.
   const waitingCount = waitingItems.length;
-  const trustedCount = permissions.length;
   // A failed read while the whole link is down is not news about approvals — it
   // is the same outage the connection item already reports. Staying quiet keeps
   // one amber marker in the header meaning exactly one thing.
@@ -284,9 +256,7 @@ export function InboxBell() {
     waitingCount === 0 &&
     settling.length === 0 &&
     unreadCount === 0 &&
-    trustedCount === 0 &&
     !unreadable &&
-    !permissionsUnreadable &&
     // …unless somebody asked for the Inbox. `⌘⇧Y` on a quiet cockpit and "View
     // notifications" in a session's menu both set `open`, and a panel that
     // stayed unmounted because there was no news would make both of them do
@@ -312,9 +282,7 @@ export function InboxBell() {
     askCount: asks.length,
     settlingCount: settling.length,
     unreadable,
-    permissionsUnreadable,
     unreadCount,
-    trustedCount,
   });
 
   return (
@@ -494,29 +462,6 @@ export function InboxBell() {
                   <InboxList lens={lens} onOpened={() => setOpen(false)} />
                 </div>
               </div>
-
-              {/* A permission list that cannot be read is NOT the same as no
-                  permissions, and the difference is an agent still acting without
-                  asking under one the person can no longer end. */}
-              {permissionsUnreadable && (
-                <StandingPermissionsUnavailable onRetry={retryPermissions} />
-              )}
-
-              {/* Under everything else, never above it: something waiting on a
-                  person outranks something already decided. A permission a person
-                  cannot find is a dark pattern, and this is the surface they are
-                  most likely to be looking at when they wonder why nothing asked. */}
-              {trustedCount > 0 && (
-                <div>
-                  <h2 className="text-muted-foreground sr-only text-xs font-medium tracking-widest uppercase md:not-sr-only">
-                    Standing Permissions
-                  </h2>
-                  <p className="text-muted-foreground text-xs md:mt-1">
-                    These run without asking until the time runs out.
-                  </p>
-                  <StandingPermissionList permissions={permissions} className="mt-2" />
-                </div>
-              )}
             </div>
           </ResponsivePopoverContent>
         </ResponsivePopover>
@@ -526,12 +471,10 @@ export function InboxBell() {
 }
 
 /**
- * Which of the six things the pill is saying this frame.
+ * Which of the four things the pill is saying this frame.
  *
  * Ordered by urgency, and the order is the contract: something blocked, then a
- * receipt still being said, then a check that failed (approvals before
- * permissions, because a failed approval read may be hiding a blocked agent),
- * then unread history, then live trust. Everything below the first true branch
+ * receipt still being said, then a check that failed, then unread history. Everything below the first true branch
  * is still in the panel — the pill only decides what the header says.
  *
  * **`waitingCount` is a parameter, not a re-derivation.** The badge paints
@@ -542,7 +485,7 @@ export function InboxBell() {
  * the shape of drift this file exists to close off (spec
  * `schedule-approval-experience` §C4 review).
  *
- * @param counts - Every number the pill could report, plus the two read failures.
+ * @param counts - Every number the pill could report, plus the read failure.
  */
 function resolvePill(counts: {
   waitingCount: number;
@@ -551,9 +494,7 @@ function resolvePill(counts: {
   askCount: number;
   settlingCount: number;
   unreadable: boolean;
-  permissionsUnreadable: boolean;
   unreadCount: number;
-  trustedCount: number;
 }): PillState {
   if (counts.waitingCount > 0) {
     return {
@@ -582,16 +523,6 @@ function resolvePill(counts: {
       label: 'DorkOS could not check for approvals. Open for details.',
     };
   }
-  if (counts.permissionsUnreadable) {
-    // Not the check-mark shield: that icon says "verified", the opposite of what
-    // a failed read means.
-    return {
-      tone: 'neutral',
-      glyph: 'untrusted',
-      text: 'can’t check permissions',
-      label: 'DorkOS could not check which standing permissions are live. Open for details.',
-    };
-  }
   if (counts.unreadCount > 0) {
     return {
       tone: 'neutral',
@@ -601,17 +532,8 @@ function resolvePill(counts: {
       label: unreadLabel(counts.unreadCount),
     };
   }
-  if (counts.trustedCount > 0) {
-    return {
-      tone: 'neutral',
-      glyph: 'trusted',
-      count: counts.trustedCount,
-      text: 'trusted',
-      label: trustedLabel(counts.trustedCount),
-    };
-  }
   // Nothing is true, and the bell is only on screen because somebody asked for
-  // it. No number — "0 trusted" is a sentence about nothing.
+  // it. No number — "0 unread" is a sentence about nothing.
   return {
     tone: 'neutral',
     glyph: 'unread',

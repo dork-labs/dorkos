@@ -13,7 +13,8 @@ import {
   useSetPermission,
   type PermissionScope,
 } from '@/layers/entities/permissions';
-import { Skeleton } from '@/layers/shared/ui';
+import { RotateCcw } from 'lucide-react';
+import { Button, Skeleton } from '@/layers/shared/ui';
 import { STATE_LABEL, defaultSourceText } from '../lib/permission-copy';
 import { PermissionRow } from './PermissionRow';
 import { ExceptionsChip } from './ExceptionsChip';
@@ -96,6 +97,51 @@ function DefaultAreaRow({
   );
 }
 
+/**
+ * The single actions this agent is set differently for inside one area, each
+ * with its own Reset. An Always allow from a request card lands here (spec
+ * `agent-permissions` D7), so a person can find it and take it back where the
+ * rest of the agent's permissions are, not only in the Settings exceptions list.
+ */
+function ActionExceptions({
+  agentId,
+  area,
+}: {
+  agentId: string;
+  area: AgentPermissionsResponse['areas'][number];
+}) {
+  const write = useSetPermission({ kind: 'agent', agentId });
+  const own = area.actions.filter((action) => action.resolved.source === 'agent-action');
+  if (own.length === 0) return null;
+  return (
+    <ul className="space-y-1" data-testid={`permission-action-exceptions-${area.id}`}>
+      {own.map((action) => (
+        <li key={action.id} className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-muted-foreground min-w-0">
+            Except {action.title}: {STATE_LABEL[action.resolved.state]}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={write.isPending}
+            aria-label={`Put ${action.title} back to ${area.label}`}
+            onClick={() =>
+              write.mutate(
+                { kind: 'patch', actions: { [action.id]: null }, surface: 'agent-page' },
+                { onError: reportFailure }
+              )
+            }
+          >
+            <RotateCcw className="size-3.5" aria-hidden />
+            Reset
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** One agent-layer row: the agent's own state, or the default it follows. */
 function AgentAreaRow({
   agentId,
@@ -134,6 +180,7 @@ function AgentAreaRow({
       }}
       onReset={() => save(null)}
       disabled={write.isPending}
+      footer={<ActionExceptions agentId={agentId} area={area} />}
     />
   );
 }

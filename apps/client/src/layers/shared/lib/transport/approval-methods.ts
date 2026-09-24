@@ -8,10 +8,9 @@
  * @module shared/lib/transport/approval-methods
  */
 import type {
+  ApprovalAnswer,
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
-  RevokeStandingPermissionResponse,
-  StandingPermissionsResponse,
 } from '@dorkos/shared/approval-schemas';
 import { fetchJSON } from './http-client';
 
@@ -28,13 +27,13 @@ export function createApprovalMethods(baseUrl: string) {
 
     grantApproval(
       approvalId: string,
-      options?: { standing?: boolean }
+      options?: { answer?: ApprovalAnswer }
     ): Promise<ApprovalDecisionResponse> {
       return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/grant`, {
         method: 'POST',
-        // Sent only when asked for. An empty body is the plain one-time yes, and
+        // Sent only for Always allow. An empty body is the plain one-time yes, and
         // Express 5 reads it as `undefined`, which the route already handles.
-        ...(options?.standing ? { body: JSON.stringify({ standing: true }) } : {}),
+        ...(options?.answer === 'always' ? { body: JSON.stringify({ answer: 'always' }) } : {}),
       });
     },
 
@@ -42,16 +41,6 @@ export function createApprovalMethods(baseUrl: string) {
       return fetchJSON(baseUrl, `/approvals/${encodeURIComponent(approvalId)}/deny`, {
         method: 'POST',
         body: JSON.stringify(reason ? { reason } : {}),
-      });
-    },
-
-    listStandingPermissions(): Promise<StandingPermissionsResponse> {
-      return fetchJSON(baseUrl, '/approvals/grants');
-    },
-
-    revokeStandingPermission(grantId: string): Promise<RevokeStandingPermissionResponse> {
-      return fetchJSON(baseUrl, `/approvals/grants/${encodeURIComponent(grantId)}`, {
-        method: 'DELETE',
       });
     },
   };

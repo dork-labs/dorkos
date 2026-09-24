@@ -56,6 +56,8 @@ function approval(overrides: Partial<PendingApproval> = {}): PendingApproval {
     summary: 'Write src/index.ts',
     requestedBy: 'alpha',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date(NOW - 9 * MINUTE).toISOString(),
     expiresAt: new Date(NOW + 60 * MINUTE).toISOString(),
     ...overrides,

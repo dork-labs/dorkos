@@ -39,6 +39,8 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: 'dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 8 * 60_000).toISOString(),
     ...overrides,
@@ -172,7 +174,7 @@ describe('useNowAttentionSlot — the settling hold', () => {
     // The drain has LANDED, not merely been asked for.
     await screen.findByText('pending:0');
 
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     expect(screen.queryByTestId('no-slot')).not.toBeInTheDocument();
   });
 
@@ -212,7 +214,7 @@ describe('useNowAttentionSlot — the settling hold', () => {
     await screen.findByText('pending:0');
 
     // The receipt is still drawn…
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     // …and it covers nothing.
     expect(covered.at(-1)).toEqual([]);
   });

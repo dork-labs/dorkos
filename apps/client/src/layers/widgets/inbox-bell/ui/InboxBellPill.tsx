@@ -9,7 +9,7 @@
  */
 import type { ComponentProps } from 'react';
 import { motion } from 'motion/react';
-import { Bell, ShieldAlert, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { Bell, TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 
 /**
@@ -22,9 +22,8 @@ export const DISPLAY_CAP = 9;
  * Which silhouette the pill wears.
  *
  * A person reads this pill by shape far more often than by its accessible name,
- * so the four states that mean genuinely different things get genuinely
- * different marks: something is blocked, something happened, trust is live,
- * trust could not be checked.
+ * so the two states that mean genuinely different things get genuinely
+ * different marks: something is blocked, and something happened.
  *
  * A record rather than a function, because the pill looks the icon up during
  * render (`react-hooks/static-components`).
@@ -32,8 +31,6 @@ export const DISPLAY_CAP = 9;
 const PILL_ICONS = {
   waiting: TriangleAlert,
   unread: Bell,
-  trusted: ShieldCheck,
-  untrusted: ShieldAlert,
 } as const;
 
 /** Which silhouette the pill wears. */

@@ -305,4 +305,48 @@ describe('PermissionList (agent scope)', () => {
     expect(await screen.findByText('Everyone else: Blocked')).toBeInTheDocument();
     expect(screen.queryByText(/Changed outside DorkOS/)).not.toBeInTheDocument();
   });
+
+  it('lists an Always allow under its area, with a Reset that removes only that action', async () => {
+    const { transport, wrapper } = wrap();
+    const base = rooms(null);
+    const alwaysAllowed: AgentPermissionsResponse = {
+      ...base,
+      overrides: { actions: { 'rooms.create': 'allowed' } },
+      areas: [
+        {
+          ...base.areas[0]!,
+          resolved: { state: 'ask', source: 'preset', layer: 'default' },
+          inherited: { state: 'ask', source: 'preset', layer: 'default' },
+          actions: [
+            {
+              id: 'rooms.create',
+              title: 'Open a room',
+              tier: 'act',
+              resolved: { area: 'rooms', state: 'allowed', source: 'agent-action', layer: 'agent' },
+            },
+          ],
+        },
+      ],
+    };
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue(alwaysAllowed);
+    render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
+
+    expect(await screen.findByText('Except Open a room: Allowed')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Put Open a room back to Rooms' }));
+    await waitFor(() =>
+      expect(transport.patchAgentPermissions).toHaveBeenCalledWith('a1', {
+        actions: { 'rooms.create': null },
+        surface: 'agent-page',
+      })
+    );
+  });
+
+  it('lists nothing extra when the agent has no action of its own', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue(rooms(null));
+    render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
+
+    await screen.findByText('Everyone else: Blocked');
+    expect(screen.queryByTestId('permission-action-exceptions-rooms')).not.toBeInTheDocument();
+  });
 });

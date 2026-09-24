@@ -34,10 +34,9 @@ import {
   type MemoryProviderStatus,
 } from '@dorkos/shared/memory-provider';
 import type {
+  ApprovalAnswer,
   ApprovalDecisionResponse,
   PendingApprovalsResponse,
-  RevokeStandingPermissionResponse,
-  StandingPermissionsResponse,
 } from '@dorkos/shared/approval-schemas';
 import type {
   DeletePushSubscriptionResponse,
@@ -562,20 +561,12 @@ export const approvalStubs = {
 
   async grantApproval(
     _approvalId: string,
-    _options?: { standing?: boolean }
+    _options?: { answer?: ApprovalAnswer }
   ): Promise<ApprovalDecisionResponse> {
     throw new Error('Approvals are not supported in Obsidian plugin mode.');
   },
 
   async denyApproval(_approvalId: string, _reason?: string): Promise<ApprovalDecisionResponse> {
-    throw new Error('Approvals are not supported in Obsidian plugin mode.');
-  },
-
-  async listStandingPermissions(): Promise<StandingPermissionsResponse> {
-    return { grants: [] };
-  },
-
-  async revokeStandingPermission(_grantId: string): Promise<RevokeStandingPermissionResponse> {
     throw new Error('Approvals are not supported in Obsidian plugin mode.');
   },
 };

@@ -39,6 +39,9 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
       'irreversible',
       'consent',
       'waiting on you',
+      'always allow',
+      'request card',
+      'request permission',
     ],
   },
   {
@@ -47,20 +50,6 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Approvals',
     keywords: ['approval', 'queue', 'stack', 'cap', 'pending', 'waiting on you'],
-  },
-  {
-    id: 'standingpermissionlist',
-    title: 'StandingPermissionList',
-    page: 'home-inbox',
-    category: 'Approvals',
-    keywords: [
-      'approval',
-      'standing permission',
-      'stop asking',
-      'trust',
-      'revoke',
-      'stop trusting',
-    ],
   },
   {
     id: 'approvalsunavailable',
