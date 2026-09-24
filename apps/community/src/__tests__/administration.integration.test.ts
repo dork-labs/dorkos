@@ -641,6 +641,15 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   });
   expect(created.status).toBe(201);
   const channel = (await created.json()).channel.id;
+  // A private channel refuses a non-member with the same 404 as a missing one,
+  // so it would hide a missing tenant check. Every channel probe also runs
+  // against this public one, which a non-member of B could otherwise read.
+  const createdPublic = await jsonRequest(`${other}/channels`, 'POST', {
+    name: 'Tenant isolation public',
+    visibility: 'public',
+  });
+  expect(createdPublic.status).toBe(201);
+  const publicChannel = (await createdPublic.json()).channel.id;
   const posted = await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
     text: 'Only in the other tenant',
     idempotencyKey: 'isolation-positive-entry',
@@ -767,6 +776,10 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     `/channels/${channel}/entries`,
     `/channels/${channel}/members`,
     `/channels/${channel}/read-cursor`,
+    `/channels/${publicChannel}`,
+    `/channels/${publicChannel}/entries`,
+    `/channels/${publicChannel}/members`,
+    `/channels/${publicChannel}/read-cursor`,
     `/exports/${archive}`,
   ]) {
     const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
@@ -814,6 +827,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     archive,
     admission: foreignAdmission,
   };
+  const foreignPublic: Ids = { ...foreign, channel: publicChannel };
   // The same shapes with ids that exist nowhere: a foreign id must be refused
   // exactly as a nonexistent one is, so the response reveals nothing.
   const missing: Ids = {
@@ -1114,12 +1128,36 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     return { status: response.status, body: await response.text() };
   }
 
+  // A probe reads the channel id exactly when swapping it changes the call.
+  const variants = probes.flatMap((probe, index) => {
+    const label = `${probe.route} #${index}`;
+    const readsChannel =
+      JSON.stringify(probe.call(foreign, 'shape')) !==
+      JSON.stringify(probe.call(foreignPublic, 'shape'));
+    return [
+      { probe, label, ids: foreign, attempt: `foreign-${index}` },
+      ...(readsChannel
+        ? [
+            {
+              probe,
+              label: `${label} (public channel)`,
+              ids: foreignPublic,
+              attempt: `foreign-public-${index}`,
+            },
+          ]
+        : []),
+    ];
+  });
+  // Guards the detection itself: every probe that names the channel gets the public run.
+  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(
+    probes.filter((probe) => probe.call.toString().includes('x.channel')).length
+  );
+
   const before = await isolationSnapshot([communityId, otherId]);
   let executed = 0;
-  for (const [index, probe] of probes.entries()) {
-    const label = `${probe.route} #${index}`;
-    const refused = await send(probe, foreign, `foreign-${index}`);
-    const unknown = await send(probe, missing, `missing-${index}`);
+  for (const { probe, label, ids, attempt } of variants) {
+    const refused = await send(probe, ids, attempt);
+    const unknown = await send(probe, missing, `missing-${attempt}`);
     expect(refused.status, `${label} must be refused`).toBeGreaterThanOrEqual(400);
     // A malformed, unauthenticated or cross-site probe would be refused before
     // any lookup, and would then match the nonexistent id for the wrong reason.
@@ -1131,7 +1169,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     expect(refused, `${label} must match a nonexistent id`).toEqual(unknown);
     executed++;
   }
-  expect(executed).toBe(probes.length);
+  expect(executed).toBe(variants.length);
   expect(await isolationSnapshot([communityId, otherId])).toEqual(before);
 
   // POST /agents looks up the caller's existing agent by its local id, then
