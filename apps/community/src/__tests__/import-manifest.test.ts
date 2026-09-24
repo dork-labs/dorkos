@@ -6,6 +6,7 @@ import {
   checkManifest,
   importedChannel,
   parseManifest,
+  shorten,
   renumberedSequences,
 } from '../imports/manifest.js';
 
@@ -325,6 +326,20 @@ describe('checkManifest', () => {
       1, 2, 1,
     ]);
     expect(failureOf(() => Object.assign(m, {}))).toBeNull();
+  });
+
+  // Purpose: the cap is measured as the app measures names (UTF-16 `.length`), and a cut
+  // never splits an emoji, so an emoji-heavy name ends at most 80 units long and still valid.
+  it('shortens by UTF-16 length without splitting an emoji', () => {
+    const emoji = '👋'.repeat(50);
+    const cut = shorten(emoji, 80);
+    expect(cut.length).toBeLessThanOrEqual(80);
+    expect(cut).toBe(`${'👋'.repeat(39)}…`);
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(cut)).toBe(false);
+    const odd = `a${'👋'.repeat(50)}`;
+    expect(shorten(odd, 80)).toBe(`a${'👋'.repeat(39)}…`);
+    expect(shorten(odd, 80).length).toBe(80);
+    expect(shorten('n'.repeat(80), 80)).toBe('n'.repeat(80));
   });
 
   // Purpose: a file larger than this host's COMMUNITY_ATTACHMENT_BYTES is a size refusal.
