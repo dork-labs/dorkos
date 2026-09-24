@@ -58,6 +58,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   channelAgents: '/api/v1/channels/:id/agents',
   entries: '/api/v1/channels/:id/entries',
   threads: '/api/v1/channels/:id/threads',
+  entry: '/api/v1/entries/:id',
   channelAttachments: '/api/v1/channels/:id/attachments',
   channelReadCursor: '/api/v1/channels/:id/read-cursor',
   channelEvents: '/api/v1/channels/:id/events',
@@ -383,6 +384,13 @@ export const CommunityWireEntryPostResponseSchema = z
   .refine(({ entry, cursor }) => entry.cursor === cursor, {
     message: 'Receipt cursor must resume after its entry',
   });
+/**
+ * The entry as it stands after a message or one of its files was removed: its tombstone, or the
+ * message without that file. No cursor: a removal does not move the room.
+ */
+export const CommunityWireEntryRemoveResponseSchema = z.strictObject({
+  entry: CommunityWireEntrySchema,
+});
 /** Oldest-first page. `nextCursor` is a scoped PAGE cursor, separate from each entry's room-event resume cursor. */
 export const CommunityWireEntryPageSchema = z.strictObject({
   entries: z.array(CommunityWireEntrySchema).max(100),

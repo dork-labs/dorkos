@@ -1766,6 +1766,10 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /attention': "the caller's own unread counts",
   'POST /channels/:id/attachments': 'ordinary upload',
   'GET /attachments/:id': 'ordinary reading',
+  'DELETE /entries/:entryId':
+    "the caller's own message, or one ranked below them; content-removal.integration.test.ts",
+  'DELETE /attachments/:attachmentId':
+    "the caller's own file, or one ranked below them; content-removal.integration.test.ts",
   'GET /agents': "the caller's own agents",
   'POST /agents': 'the caller enrolls their own agent',
   'POST /agents/recover': "the caller recovers their own agent's credential",

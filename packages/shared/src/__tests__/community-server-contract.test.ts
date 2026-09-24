@@ -16,6 +16,7 @@ import {
   CommunityWireEntryPostRequestSchema,
   CommunityWireEntryPostResponseSchema,
   CommunityWireEntryPageSchema,
+  CommunityWireEntryRemoveResponseSchema,
   CommunityWireErrorSchema,
   CommunityWireInviteListResponseSchema,
   CommunityWireInvitePreflightResponseSchema,
@@ -224,6 +225,12 @@ describe('community server port additions', () => {
     expect(CommunityWireEntryPostResponseSchema.safeParse({ entry, cursor: 'wrong' }).success).toBe(
       false
     );
+    // A removal answers with the entry alone; a receipt cursor is not part of it.
+    expect(CommunityWireEntryRemoveResponseSchema.safeParse({ entry }).success).toBe(true);
+    expect(
+      CommunityWireEntryRemoveResponseSchema.safeParse({ entry, cursor: entry.cursor }).success
+    ).toBe(false);
+    expect(COMMUNITY_API_V1_ROUTES.entry).toBe('/api/v1/entries/:id');
     expect(
       CommunityWireEntryPageSchema.safeParse({ entries: [entry], nextCursor: 'page-only-cursor' })
         .success
