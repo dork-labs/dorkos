@@ -1,0 +1,114 @@
+{
+  "spec": "specs/marketplace-update-disclosure-binding/02-specification.md",
+  "slug": "marketplace-update-disclosure-binding",
+  "generatedAt": "2026-09-24T11:45:23+00:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-24",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 — Bound applies and activation consent",
+      "subject": "[marketplace-update-disclosure-binding] [P1] Move DisclosedEffects to the shared wire and make every check disclose",
+      "description": "Move the DisclosedEffects types to @dorkos/shared/marketplace-schemas (server disclosed-effects.ts uses them); add InstallationUpdateCheck.disclosed and MarketplacePackageDetail.disclosed; checkInstalledUpdates plans with disclose (spec D1). Tests: GET /updates carries disclosed; an unreadable new version is unknown.",
+      "activeForm": "Making every check disclose",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 — Bound applies and activation consent",
+      "subject": "[marketplace-update-disclosure-binding] [P1] Bind POST /updates to the targets a person was shown; retire the unbound applies",
+      "description": "New strict body {apply, projectPath?, targets[{installPath, latestVersion, disclosed}], confirmationToken?}; gate compares recomputed updates to targets (409 disclosure_changed), trusted callers proceed, agents get the ConfirmationProvider card (202/403); delete applyInstalledUpdates and UpdateFlow.run apply; per-package route strict and advisory (spec D2). Exploit tests: agent never applies without a granted card; stale disclosure is 409 with installer untouched; per-package apply is 400.",
+      "activeForm": "Binding the HTTP apply",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 — Bound applies and activation consent",
+      "subject": "[marketplace-update-disclosure-binding] [P1] Gate global activation on consent for what a plugin runs",
+      "description": "global-plugin-consent.ts (readActivationEffects via readRunnableDeclarations, runsOnItsOwn, globalActivationEntry, partitionGlobalPlugins); refreshActivatedPlugins activates only consented packages (spec D3). Tests: unapproved hook/MCP plugin withheld, approved loads, edited-on-disk withheld again, runs-nothing loads, unreadable withholds, unreadable config withholds, refused wins over approved; parity test through the real installer.",
+      "activeForm": "Gating global activation",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "P1 — Bound applies and activation consent",
+      "subject": "[marketplace-update-disclosure-binding] [P1] Record consent where a person approved, and ask about withheld global plugins",
+      "description": "Record on trusted HTTP apply/install, granted HTTP/MCP cards (never preApproved), before onPluginsChanged (spec D4); askAboutWithheldGlobalPlugins card at boot and after each change with grant/deny/expiry handling (spec D5); capability descriptor wired in index.ts.",
+      "activeForm": "Recording consent and asking",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "phaseName": "P1 — Bound applies and activation consent",
+      "subject": "[marketplace-update-disclosure-binding] [P1] Show each update's disclosure in ConfirmUpdatesDialog and bind the app's applies and installs",
+      "description": "Dialog lists every program verbatim with when it starts; row Update opens the dialog when the new version runs something; targets carry latestVersion + disclosed; 409 refreshes the check and explains; install dialog sends approvedDisclosure (spec D6). Screenshots at desktop and mobile width.",
+      "activeForm": "Showing disclosures in the app",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "phaseName": "P1 — Bound applies and activation consent",
+      "subject": "[marketplace-update-disclosure-binding] [P1] CLI parity: update --apply shows, confirms and binds; install sends its disclosure",
+      "description": "dorkos update [name] --apply prints programs, prompts unless --yes, sends targets, handles 202 (--approval) and 409; install sends approvedDisclosure; harness hooks --list names global entries (spec D7).",
+      "activeForm": "Bringing the CLI along",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.7",
+      "phase": 1,
+      "phaseName": "P1 — Bound applies and activation consent",
+      "subject": "[marketplace-update-disclosure-binding] [P1] Docs, OpenAPI, changelog",
+      "description": "OpenAPI registry for changed bodies/responses; docs marketplace updates page; contributing/marketplace-installs.md; one changelog fragment.",
+      "activeForm": "Writing the docs",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.5",
+        "1.6"
+      ],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

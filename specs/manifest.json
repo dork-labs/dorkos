@@ -9,6 +9,15 @@
       "status": "specified"
     },
     {
+      "id": "260924-114458",
+      "slug": "marketplace-update-disclosure-binding",
+      "title": "Updates and global plugins run only what a person approved",
+      "created": "2026-09-24",
+      "status": "specified",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2306"
+    },
+    {
       "id": "260923-144507",
       "slug": "shared-design-system",
       "title": "One design system across DorkOS surfaces",
