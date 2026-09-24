@@ -61,6 +61,7 @@ import type { ScheduleBlock, SkillFrontmatter, TaskDefinition } from '@dorkos/sk
 import { parseSkillFile, type ParsedSkill } from '@dorkos/skills/parser';
 import { scanSkillDirectory } from '@dorkos/skills/scanner';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { describeScheduleProblem } from './cron-validation.js';
@@ -303,7 +304,9 @@ async function scanSymlinkedSkills<T>(
     if (isInstallSiblingName(entry.name)) continue; // a marketplace install's own copy (DOR-2273)
     const filePath = path.join(dir, entry.name, SKILL_FILENAME);
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      // Follows the link on purpose (a linked skill root), bounded like every
+      // read of installed package content (DOR-2321).
+      const content = await readTextFileWithin(filePath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
       found.push({
         filePath,
         result: parseSkillFile(filePath, content, schema, { requireNameMatch: false }),

@@ -51,6 +51,11 @@ import { execFile } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import {
+  CLONE_SIZE_LIMITS,
+  PackageTooLargeError,
+  measurePackageTree,
+} from '@dorkos/marketplace/package-size';
 import { hardenedGitEnv } from '../../../lib/git-safety.js';
 import {
   gitHubAuthConfig,
@@ -239,26 +244,50 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
   const git: GitRunner = (args) => runGit(args, req.destDir, GIT_FETCH_TIMEOUT_MS, auth.config);
 
   try {
-    if (req.subpath !== '') {
-      // A subpath is first tried as a blob-filtered partial clone, which
-      // downloads only the package's own files. It is an optimisation, so ANY
-      // failure of it starts over once with the full fetch below: a server
-      // that refuses unadvertised objects refuses the lazy blob requests
-      // checkout makes, and git words that differently by version ("could not
-      // fetch … from promisor remote", "bad pack header" on 2.26, a silent
-      // "invalid object" on 2.30–2.36). A real failure fails again, unfiltered,
-      // and is reported from there.
-      try {
-        return await attempt(git, req, auth.url, true);
-      } catch {
-        await emptyDir(req.destDir);
-      }
+    const commit = await fetchCommit(git, req, auth.url);
+    // Bound what arrived before anything reads it (DOR-2321). Every git step
+    // is already time-limited and shallow where git allows; this catches a
+    // repository that is simply too large, history included.
+    try {
+      await measurePackageTree(req.destDir, CLONE_SIZE_LIMITS);
+    } catch (err) {
+      if (!(err instanceof PackageTooLargeError)) throw err;
+      await emptyDir(req.destDir);
+      throw new GitFetchError(req.cloneUrl, err.message);
     }
-    return await attempt(git, req, auth.url, false);
+    return commit;
   } catch (err) {
-    if (err instanceof GitCommitNotFoundError) throw err;
+    if (err instanceof GitCommitNotFoundError || err instanceof GitFetchError) throw err;
     throw new GitFetchError(req.cloneUrl, reasonOf(err));
   }
+}
+
+/**
+ * Fetch and check out the commit, with the partial-clone optimisation and its
+ * one fallback. See {@link fetchTree}.
+ *
+ * @param git - Runs git in `req.destDir` with the remote's auth.
+ * @param req - The remote, commit, optional refname, subpath and destination.
+ * @param remoteUrl - The remote URL with any auth applied.
+ * @returns The full commit id of the checkout.
+ */
+async function fetchCommit(git: GitRunner, req: TreeRequest, remoteUrl: string): Promise<string> {
+  if (req.subpath !== '') {
+    // A subpath is first tried as a blob-filtered partial clone, which
+    // downloads only the package's own files. It is an optimisation, so ANY
+    // failure of it starts over once with the full fetch below: a server
+    // that refuses unadvertised objects refuses the lazy blob requests
+    // checkout makes, and git words that differently by version ("could not
+    // fetch … from promisor remote", "bad pack header" on 2.26, a silent
+    // "invalid object" on 2.30–2.36). A real failure fails again, unfiltered,
+    // and is reported from there.
+    try {
+      return await attempt(git, req, remoteUrl, true);
+    } catch {
+      await emptyDir(req.destDir);
+    }
+  }
+  return await attempt(git, req, remoteUrl, false);
 }
 
 /**

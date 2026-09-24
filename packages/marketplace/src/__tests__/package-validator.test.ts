@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { PACKAGE_TEXT_MAX_BYTES } from '@dorkos/shared/bounded-read';
+import { PACKAGE_SIZE_LIMITS } from '../package-size.js';
 import { readDeclaredVersion, validatePackage } from '../package-validator.js';
 import {
   AGENT_MANIFEST_PATH,
@@ -1197,5 +1198,38 @@ describe('symbolic links in a package (DOR-2319)', () => {
         "skills/neon-postgres is a shortcut to a folder outside the package, so it won't be installed.",
       path: 'skills/neon-postgres',
     });
+  });
+});
+
+describe('package size (DOR-2321)', () => {
+  // Purpose: a package larger than DorkOS installs is refused by the validator,
+  // so the install preview says so before anything is copied.
+  it('refuses a package with a file over the per-file limit', async () => {
+    const dir = await makeTempDir();
+    try {
+      await writeJson(path.join(dir, '.dork', 'manifest.json'), {
+        schemaVersion: 1,
+        name: path.basename(dir),
+        version: '1.0.0',
+        type: 'skill-pack',
+        description: 'x',
+        license: 'MIT',
+        tags: [],
+        layers: ['skills'],
+      });
+      await writeText(path.join(dir, 'assets', 'big.bin'), '');
+      await fs.truncate(path.join(dir, 'assets', 'big.bin'), PACKAGE_SIZE_LIMITS.maxFileBytes + 1);
+      const result = await validatePackage(dir);
+      expect(result.ok).toBe(false);
+      expect(result.issues).toContainEqual({
+        level: 'error',
+        code: 'PACKAGE_TOO_LARGE',
+        message:
+          'assets/big.bin is larger than 50 MB, which is more than DorkOS installs from one file.',
+        path: 'assets/big.bin',
+      });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

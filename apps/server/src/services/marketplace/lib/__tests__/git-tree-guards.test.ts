@@ -58,6 +58,13 @@ vi.mock('node:child_process', async () => {
 });
 
 const resolveGitAuth = vi.fn(() => 'ghp_secret');
+// The git steps are faked and never write a tree, so the size check after the
+// fetch has nothing to measure; it has its own test (git-tree-size.test.ts).
+vi.mock('@dorkos/marketplace/package-size', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/marketplace/package-size')>()),
+  measurePackageTree: vi.fn().mockResolvedValue({ files: 0, bytes: 0 }),
+}));
+
 vi.mock('../../../core/template-downloader.js', async () => {
   const actual = await vi.importActual<typeof import('../../../core/template-downloader.js')>(
     '../../../core/template-downloader.js'

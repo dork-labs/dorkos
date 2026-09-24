@@ -36,6 +36,7 @@ import {
   readPackageFileWithin,
 } from '@dorkos/shared/bounded-read';
 import { describePackageLink, findPackageLinks } from './package-links.js';
+import { PackageTooLargeError, measurePackageTree } from './package-size.js';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
@@ -324,6 +325,21 @@ async function validatePackageFiles(
   // version the tree states. The update check relies on that for trees that
   // do not validate.
   const declaredVersion = await readDeclaredVersion(packagePath);
+
+  // 0. The package is not larger than DorkOS installs (DOR-2321). First, so
+  //    an enormous tree is refused before anything else walks it.
+  try {
+    await measurePackageTree(packagePath);
+  } catch (err) {
+    if (!(err instanceof PackageTooLargeError)) throw err;
+    issues.push({
+      level: 'error',
+      code: 'PACKAGE_TOO_LARGE',
+      message: err.message,
+      ...(err.path !== undefined && { path: err.path }),
+    });
+    return { ok: false, issues, declaredVersion };
+  }
 
   // 1. Manifest existence — prefer .dork/manifest.json, fall back to
   //    synthesizing from .claude-plugin/plugin.json for CC-only packages.

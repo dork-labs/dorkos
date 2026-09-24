@@ -26,12 +26,12 @@
  *
  * @module services/core/mcp-resources/skill-resources
  */
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { scanSkillDirs, AGENTS_SKILLS_DIR } from '@dorkos/harness/scan';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import {
   SkillFrontmatterSchema,
   SKILL_FILENAME,
@@ -95,7 +95,8 @@ async function listWorkspaceSkills(cwd: string): Promise<ParsedSkill<SkillFrontm
   })) {
     const filePath = join(skillsRoot, entry.name, SKILL_FILENAME);
     try {
-      const content = await readFile(filePath, 'utf-8');
+      // Bounded like every read of installed package content (DOR-2321).
+      const content = await readTextFileWithin(filePath, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
       // Consumption path: tolerate a frontmatter name that differs from the
       // directory name — projected plugin skills are namespaced `<pkg>__<name>`
       // and third-party CC skills legitimately diverge (DOR-263).

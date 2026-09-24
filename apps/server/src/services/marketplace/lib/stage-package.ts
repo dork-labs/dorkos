@@ -45,6 +45,7 @@ import { cp, lstat } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { isReservedPackagePath } from '@dorkos/marketplace';
+import { measurePackageTree } from '@dorkos/marketplace/package-size';
 import { PACKAGE_NPMRC } from './npm-dependencies.js';
 
 /**
@@ -63,15 +64,22 @@ import { PACKAGE_NPMRC } from './npm-dependencies.js';
  * config when it runs in this directory. A copy nested inside the package is
  * inert content and is left alone, exactly as any other file would be.
  *
+ * The tree is measured first and refused past the package size limits
+ * (DOR-2321), so an oversized package is never copied. Validation checks the
+ * same limits; this is the backstop for the paths that stage without it (the
+ * legacy-record rebuild, a Shape fork).
+ *
  * @param source - Absolute path to the validated package source directory.
  * @param dest - Absolute path to the staging directory to populate.
  * @param logger - Logger used to warn about each stripped entry.
+ * @throws {PackageTooLargeError} When the package passes a size limit.
  */
 export async function stagePackageContents(
   source: string,
   dest: string,
   logger: Logger
 ): Promise<void> {
+  await measurePackageTree(source);
   const rootNpmrc = path.join(source, PACKAGE_NPMRC);
   await cp(source, dest, {
     recursive: true,

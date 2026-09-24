@@ -24,7 +24,7 @@
  *
  * @module shared/bounded-read
  */
-import { constants } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -245,6 +245,44 @@ export async function readPackageFileWithin(
     return await readOpenedWithin(handle, maxBytes, what);
   } finally {
     await handle.close();
+  }
+}
+
+/**
+ * The synchronous twin of {@link readTextFileWithin}, for code that cannot
+ * await (the harness's installed-package readers). Same limit, same
+ * regular-file check, same non-blocking open, same result.
+ *
+ * @param filePath - The file to read; symbolic links are followed.
+ * @param maxBytes - The largest size read, in bytes.
+ * @param what - What the file is, as the start of a sentence, for the errors.
+ * @returns The file's text.
+ * @throws {TooLargeError} When the file is larger than `maxBytes`.
+ * @throws {UnsafeFileError} When the path is not a regular file.
+ * @throws The underlying error, unchanged, otherwise (for example `ENOENT`).
+ */
+export function readTextFileWithinSync(filePath: string, maxBytes: number, what: string): string {
+  const fd = openSync(filePath, READ_FLAGS);
+  try {
+    const stats = fstatSync(fd);
+    if (!stats.isFile()) {
+      throw new UnsafeFileError(`${what} is not a regular file, so DorkOS will not read it.`);
+    }
+    if (stats.size > maxBytes) throw new TooLargeError(what, maxBytes);
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const want = Math.min(maxBytes + 1 - total, Math.max(stats.size + 1 - total, 64 * 1024));
+      const chunk = Buffer.allocUnsafe(want);
+      const bytesRead = readSync(fd, chunk, 0, want, null);
+      if (bytesRead === 0) break;
+      chunks.push(chunk.subarray(0, bytesRead));
+      total += bytesRead;
+      if (total > maxBytes) throw new TooLargeError(what, maxBytes);
+    }
+    return Buffer.concat(chunks, total).toString('utf8');
+  } finally {
+    closeSync(fd);
   }
 }
 
