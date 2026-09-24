@@ -9,6 +9,7 @@ import { connect } from 'node:net';
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { CommunityExportManifestV1Schema } from '@dorkos/shared/community-wire';
 import { sweepImports } from '../imports/worker.js';
+import { acquireUploadLease, renewUploadLease } from '../imports/upload.js';
 import { drainCleanup, post, upload } from './member-erasure-fixture.js';
 import {
   buildArchive,
@@ -71,7 +72,11 @@ beforeAll(async () => {
   }
   h = await startTenancyHarness('imports', {
     now: () => clock,
-    hooks: { importUploadIdleMs: 700, freeTempBytes: async () => freeTemp },
+    hooks: {
+      importUploadIdleMs: 700,
+      jsonBodyMs: 700,
+      freeTempBytes: async () => freeTemp,
+    },
     env: { COMMUNITY_IMPORT_UPLOADS: 2 },
   });
   const host = await bootstrapHost(h, 'Operator', 'operator@example.test');
@@ -607,4 +612,47 @@ it('keeps a slow upload that keeps sending, and drops one that stalls', async ()
   });
   expect(await trickle.response).toMatch(/^HTTP\/1\.1 200 /);
   expect(Date.now() - started).toBeGreaterThan(2 * 700);
+});
+
+// Purpose: an upload's lease renewal reports whether this request still holds the lease, so
+// an upload whose lease another took stops instead of carrying on.
+it('reports a lost upload lease', async () => {
+  const { importId } = await createImport(h, { bearer: keyImport });
+  const token = await acquireUploadLease(h.pool, importId);
+  expect(await renewUploadLease(h.pool, importId, token)).toBe(true);
+  await h.pool.query(
+    'UPDATE community_imports SET upload_lease_token=gen_random_uuid() WHERE id=$1',
+    [importId]
+  );
+  expect(await renewUploadLease(h.pool, importId, token)).toBe(false);
+});
+
+// Purpose: the server allows hours for an export upload, but a JSON body still has its own
+// short deadline, so a slow drip on any other route cannot hold a connection open.
+it('drops a JSON body that drips slower than its deadline', async () => {
+  const { port } = new URL(h.baseUrl);
+  const socket = connect(Number(port), '127.0.0.1');
+  const chunks: Buffer[] = [];
+  socket.on('data', (chunk: Buffer) => chunks.push(chunk));
+  await new Promise<void>((resolve) => socket.once('connect', resolve));
+  const body = JSON.stringify({ idempotencyKey: 'drip', name: 'Drip' });
+  socket.write(
+    [
+      'POST /api/v1/host/imports HTTP/1.1',
+      `Host: 127.0.0.1:${port}`,
+      `Authorization: Bearer ${keyImport}`,
+      'Content-Type: application/json',
+      `Content-Length: ${body.length}`,
+      'Connection: close',
+      '',
+      body.slice(0, 5),
+    ].join('\r\n')
+  );
+  const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+  await closed;
+  expect(Buffer.concat(chunks).toString('utf8')).toMatch(/^HTTP\/1\.1 408 /);
+  // A body that arrives in time is unaffected.
+  expect(
+    (await readImport(h, (await createImport(h, { bearer: keyImport })).importId, keyRead)).state
+  ).toBe('awaiting_upload');
 });

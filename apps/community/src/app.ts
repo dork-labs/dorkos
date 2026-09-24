@@ -15,7 +15,7 @@ import {
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
-import { ApiError, handleError, json, readJson } from './http.js';
+import { ApiError, JSON_BODY_MS, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
@@ -67,6 +67,8 @@ export function createCommunityApp({
     /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
     now?: () => Date;
     afterExportSnapshot?: () => Promise<void>;
+    /** How long a JSON request body may take to arrive; tests shorten it. */
+    jsonBodyMs?: number;
     /** How long an export upload may go without a byte; tests shorten it. */
     importUploadIdleMs?: number;
     /** Free bytes in the temporary folder, as an upload's space check sees them. */
@@ -109,6 +111,7 @@ export function createCommunityApp({
     refund: refundAttempt,
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
+  const jsonBodyMs = hooks?.jsonBodyMs ?? JSON_BODY_MS;
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
       const origin = c.req.header('origin');
@@ -135,8 +138,26 @@ export function createCommunityApp({
         const reader = c.req.raw.body.getReader();
         const chunks: Uint8Array[] = [];
         let size = 0;
+        // The server lets a request take hours to arrive, for export uploads. A small JSON
+        // body gets its own short deadline, so a slow drip cannot hold a connection open.
+        const deadline = Date.now() + jsonBodyMs;
         while (true) {
-          const { done, value } = await reader.read();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const { done, value } = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(new ApiError(408, 'UNAVAILABLE', 'The request took too long to arrive.')),
+                Math.max(0, deadline - Date.now())
+              );
+            }),
+          ])
+            .catch(async (error: unknown) => {
+              await reader.cancel().catch(() => undefined);
+              throw error;
+            })
+            .finally(() => clearTimeout(timer));
           if (done) break;
           size += value.byteLength;
           if (size > maxBodyBytes) {

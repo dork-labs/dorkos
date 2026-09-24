@@ -25,22 +25,28 @@ describe('server timeouts', () => {
 });
 
 describe('upload slots and space', () => {
-  // Purpose: the replica-wide cap refuses one more upload and frees a slot exactly once.
-  it('refuses past the limit and frees each slot once', () => {
+  // Purpose: the replica-wide cap refuses one more upload and frees each slot exactly once,
+  // along with the temporary space it reserved.
+  it('refuses past the limit and frees each slot and its space once', () => {
     const slots = new UploadSlots(1);
-    const release = slots.take();
-    expect(() => slots.take()).toThrow(/Too many exports/);
+    const release = slots.take(100);
+    expect(slots.reservedBytes).toBe(200);
+    expect(() => slots.take(1)).toThrow(/Too many exports/);
     release();
     release();
-    const again = slots.take();
-    expect(() => slots.take()).toThrow();
+    expect(slots.reservedBytes).toBe(0);
+    const again = slots.take(5);
+    expect(() => slots.take(5)).toThrow();
     again();
   });
 
-  // Purpose: an upload needs room for twice its size (its received copy and storage's copy).
-  it('needs twice the declared size free', async () => {
+  // Purpose: an upload needs room for twice its size beyond what uploads already in flight
+  // may still write.
+  it('needs twice the declared size free, after other uploads', async () => {
     await expect(assertTempSpace(100, async () => 199)).rejects.toThrow(/no room/);
     await expect(assertTempSpace(100, async () => 200)).resolves.toBeUndefined();
+    await expect(assertTempSpace(100, async () => 300, 101)).rejects.toThrow(/no room/);
+    await expect(assertTempSpace(100, async () => 300, 100)).resolves.toBeUndefined();
   });
 });
 

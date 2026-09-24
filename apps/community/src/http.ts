@@ -88,13 +88,16 @@ export function handleError(error: unknown, c: Context): Response {
   );
 }
 
+/** The longest a JSON request body (at most about 96 KiB) may take to arrive. */
+export const JSON_BODY_MS = 30_000;
+
 /** The longest one request may take to arrive: time for a 1 GiB export on a slow link. */
 export const REQUEST_TIMEOUT_MS = 3 * 60 * 60_000;
 
 /**
  * Let one request take up to {@link REQUEST_TIMEOUT_MS} to arrive. Node's default of five
  * minutes cuts off an export upload part-way. Headers must still arrive within Node's own
- * header timeout, JSON bodies are bounded in size before they are read, and an export upload
+ * header timeout, JSON bodies must arrive within {@link JSON_BODY_MS}, and an export upload
  * is dropped as soon as it goes a minute without a byte, so the long ceiling only ever helps
  * a request that keeps sending.
  */
