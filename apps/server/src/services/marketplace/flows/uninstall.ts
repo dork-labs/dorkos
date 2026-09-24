@@ -33,9 +33,10 @@
  *
  * @module services/marketplace/flows/uninstall
  */
-import { copyFile, lstat, readFile, readdir, rm, stat, unlink } from 'node:fs/promises';
+import { copyFile, lstat, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { isManifestGitTracked } from '@dorkos/mesh';
 import type { AgentRemovedSummary } from '@dorkos/shared/marketplace-schemas';
 import {
   AGENT_MANIFEST_PATH,
@@ -712,11 +713,21 @@ export class UninstallFlow {
   }): Promise<AgentRemovedSummary | undefined> {
     if (!this.deps.agentRegistry) return undefined;
     const manifest = path.join(journaled.root, ...AGENT_MANIFEST_PATH.split('/'));
-    if (await pathExists(manifest)) {
-      await copyFile(manifest, path.join(journaled.root, ...UNINSTALLED_AGENT_PATH.split('/')));
-    }
+    const parked = path.join(journaled.root, ...UNINSTALLED_AGENT_PATH.split('/'));
+    // Journaled first, so a rollback knows to put the manifest back.
     journaled.journal.agentUnregistered = true;
     await writeJournal(journaled.sibling, journaled.journal);
+    if (await pathExists(manifest)) {
+      // Moved, so no live agent.json is left for a scan to register when the
+      // registry has no row to release it. A git-tracked one is copied instead
+      // and left to the unregister, which keeps it and denies the folder
+      // (DOR-1019): an uninstall never changes a person's source tree.
+      if (await isManifestGitTracked(journaled.root, this.deps.logger)) {
+        await copyFile(manifest, parked);
+      } else {
+        await rename(manifest, parked);
+      }
+    }
     const removed = await this.deps.agentRegistry.unregisterAtPath(journaled.root);
     if (!removed) return undefined;
     return {

@@ -19,6 +19,7 @@ import {
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
@@ -343,6 +344,42 @@ describe('uninstalling an agent package (DOR-2245 §5)', () => {
     expect(result.agentRemoved!.removed).toContain('mcp-sign-ins');
   });
 
+  // Purpose (code review 6): with no registry row to release the manifest
+  // (Mesh never saw the agent), a copied agent.json stayed live and the next
+  // scan registered an agent with no package. The manifest is moved, not copied.
+  it('leaves no live agent.json when the registry has no row for the agent', async () => {
+    const dorkHome = await home();
+    const root = await agentRoot(dorkHome);
+    const agentRegistry = {
+      unregisterAtPath: vi.fn().mockResolvedValue(null),
+      restoreAtPath: vi.fn(),
+    };
+    await new UninstallFlow(deps(dorkHome, { agentRegistry })).uninstall({ name: 'bot' });
+    expect(await exists(path.join(root, '.dork', 'agent.json'))).toBe(false);
+    expect(await readFile(path.join(root, '.dork', 'uninstalled-agent.json'), 'utf8')).toContain(
+      '01AGENT'
+    );
+  });
+
+  // Purpose (code review 6): a git-tracked agent.json is never moved or
+  // deleted (DOR-1019): it is copied to the parked name and mesh keeps it and
+  // denies the folder instead.
+  it('copies, never moves, a git-tracked agent.json', async () => {
+    const dorkHome = await home();
+    const root = await agentRoot(dorkHome);
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+    git('init', '-q');
+    git('add', '.dork/agent.json');
+    git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '-m', 'agent');
+    const agentRegistry = {
+      unregisterAtPath: vi.fn().mockResolvedValue({ id: '01AGENT', directoryDenied: true }),
+      restoreAtPath: vi.fn(),
+    };
+    await new UninstallFlow(deps(dorkHome, { agentRegistry })).uninstall({ name: 'bot' });
+    expect(await readFile(path.join(root, '.dork', 'agent.json'), 'utf8')).toContain('01AGENT');
+    expect(await exists(path.join(root, '.dork', 'uninstalled-agent.json'))).toBe(true);
+  });
+
   // Purpose: an update's uninstall half keeps the agent registered.
   it('leaves the agent registered when replacing', async () => {
     const dorkHome = await home();
@@ -363,7 +400,8 @@ describe('uninstalling an agent package (DOR-2245 §5)', () => {
     const root = await agentRoot(dorkHome);
     const agentRegistry = {
       unregisterAtPath: vi.fn().mockImplementation(async () => {
-        await rm(path.join(root, '.dork', 'agent.json'));
+        // Mesh releases the manifest, tolerating one already moved aside.
+        await rm(path.join(root, '.dork', 'agent.json'), { force: true });
         throw new Error('cascade failed');
       }),
       restoreAtPath: vi.fn().mockResolvedValue(undefined),
