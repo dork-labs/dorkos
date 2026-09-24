@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(community): host-set terms, privacy, and report links'
+  - 'fix(community): tighten host report addresses and links after review'
 ---
 
 ### Added
