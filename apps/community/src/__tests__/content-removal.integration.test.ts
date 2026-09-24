@@ -713,10 +713,10 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
   });
 
   // Purpose (the held cells of AC-4 and AC-5): a host hold stops a community growing, not its
-  // members cleaning it up. resolveCommunityContext lets a held community through, so a browser
-  // session still removes (its own, or as the owner); the hold revoked every grant and agent
-  // credential (host-lifecycle.ts), so those answer 401 like any revoked credential.
-  it('removes in a held community through a browser session', async () => {
+  // members cleaning it up. resolveCommunityContext lets a held community through. A hold keeps
+  // connections and agents (DOR-2286), so a kept grant with `post` and a kept agent credential
+  // remove what is theirs, as a browser session does, while posting stays refused for all.
+  it('removes in a held community through a session, a kept grant, and a kept agent', async () => {
     const s = await scene('held');
     const [own, members, viaGrant, viaAgent] = [
       await say(s, { cookie: s.p.cookie }),
@@ -749,6 +749,11 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
       body: { text: 'new while held', idempotencyKey: 'held-post' },
     });
     expect((await posting.json()).code).toBe('COMMUNITY_HELD');
+    const grantPosting = await h.call(`${s.base}/channels/${s.channelId}/entries`, {
+      bearer: s.grant,
+      body: { text: 'new while held', idempotencyKey: 'held-grant-post' },
+    });
+    expect((await grantPosting.json()).code).toBe('COMMUNITY_HELD');
     expect(
       (await removed(await removeMessage(s, own, { cookie: s.p.cookie }), 'own while held')).text
     ).toBe(REMOVED_ENTRY_TEXT.author);
@@ -760,13 +765,19 @@ describe('who may remove (AC-4)', { timeout: 180_000 }, () => {
         )
       ).text
     ).toBe(REMOVED_ENTRY_TEXT.moderator);
-    expect((await removeMessage(s, viaGrant, { bearer: s.grant })).status).toBe(401);
-    expect((await removeMessage(s, viaAgent, { bearer: s.agent.token })).status).toBe(401);
     expect(
-      await count('SELECT 1 FROM entries WHERE id=ANY($1::uuid[]) AND removed_at IS NULL', [
-        [viaGrant, viaAgent],
-      ])
-    ).toBe(2);
+      (await removed(await removeMessage(s, viaGrant, { bearer: s.grant }), 'kept grant')).text
+    ).toBe(REMOVED_ENTRY_TEXT.author);
+    expect(
+      (await removed(await removeMessage(s, viaAgent, { bearer: s.agent.token }), 'kept agent'))
+        .text
+    ).toBe(REMOVED_ENTRY_TEXT.author);
+    // The kept grant still cannot remove someone else's message.
+    const other = await h.pool.query<{ id: string }>(
+      'SELECT id FROM entries WHERE community_id=$1 AND author_member_id=$2 AND removed_at IS NULL LIMIT 1',
+      [s.communityId, s.q.memberId]
+    );
+    expect((await removeMessage(s, other.rows[0].id, { bearer: s.grant })).status).toBe(403);
   });
 });
 
