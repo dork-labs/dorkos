@@ -375,7 +375,12 @@ export class PermissionService {
    * @returns Every change the write made.
    */
   async setDefaults(
-    input: PermissionPatch & { applyToAgents?: string[]; surface: PermissionSurface },
+    input: PermissionPatch & {
+      applyToAgents?: string[];
+      surface: PermissionSurface;
+      /** The approval an agent's request was answered through, when it was one. */
+      approvalId?: string;
+    },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
     const actions = this.actionIndex();
@@ -391,7 +396,15 @@ export class PermissionService {
     if (changes.length > 0) this.deps.config.set({ ...config, defaults: next });
     await cleared.write();
     const all = [...changes, ...cleared.changes];
-    await this.record({ changes: all, surface: input.surface, writer }, this.titleFor(actions));
+    await this.record(
+      {
+        changes: all,
+        surface: input.surface,
+        writer,
+        ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+      },
+      this.titleFor(actions)
+    );
     return all;
   }
 

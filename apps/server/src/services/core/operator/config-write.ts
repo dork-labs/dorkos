@@ -170,6 +170,27 @@ export const OPERATOR_TOOL_AUTHORITY: ConfigWriteAuthority = {
   }),
 };
 
+/**
+ * The identity an agent's `config_patch` writes under once a PERSON approved that
+ * exact call on a card (spec `agent-permissions` D6): it clears the operator bar.
+ *
+ * Safe for the reason the trusted-caller escape is safe (`trusted-caller.ts`):
+ * whoever may decide an approval may make the change themselves, so a change
+ * a person approved removes no guarantee. The approval was bound to this exact
+ * patch, and the card asked in the floor area the patch touches, where Always
+ * allow is never offered, so every such write is its own yes. The two bars that
+ * are not about "may you" still apply: `permissions` is never written through
+ * this door at all (`USE_PERMISSIONS_API`), and moving a trust stop to Full
+ * autonomy still needs the acknowledgement.
+ *
+ * Only ever chosen from `context.approval` with `via: 'approval'`, which the
+ * registry sets after the gate spent a person's approval, never from anything a
+ * caller sends.
+ */
+export const PERSON_APPROVED_AUTHORITY: ConfigWriteAuthority = {
+  refuseOperatorOnly: () => undefined,
+};
+
 /** What a guarded write did, or the reason it did nothing. */
 export type GuardedConfigWriteResult =
   | {

@@ -209,6 +209,8 @@
  *
  * @module services/core/operator/config-write-policy
  */
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
+
 import { findGuardedPaths, prepareGuardedPaths } from './guarded-paths.js';
 
 /**
@@ -871,10 +873,24 @@ export type OperatorOnlyStake =
   | 'authorship'
   | 'navigation';
 
+/**
+ * The floor permission area an operator-only setting is asked about in (spec
+ * `agent-permissions` D6). An agent's `config_patch` that touches one of these
+ * no longer bounces off a flat refusal: it asks the person in this area, which
+ * is never Allowed, so every such change is a person's yes.
+ */
+export type OperatorOnlyArea = Extract<PermissionAreaId, 'safety' | 'reach' | 'permissions'>;
+
 /** One stake, the sentence an agent reads for it, and the paths it covers. */
 interface OperatorOnlyStakeGroup {
   /** The stake these paths share. */
   readonly stake: OperatorOnlyStake;
+  /**
+   * The floor area a change to one of these paths asks in. Carried per stake
+   * because the stake already says what the setting guards, and the area is the
+   * person-facing name for that same thing.
+   */
+  readonly area: OperatorOnlyArea;
   /**
    * The clause the refusal quotes, written for a model and true of every path
    * below it. No trailing punctuation: the refusal appends `: <paths>.`
@@ -895,6 +911,7 @@ interface OperatorOnlyStakeGroup {
 export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   {
     stake: 'reach',
+    area: 'reach',
     description: 'Who can reach this instance, and how far it reaches on this machine',
     paths: [
       'auth.enabled',
@@ -938,6 +955,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'credentials',
+    area: 'reach',
     description: 'Which account and keys the work runs on, and who pays for it',
     paths: [
       'providers',
@@ -958,6 +976,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'code',
+    area: 'reach',
     // Covers both halves honestly: extension code and spawned binaries run
     // INSIDE this machine, while a raw-MCP server is an endpoint DorkOS reaches
     // out to and hands a session as a tool. Neither lets anybody IN, which is
@@ -979,6 +998,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'tools',
+    area: 'safety',
     // "Told about" is the precise verb and the reason this stake exists. These
     // switches feed the context blocks (`tool-filter.ts`), so a clause promising
     // they decide what an agent MAY DO would be false — the tools stay registered
@@ -995,6 +1015,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'disclosure',
+    area: 'reach',
     description: 'What leaves this machine',
     paths: [
       'telemetry.userHasDecided',
@@ -1014,6 +1035,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'approvals',
+    area: 'permissions',
     description: 'Whether the person is asked before work happens on their behalf',
     paths: [
       'runtimes.defaultTrustStop',
@@ -1038,6 +1060,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'initiative',
+    area: 'safety',
     description: 'When your agents speak on their own, and how much that spends',
     paths: [
       'rooms.turnLimitsEnabled',
@@ -1071,6 +1094,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'resources',
+    area: 'safety',
     // Memory, disk and how many things run at once. None of these is a security
     // control and none of them decides whether an agent acts unbidden, so neither
     // `reach` nor `initiative` would be a true sentence about them. They are here
@@ -1098,6 +1122,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'authorship',
+    area: 'safety',
     // The narrowest stake here, and the only one that guards a RECORD rather
     // than a behaviour: these two leaves say whether the stored display name was
     // the person's own or an agent's suggestion (DOR-1022). Writing them changes
@@ -1110,6 +1135,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'navigation',
+    area: 'reach',
     // Not `reach` (nobody gets in) and not `authorship` (no name is shown as
     // anyone's). An agent able to write the owner key could file its own state
     // under the person's namespace, and one able to write the saved route could
@@ -1124,6 +1150,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'attention',
+    area: 'safety',
     description: 'Whether you are told that something is waiting on you',
     paths: [
       'notifications.escalation.phoneAfterMinutes',
@@ -1135,6 +1162,30 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     ],
   },
 ];
+
+/** Floor areas, strictest first: the tie-break when a patch touches several. */
+const AREA_STRICTNESS: readonly OperatorOnlyArea[] = ['permissions', 'reach', 'safety'];
+
+/**
+ * The floor area an agent's config patch asks in, or `null` when it touches no
+ * operator-only setting (it then asks, or runs, in DorkOS settings). With paths
+ * in several areas, the strictest wins: Permissions, then Reach & secrets, then
+ * Safety limits. A path with no stake on file (the drift guard keeps that out of
+ * normal use) is asked about in Permissions, the strictest answer there is.
+ *
+ * @param patch - The raw patch a caller supplied.
+ */
+export function operatorOnlyAreaForPatch(patch: unknown): OperatorOnlyArea | null {
+  const paths = findOperatorOnlyPaths(patch);
+  if (paths.length === 0) return null;
+  const areas = new Set<OperatorOnlyArea>(
+    paths.map(
+      (path) =>
+        OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions'
+    )
+  );
+  return AREA_STRICTNESS.find((area) => areas.has(area)) ?? 'permissions';
+}
 
 /**
  * The clause for a refused path with no stake on file. Deliberately says only

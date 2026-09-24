@@ -44,6 +44,7 @@ import { MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { AgentManifestFileSchema } from '@dorkos/shared/mesh-schemas';
 import {
   getPermissionArea,
+  isFloorArea,
   resolvePermission,
   type AgentPermissions,
   type PermissionAreaId,
@@ -162,10 +163,55 @@ export function permissionGateSources(): PermissionGateSources {
 }
 
 /** A gated action, with the area it declares. */
-export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier'> & {
+export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areaForInput'> & {
   /** The permission area, or `null` for an action that is always allowed on its tier. */
   area: PermissionAreaId | null;
 };
+
+/** How strict an area is, for {@link areaForCall}: a floor area outranks any other. */
+function strictness(area: PermissionAreaId): number {
+  return isFloorArea(area) ? 1 : 0;
+}
+
+/**
+ * The area one call resolves in: the action's static area, or the stricter one
+ * its input asks for (`areaForInput`, spec `agent-permissions` D6). An answer
+ * that would make the call LESS strict is ignored and logged: input may only
+ * ever tighten how a call is decided.
+ *
+ * @param action - The gated action.
+ * @param input - The parsed input, when the caller has it.
+ */
+export function areaForCall(
+  action: PermissionGatedAction,
+  input: unknown
+): PermissionAreaId | null {
+  const area = action.area ?? null;
+  if (area === null || !action.areaForInput || input === undefined) return area;
+  let escalated: PermissionAreaId | null;
+  try {
+    escalated = action.areaForInput(input);
+  } catch (err) {
+    // An escalation that cannot be computed fails toward the strictest answer
+    // DorkOS can name for this action: its own area is the floor of that, and a
+    // floor area is stricter still, so pick the permissions floor.
+    logger.error('[capabilities] areaForInput threw; deciding the call in Permissions', {
+      capabilityId: action.id,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return 'permissions';
+  }
+  if (escalated === null || escalated === area) return area;
+  if (strictness(escalated) < strictness(area)) {
+    logger.warn('[capabilities] areaForInput tried to loosen a call; keeping its own area', {
+      capabilityId: action.id,
+      area,
+      escalated,
+    });
+    return area;
+  }
+  return escalated;
+}
 
 /**
  * Resolve the permission for one call, reading the config and the calling
@@ -177,16 +223,18 @@ export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier'> & {
  * resolves Blocked. A manifest read that fails resolves Blocked and
  * `unreadable`, which the gate refuses without an approval.
  *
- * @param request - The action and the calling identity.
+ * @param request - The action, the calling identity, and the parsed input.
  * @returns The permission to hand the gate, or `null` when the action has no area.
  */
 export async function resolveCallPermission(request: {
   action: PermissionGatedAction;
   identity?: AgentIdentity;
+  /** The parsed input, so an action whose input can make it stricter is decided on it. */
+  input?: unknown;
 }): Promise<CallPermission | null> {
   const { action, identity } = request;
-  const area = action.area;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
+  const area = areaForCall(action, request.input);
   if (area === null || area === undefined) return null;
 
   let config: PermissionConfigInput;

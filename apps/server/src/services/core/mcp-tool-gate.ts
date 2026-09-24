@@ -230,7 +230,11 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
   // same reason, and the same shape, as awaiting the identity above.
   const subject = await resolveApprovalSubject(action.approvalSubject, input);
   // The permission, resolved fresh for this call (spec `agent-permissions` D6).
-  const permission = await resolveCallPermission({ action, ...(identity ? { identity } : {}) });
+  const permission = await resolveCallPermission({
+    action,
+    input,
+    ...(identity ? { identity } : {}),
+  });
 
   const decision = enforceCapabilityTier({
     action,

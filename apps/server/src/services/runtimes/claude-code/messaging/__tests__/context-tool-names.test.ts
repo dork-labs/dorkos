@@ -459,7 +459,10 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // `agent-permissions` D8, D9). No claude-code prompt block names either bare:
     // the Blocked-area line names the request tool by its ENDING, the form that
     // survives every runtime's prefix.
-    expect(advertised.size).toBe(107);
+    //
+    // 107 -> 108 for `change_permission` (spec `agent-permissions` D9): the
+    // settings tool's description names it by its ENDING, never bare.
+    expect(advertised.size).toBe(108);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

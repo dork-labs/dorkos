@@ -4414,6 +4414,9 @@ async function start() {
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
+      // An agent's approved `change_permission` writes through the same owner
+      // Settings does (spec `agent-permissions` D9).
+      permissionService,
       ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
       ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
       // Ordinary MCP surfaces expose only provider-neutral discovery. Private

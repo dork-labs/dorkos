@@ -75,14 +75,19 @@ vi.mock('../../../lib/version.js', () => ({ SERVER_VERSION: 'test', IS_DEV_BUILD
 vi.mock('../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn().mockResolvedValue(null) }));
+// The rest of the module stays real: the permission gate reads an agent's own
+// settings file by the manifest path constants.
+vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/shared/manifest')>()),
+  readManifest: vi.fn().mockResolvedValue(null),
+}));
 
 import { createExternalMcpServer } from '../mcp-server.js';
 import {
   createDorkOsToolServer,
   handRegisteredInSessionTools,
 } from '../../runtimes/claude-code/mcp-tools/index.js';
-import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../mcp-tool-tiers.js';
+import { MCP_TOOL_TIERS, gatedActionForMcpTool, type McpToolTier } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
 import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
@@ -395,12 +400,37 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       expect(gatedActionForMcpTool('mesh_list').approvalSubject).toBeUndefined();
     });
 
-    it('declares card fields only where a card can appear', () => {
+    it('declares card fields exactly where a card can appear', () => {
+      // A card appears for a destructive tool, and for an `act` tool with an
+      // area once a person sets that area to Ask (spec `agent-permissions` D6).
+      const canAsk = (name: (typeof declaredNames)[number]) => {
+        const declared: McpToolTier = MCP_TOOL_TIERS[name];
+        return (
+          declared.tier === 'destructive' || (declared.tier === 'act' && declared.area !== null)
+        );
+      };
       const strays = declaredNames.filter(
-        (name) =>
-          MCP_TOOL_TIERS[name].tier !== 'destructive' && MCP_TOOL_TIERS[name].approvalDisplayFields
+        (name) => !canAsk(name) && MCP_TOOL_TIERS[name].approvalDisplayFields
       );
-      expect(strays, 'card fields on a tier that never builds a card').toEqual([]);
+      expect(strays, 'card fields on a tool that never builds a card').toEqual([]);
+      const missing = declaredNames.filter(
+        (name) => canAsk(name) && !MCP_TOOL_TIERS[name].approvalDisplayFields
+      );
+      expect(missing, 'a tool that can ask, with no card fields').toEqual([]);
+    });
+
+    it('names only real arguments on a card, and none only for a tool that takes none', () => {
+      for (const server of ['in-session', 'external'] as const) {
+        const tools = server === 'in-session' ? inSessionTools() : externalTools();
+        for (const name of declaredNames) {
+          const fields = (MCP_TOOL_TIERS[name] as McpToolTier).approvalDisplayFields;
+          const tool = tools.get(name);
+          if (!fields || !tool) continue;
+          const args = Object.keys(tool.inputSchema).filter((k) => k !== 'approvalToken');
+          for (const field of fields) expect(args, `${name} on ${server}`).toContain(field);
+          if (fields.length === 0) expect(args, `${name} takes arguments`).toEqual([]);
+        }
+      }
     });
 
     it('refuses to hand out an action for a tool nobody tiered', () => {
@@ -676,17 +706,22 @@ describe('hand-registered MCP tools carry a permission tier', () => {
 
   describe('the retry argument is advertised', () => {
     for (const server of ['in-session', 'external'] as const) {
-      it(`${server}: destructive tools take approvalToken, and nothing else does`, () => {
+      it(`${server}: tools that can ask take approvalToken, and nothing else does`, () => {
+        // A destructive tool always asks; an `act` tool with an area asks when a
+        // person sets that area to Ask (spec `agent-permissions` D6). A read
+        // never asks, and neither does a tool with no area.
         const tools = server === 'in-session' ? inSessionTools() : externalTools();
         for (const tool of tools.values()) {
           const advertises = Object.keys(tool.inputSchema).includes('approvalToken');
-          const shouldAdvertise = MCP_TOOL_TIERS[tool.name].tier === 'destructive';
+          const declared = MCP_TOOL_TIERS[tool.name];
+          const shouldAdvertise =
+            declared.tier === 'destructive' || (declared.tier === 'act' && declared.area !== null);
           expect(
             advertises,
             shouldAdvertise
-              ? `${tool.name} is destructive but does not advertise approvalToken, so a retry ` +
+              ? `${tool.name} can ask but does not advertise approvalToken, so a retry ` +
                   `has nowhere to put the approval and the gate loops forever`
-              : `${tool.name} is not destructive but advertises approvalToken`
+              : `${tool.name} can never ask but advertises approvalToken`
           ).toBe(shouldAdvertise);
         }
       });

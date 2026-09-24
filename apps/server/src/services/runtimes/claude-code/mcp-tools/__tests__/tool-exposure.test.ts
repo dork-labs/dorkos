@@ -423,8 +423,13 @@ describe('in-session tool exposure', () => {
     // D9): `request_permission` ALWAYS-LOADED, because the Blocked-area line
     // names it, and `list_my_permissions` DEFERRED, because nothing does. So
     // the deferred count moves by one, not two.
-    expect(tools).toHaveLength(107);
-    expect(deferred).toHaveLength(97);
+    //
+    // 107 -> 108 for `change_permission` (spec `agent-permissions` D9),
+    // DEFERRED: an agent asks to change a permission rarely, and always on a
+    // person's card, which is a turn with room for a search. Both counts move by
+    // the same one.
+    expect(tools).toHaveLength(108);
+    expect(deferred).toHaveLength(98);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

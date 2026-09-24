@@ -24,13 +24,9 @@ import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
 import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
-import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
+import { CAPABILITY_TIERS, isSecretInputKey } from '@dorkos/shared/capabilities';
 
-import {
-  AREA_PENDING_PHASE_3,
-  defineCapability,
-  type CapabilityDomain,
-} from '../capabilities/index.js';
+import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
 import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -51,6 +47,37 @@ import {
   type SidebarRemoveFromGroupArgs,
   type FeedbackDraftArgs,
 } from './operator-tool-handlers.js';
+import { operatorOnlyAreaForPatch } from './config-write-policy.js';
+
+/**
+ * The settings a config patch changes, as one line for its approval card:
+ * `ui.theme: dark, tunnel.enabled: yes`. The card quotes and escapes the whole
+ * line as one value, so nothing in it can pass for a second field. A leaf whose name says secret is
+ * listed by name only, and a list or an empty object by name only, so the card
+ * never carries a credential or a wall of structure.
+ *
+ * @param patch - The patch the call carries.
+ */
+export function describePatchForCard(patch: unknown): string {
+  const parts: string[] = [];
+  const walk = (value: unknown, prefix: string): void => {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const entries = Object.entries(value as Record<string, unknown>);
+      if (entries.length === 0 && prefix) parts.push(prefix);
+      for (const [key, child] of entries) walk(child, prefix ? `${prefix}.${key}` : key);
+      return;
+    }
+    const leaf = prefix.split('.').pop() ?? prefix;
+    if (isSecretInputKey(leaf) || Array.isArray(value)) {
+      parts.push(prefix);
+      return;
+    }
+    const shown = typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value);
+    parts.push(`${prefix}: ${shown}`);
+  };
+  walk(patch, '');
+  return parts.length > 0 ? parts.join(', ') : 'nothing';
+}
 
 /**
  * Caps on the two free-form fields `feedback_draft` accepts.
@@ -404,8 +431,8 @@ export const operatorDomain: CapabilityDomain = {
         'Target the agent by agent_id or cwd. The slug (name) is immutable, and system agents (e.g. DorkBot) ' +
         'reject identity changes. Editing your OWN agent is fine; before editing a DIFFERENT agent, confirm with the user first.',
       tier: 'act',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'agents',
+      approvalDisplayFields: ['agent_id', 'cwd', 'displayName', 'description'],
       input: z.object({
         ...agentSelectorSchema,
         displayName: z.string().optional().describe('Human-facing display name'),
@@ -537,8 +564,7 @@ export const operatorDomain: CapabilityDomain = {
         'A person approves every call, your own boundaries included, so say plainly what you want to ' +
         'change and why before you ask.',
       tier: 'destructive',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'safety',
       input: z.object({
         ...agentSelectorSchema,
         nopeContent: z
@@ -593,14 +619,25 @@ export const operatorDomain: CapabilityDomain = {
         'Update DorkOS user settings by deep-merging a partial config object (the same validated path as the ' +
         "settings UI). Use for status-bar/sidebar prefs, scheduler, logging, etc. This mutates the user's own " +
         'settings — only do it when the user has asked for the change. Arrays replace (not merge); invalid values are rejected. ' +
-        'Some settings only a person can change, and a patch touching any of them is refused whole: login (auth), ' +
-        'public exposure (tunnel), the MCP endpoint and its key, telemetry consent, credentials (providers, ' +
-        'credentialRef, cloud), extensions, the runtime binary paths and the OpenCode provider and baseURL, and the ' +
-        'directories DorkOS reads and writes (server.boundary, workspace.rootPath, relay.dataDir, ' +
-        'agents.defaultDirectory, mesh.scanRoots). Ask the person to change those in Settings themselves.',
+        "Some settings are the person's to decide: login (auth), public exposure (tunnel), the MCP endpoint and " +
+        'its key, telemetry consent, credentials (providers, credentialRef, cloud), extensions, the runtime binary ' +
+        'paths and the OpenCode provider and baseURL, the directories DorkOS reads and writes (server.boundary, ' +
+        'workspace.rootPath, relay.dataDir, agents.defaultDirectory, mesh.scanRoots), reply and turn limits, and ' +
+        'how often agents stop to ask. A patch touching any of them asks the person on a card every time, and is ' +
+        'applied whole only if they say yes. Agent permissions are never changed here: use the tool whose name ' +
+        'ends in `change_permission`.',
       tier: 'act',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'settings',
+      // A patch touching a setting only a person may change asks in that
+      // setting's floor area instead (Safety limits, Reach & secrets or
+      // Permissions), where Always allow is never offered.
+      areaForInput: (input) => operatorOnlyAreaForPatch((input as { patch?: unknown }).patch),
+      // The card lists the settings the patch changes, never the patch object
+      // (which renders as "details") and never the value of a secret-named one.
+      approvalDisplayFields: ['changes'],
+      approvalView: (input) => ({
+        changes: describePatchForCard((input as { patch?: unknown }).patch),
+      }),
       input: z.object({
         // Not `z.record()`: a record anywhere in an in-session tool's schema
         // crashes the whole `tools/list` answer on claude-agent-sdk 0.3.257+ with
@@ -631,9 +668,10 @@ export const operatorDomain: CapabilityDomain = {
       // and simply cannot be named.
       invoke: async (_deps, input, context) =>
         unwrapMcpEnvelope(
-          await createConfigPatchHandler(context.identity)(
-            input as { patch?: Record<string, unknown> }
-          )
+          await createConfigPatchHandler(
+            context.identity,
+            context.approval
+          )(input as { patch?: Record<string, unknown> })
         ),
     }),
     // The two sidebar capabilities are `act` and live beside `config_patch`
@@ -678,8 +716,8 @@ export const operatorDomain: CapabilityDomain = {
         'the tool whose name ends in `sidebar_remove_from_group`. This rearranges the ' +
         "user's own sidebar, so only do it when they have asked for it.",
       tier: 'act',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'agents',
+      approvalDisplayFields: ['group', 'items'],
       input: z.object({
         ...sidebarGroupSelectorSchema,
         items: sidebarItemsSchema('file there'),
@@ -722,8 +760,8 @@ export const operatorDomain: CapabilityDomain = {
         "name ends in `sidebar_add_to_group`. This rearranges the user's own sidebar, so only " +
         'do it when they have asked for it.',
       tier: 'act',
-      area: null,
-      areaNote: AREA_PENDING_PHASE_3,
+      area: 'agents',
+      approvalDisplayFields: ['group', 'items'],
       input: z.object({
         ...sidebarGroupSelectorSchema,
         items: sidebarItemsSchema('take out'),

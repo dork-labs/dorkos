@@ -203,8 +203,18 @@ export interface GatedAction {
    * the gate without somebody having decided it.
    */
   area: PermissionAreaId | null;
+  /**
+   * A stricter area for this call, decided from its input. See
+   * `CapabilityDefinition.areaForInput`; `permission-enforcement.ts` applies it.
+   */
+  areaForInput?: (input: unknown) => PermissionAreaId | null;
   /** The input fields the approval card may show. Required on `destructive`. */
   approvalDisplayFields?: readonly string[];
+  /**
+   * A display-only view of the input the card's fields are read from. See
+   * `CapabilityDefinition.approvalView`.
+   */
+  approvalView?: (input: unknown) => Record<string, unknown>;
   /**
    * The one input field whose FULL value the card carries, when the action
    * declares one (DOR-1698). Read here rather than by a surface, so every
@@ -751,7 +761,7 @@ export function describeGatedAttempt(
     : 'An unidentified caller ';
   const clause = joinSummaryFields(
     summaryFieldsNamingSubject(
-      input,
+      action.approvalView ? action.approvalView(input) : input,
       action.approvalDisplayFields,
       subject,
       action.approvalSubject?.field
@@ -1388,6 +1398,7 @@ export async function authorizeCapability(
   const parsed = capability.input.parse(input);
   const permission = await resolveCallPermission({
     action: capability,
+    input: parsed,
     ...(context.identity ? { identity: context.identity } : {}),
   });
   return enforceCapabilityTier({

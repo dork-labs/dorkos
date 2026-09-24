@@ -595,6 +595,7 @@ export function composeRegistry(
           ? null
           : await resolveCallPermission({
               action: capability,
+              input: parsed,
               ...(supplied.identity ? { identity: supplied.identity } : {}),
             });
         // Named here rather than in the gate, which is synchronous (DOR-1929):

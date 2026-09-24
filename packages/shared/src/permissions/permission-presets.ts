@@ -101,6 +101,11 @@ export const PERMISSION_PRESET_TABLES: Readonly<Record<PermissionPreset, Permiss
  * area with the area's Blocked would silently remove it from undecided installs
  * (a decomposition-stage resolution of a spec gap).
  *
+ * `operator.update_agent_boundaries` has one too, for the same reason: it sits
+ * in Safety limits, which Unchanged blocks, but it always ran behind a card of
+ * its own (it is `destructive`), so an undecided install keeps asking for it
+ * rather than losing it.
+ *
  * `filesStop: null`: the stored trust stop stays untouched.
  */
 export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
@@ -116,7 +121,10 @@ export const UNCHANGED_PERMISSION_TABLE: PermissionPresetTable = Object.freeze({
     permissions: 'blocked',
     reach: 'blocked',
   }),
-  actions: Object.freeze({ 'rooms.merge': 'allowed' }),
+  actions: Object.freeze({
+    'rooms.merge': 'allowed',
+    'operator.update_agent_boundaries': 'ask',
+  }),
   filesStop: null,
 });
 

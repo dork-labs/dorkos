@@ -6,7 +6,6 @@
  * @module services/core/capabilities
  */
 export {
-  AREA_PENDING_PHASE_3,
   defineCapability,
   type CapabilityDefinition,
   type CapabilityDeps,

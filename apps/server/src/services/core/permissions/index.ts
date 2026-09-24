@@ -37,6 +37,7 @@ export { readAgentPermissionsFromManifest } from '../capabilities/permission-enf
 export {
   listPermissionHistory,
   personWriter,
+  agentRequestWriter,
   type PermissionWriter,
 } from './permission-history.js';
 
