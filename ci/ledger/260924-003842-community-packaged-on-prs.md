@@ -7,7 +7,7 @@ actor: agent
 gates:
   - wf.test.community-packaged
   - wf.scripts-test.fixtures
-prs: []
+prs: [2061]
 hypothesis:
   metric: gate.wf.test.community-packaged.ejections_caused
   slo: queue-green
