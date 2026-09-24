@@ -196,7 +196,8 @@ export function FullPowerDoor({ heading, onClose, onCustomize }: FullPowerDoorPr
       await updateConfig.mutateAsync({
         ui: { fullPowerDecidedAt: new Date().toISOString(), fullPowerChoice: 'supervised' },
       });
-      // The careful answer's preset: agents ask before changing anything.
+      // The careful answer's preset: agents ask before arranging rooms (the one
+      // area on the new model so far).
       await setPermission.mutateAsync({ kind: 'preset', preset: 'careful', surface: 'first-run' });
     } catch (err) {
       setConfigError(describeWriteFailure(err));

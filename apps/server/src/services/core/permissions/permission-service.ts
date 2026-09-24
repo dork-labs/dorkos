@@ -37,6 +37,7 @@ import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { z } from 'zod';
 
 import {
+  listPermissionHistory,
   recordPermissionChange,
   type PermissionChangeRecord,
   type PermissionWriter,
@@ -109,8 +110,8 @@ export interface PermissionServiceDeps {
   };
   /** Every action an agent can reach, with its area. Read per call. */
   actions: () => PermissionActionInfo[];
-  /** The Activity writer, absent in a process with none. */
-  activity?: Pick<ActivityService, 'emit'>;
+  /** The Activity log, absent in a process with none. */
+  activity?: Pick<ActivityService, 'emit' | 'list'>;
 }
 
 /** A per-key request: a state to set, or `null` to remove the change. */
@@ -118,6 +119,9 @@ export type PermissionPatch = {
   areas?: Record<string, PermissionState | null>;
   actions?: Record<string, PermissionState | null>;
 };
+
+/** How far back the agent page looks for a change made outside DorkOS. */
+const OUTSIDE_HISTORY_DEPTH = 50;
 
 /** An area-level resolution: the action id no action entry ever names. */
 const AREA_PROBE_ACTION = '';
@@ -581,11 +585,42 @@ export class PermissionService {
     const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
     const own = this.areaEntries(config, actions, stored);
     const inherited = this.areaEntries(config, actions);
+    const outside = await this.changedOutsideAt(agent!.id);
     return {
       agentId: agent!.id,
       agentName: agentName(agent!),
       overrides: stored,
-      areas: own.map((entry, i) => ({ ...entry, inherited: inherited[i]!.resolved })),
+      areas: own.map((entry, i) => ({
+        ...entry,
+        inherited: inherited[i]!.resolved,
+        changedOutsideAt: outside.get(entry.id) ?? null,
+      })),
     };
+  }
+
+  /**
+   * For each area of one agent, when its most recent change was made outside
+   * DorkOS, or nothing when the most recent change came through DorkOS. An
+   * action's change counts for the area it belongs to.
+   */
+  private async changedOutsideAt(agentId: string): Promise<Map<string, string>> {
+    const found = new Map<string, string>();
+    if (!this.deps.activity) return found;
+    const decided = new Set<string>();
+    const history = await listPermissionHistory(this.deps.activity, {
+      agentId,
+      limit: OUTSIDE_HISTORY_DEPTH,
+    });
+    for (const entry of history.items) {
+      for (const change of entry.metadata.changes) {
+        if (change.target.kind !== 'agent' || change.target.agentId !== agentId) continue;
+        const area =
+          change.key.kind === 'area' || change.key.kind === 'action' ? change.key.area : undefined;
+        if (!area || decided.has(area)) continue;
+        decided.add(area);
+        if (entry.metadata.attribution === 'outside') found.set(area, entry.occurredAt);
+      }
+    }
+    return found;
   }
 }

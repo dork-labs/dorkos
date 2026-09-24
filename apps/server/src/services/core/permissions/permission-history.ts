@@ -229,9 +229,15 @@ export async function recordPermissionChange(
   });
 }
 
+/** The honesty line a change DorkOS noticed rather than made carries. */
+const OUTSIDE_ACTOR_DETAIL =
+  "This agent's settings file was edited directly. DorkOS follows the file, so the change is in effect.";
+
 /** The extra line a history row shows under its actor. */
 function actorDetailFor(attribution: PermissionAttribution): string | null {
-  return attribution === 'local-trust' ? LOCAL_TRUST_ACTOR_DETAIL : null;
+  if (attribution === 'local-trust') return LOCAL_TRUST_ACTOR_DETAIL;
+  if (attribution === 'outside') return OUTSIDE_ACTOR_DETAIL;
+  return null;
 }
 
 /** How many rows the history scans per page while filtering for one agent. */

@@ -866,7 +866,7 @@ DorkOS keeps one more value in this section, `approvals.standingGrantsVoidBefore
 
 What your agents may do on their own, what waits for your yes, and what they cannot do at all. See the [Permissions guide](/docs/guides/permissions).
 
-These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here: every change needs a person and is recorded in the history. `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
+These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here, so that every change DorkOS makes is recorded in the history. (An edit made straight to an agent's settings file is recorded too, as changed outside DorkOS.) `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
 
 <TypeTable
   type={{

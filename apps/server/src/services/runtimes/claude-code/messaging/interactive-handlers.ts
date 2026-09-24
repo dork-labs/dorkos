@@ -249,7 +249,9 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * `archive_room` sit in the Rooms permission area: `registry.invoke` resolves it
  * for this agent, fresh, on every call — Blocked refuses, Ask raises the gate's
  * own card inside the call, Allowed runs — and no agent can write its own
- * permissions. So the auto-allow here is strictly narrower than the eight
+ * permissions through DorkOS. (One with file tools can edit its manifest; that
+ * is honoured and recorded as a change made outside DorkOS, see
+ * `services/core/permissions/permission-observer.ts`.) So the auto-allow here is strictly narrower than the eight
  * above: those need only an identity, these need an identity AND a Rooms
  * permission a person set or chose a preset for.
  *

@@ -13,7 +13,11 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { createMockTransport } from '@dorkos/test-utils';
-import type { PermissionException, PermissionsResponse } from '@dorkos/shared/permissions';
+import type {
+  AgentPermissionsResponse,
+  PermissionException,
+  PermissionsResponse,
+} from '@dorkos/shared/permissions';
 import { TransportProvider } from '@/layers/shared/model';
 
 import { PermissionRow } from '../ui/PermissionRow';
@@ -253,5 +257,52 @@ describe('PermissionList (default scope)', () => {
         surface: 'settings',
       })
     );
+  });
+});
+
+describe('PermissionList (agent scope)', () => {
+  const rooms = (changedOutsideAt: string | null): AgentPermissionsResponse => ({
+    agentId: 'a1',
+    agentName: 'security-auditor',
+    overrides: { areas: { rooms: 'allowed' } },
+    areas: [
+      {
+        id: 'rooms',
+        label: 'Rooms',
+        description: 'Make rooms',
+        floor: false,
+        kind: 'state',
+        actions: [
+          {
+            id: 'rooms.create',
+            title: 'Open a room',
+            tier: 'act',
+            resolved: { area: 'rooms', state: 'allowed', source: 'agent-area', layer: 'agent' },
+          },
+        ],
+        resolved: { state: 'allowed', source: 'agent-area', layer: 'agent' },
+        inherited: { state: 'blocked', source: 'preset', layer: 'default' },
+        changedOutsideAt,
+      },
+    ],
+  });
+
+  it('says so when the setting came from an edit made outside DorkOS', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue(rooms('2026-09-24T00:00:00.000Z'));
+    render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
+
+    expect(
+      await screen.findByText('Changed outside DorkOS · Everyone else: Blocked')
+    ).toBeInTheDocument();
+  });
+
+  it('shows the plain source otherwise', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue(rooms(null));
+    render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
+
+    expect(await screen.findByText('Everyone else: Blocked')).toBeInTheDocument();
+    expect(screen.queryByText(/Changed outside DorkOS/)).not.toBeInTheDocument();
   });
 });

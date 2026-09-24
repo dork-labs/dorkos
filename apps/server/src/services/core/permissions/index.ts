@@ -12,6 +12,7 @@ import type { CapabilityRegistry } from '../capabilities/index.js';
 import { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
 import type { ConfigManager } from '../config-manager.js';
 import type { ActivityService } from '../../activity/activity-service.js';
+import type { PermissionObserver } from './permission-observer.js';
 import {
   PermissionService,
   type PermissionActionInfo,
@@ -25,6 +26,7 @@ export {
   type PermissionAgentRef,
 } from './permission-service.js';
 export { readRawManifestFile, runPermissionUpgradeSweep } from './permission-upgrade-sweep.js';
+export { PermissionObserver } from './permission-observer.js';
 export {
   listPermissionHistory,
   personWriter,
@@ -69,6 +71,26 @@ export interface PermissionServiceWiring {
   registry: () => CapabilityRegistry | undefined;
   /** The Activity writer. */
   activity: ActivityService;
+  /** Notices changes made to an agent's settings file outside DorkOS. */
+  observer: PermissionObserver;
+}
+
+/**
+ * Read an agent's settings fresh off its manifest, and let the observer compare
+ * them with the last value DorkOS saw, so an edit made outside DorkOS is
+ * recorded the first time anything reads it. The gate, the tool lists and the
+ * permission pages all read through this.
+ *
+ * @param observer - The observer to report each read to.
+ */
+export function observedPermissionReader(
+  observer: PermissionObserver
+): (agentPath: string) => Promise<AgentPermissions | undefined> {
+  return async (agentPath) => {
+    const permissions = await readAgentPermissionsFromManifest(agentPath);
+    await observer.observe(agentPath, permissions);
+    return permissions;
+  };
 }
 
 /**
@@ -94,12 +116,17 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
           projectPath: a.projectPath,
         }));
       },
-      readPermissions: readAgentPermissionsFromManifest,
+      readPermissions: observedPermissionReader(wiring.observer),
       writePermissions: async (agentId: string, next: AgentPermissions | undefined) => {
         const mesh = wiring.mesh();
         if (!mesh)
           throw new Error('The agent registry is not running, so no agent can be changed.');
-        await mesh.update(agentId, { permissions: next });
+        const agentPath = mesh.listWithPaths().find((a) => a.id === agentId)?.projectPath;
+        const write = async () => {
+          await mesh.update(agentId, { permissions: next });
+        };
+        if (agentPath) await wiring.observer.writing(agentPath, next, write);
+        else await write();
       },
     },
     actions: () => permissionActions(wiring.registry()),

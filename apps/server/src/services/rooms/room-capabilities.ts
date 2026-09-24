@@ -112,8 +112,10 @@
  * merge, archive — declare `area: 'rooms'` (spec `agent-permissions` D2). The
  * capability gate resolves that area on every call, fresh off the agent's
  * manifest and the install's defaults: Blocked refuses the call, Ask raises the
- * approval card, Allowed runs. An agent cannot change its own setting — only the
- * permission routes, behind a person, write it. What the area withholds is the
+ * approval card, Allowed runs. No agent can change its setting through DorkOS —
+ * only the permission routes, behind a person, write it; an agent that can edit
+ * files can still edit its own manifest, which the permission observer records
+ * as a change made outside DorkOS. What the area withholds is the
  * ability to rearrange, which is the part that touches other people's rooms; an
  * agent with Rooms Blocked can still read, post, react and look rooms up.
  *

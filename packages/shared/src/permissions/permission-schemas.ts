@@ -133,6 +133,8 @@ export const PERMISSION_SURFACES = [
   'cli',
   'upgrade',
   'undo',
+  /** An edit to the agent's settings file that DorkOS noticed rather than made. */
+  'file-edit',
 ] as const;
 
 /** One of {@link PERMISSION_SURFACES}. */
@@ -144,9 +146,11 @@ export type PermissionSurface = z.infer<typeof PermissionSurfaceSchema>;
 /**
  * How sure DorkOS is about who made a change. `local-trust` means login was off,
  * so the change came from "someone on this computer", never a confirmed "you".
+ * `outside` means the agent's settings file changed without DorkOS writing it,
+ * so nobody can be named at all.
  */
 export const PermissionAttributionSchema = z
-  .enum(['signed-in', 'local-trust', 'agent-request-approved', 'upgrade'])
+  .enum(['signed-in', 'local-trust', 'agent-request-approved', 'upgrade', 'outside'])
   .openapi('PermissionAttribution');
 
 /** How sure DorkOS is about who made a permission change. */

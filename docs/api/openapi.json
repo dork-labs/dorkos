@@ -8404,7 +8404,8 @@
           "api",
           "cli",
           "upgrade",
-          "undo"
+          "undo",
+          "file-edit"
         ]
       },
       "PatchPermissionDefaultsBody": {
@@ -8705,7 +8706,8 @@
           "signed-in",
           "local-trust",
           "agent-request-approved",
-          "upgrade"
+          "upgrade",
+          "outside"
         ]
       },
       "AgentPermissionsResponse": {
@@ -8753,10 +8755,17 @@
                         "source",
                         "layer"
                       ]
+                    },
+                    "changedOutsideAt": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     }
                   },
                   "required": [
-                    "inherited"
+                    "inherited",
+                    "changedOutsideAt"
                   ]
                 }
               ]

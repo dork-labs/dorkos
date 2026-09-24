@@ -625,10 +625,12 @@ export interface CapabilityTierGateOptions {
  * card says an unidentified caller asked), and it is still audited; what it is
  * not is *capped*.
  *
- * That is the same `local-trust` residual `enabledToolGroups.roomsManage` and
- * `account` carry — an agent with a shell can reach the operator's own HTTP
- * routes too — and it has the same remedy: turn login on, which makes every
- * `/api/*` path demand a credential the agent has no way to mint. See
+ * That is the same `local-trust` residual a per-agent permission and `account`
+ * carry — an agent with a shell can reach the operator's own HTTP routes too —
+ * and it has the same remedy: turn login on, which makes every `/api/*` path
+ * demand a credential the agent has no way to mint. (An agent that can edit
+ * files can also edit its own `.dork/agent.json`, which login does not stop;
+ * the permission gate records that as a change made outside DorkOS.) See
  * `contributing/agent-operator-surface.md`. **A ceiling is protection against a
  * confused or prompt-injected agent following the sanctioned path, not a
  * sandbox**, and no user-facing copy may promise otherwise.

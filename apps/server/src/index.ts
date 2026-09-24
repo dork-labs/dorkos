@@ -1,4 +1,5 @@
 import path from 'path';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { randomUUID } from 'node:crypto';
 import { createApp, finalizeApp } from './app.js';
 import { ManagedConnectorCloudError } from './services/core/auth/cloud-link-client.js';
@@ -202,8 +203,11 @@ import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createPermissionsRouter } from './routes/permissions.js';
 import { resolveToolVisibilityFor } from './services/runtimes/shared/permission-tool-filter.js';
+import { composeCapabilityRegistryForDocs } from './services/core/self-description/dorkos-registry.js';
 import {
+  PermissionObserver,
   createPermissionService,
+  observedPermissionReader,
   permissionActions,
   readRawManifestFile,
   runPermissionUpgradeSweep,
@@ -911,6 +915,29 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+  // Records a change to an agent's permissions that was made by editing its
+  // settings file rather than through DorkOS. The last-seen values live in
+  // DorkOS's own data directory, never the agent's.
+  const permissionObserver = new PermissionObserver({
+    snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
+    agentAt: (agentPath) => {
+      const agent = meshCore?.listWithPaths().find((a) => a.projectPath === agentPath);
+      return agent ? { id: agent.id, name: agent.displayName || agent.name } : undefined;
+    },
+    // The whole static catalog, not the live registry: this is built before the
+    // live registry is composed, and every action's area is fixed in code.
+    areaOfAction: (() => {
+      let areas: Map<string, PermissionAreaId | null> | undefined;
+      return (actionId: string) => {
+        areas ??= new Map(
+          permissionActions(composeCapabilityRegistryForDocs()).map((a) => [a.id, a.area])
+        );
+        return areas.get(actionId);
+      };
+    })(),
+    activity: activityService,
+    logger,
+  });
   const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
   try {
     const pruned = await activityService.prune(retentionDays);
@@ -1940,7 +1967,13 @@ async function start() {
           })),
         readRawManifest: readRawManifestFile,
         writeFolded: async (agentId, fields) => {
-          await mesh.update(agentId, fields);
+          const write = async () => {
+            await mesh.update(agentId, fields);
+          };
+          const agentPath = mesh.listWithPaths().find((a) => a.id === agentId)?.projectPath;
+          // The sweep's own write is not an outside change.
+          if (agentPath) await permissionObserver.writing(agentPath, fields.permissions, write);
+          else await write();
         },
         activity: activityService,
         logger,
@@ -3811,6 +3844,7 @@ async function start() {
         mesh: () => meshCore,
         registry: () => capabilityRegistry,
         activity: activityService,
+        observer: permissionObserver,
       }),
       activity: activityService,
     })
@@ -4465,6 +4499,9 @@ async function start() {
   // manifest file by the default source.
   initPermissionGate({
     readConfig: () => configManager.get('permissions'),
+    // Fresh off the manifest on every call, and compared with the last value
+    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
+    readAgentPermissions: observedPermissionReader(permissionObserver),
     // The tool-list builders hide an action whose permission is Blocked; they
     // read this catalog, per build, off the composed registry.
     listActions: () => permissionActions(capabilityRegistry),

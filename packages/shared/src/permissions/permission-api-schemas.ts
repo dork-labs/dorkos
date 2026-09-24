@@ -95,6 +95,12 @@ export const AgentPermissionsResponseSchema = z
       PermissionAreaEntrySchema.extend({
         /** What the area would be with no override for this agent. */
         inherited: ResolvedPermissionSchema.pick({ state: true, source: true, layer: true }),
+        /**
+         * When this area's most recent change was an edit to the agent's
+         * settings file that DorkOS noticed rather than made; `null` when the
+         * most recent change came through DorkOS, or there was none.
+         */
+        changedOutsideAt: z.string().nullable(),
       })
     ),
   })

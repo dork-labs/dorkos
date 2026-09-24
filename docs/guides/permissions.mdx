@@ -21,8 +21,8 @@ Every permission is in one of three states:
 
 <Callout type="warn">
   Blocked stops an agent that plays by the rules; it isn't a sandbox. An agent that can run terminal
-  commands on your computer can still act outside DorkOS. Turn on **Require login** in Settings →
-  Access to close that door too.
+  commands or edit files on your computer can still act outside DorkOS, and that includes editing
+  its own settings file. See [What permissions can't stop](#what-permissions-cant-stop).
 </Callout>
 
 ## Areas
@@ -39,8 +39,10 @@ More areas (tasks, other agents, chat connections, packages, settings) arrive in
 
 A preset is the starting point for every area. You pick one when you first set up DorkOS:
 
-- **Full power**: your agents do everyday work themselves, rooms included.
-- **Careful**: your agents ask before changing anything.
+- **Full power**: your agents arrange rooms themselves.
+- **Careful**: your agents ask you before they arrange rooms, including merging a room's work into the main branch.
+
+Rooms is the only area that follows the preset in this release. The other kinds of work keep behaving as they did before, until their areas arrive.
 
 If you have not picked yet, your agents keep working exactly as they did before permissions existed. Settings → Permissions says so, and has a button to choose.
 
@@ -65,15 +67,23 @@ A row that says **"Same as everyone (Allowed)"** follows your default. Once you 
 
 If the agent runs on a program that cannot use DorkOS tools, the page says so: those settings do not change anything for it.
 
-## Only you can change them
+## Who can change them
 
-An agent can never change its own permissions, or another agent's. Every change goes through the permission pages, and DorkOS refuses one that comes from an agent.
+In DorkOS, only a person can: the permission pages are the one way in, and DorkOS refuses a change that an agent asks for through DorkOS itself.
+
+## What permissions can't stop
+
+An agent's own settings are kept in a file in its folder (`.dork/agent.json`). Anything that can edit files on your computer can edit that file, and that includes an agent that has file tools. DorkOS can't prevent that, and turning on login doesn't prevent it either, because login guards DorkOS, not your files.
+
+What DorkOS does is notice. The next time it checks that agent's permissions, it records the change in the history as **"Changed outside DorkOS"**, with what it was before and what it is now. The change takes effect, because you may have edited the file yourself on purpose. The agent's Permissions page marks the row too, so you can see it and set it back.
+
+If an agent should never be able to do something, don't rely on its settings alone: give it no way to edit files in its own folder, or keep a close eye on the history.
 
 ## The history
 
-Every change is recorded, and the history is kept for good rather than for 30 days. Settings → Permissions shows all of them; an agent's Permissions page shows the ones that touched it. Each line says what changed, who changed it, and when.
+Every change DorkOS makes or notices is recorded, and the history is kept for good rather than for 30 days. Settings → Permissions shows all of them; an agent's Permissions page shows the ones that touched it. Each line says what changed, who changed it, and when.
 
-With login off, DorkOS cannot tell you apart from any other program running on your computer, so it records a change as made by **"Someone on this computer"** and says why. With login on, it names your account. Changes made when DorkOS upgraded itself are labelled **"Upgrade"**.
+With login off, DorkOS cannot tell you apart from any other program running on your computer, so it records a change as made by **"Someone on this computer"** and says why. With login on, it names your account. Changes made when DorkOS upgraded itself are labelled **"Upgrade"**, and edits to an agent's settings file are labelled **"Changed outside DorkOS"**.
 
 ## After an upgrade
 

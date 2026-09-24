@@ -106,9 +106,14 @@ function AgentAreaRow({
 }) {
   const write = useSetPermission({ kind: 'agent', agentId });
   const changed = area.resolved.source === 'agent-area' || area.resolved.source === 'agent-action';
-  const sourceText = changed
+  const inheritedText = changed
     ? `Everyone else: ${STATE_LABEL[area.inherited.state]}`
     : `Same as everyone (${STATE_LABEL[area.inherited.state]})`;
+  // An edit to the agent's settings file that DorkOS noticed rather than made.
+  // It is in effect, so the row says where it came from.
+  const sourceText = area.changedOutsideAt
+    ? `Changed outside DorkOS · ${inheritedText}`
+    : inheritedText;
   const save = (next: PermissionState | null) =>
     write.mutate(
       { kind: 'patch', areas: { [area.id]: next }, surface: 'agent-page' },
