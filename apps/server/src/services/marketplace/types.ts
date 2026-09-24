@@ -344,7 +344,8 @@ export interface InstallResult {
    * showing them until a reinstall clears them. A toast the person dismissed
    * is not a record of a package that is still missing its libraries.
    */
-  dependencyWarnings?: string[]; /**
+  dependencyWarnings?: string[];
+  /**
    * What the install did with files the person may have changed (DOR-2245).
    * Each notice is also one plain sentence on {@link InstallResult.warnings}.
    */
