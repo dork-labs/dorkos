@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(security): bound how much DorkOS reads from packages and marketplaces (DOR-2319)'
+  - 'fix(security): never follow a link or block on a device when reading a package (DOR-2319)'
 ---
 
 ### Security
