@@ -80,8 +80,8 @@ update, a reinstall and an uninstall. If one of the package's own files was
 edited, the new version's copy goes in and the edited one is saved beside it as
 \`<file>.dork-old\`. A package can mark a file as the person's to edit
 (\`userEditable\`, such as a settings file): then the edit stays and the new
-default is saved as \`<file>.dork-new\`. Read \`warnings\` on the result and tell
-the person about each of these. A package may not mark a file that decides what
+default is saved as \`<file>.dork-new\`. Read \`warnings\` on an install's result
+(on an update, each entry's \`applied.warnings\`) and tell the person about each. A package may not mark a file that decides what
 it runs (hooks, servers, \`bin/\`, skills, commands, extensions) as user-editable,
 and one that ships \`.dork/data/\`, \`.dork/secrets.json\` or an install record is
 refused.
@@ -96,7 +96,7 @@ back: a package installed before DorkOS checked this, or a copy that arrived
 another way. \`dorkos marketplace held-back\` lists them and why.
 
 You cannot approve one, not even one you installed: \`--allow\` and \`--refuse\`
-refuse you. Tell the person which package is held back and what it runs, and
+refuse you. Tell the person which package is held back and why (the note it lists), and
 that they can press **Review** on its row under Marketplace, then Installed.
 
 ## Remove a package (tier: destructive)
@@ -122,6 +122,7 @@ Uninstall keeps what the person and their agents added (see above) and a later
 reinstall picks it up; \`purge: true\` removes it too, so say that out loud.
 Uninstalling an agent package also removes that agent from the team: its rooms,
 schedules, sign-ins and access go, and reinstalling does not bring them back.
+Say so before asking.
 
 \`dorkos uninstall <name>\` is the person's verb, and it is gated for you
 exactly like the paths above, so it is not a way around an approval.

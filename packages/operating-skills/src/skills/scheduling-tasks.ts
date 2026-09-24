@@ -122,10 +122,11 @@ A schedule that came with an installed package can only be turned on or off, or
 given a new \`cron\` or \`timezone\`; any other change is refused
 (\`schedule_package_owned\`). DorkOS keeps the new timing itself, leaves the
 package's files alone, and keeps it through the package's updates. Send
-\`resetTiming: true\`, on its own, to put it back on the package's timing. Either
-timing change stops an approved schedule at once until the user approves it again.
+\`resetTiming: true\`, on its own, to put it back on the package's timing. A change
+to when an approved schedule runs stops it at once until the user approves it again.
 To change what it does, the user can press **Make my own copy** on it in DorkOS: a
 new schedule for the same agent, filled in, and by default the package's one off.
+Packages installed by an older DorkOS don't offer it yet.
 
 - \`tasks_delete\` removes a task permanently, and it is \`destructive\` tier. It does
   NOT run until a person approves it: the first call comes back with the
@@ -150,9 +151,8 @@ user to open the task in DorkOS for those.
 
 \`minute hour day-of-month month day-of-week\`. Examples: \`0 2 * * *\` every day
 at 02:00, \`0 9 * * 1\` every Monday at 09:00, \`*/15 * * * *\` every 15 minutes.
-
-Always pass the user's timezone when the time of day matters; cron with no
-timezone runs in the server's zone.
+Pass the user's timezone when the time of day matters; without one, it runs in the
+server's zone.
 
 ## Reading run results
 
