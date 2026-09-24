@@ -23,3 +23,18 @@ describe('profile pages in the Obsidian embed', () => {
     expect(isProfilePageAvailable('tools')).toBe(true);
   });
 });
+
+describe('the Permissions row', () => {
+  it('reads as "Agent permissions", distinct from the status bar’s Permissions control', async () => {
+    const { rowsFor } = await import('../lib/profile-rows');
+    const agent = {
+      id: 'a1',
+      kind: 'agent',
+      name: 'ana',
+      displayName: 'Ana',
+    } as unknown as Parameters<typeof rowsFor>[0];
+    const rows = rowsFor(agent, { relationship: 'managed', manages: [] }).flatMap((g) => g.rows);
+    const row = rows.find((r) => r.id === 'permissions');
+    expect(row).toMatchObject({ label: 'Permissions', accessibleLabel: 'Agent permissions' });
+  });
+});
