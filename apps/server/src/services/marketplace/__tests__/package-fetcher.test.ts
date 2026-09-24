@@ -16,7 +16,7 @@ import {
   type GitTreeSource,
   type RemoteRef,
   type TreeRequest,
-} from '../lib/git-tree.js';
+} from '../lib/git/git-tree.js';
 import { UnsupportedSourceUrlError } from '../source-url-policy.js';
 import type { MarketplaceSource } from '../types.js';
 

@@ -8,7 +8,7 @@
  * {@link downloadTemplate} is the workspace-template flow behind
  * `POST /api/agents/create`. Its `source` is free-form, so it asks
  * {@link isSupportedTemplateSource} before either strategy runs (DOR-1825).
- * The marketplace fetches packages itself (`services/marketplace/lib/git-tree.ts`)
+ * The marketplace fetches packages itself (`services/marketplace/lib/git/git-tree.ts`)
  * and confines its addresses with `services/marketplace/source-url-policy.ts`,
  * whose accepted set is deliberately different (it fetches from `ssh://`; this
  * file cannot), so the two doors stay two doors rather than one shared

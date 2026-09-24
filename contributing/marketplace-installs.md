@@ -97,7 +97,9 @@ apps/server/src/services/marketplace/
 │   └── npm.ts                   # Not supported yet (throws)
 ├── lib/
 │   ├── atomic-move.ts           # Cross-device-safe fs.rename replacement
-│   ├── git-tree.ts              # Resolve a ref exactly; fetch one commit, verify HEAD
+│   ├── git/
+│   │   ├── git-tree.ts          # Resolve a ref exactly; fetch one commit, verify HEAD
+│   │   └── git-runner.ts        # One bounded git command: time, output, disk, process tree
 │   └── npm-dependencies.ts      # Staged `npm install` + the preview's reader
 ├── flows/
 │   ├── install-plugin.ts
@@ -487,7 +489,7 @@ Concurrency: every reader of a cache entry is in this server process (one server
 
 **An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, subpath, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. A sparse checkout is a different tree from the whole repository at the same commit, so a `git-subdir` entry's key carries the first 12 hex digits of its subfolder's SHA-256 (`flow@<sha>~<digest>`), and `getPackage` takes the subfolder too. Entries from before this rule lived under `packages/`; nothing reads them. At startup, before any route exists, the server calls `removeLeftovers`, which deletes that directory and any `trees/.tmp-fetch-*` or `trees/.tmp-prune-*` a crash left behind.
 
-**How a tree is fetched** (`lib/git-tree.ts`, behind `PackageFetcher.fetchGitTree`, which all three git forms share):
+**How a tree is fetched** (`lib/git/git-tree.ts`, with `lib/git/git-runner.ts`, behind `PackageFetcher.fetchGitTree`, which all three git forms share):
 
 1. **Resolve the ref exactly** (`lookupRemoteRef`): a full commit id is itself; `HEAD` is the default branch; a `refs/…` name is taken as written; any other name is `refs/heads/<ref>`, then `refs/tags/<ref>` (the order `git clone --branch` uses), with an annotated tag peeled to its commit. `git ls-remote` is asked for those qualified names, never the bare name, because it matches the tail of every ref (`main` also returns `refs/heads/x/main`). A ref the remote lacks throws `GitRefNotFoundError`; a remote that cannot be asked throws `GitRemoteUnreachableError`. Nothing is fetched in either case.
 2. **Fetch that commit by id**: `git init`, a temporary remote, and `git fetch --depth=1 <commit>`. A push after the lookup cannot change what arrives. A `git-subdir` subpath is first tried as a blob-filtered partial clone with a sparse cone (`sparse-checkout init --cone`, then `set`), so only the package's own files download.

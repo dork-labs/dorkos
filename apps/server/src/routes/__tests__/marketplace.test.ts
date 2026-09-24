@@ -74,7 +74,7 @@ import {
   GitFetchError,
   GitRefNotFoundError,
   GitRemoteUnreachableError,
-} from '../../services/marketplace/lib/git-tree.js';
+} from '../../services/marketplace/lib/git/git-tree.js';
 import type { InstallResult, PermissionPreview } from '../../services/marketplace/types.js';
 import { createMarketplaceRouter } from '../marketplace.js';
 import {

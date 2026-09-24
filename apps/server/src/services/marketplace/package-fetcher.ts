@@ -60,7 +60,7 @@ import {
   GitRemoteUnreachableError,
   isFullCommitSha,
   type GitTreeSource,
-} from './lib/git-tree.js';
+} from './lib/git/git-tree.js';
 
 /**
  * Options for {@link PackageFetcher.fetchPackage} (and the legacy

@@ -41,7 +41,7 @@ import {
 } from '@dorkos/marketplace';
 import { readInstallMetadataStrict, type InstallMetadata } from '../installed-metadata.js';
 import type { PackageFetcher } from '../package-fetcher.js';
-import { isFullCommitSha } from './git-tree.js';
+import { isFullCommitSha } from './git/git-tree.js';
 import {
   computeInstalledFiles,
   hashFile,

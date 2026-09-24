@@ -78,7 +78,13 @@ vi.mock('../../../core/template-downloader.js', async () => {
   return { ...actual, resolveGitAuth: () => resolveGitAuth() };
 });
 
-import { fetchTree, GitFetchError, lookupRemoteRef, parseGitVersion } from '../git-tree.js';
+import {
+  FETCH_DEADLINE_MS,
+  fetchTree,
+  GitFetchError,
+  lookupRemoteRef,
+  parseGitVersion,
+} from '../git/git-tree.js';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -228,7 +234,7 @@ describe('the installed git decides how the token travels', () => {
     vi.resetModules();
     gitVersionOutput = version;
     versionReads = 0;
-    return import('../git-tree.js');
+    return import('../git/git-tree.js');
   }
 
   it.each(['git version 2.30.0\n', 'git version 2.26.2\n', 'unreadable\n'])(
@@ -317,6 +323,35 @@ describe('verification', () => {
       "Couldn't fetch gitlab.example.com/o/r: repository 'x' not found"
     );
     expect(calls.filter((a) => a[0] === 'fetch')).toHaveLength(1);
+  });
+
+  it('gives up once the whole fetch passes its deadline, however each step answers', async () => {
+    // Purpose: every step has its own timeout, but a server answering each one
+    // just inside it could hold an install for hours across many steps. The
+    // whole fetch has one deadline, and each step gets what is left of it.
+    // Time is faked: every git step takes four minutes.
+    respond = gitReporting(A, A);
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const step = respond;
+    respond = (args) => {
+      now += 4 * 60_000;
+      return step(args);
+    };
+    try {
+      const error = await fetchTree({
+        ...req('https://gitlab.example.com/o/r.git'),
+        subpath: 'pkg',
+      }).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(GitFetchError);
+      expect((error as Error).message).toContain(
+        `the download took longer than ${FETCH_DEADLINE_MS / 60_000} minutes`
+      );
+      // Ten minutes of four-minute steps: three steps ran, none after that.
+      expect(calls.length).toBe(3);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it('runs the exact command sequence the git floor was measured against', async () => {

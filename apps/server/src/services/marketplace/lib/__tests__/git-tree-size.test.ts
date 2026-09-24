@@ -25,7 +25,14 @@ vi.mock('@dorkos/marketplace/package-size', async (importOriginal) => ({
   CLONE_SIZE_LIMITS: { maxTotalBytes: 1024 * 1024, maxEntries: 100, maxFileBytes: 1024 * 1024 },
 }));
 
-import { fetchTree, GitFetchError, killProcessTree, pastByteLimit } from '../git-tree.js';
+import { fetchTree, GitFetchError } from '../git/git-tree.js';
+import {
+  GIT_OUTPUT_LIMITS,
+  killProcessTree,
+  pastByteLimit,
+  stopAllGit,
+  trackGit,
+} from '../git/git-runner.js';
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
@@ -235,5 +242,52 @@ describe('stopping git (DOR-2321)', () => {
     ['free space unknown', { size: 0, freeBefore: undefined, freeNow: undefined }, false],
   ])('decides on %s', (_label, sample, stop) => {
     expect(pastByteLimit({ ...sample, maxBytes: 10 })).toBe(stop);
+  });
+});
+
+describe('git output and running groups (DOR-2321)', () => {
+  // Purpose: a tree listing is counted as it streams and never kept, so a
+  // legitimate listing longer than the output limit is judged by the entry
+  // and byte limits alone: a small package still fetches, and a tree past the
+  // entry limit still gets the size message.
+  it('judges a tree listing by the size limits, never the output limit', async () => {
+    const saved = GIT_OUTPUT_LIMITS.stdoutChars;
+    // Shorter than the small package's own listing, longer than any other
+    // output its fetch keeps (a 41-character commit id).
+    GIT_OUTPUT_LIMITS.stdoutChars = 50;
+    try {
+      const fetched = await fetchInto(small, '');
+      expect(fetched.error).toBeUndefined();
+      const refused = await fetchInto(bomb, '');
+      expect(refused.error!.message).toContain('more than 100 files and folders');
+    } finally {
+      GIT_OUTPUT_LIMITS.stdoutChars = saved;
+    }
+  });
+
+  // Purpose: output that is kept is capped, and passing the cap stops git.
+  it('stops git that prints past the output limit', async () => {
+    const saved = GIT_OUTPUT_LIMITS.stdoutChars;
+    GIT_OUTPUT_LIMITS.stdoutChars = 5;
+    try {
+      const { error } = await fetchInto(small, '');
+      expect(error!.message).toContain('git printed too much');
+    } finally {
+      GIT_OUTPUT_LIMITS.stdoutChars = saved;
+    }
+  });
+
+  // Purpose: git runs in its own process group, which the terminal's Ctrl-C
+  // no longer reaches, so running groups are tracked and stopped on the way
+  // out, with exit and signal handlers installed the first time.
+  it.skipIf(process.platform === 'win32')('stops every tracked group on the way out', async () => {
+    const child = spawn('sh', ['-c', 'sleep 30 & wait'], { detached: true });
+    const before = process.listenerCount('SIGTERM');
+    trackGit(child.pid!);
+    expect(process.listenerCount('SIGTERM')).toBeGreaterThanOrEqual(Math.min(before + 1, 1));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    stopAllGit();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(() => process.kill(child.pid!, 0)).toThrow();
   });
 });

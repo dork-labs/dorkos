@@ -47,28 +47,51 @@
  *
  * @module services/marketplace/lib/git-tree
  */
-import { execFile, spawn } from 'node:child_process';
-import { lstat, readdir, rm, statfs } from 'node:fs/promises';
+import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import {
   CLONE_SIZE_LIMITS,
   PackageTooLargeError,
   measurePackageTree,
 } from '@dorkos/marketplace/package-size';
-import { hardenedGitEnv } from '../../../lib/git-safety.js';
+import { GitDownloadTooLargeError, runGit, type GitConfigEntry } from './git-runner.js';
 import {
   gitHubAuthConfig,
   isGitHubCredentialHost,
   redactAuthTokens,
   resolveGitAuth,
   withGitHubToken,
-} from '../../core/template-downloader.js';
+} from '../../../core/template-downloader.js';
+
+export { GitDownloadTooLargeError } from './git-runner.js';
 
 /** Max time to wait for `git ls-remote`. */
 const LS_REMOTE_TIMEOUT_MS = 15_000;
 
 /** Max time for any one git step of a fetch; matches the clone it replaced. */
 const GIT_FETCH_TIMEOUT_MS = 120_000;
+
+/**
+ * Max time for a whole {@link fetchTree}, every step together (DOR-2321). Each
+ * step gets what is left of it, so a server that answers every step just
+ * inside {@link GIT_FETCH_TIMEOUT_MS} cannot hold an install for hours across
+ * a blobless download's many batches. Ten minutes covers the slowest honest
+ * case with room: the full-history fallback for a large repository on a slow
+ * connection, then its checkout. A normal package takes seconds.
+ */
+export const FETCH_DEADLINE_MS = 10 * 60_000;
+
+/** A fetch that ran out of its whole-fetch time ({@link FETCH_DEADLINE_MS}). */
+class GitDeadlineError extends Error {
+  /** Build the error; the message is the reason a person reads. */
+  constructor() {
+    super(`the download took longer than ${FETCH_DEADLINE_MS / 60_000} minutes`);
+    this.name = 'GitDeadlineError';
+  }
+}
+
+/** How many blob ids one fetch names; well inside Windows' command-line limit. */
+const BLOB_FETCH_BATCH = 500;
 
 /** Everything after it is a value, never a flag (git ≥ 2.24). */
 const END_OF_OPTIONS = '--end-of-options';
@@ -186,36 +209,6 @@ export class GitFetchError extends Error {
   }
 }
 
-/** A byte count in plain words: GB from one gigabyte up, else MB. */
-function describeDownloadBytes(bytes: number): string {
-  const gb = 1024 * 1024 * 1024;
-  return bytes >= gb ? `${Math.round(bytes / gb)} GB` : `${Math.ceil(bytes / (1024 * 1024))} MB`;
-}
-
-/**
- * A git download that passed the clone limits (DOR-2321): it grew past the
- * byte limit while downloading, or its tree lists more files and folders, or
- * more bytes, than DorkOS unpacks. Raised before anything is checked out.
- */
-export class GitDownloadTooLargeError extends Error {
-  /**
-   * Build the error for one limit.
-   *
-   * @param kind - `growing` while downloading, else what the tree listing found.
-   * @param limit - The limit passed: bytes, or files and folders for `entries`.
-   */
-  constructor(kind: 'growing' | 'bytes' | 'entries', limit: number) {
-    super(
-      kind === 'growing'
-        ? `The download grew past ${describeDownloadBytes(limit)}, so DorkOS stopped it.`
-        : kind === 'bytes'
-          ? `The download is larger than ${describeDownloadBytes(limit)}, so DorkOS did not unpack it.`
-          : `The download has more than ${limit.toLocaleString('en-US')} files and folders, so DorkOS did not unpack it.`
-    );
-    this.name = 'GitDownloadTooLargeError';
-  }
-}
-
 /**
  * Resolve `ref` on the remote at `cloneUrl` to an exact refname and commit.
  * Never throws: a failed `ls-remote` is `unreachable`, with git's reason.
@@ -268,8 +261,14 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
   // Every step gets the auth: a sparse checkout fetches the blobs it lacks
   // from the remote, so the checkout needs it as much as the fetch does.
   const auth = await gitAuth(req.cloneUrl);
-  const git: GitRunner = (args, options = {}) =>
-    runGit(args, req.destDir, GIT_FETCH_TIMEOUT_MS, auth.config, {
+  const deadline = Date.now() + FETCH_DEADLINE_MS;
+  const git: GitRunner = (args, options = {}) => {
+    // Each step gets what is left of the whole fetch's time (DOR-2321).
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return Promise.reject(new GitDeadlineError());
+    }
+    return runGit(args, req.destDir, Math.min(GIT_FETCH_TIMEOUT_MS, remaining), auth.config, {
       // A download is watched on disk while git runs, so a server cannot
       // stream more than the clone limit however it answers (DOR-2321).
       ...(options.watchBytes && {
@@ -283,6 +282,7 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
       ...(options.stdin !== undefined && { stdin: options.stdin }),
       ...(options.env && { env: options.env }),
     });
+  };
 
   try {
     const commit = await fetchCommit(git, req, auth.url);
@@ -329,8 +329,9 @@ async function fetchCommit(git: GitRunner, req: TreeRequest, remoteUrl: string):
     try {
       return await attempt(git, req, remoteUrl, true);
     } catch (err) {
-      // Too large is the answer, not a reason to try again without the filter.
-      if (err instanceof GitDownloadTooLargeError) throw err;
+      // Too large, or out of time, is the answer, not a reason to try again
+      // without the filter.
+      if (err instanceof GitDownloadTooLargeError || err instanceof GitDeadlineError) throw err;
       await emptyDir(req.destDir);
     }
   }
@@ -462,7 +463,6 @@ async function checkTreeBeforeCheckout(
   let entries = 0;
   let bytes = 0;
   let over: GitDownloadTooLargeError | null = null;
-  let counted = false;
   /** Blob id to how many times the tree names it, when sizes are not known yet. */
   const blobs = new Map<string, number>();
   const addBytes = (size: number): void => {
@@ -471,7 +471,6 @@ async function checkTreeBeforeCheckout(
     }
   };
   const count = (line: string): boolean => {
-    counted = true;
     if (line === '' || over) return over === null;
     entries += 1;
     if (entries > maxEntries) over = new GitDownloadTooLargeError('entries', maxEntries);
@@ -483,7 +482,7 @@ async function checkTreeBeforeCheckout(
     }
     return over === null;
   };
-  const { stdout } = await git(
+  await git(
     [
       'ls-tree',
       '-r',
@@ -495,13 +494,9 @@ async function checkTreeBeforeCheckout(
     { onStdoutLine: count }
   ).catch((err: unknown) => {
     // Stopping git early is how the limit is enforced; its exit is expected.
-    if (over) return { stdout: '' };
+    if (over) return { stdout: '', stderr: '' };
     throw err;
   });
-  // A runner that cannot stream (a test double) hands the whole listing back.
-  if (!counted) {
-    for (const line of stdout.split('\n')) if (!count(line)) break;
-  }
   if (over) throw over;
   if (withSizes || blobs.size === 0) return;
 
@@ -526,9 +521,10 @@ async function checkTreeBeforeCheckout(
       { watchBytes: true }
     );
   }
-  // Sized from the local copies. GIT_NO_LAZY_FETCH (git 2.44+) makes a blob
-  // that somehow did not arrive read as missing instead of being fetched one
-  // at a time; older git fetches it, still under the byte watch.
+  // Sized from the local copies. GIT_NO_LAZY_FETCH exists from git 2.45: there
+  // a blob that somehow did not arrive reads as missing instead of being
+  // fetched one at a time. Older git ignores it and fetches such a blob, still
+  // under the byte watch, so the limit holds either way.
   const { stdout: sized } = await git(['cat-file', '--batch-check=%(objectname) %(objectsize)'], {
     stdin: `${ids.join('\n')}\n`,
     env: { GIT_NO_LAZY_FETCH: '1' },
@@ -700,26 +696,6 @@ async function gitAuth(cloneUrl: string): Promise<GitAuth> {
   return { url: withGitHubToken(cloneUrl, token), config: [] };
 }
 
-/** One `git -c`-style setting, passed through the environment instead of argv. */
-type GitConfigEntry = { key: string; value: string };
-
-/**
- * `env` with `entries` appended to git's environment config
- * (`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`, read by
- * git ≥ 2.31), after any entries the environment already carries.
- */
-function withGitConfig(env: NodeJS.ProcessEnv, entries: GitConfigEntry[]): NodeJS.ProcessEnv {
-  if (entries.length === 0) return env;
-  const existing = Number.parseInt(env.GIT_CONFIG_COUNT ?? '0', 10);
-  const start = Number.isNaN(existing) || existing < 0 ? 0 : existing;
-  const next: NodeJS.ProcessEnv = { ...env, GIT_CONFIG_COUNT: String(start + entries.length) };
-  entries.forEach(({ key, value }, i) => {
-    next[`GIT_CONFIG_KEY_${start + i}`] = key;
-    next[`GIT_CONFIG_VALUE_${start + i}`] = value;
-  });
-  return next;
-}
-
 /**
  * How a remote is named in a message a person reads: host and path, with any
  * userinfo (which may be a credential) and query left out.
@@ -762,242 +738,4 @@ function reasonOf(err: unknown): string {
     );
   }
   return redactAuthTokens(String(err));
-}
-
-/** How one git command is watched while it runs. */
-interface GitRunOptions {
-  /**
-   * Kill git once the files under `dir` pass `maxBytes`, or the free space on
-   * the disk holding `freeSpaceOf` drops by more than `maxBytes` (plus
-   * {@link FREE_SPACE_MARGIN}) since git started, checked every
-   * {@link WATCH_INTERVAL_MS}. The first catches a download; the second
-   * catches anything git writes elsewhere, such as a checkout. Portable (no
-   * `ulimit`), so it holds on Windows too.
-   */
-  watch?: { dir: string; freeSpaceOf: string; maxBytes: number };
-  /** Called for each line of output; returning `false` stops git. */
-  onStdoutLine?: (line: string) => boolean;
-  /** Text written to git's standard input. */
-  stdin?: string;
-  /** Extra environment variables for this one command. */
-  env?: NodeJS.ProcessEnv;
-}
-
-/** How many blob ids one fetch names; well inside Windows' command-line limit. */
-const BLOB_FETCH_BATCH = 500;
-
-/** The most output one git command may print; more is stopped. */
-const GIT_OUTPUT_MAX_CHARS = 16 * 1024 * 1024;
-
-/** How often a watched command's size on disk is checked. */
-const WATCH_INTERVAL_MS = 200;
-
-/** Room for the disk's other writers before a free-space drop counts as git's. */
-const FREE_SPACE_MARGIN = 256 * 1024 * 1024;
-
-/**
- * The total size of every file under `dir`, `0` when it does not exist yet.
- *
- * @param dir - The directory to measure.
- */
-async function sizeOnDisk(dir: string): Promise<number> {
-  let total = 0;
-  const pending = [dir];
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    let entries;
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) pending.push(full);
-      else if (entry.isFile()) total += (await lstat(full).catch(() => ({ size: 0 }))).size;
-    }
-  }
-  return total;
-}
-
-/**
- * Free bytes on the disk holding `dir`, or `undefined` where that cannot be read.
- *
- * @param dir - Any path on the disk.
- */
-async function freeBytes(dir: string): Promise<number | undefined> {
-  try {
-    const stats = await statfs(dir);
-    return Number(stats.bavail) * Number(stats.bsize);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Whether a watched git command has gone past its byte limit: the watched
- * directory holds more than `maxBytes`, or the disk has lost more than
- * `maxBytes` plus {@link FREE_SPACE_MARGIN} of free space since it started.
- *
- * @param sample - What one poll saw.
- * @returns `true` to stop git.
- * @internal Exported for tests.
- */
-export function pastByteLimit(sample: {
-  size: number;
-  freeBefore: number | undefined;
-  freeNow: number | undefined;
-  maxBytes: number;
-}): boolean {
-  const { size, freeBefore, freeNow, maxBytes } = sample;
-  const drop = freeBefore !== undefined && freeNow !== undefined ? freeBefore - freeNow : 0;
-  return size > maxBytes || drop > maxBytes + FREE_SPACE_MARGIN;
-}
-
-/**
- * Stop a process and everything it started. Killing git alone leaves its
- * helpers (`index-pack`, `upload-pack`, a transport) running and writing. On
- * POSIX, git is started as the leader of its own process group, and the group
- * is killed; on Windows, `taskkill /T` walks the tree.
- *
- * @param pid - The process to stop, with its descendants.
- * @param platform - The platform to act for; a parameter so tests can check
- *   the Windows branch anywhere.
- * @param run - Runs `taskkill` on Windows; a parameter for the same reason.
- * @internal Exported for tests.
- */
-export function killProcessTree(
-  pid: number,
-  platform: NodeJS.Platform = process.platform,
-  run: (file: string, args: string[]) => void = (file, args) => {
-    execFile(file, args, { windowsHide: true }, () => {});
-  }
-): void {
-  if (platform === 'win32') {
-    run('taskkill', ['/T', '/F', '/PID', String(pid)]);
-    return;
-  }
-  try {
-    process.kill(-pid, 'SIGKILL');
-  } catch {
-    // Not a group leader after all (or already gone): stop the process itself.
-    try {
-      process.kill(pid, 'SIGKILL');
-    } catch {
-      // Already gone.
-    }
-  }
-}
-
-/**
- * Run one git command. `cwd` is the fetch directory, or `undefined` for
- * `ls-remote`, which needs no repository. A rejection carries git's `stdout`
- * and `stderr`, as `execFile`'s promise form does, and `killed: true` when
- * git ran out of time. Every way of stopping git (its time running out, a
- * size limit, an output limit) stops its whole process tree.
- */
-async function runGit(
-  args: string[],
-  cwd: string | undefined,
-  timeout: number,
-  config: GitConfigEntry[] = [],
-  options: GitRunOptions = {}
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    let watchTimer: NodeJS.Timeout | undefined;
-    let tooLarge = false;
-    let stopped = false;
-    let timedOut = false;
-    let overflowed = false;
-    let settled = false;
-    let stdout = '';
-    let stderr = '';
-    const child = spawn('git', args, {
-      cwd,
-      // Confine git to safe transports so an author-controlled URL cannot reach
-      // the `ext::`/`file::` helpers, and never prompt for a credential.
-      env: { ...withGitConfig(hardenedGitEnv(), config), ...options.env },
-      windowsHide: true,
-      // Its own process group on POSIX, so the whole tree can be stopped.
-      detached: process.platform !== 'win32',
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const kill = (): void => {
-      if (child.pid !== undefined) killProcessTree(child.pid);
-    };
-    const timeoutTimer = setTimeout(() => {
-      timedOut = true;
-      kill();
-    }, timeout);
-    const finish = (err: (Error & { code?: unknown }) | null): void => {
-      if (settled) return;
-      settled = true;
-      if (watchTimer) clearInterval(watchTimer);
-      clearTimeout(timeoutTimer);
-      if (tooLarge) return reject(new GitDownloadTooLargeError('growing', options.watch!.maxBytes));
-      if (stopped) return resolve({ stdout, stderr });
-      if (timedOut) {
-        return reject(Object.assign(new Error('git timed out'), { killed: true, stdout, stderr }));
-      }
-      if (overflowed)
-        return reject(Object.assign(new Error('git printed too much'), { stdout, stderr }));
-      if (err) return reject(Object.assign(err, { stdout, stderr }));
-      resolve({ stdout, stderr });
-    };
-    const collect = (stream: 'stdout' | 'stderr', chunk: string): void => {
-      if (stream === 'stdout') stdout += chunk;
-      else stderr += chunk;
-      if (stdout.length + stderr.length > GIT_OUTPUT_MAX_CHARS && !overflowed) {
-        overflowed = true;
-        kill();
-      }
-    };
-    child.stdout.setEncoding('utf-8');
-    child.stderr.setEncoding('utf-8');
-    child.stderr.on('data', (chunk: string) => collect('stderr', chunk));
-    let partial = '';
-    child.stdout.on('data', (chunk: string) => {
-      collect('stdout', chunk);
-      if (!options.onStdoutLine || stopped) return;
-      const lines = (partial + chunk).split('\n');
-      partial = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!options.onStdoutLine(line)) {
-          stopped = true;
-          kill();
-          return;
-        }
-      }
-    });
-    child.stdin.on('error', () => {
-      // Git may exit without reading its input; that is its answer, not ours.
-    });
-    child.stdin.end(options.stdin ?? '');
-    child.once('error', (err) => finish(err));
-    child.once('close', (code, signal) => {
-      finish(
-        code === 0 && signal === null
-          ? null
-          : Object.assign(new Error(`Command failed: git ${args.join(' ')}`), { code, signal })
-      );
-    });
-    if (options.watch) {
-      const { dir, freeSpaceOf, maxBytes } = options.watch;
-      const startFree = freeBytes(freeSpaceOf);
-      let busy = false;
-      watchTimer = setInterval(() => {
-        if (busy || tooLarge) return;
-        busy = true;
-        void Promise.all([sizeOnDisk(dir), startFree, freeBytes(freeSpaceOf)]).then(
-          ([size, freeBefore, freeNow]) => {
-            busy = false;
-            if (pastByteLimit({ size, freeBefore, freeNow, maxBytes })) {
-              tooLarge = true;
-              kill();
-            }
-          }
-        );
-      }, WATCH_INTERVAL_MS);
-    }
-  });
 }

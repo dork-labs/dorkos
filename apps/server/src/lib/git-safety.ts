@@ -1,7 +1,7 @@
 /**
  * Hardened environment for spawning `git` against an author-supplied URL.
  *
- * The marketplace's package fetch (`services/marketplace/lib/git-tree.ts`, for
+ * The marketplace's package fetch (`services/marketplace/lib/git/git-tree.ts`, for
  * every `github`, `url` and `git-subdir` source) and the workspace-template
  * clone (`template-downloader.execGitClone`) both hand a remote URL to `git`. Git's default configuration honours transport helpers such as `ext::`
  * (`ext::sh -c '<cmd>'`), which turn a clone/ls-remote into arbitrary command

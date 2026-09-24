@@ -42,7 +42,7 @@ import type { Logger } from '@dorkos/shared/logger';
 import { MarketplaceSourceManager } from '../../marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from '../../marketplace/marketplace-cache.js';
 import { PackageFetcher } from '../../marketplace/package-fetcher.js';
-import type { GitTreeSource } from '../../marketplace/lib/git-tree.js';
+import type { GitTreeSource } from '../../marketplace/lib/git/git-tree.js';
 import type { InstallerLike, PreviewResult } from '../../marketplace/marketplace-installer.js';
 import type { InstallRequest, InstallResult, PermissionPreview } from '../../marketplace/types.js';
 import type { UninstallFlow } from '../../marketplace/flows/uninstall.js';

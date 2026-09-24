@@ -37,7 +37,7 @@ import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
 import { PackageFetcher } from '../package-fetcher.js';
 import { PackageResolver } from '../package-resolver.js';
 import { PermissionPreviewBuilder } from '../permission-preview.js';
-import type { GitTreeSource } from '../lib/git-tree.js';
+import type { GitTreeSource } from '../lib/git/git-tree.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
