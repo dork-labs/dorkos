@@ -1119,7 +1119,9 @@ it('refuses to run an unapplied migration below the newest applied one', async (
     ).toEqual([{ version: 1 }, { version: 3 }]);
   } finally {
     await db.end();
-    await admin.query(`DROP DATABASE IF EXISTS ${gapName} WITH (FORCE)`);
+    // Never WITH (FORCE) straight after db.end(): the pool resolves before its connections
+    // close, and forcing kills them mid-close into an uncaught pool error. A plain drop waits.
+    await admin.query(`DROP DATABASE IF EXISTS ${gapName}`);
   }
 });
 
@@ -1319,6 +1321,8 @@ it('upgrades a populated database to member erasure without changing what old co
     expect(exported.rowCount).toBe(2);
   } finally {
     await db.end();
-    await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    // Never WITH (FORCE) straight after db.end(): the pool resolves before its connections
+    // close, and forcing kills them mid-close into an uncaught pool error. A plain drop waits.
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
   }
 });

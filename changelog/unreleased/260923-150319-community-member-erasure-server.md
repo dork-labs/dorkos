@@ -4,6 +4,7 @@ covers:
   - 'fix(community): address review of member erasure (DOR-2265)'
   - 'refactor(community): erasure password checks share the per-account budget (DOR-2265)'
   - 'refactor(community): keep the erasure modules in their own folder (DOR-2265)'
+  - 'fix(community): stop the migration tests racing a forced database drop (DOR-2265)'
 ---
 
 ### Added

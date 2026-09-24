@@ -18,6 +18,11 @@ import { sweepExpiredPairings } from './routes/pairings.js';
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
 const pool = new Pool({ connectionString: config.databaseUrl });
+// A database restart or failover drops idle connections. The pool has already discarded the
+// broken one and opens a fresh one for the next query, so log it rather than crash the server.
+pool.on('error', (error: Error & { code?: string }) => {
+  console.error('Community database connection lost', error.code ?? error.name);
+});
 const blobStore = createBlobStore(config);
 const app = createCommunityApp({ config, pool, blobStore });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
