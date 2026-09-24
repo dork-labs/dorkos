@@ -1,5 +1,6 @@
 ---
 covers:
+  - "fix(client): spell the refusal notice's apostrophe the house way (DOR-2314)"
   - 'fix(marketplace): refuse nested .claude folders, deep or non-YAML subagents and Gemini settings in agent packages, and block agent creation on a refused package (DOR-2314)'
   - 'fix(marketplace): an agent package can no longer ship settings for its own sessions, and its skills are on the install screen (DOR-2314)'
 ---
