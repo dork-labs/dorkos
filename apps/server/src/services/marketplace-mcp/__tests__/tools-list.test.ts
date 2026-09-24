@@ -114,7 +114,7 @@ function buildStubDeps(): MarketplaceMcpDeps {
 }
 
 describe('marketplace MCP tools/list discovery', () => {
-  it('registers all 8 marketplace tools on a real McpServer', () => {
+  it(`registers all ${EXPECTED_TOOLS.length} marketplace tools on a real McpServer`, () => {
     const server = new McpServer({ name: 'tools-list-smoke', version: '1.0.0' });
     const deps = buildStubDeps();
 
