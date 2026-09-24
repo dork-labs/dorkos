@@ -112,15 +112,16 @@ function PermissionDetails({ items, label }: { items: PermissionDetailItem[]; la
 }
 
 /**
- * A command or path with a line-break opportunity after every `/` and quote,
- * so a long one wraps between its parts (`node "…/hooks/` then `guard.mjs"`)
- * rather than mid-word. `overflow-wrap: anywhere` on the container stays as
- * the last resort for a single part too long for the line.
+ * A command or path with a line-break opportunity after every `/` and before
+ * every quote, so a long one wraps between its parts (`node` then
+ * `"…/hooks/` then `guard.mjs"`) rather than mid-word, and a quote stays with
+ * the word it opens. `overflow-wrap: anywhere` on the container stays as the
+ * last resort for a single part too long for the line.
  *
  * @param text - The verbatim command, arguments or path.
  */
 export function withBreakPoints(text: string): React.ReactNode {
-  const parts = text.split(/(?<=[/"'])/);
+  const parts = text.split(/(?<=\/)|(?=["'])/);
   return parts.map((part, index) => (
     <React.Fragment key={index}>
       {part}

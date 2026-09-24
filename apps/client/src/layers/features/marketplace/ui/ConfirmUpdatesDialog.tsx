@@ -146,7 +146,7 @@ function Disclosure(item: StaleInstallation) {
           </div>
         ))}
         {unchanged.length > 0 && (
-          <details className="group/unchanged" role="listitem" open={lead.length === 0}>
+          <details className="group/unchanged" role="listitem">
             <summary className="text-muted-foreground hover:text-foreground focus-ring inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-xs select-none [&::-webkit-details-marker]:hidden">
               <ChevronRight className="size-3 shrink-0 transition-transform duration-200 group-open/unchanged:rotate-90" />
               {unchanged.length} unchanged
@@ -202,7 +202,7 @@ function StaleItem(item: StaleInstallation) {
 export function ConfirmUpdatesDialog({ stale, onCancel, onConfirm }: ConfirmUpdatesDialogProps) {
   return (
     <ResponsiveDialog open={stale !== null} onOpenChange={(open) => !open && onCancel()}>
-      <ResponsiveDialogContent className="max-h-[85vh] !min-h-0 sm:max-w-lg">
+      <ResponsiveDialogContent className="max-h-[85vh] !min-h-0 sm:max-w-xl">
         {stale && (
           <>
             <ResponsiveDialogHeader className="shrink-0 text-left">

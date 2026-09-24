@@ -80,7 +80,7 @@ function HeldBackNotice({
   return (
     <div className="mt-1.5 flex flex-wrap items-start gap-2 text-xs text-amber-700 dark:text-amber-300">
       <ShieldAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 break-words">{heldBack.note}</span>
+      <span className="min-w-0 break-words">{heldBack.note}</span>
       {heldBack.reviewable && (
         <Button
           size="sm"
