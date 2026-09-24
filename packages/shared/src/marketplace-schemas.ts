@@ -1057,6 +1057,11 @@ export interface InstalledPackage {
    * (DOR-2306). Absent when it loads.
    */
   heldBack?: HeldBackState;
+  /**
+   * Whether the installed files still match what was installed (DOR-2197).
+   * Present only when the caller asked for verification (`?verify=true`).
+   */
+  integrity?: InstallIntegrity;
 }
 
 /** Why a global package is held back from sessions. */
@@ -1109,6 +1114,38 @@ export interface HeldBackPackage extends HeldBackState {
    */
   bindsTo?: string;
 }
+
+/** Why an install's files cannot be checked against what was installed. */
+export type InstallIntegrityUnknownReason = 'no-record' | 'unreadable-record' | 'linked';
+
+/**
+ * Whether an install's files still match what was installed (DOR-2197), read
+ * from its installed-files record (DOR-2245). Paths are relative to the
+ * install folder, sorted, and each list holds at most 50 (`truncated` when
+ * there were more).
+ *
+ * - `clean`: every shipped file is as installed. `customized` names shipped
+ *   files the package marks as yours to edit that you changed; those never
+ *   count as a modification.
+ * - `modified`: `changed` shipped files differ, `missing` ones are gone, and
+ *   `added` files sit where a package keeps what it runs (a new skill, a
+ *   hook), so they change what runs.
+ * - `unknown`: the record cannot speak for the install. `no-record` is an
+ *   install made before DorkOS recorded a package's files (it can be prepared);
+ *   `unreadable-record` is a damaged record; `linked` is a developer's working
+ *   copy.
+ */
+export type InstallIntegrity =
+  | { status: 'clean'; customized: string[]; truncated?: true }
+  | {
+      status: 'modified';
+      changed: string[];
+      missing: string[];
+      added: string[];
+      customized: string[];
+      truncated?: true;
+    }
+  | { status: 'unknown'; reason: InstallIntegrityUnknownReason };
 
 // ---------------------------------------------------------------------------
 // Sources
