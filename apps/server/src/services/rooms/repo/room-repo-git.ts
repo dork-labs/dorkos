@@ -77,6 +77,7 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { internalGitArgs } from '../../../lib/git-safety.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -104,11 +105,13 @@ const LARGE_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
  * Config overrides applied to EVERY command, ahead of the subcommand.
  *
  * `-c` rather than writing them into the repo's own config, because the repo's
- * config is a file member-written content can reach and these two are exactly
- * the values that turn reading a checkout into running code. See the module
- * doc for what each was measured to stop.
+ * config is a file member-written content can reach and these are exactly the
+ * values that turn reading a checkout into running code: the shared set every
+ * git command DorkOS runs carries (`internalGitArgs`, DOR-2326), which also
+ * refuses a bare repository git merely finds. See the module doc for what
+ * the hook and fsmonitor settings were measured to stop.
  */
-const SHARED_CONFIG_ARGS = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
+const SHARED_CONFIG_ARGS = internalGitArgs();
 
 /**
  * Environment variables that point a git command at a DIFFERENT repository's

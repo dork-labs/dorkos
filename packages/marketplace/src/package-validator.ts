@@ -468,6 +468,14 @@ async function validatePackageFiles(
   //    that gate, never carried by the package.
   await checkPackagedMcpServers(packagePath, issues);
 
+  // 7b. A root git would read as a repository (DOR-2326): its `config` can
+  //     name a program git runs whenever it runs there. Only before install:
+  //     a person may make their installed agent's folder a repository of
+  //     their own, and that must not hide the agent.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkGitShapedRoot(packagePath, manifest.type, issues);
+  }
+
   // 8. Declared schedules that point at nothing.
   await checkScheduleSkillRefs(packagePath, manifest, issues);
 
@@ -766,6 +774,73 @@ async function searchForSkill(root: string, skillName: string, depth: number): P
     if (await searchForSkill(child, skillName, depth + 1)) return true;
   }
   return false;
+}
+
+/**
+ * Refuse a package whose root git would read as a repository (DOR-2326).
+ *
+ * Git treats a folder holding `HEAD` with `objects/`, `refs/` or `packed-refs`
+ * as a repository in its own right, and a `.git` file saying `gitdir:` makes
+ * the folder part of another one. Either way git reads a `config` the package
+ * wrote, and settings such as `core.fsmonitor` name a program git runs, so
+ * `git status` in the installed folder ran the package's code. That holds for
+ * any package type.
+ *
+ * An agent's folder is also where its sessions run git, so an agent may not
+ * carry any piece of a repository at its root: no `config` file, `.git`,
+ * `worktrees/` or `packed-refs` either. (A plugin's `config` file or folder is
+ * an ordinary name, and nothing runs git inside a plugin's folder.) DorkOS's
+ * own git calls and every agent session's git are hardened as well
+ * (`@dorkos/shared/git-hardening`); this refusal keeps such a package from
+ * being installed at all.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param type - The package's type.
+ * @param issues - Mutable issue list to append a finding to.
+ * @internal
+ */
+async function checkGitShapedRoot(
+  packagePath: string,
+  type: string,
+  issues: ValidationIssue[]
+): Promise<void> {
+  const kindOf = async (name: string): Promise<'file' | 'dir' | null> => {
+    try {
+      const stats = await fs.lstat(path.join(packagePath, name));
+      return stats.isDirectory() ? 'dir' : 'file';
+    } catch {
+      return null;
+    }
+  };
+  const [head, objects, refs, packedRefs, dotGit, config, worktrees] = await Promise.all(
+    ['HEAD', 'objects', 'refs', 'packed-refs', '.git', 'config', 'worktrees'].map(kindOf)
+  );
+  const found: string[] = [];
+  if (head === 'file' && (objects === 'dir' || refs === 'dir' || packedRefs === 'file')) {
+    found.push('HEAD with objects/, refs/ or packed-refs');
+  }
+  if (dotGit === 'file') {
+    let text: string;
+    try {
+      text = await readPackageFileWithin(packagePath, '.git', 4096, "The package's .git");
+    } catch {
+      // A link, too large, or unreadable: treated like one that points elsewhere.
+      text = 'gitdir:';
+    }
+    if (/^\s*gitdir:/m.test(text.slice(0, 4096))) found.push('a .git file that points elsewhere');
+  }
+  if (type === 'agent') {
+    if (config === 'file') found.push('a config file');
+    if (dotGit !== null) found.push('.git');
+    if (worktrees === 'dir') found.push('a worktrees folder');
+    if (packedRefs === 'file') found.push('packed-refs');
+  }
+  if (found.length === 0) return;
+  issues.push({
+    level: 'error',
+    code: 'GIT_REPOSITORY_SHAPED',
+    message: `The package's folder looks like a git repository (${[...new Set(found)].join(', ')}), and git would read settings from it that can run a program. Remove those files from the package.`,
+  });
 }
 
 /**

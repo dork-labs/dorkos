@@ -148,6 +148,10 @@ describe('the GitHub token', () => {
     }
     expect(envConfig(envs[0]!)).toEqual({
       'protocol.version': '2',
+      // Every git DorkOS runs refuses a repository's own programs (DOR-2326).
+      'safe.bareRepository': 'explicit',
+      'core.fsmonitor': 'false',
+      'core.hooksPath': process.platform === 'win32' ? 'NUL' : '/dev/null',
       'http.https://github.com/.extraHeader': HEADER,
     });
   });

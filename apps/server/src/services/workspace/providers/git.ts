@@ -10,6 +10,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DirtyState } from '@dorkos/shared/workspace';
+import { internalGitArgs } from '../../../lib/git-safety.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,7 +31,10 @@ export async function runGit(
   cwd: string,
   timeoutMs: number = GIT_TIMEOUT_MS
 ): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, timeout: timeoutMs });
+  const { stdout } = await execFileAsync('git', [...internalGitArgs(), ...args], {
+    cwd,
+    timeout: timeoutMs,
+  });
   return stdout;
 }
 

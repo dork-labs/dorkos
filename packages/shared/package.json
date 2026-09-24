@@ -45,6 +45,10 @@
       "types": "./src/bounded-read.ts",
       "default": "./dist/bounded-read.js"
     },
+    "./git-hardening": {
+      "types": "./src/git-hardening.ts",
+      "default": "./dist/git-hardening.js"
+    },
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"

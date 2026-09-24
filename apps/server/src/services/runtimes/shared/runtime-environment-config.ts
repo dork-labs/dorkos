@@ -1,4 +1,5 @@
 /** Configuration boundary for the pure runtime environment projection. */
+import { SESSION_GIT_CONFIG, withGitConfigEnv } from '@dorkos/shared/git-hardening';
 import { configManager } from '../../core/config-manager.js';
 import {
   projectRuntimeEnvironment,
@@ -12,7 +13,14 @@ const CONFIG_RUNTIME = {
   opencode: 'opencode',
 } as const;
 
-/** Read only names from owner configuration, then project this launch's ambient environment. */
+/**
+ * Read only names from owner configuration, then project this launch's
+ * ambient environment. Every runtime child's git also gets
+ * {@link SESSION_GIT_CONFIG} (DOR-2326), appended after any git settings the
+ * environment already carries, so a folder shaped like a git directory cannot
+ * run a program when an agent runs git in it. A person's own hooks are left
+ * alone; `@dorkos/shared/git-hardening` says why.
+ */
 export function runtimeEnvironment(
   runtime: EnvironmentRuntime,
   purpose: EnvironmentPurpose,
@@ -20,7 +28,10 @@ export function runtimeEnvironment(
 ): Record<string, string> {
   const inherit = runtimeInheritedNames(runtime);
   // eslint-disable-next-line no-restricted-syntax -- deliberate ambient-input boundary for the pure child-environment projection
-  return projectRuntimeEnvironment({ parent: process.env, runtime, purpose, inherit, overrides });
+  return withGitConfigEnv(
+    projectRuntimeEnvironment({ parent: process.env, runtime, purpose, inherit, overrides }),
+    SESSION_GIT_CONFIG
+  );
 }
 
 /** Names-only policy identity also invalidates clients that capture env at construction. */

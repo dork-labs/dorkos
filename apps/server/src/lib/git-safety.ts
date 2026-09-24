@@ -16,8 +16,14 @@
  * and `url` source schemas (`@dorkos/marketplace`) reject unsafe URL transports
  * at parse time.
  *
+ * Every git command DorkOS runs itself also carries {@link internalGitArgs}
+ * (DOR-2326): settings that stop a folder's own git configuration from running
+ * a program (`@dorkos/shared/git-hardening`). {@link hardenedGitEnv} carries
+ * them too, through git's environment settings (git 2.31+).
+ *
  * @module lib/git-safety
  */
+import { gitConfigArgs, internalGitConfig, withGitConfigEnv } from '@dorkos/shared/git-hardening';
 
 /** Transports a marketplace fetch or ls-remote is allowed to use. Blocks `ext::`, `file::`, etc. */
 const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
@@ -31,10 +37,25 @@ const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
  * @returns An env object suitable for `spawn`/`execFile` `env` options.
  */
 export function hardenedGitEnv(): NodeJS.ProcessEnv {
-  return {
-    // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME/proxy/credential vars; we only ADD the protocol allowlist on top.
-    ...process.env,
-    GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
-    GIT_TERMINAL_PROMPT: '0',
-  };
+  return withGitConfigEnv(
+    {
+      // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME/proxy/credential vars; we only ADD the protocol allowlist on top.
+      ...process.env,
+      GIT_ALLOW_PROTOCOL: ALLOWED_GIT_PROTOCOLS,
+      GIT_TERMINAL_PROMPT: '0',
+    },
+    internalGitConfig()
+  );
+}
+
+/**
+ * The `-c` arguments every git command DorkOS runs itself puts before its
+ * subcommand (DOR-2326): no implicitly found bare repository, no file-system
+ * monitor, no hooks. `-c` works on every git version, unlike the environment
+ * form.
+ *
+ * @returns The arguments, to spread ahead of the subcommand.
+ */
+export function internalGitArgs(): string[] {
+  return gitConfigArgs(internalGitConfig());
 }
