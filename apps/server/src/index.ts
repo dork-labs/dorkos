@@ -216,7 +216,11 @@ import {
   recordEndedStandingGrants,
   runPermissionRetirements,
   runPermissionUpgradeSweep,
+  recordPermissionChange,
+  agentRequestWriter,
+  personWriter,
 } from './services/core/permissions/index.js';
+import { onTrustStopChange } from './services/core/operator/config-write.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
@@ -4505,6 +4509,28 @@ async function start() {
   // the live `permissions` config section, read per call like everything else
   // this gate decides on. The agent's own overrides are read fresh off its
   // manifest file by the default source.
+  // A Files & commands stop moved through a general config door (the Runtimes
+  // settings, `PATCH /api/config`, or a config patch a person approved) is a
+  // permission change like any other, so it lands in the permission history
+  // (spec `agent-permissions` D10). The preset writes its stop itself and
+  // records it with the preset, so it does not come through here.
+  onTrustStopChange((moves, write) => {
+    void recordPermissionChange(activityService, {
+      changes: moves.map((move) => ({
+        target: { kind: 'default' },
+        key: { kind: 'files', ...(move.runtime ? { runtime: move.runtime } : {}) },
+        before: move.before,
+        after: move.after,
+      })),
+      surface: write.writer.kind === 'agent' ? 'agent-request' : 'api',
+      // A general config door cannot say who is behind it; an agent's patch
+      // reached a trust stop only because a person approved it on a card.
+      writer:
+        write.writer.kind === 'agent'
+          ? agentRequestWriter({ name: write.writer.agentName ?? 'An agent' })
+          : personWriter('local-trust'),
+    });
+  });
   initPermissionGate({
     readConfig: () => configManager.get('permissions'),
     // Fresh off the manifest on every call, and compared with the last value

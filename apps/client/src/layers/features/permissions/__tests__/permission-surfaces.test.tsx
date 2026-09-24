@@ -203,6 +203,7 @@ describe('PermissionList (default scope)', () => {
     preset: 'full',
     defaults: { areas: {}, actions: {} },
     changeCount: 0,
+    filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
     areas: [
       {
         id: 'rooms',
@@ -266,6 +267,11 @@ describe('PermissionList (agent scope)', () => {
     agentId: 'a1',
     agentName: 'security-auditor',
     overrides: { areas: { rooms: 'allowed' } },
+    filesAndCommands: {
+      stop: 'autonomy',
+      source: 'default',
+      inherited: { stop: 'autonomy', source: 'default' },
+    },
     areas: [
       {
         id: 'rooms',

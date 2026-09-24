@@ -470,6 +470,15 @@ describe('readAgentExecutionDefaults', () => {
     expect(await readAgentExecutionDefaults(dir)).toEqual({ runtime: 'claude-code' });
   });
 
+  it("reads the agent's own Files & commands stop", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'agent-defaults-'));
+    await writeManifest(dir, { ...BASE_MANIFEST, permissions: { filesAndCommands: 'ask' } });
+    expect(await readAgentExecutionDefaults(dir)).toEqual({
+      runtime: 'claude-code',
+      filesAndCommands: 'ask',
+    });
+  });
+
   it('says nothing for a directory with no agent, and never throws', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'agent-defaults-'));
     expect(await readAgentExecutionDefaults(dir)).toEqual({});
@@ -818,6 +827,16 @@ describe('resolveSessionDefaults — the trust stop', () => {
     ).toEqual({});
   });
 
+  it("maps the agent's own stop, over the server's, to a permission mode", () => {
+    const resolved = resolveForRuntime({
+      runtimeType: 'claude-code',
+      runtimes: runtimes({ defaultTrustStop: 'autonomy' }),
+      agent: { filesAndCommands: 'act' },
+      permissionModes: CLAUDE_CODE_CAPABILITIES.permissionModes.values,
+    });
+    expect(resolved.permissionMode).toBe('acceptEdits');
+  });
+
   it('resolves alongside model and effort without disturbing either', () => {
     const config = runtimes({
       defaultTrustStop: 'act',
@@ -838,6 +857,24 @@ describe('resolveSessionDefaults — the trust stop', () => {
 });
 
 describe('resolveUnattendedDefaultStop', () => {
+  it("lets the agent's own stop beat the runtime's and the global one", () => {
+    const config = runtimes({
+      defaultTrustStop: 'autonomy',
+      codex: { ...USER_CONFIG_DEFAULTS.runtimes.codex, defaultTrustStop: 'act' },
+    });
+    expect(
+      resolveUnattendedDefaultStop({
+        configSection: 'codex',
+        runtimes: config,
+        agent: { filesAndCommands: 'ask' },
+      })
+    ).toBe('ask');
+    // An agent with no stop of its own keeps the runtime's answer.
+    expect(
+      resolveUnattendedDefaultStop({ configSection: 'codex', runtimes: config, agent: {} })
+    ).toBe('act');
+  });
+
   it('answers the global stop when that is all there is', () => {
     expect(resolveUnattendedDefaultStop({ runtimes: runtimes({ defaultTrustStop: 'act' }) })).toBe(
       'act'

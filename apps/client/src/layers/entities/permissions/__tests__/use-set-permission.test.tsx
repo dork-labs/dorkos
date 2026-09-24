@@ -23,6 +23,7 @@ const OVERVIEW: PermissionsResponse = {
   preset: 'full',
   defaults: { areas: {}, actions: {} },
   changeCount: 0,
+  filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
   areas: [],
   exceptions: [
     { agentId: 'a1', agentName: 'auditor', area: 'rooms', state: 'blocked' },

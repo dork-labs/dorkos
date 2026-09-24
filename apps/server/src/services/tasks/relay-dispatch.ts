@@ -147,7 +147,10 @@ export async function dispatchRunViaRelay(
     // ...and read in the RESOLVED runtime's own mode vocabulary (DOR-1615).
     permissionMode:
       task.permissionMode ??
-      resolveScheduledRunPermissionMode({ capabilities: execution.capabilities }),
+      resolveScheduledRunPermissionMode({
+        capabilities: execution.capabilities,
+        agent: execution.agent,
+      }),
     taskName: task.name,
     cron: task.cron,
     trigger: run.trigger,

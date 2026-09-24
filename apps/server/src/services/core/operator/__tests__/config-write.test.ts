@@ -343,6 +343,58 @@ describe('applyGuardedConfigWrite', () => {
     });
   });
 
+  describe('recording a Files & commands move (spec `agent-permissions` D10)', () => {
+    it('tells the listener exactly which stops moved, after the write lands', async () => {
+      const { onTrustStopChange } = await import('../config-write.js');
+      const heard: unknown[] = [];
+      onTrustStopChange((moves, write) => heard.push({ moves, source: write.source }));
+      try {
+        const result = applyGuardedConfigWrite({
+          patch: { runtimes: { defaultTrustStop: 'ask', codex: { defaultTrustStop: 'act' } } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(result.ok).toBe(true);
+        expect(heard).toEqual([
+          {
+            moves: [
+              { before: null, after: 'ask' },
+              { runtime: 'codex', before: null, after: 'act' },
+            ],
+            source: 'dorkos config set',
+          },
+        ]);
+      } finally {
+        onTrustStopChange(undefined);
+      }
+    });
+
+    it('stays quiet for a write that moves no stop, and for a refused one', async () => {
+      const { onTrustStopChange } = await import('../config-write.js');
+      const heard: unknown[] = [];
+      onTrustStopChange((moves) => heard.push(moves));
+      try {
+        applyGuardedConfigWrite({
+          patch: { ui: { theme: 'dark' } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        // Full autonomy with no acknowledgement is refused, so nothing moved.
+        applyGuardedConfigWrite({
+          patch: { runtimes: { claudeCode: { defaultTrustStop: 'autonomy' } } },
+          authority: LOCAL_OPERATOR_AUTHORITY,
+          source: 'dorkos config set',
+          writer: { kind: 'unattributed' },
+        });
+        expect(heard).toEqual([]);
+      } finally {
+        onTrustStopChange(undefined);
+      }
+    });
+  });
+
   describe('logConfigWrite, for the writers that have their own gate', () => {
     it('names the fully-qualified path and never the value', async () => {
       // `mcp.apiKey` is a secret the schema declares as one. The migration that

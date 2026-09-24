@@ -191,6 +191,82 @@ export const PERSON_APPROVED_AUTHORITY: ConfigWriteAuthority = {
   refuseOperatorOnly: () => undefined,
 };
 
+/** One Files & commands stop a guarded write moved. */
+export interface TrustStopMove {
+  /** The runtime whose own stop moved, or absent for the global one. */
+  runtime?: string;
+  /** The stop before the write; `null` = not set. */
+  before: string | null;
+  /** The stop after the write; `null` = not set. */
+  after: string | null;
+}
+
+/** The trust-stop leaves, with the runtime each belongs to (absent = global). */
+const TRUST_STOP_LEAVES: readonly { path: readonly string[]; runtime?: string }[] = [
+  { path: ['runtimes', 'defaultTrustStop'] },
+  { path: ['runtimes', 'claudeCode', 'defaultTrustStop'], runtime: 'claude-code' },
+  { path: ['runtimes', 'codex', 'defaultTrustStop'], runtime: 'codex' },
+  { path: ['runtimes', 'opencode', 'defaultTrustStop'], runtime: 'opencode' },
+];
+
+/** Read one leaf out of a stored config, tolerating any shape. */
+function leafAt(config: unknown, path: readonly string[]): string | null {
+  let current: unknown = config;
+  for (const key of path) {
+    if (current === null || typeof current !== 'object') return null;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'string' ? current : null;
+}
+
+/**
+ * Told about every Files & commands stop a guarded write moved, so the change
+ * lands in the permission history like every other permission write (spec
+ * `agent-permissions` D10). Wired at boot, because the Activity log does not
+ * exist in the CLI or in the config store's own tests; unwired, nothing is
+ * recorded and nothing else changes.
+ */
+export type TrustStopListener = (
+  moves: TrustStopMove[],
+  write: {
+    source: string;
+    writer: DisplayNameWriter;
+  }
+) => void;
+
+let trustStopListener: TrustStopListener | undefined;
+
+/**
+ * Wire the listener that records Files & commands moves. Called once at boot.
+ *
+ * @param listener - The recorder, or `undefined` to unwire (tests).
+ */
+export function onTrustStopChange(listener: TrustStopListener | undefined): void {
+  trustStopListener = listener;
+}
+
+/** Tell the listener about the stops a write moved, if any. */
+function reportTrustStopMoves(
+  before: unknown,
+  after: unknown,
+  write: { source: string; writer: DisplayNameWriter }
+): void {
+  if (!trustStopListener) return;
+  const moves = TRUST_STOP_LEAVES.flatMap(({ path, runtime }) => {
+    const was = leafAt(before, path);
+    const now = leafAt(after, path);
+    return was === now ? [] : [{ ...(runtime ? { runtime } : {}), before: was, after: now }];
+  });
+  if (moves.length === 0) return;
+  try {
+    trustStopListener(moves, write);
+  } catch (err) {
+    logger.warn('[Config] could not record a Files & commands change', {
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 /** What a guarded write did, or the reason it did nothing. */
 export type GuardedConfigWriteResult =
   | {
@@ -425,6 +501,7 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
   if (touched) {
     logger.info(`[Config] Patched by ${source}: ${touched}`);
   }
+  reportTrustStopMoves(result.before, result.config, { source, writer });
 
   return { ok: true, config: result.config, warnings: result.warnings };
 }

@@ -11,6 +11,8 @@ import type {
 } from '@dorkos/shared/permissions';
 import type { ActivityItem, ListActivityQuery } from '@dorkos/shared/activity-schemas';
 
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+
 import { PermissionService, type PermissionActionInfo } from '../permission-service.js';
 
 /** The actions the fixture world knows. */
@@ -37,6 +39,12 @@ export function createPermissionWorld(
     preset?: PermissionConfigInput['preset'];
     defaults?: PermissionConfigInput['defaults'];
     agents?: FixtureAgent[];
+    /** The global Files & commands stop; `act` (Balanced's) by default. */
+    trustStop?: PermissionStop | null;
+    /** Per-runtime stops, by runtime id. */
+    runtimeStops?: Record<string, PermissionStop | null>;
+    /** Whether an acknowledgement of Full autonomy is on file. */
+    autonomyAcknowledged?: boolean;
   } = {}
 ) {
   const config = {
@@ -48,6 +56,20 @@ export function createPermissionWorld(
     (options.agents ?? []).map((a) => [a.id, structuredClone(a)])
   );
   const events: ActivityItem[] = [];
+  /** The stored Files & commands stops. Balanced's stop by default. */
+  const stops: {
+    global: PermissionStop | null;
+    perRuntime: Record<string, PermissionStop | null>;
+  } = {
+    global: options.trustStop === undefined ? 'act' : options.trustStop,
+    perRuntime: { ...(options.runtimeStops ?? {}) },
+  };
+  /** Whether the person acknowledged Full autonomy. */
+  const autonomy = {
+    acknowledgedAt: options.autonomyAcknowledged ? '2026-08-01T00:00:00.000Z' : null,
+  } as {
+    acknowledgedAt: string | null;
+  };
   let clock = Date.parse('2026-09-01T00:00:00.000Z');
 
   const activity = {
@@ -87,7 +109,15 @@ export function createPermissionWorld(
     config: {
       get: () => structuredClone(config),
       set: (next) => Object.assign(config, structuredClone(next)),
-      trustStop: () => 'act',
+      trustStops: () => structuredClone(stops),
+      setGlobalTrustStop: (stop, acknowledge) => {
+        stops.global = stop;
+        if (acknowledge) autonomy.acknowledgedAt = new Date(clock).toISOString();
+      },
+      hasAutonomyAck: () => autonomy.acknowledgedAt !== null,
+      recordAutonomyAck: () => {
+        autonomy.acknowledgedAt = new Date(clock).toISOString();
+      },
     },
     agents: {
       list: () =>
@@ -114,6 +144,8 @@ export function createPermissionWorld(
   return {
     service,
     config,
+    stops,
+    autonomy,
     agents,
     events,
     activity,

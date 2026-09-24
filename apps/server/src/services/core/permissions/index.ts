@@ -12,10 +12,14 @@ import type { CapabilityRegistry } from '../capabilities/index.js';
 import type { ConfigManager } from '../config-manager.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 import type { PermissionObserver } from './permission-observer.js';
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+
+import { hasStandingAutonomyAck } from '../approvals/autonomy-consent.js';
 import {
   PermissionService,
   type PermissionActionInfo,
   type PermissionAgentRef,
+  type StoredTrustStops,
 } from './permission-service.js';
 
 export {
@@ -42,6 +46,7 @@ export {
   listPermissionHistory,
   personWriter,
   agentRequestWriter,
+  recordPermissionChange,
   type PermissionWriter,
 } from './permission-history.js';
 
@@ -101,6 +106,28 @@ export function observedPermissionReader(
   return (agentPath) => observer.readObserved(agentPath);
 }
 
+/** Where each runtime keeps its own Files & commands stop in config. */
+const RUNTIME_TRUST_STOP_PATHS: Readonly<Record<string, string>> = {
+  'claude-code': 'runtimes.claudeCode.defaultTrustStop',
+  codex: 'runtimes.codex.defaultTrustStop',
+  opencode: 'runtimes.opencode.defaultTrustStop',
+};
+
+/**
+ * The stored Files & commands stops, read fresh.
+ *
+ * @param config - The config manager.
+ */
+export function readTrustStops(config: Pick<ConfigManager, 'getDot'>): StoredTrustStops {
+  const read = (path: string) => (config.getDot(path) as PermissionStop | null | undefined) ?? null;
+  return {
+    global: read('runtimes.defaultTrustStop'),
+    perRuntime: Object.fromEntries(
+      Object.entries(RUNTIME_TRUST_STOP_PATHS).map(([runtime, path]) => [runtime, read(path)])
+    ),
+  };
+}
+
 /**
  * Build the production permission service.
  *
@@ -111,7 +138,24 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
     config: {
       get: () => wiring.config.get('permissions'),
       set: (next) => wiring.config.set('permissions', next),
-      trustStop: () => (wiring.config.getDot('runtimes.defaultTrustStop') as string | null) ?? null,
+      trustStops: () => readTrustStops(wiring.config),
+      setGlobalTrustStop: (stop, acknowledge) => {
+        // The acknowledgement lands before the stop, so no reader can catch
+        // Full autonomy without the consent that licenses it.
+        if (acknowledge) {
+          wiring.config.set('ui', {
+            ...wiring.config.get('ui'),
+            autonomyAcknowledgedAt: new Date().toISOString(),
+          });
+        }
+        wiring.config.setDot('runtimes.defaultTrustStop', stop);
+      },
+      hasAutonomyAck: hasStandingAutonomyAck,
+      recordAutonomyAck: () =>
+        wiring.config.set('ui', {
+          ...wiring.config.get('ui'),
+          autonomyAcknowledgedAt: new Date().toISOString(),
+        }),
     },
     agents: {
       list: (): PermissionAgentRef[] => {
@@ -122,6 +166,8 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
           name: a.name,
           ...(a.displayName ? { displayName: a.displayName } : {}),
           projectPath: a.projectPath,
+          // The roster entry carries no runtime; the registry row does.
+          ...(mesh.get(a.id)?.runtime ? { runtime: mesh.get(a.id)!.runtime } : {}),
         }));
       },
       readPermissions: observedPermissionReader(wiring.observer),

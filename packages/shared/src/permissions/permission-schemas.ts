@@ -172,7 +172,11 @@ export const PermissionChangeKeySchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('preset') }),
   z.object({ kind: z.literal('area'), area: PermissionAreaIdSchema }),
   z.object({ kind: z.literal('action'), action: z.string(), area: PermissionAreaIdSchema }),
-  z.object({ kind: z.literal('files') }),
+  z.object({
+    kind: z.literal('files'),
+    /** The runtime whose own stop changed; absent for the global one. */
+    runtime: z.string().optional(),
+  }),
 ]);
 
 /** One change inside a `permission.changed` event. */
