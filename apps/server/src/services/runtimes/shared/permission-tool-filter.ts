@@ -21,7 +21,11 @@ import {
   type PermissionAreaId,
 } from '@dorkos/shared/permissions';
 
-import { blockedAreaPhrase, permissionGateSources } from '../../core/capabilities/index.js';
+import {
+  permissionAreaLabel,
+  permissionGateSources,
+  REQUEST_PERMISSION_TOOL,
+} from '../../core/capabilities/index.js';
 
 /** The tools one agent should not be shown, and the areas that hid them. */
 export interface ToolVisibility {
@@ -114,13 +118,18 @@ export async function resolveToolVisibilityFor(
 
 /**
  * The context lines for the Blocked areas, one per area, or `''` when nothing
- * is blocked. Phase 1 has no request tool yet, so each line says to ask the
- * person.
+ * is blocked. Each names the tool the agent asks past Blocked with (spec
+ * `agent-permissions` D15), so a hidden area is one the agent knows exists and
+ * knows how to ask for.
  *
  * @param blockedAreas - From {@link resolveToolVisibility}.
  */
 export function renderBlockedAreaLines(blockedAreas: readonly PermissionAreaId[]): string {
   return blockedAreas
-    .map((area) => `${blockedAreaPhrase(area)} is blocked for you. Ask the person if you need it.`)
+    .map(
+      (area) =>
+        `${permissionAreaLabel(area)} is blocked for you. If you need it, ask with the tool ` +
+        `ending in \`${REQUEST_PERMISSION_TOOL}\`, and say why.`
+    )
     .join('\n');
 }

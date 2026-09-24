@@ -284,7 +284,7 @@ describe('in-session tool exposure', () => {
     await Promise.all([client.close(), server.instance.close()]);
   });
 
-  it('always-loads exactly the nine a turn cannot search for first', async () => {
+  it('always-loads exactly the ten a turn cannot search for first', async () => {
     const tools = await advertisedTools();
     const eager = tools
       .filter((t) => t._meta?.[ALWAYS_LOAD_META] === true)
@@ -314,6 +314,9 @@ describe('in-session tool exposure', () => {
         // waiting on: the context says WHAT is on the canvas and never what a
         // document says.
         'read_canvas',
+        // Spec `agent-permissions` D15: the line that replaces a Blocked area's
+        // tools names this one, so it may not be deferred.
+        'request_permission',
       ].sort()
     );
     // The declared set and the served surface are the same set, in both
@@ -415,8 +418,13 @@ describe('in-session tool exposure', () => {
     // 104 -> 105 for `archive_room` (spec `agent-permissions` D12), DEFERRED: an
     // agent archives a channel rarely, once its work is done, which is a turn
     // with room for a search. Both counts move by the same one.
-    expect(tools).toHaveLength(105);
-    expect(deferred).toHaveLength(96);
+    //
+    // 105 -> 107 for the two permission verbs (spec `agent-permissions` D8,
+    // D9): `request_permission` ALWAYS-LOADED, because the Blocked-area line
+    // names it, and `list_my_permissions` DEFERRED, because nothing does. So
+    // the deferred count moves by one, not two.
+    expect(tools).toHaveLength(107);
+    expect(deferred).toHaveLength(97);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',
@@ -463,6 +471,7 @@ describe('in-session tool exposure', () => {
         'search_member_rooms',
         'read_canvas',
         'memory_write',
+        'request_permission',
         'mesh_list',
         'mesh_inspect',
         'relay_send',

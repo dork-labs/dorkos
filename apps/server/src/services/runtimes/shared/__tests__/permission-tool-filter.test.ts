@@ -107,8 +107,11 @@ describe('resolveToolVisibility', () => {
 describe('the context line', () => {
   it('appears exactly once for a Blocked Rooms, and not otherwise', () => {
     const blocked = renderBlockedAreaLines(['rooms']);
-    expect(blocked).toBe('Managing rooms is blocked for you. Ask the person if you need it.');
-    expect(blocked.match(/Managing rooms/g)).toHaveLength(1);
+    expect(blocked).toBe(
+      'Rooms is blocked for you. If you need it, ask with the tool ending in ' +
+        '`request_permission`, and say why.'
+    );
+    expect(blocked.match(/Rooms is blocked/g)).toHaveLength(1);
     expect(renderBlockedAreaLines([])).toBe('');
   });
 });

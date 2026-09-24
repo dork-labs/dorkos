@@ -155,6 +155,12 @@ export const DORKOS_AGENT_TOOLS = new Set(
     'update_room',
     'leave_room',
     'archive_room',
+    // Asking past a Blocked permission (spec `agent-permissions` D8). Its whole
+    // effect is to put a DorkOS card in front of a person, rate-limited per
+    // agent before anything is minted; a runtime card asking "may it ask?"
+    // first would be a second card for one question. Identity-scoped: without
+    // an agent the tool refuses itself.
+    'request_permission',
     'relay_notify_user',
     'relay_send',
     'relay_inbox',
@@ -191,7 +197,7 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * (and by default does) set that scope.
  *
  * What the auto-allow gives up is stated once, here, because it is the same
- * thing for all fifteen: **the per-call card an operator watching a DIRECT session
+ * thing for all sixteen: **the per-call card an operator watching a DIRECT session
  * could have denied.** Not the setup consent, which is untouched — a room the
  * agent is not a member of, and a binding nobody switched initiating on for, are
  * both still refused underneath. (Note what that does NOT say: an unclaimed CHAT
@@ -399,6 +405,7 @@ export const IDENTITY_SCOPED_TOOLS = new Set(
     'update_room',
     'leave_room',
     'archive_room',
+    'request_permission',
     'relay_notify_user',
     'memory_write',
   ].map(inSessionToolName)
