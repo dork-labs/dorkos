@@ -5846,6 +5846,24 @@
               "null"
             ]
           },
+          "defaultCron": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "defaultTimezone": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "timingOverridden": {
+            "type": "boolean",
+            "default": false
+          },
           "agentId": {
             "type": [
               "string",
@@ -6187,6 +6205,12 @@
           },
           "reason": {
             "type": "string"
+          },
+          "resetTiming": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         }
       },
