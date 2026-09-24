@@ -219,6 +219,64 @@ describe('runTransaction ownership (DOR-2245)', () => {
     expect(await read(target, 'scratch.txt')).toBeNull();
   });
 
+  // Purpose (code review 7, M16): the late pass replaces or deletes a target
+  // entry only while it is still the untouched clone. A write into the NEW
+  // install after activation wins; the late write is saved beside it, and a
+  // late deletion does not delete it.
+  it('never overwrites or deletes a target entry changed after activation', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await install(target, { 'a.md': 'v1' });
+    await put(target, 'notes/one.md', 'before');
+    await put(target, 'scratch.txt', 'x');
+    await install(
+      target,
+      { 'a.md': 'v2' },
+      {
+        duringActivate: async () => {
+          const backup = (await readdir(path.dirname(target))).find((n) =>
+            n.includes('.dorkos-bak-')
+          )!;
+          const backupRoot = path.join(path.dirname(target), backup);
+          await put(backupRoot, 'notes/one.md', 'during, in the old install');
+          await rm(path.join(backupRoot, 'scratch.txt'));
+          await put(target, 'notes/one.md', 'written into the new install');
+          await put(target, 'scratch.txt', 'kept by the new install');
+        },
+      }
+    );
+    expect(await read(target, 'notes/one.md')).toBe('written into the new install');
+    expect(await read(target, 'notes/one.md.dork-old')).toBe('during, in the old install');
+    expect(await read(target, 'scratch.txt')).toBe('kept by the new install');
+  });
+
+  // Purpose (code review 7, M15): a late write can keep size and mtime (an
+  // editor that writes a temp file, restores the time and renames it over);
+  // the inode is what still tells it apart, so it must be compared.
+  it('brings over a same-size rename-over whose mtime was restored', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await install(target, { 'a.md': 'v1' });
+    await put(target, 'notes/one.md', 'AAAA');
+    const { rename, utimes } = await import('node:fs/promises');
+    const when = new Date('2021-05-06T07:08:09Z');
+    await utimes(path.join(target, 'notes', 'one.md'), when, when);
+    await install(
+      target,
+      { 'a.md': 'v2' },
+      {
+        duringActivate: async () => {
+          const backup = (await readdir(path.dirname(target))).find((n) =>
+            n.includes('.dorkos-bak-')
+          )!;
+          const file = path.join(path.dirname(target), backup, 'notes', 'one.md');
+          await writeFile(`${file}.tmp`, 'BBBB');
+          await utimes(`${file}.tmp`, when, when);
+          await rename(`${file}.tmp`, file);
+        },
+      }
+    );
+    expect(await read(target, 'notes/one.md')).toBe('BBBB');
+  });
+
   // Purpose: a carried file keeps its timestamps (utimes after the clone).
   it('keeps the mtime of a carried file', async () => {
     const target = path.join(scratch, 'plugins', 'pkg');

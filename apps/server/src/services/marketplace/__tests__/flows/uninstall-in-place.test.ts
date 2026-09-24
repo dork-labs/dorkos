@@ -30,6 +30,7 @@ import {
   writeInstalledFiles,
 } from '../../lib/installed-files.js';
 import * as journalModule from '../../lib/uninstall-journal.js';
+import { recoverInterruptedInstall } from '../../install-recovery.js';
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -227,6 +228,33 @@ describe('in-place uninstall (DOR-2245)', () => {
       expect(await tree(root)).toEqual(snapshot);
       expect(await readdir(path.dirname(root))).toEqual(['pkg']);
     }
+  });
+
+  // Purpose (code review 7, M7): once the side effects have run, the uninstall
+  // is decided. A crash after that point must be finished by recovery (rolled
+  // forward), never resurrect a package whose side effects are already gone.
+  it('is rolled forward, not resurrected, by recovery after a crash past the side effects', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { '.dork/extensions/ext/extension.json': '{}', 'a.md': 'a' });
+    await put(root, 'mine.txt', 'mine');
+    const d = deps(dorkHome);
+    vi.spyOn(journalModule, 'finishUninstall').mockRejectedValueOnce(new Error('killed'));
+
+    const result = await new UninstallFlow(d).uninstall({ name: 'pkg' });
+    vi.restoreAllMocks();
+    expect(d.extensionManager.disable).toHaveBeenCalled();
+    expect(result.warnings?.join(' ')).toMatch(/cleanup did not finish/);
+
+    const report = await recoverInterruptedInstall(root);
+
+    expect(report.settled.map((s) => `${s.record.kind}:${s.outcome}`)).toEqual([
+      'uninstall:rolled-forward',
+    ]);
+    expect(await exists(path.join(root, 'a.md'))).toBe(false);
+    expect(await exists(path.join(root, '.dork', 'manifest.json'))).toBe(false);
+    expect(await readFile(path.join(root, 'mine.txt'), 'utf8')).toBe('mine');
+    expect(await readdir(path.dirname(root))).toEqual(['pkg']);
   });
 
   // Purpose: the identity files move last, so a crash mid-way leaves a root
