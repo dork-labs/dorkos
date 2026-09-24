@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -351,6 +351,130 @@ test('a host holds a community with a notice members can see, then deletes it af
     await expect(record).toContainText('On hold.');
     await record.getByRole('button', { name: 'Release hold' }).click();
     await expect(record.getByRole('button', { name: 'Hold', exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test('a hold turns an open channel read-only without a retry loop, and a release brings live updates back', async ({
+  browser,
+}) => {
+  // Purpose (spec `community-hold-keeps-access`, AC-2b): fails if a hold leaves the page retrying
+  // its live stream in a loop, or if the page never resumes live updates after the release.
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const streamOpens: number[] = [];
+  page.on('response', (response) => {
+    if (/\/channels\/[^/]+\/events$/u.test(new URL(response.url()).pathname))
+      streamOpens.push(response.status());
+  });
+  const lifecycle = async (action: 'hold' | 'release') => {
+    const version = (
+      await pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [communityId]
+      )
+    ).rows[0].lifecycle_version;
+    const response = await context.request.patch(
+      `${baseUrl}/api/v1/host/communities/${communityId}/lifecycle`,
+      {
+        headers: { origin: baseUrl },
+        data:
+          action === 'hold'
+            ? { action, lifecycleVersion: version, deletionNoticeAt: null }
+            : { action, lifecycleVersion: version },
+      }
+    );
+    expect(response.status(), action).toBe(200);
+  };
+  try {
+    await page.clock.install();
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/c/${communityId}`);
+    await expect(page.getByLabel('Message #general')).toBeVisible();
+    await expect.poll(() => streamOpens).toEqual([200]);
+
+    // The hold closes the open stream as read-only: the banner shows, no error does.
+    await lifecycle('hold');
+    const banner = page.getByRole('status').filter({ hasText: 'You can read it but not post.' });
+    await expect(banner).toBeVisible();
+    await expect(page.getByText('Your access to this channel has changed.')).toHaveCount(0);
+    await expect(page.getByText(/Live updates paused/u)).toHaveCount(0);
+
+    // Approving an installation while held says the connection will only read.
+    const challenge = createHash('sha256')
+      .update(randomBytes(32).toString('base64url'))
+      .digest('base64url');
+    const started = await context.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/pairings/start`,
+      { data: { installName: 'Held laptop', challenge, scopes: ['read'] } }
+    );
+    expect(started.status()).toBe(201);
+    const approval = await context.newPage();
+    await approval.goto((await started.json()).approvalUrl);
+    await expect(
+      approval.getByText(
+        'The community is on hold, so this connection can only read. Connect again after the hold ends to post.'
+      )
+    ).toBeVisible();
+    await approval.close();
+
+    // A page that still believes the community is active opens the stream, which the hold
+    // refuses. It must try again at most once a minute, never in a loop.
+    await page.route('**/api/v1/memberships', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      for (const membership of body.memberships) membership.lifecycle = 'active';
+      await route.fulfill({ response, json: body });
+    });
+    await page.clock.runFor(5_000);
+    await expect.poll(() => streamOpens).toEqual([200, 423]);
+    // Two minutes in five-second steps, letting each step's requests finish in real time, so a
+    // retry scheduled after a refused request would show up as another open.
+    const advance = async (ms: number) => {
+      for (let passed = 0; passed < ms; passed += 5_000) {
+        await page.clock.runFor(5_000);
+        await new Promise((resolve) => setTimeout(resolve, 75));
+      }
+    };
+    await advance(120_000);
+    expect(streamOpens.length).toBeLessThanOrEqual(4);
+    expect(streamOpens.slice(1).every((status) => status === 423)).toBe(true);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.clock.runFor(5_000);
+    await expect(banner).toBeVisible();
+    const refused = streamOpens.length;
+    await advance(120_000);
+    expect(streamOpens.length).toBe(refused);
+
+    // The release is noticed on the next lifecycle check; the stream reopens and a new
+    // message arrives live, with nobody signing in or reconnecting.
+    await lifecycle('release');
+    await page.clock.runFor(5_000);
+    await expect(banner).toHaveCount(0);
+    await expect.poll(() => streamOpens.at(-1)).toBe(200);
+    const channelId = (
+      await pool.query<{ id: string }>(
+        "SELECT id FROM channels WHERE community_id=$1 AND name='general'",
+        [communityId]
+      )
+    ).rows[0].id;
+    const posted = await context.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/channels/${channelId}/entries`,
+      {
+        headers: { origin: baseUrl },
+        data: { text: 'Back after the hold', idempotencyKey: 'after-hold' },
+      }
+    );
+    expect(posted.status()).toBe(201);
+    await expect(page.getByText('Back after the hold')).toBeVisible();
   } finally {
     await context.close();
   }
