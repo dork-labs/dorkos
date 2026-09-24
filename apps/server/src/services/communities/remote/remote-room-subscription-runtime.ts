@@ -50,8 +50,18 @@ export interface RemoteRoomSubscriptionRuntimeDeps {
     ownerAuthorId: string
   ) => Promise<CommunityConnectionAccess | null>;
   resolveLocalAgentAuthor: (localAgentId: string) => string | null;
+  /**
+   * Connected Communities whose last known access is read-only, across every owner. Those with
+   * no enrolled agent are re-checked on {@link releaseCheckMs}; the rest already are on every
+   * reconcile.
+   */
+  readOnlyConnections?: () => Promise<
+    readonly { communityRef: CommunityRef; ownerAuthorId: string }[]
+  >;
   now?: () => number;
   retryMs?: number;
+  /** How often a read-only connection with no enrolled agent re-checks its access. */
+  releaseCheckMs?: number;
   /** Test seam for portable mock rooms; native production rooms use retained metadata. */
   isRoomJoined?: (room: CommunityRoom) => boolean;
   /** Test seam for native private entry metadata retained by the adapter. */
@@ -98,6 +108,9 @@ interface MutableObservation {
   replayComplete: boolean;
 }
 
+/** How often a read-only connection with no enrolled agent re-checks its access: 5 minutes. */
+export const READ_ONLY_RECHECK_MS = 5 * 60_000;
+
 /**
  * Background consumer for native Community room streams.
  *
@@ -110,6 +123,8 @@ export class RemoteRoomSubscriptionRuntime {
   private readonly running = new Map<string, RunningSubscription>();
   private readonly observations = new Map<string, MutableObservation>();
   private timer: ReturnType<typeof setInterval> | undefined;
+  private releaseTimer: ReturnType<typeof setInterval> | undefined;
+  private checkingReleases: Promise<void> | undefined;
   private reconciling: Promise<void> | undefined;
   private refreshQueued = false;
   private membershipVersion = 0;
@@ -126,6 +141,10 @@ export class RemoteRoomSubscriptionRuntime {
     this.stopped = false;
     this.refresh();
     this.timer = setInterval(() => this.refresh(), this.deps.retryMs ?? 5_000);
+    this.releaseTimer = setInterval(
+      () => this.checkReleases(),
+      this.deps.releaseCheckMs ?? READ_ONLY_RECHECK_MS
+    );
   }
 
   /** Abort every private remote stream before shutdown completes. */
@@ -133,6 +152,8 @@ export class RemoteRoomSubscriptionRuntime {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    if (this.releaseTimer) clearInterval(this.releaseTimer);
+    this.releaseTimer = undefined;
     for (const subscription of this.running.values()) subscription.abort.abort();
     this.running.clear();
   }
@@ -254,6 +275,36 @@ export class RemoteRoomSubscriptionRuntime {
         .catch(() => undefined);
     }
     this.refresh();
+  }
+
+  /**
+   * Re-check each read-only connection that has no enrolled agent, so a member-only
+   * connection learns that a hold ended. A connection with an enrolled agent is skipped: the
+   * reconcile already re-checks it every few seconds and resubscribes once it can stream.
+   * Each check is the pairing service's own status read, so a refusal still requires
+   * reconnecting exactly as it does anywhere else.
+   */
+  private checkReleases(): void {
+    if (this.stopped || this.checkingReleases || !this.deps.readOnlyConnections) return;
+    const readOnly = this.deps.readOnlyConnections;
+    this.checkingReleases = (async () => {
+      const polled = new Set(
+        this.deps.enrollments
+          .activeConnections()
+          .map((connection) => `${connection.communityRef}\0${connection.ownerAuthorId}`)
+      );
+      for (const connection of await readOnly()) {
+        if (this.stopped) return;
+        if (polled.has(`${connection.communityRef}\0${connection.ownerAuthorId}`)) continue;
+        await this.deps
+          .resolveConnectionAccess(connection.communityRef, connection.ownerAuthorId)
+          .catch(() => null);
+      }
+    })()
+      .catch(() => undefined)
+      .finally(() => {
+        this.checkingReleases = undefined;
+      });
   }
 
   private refresh(): void {
