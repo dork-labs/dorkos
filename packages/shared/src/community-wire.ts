@@ -70,6 +70,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   hostAccess: '/api/v1/me/host-access',
   members: '/api/v1/members',
   authOptions: '/api/v1/auth-options',
+  hostLinks: '/api/v1/host-links',
   memberRole: '/api/v1/members/:id/role',
   meGrants: '/api/v1/me/grants',
   meExport: '/api/v1/me/export',
@@ -212,6 +213,18 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
   github: z.boolean(),
 });
+
+/**
+ * The host's own terms, privacy notice and abuse-report address, each `null` when the host set
+ * none. Terms and privacy are `https:` pages; a report address may also be `mailto:`.
+ */
+export const CommunityWireHostLinksSchema = z.strictObject({
+  termsUrl: z.url({ protocol: /^https$/ }).nullable(),
+  privacyUrl: z.url({ protocol: /^https$/ }).nullable(),
+  reportAbuseUrl: z.url({ protocol: /^(?:https|mailto)$/ }).nullable(),
+});
+/** Host-set public links shown on sign-in, in account settings and on each message. */
+export type CommunityWireHostLinks = z.infer<typeof CommunityWireHostLinksSchema>;
 
 /** Public channel projection. `joined` is for the current caller only. */
 export const CommunityWireChannelSchema = z.strictObject({

@@ -109,4 +109,50 @@ describe('community startup config', () => {
       })
     ).toThrow();
   });
+
+  it('shows no host links unless the host sets them, and treats Compose blanks as unset', () => {
+    // Purpose: a self-hosted Community must render no Terms, Privacy or Report control at all.
+    const unset = { termsUrl: null, privacyUrl: null, reportAbuseUrl: null };
+    expect(parseConfig(valid).hostLinks).toEqual(unset);
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_TERMS_URL: '',
+        COMMUNITY_PRIVACY_URL: '',
+        COMMUNITY_REPORT_ABUSE_URL: '',
+      }).hostLinks
+    ).toEqual(unset);
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_TERMS_URL: 'https://example.com/terms',
+        COMMUNITY_PRIVACY_URL: 'https://example.com/privacy',
+        COMMUNITY_REPORT_ABUSE_URL: 'mailto:abuse@example.com',
+      }).hostLinks
+    ).toEqual({
+      termsUrl: 'https://example.com/terms',
+      privacyUrl: 'https://example.com/privacy',
+      reportAbuseUrl: 'mailto:abuse@example.com',
+    });
+  });
+
+  it('refuses a host link that is not HTTPS, or for reports a bare mailto address', () => {
+    // Purpose: fails if a link can be plain HTTP, script, carry credentials, or smuggle a
+    // pre-filled mail body past the one the Report link writes itself.
+    const refuse = (name: string, value: string) =>
+      expect(() => parseConfig({ ...valid, [name]: value }), `${name}=${value}`).toThrow(name);
+    refuse('COMMUNITY_TERMS_URL', 'http://example.com');
+    refuse('COMMUNITY_TERMS_URL', 'example.com/terms');
+    refuse('COMMUNITY_TERMS_URL', 'mailto:legal@example.com');
+    refuse('COMMUNITY_PRIVACY_URL', 'javascript:alert(1)');
+    refuse('COMMUNITY_PRIVACY_URL', 'https://user:pass@example.com/privacy');
+    refuse('COMMUNITY_REPORT_ABUSE_URL', 'http://example.com/report');
+    refuse('COMMUNITY_REPORT_ABUSE_URL', 'mailto:abuse@example.com?body=hello');
+    refuse('COMMUNITY_REPORT_ABUSE_URL', 'mailto:not-an-address');
+    refuse('COMMUNITY_REPORT_ABUSE_URL', 'data:text/html,hi');
+    expect(
+      parseConfig({ ...valid, COMMUNITY_REPORT_ABUSE_URL: 'https://example.com/report?form=1' })
+        .hostLinks.reportAbuseUrl
+    ).toBe('https://example.com/report?form=1');
+  });
 });

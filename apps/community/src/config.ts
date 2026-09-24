@@ -4,6 +4,38 @@ import { isAbsolute } from 'node:path';
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
 
+/** An optional setting that Compose may pass through as an empty string. */
+const optionalText = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().optional()
+);
+
+/**
+ * Validate one host link: an `https:` page, or for abuse reports also a bare `mailto:` address.
+ * Returns `null` when unset, so a self-hosted Community shows no link at all.
+ */
+function hostLink(name: string, value: string | undefined, allowMailto = false): string | null {
+  if (value === undefined) return null;
+  const allowed = allowMailto ? 'an https:// address or a mailto: address' : 'an https:// address';
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch (cause) {
+    throw new Error(`${name} must be ${allowed}`, { cause });
+  }
+  if (url.protocol === 'https:' && url.hostname && !url.username && !url.password) return url.href;
+  // A report link appends its own body, so the configured address carries no query of its own.
+  if (
+    allowMailto &&
+    url.protocol === 'mailto:' &&
+    /^[^@\s/?#]+@[^@\s/?#]+$/u.test(url.pathname) &&
+    !url.search &&
+    !url.hash
+  )
+    return url.href;
+  throw new Error(`${name} must be ${allowed}`);
+}
+
 const schema = z.object({
   COMMUNITY_DATABASE_URL: z.url().startsWith('postgres'),
   COMMUNITY_AUTH_SECRET: z.string().min(32),
@@ -74,6 +106,9 @@ const schema = z.object({
   COMMUNITY_GOOGLE_CLIENT_SECRET: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_ID: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_SECRET: z.string().optional(),
+  COMMUNITY_TERMS_URL: optionalText,
+  COMMUNITY_PRIVACY_URL: optionalText,
+  COMMUNITY_REPORT_ABUSE_URL: optionalText,
 });
 
 /** Validated deployment settings, resolved only when the server starts. */
@@ -164,6 +199,11 @@ export function parseConfig(env: Record<string, unknown>) {
       secretAccessKey: value.COMMUNITY_S3_SECRET_ACCESS_KEY,
     };
   })();
+  const hostLinks = {
+    termsUrl: hostLink('COMMUNITY_TERMS_URL', value.COMMUNITY_TERMS_URL),
+    privacyUrl: hostLink('COMMUNITY_PRIVACY_URL', value.COMMUNITY_PRIVACY_URL),
+    reportAbuseUrl: hostLink('COMMUNITY_REPORT_ABUSE_URL', value.COMMUNITY_REPORT_ABUSE_URL, true),
+  };
   return {
     databaseUrl: value.COMMUNITY_DATABASE_URL,
     authSecret: value.COMMUNITY_AUTH_SECRET,
@@ -178,6 +218,7 @@ export function parseConfig(env: Record<string, unknown>) {
     testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
     /** Where each completed erasure's id-only line is also appended, outside the database. */
     erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
+    hostLinks,
     oauth: {
       google:
         value.COMMUNITY_GOOGLE_CLIENT_ID && value.COMMUNITY_GOOGLE_CLIENT_SECRET

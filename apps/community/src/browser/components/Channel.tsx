@@ -3,20 +3,28 @@ import { ArrowLeft, ArrowUp, Download, MessageCircle, Paperclip, RotateCcw, X } 
 import type { CommunityWireEvent } from '@dorkos/shared/community-wire';
 import { describeError, download, RequestError, request, tenantApiPath, upload } from '../api.js';
 import type { Channel as ChannelType, Entry } from '../types.js';
+import { ReportEntryLink } from './HostLinks.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
 type Post = { entry: Entry; cursor: string };
-type Props = { channel: ChannelType; onChanged: () => void; readOnly?: boolean };
+type Props = {
+  communityId: string;
+  channel: ChannelType;
+  onChanged: () => void;
+  readOnly?: boolean;
+};
 function mergeEntries(previous: Entry[], incoming: Entry[]) {
   const byId = new Map(previous.map((entry) => [entry.id, entry]));
   for (const entry of incoming) byId.set(entry.id, entry);
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
 }
 function EntryCard({
+  communityId,
   entry,
   onThread,
   threadReadOnly = false,
 }: {
+  communityId: string;
   entry: Entry;
   onThread?: (entry: Entry) => void;
   threadReadOnly?: boolean;
@@ -53,13 +61,14 @@ function EntryCard({
             <MessageCircle size={14} /> {threadReadOnly ? 'View thread' : 'Reply in thread'}
           </button>
         )}
+        <ReportEntryLink communityId={communityId} entryId={entry.id} />
       </div>
     </article>
   );
 }
 
 /** Render channel history, live events, threads and composition. */
-export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
+export function ChannelView({ communityId, channel, onChanged, readOnly = false }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [thread, setThread] = useState<Entry | null>(null);
   const [replies, setReplies] = useState<Entry[]>([]);
@@ -341,6 +350,7 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
             {entries.map((entry) => (
               <EntryCard
                 key={entry.id}
+                communityId={communityId}
                 entry={entry}
                 onThread={setThread}
                 threadReadOnly={readOnly}
@@ -491,10 +501,10 @@ export function ChannelView({ channel, onChanged, readOnly = false }: Props) {
               </button>
             </div>
             <div className="drawer-content">
-              <EntryCard entry={thread} />
+              <EntryCard communityId={communityId} entry={thread} />
               <hr className="divider" />
               {replies.map((entry) => (
-                <EntryCard key={entry.id} entry={entry} />
+                <EntryCard key={entry.id} communityId={communityId} entry={entry} />
               ))}
               {replies.length === 0 && <p className="muted small">No replies yet.</p>}
             </div>

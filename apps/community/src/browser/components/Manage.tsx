@@ -3,6 +3,7 @@ import { Copy, Download, KeyRound, Plus, Shield, Trash2, Unplug, UserPlus } from
 import { describeError, download, request } from '../api.js';
 import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
 import { SignOutButton } from './SignOut.js';
+import { HostLinksPanel } from './HostLinks.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
 import { EraseMembershipPanel } from './Erasure.js';
 import type { Agent, Channel, Member } from '../types.js';
@@ -794,6 +795,7 @@ export function Manage({
               </p>
               <SignOutButton onSignedOut={onSignedOut} />
             </section>
+            <HostLinksPanel communityId={communityId} />
             <section className="panel" aria-labelledby="installations-title">
               <h3 id="installations-title" ref={installationsHeading} tabIndex={-1}>
                 Connected installations
