@@ -651,6 +651,9 @@ importers:
       '@dorkos/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@dorkos/test-utils':
+        specifier: workspace:*
+        version: link:../../packages/test-utils
       '@dorkos/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config

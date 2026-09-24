@@ -10,11 +10,11 @@ import {
   request as playwrightRequest,
   type BrowserContext,
   type Page,
-  type Route,
 } from '@playwright/test';
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
+import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
@@ -146,18 +146,15 @@ async function signIn(context: BrowserContext, email: string) {
   expect(response.ok()).toBe(true);
 }
 
-/** Answer the next matching request once with a failure, then step aside for good. */
+/** Answer the next matching request once with a failure, then let later ones through. */
 function failNext(page: Page, pattern: string, status: number) {
-  let used = false;
-  return page.route(pattern, async (route: Route) => {
-    if (used) return route.fallback();
-    used = true;
-    await route.fulfill({
+  return interceptNext(page, pattern, (route) =>
+    route.fulfill({
       status,
       contentType: 'application/json',
       body: JSON.stringify({ code: 'UNAVAILABLE', message: 'The community is unavailable.' }),
-    });
-  });
+    })
+  );
 }
 
 /** Everything the page could have persisted, so a test can prove the invitation never was. */

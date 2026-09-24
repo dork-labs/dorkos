@@ -185,7 +185,7 @@ gates:
   # --- typecheck.yml ---
   - id: wf.typecheck.typecheck
     source: .github/workflows/typecheck.yml
-    purpose: Full-monorepo typecheck, plus the policy gates (retired words, boundary, NUL bytes, dead doc paths) and the CI Steward census and ledger checks.
+    purpose: Full-monorepo typecheck, plus the policy gates (retired words, boundary, NUL bytes, dead doc paths, one-shot browser routes) and the CI Steward census and ledger checks.
 
   # --- update-homebrew.yml ---
   - id: wf.update-homebrew.update-formula
