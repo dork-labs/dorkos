@@ -1160,7 +1160,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   });
   // The number of probes that take the channel id. Update it when you add or
   // remove a channel probe; it stops the public run from silently shrinking.
-  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(16);
+  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(17);
 
   const before = await isolationSnapshot([communityId, otherId]);
   let executed = 0;
