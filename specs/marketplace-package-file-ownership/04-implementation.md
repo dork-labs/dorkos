@@ -59,6 +59,24 @@ A first attempt spawned the child through `pnpm exec`; SIGKILL then hit pnpm whi
 - Reinstall (clone the person's files into the staged tree, late-write pass, commit): **3235 ms**; all 2000 files present afterwards.
 - Uninstall (journaled move of the recorded files only): **263 ms**; the person's 2000 files stayed in place.
 
+### Code review fixes
+
+Every fix began with a test that failed first; the three survivors in item 7 were mutation-checked.
+
+| #   | Fix                                                                                                                                              | Commit      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| 1   | An agent's own `SOUL.md`, `MEMORY.md` and `agent.json` replace an unrecorded shipped seed (they were treated as a collision and set aside)       | `0e6e50ab8` |
+| 2   | Reserved and identity paths compare NFKC-folded and lower-cased, so `.dork/Secrets.json` is refused, stripped and never user-editable            | `43331e340` |
+| 3   | The legacy trust check and fallback read only regular files reached through real directories (a FIFO hung it; a symlink could reach `/dev/zero`) | `2e0076a66` |
+| 4   | `finishUninstall` prunes the record before deleting the sibling                                                                                  | `8132ef643` |
+| 5   | A different-source agent install runs the full unregister cascade before setting the old identity aside                                          | `1100fdb8d` |
+| 6   | An agent uninstall moves `agent.json` to the parked name (a git-tracked one is still only copied)                                                | `bc43cd16c` |
+| 7   | Tests kill M7 (roll forward after side effects), M16 (untouched-clone guard) and M15 (inode compared)                                            | `4a0c138ed` |
+| 8   | The startup sweep names agent folders a rolled-back uninstall restored; the server syncs them once Mesh is up                                    | `8d1a0424d` |
+| 9   | Identity `.dork-old` copies are journaled and removed on rollback                                                                                | `4bc93672c` |
+| 10  | The denial check compares real paths                                                                                                             | `3f54bc645` |
+| 12  | Only directories the uninstall emptied are pruned; a person's empty folder stays (kills M23)                                                     | see log     |
+
 ### Verification
 
 See the report for the final targeted runs.
