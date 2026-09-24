@@ -51,7 +51,7 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
-import { assertContainedIn } from './lib/package-paths.js';
+import { assertContainedIn, PathEscapeError } from './lib/package-paths.js';
 import { isFullCommitSha } from './lib/git-tree.js';
 import { directorySize } from './lib/directory-size.js';
 
@@ -219,7 +219,16 @@ export class MarketplaceCache {
    * @param marketplaceName - The configured marketplace identifier (e.g. `dorkos-community`).
    */
   async readMarketplace(marketplaceName: string): Promise<CachedMarketplace | null> {
-    const dir = this.marketplaceDir(marketplaceName);
+    let dir: string;
+    try {
+      dir = this.marketplaceDir(marketplaceName);
+    } catch (err) {
+      // A name that cannot be a cache key was never cached. Sources saved
+      // before names were checked (DOR-2304) can still hold one, and every
+      // read that walks the configured sources must survive it.
+      if (err instanceof PathEscapeError) return null;
+      throw err;
+    }
     const jsonPath = join(dir, MARKETPLACE_FILENAME);
     const stampPath = join(dir, LAST_FETCHED_FILENAME);
 

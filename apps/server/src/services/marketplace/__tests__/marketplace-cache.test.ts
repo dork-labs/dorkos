@@ -118,6 +118,24 @@ describe('MarketplaceCache', () => {
       // Purpose: this is an rm(recursive) on a caller-supplied name.
       await expect(cache.removeMarketplace('../../escape')).rejects.toThrow(PathEscapeError);
     });
+
+    it.each(['x/..', '.'])(
+      'refuses %j, which names the cache root, and deletes nothing',
+      async (name) => {
+        // Purpose: a name that resolves to the root itself would take every
+        // source's listing with it.
+        await cache.writeMarketplace('kept', buildMarketplaceJson());
+
+        await expect(cache.removeMarketplace(name)).rejects.toThrow(PathEscapeError);
+        expect(await cache.readMarketplace('kept')).not.toBeNull();
+      }
+    );
+
+    it('reads a name it cannot key as a cache miss rather than throwing', async () => {
+      // Purpose: a source saved under such a name before names were checked
+      // must not break every read that walks the configured sources.
+      await expect(cache.readMarketplace('x/..')).resolves.toBeNull();
+    });
   });
 
   describe('TTL', () => {
@@ -254,7 +272,9 @@ describe('MarketplaceCache', () => {
     });
 
     it('refuses to derive a marketplace directory that climbs out of the cache', async () => {
-      await expect(cache.readMarketplace('../../escape')).rejects.toThrow(PathEscapeError);
+      // A read never looks outside: it answers "not cached" (DOR-2304). A write
+      // or a removal is refused outright.
+      await expect(cache.readMarketplace('../../escape')).resolves.toBeNull();
       await expect(cache.writeMarketplace('../../escape', buildMarketplaceJson())).rejects.toThrow(
         PathEscapeError
       );

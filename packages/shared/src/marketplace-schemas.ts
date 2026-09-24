@@ -1165,15 +1165,21 @@ export type SourceListingOutcome =
     };
 
 /**
- * What `POST /api/marketplace/sources/:name/refresh` reports: the listing it
- * just fetched and when. Only the package count is read by the app, so the
- * listing is typed down to the part it uses.
+ * What `POST /api/marketplace/sources/:name/refresh` reports. A refresh is
+ * "check now": when the source can't be reached but a copy is cached, the
+ * answer is that copy with `stale: true`, the reason, and when the copy was
+ * fetched — never the old copy passed off as new. Only the package count is
+ * read by its callers, so the listing is typed down to that part.
  */
 export interface RefreshedMarketplaceSource {
-  /** The source's listing, as fetched (or, when unreachable, as last cached). */
+  /** The source's listing: fetched just now, or the last copy when `stale`. */
   marketplace: { plugins: unknown[] };
-  /** When the refresh answered, as an ISO timestamp. */
+  /** When this copy of the listing was fetched, as an ISO timestamp. */
   fetchedAt: string;
+  /** True when the source couldn't be reached and this is the last cached copy. */
+  stale: boolean;
+  /** Why the source couldn't be reached. Present only when `stale`. */
+  reason?: string;
 }
 
 /**

@@ -477,6 +477,20 @@ describe('Marketplace Routes', () => {
       expect(list.body.sources.map((s: { name: string }) => s.name)).toContain('offline');
     });
 
+    it('refuses a name that could not be a cache key, in plain words, and saves nothing', async () => {
+      // Purpose: the name keys the listing cache, and `x/..` named the cache
+      // root, so removing that source would have deleted every listing.
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/sources')
+        .send({ name: 'x/..', source: 'https://example.com/m' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/letters, numbers, dots, dashes and underscores/);
+      expect(fetcher.fetchMarketplaceJson).not.toHaveBeenCalled();
+      const list = await request(fixtureServer).get('/api/marketplace/sources');
+      expect(list.body.sources.map((s: { name: string }) => s.name)).not.toContain('x/..');
+    });
+
     it('fetches nothing for an address it refuses to save', async () => {
       // Purpose: the URL policy runs before anything is fetched, so a refused
       // address never reaches the network.
@@ -570,6 +584,79 @@ describe('Marketplace Routes', () => {
         expect(await cache.readMarketplace('mine')).toBeNull();
       });
 
+      it('forgets an old listing under the name even when the new source is added turned off', async () => {
+        // Purpose: the cleanup must not depend on whether the listing is then
+        // fetched, or a later browse would serve the old source's packages.
+        await cache.writeMarketplace('mine', {
+          name: 'mine',
+          owner: { name: 'Old owner' },
+          plugins: [{ name: 'old-a', source: './plugins/old-a' }],
+        });
+
+        const res = await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'mine', source: 'https://github.com/new/other', enabled: false });
+
+        expect(res.status).toBe(201);
+        expect(res.body.listing.fetched).toBe(false);
+        expect(await cache.readMarketplace('mine')).toBeNull();
+      });
+
+      it('refresh says plainly when it could only show the last copy', async () => {
+        // Purpose: a Refresh that quietly answered with the cached copy read
+        // as success while the server was down. It says it is stale, why, and
+        // when the copy it shows was fetched.
+        const lastCopy = {
+          name: 'mine',
+          owner: { name: 'Owner' },
+          plugins: [
+            { name: 'a', source: './plugins/a' },
+            { name: 'b', source: './plugins/b' },
+          ],
+        };
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(JSON.stringify(lastCopy), { status: 200 }))
+        );
+        await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'mine', source: 'https://github.com/me/mine' });
+        const cachedAt = (await cache.readMarketplace('mine'))!.fetchedAt.toISOString();
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockRejectedValue(
+            new TypeError('fetch failed', {
+              cause: Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }),
+            })
+          )
+        );
+
+        const res = await request(fixtureServer).post('/api/marketplace/sources/mine/refresh');
+
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({
+          stale: true,
+          reason: 'the server at that address refused the connection',
+          fetchedAt: cachedAt,
+        });
+        expect(res.body.marketplace.plugins).toHaveLength(2);
+      });
+
+      it('refresh answers 502 with the reason when there is no copy to fall back on', async () => {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response('nope', { status: 404, statusText: 'Not Found' }))
+        );
+        await request(fixtureServer)
+          .post('/api/marketplace/sources')
+          .send({ name: 'gone', source: 'https://github.com/me/gone' });
+
+        const res = await request(fixtureServer).post('/api/marketplace/sources/gone/refresh');
+
+        expect(res.status).toBe(502);
+        expect(res.body.error).toBe("there's no marketplace listing at that address");
+      });
+
       it('gives up after the marketplace timeout and still saves the source', async () => {
         // Purpose: the add waits no longer than refresh does (DOR-2194), and a
         // silent server surfaces as a plain reason rather than a failed add.
@@ -650,7 +737,10 @@ describe('Marketplace Routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.marketplace).toEqual(SAMPLE_MARKETPLACE_JSON);
       expect(typeof res.body.fetchedAt).toBe('string');
+      expect(res.body.stale).toBe(false);
       expect(fetcher.fetchMarketplaceJson).toHaveBeenCalledTimes(1);
+      // A refresh is "check now": it never quietly answers with the old copy.
+      expect(fetcher.fetchMarketplaceJson.mock.calls[0][1]).toEqual({ staleFallback: false });
       const arg = fetcher.fetchMarketplaceJson.mock.calls[0][0];
       expect(arg.name).toBe('refreshable');
       expect(arg.source).toBe('https://example.com/refresh');

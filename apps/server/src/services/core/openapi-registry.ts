@@ -2323,7 +2323,15 @@ const AddedMarketplaceSourceSchema = MarketplaceSourceSchema.extend({
 });
 
 const AddMarketplaceSourceBodySchema = z.object({
-  name: z.string().min(1).max(128),
+  name: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+    .describe(
+      'Letters, numbers, dots, dashes and underscores, starting with a letter or number. ' +
+        'Checked by the server on add; names saved before the check still load.'
+    ),
   source: z.string().min(1),
   enabled: z.boolean().optional(),
 });
@@ -2464,7 +2472,7 @@ registry.registerPath({
       content: { 'application/json': { schema: AddedMarketplaceSourceSchema } },
     },
     400: {
-      description: 'Validation error',
+      description: 'Validation error, a name DorkOS cannot use, or an address it will not fetch',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {
@@ -2506,17 +2514,26 @@ registry.registerPath({
   path: '/api/marketplace/sources/{name}/refresh',
   tags: ['Marketplace'],
   summary: 'Force refetch of a source marketplace.json',
+  description:
+    'Checks the source now. When it cannot be reached but a copy is cached, answers 200 with ' +
+    'that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. ' +
+    'With nothing cached, answers 502.',
   request: {
     params: z.object({ name: z.string() }),
   },
   responses: {
     200: {
-      description: 'Refreshed marketplace document',
+      description: 'The listing, fetched now or (when `stale`) the last cached copy',
       content: {
         'application/json': {
           schema: z.object({
             marketplace: LocalMarketplaceJsonSchema,
-            fetchedAt: z.string(),
+            fetchedAt: z.string().describe('When this copy of the listing was fetched'),
+            stale: z.boolean().describe('True when the source could not be reached'),
+            reason: z
+              .string()
+              .optional()
+              .describe('Why the source could not be reached; present only when `stale`'),
           }),
         },
       },

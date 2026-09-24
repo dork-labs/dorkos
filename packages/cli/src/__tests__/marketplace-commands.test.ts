@@ -466,6 +466,38 @@ describe('runMarketplaceRefresh', () => {
     expect(allLogs).toContain('Refreshed dorkos-community: 47 packages.');
   });
 
+  it('says plainly when it could only show the last copy, and exits 1 (DOR-2304)', async () => {
+    // Purpose: a refresh is "check now". When the source can't be reached the
+    // server answers with its last copy marked stale; printing "Refreshed"
+    // would claim a check that did not happen.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(200, {
+          marketplace: { name: 'dorkos-community', plugins: new Array(3).fill({}) },
+          fetchedAt: '2026-04-06T09:30:00.000Z',
+          stale: true,
+          reason: 'the server at that address refused the connection',
+        })
+      )
+    );
+
+    const code = await runMarketplaceRefresh({ name: 'dorkos-community' });
+
+    expect(code).toBe(1);
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).not.toContain('Refreshed');
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    const when = new Date('2026-04-06T09:30:00.000Z').toLocaleString(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    expect(allErr).toContain(
+      `Couldn't reach dorkos-community: the server at that address refused the connection. ` +
+        `Still showing the last copy, from ${when} (3 packages).`
+    );
+  });
+
   it('falls back to the "packages" field name when "plugins" is absent', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       mockResponse(200, {

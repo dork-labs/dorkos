@@ -25,7 +25,10 @@
  *
  * @module services/marketplace/source-listing
  */
-import type { SourceListingOutcome } from '@dorkos/shared/marketplace-schemas';
+import type {
+  RefreshedMarketplaceSource,
+  SourceListingOutcome,
+} from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../lib/logger.js';
 import type { MarketplaceCache } from './marketplace-cache.js';
 import type { PackageFetcher } from './package-fetcher.js';
@@ -36,7 +39,7 @@ export interface NewSourceListingDeps {
   /** The marketplace fetcher (only `fetchMarketplaceJson` is used). */
   fetcher: Pick<PackageFetcher, 'fetchMarketplaceJson'>;
   /** The cache, to forget a listing an earlier source of the same name left. */
-  cache: Pick<MarketplaceCache, 'removeMarketplace'>;
+  cache: Pick<MarketplaceCache, 'removeMarketplace' | 'readMarketplace'>;
 }
 
 /** The reason given for a source added turned off. */
@@ -54,11 +57,13 @@ export async function fetchNewSourceListing(
   deps: NewSourceListingDeps,
   source: MarketplaceSource
 ): Promise<SourceListingOutcome> {
-  if (!source.enabled) {
-    return { fetched: false, reason: DISABLED_SOURCE_LISTING_REASON };
-  }
   try {
+    // First, whatever the outcome: an old listing under this name must not
+    // outlive the add, fetched or not.
     await deps.cache.removeMarketplace(source.name);
+    if (!source.enabled) {
+      return { fetched: false, reason: DISABLED_SOURCE_LISTING_REASON };
+    }
     const marketplace = await deps.fetcher.fetchMarketplaceJson(source, { staleFallback: false });
     return { fetched: true, packageCount: marketplace.plugins.length };
   } catch (err) {
@@ -68,5 +73,39 @@ export async function fetchNewSourceListing(
       reason,
     });
     return { fetched: false, reason };
+  }
+}
+
+/**
+ * Fetch a source's listing now, for `POST /sources/:name/refresh`.
+ *
+ * A refresh is "check now", so it never quietly answers with the cached copy:
+ * it fetches with no stale fallback. When that fails and a copy is cached, it
+ * answers with that copy, marked `stale: true`, with the reason and the time
+ * the copy was fetched, so the caller can say "couldn't reach it, still
+ * showing the copy from <time>" instead of reporting success. With nothing
+ * cached, the fetch error is rethrown.
+ *
+ * @param deps - The fetcher and the cache.
+ * @param source - The configured source to refresh.
+ * @returns The listing, when it was fetched, and whether it is an old copy.
+ * @throws The fetch error when the fetch fails and nothing is cached.
+ */
+export async function refreshSourceListing(
+  deps: NewSourceListingDeps,
+  source: MarketplaceSource
+): Promise<RefreshedMarketplaceSource> {
+  try {
+    const marketplace = await deps.fetcher.fetchMarketplaceJson(source, { staleFallback: false });
+    return { marketplace, fetchedAt: new Date().toISOString(), stale: false };
+  } catch (err) {
+    const cached = await deps.cache.readMarketplace(source.name);
+    if (!cached) throw err;
+    return {
+      marketplace: cached.json,
+      fetchedAt: cached.fetchedAt.toISOString(),
+      stale: true,
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
 }
