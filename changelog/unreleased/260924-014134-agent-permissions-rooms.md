@@ -12,6 +12,8 @@ covers:
   - 'fix(rooms): post the archive notice only once the archive lands'
   - 'fix(client): stack a permission row by its own width, not the screen'
   - 'fix(server): never report a stale read as a change made outside DorkOS'
+  - 'fix(client): say when permissions cannot be read, and keep them out of the Obsidian embed'
+  - 'fix(client): name the profile Permissions row "Agent permissions" for screen readers'
 ---
 
 ### Added

@@ -24,6 +24,7 @@ import { PermissionRow } from '../ui/PermissionRow';
 import { ApplyToOverridesDialog } from '../ui/ApplyToOverridesDialog';
 import { ExceptionsChip } from '../ui/ExceptionsChip';
 import { PermissionList } from '../ui/PermissionList';
+import { PermissionHistory } from '../ui/PermissionHistory';
 
 afterEach(() => cleanup());
 
@@ -348,5 +349,24 @@ describe('PermissionList (agent scope)', () => {
 
     await screen.findByText('Everyone else: Blocked');
     expect(screen.queryByTestId('permission-action-exceptions-rooms')).not.toBeInTheDocument();
+  });
+});
+
+describe('when the permissions cannot be read', () => {
+  it('says so on the default layer instead of loading forever', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getPermissions).mockRejectedValue(new Error('not here'));
+    render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
+
+    expect(await screen.findByText('Couldn’t read the permissions.')).toBeInTheDocument();
+  });
+
+  it('says so for the history instead of claiming there is none', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getPermissionHistory).mockRejectedValue(new Error('not here'));
+    render(<PermissionHistory />, { wrapper });
+
+    expect(await screen.findByText('Couldn’t read the history.')).toBeInTheDocument();
+    expect(screen.queryByText('No permission changes yet.')).not.toBeInTheDocument();
   });
 });

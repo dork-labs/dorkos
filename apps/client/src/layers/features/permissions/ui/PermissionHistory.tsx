@@ -15,7 +15,10 @@ export interface PermissionHistoryProps {
  * @param props - See {@link PermissionHistoryProps}.
  */
 export function PermissionHistory({ agentId }: PermissionHistoryProps) {
-  const { data, isPending } = usePermissionHistory(agentId);
+  const { data, isPending, isError } = usePermissionHistory(agentId);
+  if (isError) {
+    return <p className="text-muted-foreground text-sm">Couldn’t read the history.</p>;
+  }
   if (isPending) return <Skeleton className="h-12 w-full" />;
   const items = data?.items ?? [];
   if (items.length === 0) {

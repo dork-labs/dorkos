@@ -196,6 +196,9 @@ export function PermissionList({ scope }: PermissionListProps) {
   const agent = useAgentPermissions(scope.kind === 'agent' ? scope.agentId : undefined);
 
   if (scope.kind === 'default') {
+    if (overview.isError) {
+      return <p className="text-muted-foreground text-sm">Couldn’t read the permissions.</p>;
+    }
     if (!overview.data) return <Skeleton className="h-20 w-full" />;
     return (
       <div className="divide-border divide-y" data-testid="permission-list-default">
