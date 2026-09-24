@@ -158,9 +158,9 @@ No logic change; the call already goes through `isPackageOwned`. Both refusal se
 ### Client
 
 - `apps/client/src/layers/shared/lib/query-client.ts`: the mutation-cache toast also skips an error whose `code` is in `mutation.meta.inlineErrorCodes`. A surface that renders a specific refusal itself opts out of that refusal only; every other failure still toasts.
-- `apps/client/src/layers/entities/tasks/model/use-tasks.ts`: `useUpdateTask` sets `inlineErrorCodes: ['schedule_package_owned']`. The two callers besides the form (the row's Approve and Reset timing, and the dialog's switch) only send row-only changes, which a package's schedule accepts, so they never see this code.
+- `apps/client/src/layers/entities/tasks/model/use-tasks.ts`: `useUpdateTask({ inlineErrorCodes })` takes the codes as a per-caller option, and exports `PACKAGE_OWNED_SCHEDULE_CODE`. Only the edit form passes it. The approval card deliberately does not: its "approve at a higher level" can be refused with the same code, and its own line about the refused level relies on the toast to say why.
 - `apps/client/src/layers/features/tasks/ui/TaskFormInner.tsx`: when the edit mutation fails with `schedule_package_owned`, render the server's sentence in a notice above the footer with a **Make my own copy** button. The form gains an `onMakeCopy(values)` prop.
-- `apps/client/src/layers/features/tasks/ui/CreateTaskDialog.tsx`: holds a `copyOf` state. `onMakeCopy` sets it to the form's current values with `name: <name>-copy` (cut to the name limit) and the task's agent; while set, the dialog renders the create form (title "New Schedule", no enable switch, no Delete) with those values. Closing the dialog clears it.
+- `apps/client/src/layers/features/tasks/ui/CreateTaskDialog.tsx`: holds an `isCopy` flag, set only by `onMakeCopy` through `applyFormValues(values, true)` and cleared by every other way of loading the form (opening, closing, a new task). While set, the dialog renders the create form (title "New Schedule", no enable switch, no Delete) on the copied values. The notice stays until the next save.
 - `task-form-values.ts`: `copyFormValues(values)` does the rename, pure and tested.
 
 ## User Experience
@@ -188,7 +188,7 @@ Each test carries a purpose comment and was seen to fail first.
   - no mesh and a deregistered agent: a listed file in a global agent package is still refused through the `agents/` candidate.
 - **`__tests__/skills-root-discovery.integration.test.ts` / sync:** discovery reports a person's schedule under a recorded package agent as not package-owned, so a file edit to `enabled` reaches the row; a shipped one keeps the row's switch (FB-26).
 - **Client:** `TaskFormInner` / `CreateTaskDialog` tests: a refused edit renders the sentence and the button and no toast; the button opens the create form with the edits, `<name>-copy`, and the same agent; Create sends a create request with them. `query-client` test: `inlineErrorCodes` suppresses only that code. `copyFormValues` unit test.
-- **Mutation checks** (each must turn a test red): drop the `userEditable` clause; use `isProvenPackageFile`'s hash check; drop the `uninstalledAt` clause; make a record-less root answer `false`; remove the create door's ownership call; remove the `inlineErrorCodes` check.
+- **Mutation checks** (each must turn a test red): drop the `userEditable` clause; use `isProvenPackageFile`'s hash check; drop the `uninstalledAt` clause; make a record-less root answer `false`; remove the create door's ownership call; drop `ownedPaths`; skip resolving a not-yet-existing file through its ancestors; make discovery claim every file; remove the `inlineErrorCodes` check or the form's opt-in; show the copy for any error; keep the copy mode across a reopen.
 
 ## Performance Considerations
 

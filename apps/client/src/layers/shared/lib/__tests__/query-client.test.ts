@@ -28,11 +28,13 @@ function mutationWithMeta(
  * (error, variables, onMutateResult, mutation, context).
  *
  * @param meta - The mutation's `meta`, or undefined when it declared none.
+ * @param code - The error's `code`, as the transport attaches a server refusal's.
  */
-function fireMutationError(meta: Record<string, unknown> | undefined): void {
+function fireMutationError(meta: Record<string, unknown> | undefined, code?: string): void {
   const handler = queryClient.getMutationCache().config.onError;
+  const error = Object.assign(new Error('boom'), code === undefined ? {} : { code });
   void handler?.(
-    new Error('boom'),
+    error,
     undefined,
     undefined,
     mutationWithMeta(meta),
@@ -84,6 +86,23 @@ describe('mutation error toast policy', () => {
     fireMutationError({ suppressErrorToast: true });
 
     expect(console.error).toHaveBeenCalledWith('[dorkos:mutation-error]', { error: 'boom' });
+  });
+
+  it('stays silent for a refusal the surface renders itself (inlineErrorCodes)', () => {
+    // Purpose: the schedule edit form shows `schedule_package_owned` inline with
+    // a way out (DOR-2272); the generic toast beside it would say it twice.
+    fireMutationError({ inlineErrorCodes: ['schedule_package_owned'] }, 'schedule_package_owned');
+
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('still toasts every other failure of a mutation that renders one refusal inline', () => {
+    // Purpose: opting one refusal out must not silence a network error or any
+    // other code on the same mutation.
+    fireMutationError({ inlineErrorCodes: ['schedule_package_owned'] }, 'something_else');
+    fireMutationError({ inlineErrorCodes: ['schedule_package_owned'] });
+
+    expect(toast.error).toHaveBeenCalledTimes(2);
   });
 
   it('shows the toast when meta exists but does not opt out', () => {

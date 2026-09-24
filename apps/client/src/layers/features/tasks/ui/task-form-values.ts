@@ -190,3 +190,26 @@ export function changedUpdateFields(
     Object.entries(after).filter(([field, next]) => next !== before[field])
   ) as UpdateTaskRequest;
 }
+
+/** The longest name the schedule form accepts. */
+export const MAX_NAME_LENGTH = 100;
+
+/** What a copy's name ends with. */
+const COPY_SUFFIX = '-copy';
+
+/**
+ * The form values for a person's own copy of a schedule: everything they typed,
+ * under the original's name with `-copy` on the end (DOR-2272).
+ *
+ * Offered when an edit to a schedule that came with an installed package is
+ * refused. The copy is a new schedule, so it needs a name the package does not
+ * use; the original's name is cut, never the suffix, so the result stays
+ * within {@link MAX_NAME_LENGTH}.
+ *
+ * @param values - The values the refused edit was saved with.
+ * @returns The same values, renamed.
+ */
+export function copyFormValues(values: ScheduleFormValues): ScheduleFormValues {
+  const base = values.name.trim().slice(0, MAX_NAME_LENGTH - COPY_SUFFIX.length);
+  return { ...values, name: `${base}${COPY_SUFFIX}` };
+}

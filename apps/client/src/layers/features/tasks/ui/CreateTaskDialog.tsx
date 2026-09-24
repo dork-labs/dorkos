@@ -134,6 +134,12 @@ export function CreateTaskDialog({
   // Local shadow of enabled state — allows the Switch to respond immediately
   // while the mutation + refetch catches up.
   const [localEnabled, setLocalEnabled] = useState(editTask?.enabled ?? true);
+  // True once a refused edit to a package's schedule becomes the person's own
+  // copy (DOR-2272): the dialog is then a New Schedule on the copied values, and
+  // the task it opened on is left exactly as it is. Every other way of loading
+  // the form clears it, through `applyFormValues`.
+  const [isCopy, setIsCopy] = useState(false);
+  const formTask = isCopy ? undefined : editTask;
 
   // formValues drives ScheduleForm defaultValues. Changing this + incrementing
   // formKey causes ScheduleForm to remount with fresh form state.
@@ -146,9 +152,10 @@ export function CreateTaskDialog({
   // Incrementing this key remounts ScheduleForm so useAppForm gets fresh defaultValues.
   const [formKey, setFormKey] = useState(0);
 
-  function applyFormValues(values: ScheduleFormValues) {
+  function applyFormValues(values: ScheduleFormValues, copy = false) {
     setFormValues(values);
     setFormKey((k) => k + 1);
+    setIsCopy(copy);
   }
 
   // Reset when dialog opens/closes or edit target changes.
@@ -199,6 +206,10 @@ export function CreateTaskDialog({
     setStep('form');
   }
 
+  function handleMakeCopy(values: ScheduleFormValues) {
+    applyFormValues(values, true);
+  }
+
   function handleDelete() {
     if (!editTask) return;
     deleteTask.mutate(editTask.id, {
@@ -245,7 +256,7 @@ export function CreateTaskDialog({
       <ResponsiveDialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 p-0">
         <ResponsiveDialogHeader className="shrink-0 border-b px-4 py-3">
           <div className="flex items-center gap-2">
-            {step === 'form' && !editTask && (
+            {step === 'form' && !formTask && !isCopy && (
               <button
                 type="button"
                 onClick={() => setStep('preset-picker')}
@@ -257,9 +268,9 @@ export function CreateTaskDialog({
               </button>
             )}
             <ResponsiveDialogTitle>
-              {editTask ? 'Edit Schedule' : 'New Schedule'}
+              {formTask ? 'Edit Schedule' : 'New Schedule'}
             </ResponsiveDialogTitle>
-            {editTask && (
+            {formTask && (
               <Switch
                 className="ml-auto"
                 checked={localEnabled}
@@ -274,7 +285,7 @@ export function CreateTaskDialog({
             )}
           </div>
           <ResponsiveDialogDescription className="sr-only">
-            {editTask ? 'Edit an existing schedule' : 'Create a new schedule'}
+            {formTask ? 'Edit an existing schedule' : 'Create a new schedule'}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -304,11 +315,12 @@ export function CreateTaskDialog({
             key={formKey}
             defaultValues={formValues}
             roster={roster}
-            editTask={editTask}
+            editTask={formTask}
             onSubmitSuccess={() => onOpenChange(false)}
             onCancel={() => onOpenChange(false)}
             onDeleteClick={() => setDeleteConfirmOpen(true)}
             isPending={isPending}
+            onMakeCopy={handleMakeCopy}
           />
         )}
       </ResponsiveDialogContent>

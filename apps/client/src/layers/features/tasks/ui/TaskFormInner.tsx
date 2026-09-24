@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '@tanstack/react-form';
-import { Trash2 } from 'lucide-react';
-import { useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
+import { Copy, Trash2 } from 'lucide-react';
+import { PACKAGE_OWNED_SCHEDULE_CODE, useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
 import {
   ResponsiveDialogFooter,
   Badge,
@@ -26,11 +26,11 @@ import { usePostureConsent } from './use-posture-consent';
 import { useAgentPick } from './use-agent-pick';
 import {
   DEFAULT_MAX_RUNTIME,
+  MAX_NAME_LENGTH,
   changedUpdateFields,
+  copyFormValues,
   type ScheduleFormValues,
 } from './task-form-values';
-
-const MAX_NAME_LENGTH = 100;
 
 // ── ScheduleForm ──────────────────────────────────────────────────────────────
 // Isolated component so useAppForm gets fresh defaultValues on each key change.
@@ -51,6 +51,12 @@ export interface ScheduleFormProps {
   onCancel: () => void;
   onDeleteClick: () => void;
   isPending: boolean;
+  /**
+   * Turn a refused edit into a new schedule of the person's own: called with the
+   * values to open the create form on, when an edit to a schedule that came with
+   * an installed package is refused (DOR-2272). Omitted, no copy is offered.
+   */
+  onMakeCopy?: (values: ScheduleFormValues) => void;
 }
 
 /** Inner form component. Remounted via `key` when defaultValues change. */
@@ -62,9 +68,18 @@ export function ScheduleForm({
   onCancel,
   onDeleteClick,
   isPending,
+  onMakeCopy,
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
-  const updateTask = useUpdateTask();
+  // An edit the server refuses because the schedule came with an installed
+  // package is shown here, beside the action that works, so the shared toast
+  // is told to stay out of that one refusal.
+  const updateTask = useUpdateTask({ inlineErrorCodes: [PACKAGE_OWNED_SCHEDULE_CODE] });
+  const packageRefusal =
+    editTask !== undefined &&
+    (updateTask.error as { code?: unknown } | null)?.code === PACKAGE_OWNED_SCHEDULE_CODE
+      ? updateTask.error!.message
+      : null;
 
   const form = useAppForm({
     defaultValues,
@@ -499,6 +514,30 @@ export function ScheduleForm({
         onCancel={consent.dismiss}
         onConfirm={consent.confirm}
       />
+
+      {packageRefusal !== null && (
+        <div
+          role="status"
+          data-slot="package-owned-notice"
+          className="bg-muted/40 mx-4 my-3 shrink-0 space-y-2 rounded-md border px-3 py-2 text-xs"
+        >
+          <p>{packageRefusal}</p>
+          <p className="text-muted-foreground">
+            The package&apos;s schedule keeps running unless you switch it off.
+          </p>
+          {onMakeCopy && (
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => onMakeCopy(copyFormValues(form.state.values))}
+            >
+              <Copy />
+              Make my own copy
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* Footer uses form.Subscribe to reactively derive submit-button disabled state. */}
       <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">

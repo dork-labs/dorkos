@@ -10,6 +10,8 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { TaskTemplate } from '@dorkos/shared/types';
 import { createMockTransport, createMockSchedule } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { queryClient as appQueryClient } from '@/layers/shared/lib/query-client';
+import { toast } from 'sonner';
 import { CreateTaskDialog } from '../ui/CreateTaskDialog';
 
 const MOCK_AGENTS = [
@@ -35,6 +37,11 @@ const MOCK_PRESETS: TaskTemplate[] = [
     timezone: 'UTC',
   },
 ];
+
+vi.mock('sonner', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('sonner')>();
+  return { ...actual, toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) };
+});
 
 const mockTaskTemplateDialog = vi.fn().mockReturnValue({
   pendingTemplate: null,
@@ -415,6 +422,172 @@ describe('CreateTaskDialog', () => {
 
       await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
       expect(transport.updateTask).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('an edit refused because the schedule came with a package (DOR-2272)', () => {
+    /** The refusal the server sends, carried the way the HTTP transport throws it. */
+    const REFUSAL =
+      "This schedule came with an installed package, so DorkOS didn't change it: the " +
+      "package's next update would put its own version back. You can switch it on or off, " +
+      'or change when it runs, here. To change what it does, make your own copy.';
+    const refused = () =>
+      Object.assign(new Error(REFUSAL), { code: 'schedule_package_owned', status: 409 });
+
+    /** Open a package's schedule, change its prompt, and save. */
+    async function editAndSave(transport: Transport) {
+      const schedule = createMockSchedule({
+        id: 'sched-pkg',
+        name: 'nightly-sweep',
+        prompt: 'The package sweeps.',
+        cron: '0 3 * * *',
+        agentId: 'agent-1',
+      });
+      const Wrapper = createWrapper(transport);
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+      await waitFor(() => expect(screen.getByDisplayValue('The package sweeps.')).toBeTruthy());
+      fireEvent.change(screen.getByDisplayValue('The package sweeps.'), {
+        target: { value: 'I sweep my way.' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+    }
+
+    it('says why in the dialog and offers to make the person their own copy', async () => {
+      // Purpose: the refusal used to arrive as a raw toast with nothing to do
+      // next; the sentence now sits beside the one action that works.
+      const transport = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+        updateTask: vi.fn().mockRejectedValue(refused()),
+      });
+
+      await editAndSave(transport);
+
+      expect(await screen.findByText(REFUSAL)).toBeTruthy();
+      expect(
+        screen.getByText("The package's schedule keeps running unless you switch it off.")
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Make my own copy' })).toBeTruthy();
+    });
+
+    it('turns the edit into a new schedule of their own for the same agent', async () => {
+      // Purpose: the copy carries what the person typed, under a name the
+      // package does not use, and is created only when they press Create.
+      const transport = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+        updateTask: vi.fn().mockRejectedValue(refused()),
+        createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-mine' })),
+      });
+      await editAndSave(transport);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Make my own copy' }));
+
+      expect(await screen.findByText('New Schedule')).toBeTruthy();
+      expect(screen.getByDisplayValue('nightly-sweep-copy')).toBeTruthy();
+      expect(screen.getByDisplayValue('I sweep my way.')).toBeTruthy();
+      expect(transport.createTask).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByText('Create'));
+      await waitFor(() =>
+        expect(transport.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: 'nightly-sweep-copy',
+            prompt: 'I sweep my way.',
+            target: 'agent-1',
+            cron: '0 3 * * *',
+          })
+        )
+      );
+      expect(transport.updateTask).toHaveBeenCalledTimes(1);
+    });
+
+    it('opens on the original schedule again once the dialog is closed', async () => {
+      // Purpose: the copy is one visit's answer. Reopening the package's
+      // schedule must edit it, not resume a New Schedule nobody asked for.
+      const schedule = createMockSchedule({
+        id: 'sched-pkg',
+        name: 'nightly-sweep',
+        prompt: 'The package sweeps.',
+        agentId: 'agent-1',
+      });
+      const transport = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+        updateTask: vi.fn().mockRejectedValue(refused()),
+      });
+      const Wrapper = createWrapper(transport);
+      const view = (open: boolean) => (
+        <Wrapper>
+          <CreateTaskDialog open={open} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+      const { rerender } = render(view(true));
+      await waitFor(() => expect(screen.getByDisplayValue('The package sweeps.')).toBeTruthy());
+      fireEvent.change(screen.getByDisplayValue('The package sweeps.'), {
+        target: { value: 'I sweep my way.' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+      fireEvent.click(await screen.findByRole('button', { name: 'Make my own copy' }));
+      expect(await screen.findByText('New Schedule')).toBeTruthy();
+
+      rerender(view(false));
+      rerender(view(true));
+
+      expect(await screen.findByText('Edit Schedule')).toBeTruthy();
+      expect(screen.getByDisplayValue('The package sweeps.')).toBeTruthy();
+    });
+
+    it('leaves the app-wide failure toast out of this refusal, and only this one', async () => {
+      // Purpose: the dialog already says it, with the way out; the generic
+      // toast beside it would say it twice. Driven through the app's own query
+      // client, whose mutation cache owns that toast.
+      const refusing = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+        updateTask: vi.fn().mockRejectedValue(refused()),
+      });
+      const schedule = createMockSchedule({ id: 'sched-pkg', prompt: 'The package sweeps.' });
+      const renderWithAppClient = (transport: Transport) =>
+        render(
+          <QueryClientProvider client={appQueryClient}>
+            <TransportProvider transport={transport}>
+              <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+            </TransportProvider>
+          </QueryClientProvider>
+        );
+      const save = async () => {
+        await waitFor(() => expect(screen.getByDisplayValue('The package sweeps.')).toBeTruthy());
+        fireEvent.change(screen.getByDisplayValue('The package sweeps.'), {
+          target: { value: 'I sweep my way.' },
+        });
+        fireEvent.click(screen.getByText('Save'));
+      };
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      renderWithAppClient(refusing);
+      await save();
+      await screen.findByRole('button', { name: 'Make my own copy' });
+      expect(toast.error).not.toHaveBeenCalled();
+
+      cleanup();
+      renderWithAppClient(
+        createMockTransport({ updateTask: vi.fn().mockRejectedValue(new Error('disk full')) })
+      );
+      await save();
+      await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1));
+    });
+
+    it('offers no copy for any other failure', async () => {
+      // Purpose: the button answers one refusal; a disk error is not a reason
+      // to fork the schedule.
+      const transport = createMockTransport({
+        updateTask: vi.fn().mockRejectedValue(new Error('disk full')),
+      });
+
+      await editAndSave(transport);
+
+      await waitFor(() => expect(transport.updateTask).toHaveBeenCalled());
+      expect(screen.queryByRole('button', { name: 'Make my own copy' })).toBeNull();
     });
   });
 

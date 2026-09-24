@@ -17,6 +17,13 @@ import { TASK_RUNS_KEY } from './use-task-runs';
 export const TASKS_KEY = ['tasks'] as const;
 
 /**
+ * The code a task edit or create is refused with when the schedule's file
+ * belongs to an installed package (`services/tasks/lifecycle/*` on the server):
+ * the package's next update would put its own version back.
+ */
+export const PACKAGE_OWNED_SCHEDULE_CODE = 'schedule_package_owned';
+
+/**
  * Fetch all Tasks.
  *
  * @param enabled - When false, the query is skipped entirely (Tasks feature gate).
@@ -44,8 +51,17 @@ export function useCreateTask() {
   });
 }
 
-/** Update an existing Task. */
-export function useUpdateTask() {
+/**
+ * Update an existing Task.
+ *
+ * @param options - `inlineErrorCodes`: server refusal codes the calling surface
+ *   shows itself, so the shared failure toast leaves those alone. Only a surface
+ *   that really renders the refusal passes one: the schedule edit form does, for
+ *   {@link PACKAGE_OWNED_SCHEDULE_CODE}, with Make my own copy beside it
+ *   (DOR-2272). The approval card does not, because its own line about a
+ *   refused level leans on the toast to say why.
+ */
+export function useUpdateTask(options: { inlineErrorCodes?: readonly string[] } = {}) {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
@@ -57,7 +73,10 @@ export function useUpdateTask() {
     },
     // The shared mutation toast (`query-client.ts`) reports the failure —
     // `TaskRow.tsx`'s own call-time `onError` used to duplicate it.
-    meta: { errorLabel: 'Couldn’t update the schedule' },
+    meta: {
+      errorLabel: 'Couldn’t update the schedule',
+      ...(options.inlineErrorCodes && { inlineErrorCodes: options.inlineErrorCodes }),
+    },
   });
 }
 
