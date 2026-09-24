@@ -697,6 +697,20 @@ describe('UninstallFlow', () => {
     expect(await pathExists(installRoot)).toBe(false);
   });
 
+  // Purpose (DOR-2245): a root holding only files an earlier uninstall kept is
+  // not a package; uninstalling it again must not "remove" the person's files.
+  it('throws PackageNotInstalledError for a root that holds only kept files', async () => {
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const kept = path.join(deps.dorkHome, 'plugins', 'kept');
+    await mkdir(path.join(kept, 'config'), { recursive: true });
+    await writeFile(path.join(kept, 'config', 'config.json'), '{"mine":true}');
+
+    const flow = new UninstallFlow(deps);
+    await expect(flow.uninstall({ name: 'kept' })).rejects.toThrow(PackageNotInstalledError);
+    expect(await readFile(path.join(kept, 'config', 'config.json'), 'utf-8')).toBe('{"mine":true}');
+  });
+
   it('throws PackageNotInstalledError when no package matches the name', async () => {
     const deps = await buildDeps();
     cleanupDirs.push(deps.dorkHome);

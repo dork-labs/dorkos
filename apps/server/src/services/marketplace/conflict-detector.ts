@@ -9,7 +9,7 @@
  *
  * @module services/marketplace/conflict-detector
  */
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
@@ -23,6 +23,7 @@ import {
   projectScopeRoot,
   type InstallRootDir,
 } from './lib/install-roots.js';
+import { hasPackageIdentity } from './lib/locate-install.js';
 import type { ConflictReport } from './types.js';
 
 /**
@@ -193,7 +194,7 @@ export class ConflictDetector {
   ): Promise<ConflictReport[]> {
     const installRoot = installRootDirForType(ctx.manifest.type);
     const targetPath = join(scopeRoot, installRoot, ctx.manifest.name);
-    if (await pathExists(targetPath)) {
+    if (await hasPackageIdentity(targetPath)) {
       return [
         {
           level: 'warning',
@@ -213,7 +214,7 @@ export class ConflictDetector {
     for (const otherRoot of INSTALL_ROOT_DIRS) {
       if (otherRoot === installRoot) continue;
       const otherTypePath = join(scopeRoot, otherRoot, ctx.manifest.name);
-      if (await pathExists(otherTypePath)) {
+      if (await hasPackageIdentity(otherTypePath)) {
         return [
           {
             level: 'warning',
@@ -231,7 +232,7 @@ export class ConflictDetector {
         join(this.#dorkHome, root, ctx.manifest.name)
       );
       for (const candidate of globalCandidates) {
-        if (await pathExists(candidate)) {
+        if (await hasPackageIdentity(candidate)) {
           return [
             {
               level: 'warning',
@@ -511,16 +512,6 @@ function dropSelfInstall<T extends { kind: InstallRootDir; packageName: string }
 ): T[] {
   const selfKey = installKey(installRootDirForType(manifest.type), manifest.name);
   return records.filter((record) => installKey(record.kind, record.packageName) !== selfKey);
-}
-
-/** Best-effort `stat` to test for path existence without throwing. */
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await stat(target);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**

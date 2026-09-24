@@ -35,7 +35,11 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { MarketplacePackageManifest, PackageType } from '@dorkos/marketplace';
-import { installRootCandidates, type InstallRootCandidate } from '../lib/locate-install.js';
+import {
+  hasPackageIdentity,
+  installRootCandidates,
+  type InstallRootCandidate,
+} from '../lib/locate-install.js';
 import { assertPackageName } from '../lib/package-paths.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 import { hasInstallRecords, type InstallRecord } from '../install-recovery.js';
@@ -301,7 +305,7 @@ export class UninstallFlow {
     probed: LocatedPackage
   ): Promise<{ located: LocatedPackage; kept: InstallRecord[] } | undefined> {
     const { kept } = await settleInterruptedInstall(probed.installRoot);
-    if (!(await pathExists(probed.installRoot))) return undefined;
+    if (!(await hasPackageIdentity(probed.installRoot))) return undefined;
     const manifest = await readManifestIfPresent(probed.installRoot);
     return {
       located: {
@@ -341,8 +345,10 @@ export class UninstallFlow {
     const candidates = this.candidatePaths(req);
     for (const candidate of candidates) {
       if (skip.has(candidate.installRoot)) continue;
+      // A root holding only files an earlier uninstall kept is not an install
+      // (DOR-2245); records beside a target still are, so recovery settles them.
       const present =
-        (await pathExists(candidate.installRoot)) ||
+        (await hasPackageIdentity(candidate.installRoot)) ||
         (await hasInstallRecords(candidate.installRoot));
       if (!present) continue;
       const manifest = await readManifestIfPresent(candidate.installRoot);

@@ -149,7 +149,12 @@ async function installSkeletonUnder(
   name: string
 ): Promise<string> {
   const packageRoot = join(scopeRoot, root, name);
-  await mkdir(packageRoot, { recursive: true });
+  await mkdir(join(packageRoot, '.dork'), { recursive: true });
+  // A package root has an identity; a bare directory is only kept files (DOR-2245).
+  await writeFile(
+    join(packageRoot, '.dork', 'manifest.json'),
+    JSON.stringify({ schemaVersion: 1, name, version: '1.0.0', type: 'plugin', description: 'x' })
+  );
   return packageRoot;
 }
 
@@ -203,7 +208,7 @@ describe('ConflictDetector', () => {
   });
 
   it('reports a reinstall warning when a Shape already owns the name under shapes/', async () => {
-    await mkdir(join(dorkHome, 'shapes', 'linear-ops'), { recursive: true });
+    await installSkeletonUnder(dorkHome, 'shapes', 'linear-ops');
 
     const result = await detector.detect({
       packagePath: stagedRoot,
@@ -221,6 +226,22 @@ describe('ConflictDetector', () => {
       type: 'package-name',
       conflictingPackage: 'linear-ops',
     });
+  });
+
+  // Purpose (DOR-2245): a root an uninstall left holds only the person's kept
+  // files, so installing into it is a plain install, not a reinstall warning.
+  it('raises no package-name warning over a root that holds only kept files', async () => {
+    const kept = join(dorkHome, 'plugins', 'kept-plugin');
+    await mkdir(join(kept, 'config'), { recursive: true });
+    await writeFile(join(kept, 'config', 'config.json'), '{}');
+
+    const result = await detector.detect({
+      packagePath: stagedRoot,
+      manifest: pluginManifest('kept-plugin'),
+      dorkHome,
+    });
+
+    expect(result.filter((r) => r.type === 'package-name')).toEqual([]);
   });
 
   it('warns about cross-type coexistence when a plugin already owns a Shape name', async () => {
@@ -611,8 +632,7 @@ describe('ConflictDetector', () => {
   it('warns (does not error) when a same-name package of a different type exists in the other root', async () => {
     // Fix #5: a plugin `foo` and an agent `foo` would silently coexist. Surface the
     // cross-type collision as a non-blocking warning so it is not invisible.
-    const agentRoot = join(dorkHome, 'agents', 'foo');
-    await mkdir(agentRoot, { recursive: true });
+    await installSkeletonUnder(dorkHome, 'agents', 'foo');
 
     const result = await detector.detect({
       packagePath: stagedRoot,
@@ -635,8 +655,7 @@ describe('ConflictDetector', () => {
     // The detector must probe the `.dork` segment, not `${projectPath}/plugins`.
     const projectPath = await mkdtemp(join(tmpdir(), 'conflict-detector-project-'));
     try {
-      const localPluginDir = join(projectPath, '.dork', 'plugins', 'local-plugin');
-      await mkdir(localPluginDir, { recursive: true });
+      await installSkeletonUnder(join(projectPath, '.dork'), 'plugins', 'local-plugin');
 
       const result = await detector.detect({
         packagePath: stagedRoot,

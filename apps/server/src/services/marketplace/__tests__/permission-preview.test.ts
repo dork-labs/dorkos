@@ -217,8 +217,9 @@ async function createFixturePackage(
 /** Materialize an installed package marker so `requires` resolution can find it. */
 async function installPlugin(dorkHome: string, name: string): Promise<void> {
   const dir = join(dorkHome, 'plugins', name);
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, 'manifest.json'), JSON.stringify({ name, type: 'plugin' }));
+  await mkdir(join(dir, '.dork'), { recursive: true });
+  // The manifest's real location: a root without one holds only kept files (DOR-2245).
+  await writeFile(join(dir, '.dork', 'manifest.json'), JSON.stringify({ name, type: 'plugin' }));
 }
 
 describe('PermissionPreviewBuilder', () => {
