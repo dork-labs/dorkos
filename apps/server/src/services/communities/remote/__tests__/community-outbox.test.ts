@@ -22,6 +22,7 @@ import { CommunityOutboxStore, type CommunityOutboxItem } from '../community-out
 import { CommunityOutboxWorker } from '../community-outbox-worker.js';
 import { CommunityOutboxRuntime } from '../community-outbox-runtime.js';
 import { RemoteMirrorStore } from '../mirror-store.js';
+import { PinnedHttpError } from '../pinned-origin.js';
 
 const REF = 'remote_outbox' as CommunityRef;
 const NOW = Date.parse('2026-09-16T12:00:00.000Z');
@@ -476,6 +477,98 @@ describe('community outbox', () => {
 
     await expect(pending).resolves.toEqual({ kind: 'stopped', reason: 'stopped-or-unauthorized' });
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it('fails a post refused while the community is held at once, and never sends it after release (AC-9)', async () => {
+    // Purpose: fails if a post refused during a host hold is retried, so held-era posts would
+    // flood in on release, or if the person reads the archived sentence instead of the hold's.
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    let held = true;
+    const post = vi.fn(async () => {
+      if (held) throw new PinnedHttpError(423, 'COMMUNITY_HELD');
+      return { entryId: 'remote-entry' } as never;
+    });
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({ post, uploadAttachment: vi.fn() }),
+      { localRoomIdForOwner: () => 'room-1', remoteEntryIdForLocal: () => null } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {} as never,
+      {} as never,
+      outbox
+    );
+    await new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      delivery,
+      () => NOW
+    ).runOnce();
+    expect(post).toHaveBeenCalledOnce();
+    expect(outbox.visibleForOwner(harness.human)).toEqual([
+      expect.objectContaining({
+        id: item.id,
+        state: 'failed',
+        failure:
+          'The host has put this community on hold. You can read it, but no one can post. Its owner can still export it.',
+      }),
+    ]);
+
+    held = false;
+    await new CommunityOutboxWorker(
+      outbox,
+      { canDeliver: () => true },
+      delivery,
+      () => NOW + 60_000
+    ).runOnce();
+    expect(post).toHaveBeenCalledOnce();
+  });
+
+  it('keeps every other 423 retryable', async () => {
+    // Purpose: fails if the permanent rule catches a 423 that does not mean read-only.
+    const harness = createRoomHarness({ agents: agentLookupFor({}) });
+    const outbox = new CommunityOutboxStore(harness.db);
+    const item = outboxItem({ ownerAuthorId: harness.human });
+    harness.db.transaction((tx) => outbox.enqueue(item, tx));
+    const delivery = new CommunityAdapterOutboxDelivery(
+      () => ({
+        post: vi.fn(async () => {
+          throw new PinnedHttpError(423, 'STATE_CONFLICT');
+        }),
+        uploadAttachment: vi.fn(),
+      }),
+      { localRoomIdForOwner: () => 'room-1', remoteEntryIdForLocal: () => null } as never,
+      { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+      { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+      {} as never,
+      {} as never,
+      outbox
+    );
+    await expect(delivery.deliver(item, () => true)).resolves.toMatchObject({ kind: 'retry' });
+    for (const code of ['COMMUNITY_ARCHIVED', 'COMMUNITY_DELETION_PENDING'] as const) {
+      const refused = new CommunityAdapterOutboxDelivery(
+        () => ({
+          post: vi.fn(async () => {
+            throw new PinnedHttpError(423, code);
+          }),
+          uploadAttachment: vi.fn(),
+        }),
+        { localRoomIdForOwner: () => 'room-1', remoteEntryIdForLocal: () => null } as never,
+        { findRemoteMember: () => ({ remoteMemberId: 'remote-agent-a' }) } as never,
+        { getEntryById: () => ({ kind: 'post', body: { text: 'Output' } }) } as never,
+        {} as never,
+        {} as never,
+        outbox
+      );
+      await expect(
+        refused.deliver(item, () => true),
+        code
+      ).resolves.toMatchObject({
+        kind: 'permanent',
+      });
+    }
   });
 
   it('retries network uncertainty, but stops before a later request after authority changes', async () => {

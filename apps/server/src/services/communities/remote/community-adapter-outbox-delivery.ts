@@ -10,6 +10,7 @@ import type {
   PostCommunityEntryInput,
   UploadCommunityAttachmentInput,
 } from '@dorkos/shared/community-adapter';
+import { communityRefusal } from '../../../routes/remote-community-refusal.js';
 import type { AttachmentRowStore } from '../../rooms/attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from '../../rooms/attachments/room-attachment-store.js';
 import type { RoomStore } from '../../rooms/room-store.js';
@@ -20,6 +21,7 @@ import type {
   CommunityDeliveryResult,
 } from './community-outbox-worker.js';
 import type { RemoteMirrorStore } from './mirror-store.js';
+import { PinnedHttpError } from './pinned-origin.js';
 
 /** The hard remote-community upload ceiling, enforced before local bytes are read. */
 export const COMMUNITY_REMOTE_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
@@ -185,9 +187,29 @@ function parseAttachmentIds(value: string): readonly string[] | null {
   }
 }
 
+/**
+ * The `423` codes that mean the community is read-only for everyone. A post refused for one of
+ * these is not sent later: a message that arrives hours late, after a hold ends, is worse than
+ * a visible failure. Any other `423` stays retryable.
+ */
+const READ_ONLY_REFUSALS: ReadonlySet<string> = new Set([
+  'COMMUNITY_HELD',
+  'COMMUNITY_ARCHIVED',
+  'COMMUNITY_DELETION_PENDING',
+]);
+
 /** Convert typed remote refusals to terminal delivery state and keep outages retryable. */
 function deliveryFailure(error: unknown, signal: AbortSignal): CommunityDeliveryResult {
   if (signal.aborted) return { kind: 'stopped', reason: 'stopped-or-unauthorized' };
+  if (
+    error instanceof PinnedHttpError &&
+    error.status === 423 &&
+    error.remoteCode &&
+    READ_ONLY_REFUSALS.has(error.remoteCode)
+  ) {
+    // Say why in the person's words (a hold is not an archive), never the remote's own text.
+    return { kind: 'permanent', reason: communityRefusal(error)?.error ?? error.message };
+  }
   const message = error instanceof Error ? error.message : 'remote delivery failed';
   const status =
     typeof error === 'object' && error !== null && 'status' in error
