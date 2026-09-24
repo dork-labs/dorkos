@@ -27,6 +27,7 @@ import {
   type UninstallShapeScheduleTeardown,
 } from '../../flows/uninstall.js';
 import { InvalidPackageNameError } from '../../lib/package-paths.js';
+import { computeInstalledFiles, writeInstalledFiles } from '../../lib/installed-files.js';
 import { currentRecordOwner, formatRecordOwner } from '../../lib/record-owner.js';
 import { _internal as recoveryInternal } from '../../install-recovery.js';
 import { randomUUID } from 'node:crypto';
@@ -121,6 +122,8 @@ async function stageInstalledPackage(opts: {
   extensions?: { id: string; manifest: Record<string, unknown> }[];
   dataFiles?: { name: string; content: string }[];
   secrets?: Record<string, unknown>;
+  /** Leave out the installed-files record, like an install made before records existed. */
+  legacy?: boolean;
 }): Promise<void> {
   await mkdir(opts.installRoot, { recursive: true });
   await mkdir(path.join(opts.installRoot, '.dork'), { recursive: true });
@@ -154,6 +157,19 @@ async function stageInstalledPackage(opts: {
       path.join(opts.installRoot, '.dork', 'secrets.json'),
       JSON.stringify(opts.secrets, null, 2),
       'utf-8'
+    );
+  }
+
+  // What a real install writes (DOR-2245): the record of the package's own
+  // files. Data and secrets are reserved paths, so they are never in it.
+  if (!opts.legacy) {
+    await writeInstalledFiles(
+      opts.installRoot,
+      await computeInstalledFiles(opts.installRoot, {
+        identity: { name: opts.manifest.name, type: opts.manifest.type },
+        userEditable: [],
+        npmRan: false,
+      })
     );
   }
 }
@@ -519,7 +535,7 @@ describe('UninstallFlow', () => {
     };
 
     const flow = new UninstallFlow({ ...deps, shapeDeactivator });
-    await flow.uninstall({ name: 'linear-ops', deactivateShape: false });
+    await flow.uninstall({ name: 'linear-ops', replacing: true });
 
     expect(clearActiveShape).not.toHaveBeenCalled();
     expect(await pathExists(installRoot)).toBe(false);
@@ -612,7 +628,7 @@ describe('UninstallFlow', () => {
     expect(await pathExists(installRoot)).toBe(false);
   });
 
-  it('skips all Shape teardown on an update replace (deactivateShape: false)', async () => {
+  it('skips all Shape teardown on an update replace (replacing: true)', async () => {
     // The installer update runs uninstall as the first half of a replace — the
     // Shape comes right back — so it must NOT delete schedules, disable
     // extensions, or clear the pointer.
@@ -633,7 +649,7 @@ describe('UninstallFlow', () => {
     const shapeScheduleTeardown: UninstallShapeScheduleTeardown = { deleteSchedulesForShape };
 
     const flow = new UninstallFlow({ ...deps, shapeDeactivator, shapeScheduleTeardown });
-    await flow.uninstall({ name: 'linear-ops', deactivateShape: false });
+    await flow.uninstall({ name: 'linear-ops', replacing: true });
 
     expect(deleteSchedulesForShape).not.toHaveBeenCalled();
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();

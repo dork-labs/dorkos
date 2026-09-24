@@ -610,7 +610,7 @@ export class MarketplaceInstaller implements InstallerLike {
       name: resolved.packageName,
       purge: false,
       projectPath: req.projectPath,
-      deactivateShape: false,
+      replacing: true,
       ...(req.installRoot !== undefined && { installRoot: req.installRoot }),
     });
 

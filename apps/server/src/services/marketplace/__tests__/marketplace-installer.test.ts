@@ -1309,14 +1309,14 @@ describe('MarketplaceInstaller', () => {
       const result = await installer.update({ name: 'updateable-plugin' });
 
       // Uninstall first, with purge: false (the data preservation contract)
-      // and deactivateShape: false (an update is a replace, not a removal —
+      // and replacing: true (an update is a replace, not a removal —
       // the active-Shape pointer must survive the round trip).
       expect(uninstallFlow.uninstall).toHaveBeenCalledTimes(1);
       expect(uninstallFlow.uninstall).toHaveBeenCalledWith({
         name: 'updateable-plugin',
         purge: false,
         projectPath: undefined,
-        deactivateShape: false,
+        replacing: true,
       });
 
       // Then install fresh with force: true (so any residual collision
@@ -1516,7 +1516,7 @@ describe('MarketplaceInstaller', () => {
 
     it('suppresses deactivation during the internal uninstall and re-applies the active Shape', async () => {
       // The full active-Shape update contract: the uninstall half must not
-      // clear ui.shapes.active (deactivateShape: false), and after the fresh
+      // clear ui.shapes.active (replacing: true), and after the fresh
       // version lands the Shape is re-applied so the cockpit picks it up.
       const { deps, shapeFlow, uninstallFlow, reapplyShape } = wireShapeUpdate('linear-ops');
 
@@ -1524,7 +1524,7 @@ describe('MarketplaceInstaller', () => {
       const result = await installer.update({ name: 'linear-ops' });
 
       expect(uninstallFlow.uninstall).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'linear-ops', deactivateShape: false })
+        expect.objectContaining({ name: 'linear-ops', replacing: true })
       );
       expect(shapeFlow.install).toHaveBeenCalledTimes(1);
       expect(reapplyShape).toHaveBeenCalledTimes(1);

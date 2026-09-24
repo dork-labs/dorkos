@@ -4176,6 +4176,19 @@ async function start() {
       shapeDeactivator: { getActiveShapeName, clearActiveShape },
       // Delete the schedules a removed Shape created so its tick stops firing.
       shapeScheduleTeardown: shapeScheduleService,
+      // An uninstalled agent package's agent leaves the team (DOR-2245): the
+      // full unregister cascade, and back again if the uninstall rolls back.
+      agentRegistry: {
+        unregisterAtPath: async (projectPath: string) => {
+          const agent = meshCore?.getByPath(projectPath);
+          if (!meshCore || !agent) return null;
+          const { manifestKept } = await meshCore.unregister(agent.id);
+          return { id: agent.id, directoryDenied: manifestKept };
+        },
+        restoreAtPath: async (projectPath: string) => {
+          await meshCore?.syncFromDisk(projectPath);
+        },
+      },
       logger,
     });
 
