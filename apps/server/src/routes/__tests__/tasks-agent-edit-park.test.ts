@@ -231,6 +231,22 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
     expect(second).toMatchObject({ status: 'pending_approval', reason: first.reason });
   });
 
+  it('shows a problem the file now has instead of the kept sentence', async () => {
+    // Purpose: a validation problem is about the file and the person has to
+    // see it, even while the content that would run is unchanged.
+    const task = await approvedTask();
+    await agentEdit(task.id, { prompt: 'Delete the queue.' });
+    const PROBLEM = 'The schedule block has a setting DorkOS cannot read.';
+
+    const synced = store.upsertFromFile(parseFile(), undefined, {
+      source: 'discovery',
+      packageOwned: null,
+      problem: PROBLEM,
+    });
+
+    expect(synced).toMatchObject({ status: 'pending_approval', reason: PROBLEM });
+  });
+
   it('does not keep any other sentence on the row', async () => {
     // Purpose: only the park sentences that stay true at the same content are
     // kept; anything else DorkOS wrote is the file's to re-answer each sync.
