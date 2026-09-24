@@ -236,3 +236,10 @@ The adversarial review kept the ownership rule and required the following, all b
 6. **UX (operator decision):** the task wire type carries `packageOwned` (in the OpenAPI). A package's schedule opens with a notice at the top; its name, description, prompt, power level and runtime settings are read-only (a disabled fieldset), its switch and timing stay editable; a `record` notice offers Make my own copy, a `legacy` one does not. The copy form has **Switch off the package's schedule**, ticked by default; after Create it sends `enabled: false` for the original.
 
 **Reinstall finding.** The Installed view offers Update (only when one exists) and Uninstall per row; Reinstall is only on the package's detail sheet, and for an agent package it opens agent creation, a fresh agent, rather than reinstalling in place. So "reinstall" is not honest advice for a legacy agent package, and the wording says "after the package's next update" instead. A safe background record rebuild is DOR-2197's.
+
+## Review round 2 (2026-09-24)
+
+1. **Rows older than the column** are backfilled to `unknown` by migration `0109`. The wire shows it as `null`; the first sync treats `unknown` → not owned as a release, so an OFF switch is kept and the file is written only where row and file disagree. (A NULL row is now only ever a person's, so the reviewer's T2 is expressed with `unknown`.)
+2. **The release is two-phase** (`FileSyncGates.packageOwnedToWrite`). While the row keeps a switch the file does not say yet, the row keeps its previous ownership; `null` is recorded only by a sync that finds the file agreeing. A failed write, or the watcher and reconciler interleaving, therefore costs a retry, not the switch.
+3. **The write re-checks** that no package owns the file now and that the file still parses to what discovery read, and skips otherwise.
+4. Follow-up **DOR-2320** (related to DOR-2197): an in-place "Prepare this package" action for legacy installs, rebuilding the record from the installed commit under the install lock, with no byte-matching fallback.

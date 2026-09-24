@@ -580,8 +580,10 @@ export class TaskReconciler {
           this.registrar.syncTask(task.id);
           upserted++;
           // A file that just stopped being a package's gets the switch the row
-          // kept for it (DOR-2272). Last, so a failed write costs nothing above.
-          await carrySwitchIntoReleasedFile(task, discovered.def, packageOwned);
+          // kept for it (DOR-2272). After the clock sync so a failed write does
+          // not skip it; the row keeps its ownership until the file agrees, so a
+          // write that fails here is retried by the next pass.
+          await carrySwitchIntoReleasedFile(task, discovered.def, root);
         } catch (err) {
           this.report('error', `[TaskReconciler] Failed to sync ${discovered.def.filePath}`, err);
         }

@@ -486,7 +486,6 @@ export function createCreateScheduleHandler(
           error: outcome.error,
           ...(outcome.code !== undefined && { code: outcome.code }),
           ...(outcome.ownedBy !== undefined && { ownedBy: outcome.ownedBy }),
-          ...(outcome.ownedBy !== undefined && { ownedBy: outcome.ownedBy }),
           ...(outcome.details !== undefined && { details: outcome.details }),
         },
         true
@@ -709,7 +708,6 @@ export function createUpdateScheduleHandler(
         {
           error: fileOutcome.error,
           ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
-          ...(fileOutcome.ownedBy !== undefined && { ownedBy: fileOutcome.ownedBy }),
           ...(fileOutcome.ownedBy !== undefined && { ownedBy: fileOutcome.ownedBy }),
         },
         true

@@ -596,9 +596,10 @@ export class TaskFileWatcher implements TaskWatchHealth {
     });
     this.registrar.syncTask(task.id);
     // A file that just stopped being a package's gets the switch the row kept
-    // for it; that write comes back through here and changes nothing more.
+    // for it. That write comes back through here, finds the file agreeing, and
+    // records the release; a write that fails is retried by the next sync.
     try {
-      await carrySwitchIntoReleasedFile(task, discovered.def, packageOwned);
+      await carrySwitchIntoReleasedFile(task, discovered.def, root);
     } catch (err) {
       logger.warn('[TaskFileWatcher] could not write the kept switch into its file', {
         filePath: discovered.def.filePath,

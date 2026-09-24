@@ -1423,11 +1423,8 @@ export class TaskStore {
     // What a file on disk may do to this row, decided in one place so the
     // permission clamp and the arm gate cannot disagree — see
     // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
-    const { permissionMode, arm, keepsRowEnabled, dropsTimingOverride } = this.fileGates.resolve(
-      def,
-      existing,
-      options
-    );
+    const { permissionMode, arm, keepsRowEnabled, dropsTimingOverride, packageOwned } =
+      this.fileGates.resolve(def, existing, options);
 
     if (existing) {
       this.db
@@ -1458,10 +1455,11 @@ export class TaskStore {
           // The file is no longer a package's, so it is the one source of
           // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
           ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
-          // Discovery's answer about who owns the file, kept so the next sync can
-          // see ownership lapse and the app can show it (DOR-2272). A write that
-          // did not ask leaves it as it was.
-          ...(options?.packageOwned !== undefined ? { packageOwned: options.packageOwned } : {}),
+          // Who owns the file, kept so the next sync can see ownership lapse and
+          // the app can show it (DOR-2272); `file-sync-gates.ts` decides what to
+          // record while a release is still being written. A write that did not
+          // ask leaves it as it was.
+          ...(packageOwned !== undefined ? { packageOwned } : {}),
           // A `paused` row whose file is back is un-paused here, because
           // nothing else ever will: the scheduler requires `enabled` AND
           // `status === 'active'`, and restoring only `enabled` leaves a task

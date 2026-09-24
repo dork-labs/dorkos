@@ -42,6 +42,7 @@ import {
   scheduleToFrontmatter,
   ScheduleBlockSchema,
   type ScheduleBlock,
+  type TaskDefinition,
 } from '@dorkos/skills';
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
 import { writeSkillFile } from '@dorkos/skills/writer';
@@ -53,6 +54,7 @@ import { INSTALL_METADATA_PATH } from '../marketplace/installed-metadata.js';
 import { readInstalledFiles, type InstalledFiles } from '../marketplace/lib/installed-files.js';
 import { mergeTaskFrontmatter, type TaskFrontmatterWrite } from './task-frontmatter-merge.js';
 import type { TaskRoot } from './skills-roots.js';
+import { readTaskRootFile } from './skills-root-discovery.js';
 import { describeScheduleProblem } from './cron-validation.js';
 
 /**
@@ -567,31 +569,49 @@ async function resolveThroughExisting(target: string): Promise<string> {
  *
  * While a package owned the file, DorkOS kept the person's switch on the row
  * because it would not write the file (FB-26). The sync that finds the file is
- * now the person's keeps that switch rather than copying the file's over it
- * (`FileSyncGates.keepsRowEnabled`), and this writes it where it belongs, so
- * the file says what runs and the next sync reads it back unchanged. Any other
- * disagreement cannot reach here: for a file that is not a package's, the sync
- * copies the file's switch to the row.
+ * the person's now keeps that switch rather than copying the file's over it,
+ * and keeps the row's ownership until the file agrees
+ * (`FileSyncGates.packageOwnedToWrite`); this is the write that makes it agree.
+ * A failed write is therefore retried by the next sync, never lost.
+ *
+ * It writes only when all three still hold at the moment of writing, and
+ * otherwise leaves the file for the next sync to look at again:
+ *
+ * - the row and the file disagree about the switch;
+ * - no package owns the file NOW (asked again, not taken from the sync that
+ *   called: a package can be reinstalled in between);
+ * - the file still says what discovery parsed (read again and compared), so a
+ *   person's edit made since is never overwritten with a stale switch.
  *
  * A file DorkOS cannot fully read is left alone, as every other write does.
  *
  * @param task - The row as the sync just left it.
  * @param def - The file as discovery parsed it.
- * @param ownership - Discovery's answer; only `null` (the person's file) writes.
+ * @param root - The skills root discovery found it in.
  * @returns True when the file was rewritten.
  */
 export async function carrySwitchIntoReleasedFile(
   task: { enabled: boolean },
-  def: { filePath: string; meta: { schedule: { enabled: boolean } } },
-  ownership: 'record' | 'legacy' | null
+  def: TaskDefinition,
+  root: TaskRoot
 ): Promise<boolean> {
-  if (ownership !== null || task.enabled === def.meta.schedule.enabled) return false;
+  if (task.enabled === def.meta.schedule.enabled) return false;
+  if ((await packageOwnershipOf(def.filePath, rootPackageOwnershipContext(root))).owned) {
+    return false;
+  }
   const content = await fs.readFile(def.filePath, 'utf-8');
+  const now = await readTaskRootFile(def.filePath, content, root);
+  if (now.kind !== 'schedule' || !sameContent(now.discovered.def, def)) return false;
   const plan = planTaskFileUpdate(def.filePath, content, { enabled: task.enabled });
   if (plan.kind === 'refuse') return false;
   const dirPath = path.dirname(def.filePath);
   await writeSkillFile(path.dirname(dirPath), path.basename(dirPath), plan.frontmatter, plan.body);
   return true;
+}
+
+/** Whether two parses of a schedule file say the same thing (where it was walked in on aside). */
+function sameContent(a: TaskDefinition, b: TaskDefinition): boolean {
+  return JSON.stringify([a.meta, a.body]) === JSON.stringify([b.meta, b.body]);
 }
 
 /** `fs.realpath`, falling back to the path itself when it cannot be resolved. */

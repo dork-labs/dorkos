@@ -69,6 +69,11 @@ export interface FileSyncVerdict {
    * is no longer a package's (DOR-2302). See {@link FileSyncGates.dropsTimingOverride}.
    */
   dropsTimingOverride: boolean;
+  /**
+   * The ownership to record on the row, or `undefined` to leave it alone (a
+   * write that did not ask). See {@link FileSyncGates.packageOwnedToWrite}.
+   */
+  packageOwned: 'record' | 'legacy' | 'unknown' | null | undefined;
 }
 
 /**
@@ -142,12 +147,41 @@ export class FileSyncGates {
         ? resolveFileArmStatus(approved, incoming, options.problem)
         : null;
 
+    const keepsRowEnabled = this.keepsRowEnabled(existing, arm, options);
     return {
       permissionMode,
       arm,
-      keepsRowEnabled: this.keepsRowEnabled(existing, arm, options),
+      keepsRowEnabled,
       dropsTimingOverride,
+      packageOwned: this.packageOwnedToWrite(def, existing, keepsRowEnabled, options),
     };
+  }
+
+  /**
+   * The ownership to record on the row after this sync.
+   *
+   * Discovery's answer, with one exception that makes the release of a file
+   * TWO-PHASE (DOR-2272). While the row keeps a switch the file does not say
+   * yet, the row keeps its previous ownership, so every later sync, from the
+   * watcher or the reconciler, in any order, still sees a file being released
+   * and keeps the switch too. Only once the file says what the row does (the
+   * caller wrote it, `carrySwitchIntoReleasedFile`) is `null` recorded. A write
+   * that fails, or two syncs that interleave, therefore cost a retry, never the
+   * person's switch.
+   */
+  private packageOwnedToWrite(
+    def: TaskDefinition,
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    keepsRowEnabled: boolean,
+    options?: FileSyncSource
+  ): FileSyncVerdict['packageOwned'] {
+    if (options?.packageOwned === undefined) return undefined;
+    const switchNotInFile =
+      options.packageOwned === null &&
+      existing?.packageOwned != null &&
+      keepsRowEnabled &&
+      existing.enabled !== def.meta.schedule.enabled;
+    return switchNotInFile ? existing.packageOwned : options.packageOwned;
   }
 
   /**
@@ -223,7 +257,9 @@ export class FileSyncGates {
    * the kept switch into the file, which is now the person's to write
    * (`carrySwitchIntoReleasedFile`). A lapse is reachable: a later version
    * that stops shipping the file, a legacy record rebuilt without proof of it,
-   * or a record edited by hand.
+   * a record edited by hand, or a row older than the column (`unknown`), which
+   * may have been a package's under the old rule. The release lasts until the
+   * file agrees ({@link FileSyncGates.packageOwnedToWrite}).
    *
    * @param existing - The row the file is landing on, when there is one.
    * @param arm - What the arm gate decided, or `null` for an operator write.

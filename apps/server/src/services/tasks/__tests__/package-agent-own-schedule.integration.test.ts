@@ -24,6 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import type { Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
@@ -34,6 +35,8 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
+import { carrySwitchIntoReleasedFile } from '../task-file-update.js';
+import { readTaskRootFile } from '../skills-root-discovery.js';
 import {
   computeInstalledFiles,
   readInstalledFiles,
@@ -67,6 +70,8 @@ let agentDir: string;
 let shippedFile: string;
 /** A schedule the person made after install, which no record lists. */
 let ownFile: string;
+/** The agent's watched skills root. */
+let taskRoot: ReturnType<typeof skillsRoot>;
 
 /** A registrar that records the sync calls the reconciler makes and runs no cron. */
 const registrar = {
@@ -109,7 +114,8 @@ beforeEach(async () => {
   await fs.writeFile(ownFile, skill('my-sweep', 'I sweep my way.'), 'utf-8');
 
   reconciler = new TaskReconciler(store, registrar, new ScheduleIdentityRegistry());
-  reconciler.addRoot(skillsRoot(skillsDir, 'project', agentDir, AGENT_ID));
+  taskRoot = skillsRoot(skillsDir, 'project', agentDir, AGENT_ID);
+  reconciler.addRoot(taskRoot);
 });
 
 afterEach(async () => {
@@ -228,10 +234,14 @@ describe('a package schedule the record stops listing', () => {
     const after = await sweep(shippedFile);
 
     expect(after.enabled).toBe(false);
-    expect(after.packageOwned).toBeNull();
+    // Still the package's on the row until the file agrees (two-phase release).
+    expect(after.packageOwned).toBe('record');
     await vi.waitFor(async () =>
       expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false')
     );
+    const settled = await sweep(shippedFile);
+    expect(settled.enabled).toBe(false);
+    expect(settled.packageOwned).toBeNull();
   });
 
   it('keeps an approved ON switch the person set on a schedule the package shipped off', async () => {
@@ -269,6 +279,149 @@ describe('a package schedule the record stops listing', () => {
 
     expect(after.status).toBe('pending_approval');
     expect(after.enabled).toBe(false);
+  });
+
+  /**
+   * A shipped schedule the package ships ON, approved, then switched off by the
+   * person on the row: the one state where row and file disagree.
+   */
+  async function switchedOff(): Promise<Task> {
+    await approvedShipped();
+    await fs.writeFile(
+      shippedFile,
+      (await fs.readFile(shippedFile, 'utf-8')).replace('  enabled: false\n', ''),
+      'utf-8'
+    );
+    const onByFile = await sweep(shippedFile);
+    expect(onByFile.enabled).toBe(true);
+    await patch(onByFile, { enabled: false });
+    const off = await sweep(shippedFile);
+    expect(off.enabled).toBe(false);
+    return off;
+  }
+
+  /** What the row records about ownership, `unknown` included (the wire hides it). */
+  const ownershipColumn = (id: string) =>
+    (
+      db.get(sql`SELECT package_owned AS owned FROM pulse_schedules WHERE id = ${id}`) as {
+        owned: string | null;
+      }
+    ).owned;
+
+  it('keeps an OFF switch on a row older than the column (T2, DOR-2272 review)', async () => {
+    // A row the upgrade marked `unknown` may have been a package's under the old
+    // rule; its first sync must not read the file's ON over the person's OFF.
+    const off = await switchedOff();
+    db.run(sql`UPDATE pulse_schedules SET package_owned = 'unknown'`);
+    await releaseShippedFile();
+
+    const after = await sweep(shippedFile);
+
+    expect(after.enabled).toBe(false);
+    await vi.waitFor(async () =>
+      expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false')
+    );
+    expect(off.id).toBe(after.id);
+  });
+
+  it("settles an old row of the person's own with no write at all", async () => {
+    // The row and its file already agree, so the release has nothing to carry:
+    // it is recorded as the person's on the first sync, and the file is untouched.
+    const own = await sweep(ownFile);
+    db.run(sql`UPDATE pulse_schedules SET package_owned = 'unknown' WHERE id = ${own.id}`);
+    // `unknown` is the sync's bookkeeping; the app is never told about it.
+    expect(store.getByFilePath(ownFile)!.packageOwned).toBeNull();
+    const before = await fs.readFile(ownFile, 'utf-8');
+
+    await sweep(ownFile);
+
+    expect(ownershipColumn(own.id)).toBeNull();
+    expect(await fs.readFile(ownFile, 'utf-8')).toBe(before);
+  });
+
+  it('keeps the switch through a failed write, and writes it on a later sweep (T3)', async () => {
+    // One-shot protection lost the switch whenever the write failed. The row
+    // now stays the package's until the file agrees, so every sweep keeps OFF
+    // and tries again.
+    const off = await switchedOff();
+    await releaseShippedFile();
+    await fs.chmod(shippedFile, 0o444);
+    await fs.chmod(path.dirname(shippedFile), 0o555);
+    try {
+      expect((await sweep(shippedFile)).enabled).toBe(false);
+      expect((await sweep(shippedFile)).enabled).toBe(false);
+      expect(ownershipColumn(off.id)).toBe('record');
+    } finally {
+      await fs.chmod(path.dirname(shippedFile), 0o755);
+      await fs.chmod(shippedFile, 0o644);
+    }
+
+    await sweep(shippedFile);
+    expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false');
+    const settled = await sweep(shippedFile);
+
+    expect(settled.enabled).toBe(false);
+    expect(ownershipColumn(off.id)).toBeNull();
+  });
+
+  it('keeps the switch when two syncs land before the file is written', async () => {
+    // The watcher and the reconciler interleaving: two discovery syncs see the
+    // release before either write happens. The second must still see a release.
+    const off = await switchedOff();
+    await releaseShippedFile();
+    const parsed = await readTaskRootFile(
+      shippedFile,
+      await fs.readFile(shippedFile, 'utf-8'),
+      taskRoot
+    );
+    if (parsed.kind !== 'schedule') throw new Error('expected a schedule');
+    const syncOnce = () =>
+      store.upsertFromFile(parsed.discovered.def, AGENT_ID, {
+        source: 'discovery',
+        problem: parsed.discovered.problem,
+        packageOwned: null,
+      });
+
+    syncOnce();
+    const second = syncOnce();
+
+    expect(second.enabled).toBe(false);
+    expect(ownershipColumn(off.id)).toBe('record');
+  });
+
+  it('writes nothing into a file a package owns again, or that changed since it was read', async () => {
+    // The write is checked at the moment it happens: a reinstall can take the
+    // file back, and a person can edit it, between the sync and the write.
+    await switchedOff();
+    const readNow = async () => {
+      const parsed = await readTaskRootFile(
+        shippedFile,
+        await fs.readFile(shippedFile, 'utf-8'),
+        taskRoot
+      );
+      if (parsed.kind !== 'schedule') throw new Error('expected a schedule');
+      return parsed.discovered.def;
+    };
+    const def = await readNow();
+    const offRow = { enabled: false };
+    expect(def.meta.schedule.enabled).toBe(true);
+
+    // Still listed by the package.
+    expect(await carrySwitchIntoReleasedFile(offRow, def, taskRoot)).toBe(false);
+
+    // Released, but the person edited the file after it was read.
+    await releaseShippedFile();
+    const edited = (await fs.readFile(shippedFile, 'utf-8')).replace(
+      'The package sweeps.\n',
+      'My own words now.\n'
+    );
+    await fs.writeFile(shippedFile, edited, 'utf-8');
+    expect(await carrySwitchIntoReleasedFile(offRow, def, taskRoot)).toBe(false);
+    expect(await fs.readFile(shippedFile, 'utf-8')).toBe(edited);
+
+    // Released and unchanged since it was read: written.
+    expect(await carrySwitchIntoReleasedFile(offRow, await readNow(), taskRoot)).toBe(true);
+    expect(await fs.readFile(shippedFile, 'utf-8')).toContain('enabled: false');
   });
 
   it('records ownership on the row as discovery finds it', async () => {
