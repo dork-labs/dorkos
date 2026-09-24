@@ -2,6 +2,7 @@
 covers:
   - 'feat(community): export a community of any size in the background (DOR-2295)'
   - 'fix(community): close the husk export race and share the export worker fairly (DOR-2295)'
+  - 'fix(community): time exports by work done and step aside only for a runnable export (DOR-2295)'
 ---
 
 ### Changed
