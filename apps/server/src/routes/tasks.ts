@@ -50,10 +50,7 @@ import { resolveStanding } from '../services/notifications/notification-service.
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
-import {
-  clampSchedulePermissionMode,
-  scheduleContentKey,
-} from '../services/tasks/schedule-permission-clamp.js';
+import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -491,13 +488,14 @@ export function createTasksRouter(
       });
     }
     const { changesFile, timingLandsOn } = fileOutcome;
-    // What the approval covered before this write, measured as it RUNS — the
-    // one thing `settleTimingChange` below compares against.
-    const previousKey = scheduleContentKey({
+    // What would run before this write, as it RUNS, and the status it had: what
+    // `settleApprovedWorkChange` below compares against.
+    const before = {
       prompt: existing.prompt,
       cron: existing.cron ?? '',
       timezone: existing.timezone ?? 'UTC',
-    });
+      status: existing.status,
+    };
 
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
@@ -553,14 +551,16 @@ export function createTasksRouter(
       updated = store.getTask(updated.id) ?? updated;
     }
 
-    // **A timing change that wrote no file is settled here, not by the sync.**
-    // A package's schedule takes a new cron or a reset on its row alone
-    // (DOR-2302), which no watcher sees: a person's change re-approves it in the
-    // same act, an agent's parks it at once (`settleTimingChange`). The park is
-    // then picked up by the "entered `pending_approval`" edge below like any
-    // other.
-    if (!changesFile) {
-      store.settleTimingChange(updated.id, previousKey, { trusted });
+    // **A change to approved work is settled here, not by the sync.** An
+    // agent's parks the schedule at once, whether or not a file was written
+    // (`settleApprovedWorkChange`, DOR-2313): the watcher's park is a moment
+    // away and the sweep's up to five minutes, and until then the agent's work
+    // would run approved. A person's change that wrote no file (a package's
+    // row-only timing, DOR-2302) re-approves in the same act; a person's
+    // file-backed edit was re-approved just above. The park is then picked up by
+    // the "entered `pending_approval`" edge below like any other.
+    if (!trusted || !changesFile) {
+      store.settleApprovedWorkChange(updated.id, before, { trusted });
       updated = store.getTask(updated.id) ?? updated;
     }
 

@@ -99,7 +99,7 @@ export interface TaskFileUpdateSuccess {
    *
    * Always, except for a package's schedule whose change lands on its row alone
    * (DOR-2302): the package's file is never written, and a timing change there
-   * is settled against the approval instead (`TaskStore.settleTimingChange`
+   * is settled against the approval instead (`TaskStore.settleApprovedWorkChange`
    * parks an agent's), so the clamp has nothing to protect — and carried into
    * the request it would read as an attempt to change the package's permission
    * level, and refuse a timing change with a sentence about approval levels.

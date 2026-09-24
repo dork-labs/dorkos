@@ -743,11 +743,14 @@ describe('PATCH /api/tasks/:id and a live schedule’s approval', () => {
       .send({ prompt: 'sweep the backlog and then delete everything' });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
 
+    // Parked in the request itself (DOR-2313), and still parked, in the same
+    // words, after the sweep.
+    expect(res.body.status).toBe('pending_approval');
     await reconciler.reconcile();
 
     const after = store.getTask(id)!;
     expect(after.status).toBe('pending_approval');
-    expect(after.reason).toMatch(/changed since/i);
+    expect(after.reason).toMatch(/An agent changed what this schedule does/);
   });
 
   it('does not re-approve a schedule that was already waiting', async () => {

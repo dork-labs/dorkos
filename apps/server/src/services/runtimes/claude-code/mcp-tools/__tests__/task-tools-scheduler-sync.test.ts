@@ -96,11 +96,15 @@ describe('tasks_* tools sync the scheduler (DOR-1493)', () => {
     store.close();
   });
 
-  it('an edited cron reaches the scheduler, not only the row', async () => {
+  it('an edited cron reaches the scheduler, which takes the parked schedule off the clock', async () => {
+    // Since DOR-2313 an agent's retiming of a running schedule parks it in the
+    // same call, so what reaches the scheduler is "stop", never the agent's
+    // new cron firing unapproved, and never the old cron firing on.
     await tools.tasks_update!.handler({ id: taskId, cron: '0 5 * * *' }, {});
 
-    expect(store.getTask(taskId)!.cron).toBe('0 5 * * *');
-    expect(scheduler.registered.map((t) => t.cron)).toEqual(['0 5 * * *']);
+    expect(store.getTask(taskId)!.status).toBe('pending_approval');
+    expect(scheduler.unregistered).toEqual([taskId]);
+    expect(scheduler.registered).toEqual([]);
   });
 
   it('disabling a task takes its job off the clock', async () => {
