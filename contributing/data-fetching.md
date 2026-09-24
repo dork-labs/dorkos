@@ -893,9 +893,9 @@ export function useMarketplaceSources() {
 }
 ```
 
-### useInstallPackage / useUninstallPackage / useUpdatePackage
+### useInstallPackage / useUninstallPackage
 
-Mutation hooks for the install/uninstall/update pipeline. Each invalidates the installed-packages cache and the package query on success.
+Mutation hooks for the install/uninstall pipeline. Each invalidates the installed-packages cache and the package query on success. An install also marks the update check stale (`refetchType: 'none'`), so the next view that mounts re-checks without an install setting off a sweep.
 
 ```typescript
 export function useInstallPackage() {
@@ -920,6 +920,26 @@ export function useInstalledPackages() {
   return useQuery({
     queryKey: marketplaceKeys.installed(),
     queryFn: () => transport.listInstalledPackages(),
+  });
+}
+```
+
+### useInstalledUpdates / useApplyUpdates / useApplyingInstallPaths
+
+`useInstalledUpdates(projectPath?, { enabled })` reads `GET /api/marketplace/updates`: one check per installation in view, keyed by `installPath` (the key the installed list's rows carry). Every consumer of one view shares the one request. The check reaches out to every package's source, so it is fresh for 10 minutes (`UPDATE_CHECK_STALE_MS`), never refetches on focus or reconnect, and never retries on its own.
+
+`useApplyUpdates()` sends `POST /api/marketplace/updates` with a non-empty `installPaths` (the transport requires one, so the app never sends an unnamed "update everything"). On success it patches the cached check from the answer instead of re-running it: an applied installation becomes `current` at the latest version, any other returned check replaces the cached one as given. `useApplyingInstallPaths()` reads every in-flight apply through `useMutationState` on the `marketplaceKeys.applyUpdates()` mutation key, so several rows can each show their own progress.
+
+```typescript
+export function useApplyUpdates() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: marketplaceKeys.applyUpdates(),
+    mutationFn: (opts: ApplyUpdatesOptions) => transport.applyMarketplaceUpdates(opts),
+    onSuccess: (result) => {
+      /* patch marketplaceKeys.updates() from result.checks; invalidate installed + commands */
+    },
   });
 }
 ```

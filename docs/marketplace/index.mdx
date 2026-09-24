@@ -75,6 +75,8 @@ dorkos marketplace uninstall code-review-suite
 
 `dorkos install`, `dorkos update` and `dorkos uninstall` are shorter names for the same commands.
 
+In DorkOS, the **Installed** tab of Marketplace shows the same list and which packages have an update waiting (see the other tab).
+
 `dorkos marketplace update` tells you one of three things about each package:
 
 - **A newer version is available.** For example, `flow  0.7.2 → 0.7.3  (dorkos-community)`. Run the command again with `--apply` to install it.
@@ -150,6 +152,20 @@ The browse surface has three sections:
 - **Detail sheet**: opens when you click a package. Shows the permission preview, install instructions, and related packages.
 
 The install confirmation dialog always shows you exactly what the package wants to do (which files it will write, which network hosts it needs to reach, which permissions it will request) before any state changes. You can deny at any point and DorkOS leaves your installation untouched.
+
+## Keeping packages up to date
+
+The **Installed** tab of Marketplace lists every package you've installed, in every place it's installed. When you open Marketplace, DorkOS checks all of them for a newer version at once. The **Installed** tab shows how many have an update waiting, so you can see it from Browse too.
+
+Each package says where it stands:
+
+- **Update available: v1.2.0 → v1.3.0.** Its **Update to v1.3.0** button installs the new version in the same place.
+- **Up to date.** There's nothing to install, so there's no Update button.
+- **Couldn't check for updates, and why.** For example, "couldn't reach github.com" when you're offline, or "linked install — update its source instead" for a package linked to a folder on your computer. DorkOS never calls a package up to date when it couldn't check it.
+
+While the check runs, each package says **Checking for updates…**. It can take a moment when many packages are installed.
+
+**Update all…** opens a list of every package it will update, where each one is installed (all agents, or a named agent), and which version it moves to. Nothing changes until you confirm, and then only those packages are updated. If one fails, the others still update, and the failed one shows why. **Check again** runs the check again whenever you like.
 
 ## Managing installed packages
 

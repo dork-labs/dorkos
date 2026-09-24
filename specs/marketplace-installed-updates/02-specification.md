@@ -2,14 +2,14 @@
 slug: marketplace-installed-updates
 number: 260923-235409
 created: 2026-09-23
-status: specified
+status: implemented
 linear-issue: DOR-2196
 project: Marketplace Package Management
 ---
 
 # The Installed view says what is out of date and updates it
 
-**Status:** Specified
+**Status:** Implemented
 **Author:** Claude Code
 **Date:** 2026-09-23
 **Input:** [`01-ideation.md`](./01-ideation.md) (decisions 1–12 carried forward)
@@ -148,15 +148,15 @@ export function installationPlace(i: {
 
 **Summary bar** (new `ui/InstalledUpdatesSummary.tsx`), above the list, a `role="status"` region so each settled answer is announced once:
 
-| State              | Text                                                                 | Actions                                |
-| ------------------ | -------------------------------------------------------------------- | -------------------------------------- |
-| checking           | spinner, "Checking your packages for updates…"                       | none                                   |
-| request failed     | "Couldn't check for updates: <message>"                              | "Try again"                            |
-| updates available  | "**3 updates available**" · "5 up to date" · "1 couldn't be checked" | "Update all…" (primary), "Check again" |
-| none, some unknown | "Nothing to update" · "5 up to date" · "1 couldn't be checked"       | "Check again"                          |
-| all current        | check icon, "All packages are up to date."                           | "Check again"                          |
+| State              | Text                                                                                     | Actions                                |
+| ------------------ | ---------------------------------------------------------------------------------------- | -------------------------------------- |
+| checking           | spinner, "Checking your packages for updates…"                                           | none                                   |
+| request failed     | "Couldn't check for updates: <message>"                                                  | "Try again"                            |
+| updates available  | "**3 updates available.**" "5 packages are up to date." "1 package couldn't be checked." | "Update all…" (primary), "Check again" |
+| none, some unknown | "No updates found." plus the same sentences                                              | "Check again"                          |
+| all current        | check icon, "All packages are up to date."                                               | "Check again"                          |
 
-Counts use "package" for one and "packages" for several, and count installations (a package on two agents is two rows, and two lines of the list).
+Counts use "package" for one and "packages" for several, and count installations (a package on two agents is two rows). The details are whole sentences rather than " · " fragments, so they read the same beside the headline or wrapped under it on a phone. While an apply is in flight, "Update all…" is hidden and "Check again" is disabled. A result with no answer for any listed row says "These packages haven't been checked for updates yet."
 
 **Row** (`PackageRow`): the existing badges and metadata stay. A status line joins the metadata column:
 
@@ -171,7 +171,7 @@ Counts use "package" for one and "packages" for several, and count installations
 
 An `applyError` on a row that is still `update-available` adds an error line, "Couldn't update: <reason>" (`status-error-fg`), and the Update button stays so the person can retry.
 
-**Layout:** the row stacks (metadata, then actions) below the `sm` breakpoint and sits side by side from `sm` up; actions wrap. Row padding drops to `p-4` on phones.
+**Layout:** the list is a container-query context. A row stacks (metadata, then actions) until the list itself is `@2xl` (42rem) wide, and sits side by side from there; actions wrap. The container, not the viewport, decides, because the app sidebar leaves a tablet only ~450px of content width. Row padding is `p-4` while stacked.
 
 **Confirm step** (new `ui/UpdateAllDialog.tsx`, a `ResponsiveDialog`, so a drawer on phones): "Update all…" snapshots `summary.available` and opens it.
 
