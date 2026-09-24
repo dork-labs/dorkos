@@ -28,12 +28,31 @@ A throwaway harness, deleted, ran on four copies of blintz's real legacy flow 0.
 **Screenshots** (Dev Playground, real components, seeded queries) cover:
 
 - a row with changed files and an update waiting;
-- an older install with **Prepare**;
+- an older install with **Check files**, and one whose files were found to differ;
 - the same at 390 px wide, and in dark mode;
 - the update-all confirm naming the changed files.
 
+## Review round 1
+
+The first adversarial review returned CHANGES_REQUIRED on the engine's exactness and on the copy. Every item was fixed with a test that failed first, and mutation-checked:
+
+- **Engine:** 7 mutants, all caught after one added test (the record's own `userEditable` filter).
+- **Sweep:** cancellation and leftover cleanup, each mutation-checked.
+- **UI:** 6 mutants, all caught.
+
+The reviewer's attack script (`attack.mts`) now gives:
+
+| Scenario                             | Result                              |
+| ------------------------------------ | ----------------------------------- |
+| S1 (an extra skill)                  | mismatch                            |
+| S2 (`skills/**` userEditable)        | mismatch                            |
+| S3 (an editable file turned symlink) | rebuilt, and verifies as customized |
+| S4 (`**`)                            | mismatch                            |
+| S5 (a case-only rename)              | mismatch                            |
+| S6 (an edited manifest)              | mismatch                            |
+
+Follow-up (1) is filed as DOR-2322. Follow-up (2), plugin.json locations, is done. DOR-2272 (#2091) merged first; the branch is rebased onto it, and its older-install messages point at Check files.
+
 ## Follow-ups (to file)
 
-- The update and uninstall paths should try `rebuildRecordStrict` first, and fall back to inference only when a fetched tree exists (the offline mis-assignment).
-- `added` should also walk the effect-bearing locations plugin.json declares.
-- DOR-2272's edit refusal should point at Prepare.
+- DOR-2322: the update and uninstall paths should try `rebuildRecordStrict` first (filed; an offline product decision).

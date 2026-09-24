@@ -103,11 +103,11 @@ type StrictRebuildResult =
 - **CLI:** `dorkos marketplace installed --verify` adds a **Files** column: `as installed`, `changed (3)`, `unknown`. `--json` passes `integrity` through.
 - **Doctor:** `dorkos doctor --deep` gets a new deep check, `checkInstalledPackages`:
   - `pass`: "Installed packages match what was installed".
-  - `warn`: names the packages with changed files, and separately the ones installed by an older DorkOS. The fix line for those is `dorkos marketplace prepare <name>`.
+  - `warn`: names the packages with changed files, and separately the ones installed by an older DorkOS. The fix line for those is `dorkos marketplace check-files <name>`.
 - **Installed view:**
   - Rows are verified by one `listInstalledPackages(projectPath, { verify: true })` query that runs beside the update check. It is never one request per row.
   - A `modified` row shows "N files changed since install", with the paths in a tooltip.
-  - A legacy row (`unknown` / `no-record`) shows "Installed by an older DorkOS" and a **Prepare** button (§8).
+  - A legacy row (`unknown` / `no-record`) shows "Installed by an older DorkOS" and a **Check files** button (§8).
   - `linked` and `unreadable-record` show nothing new.
 - **Update confirm:** `ConfirmUpdatesDialog` lists each installation it will touch. A `modified` installation there gets one extra sentence: "Your changes to N files will be replaced; your copies are saved beside them (.dork-old)." That sentence is the "warn before discarding" the issue asked for. DOR-2245 already keeps the copies, so the warning is honest and there is no extra blocking step.
 
@@ -121,7 +121,7 @@ type StrictRebuildResult =
 
 **Surface:**
 
-- **Route:** `POST /api/marketplace/packages/:name/prepare`, body `{ projectPath?, installRoot? }`.
+- **Route:** `POST /api/marketplace/packages/:name/check-files`, body `{ projectPath?, installRoot? }`.
   - The name is checked with `assertPackageName`, and **not tier-gated** (a change from the first draft): it writes only a record that must match the live files byte for byte, so it cannot change what runs or claim a person's file. Gating it as `marketplace.install` would also have bound its approval hash to an install of the same name, a token replayable as an install.
   - It finds the root with `locateInstallRoot`, as update and uninstall do, and returns 404 `PackageNotInstalledError` when there is none.
   - Response: `{ outcome, message }`, where `message` is one sentence per outcome:
@@ -130,8 +130,8 @@ type StrictRebuildResult =
     - `no-source`: "{name} was installed from a folder on this computer, so DorkOS can't fetch the version it came from. Reinstall it to start tracking its files."
     - `fetch-failed`: "Couldn't fetch the version {name} was installed from ({detail}). Try again when you're online."
     - `mismatch`: "Some of {name}'s files differ from the version it was installed from, so DorkOS can't tell yours from the package's. Its next update sorts this out, keeping your copies."
-- **Transport:** `prepareMarketplacePackage(name, opts)`, in `HttpTransport` and `DirectTransport`.
-- **CLI:** `dorkos marketplace prepare <name> [--project <path>] [--json]`.
+- **Transport:** `checkPackageFiles(name, opts)`, in `HttpTransport` and `DirectTransport`.
+- **CLI:** `dorkos marketplace check-files <name> [--project <path>] [--json]`.
 - **Not in MCP.** An agent has no reason to prepare a package, and it can already update one.
 
 **DOR-2272 follow-through:** its edit refusal, "this will work after the package's next update", should also name Prepare. That text lives on DOR-2272's branch (in progress), so this item only posts the pointer on DOR-2272.
@@ -179,3 +179,15 @@ type StrictRebuildResult =
 - The update and uninstall paths' own rebuild should use `rebuildRecordStrict` first, and fall back to inference only when a fetched tree exists. This removes the offline mis-assignment the DOR-2272 review found.
 - DOR-2306's `hashTree` should digest files through `hashFile` (whichever of the two lands second).
 - Walking plugin.json's custom effect-bearing locations for `added`.
+
+## 12. Review revisions (round 1)
+
+The first adversarial review asked for these; the implementation log records each.
+
+- **Exact means exact.** The strict rebuild also requires no unrecorded file where a package keeps what it runs (`addedEffectFiles`, defaults plus the locations plugin.json declares), which rejects an extra skill and a case-only rename. `userEditable` entries are filtered through `UserEditablePathSchema` wherever they are read (old manifests, records).
+- **The copy says what an update does to each kind of change.** Edited files are replaced (the person's copies kept), added files stay, removed files come back. The row note is a disclosure that opens to the paths grouped Edited/Added/Removed, says nothing about updating when no update is on offer, and colours only its icon. No `.dork-old` in user copy.
+- **Check files, not Prepare.** The action is named for what it does everywhere: the button ("Check files", with "Compares this package with the version you installed, so updates keep your edits."), the CLI verb `check-files`, the route `/packages/:name/check-files`, the transport `checkPackageFiles`.
+- **Not a dead end.** A `no-record` integrity carries `check: { source: 'fetchable' | 'local'; last? }`. The button is hidden for a local install and after a mismatch; the note gives the reason. The last answer lives in memory; the boot sweep answers again after a restart.
+- **Minors.** Staging runs outside the install lock. The sweep is cancellable on shutdown. Boot removes rebuild scratch folders older than an hour. An editable path turned into a folder or link verifies as customized.
+- **DOR-2272 follow-through.** Its older-install refusals now point at Check files instead of "after the package's next update".
+- **Deferred as DOR-2322:** update and uninstall trying the strict rebuild first (an offline product decision).
