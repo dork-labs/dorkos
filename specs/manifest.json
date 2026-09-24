@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260923-223844",
+      "slug": "agent-permissions",
+      "title": "Agent permissions: one default for everyone, a few agents set differently",
+      "created": "2026-09-23",
+      "status": "specified",
+      "project": "Permissions & Approvals"
+    },
+    {
       "id": "260924-004728",
       "slug": "launcher-uncertain-create-cleanup",
       "title": "Remove a resource left by an uncertain Community launch create, with proof and confirmation",

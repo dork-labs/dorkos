@@ -6074,6 +6074,99 @@
         "apps/server/src/routes/marketplace.ts",
         "packages/cli/src/commands/update.ts"
       ]
+    },
+    {
+      "id": "260923-223904",
+      "slug": "one-permission-model-for-agent-actions",
+      "title": "One permission model for agent actions, areas with three states, a default and per-agent overrides",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/permissions/**",
+        "apps/server/src/services/core/permissions/**",
+        "apps/server/src/routes/permissions.ts",
+        "packages/shared/src/mesh-schemas.ts",
+        "packages/shared/src/config-schema.ts"
+      ]
+    },
+    {
+      "id": "260923-223905",
+      "slug": "permission-decisions-ride-the-tier-gate",
+      "title": "Permission decisions ride the tier gate's three choke points and the existing approval machinery",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/capabilities/tier-enforcement.ts",
+        "apps/server/src/services/core/capabilities/permission-enforcement.ts",
+        "apps/server/src/services/core/capabilities/registry.ts",
+        "apps/server/src/services/core/mcp-tool-gate.ts"
+      ]
+    },
+    {
+      "id": "260923-223907",
+      "slug": "permission-area-lives-on-the-action",
+      "title": "An action's permission area is declared on the action, and the compiler is the census",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/capabilities/capability-definition.ts",
+        "apps/server/src/services/core/mcp-tool-tiers.ts",
+        "apps/server/src/services/core/capabilities/__tests__/permission-area-census.test.ts"
+      ]
+    },
+    {
+      "id": "260923-223908",
+      "slug": "always-allow-is-a-per-agent-per-action-setting",
+      "title": "Always allow is a per-agent, per-action permission setting, and standing grants are retired",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/routes/approvals.ts",
+        "apps/server/src/services/core/permissions-capabilities.ts",
+        "apps/client/src/layers/features/approvals/ui/ApprovalCard.tsx"
+      ]
+    },
+    {
+      "id": "260923-223909",
+      "slug": "login-off-permission-writes-are-labelled-unverified",
+      "title": "With login off, permission writes are labelled unverified, and a tokenless agent gets the default",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/routes/permissions.ts",
+        "apps/server/src/services/core/approvals/decision-authority.ts",
+        "packages/shared/src/permissions/resolve-permission.ts"
+      ]
+    },
+    {
+      "id": "260923-223910",
+      "slug": "destructive-actions-ask-and-three-areas-are-never-allowed",
+      "title": "Destructive actions ask unless allowed one by one, and three floor areas are never Allowed",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "agent-permissions",
+      "specSlug": "agent-permissions",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/permissions/resolve-permission.ts",
+        "packages/shared/src/permissions/permission-areas.ts",
+        "apps/server/src/services/core/permissions/permission-service.ts"
+      ]
     }
   ]
 }
