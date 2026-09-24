@@ -4,6 +4,7 @@ import { describeError, download, request } from '../api.js';
 import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
 import { SignOutButton } from './SignOut.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
+import { EraseMembershipPanel } from './Erasure.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
 
@@ -920,7 +921,8 @@ export function Manage({
                     </p>
                     <p className="small muted" id="leave-scope-stays">
                       <strong>Stays:</strong> your account, your other communities, this
-                      browser&rsquo;s sign-in, and your past messages.
+                      browser&rsquo;s sign-in, and your past messages. To remove your messages too,
+                      erase them here instead.
                     </p>
                     <div className="field">
                       <label htmlFor="leave-community-name">Enter {communityName}</label>
@@ -1003,6 +1005,11 @@ export function Manage({
                 )}
               </section>
             )}
+            <EraseMembershipPanel
+              communityId={communityId}
+              communityName={communityName}
+              owner={me.role === 'owner'}
+            />
           </div>
         )}
       </main>

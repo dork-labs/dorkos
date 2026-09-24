@@ -6,6 +6,7 @@ import { Manage } from './components/Manage.js';
 import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
+import { ErasureBanner } from './components/Erasure.js';
 import { describeError, hostRequest, RequestError, request } from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
 import { readPendingAdmission } from './admission.js';
@@ -429,6 +430,7 @@ export function CommunityApp() {
             {error}
           </div>
         )}
+        <ErasureBanner communityId={community!.id} />
         {settings ? (
           <Manage
             communityId={community!.id}

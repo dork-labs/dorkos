@@ -9,8 +9,14 @@ import {
   writeStorage,
 } from '../remembered-community.js';
 import { SignedOutPanel, SignOutButton } from './SignOut.js';
+import { AccountErasurePanels } from './Erasure.js';
 
 const ROUTE_NOTICE_KEY = 'communityChooserNotice';
+
+/** `/?account` opens the chooser for account actions instead of entering the one community. */
+function accountRequested(): boolean {
+  return new URLSearchParams(window.location.search).has('account');
+}
 
 /**
  * Send the person back to the chooser after a community route they cannot enter.
@@ -94,7 +100,12 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
           enterCommunity(recovering.communityId, true, true);
           return;
         }
-        if (next.length === 1 && next[0].lifecycle === 'active' && !routeNotice) {
+        if (
+          next.length === 1 &&
+          next[0].lifecycle === 'active' &&
+          !routeNotice &&
+          !accountRequested()
+        ) {
           enterCommunity(next[0].communityId, true);
           return;
         }
@@ -205,6 +216,7 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
             })}
           </ul>
         )}
+        {memberships && <AccountErasurePanels memberships={memberships} />}
         {!error && (
           <div className="mt-6 border-t border-[var(--line)] pt-4">
             <p className="small muted">
