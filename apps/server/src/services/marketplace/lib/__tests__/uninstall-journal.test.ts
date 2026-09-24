@@ -6,7 +6,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { finishUninstall, rollBackUninstall, type UninstallJournal } from '../uninstall-journal.js';
+import {
+  createUninstallSibling,
+  finishUninstall,
+  readJournal,
+  rollBackUninstall,
+  writeJournal,
+  type UninstallJournal,
+} from '../uninstall-journal.js';
+import { recoverInterruptedInstall } from '../../install-recovery.js';
 import { readInstalledFiles, writeInstalledFiles } from '../installed-files.js';
 
 const dirs: string[] = [];
@@ -101,5 +109,39 @@ describe('finishUninstall', () => {
 
     expect(await lstat(sibling).catch(() => undefined)).toBeUndefined();
     expect(Object.keys((await readInstalledFiles(root))!.files)).toEqual(['edited.md']);
+  });
+});
+
+describe('readJournal (delta review 3)', () => {
+  // Purpose: a journal is read back during recovery, which renames and deletes
+  // what it names. A tampered path that leaves the root is refused, so the
+  // journal is unreadable and recovery keeps the sibling rather than act on it.
+  it.each([
+    ['a move', { moves: [{ path: '../outside.txt' }] }],
+    ['a unit file', { moves: [{ path: 'dir', unitFiles: ['../../outside.txt'] }] }],
+    ['a saved copy', { savedCopies: ['../outside.txt'] }],
+    ['an absolute saved copy', { savedCopies: ['/etc/hosts'] }],
+  ])('refuses %s that leaves the root', async (_label, tamper) => {
+    const { root, sibling } = await setup();
+    await writeJournal(sibling, { ...journal(root, []), ...tamper } as UninstallJournal);
+    expect(await readJournal(sibling)).toBeNull();
+  });
+
+  // Purpose: end to end, recovery never deletes a file outside the root that a
+  // tampered journal names; it keeps the sibling and reports it.
+  it('never deletes outside the root during recovery', async () => {
+    const { root } = await setup();
+    const outside = path.join(path.dirname(root), 'outside.txt');
+    await writeFile(outside, 'not the package');
+    const sibling = await createUninstallSibling(root);
+    await writeJournal(sibling, {
+      ...journal(root, []),
+      savedCopies: ['../outside.txt'],
+    } as UninstallJournal);
+
+    const report = await recoverInterruptedInstall(root);
+
+    expect(report.kept.map((r) => r.kind)).toEqual(['uninstall']);
+    expect(await readFile(outside, 'utf8')).toBe('not the package');
   });
 });

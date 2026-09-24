@@ -73,7 +73,7 @@ const NEVER_CARRIED: ReadonlySet<string> = new Set([
 const HashSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 
 /** A root-relative POSIX path that stays inside the root. */
-const RecordPathSchema = z
+export const RecordPathSchema = z
   .string()
   .min(1)
   .refine(

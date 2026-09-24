@@ -30,16 +30,21 @@ import { z } from 'zod';
 import { INSTALLED_FILES_PATH, PACKAGE_DATA_DIR, PackageTypeSchema } from '@dorkos/marketplace';
 import { MARKETPLACE_UNINSTALL_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { currentRecordOwner, formatRecordOwner } from './record-owner.js';
-import { readInstalledFiles, writeInstalledFiles, type InstalledFiles } from './installed-files.js';
+import {
+  readInstalledFiles,
+  RecordPathSchema,
+  writeInstalledFiles,
+  type InstalledFiles,
+} from './installed-files.js';
 
 /** The journal's file name, inside the uninstall sibling. */
 export const UNINSTALL_JOURNAL_FILE = '.dorkos-journal.json';
 
 /** One journaled move: a root-relative POSIX path, the same inside the sibling. */
 const JournalMoveSchema = z.object({
-  path: z.string().min(1),
+  path: RecordPathSchema,
   /** For a directory moved as one unit: the files classification found under it. */
-  unitFiles: z.array(z.string()).optional(),
+  unitFiles: z.array(RecordPathSchema).optional(),
 });
 
 /** The journal (`.dorkos-journal.json`). */
@@ -57,7 +62,7 @@ export const UninstallJournalSchema = z.object({
    * root (root-relative). Logged before each is written; a rollback deletes
    * them, since the originals come back.
    */
-  savedCopies: z.array(z.string().min(1)).optional(),
+  savedCopies: z.array(RecordPathSchema).optional(),
 });
 
 /** See {@link UninstallJournalSchema}. */
