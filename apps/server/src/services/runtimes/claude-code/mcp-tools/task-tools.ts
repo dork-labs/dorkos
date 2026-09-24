@@ -22,7 +22,10 @@ import type { EffortLevel, UpdateTaskRequest } from '@dorkos/shared/types';
 import { slugify } from '@dorkos/skills/slug';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
-import { clampSchedulePermissionMode } from '../../../tasks/schedule-permission-clamp.js';
+import {
+  clampSchedulePermissionMode,
+  scheduleContentKey,
+} from '../../../tasks/schedule-permission-clamp.js';
 import {
   describeOperatorOnlyTaskRefusal,
   findOperatorOnlyTaskFields,
@@ -35,7 +38,12 @@ import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js
 import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
 import { describeScheduleProblem } from '../../../tasks/cron-validation.js';
 import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
-import { resolveParkedScheduleRemoved } from '../../../notifications/emitters/schedule-park.js';
+import {
+  resolveParkedScheduleRemoved,
+  resolveScheduleParkPayload,
+} from '../../../notifications/emitters/schedule-park.js';
+import { raiseStanding } from '../../../notifications/standing-events.js';
+import { conflictingTimingRequest } from '../../../tasks/timing/effective-timing.js';
 
 /**
  * Who is proposing a schedule, read at CALL time rather than at registration.
@@ -107,6 +115,33 @@ export const REAPPROVAL_NOTE =
   'few minutes DorkOS will stop the schedule and put it back in front of them — your change is ' +
   'saved, it just will not run until they say yes. Tell them so in your reply: name the ' +
   'scheduled task and say it is waiting on them. Do not end the turn as if the work were done.';
+
+/**
+ * What `tasks_update` tells an agent whose change to WHEN a package's schedule
+ * runs has already stopped it (DOR-2302).
+ *
+ * A sibling of {@link REAPPROVAL_NOTE} rather than a reuse, because the timing
+ * differs and the agent repeats it to a person. A package's schedule takes a
+ * new cron on its row alone — its file is the package's and DorkOS never writes
+ * it — so no sync is coming to park it later: DorkOS parks it in the same
+ * call, and "within a few minutes" would be wrong in the other direction.
+ */
+export const TIMING_REAPPROVAL_NOTE =
+  'This changed when an approved schedule runs, so the person has to approve it again. DorkOS ' +
+  'has already stopped it and put it in front of them — your change is saved, it just will not ' +
+  'run until they say yes. Tell them so in your reply: name the scheduled task and say it is ' +
+  'waiting on them. Do not end the turn as if the work were done.';
+
+/**
+ * The description `tasks_update` gives the `resetTiming` argument (DOR-2302).
+ *
+ * Agent-writable like `cron`, and approved like `cron`: going back to the
+ * package's timing changes when the work runs, so a person approves it again.
+ */
+export const RESET_TIMING_DESCRIPTION =
+  "Send true to put a schedule that came with an installed package back on the package's own " +
+  'timing, undoing a cron or timezone set here. Send it on its own, not together with cron or ' +
+  'timezone. If it changes when an approved schedule runs, the person has to approve it again.';
 
 /**
  * The extra sentence for an agent that is in a live DorkOS session, where it can
@@ -526,6 +561,8 @@ export function createUpdateScheduleHandler(
     model?: string | null;
     /** How hard the model thinks, or `null` to clear the override. */
     effort?: EffortLevel | null;
+    /** Put a package's schedule back on its own timing; see {@link RESET_TIMING_DESCRIPTION}. */
+    resetTiming?: true;
     /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
@@ -553,6 +590,11 @@ export function createUpdateScheduleHandler(
     // person approved.
     const existing = deps.taskStore!.getTask(args.id);
     if (!existing) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+
+    // A new timing and the package's own timing are two different answers to
+    // one question; the call has to pick (DOR-2302).
+    const timingConflict = conflictingTimingRequest(args);
+    if (timingConflict) return jsonContent({ error: timingConflict }, true);
 
     // The MERGED schedule is what gets written and registered, so the merged
     // schedule is what has to read: a new cron runs in the task's existing
@@ -589,6 +631,7 @@ export function createUpdateScheduleHandler(
       ...(args.runtime !== undefined && { runtime: args.runtime }),
       ...(args.model !== undefined && { model: args.model }),
       ...(args.effort !== undefined && { effort: args.effort }),
+      ...(args.resetTiming === true && { resetTiming: true as const }),
     };
 
     // A non-trusted caller cannot KEEP an approved task's `bypassPermissions` by
@@ -661,8 +704,28 @@ export function createUpdateScheduleHandler(
       );
     }
 
-    const updated = deps.taskStore!.updateTask(args.id, patch);
+    let updated = deps.taskStore!.updateTask(args.id, patch, {
+      timingLandsOn: fileOutcome.timingLandsOn,
+    });
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+
+    // A timing change that wrote no file — a package's schedule, whose timing
+    // lives on its row (DOR-2302) — has no sync coming to park it, so it is
+    // settled here: this is an agent, so an approved schedule stops at once and
+    // goes back to a person, exactly as the REST route does for an agent.
+    const settled = fileOutcome.changesFile
+      ? 'unchanged'
+      : deps.taskStore!.settleTimingChange(
+          updated.id,
+          scheduleContentKey({ prompt: existing.prompt, cron: existing.cron ?? '' }),
+          { trusted: false }
+        );
+    if (settled === 'parked') {
+      updated = deps.taskStore!.getTask(updated.id) ?? updated;
+      // The standing condition and its escalation clock start here, as they do
+      // at every other door a schedule parks through.
+      raiseStanding('schedule.parked', await resolveScheduleParkPayload(updated));
+    }
     // Through the registrar, exactly as `PATCH /api/tasks/:id` does. Without
     // this the row said one thing and the running cron job went on firing the
     // old schedule until a restart — an agent could change a task's cron, be
@@ -694,7 +757,15 @@ export function createUpdateScheduleHandler(
     // The row this hands back still says `active`, and within minutes it will
     // not be — so say so here rather than let an agent report a live schedule
     // that is about to stop. Only a task that HELD an approval can lose one; a
-    // schedule already parked, or paused, has nothing to disclose.
+    // schedule already parked, or paused, has nothing to disclose. A package's
+    // schedule parked above has already stopped, and is told so in its own words.
+    if (settled === 'parked') {
+      return jsonContent({
+        schedule: updated,
+        needsReapproval: true,
+        note: TIMING_REAPPROVAL_NOTE,
+      });
+    }
     const losesApproval = changesApprovedContent && existing.status === 'active';
     return jsonContent({
       schedule: updated,
@@ -795,7 +866,9 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
       'tasks_update',
       'Update an existing scheduled task. Only the fields you send are changed. Changing the ' +
         'prompt or the cron of a task the person already approved means they have to approve it ' +
-        'again, and it stops running until they do.',
+        'again, and it stops running until they do. A task that came with an installed package ' +
+        'can still be switched on or off and given a new cron or timezone — DorkOS keeps those, ' +
+        "the package is not edited — and resetTiming puts it back on the package's own timing.",
       {
         id: z.string().describe('Schedule ID to update'),
         // Bounded to the SKILL.md slug rule, exactly as `UpdateTaskRequest.name`
@@ -819,6 +892,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         runtime: z.string().min(1).nullable().optional().describe(RUNTIME_DESCRIPTION),
         model: z.string().min(1).nullable().optional().describe(MODEL_DESCRIPTION),
         effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),
+        resetTiming: z.literal(true).optional().describe(RESET_TIMING_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         target: z.string().optional().describe(REFUSED_UPDATE_TARGET_DESCRIPTION),

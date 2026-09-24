@@ -538,9 +538,21 @@ describe('PATCH /api/tasks/:id and a schedule-block file', () => {
     const before = await fs.readFile(filePath, 'utf-8');
     const id = seedParked('owned', filePath, '0 9 * * *');
 
-    const res = await request(fixtureServer).patch(`/api/tasks/${id}`).send({ cron: '0 21 * * *' });
+    // What it DOES is the package's to say, so a prompt edit is refused...
+    const refused = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .send({ prompt: 'Do another thing.' });
+    expect(refused.status).toBe(409);
+    expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
 
-    expect(res.status).toBe(409);
+    // ...and WHEN it runs is the person's (DOR-2302): the new timing lands on
+    // the row, and the package's file is still left exactly as it shipped.
+    const retimed = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .send({ cron: '0 21 * * *' });
+    expect(retimed.status).toBe(200);
+    expect(retimed.body.cron).toBe('0 21 * * *');
+    expect(retimed.body.defaultCron).toBe('0 9 * * *');
     expect(await fs.readFile(filePath, 'utf-8')).toBe(before);
   });
 

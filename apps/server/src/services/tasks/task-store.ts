@@ -32,6 +32,12 @@ import { logger } from '../../lib/logger.js';
 import { FileSyncGates, type FileSyncSource } from './file-sync-gates.js';
 import { scheduleContentKey, type IncomingTaskContent } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
+import {
+  AGENT_TIMING_CHANGE_REASON,
+  effectiveContentKey,
+  timingColumnWrites,
+  type TimingLandsOn,
+} from './timing/effective-timing.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -164,6 +170,26 @@ export type RekeyOutcome = 'rekeyed' | 'reparked' | 'moved' | 'no-row';
 const DRIFTED_DURING_MIGRATION_REASON =
   'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
   'Read what it does now, then approve it or delete it.';
+
+/**
+ * How {@link TaskStore.updateTask} writes a request's timing — see
+ * {@link TimingLandsOn}.
+ */
+export interface UpdateTaskOptions {
+  /**
+   * Where `cron` and `timezone` go. `file` (the default) is every schedule whose
+   * SKILL.md DorkOS writes; `row` is a package's schedule, whose timing becomes
+   * the row's override. Decided by `applyTaskFileUpdate`, which is the one step
+   * that asks whether a package owns the file.
+   */
+  timingLandsOn?: TimingLandsOn;
+}
+
+/**
+ * What {@link TaskStore.settleTimingChange} did about a schedule whose timing
+ * changed on its row alone.
+ */
+export type TimingSettlement = 'unchanged' | 'rekeyed' | 'parked';
 
 /** Fields that can be updated on a run. */
 interface RunUpdate {
@@ -328,9 +354,15 @@ export class TaskStore {
     return this.getTask(id)!;
   }
 
-  /** Update an existing task. Returns the updated task or null if not found. */
-  updateTask(id: string, input: UpdateTaskRequest): Task | null {
-    const existing = this.getTask(id);
+  /**
+   * Update an existing task. Returns the updated task or null if not found.
+   *
+   * @param id - The task to update.
+   * @param input - The fields to change; an omitted field is left alone.
+   * @param options - Where the request's timing lands; see {@link UpdateTaskOptions}.
+   */
+  updateTask(id: string, input: UpdateTaskRequest, options: UpdateTaskOptions = {}): Task | null {
+    const existing = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!existing) return null;
 
     const updates: Record<string, unknown> = {
@@ -349,8 +381,11 @@ export class TaskStore {
     // sends exactly that on every save of a task with no cron
     // (`cron: cronTrimmed || null` in `TaskFormInner.tsx`) — so editing an
     // on-demand task's prompt failed, AFTER its file had already been rewritten.
-    if (input.cron !== undefined) updates.cron = input.cron ?? '';
-    if (input.timezone !== undefined) updates.timezone = input.timezone ?? 'UTC';
+    //
+    // For a package's schedule the same two fields land in the override
+    // columns instead, and a reset clears them (DOR-2302) — one rule, in
+    // `timingColumnWrites`, so the NOT NULL spelling above holds on both paths.
+    Object.assign(updates, timingColumnWrites(existing, input, options.timingLandsOn ?? 'file'));
     if (input.enabled !== undefined) updates.enabled = input.enabled;
     if (input.sticky !== undefined) updates.sticky = input.sticky;
     if (input.maxRuntime !== undefined) {
@@ -395,17 +430,78 @@ export class TaskStore {
    * @param id - The schedule a person just armed.
    */
   recordApproval(id: string): void {
-    const row = this.db
-      .select({ prompt: pulseSchedules.prompt, cron: pulseSchedules.cron })
-      .from(pulseSchedules)
-      .where(eq(pulseSchedules.id, id))
-      .get();
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
     if (!row) return;
+    // The content that RUNS, a person's own timing included (DOR-2302): an
+    // approval recorded against the package's cron while theirs ran would be
+    // an approval of work nobody looked at.
     this.db
       .update(pulseSchedules)
-      .set({ approvedContentKey: scheduleContentKey(row) })
+      .set({ approvedContentKey: effectiveContentKey(row) })
       .where(eq(pulseSchedules.id, id))
       .run();
+  }
+
+  /**
+   * Keep a schedule's approval honest after its timing changed on the row
+   * alone — a package's schedule, whose file DorkOS never writes (DOR-2302).
+   *
+   * A timing change is a change to the approved work (`[prompt, cron]`), and
+   * nothing else will notice this one: no file was written, so no watcher
+   * fires, and the next sync is up to five minutes away. So it is settled here,
+   * in the request that made it, one of two ways:
+   *
+   * - **A person** (the caller cleared the agent bar) changing the timing of a
+   *   schedule they approved re-approves it in the same act: the grant moves to
+   *   the new timing. Keyed on the grant covering the OLD timing rather than on
+   *   `status`, so a switched-off or paused schedule the person approved is
+   *   still approved when it comes back, and a schedule nobody approved yet is
+   *   not approved by a timing edit.
+   * - **Anyone else** — an agent — gets an `active` schedule parked at once,
+   *   with DorkOS's own sentence saying what happened. Left to the sync, the
+   *   registrar would run the agent's new timing on an approved schedule until
+   *   the next sweep, and the sync would then say the FILE changed. A schedule
+   *   that is not active keeps its status; its grant no longer matches what
+   *   would run, so nothing can arm it again without a person.
+   *
+   * @param id - The schedule whose timing just changed.
+   * @param previousKey - {@link effectiveContentKey} of the row before the update.
+   * @param caller - Whether the caller cleared the agent bar.
+   * @returns What was done, so a caller can tell the agent or raise the park.
+   */
+  settleTimingChange(
+    id: string,
+    previousKey: string,
+    caller: { trusted: boolean }
+  ): TimingSettlement {
+    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
+    if (!row) return 'unchanged';
+    const key = effectiveContentKey(row);
+    if (key === previousKey) return 'unchanged';
+
+    if (caller.trusted) {
+      if (row.approvedContentKey !== previousKey) return 'unchanged';
+      this.db
+        .update(pulseSchedules)
+        .set({ approvedContentKey: key })
+        .where(eq(pulseSchedules.id, id))
+        .run();
+      return 'rekeyed';
+    }
+
+    if (row.status !== 'active') return 'unchanged';
+    this.db
+      .update(pulseSchedules)
+      .set({
+        status: 'pending_approval',
+        approvedContentKey: null,
+        reason: AGENT_TIMING_CHANGE_REASON,
+        reasonSource: 'dorkos',
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(pulseSchedules.id, id))
+      .run();
+    return 'parked';
   }
 
   /**
@@ -480,9 +576,16 @@ export class TaskStore {
       if (!existing) return 'no-row';
 
       const now = new Date().toISOString();
-      const fileKey = scheduleContentKey(rewritten);
-      const agrees =
-        scheduleContentKey({ prompt: existing.prompt, cron: existing.cron }) === fileKey;
+      // Both sides as they would RUN: the row's own timing override applies to
+      // the migrated file exactly as it applied to the file it came from
+      // (DOR-2302), so a person's timing neither passes for drift nor is lost
+      // from the grant.
+      const fileKey = effectiveContentKey({
+        ...existing,
+        prompt: rewritten.prompt,
+        cron: rewritten.cron,
+      });
+      const agrees = effectiveContentKey(existing) === fileKey;
 
       if (existing.status === 'active' && park === null && agrees) {
         tx.update(pulseSchedules)
@@ -541,7 +644,7 @@ export class TaskStore {
    */
   backfillApprovalGrants(): number {
     const rows = this.db
-      .select({ id: pulseSchedules.id, prompt: pulseSchedules.prompt, cron: pulseSchedules.cron })
+      .select()
       .from(pulseSchedules)
       .where(and(eq(pulseSchedules.status, 'active'), isNull(pulseSchedules.approvedContentKey)))
       .all();
@@ -549,7 +652,7 @@ export class TaskStore {
     for (const row of rows) {
       this.db
         .update(pulseSchedules)
-        .set({ approvedContentKey: scheduleContentKey(row) })
+        .set({ approvedContentKey: effectiveContentKey(row) })
         .where(eq(pulseSchedules.id, row.id))
         .run();
     }
@@ -1312,7 +1415,9 @@ export class TaskStore {
                   // until the next sync noticed and parked it (DOR-1485 review,
                   // R2). Reachable through `shape-schedule-service` and through a
                   // route write over a path whose file had been deleted.
-                  approvedContentKey: scheduleContentKey({
+                  // What will RUN, a person's own timing included (DOR-2302).
+                  approvedContentKey: effectiveContentKey({
+                    ...existing,
                     prompt: def.body,
                     cron: incomingCron,
                   }),

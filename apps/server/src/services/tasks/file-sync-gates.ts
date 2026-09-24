@@ -24,6 +24,7 @@ import {
   resolveFilePermissionMode,
   type FileArmVerdict,
 } from './schedule-permission-clamp.js';
+import { effectiveTiming } from './timing/effective-timing.js';
 import { logger } from '../../lib/logger.js';
 
 /** Where a file-sourced write came from, and what is wrong with the file. */
@@ -94,12 +95,18 @@ export class FileSyncGates {
     existing: typeof pulseSchedules.$inferSelect | undefined,
     options?: FileSyncSource
   ): FileSyncVerdict {
-    const incoming = { prompt: def.body, cron: def.meta.schedule.cron ?? '' };
+    const fileCron = def.meta.schedule.cron ?? '';
+    // Both gates compare what will RUN, not what the file says (DOR-2302). A
+    // package's schedule can carry a person's own cron on its row, which the
+    // sync never overwrites — so the incoming content runs on that cron, and a
+    // package update that changes only its default timing is not new work to
+    // approve. A changed prompt still is.
+    const incoming = { prompt: def.body, cron: existing?.cronOverride ?? fileCron };
     const approved = existing && {
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
       prompt: existing.prompt,
-      cron: existing.cron,
+      cron: effectiveTiming(existing).cron,
       approvedContentKey: existing.approvedContentKey,
     };
 
@@ -108,7 +115,9 @@ export class FileSyncGates {
       approved,
       incoming
     );
-    this.reportRefusal(def, incoming.cron, clamped);
+    // The refusal is about the FILE asking for more than it got, so its log key
+    // is the file's own content.
+    this.reportRefusal(def, fileCron, clamped);
 
     // Only discovery is subject to the arm gate: a file DorkOS found is nobody's
     // decision to run, while a route write is a person's (ADR `260823-200726`).

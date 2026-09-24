@@ -36,6 +36,7 @@ import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { removeScheduledTaskFile } from '../services/tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
+import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
@@ -49,7 +50,10 @@ import { resolveStanding } from '../services/notifications/notification-service.
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
-import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
+import {
+  clampSchedulePermissionMode,
+  scheduleContentKey,
+} from '../services/tasks/schedule-permission-clamp.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -393,6 +397,11 @@ export function createTasksRouter(
       return res.status(404).json({ error: 'Scheduled task not found' });
     }
 
+    // A new timing and the package's own timing are two different answers to
+    // one question; the request has to pick (DOR-2302).
+    const timingConflict = conflictingTimingRequest(data);
+    if (timingConflict) return res.status(400).json({ error: timingConflict });
+
     // The MERGED schedule is what gets registered, so the merged schedule is
     // what has to read: a new cron runs in the task's existing timezone unless
     // this same request changes it, and either half alone can be the one croner
@@ -467,9 +476,12 @@ export function createTasksRouter(
         ...(fileOutcome.code !== undefined && { code: fileOutcome.code }),
       });
     }
-    const { changesFile } = fileOutcome;
+    const { changesFile, timingLandsOn } = fileOutcome;
+    // What the approval covered before this write, measured as it RUNS — the
+    // one thing `settleTimingChange` below compares against.
+    const previousKey = scheduleContentKey({ prompt: existing.prompt, cron: existing.cron ?? '' });
 
-    let updated = store.updateTask(req.params.id, data);
+    let updated = store.updateTask(req.params.id, data, { timingLandsOn });
     if (!updated) {
       return res.status(404).json({ error: 'Scheduled task not found' });
     }
@@ -514,6 +526,17 @@ export function createTasksRouter(
     // agent's edit still re-parks, and a person still has to look at it.
     if (trusted && changesFile && existing.status === 'active' && updated.status === 'active') {
       store.recordApproval(updated.id);
+      updated = store.getTask(updated.id) ?? updated;
+    }
+
+    // **A timing change that wrote no file is settled here, not by the sync.**
+    // A package's schedule takes a new cron or a reset on its row alone
+    // (DOR-2302), which no watcher sees: a person's change re-approves it in the
+    // same act, an agent's parks it at once (`settleTimingChange`). The park is
+    // then picked up by the "entered `pending_approval`" edge below like any
+    // other.
+    if (!changesFile) {
+      store.settleTimingChange(updated.id, previousKey, { trusted });
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -625,7 +648,10 @@ export function createTasksRouter(
     // with that park is still kept, so the field means the same thing on every
     // door it can arrive through.
     if (existing.status !== 'pending_approval' && updated.status === 'pending_approval') {
-      const parkReason = data.reason?.trim();
+      // Only an operator's OWN park carries their words. A schedule parked
+      // because an agent changed its timing already holds DorkOS's sentence
+      // saying so, and an agent's `reason` must not be written over it.
+      const parkReason = data.status === 'pending_approval' ? data.reason?.trim() : undefined;
       if (parkReason) {
         updated = store.recordProposal(req.params.id, { reason: parkReason }) ?? updated;
       }

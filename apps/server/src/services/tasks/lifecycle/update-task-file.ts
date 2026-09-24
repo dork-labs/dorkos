@@ -37,6 +37,7 @@ import {
   packageOwnershipContext,
   planTaskFileUpdate,
 } from '../task-file-update.js';
+import type { TimingLandsOn } from '../timing/effective-timing.js';
 import { logger } from '../../../lib/logger.js';
 
 /** The collaborators a file rewrite needs. */
@@ -76,6 +77,15 @@ export interface TaskFileUpdateSuccess {
    * above exist to compensate for a write. No write, nothing to compensate for.
    */
   changesFile: boolean;
+  /**
+   * Where the request's `cron` and `timezone` go — see {@link TimingLandsOn}.
+   *
+   * `row` only for a schedule an installed package owns, whose timing becomes
+   * the row's override (DOR-2302); `file` for everything else. Returned here
+   * because this is the one step that asks who owns the file, and the store
+   * cannot ask on its own.
+   */
+  timingLandsOn: TimingLandsOn;
 }
 
 /** The outcome of a file rewrite. */
@@ -178,7 +188,7 @@ async function rewriteTaskFile(
     // schedule answer 409 with the sentence that offers the thing it refused
     // (FB-26). The row is then authoritative for that switch, and the sync
     // keeps it (`file-sync-gates.ts`).
-    if (landsOnRowAlone(changed)) return { ok: true, changesFile: false };
+    if (landsOnRowAlone(changed)) return { ok: true, changesFile: false, timingLandsOn: 'row' };
     // **When the refused request was a grant, say so about the grant** (DOR-2100).
     // Approving a packaged schedule at the operator's own trust stop arrives
     // here as an ordinary `permissionMode` change, and the sentence below is
@@ -203,8 +213,8 @@ async function rewriteTaskFile(
           `own copy of the skill.`
         : `This file lives inside an installed package's folder, so DorkOS did not change it — ` +
           `the next update of that package would wipe the change out. You can switch this ` +
-          `schedule on or off here; to change what it does, edit the package or make your own ` +
-          `copy of the skill.`,
+          `schedule on or off, or change when it runs, here; to change what it does, edit the ` +
+          `package or make your own copy of the skill.`,
       code: 'schedule_package_owned',
     };
   }
@@ -229,7 +239,7 @@ async function rewriteTaskFile(
       error: describeTaskFileFailure('save', existing.filePath, diskReason(err)),
     };
   }
-  return { ok: true, changesFile: true };
+  return { ok: true, changesFile: true, timingLandsOn: 'file' };
 }
 
 /**
@@ -266,7 +276,9 @@ export async function applyTaskFileUpdate(
   const arming = data.status === 'active' && existing.status === 'pending_approval';
   const changed = fileBackedChanges(data, existing);
   const changesFile = changed.length > 0;
-  if (!existing.filePath || !(changesFile || arming)) return { ok: true, changesFile };
+  if (!existing.filePath || !(changesFile || arming)) {
+    return { ok: true, changesFile, timingLandsOn: 'file' };
+  }
 
   // No initializer: every catch path returns, so a value here could never be
   // read - and ESLint 10's no-useless-assignment now says so.
@@ -294,7 +306,7 @@ export async function applyTaskFileUpdate(
       taskId: existing.id,
       filePath: existing.filePath,
     });
-    return { ok: true, changesFile };
+    return { ok: true, changesFile, timingLandsOn: 'file' };
   }
 
   // A schedule whose block or cron DorkOS cannot read has nothing to run on, so
@@ -315,7 +327,7 @@ export async function applyTaskFileUpdate(
     }
   }
 
-  if (!changesFile) return { ok: true, changesFile };
+  if (!changesFile) return { ok: true, changesFile, timingLandsOn: 'file' };
 
   return rewriteTaskFile(deps, existing, content, data, changed);
 }

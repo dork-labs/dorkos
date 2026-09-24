@@ -43,6 +43,9 @@ const activeSchedule: Task = {
   status: 'active',
   agentId: null,
   timezone: null,
+  defaultCron: '0 9 * * *',
+  defaultTimezone: null,
+  timingOverridden: false,
   maxRuntime: null,
   permissionMode: 'acceptEdits',
   runtime: null,
@@ -645,6 +648,98 @@ describe('ScheduleRow', () => {
       );
 
       expect(screen.queryByTestId('task-override-chip')).toBeNull();
+    });
+  });
+
+  describe('a package’s schedule on the person’s own timing (DOR-2302)', () => {
+    // Overridden from Europe/Berlin at 07:30 on weekdays; the package ships hourly UTC.
+    const retimed: Task = {
+      ...activeSchedule,
+      id: 'sched-9',
+      name: 'flow-drain',
+      cron: '30 7 * * 1-5',
+      timezone: 'Europe/Berlin',
+      defaultCron: '0 * * * *',
+      defaultTimezone: 'UTC',
+      timingOverridden: true,
+      filePath: '/home/user/.dork/plugins/flow/skills/flow-drain/SKILL.md',
+    };
+
+    /** Open the row's actions menu, the full pointer sequence Radix needs in jsdom. */
+    async function openActions(task: Task) {
+      const trigger = screen.getByLabelText(`Actions for ${task.name}`);
+      await act(async () => {
+        fireEvent.pointerDown(trigger);
+        fireEvent.mouseDown(trigger);
+        fireEvent.click(trigger);
+      });
+      await waitFor(() => expect(screen.getByRole('menuitem', { name: /Edit/i })).toBeTruthy());
+    }
+
+    it('shows the timing that runs and marks it as the person’s own', () => {
+      // Purpose: the collapsed row is where a person asks "why is this not
+      // running when the package says it does".
+      renderScheduleRow(retimed);
+
+      expect(screen.getByText(/Every: 30 7 \* \* 1-5/)).toBeTruthy();
+      expect(document.querySelector('[data-slot="task-timing-override"]')).toHaveTextContent(
+        'Your timing'
+      );
+    });
+
+    it('says nothing of the kind for a schedule on its own timing', () => {
+      // Purpose: the marker must mean something — never on every row.
+      renderScheduleRow(activeSchedule, { expanded: true });
+
+      expect(document.querySelector('[data-slot="task-timing-override"]')).toBeNull();
+      expect(document.querySelector('[data-slot="task-package-timing"]')).toBeNull();
+    });
+
+    it('names the package’s own timing when expanded', () => {
+      // Purpose: resetting blind is a guess; the row says what it goes back to.
+      renderScheduleRow(retimed, { expanded: true });
+
+      expect(document.querySelector('[data-slot="task-package-timing"]')).toHaveTextContent(
+        'The package runs this every: 0 * * * *, UTC.'
+      );
+    });
+
+    it('puts it back from the expanded row', async () => {
+      // Purpose: "Reset to the package's default" sends the one request that
+      // clears both halves, and nothing else.
+      const transport = createMockTransport({ updateTask: vi.fn().mockResolvedValue(retimed) });
+      renderScheduleRow(retimed, { expanded: true }, transport);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Reset to the package’s default/ }));
+      });
+
+      await waitFor(() =>
+        expect(transport.updateTask).toHaveBeenCalledWith('sched-9', { resetTiming: true })
+      );
+    });
+
+    it('puts it back from the actions menu', async () => {
+      // Purpose: the collapsed row reaches the reset too, without expanding it.
+      const transport = createMockTransport({ updateTask: vi.fn().mockResolvedValue(retimed) });
+      renderScheduleRow(retimed, {}, transport);
+      await openActions(retimed);
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('menuitem', { name: /Reset to the package’s default/ }));
+      });
+
+      await waitFor(() =>
+        expect(transport.updateTask).toHaveBeenCalledWith('sched-9', { resetTiming: true })
+      );
+    });
+
+    it('offers no reset where there is nothing to reset', async () => {
+      // Purpose: a menu item that does nothing is noise.
+      renderScheduleRow(activeSchedule);
+      await openActions(activeSchedule);
+
+      expect(screen.queryByRole('menuitem', { name: /Reset to the package’s default/ })).toBeNull();
     });
   });
 });

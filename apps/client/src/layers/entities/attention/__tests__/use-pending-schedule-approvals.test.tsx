@@ -21,6 +21,9 @@ function task(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     prompt: 'Do the thing.',
     cron: '0 3 * * *',
     timezone: 'UTC',
+    defaultCron: '0 3 * * *',
+    defaultTimezone: 'UTC',
+    timingOverridden: false,
     agentId: null,
     // True by default: most fixtures here stand in for a schedule that IS
     // asking to run (an agent's proposal, or a package shipped switched on).

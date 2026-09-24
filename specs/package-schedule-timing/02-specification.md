@@ -103,7 +103,7 @@ Unchanged: `[prompt, cron]`, with cron meaning the effective value. Timezone is 
 
 ### The two update doors
 
-Both run the same sequence: refuse a conflicting timing request (400 / tool error), validate the merged timing (existing), clamp (existing, now also counting a reset that changes the cron), write the file (existing), `store.updateTask(id, data, { timingLandsOn })`, then — when no file was written — `store.settleTimingChange(id, previousKey, { trusted })`:
+Both run the same sequence: refuse a conflicting timing request (400 / tool error), validate the merged timing (existing), clamp (existing — a reset is not added to it: it only ever reaches a package's schedule, whose row-only change is parked or re-approved below, and a package's schedule never holds a bypass for the clamp to drop), write the file (existing), `store.updateTask(id, data, { timingLandsOn })`, then — when no file was written — `store.settleTimingChange(id, previousKey, { trusted })`:
 
 - The effective key did not change → nothing.
 - **Trusted** (the caller cleared the agent bar) → if the grant covered the previous effective content, it is re-keyed to the new one. The person's edit is itself the approval (the design's "re-approves in the same act"). Keyed on the grant, not on `status`, so a switched-off or paused schedule the person approved stays approved when it comes back.
