@@ -29,7 +29,8 @@ vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
   return {
     ...actual,
-    // Callback-style, so `promisify(execFile)` resolves `{ stdout, stderr }`.
+    // Node's callback shape: (err, stdout, stderr), with git's output also on
+    // the error, as the real execFile gives it.
     execFile: vi.fn(
       (
         _cmd: string,
@@ -39,7 +40,7 @@ vi.mock('node:child_process', async () => {
       ) => {
         if (args[0] === '--version') {
           versionReads += 1;
-          setImmediate(() => callback(null, { stdout: gitVersionOutput, stderr: '' }));
+          setImmediate(() => callback(null, gitVersionOutput, ''));
           return;
         }
         calls.push(args);
@@ -47,9 +48,13 @@ vi.mock('node:child_process', async () => {
         const answer = respond(args);
         setImmediate(() => {
           if ('fail' in answer) {
-            callback(Object.assign(new Error('Command failed: git'), { stderr: answer.fail }));
+            callback(
+              Object.assign(new Error('Command failed: git'), { stderr: answer.fail }),
+              '',
+              answer.fail
+            );
           } else {
-            callback(null, { stdout: answer.stdout, stderr: answer.stderr ?? '' });
+            callback(null, answer.stdout, answer.stderr ?? '');
           }
         });
       }
@@ -341,6 +346,9 @@ describe('verification', () => {
         A,
       ],
       ['rev-parse', '--verify', '--quiet', 'FETCH_HEAD^{commit}'],
+      // The tree is listed before anything is checked out (DOR-2321); a
+      // blobless fetch has no sizes, so no `-l`.
+      ['ls-tree', '-r', '-t', A, '--', '--stdin'],
       ['-c', 'advice.detachedHead=false', 'checkout', '--quiet', '--detach', A],
       ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
       ['ls-files', '--deleted'],

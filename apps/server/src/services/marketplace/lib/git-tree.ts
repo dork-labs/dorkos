@@ -48,9 +48,8 @@
  * @module services/marketplace/lib/git-tree
  */
 import { execFile } from 'node:child_process';
-import { readdir, rm } from 'node:fs/promises';
+import { lstat, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import {
   CLONE_SIZE_LIMITS,
   PackageTooLargeError,
@@ -64,8 +63,6 @@ import {
   resolveGitAuth,
   withGitHubToken,
 } from '../../core/template-downloader.js';
-
-const execFileAsync = promisify(execFile);
 
 /** Max time to wait for `git ls-remote`. */
 const LS_REMOTE_TIMEOUT_MS = 15_000;
@@ -189,6 +186,36 @@ export class GitFetchError extends Error {
   }
 }
 
+/** A byte count in plain words: GB from one gigabyte up, else MB. */
+function describeDownloadBytes(bytes: number): string {
+  const gb = 1024 * 1024 * 1024;
+  return bytes >= gb ? `${Math.round(bytes / gb)} GB` : `${Math.ceil(bytes / (1024 * 1024))} MB`;
+}
+
+/**
+ * A git download that passed the clone limits (DOR-2321): it grew past the
+ * byte limit while downloading, or its tree lists more files and folders, or
+ * more bytes, than DorkOS unpacks. Raised before anything is checked out.
+ */
+export class GitDownloadTooLargeError extends Error {
+  /**
+   * Build the error for one limit.
+   *
+   * @param kind - `growing` while downloading, else what the tree listing found.
+   * @param limit - The limit passed: bytes, or files and folders for `entries`.
+   */
+  constructor(kind: 'growing' | 'bytes' | 'entries', limit: number) {
+    super(
+      kind === 'growing'
+        ? `The download grew past ${describeDownloadBytes(limit)}, so DorkOS stopped it.`
+        : kind === 'bytes'
+          ? `The download is larger than ${describeDownloadBytes(limit)}, so DorkOS did not unpack it.`
+          : `The download has more than ${limit.toLocaleString('en-US')} files and folders, so DorkOS did not unpack it.`
+    );
+    this.name = 'GitDownloadTooLargeError';
+  }
+}
+
 /**
  * Resolve `ref` on the remote at `cloneUrl` to an exact refname and commit.
  * Never throws: a failed `ls-remote` is `unreachable`, with git's reason.
@@ -241,13 +268,21 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
   // Every step gets the auth: a sparse checkout fetches the blobs it lacks
   // from the remote, so the checkout needs it as much as the fetch does.
   const auth = await gitAuth(req.cloneUrl);
-  const git: GitRunner = (args) => runGit(args, req.destDir, GIT_FETCH_TIMEOUT_MS, auth.config);
+  const git: GitRunner = (args, options = {}) =>
+    runGit(args, req.destDir, GIT_FETCH_TIMEOUT_MS, auth.config, {
+      // A download is watched on disk while git runs, so a server cannot
+      // stream more than the clone limit however it answers (DOR-2321).
+      ...(options.watchBytes && {
+        watch: { dir: path.join(req.destDir, '.git'), maxBytes: CLONE_SIZE_LIMITS.maxTotalBytes },
+      }),
+      ...(options.onStdoutLine && { onStdoutLine: options.onStdoutLine }),
+    });
 
   try {
     const commit = await fetchCommit(git, req, auth.url);
-    // Bound what arrived before anything reads it (DOR-2321). Every git step
-    // is already time-limited and shallow where git allows; this catches a
-    // repository that is simply too large, history included.
+    // The checked-out tree, measured before anything reads it (DOR-2321). The
+    // download and the tree listing were bounded before the checkout; this is
+    // what actually landed, which a blobless fetch could not know in advance.
     try {
       await measurePackageTree(req.destDir, CLONE_SIZE_LIMITS);
     } catch (err) {
@@ -258,6 +293,10 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
     return commit;
   } catch (err) {
     if (err instanceof GitCommitNotFoundError || err instanceof GitFetchError) throw err;
+    if (err instanceof GitDownloadTooLargeError) {
+      await emptyDir(req.destDir);
+      throw new GitFetchError(req.cloneUrl, err.message);
+    }
     throw new GitFetchError(req.cloneUrl, reasonOf(err));
   }
 }
@@ -283,7 +322,9 @@ async function fetchCommit(git: GitRunner, req: TreeRequest, remoteUrl: string):
     // and is reported from there.
     try {
       return await attempt(git, req, remoteUrl, true);
-    } catch {
+    } catch (err) {
+      // Too large is the answer, not a reason to try again without the filter.
+      if (err instanceof GitDownloadTooLargeError) throw err;
       await emptyDir(req.destDir);
     }
   }
@@ -328,18 +369,22 @@ async function attempt(
   // route, anything else is a failure.
   let mayDiffer = false;
   try {
-    await git([
-      'fetch',
-      '--quiet',
-      '--no-tags',
-      '--depth=1',
-      ...(filtered ? ['--filter=blob:none'] : []),
-      END_OF_OPTIONS,
-      REMOTE,
-      req.commitSha,
-    ]);
+    await git(
+      [
+        'fetch',
+        '--quiet',
+        '--no-tags',
+        '--depth=1',
+        ...(filtered ? ['--filter=blob:none'] : []),
+        END_OF_OPTIONS,
+        REMOTE,
+        req.commitSha,
+      ],
+      { watchBytes: true }
+    );
     arrived = await commitOf(git, 'FETCH_HEAD');
   } catch (err) {
+    if (err instanceof GitDownloadTooLargeError) throw err;
     if (filtered || !REFUSAL_RE.test(reasonOf(err))) throw err;
     if (req.refName === undefined) {
       arrived = await fetchPinnedFromAllRefs(git, req.commitSha, req.cloneUrl);
@@ -352,16 +397,17 @@ async function attempt(
     throw new Error(`expected commit ${req.commitSha}, received ${arrived}`);
   }
 
+  // Before a single file is written: the tree must fit the clone limits. A
+  // few kilobytes of trees can name millions of files (DOR-2321).
+  await checkTreeBeforeCheckout(git, arrived, req.subpath, !filtered);
+
   // No `--end-of-options` here: `checkout --detach` rejects it up to git
   // 2.43, and `arrived` is a verified full commit id, never author text.
-  const checkout = await git([
-    '-c',
-    'advice.detachedHead=false',
-    'checkout',
-    '--quiet',
-    '--detach',
-    arrived,
-  ]);
+  // Watched, because a blobless checkout downloads the files it writes.
+  const checkout = await git(
+    ['-c', 'advice.detachedHead=false', 'checkout', '--quiet', '--detach', arrived],
+    { watchBytes: true }
+  );
   // Git 2.30–2.36 (measured) can report a blob it failed to fetch lazily as
   // `error: invalid object … for '<path>'` and still exit 0, leaving HEAD
   // right and the file missing. So an `error:` line fails the checkout, and
@@ -381,6 +427,67 @@ async function attempt(
   return arrived;
 }
 
+/**
+ * Refuse a tree that is larger than the clone limits before checking it out,
+ * streaming `git ls-tree -r -t` and stopping git the moment it passes a
+ * limit. Folders count toward the entry limit (`-t`). With the file contents
+ * already downloaded (`withSizes`), `-l` sizes every file too. A blobless
+ * fetch has no sizes to give, so only entries are counted: the blobs the
+ * checkout downloads are watched against the byte limit, and the checked-out
+ * tree is measured before anything reads it.
+ *
+ * @param git - Runs git in the fetch directory.
+ * @param commit - The verified commit to be checked out.
+ * @param subpath - The package's directory, or `''` for the whole tree.
+ * @param withSizes - Whether file sizes are known locally.
+ * @throws {GitDownloadTooLargeError} Past a limit.
+ */
+async function checkTreeBeforeCheckout(
+  git: GitRunner,
+  commit: string,
+  subpath: string,
+  withSizes: boolean
+): Promise<void> {
+  const { maxEntries, maxTotalBytes } = CLONE_SIZE_LIMITS;
+  let entries = 0;
+  let bytes = 0;
+  let over: GitDownloadTooLargeError | null = null;
+  let counted = false;
+  const count = (line: string): boolean => {
+    counted = true;
+    if (line === '' || over) return over === null;
+    entries += 1;
+    if (entries > maxEntries) over = new GitDownloadTooLargeError('entries', maxEntries);
+    if (withSizes) {
+      // "<mode> <type> <object> <size>\t<path>", with "-" for a folder's size.
+      const size = Number(line.slice(0, line.indexOf('\t')).trim().split(/\s+/)[3]);
+      if (Number.isFinite(size)) bytes += size;
+      if (bytes > maxTotalBytes) over ??= new GitDownloadTooLargeError('bytes', maxTotalBytes);
+    }
+    return over === null;
+  };
+  const { stdout } = await git(
+    [
+      'ls-tree',
+      '-r',
+      '-t',
+      ...(withSizes ? ['-l'] : []),
+      commit,
+      ...(subpath !== '' ? ['--', subpath] : []),
+    ],
+    { onStdoutLine: count }
+  ).catch((err: unknown) => {
+    // Stopping git early is how the limit is enforced; its exit is expected.
+    if (over) return { stdout: '' };
+    throw err;
+  });
+  // A runner that cannot stream (a test double) hands the whole listing back.
+  if (!counted) {
+    for (const line of stdout.split('\n')) if (!count(line)) break;
+  }
+  if (over) throw over;
+}
+
 /** Remove everything inside `dir`, keeping `dir` itself. */
 async function emptyDir(dir: string): Promise<void> {
   const entries = await readdir(dir);
@@ -388,7 +495,10 @@ async function emptyDir(dir: string): Promise<void> {
 }
 
 /** Run git in the fetch's directory. */
-type GitRunner = (args: string[]) => Promise<{ stdout: string; stderr: string }>;
+type GitRunner = (
+  args: string[],
+  options?: { watchBytes?: boolean; onStdoutLine?: (line: string) => boolean }
+) => Promise<{ stdout: string; stderr: string }>;
 
 /**
  * The fallback for a named ref: fetch the exact refname the lookup chose (never
@@ -396,7 +506,9 @@ type GitRunner = (args: string[]) => Promise<{ stdout: string; stderr: string }>
  * commit it points at now.
  */
 async function fetchByRefName(git: GitRunner, refName: string): Promise<string> {
-  await git(['fetch', '--quiet', '--no-tags', '--depth=1', END_OF_OPTIONS, REMOTE, refName]);
+  await git(['fetch', '--quiet', '--no-tags', '--depth=1', END_OF_OPTIONS, REMOTE, refName], {
+    watchBytes: true,
+  });
   return commitOf(git, 'FETCH_HEAD');
 }
 
@@ -410,15 +522,22 @@ async function fetchPinnedFromAllRefs(
   commitSha: string,
   cloneUrl: string
 ): Promise<string> {
-  await git([
-    'fetch',
-    '--quiet',
-    '--no-tags',
-    END_OF_OPTIONS,
-    REMOTE,
-    `+refs/heads/*:refs/remotes/${REMOTE}/*`,
-    '+refs/tags/*:refs/tags/*',
-  ]);
+  // Reached on text the server sends (REFUSAL_RE), so it is untrusted: the
+  // full history it downloads is watched against the same byte limit as any
+  // other fetch (DOR-2321). It stays unfiltered: a server that refuses a
+  // fetch by id also refuses the blob requests a filtered checkout makes.
+  await git(
+    [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      END_OF_OPTIONS,
+      REMOTE,
+      `+refs/heads/*:refs/remotes/${REMOTE}/*`,
+      '+refs/tags/*:refs/tags/*',
+    ],
+    { watchBytes: true }
+  );
   try {
     return await commitOf(git, commitSha);
   } catch {
@@ -583,23 +702,113 @@ function reasonOf(err: unknown): string {
   return redactAuthTokens(String(err));
 }
 
+/** How one git command is watched while it runs. */
+interface GitRunOptions {
+  /**
+   * Kill git once the files under this directory pass `maxBytes`, checked
+   * every {@link WATCH_INTERVAL_MS}. Portable (no `ulimit`), so it holds on
+   * Windows too.
+   */
+  watch?: { dir: string; maxBytes: number };
+  /** Called for each line of output; returning `false` kills git. */
+  onStdoutLine?: (line: string) => boolean;
+}
+
+/** How often a watched command's size on disk is checked. */
+const WATCH_INTERVAL_MS = 200;
+
+/**
+ * The total size of every file under `dir`, `0` when it does not exist yet.
+ *
+ * @param dir - The directory to measure.
+ */
+async function sizeOnDisk(dir: string): Promise<number> {
+  let total = 0;
+  const pending = [dir];
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) pending.push(full);
+      else if (entry.isFile()) total += (await lstat(full).catch(() => ({ size: 0 }))).size;
+    }
+  }
+  return total;
+}
+
 /**
  * Run one git command. `cwd` is the fetch directory, or `undefined` for
- * `ls-remote`, which needs no repository.
+ * `ls-remote`, which needs no repository. A rejection carries git's `stdout`
+ * and `stderr`, as `execFile`'s promise form does.
  */
 async function runGit(
   args: string[],
   cwd: string | undefined,
   timeout: number,
-  config: GitConfigEntry[] = []
+  config: GitConfigEntry[] = [],
+  options: GitRunOptions = {}
 ): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync('git', args, {
-    cwd,
-    timeout,
-    maxBuffer: 16 * 1024 * 1024,
-    // Confine git to safe transports so an author-controlled URL cannot reach
-    // the `ext::`/`file::` helpers, and never prompt for a credential.
-    env: withGitConfig(hardenedGitEnv(), config),
-    encoding: 'utf-8',
+  return new Promise((resolve, reject) => {
+    let watchTimer: NodeJS.Timeout | undefined;
+    let tooLarge = false;
+    let stopped = false;
+    const child = execFile(
+      'git',
+      args,
+      {
+        cwd,
+        timeout,
+        maxBuffer: 16 * 1024 * 1024,
+        // Confine git to safe transports so an author-controlled URL cannot reach
+        // the `ext::`/`file::` helpers, and never prompt for a credential.
+        env: withGitConfig(hardenedGitEnv(), config),
+        encoding: 'utf-8',
+      },
+      (err, stdout, stderr) => {
+        if (watchTimer) clearInterval(watchTimer);
+        if (tooLarge)
+          return reject(new GitDownloadTooLargeError('growing', options.watch!.maxBytes));
+        if (stopped) return resolve({ stdout, stderr });
+        if (err) return reject(Object.assign(err, { stdout, stderr }));
+        resolve({ stdout, stderr });
+      }
+    );
+    const kill = () => child?.kill('SIGKILL');
+    if (options.onStdoutLine && child?.stdout) {
+      let partial = '';
+      child.stdout.on('data', (chunk: string) => {
+        if (stopped) return;
+        const lines = (partial + chunk).split('\n');
+        partial = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!options.onStdoutLine!(line)) {
+            stopped = true;
+            kill();
+            return;
+          }
+        }
+      });
+    }
+    if (options.watch && child) {
+      const { dir, maxBytes } = options.watch;
+      let busy = false;
+      watchTimer = setInterval(() => {
+        if (busy || tooLarge) return;
+        busy = true;
+        void sizeOnDisk(dir).then((size) => {
+          busy = false;
+          if (size > maxBytes) {
+            tooLarge = true;
+            kill();
+          }
+        });
+      }, WATCH_INTERVAL_MS);
+    }
   });
 }

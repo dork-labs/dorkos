@@ -10,7 +10,7 @@ import {
 } from '../package-size.js';
 
 let root: string;
-const small: PackageSizeLimits = { maxTotalBytes: 1000, maxFiles: 5, maxFileBytes: 400 };
+const small: PackageSizeLimits = { maxTotalBytes: 1000, maxEntries: 5, maxFileBytes: 400 };
 
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'package-size-'));
@@ -27,7 +27,8 @@ describe('measurePackageTree', () => {
     await writeFile(path.join(root, 'skills', 'a', 'SKILL.md'), 'x'.repeat(100));
     await writeFile(path.join(root, 'README.md'), 'x'.repeat(50));
     await symlink(path.join(root, 'README.md'), path.join(root, 'link.md'));
-    expect(await measurePackageTree(root, small)).toEqual({ files: 2, bytes: 150 });
+    // skills, skills/a, SKILL.md, README.md: two folders and two files.
+    expect(await measurePackageTree(root, small)).toEqual({ entries: 4, bytes: 150 });
   });
 
   // Purpose: each limit refuses on its own, naming what was too large.
@@ -48,7 +49,25 @@ describe('measurePackageTree', () => {
   it('refuses a tree with too many files', async () => {
     for (let i = 0; i < 6; i++) await writeFile(path.join(root, `f${i}`), '');
     await expect(measurePackageTree(root, small)).rejects.toThrow(
-      'The package has more than 5 files, which is more than DorkOS installs.'
+      'The package has more than 5 files and folders, which is more than DorkOS installs.'
+    );
+  });
+
+  // Purpose: folders count, so a tree of empty folders is refused too.
+  it('refuses a tree of empty folders', async () => {
+    for (let i = 0; i < 6; i++) await mkdir(path.join(root, `d${i}`));
+    await expect(measurePackageTree(root, small)).rejects.toThrow(/more than 5 files and folders/);
+  });
+
+  // Purpose: a local checkout with its libraries installed is told how much
+  // of it is node_modules.
+  it('says how much of an oversized tree is node_modules', async () => {
+    await rm(path.join(root, 'skills'), { recursive: true });
+    await mkdir(path.join(root, 'node_modules', 'lib'), { recursive: true });
+    for (let i = 0; i < 4; i++)
+      await writeFile(path.join(root, 'node_modules', 'lib', `f${i}`), '');
+    await expect(measurePackageTree(root, small)).rejects.toThrow(
+      'The package has more than 5 files and folders, of which 6 are in node_modules (a local source is copied with its node_modules), which is more than DorkOS installs.'
     );
   });
 
@@ -64,10 +83,10 @@ describe('measurePackageTree', () => {
   });
 
   // Purpose: the limits keep generous headroom over real packages (largest
-  // seen: ~12.5 MB total, ~700 files, one 3.4 MB file).
+  // seen: ~12.5 MB total, ~980 files and folders, one 3.4 MB file).
   it('keeps at least 10x headroom over real packages', () => {
     expect(PACKAGE_SIZE_LIMITS.maxTotalBytes).toBeGreaterThanOrEqual(10 * 12.5 * 1024 * 1024);
-    expect(PACKAGE_SIZE_LIMITS.maxFiles).toBeGreaterThanOrEqual(10 * 707);
+    expect(PACKAGE_SIZE_LIMITS.maxEntries).toBeGreaterThanOrEqual(10 * 979);
     expect(PACKAGE_SIZE_LIMITS.maxFileBytes).toBeGreaterThanOrEqual(10 * 3.4 * 1024 * 1024);
   });
 });
