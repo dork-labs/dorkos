@@ -187,8 +187,8 @@ import type {
   InstallResult,
   UninstallOptions,
   UninstallResult,
-  UpdateOptions,
-  UpdateResult,
+  ApplyUpdatesOptions,
+  InstallationUpdatesResult,
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
@@ -941,7 +941,13 @@ export const marketplaceStubs = {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 
-  async updateMarketplacePackage(_name: string, _opts?: UpdateOptions): Promise<UpdateResult> {
+  // No marketplace here, so nothing is installed (see `listInstalledPackages`)
+  // and nothing can be out of date.
+  async checkMarketplaceUpdates(_projectPath?: string): Promise<InstallationUpdatesResult> {
+    return { checks: [] };
+  },
+
+  async applyMarketplaceUpdates(_opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult> {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 

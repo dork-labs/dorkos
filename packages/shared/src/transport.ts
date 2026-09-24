@@ -159,8 +159,8 @@ import type {
   InstallResult,
   UninstallOptions,
   UninstallResult,
-  UpdateOptions,
-  UpdateResult,
+  ApplyUpdatesOptions,
+  InstallationUpdatesResult,
   InstalledPackage,
   MarketplaceSource,
   AddSourceInput,
@@ -2323,14 +2323,26 @@ export interface Transport
   uninstallMarketplacePackage(name: string, opts?: UninstallOptions): Promise<UninstallResult>;
 
   /**
-   * Check for (and optionally apply) updates to a marketplace package.
+   * Check every installation in view for a newer version, in one request.
    *
-   * Advisory by default — pass `{ apply: true }` to reinstall in place.
+   * Advisory: nothing installed changes. One check per installation, keyed by
+   * `installPath` (the same key `listInstalledPackages` rows carry); a check
+   * that could not answer is `unknown` with its reason, never dropped.
    *
-   * @param name - Package name. Will be URL-encoded.
-   * @param opts - Update options (apply, projectPath).
+   * @param projectPath - Omit for every scope (the Installed view's listing);
+   *   pass a project for that project's merged view.
    */
-  updateMarketplacePackage(name: string, opts?: UpdateOptions): Promise<UpdateResult>;
+  checkMarketplaceUpdates(projectPath?: string): Promise<InstallationUpdatesResult>;
+
+  /**
+   * Reinstall exactly the named installations at their newest version, each in
+   * the scope it is installed in. An installation that is already current is
+   * left alone; one that fails carries `applyError` while the rest continue.
+   *
+   * @param opts - The installations to update (at least one target), and the
+   *   project whose view they came from, if any.
+   */
+  applyMarketplaceUpdates(opts: ApplyUpdatesOptions): Promise<InstallationUpdatesResult>;
 
   /**
    * List installed marketplace packages.

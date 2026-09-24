@@ -1,5 +1,5 @@
 /**
- * Marketplace entity — domain hooks for package install, uninstall, update,
+ * Marketplace entity — domain hooks for package install, uninstall, update checks,
  * source management, and browse/discovery queries.
  *
  * @module entities/marketplace
@@ -19,6 +19,8 @@ export { useMarketplacePackage } from './model/use-marketplace-package';
 export { usePermissionPreview } from './model/use-permission-preview';
 export { useInstalledPackages } from './model/use-installed-packages';
 export { usePackageInstallations } from './model/use-package-installations';
+export { useInstalledUpdates, UPDATE_CHECK_STALE_MS } from './model/use-installed-updates';
+export type { UseInstalledUpdatesOptions } from './model/use-installed-updates';
 export { useMarketplaceSources } from './model/use-marketplace-sources';
 
 // --- Mutation hooks ---
@@ -28,8 +30,11 @@ export type { InstallPackageArgs } from './model/use-install-package';
 export { useUninstallPackage } from './model/use-uninstall-package';
 export type { UninstallPackageArgs } from './model/use-uninstall-package';
 
-export { useUpdatePackage } from './model/use-update-package';
-export type { UpdatePackageArgs } from './model/use-update-package';
+export {
+  settleAppliedCheck,
+  useApplyUpdates,
+  useApplyingInstallPaths,
+} from './model/use-apply-updates';
 
 export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 

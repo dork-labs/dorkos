@@ -4,13 +4,14 @@
  * All shapes match the real TypeScript interfaces from
  * `@dorkos/shared/marketplace-schemas`. No `displayName`, `installCount`,
  * `updatedAt` (not on `AggregatedPackage`), no `source`/`updateAvailable` (not
- * on `InstalledPackage`), no `url`/`packageCount`/`lastRefreshed` (not on
+ * on `InstalledPackage`: update state comes from the separate update check), no `url`/`packageCount`/`lastRefreshed` (not on
  * `MarketplaceSource`).
  *
  * @module dev/showcases/marketplace-mocks
  */
 import type {
   AggregatedPackage,
+  InstallationUpdateCheck,
   InstalledPackage,
   MarketplaceSource,
   PermissionPreview,
@@ -272,34 +273,149 @@ export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
 };
 
 // ---------------------------------------------------------------------------
-// InstalledPackage mocks
+// InstalledPackage + update-check mocks
 // ---------------------------------------------------------------------------
 
-/** Installed packages list for the InstalledPackagesView showcase. */
-export const MOCK_INSTALLED_PACKAGES: InstalledPackage[] = [
+/**
+ * An Installed list that exercises every update state: one package installed
+ * globally and on an agent (two rows, two answers), a linked install the check
+ * cannot answer for, a package identified by its commit, and one whose last
+ * update attempt failed.
+ */
+export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
   {
     name: 'code-reviewer',
     version: '1.4.2',
     type: 'agent',
+    scope: 'global',
     installPath: '/Users/kai/.dork/agents/code-reviewer',
-    installedFrom: 'https://github.com/dorkos-marketplace/code-reviewer',
+    installedFrom: 'dorkos-community',
     installedAt: '2026-02-14T09:00:00Z',
+  },
+  {
+    name: 'flow',
+    version: '0.7.2',
+    type: 'plugin',
+    scope: 'agent-local',
+    agentPath: '/Users/kai/work/release-bot',
+    agentName: 'Release Bot',
+    installPath: '/Users/kai/work/release-bot/.dork/plugins/flow',
+    installedFrom: 'dorkos-community',
+    installedAt: '2026-08-30T10:00:00Z',
+  },
+  {
+    name: 'flow',
+    version: '0.7.3',
+    type: 'plugin',
+    scope: 'global',
+    installPath: '/Users/kai/.dork/plugins/flow',
+    installedFrom: 'dorkos-community',
+    installedAt: '2026-09-20T10:00:00Z',
   },
   {
     name: 'obsidian-sync',
     version: '0.8.1',
     type: 'plugin',
+    scope: 'global',
     installPath: '/Users/kai/.dork/plugins/obsidian-sync',
-    installedFrom: 'https://github.com/dorkos-marketplace/obsidian-sync',
     installedAt: '2026-03-01T14:30:00Z',
   },
   {
     name: 'python-skills',
     version: '1.0.0',
     type: 'skill-pack',
-    installPath: '/Users/kai/.dork/skills/python-skills',
+    scope: 'global',
+    installPath: '/Users/kai/.dork/plugins/python-skills',
+    installedFrom: 'https://github.com/kai/python-skills',
+    installedAt: '2026-04-11T08:15:00Z',
   },
 ];
+
+/** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
+export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
+  {
+    packageName: 'code-reviewer',
+    installedVersion: '1.4.2',
+    latestVersion: '1.5.0',
+    hasUpdate: true,
+    marketplace: 'dorkos-community',
+    status: 'update-available',
+    installedVersionSource: 'package',
+    latestVersionSource: 'package',
+    installPath: '/Users/kai/.dork/agents/code-reviewer',
+    type: 'agent',
+    scope: 'global',
+  },
+  {
+    packageName: 'flow',
+    installedVersion: '0.7.2',
+    latestVersion: '0.7.3',
+    hasUpdate: true,
+    marketplace: 'dorkos-community',
+    status: 'update-available',
+    installedVersionSource: 'package',
+    latestVersionSource: 'package',
+    installPath: '/Users/kai/work/release-bot/.dork/plugins/flow',
+    type: 'plugin',
+    scope: 'agent-local',
+    agentPath: '/Users/kai/work/release-bot',
+    agentName: 'Release Bot',
+    applyError: 'another install is already running in this folder',
+  },
+  {
+    packageName: 'flow',
+    installedVersion: '0.7.3',
+    latestVersion: '0.7.3',
+    hasUpdate: false,
+    marketplace: 'dorkos-community',
+    status: 'current',
+    installedVersionSource: 'package',
+    latestVersionSource: 'package',
+    installPath: '/Users/kai/.dork/plugins/flow',
+    type: 'plugin',
+    scope: 'global',
+  },
+  {
+    packageName: 'obsidian-sync',
+    installedVersion: '0.8.1',
+    latestVersion: '',
+    hasUpdate: false,
+    marketplace: '',
+    status: 'unknown',
+    installPath: '/Users/kai/.dork/plugins/obsidian-sync',
+    type: 'plugin',
+    scope: 'global',
+    note: 'linked install — update its source instead',
+  },
+  {
+    packageName: 'python-skills',
+    installedVersion: '3f9c2a1b7e6d5c4b3a291807f6e5d4c3b2a19087',
+    latestVersion: '3f9c2a1b7e6d5c4b3a291807f6e5d4c3b2a19087',
+    hasUpdate: false,
+    marketplace: '',
+    status: 'current',
+    installedVersionSource: 'commit',
+    latestVersionSource: 'commit',
+    installPath: '/Users/kai/.dork/plugins/python-skills',
+    type: 'skill-pack',
+    scope: 'global',
+    note: 'checked against the default branch: this package was installed before DorkOS recorded which branch it came from',
+  },
+];
+
+/** The same rows with every check current: the "all up to date" state. */
+export const MOCK_UPDATE_CHECKS_ALL_CURRENT: InstallationUpdateCheck[] = MOCK_UPDATE_CHECKS.map(
+  (check) => ({
+    ...check,
+    status: 'current',
+    hasUpdate: false,
+    latestVersion: check.installedVersion,
+    latestVersionSource: check.installedVersionSource,
+    marketplace: check.marketplace,
+    applyError: undefined,
+    note: undefined,
+  })
+);
 
 // ---------------------------------------------------------------------------
 // MarketplaceSource mocks
