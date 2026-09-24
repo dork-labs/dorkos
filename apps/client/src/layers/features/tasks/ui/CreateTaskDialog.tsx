@@ -4,6 +4,7 @@ import {
   useCreateTask,
   useUpdateTask,
   useDeleteTask,
+  useTasks,
   useTaskTemplateDialog,
 } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
@@ -23,12 +24,19 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  Checkbox,
+  Label,
   Switch,
 } from '@/layers/shared/ui';
 import type { Task } from '@dorkos/shared/types';
 import { TaskTemplateGallery } from './TaskTemplateGallery';
 import { ScheduleForm } from './TaskFormInner';
-import { buildFormValues, type ScheduleFormValues, type DialogStep } from './task-form-values';
+import {
+  buildFormValues,
+  copyFormValues,
+  type ScheduleFormValues,
+  type DialogStep,
+} from './task-form-values';
 import type { TaskAgentRoster } from './TaskAgentField';
 import { useAgentRuntime } from './use-task-execution';
 
@@ -140,6 +148,12 @@ export function CreateTaskDialog({
   // the form clears it, through `applyFormValues`.
   const [isCopy, setIsCopy] = useState(false);
   const formTask = isCopy ? undefined : editTask;
+  // Whether creating the copy also switches the package's own schedule off, so
+  // the same work does not run twice. On by default: running both is the rare
+  // want, and it is one click away.
+  const [switchOffOriginal, setSwitchOffOriginal] = useState(true);
+  // Every schedule's name, so a copy can be named clear of them all.
+  const { data: allTasks } = useTasks();
 
   // formValues drives ScheduleForm defaultValues. Changing this + incrementing
   // formKey causes ScheduleForm to remount with fresh form state.
@@ -207,7 +221,22 @@ export function CreateTaskDialog({
   }
 
   function handleMakeCopy(values: ScheduleFormValues) {
-    applyFormValues(values, true);
+    const siblings = (allTasks ?? [])
+      .filter((task) => (task.agentId ?? '') === values.agentId)
+      .map((task) => task.name);
+    setSwitchOffOriginal(true);
+    applyFormValues(copyFormValues(values, siblings), true);
+  }
+
+  function handleSubmitSuccess() {
+    // A copy was just created; the package's own schedule is switched off if
+    // the person left that ticked. A switch is one of the two things a
+    // package's schedule takes on the row, so this cannot be refused as an
+    // edit, and a failure still reaches the shared toast.
+    if (isCopy && switchOffOriginal && editTask) {
+      updateTask.mutate({ id: editTask.id, enabled: false });
+    }
+    onOpenChange(false);
   }
 
   function handleDelete() {
@@ -316,11 +345,30 @@ export function CreateTaskDialog({
             defaultValues={formValues}
             roster={roster}
             editTask={formTask}
-            onSubmitSuccess={() => onOpenChange(false)}
+            onSubmitSuccess={handleSubmitSuccess}
             onCancel={() => onOpenChange(false)}
             onDeleteClick={() => setDeleteConfirmOpen(true)}
             isPending={isPending}
             onMakeCopy={handleMakeCopy}
+            leading={
+              isCopy && editTask ? (
+                <div className="flex items-start gap-2 rounded-md border px-3 py-2">
+                  <Checkbox
+                    id="copy-switch-off-original"
+                    checked={switchOffOriginal}
+                    onCheckedChange={(checked) => setSwitchOffOriginal(checked === true)}
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="copy-switch-off-original" className="text-sm font-normal">
+                      Switch off the package’s schedule
+                    </Label>
+                    <p className="text-muted-foreground text-xs">
+                      So “{editTask.name}” and your copy don’t both run.
+                    </p>
+                  </div>
+                </div>
+              ) : undefined
+            }
           />
         )}
       </ResponsiveDialogContent>

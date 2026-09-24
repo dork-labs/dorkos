@@ -104,6 +104,7 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     defaultCron: '* * * * *',
     defaultTimezone: null,
     timingOverridden: false,
+    packageOwned: null,
     agentId: null,
     sticky: false,
     maxRuntime: null,

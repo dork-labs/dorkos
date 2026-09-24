@@ -212,6 +212,7 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     defaultCron: '0 3 * * *',
     defaultTimezone: 'UTC',
     timingOverridden: false,
+    packageOwned: null,
     agentId: null,
     // True: this fixture stands in for a schedule an AGENT proposed, which is
     // asking to run by definition (DOR-2059 only quiets a package-shipped

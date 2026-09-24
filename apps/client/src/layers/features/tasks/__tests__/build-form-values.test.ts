@@ -57,6 +57,16 @@ describe('copyFormValues — Make my own copy (DOR-2272)', () => {
     expect(copy).toEqual({ ...values, name: 'Existing-copy' });
   });
 
+  it('counts up past names already taken, ignoring case', () => {
+    // Purpose: a second copy must not collide with the first (DOR-2272 review).
+    const values = buildFormValues(EDIT_TASK);
+
+    expect(copyFormValues(values, ['Existing-Copy']).name).toBe('Existing-copy-2');
+    expect(copyFormValues(values, ['existing-copy', 'existing-copy-2']).name).toBe(
+      'Existing-copy-3'
+    );
+  });
+
   it('keeps the name inside the 100-character limit', () => {
     // Purpose: a long package name plus the suffix must still pass the form's
     // own name rule, or Create would be dead on arrival.

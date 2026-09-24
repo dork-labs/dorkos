@@ -54,14 +54,15 @@ export function useCreateTask() {
 /**
  * Update an existing Task.
  *
- * @param options - `inlineErrorCodes`: server refusal codes the calling surface
- *   shows itself, so the shared failure toast leaves those alone. Only a surface
- *   that really renders the refusal passes one: the schedule edit form does, for
- *   {@link PACKAGE_OWNED_SCHEDULE_CODE}, with Make my own copy beside it
- *   (DOR-2272). The approval card does not, because its own line about a
- *   refused level leans on the toast to say why.
+ * @param options - `isShownInline`: asked when an update fails; true means the
+ *   calling surface is on screen and shows that failure itself, so the shared
+ *   failure toast leaves it alone. It must answer false once the surface has
+ *   gone, or a failure that lands after it closed is seen by nobody. The
+ *   schedule edit form passes one for {@link PACKAGE_OWNED_SCHEDULE_CODE}, with
+ *   Make my own copy beside it (DOR-2272). The approval card does not, because
+ *   its own line about a refused level leans on the toast to say why.
  */
-export function useUpdateTask(options: { inlineErrorCodes?: readonly string[] } = {}) {
+export function useUpdateTask(options: { isShownInline?: (error: Error) => boolean } = {}) {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
@@ -75,7 +76,7 @@ export function useUpdateTask(options: { inlineErrorCodes?: readonly string[] } 
     // `TaskRow.tsx`'s own call-time `onError` used to duplicate it.
     meta: {
       errorLabel: 'Couldn’t update the schedule',
-      ...(options.inlineErrorCodes && { inlineErrorCodes: options.inlineErrorCodes }),
+      ...(options.isShownInline && { isShownInline: options.isShownInline }),
     },
   });
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '@tanstack/react-form';
 import { Copy, Trash2 } from 'lucide-react';
 import { PACKAGE_OWNED_SCHEDULE_CODE, useCreateTask, useUpdateTask } from '@/layers/entities/tasks';
@@ -28,9 +28,43 @@ import {
   DEFAULT_MAX_RUNTIME,
   MAX_NAME_LENGTH,
   changedUpdateFields,
-  copyFormValues,
   type ScheduleFormValues,
 } from './task-form-values';
+
+/** How an installed package owns a schedule, as the task or a refusal says. */
+type PackageOwnedBy = 'record' | 'legacy';
+
+/**
+ * What the form says about a schedule that came with a package, before any
+ * edit is tried (DOR-2272). The server's own sentence replaces it when an edit
+ * is refused.
+ */
+const PACKAGE_NOTICE: Record<PackageOwnedBy, string> = {
+  record:
+    'This schedule came with an installed package. DorkOS doesn’t change what it does, because ' +
+    'the package’s next update would put its own version back. You can switch it on or off, or ' +
+    'change when it runs, here.',
+  legacy:
+    'This schedule sits in a package installed by an older version of DorkOS, which kept no ' +
+    'list of the package’s files, so DorkOS can’t yet tell them from yours. You can switch it on ' +
+    'or off, or change when it runs, here. The rest will work after the package’s next update.',
+};
+
+/**
+ * A failed update's package refusal, when that is what it was: the server's
+ * sentence and how the package's ownership is known (`ownedBy`, riding on the
+ * transport error's parsed body).
+ */
+function packageRefusalOf(
+  error: Error | null
+): { message: string; ownedBy: PackageOwnedBy } | null {
+  const failure = error as (Error & { code?: unknown; body?: { ownedBy?: unknown } }) | null;
+  if (failure?.code !== PACKAGE_OWNED_SCHEDULE_CODE) return null;
+  return {
+    message: failure.message,
+    ownedBy: failure.body?.ownedBy === 'legacy' ? 'legacy' : 'record',
+  };
+}
 
 // ── ScheduleForm ──────────────────────────────────────────────────────────────
 // Isolated component so useAppForm gets fresh defaultValues on each key change.
@@ -52,11 +86,13 @@ export interface ScheduleFormProps {
   onDeleteClick: () => void;
   isPending: boolean;
   /**
-   * Turn a refused edit into a new schedule of the person's own: called with the
-   * values to open the create form on, when an edit to a schedule that came with
-   * an installed package is refused (DOR-2272). Omitted, no copy is offered.
+   * Make the person their own copy of a schedule that came with an installed
+   * package: called with the form's current values (DOR-2272). Omitted, no copy
+   * is offered.
    */
   onMakeCopy?: (values: ScheduleFormValues) => void;
+  /** Shown at the top of the form, above every field. */
+  leading?: ReactNode;
 }
 
 /** Inner form component. Remounted via `key` when defaultValues change. */
@@ -69,17 +105,31 @@ export function ScheduleForm({
   onDeleteClick,
   isPending,
   onMakeCopy,
+  leading,
 }: ScheduleFormProps) {
   const createTask = useCreateTask();
   // An edit the server refuses because the schedule came with an installed
   // package is shown here, beside the action that works, so the shared toast
-  // is told to stay out of that one refusal.
-  const updateTask = useUpdateTask({ inlineErrorCodes: [PACKAGE_OWNED_SCHEDULE_CODE] });
-  const packageRefusal =
-    editTask !== undefined &&
-    (updateTask.error as { code?: unknown } | null)?.code === PACKAGE_OWNED_SCHEDULE_CODE
-      ? updateTask.error!.message
-      : null;
+  // stays out of that one refusal, but only while this form is on screen: a
+  // refusal that lands after the dialog closed has nowhere else to be seen.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const updateTask = useUpdateTask({
+    isShownInline: (error) => mountedRef.current && packageRefusalOf(error) !== null,
+  });
+  const refusal = editTask ? packageRefusalOf(updateTask.error) : null;
+  // What DorkOS already knows about this schedule when the form opens decides
+  // what can be edited: a package's schedule keeps only its switch (in the
+  // header) and its timing editable. A refusal can still reveal ownership the
+  // app had not heard of yet, and then it is shown the same way.
+  const knownOwner = editTask?.packageOwned ?? null;
+  const ownedBy: PackageOwnedBy | null = knownOwner ?? refusal?.ownedBy ?? null;
+  const readOnly = knownOwner !== null;
 
   const form = useAppForm({
     defaultValues,
@@ -209,6 +259,28 @@ export function ScheduleForm({
         className="min-h-0 flex-1 overflow-y-auto"
       >
         <div className="space-y-5 px-4 py-5">
+          {ownedBy !== null && (
+            <div
+              role="status"
+              data-slot="package-owned-notice"
+              className="bg-muted/40 space-y-2 rounded-md border px-3 py-2 text-xs"
+            >
+              <p>{refusal?.message ?? PACKAGE_NOTICE[ownedBy]}</p>
+              {ownedBy === 'record' && onMakeCopy && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => onMakeCopy(form.state.values)}
+                >
+                  <Copy />
+                  Make my own copy
+                </Button>
+              )}
+            </div>
+          )}
+          {leading}
+
           {/* ── Agent (target) ── */}
           <TaskAgentField
             roster={roster}
@@ -217,65 +289,69 @@ export function ScheduleForm({
             pick={agentPick}
           />
 
-          {/* ── Essential fields ── */}
-          <form.AppField name="name">
-            {(field) => (
-              <div className="space-y-1.5">
-                <Label htmlFor="schedule-name">Name *</Label>
-                <input
-                  id="schedule-name"
-                  className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                  maxLength={MAX_NAME_LENGTH}
-                  placeholder="Daily code review"
-                />
-                {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
-                  <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
-                )}
-              </div>
-            )}
-          </form.AppField>
+          {/* ── Essential fields ── read-only, with everything else the package
+              decides, for a package's schedule (DOR-2272). A disabled fieldset
+              disables every control inside it and keeps the values readable. */}
+          <fieldset disabled={readOnly} className="min-w-0 space-y-5">
+            <form.AppField name="name">
+              {(field) => (
+                <div className="space-y-1.5">
+                  <Label htmlFor="schedule-name">Name *</Label>
+                  <input
+                    id="schedule-name"
+                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    maxLength={MAX_NAME_LENGTH}
+                    placeholder="Daily code review"
+                  />
+                  {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+                    <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
+                  )}
+                </div>
+              )}
+            </form.AppField>
 
-          <form.AppField name="description">
-            {(field) => (
-              <div className="space-y-1.5">
-                <Label htmlFor="schedule-description">Description *</Label>
-                <input
-                  id="schedule-description"
-                  className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                  placeholder="A short description of this schedule"
-                />
-                {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
-                  <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
-                )}
-              </div>
-            )}
-          </form.AppField>
+            <form.AppField name="description">
+              {(field) => (
+                <div className="space-y-1.5">
+                  <Label htmlFor="schedule-description">Description *</Label>
+                  <input
+                    id="schedule-description"
+                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    placeholder="A short description of this schedule"
+                  />
+                  {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+                    <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
+                  )}
+                </div>
+              )}
+            </form.AppField>
 
-          <form.AppField name="prompt">
-            {(field) => (
-              <div className="space-y-1.5">
-                <Label htmlFor="schedule-prompt">Prompt *</Label>
-                <textarea
-                  id="schedule-prompt"
-                  className="border-input focus-visible:ring-ring w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                  rows={4}
-                  placeholder="Review all pending PRs and summarize findings…"
-                />
-                {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
-                  <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
-                )}
-              </div>
-            )}
-          </form.AppField>
+            <form.AppField name="prompt">
+              {(field) => (
+                <div className="space-y-1.5">
+                  <Label htmlFor="schedule-prompt">Prompt *</Label>
+                  <textarea
+                    id="schedule-prompt"
+                    className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-full rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                    rows={4}
+                    placeholder="Review all pending PRs and summarize findings…"
+                  />
+                  {field.state.meta.isTouched && field.state.meta.errors.length > 0 && (
+                    <p className="text-destructive text-xs">{String(field.state.meta.errors[0])}</p>
+                  )}
+                </div>
+              )}
+            </form.AppField>
+          </fieldset>
 
           {/* ── Schedule (optional) ── */}
           <CollapsibleFieldCard
@@ -342,7 +418,7 @@ export function ScheduleForm({
               ) : undefined
             }
           >
-            <div className="space-y-4">
+            <fieldset disabled={readOnly} className="min-w-0 space-y-4">
               {/* Above Permissions on purpose: the dial's whole vocabulary comes
                   from the runtime chosen here, so the runtime is the thing to
                   read first. */}
@@ -469,7 +545,7 @@ export function ScheduleForm({
                     </p>
                     <input
                       id="schedule-max-runtime"
-                      className="border-input focus-visible:ring-ring w-24 rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none"
+                      className="border-input focus-visible:ring-ring disabled:bg-muted/40 w-24 rounded-md border bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:ring-1 focus-visible:outline-none disabled:cursor-default"
                       value={field.state.value}
                       onChange={(e) => field.handleChange(e.target.value)}
                       onBlur={field.handleBlur}
@@ -498,7 +574,7 @@ export function ScheduleForm({
                   </div>
                 )}
               </form.AppField>
-            </div>
+            </fieldset>
           </CollapsibleFieldCard>
         </div>
       </form>
@@ -514,30 +590,6 @@ export function ScheduleForm({
         onCancel={consent.dismiss}
         onConfirm={consent.confirm}
       />
-
-      {packageRefusal !== null && (
-        <div
-          role="status"
-          data-slot="package-owned-notice"
-          className="bg-muted/40 mx-4 my-3 shrink-0 space-y-2 rounded-md border px-3 py-2 text-xs"
-        >
-          <p>{packageRefusal}</p>
-          <p className="text-muted-foreground">
-            The package’s schedule keeps running unless you switch it off.
-          </p>
-          {onMakeCopy && (
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => onMakeCopy(copyFormValues(form.state.values))}
-            >
-              <Copy />
-              Make my own copy
-            </Button>
-          )}
-        </div>
-      )}
 
       {/* Footer uses form.Subscribe to reactively derive submit-button disabled state. */}
       <ResponsiveDialogFooter className="shrink-0 border-t px-4 py-3">

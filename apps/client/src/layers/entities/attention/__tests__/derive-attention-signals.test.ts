@@ -91,6 +91,7 @@ function schedule(overrides: Partial<Task> = {}): Task {
     defaultCron: '0 3 * * *',
     defaultTimezone: 'UTC',
     timingOverridden: false,
+    packageOwned: null,
     agentId: null,
     enabled: false,
     sticky: false,

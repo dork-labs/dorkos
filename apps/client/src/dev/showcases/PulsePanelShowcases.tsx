@@ -111,6 +111,7 @@ const PARKED_SCHEDULE: Task = {
   defaultCron: '0 2 * * *',
   defaultTimezone: 'UTC',
   timingOverridden: false,
+  packageOwned: null,
   agentId: null,
   enabled: false,
   sticky: false,
