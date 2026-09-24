@@ -184,6 +184,7 @@ export {
 export { RadioGroup, RadioGroupItem } from './radio-group';
 export type { RadioGroupItemProps } from './radio-group';
 export { SegmentedControl, SegmentedControlItem } from './segmented-control';
+export { PermissionStateSwitch, type PermissionStateSwitchProps } from './permission-state-switch';
 export {
   NavigationLayout,
   NavigationLayoutBody,

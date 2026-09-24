@@ -31,6 +31,11 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   return { ...actual, useConfig: vi.fn(), useUpdateConfig: vi.fn() };
 });
 vi.mock('@/layers/entities/mesh', () => ({ useSetOpenMesh: vi.fn() }));
+// The door also chooses the permission preset (spec `agent-permissions` D5).
+const presetMutateAsync = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/layers/entities/permissions', () => ({
+  useSetPermission: () => ({ mutateAsync: presetMutateAsync, isPending: false }),
+}));
 
 // The step's own flow-progress writes, which are what these tests assert.
 const completeStep = vi.fn();
@@ -112,6 +117,13 @@ describe('OnboardingPowerStep', () => {
     // The door's own atomic write (full body pinned in FullPowerDoor.test) fired,
     // then the mesh opened — the stage did not re-implement any of it.
     expect(configMutateAsync).toHaveBeenCalledTimes(1);
+    // The stage inherits the door's preset write, so a fresh install that
+    // accepts here gets Full power permissions too.
+    expect(presetMutateAsync).toHaveBeenCalledWith({
+      kind: 'preset',
+      preset: 'full',
+      surface: 'first-run',
+    });
     expect(meshMutateAsync).toHaveBeenCalledWith(true);
     // What the STAGE owns: the step is marked complete and the flow advances.
     await waitFor(() => expect(completeStep).toHaveBeenCalledWith('power'));
