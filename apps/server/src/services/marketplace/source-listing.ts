@@ -113,40 +113,66 @@ export async function refreshSourceListing(
 
 /**
  * Describe how the most recent fetch of a source's listing went (DOR-2324),
- * from the record the fetcher keeps beside the listing and the cached copy
- * itself.
+ * from the record the fetcher keeps beside the listing and the time the
+ * cached copy was fetched. The record carries the package count, so the
+ * listing itself is read only for a copy that has no count on record.
  *
- * A listing cached before those records existed has a copy and no record: it
- * reads as `fetched` at the copy's own date, not as `never`.
+ * - A failure is reported as `fetched` when the copy on disk was written
+ *   after that failed attempt started (strictly: the same millisecond proves
+ *   nothing): a success that began earlier but finished later is what is
+ *   listed now.
+ * - A copy with no record (cached before DOR-2324) reads as `fetched` at the
+ *   copy's own date, not as `never`.
  *
- * @param cache - The cache's two read doors.
+ * @param cache - The cache's read doors.
  * @param sourceName - The source's name.
  * @returns The source's last-fetch state.
  */
 export async function describeLastFetch(
-  cache: Pick<MarketplaceCache, 'readFetchStatus' | 'readMarketplace'>,
+  cache: Pick<MarketplaceCache, 'readFetchStatus' | 'readMarketplaceFetchedAt' | 'readMarketplace'>,
   sourceName: string
 ): Promise<SourceLastFetch> {
-  const [status, copy] = await Promise.all([
+  const [status, copyAt] = await Promise.all([
     cache.readFetchStatus(sourceName),
-    cache.readMarketplace(sourceName),
+    cache.readMarketplaceFetchedAt(sourceName),
   ]);
-  if (status && !status.ok) {
-    const reason = status.reason ?? 'no reason was recorded';
-    return copy
+  if (!copyAt) {
+    return status && !status.ok
       ? {
-          state: 'stale',
+          state: 'failed',
           checkedAt: status.checkedAt,
-          reason,
-          copyFetchedAt: copy.fetchedAt.toISOString(),
-          packageCount: copy.json.plugins.length,
+          reason: status.reason ?? 'no reason was recorded',
         }
-      : { state: 'failed', checkedAt: status.checkedAt, reason };
+      : { state: 'never' };
   }
-  if (!copy) return { state: 'never' };
+  // Strictly later: a copy stamped in the same millisecond the failed attempt
+  // started cannot be shown to be newer, so the failure is what is reported.
+  const copyIsNewer =
+    status !== null && !status.ok && copyAt.getTime() > Date.parse(status.startedAt);
+  if (!status || status.ok || copyIsNewer) {
+    return {
+      state: 'fetched',
+      checkedAt: status?.ok ? status.checkedAt : copyAt.toISOString(),
+      // Only a success's count is the count of this copy.
+      packageCount:
+        status?.ok && status.packageCount !== undefined
+          ? status.packageCount
+          : await countFromCopy(cache, sourceName),
+    };
+  }
   return {
-    state: 'fetched',
-    checkedAt: status?.checkedAt ?? copy.fetchedAt.toISOString(),
-    packageCount: copy.json.plugins.length,
+    state: 'stale',
+    checkedAt: status.checkedAt,
+    reason: status.reason ?? 'no reason was recorded',
+    copyFetchedAt: copyAt.toISOString(),
+    packageCount: status.packageCount ?? (await countFromCopy(cache, sourceName)),
   };
+}
+
+/** Count the packages in the cached copy itself, for a copy with no count on record. */
+async function countFromCopy(
+  cache: Pick<MarketplaceCache, 'readMarketplace'>,
+  sourceName: string
+): Promise<number> {
+  return (await cache.readMarketplace(sourceName))?.json.plugins.length ?? 0;
 }

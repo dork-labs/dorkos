@@ -157,7 +157,10 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.list_marketplaces',
       title: 'List marketplace sources',
       description:
-        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, and total package count.',
+        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, ' +
+        'total package count, and lastFetch: how the latest fetch of its listing went (never | fetched | ' +
+        'failed | stale, with the reason). A packageCount of 0 with lastFetch failed means the listing ' +
+        "didn't load, not that the marketplace is empty.",
       tier: 'observe',
       area: null,
       areaNote: 'reading',

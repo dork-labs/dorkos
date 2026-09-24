@@ -407,13 +407,14 @@ export class PackageFetcher {
     source: MarketplaceSource,
     options: { staleFallback?: boolean } = {}
   ): Promise<MarketplaceJson> {
+    const startedAt = new Date().toISOString();
     if (isFileUrl(source.source)) {
       try {
         const json = await this.readLocalMarketplaceJson(source);
-        await this.recordFetch(source.name, null);
+        await this.recordFetch(source.name, startedAt, json);
         return json;
       } catch (err) {
-        await this.recordFetch(source.name, err);
+        await this.recordFetch(source.name, startedAt, err);
         throw err;
       }
     }
@@ -421,13 +422,13 @@ export class PackageFetcher {
     try {
       const json = await this.fetchAndParseMarketplaceJson(url, source.name);
       await this.cache.writeMarketplace(source.name, json);
-      await this.recordFetch(source.name, null);
+      await this.recordFetch(source.name, startedAt, json);
       return json;
     } catch (err) {
       // Recorded as a failure even when an old copy is served below: the
       // record is about THIS attempt, and GET /sources pairs it with the
       // cached copy's own date to say "still showing the copy from …".
-      await this.recordFetch(source.name, err);
+      await this.recordFetch(source.name, startedAt, err);
       // Surface the attempted URL alongside the marketplace name so it's
       // obvious from the log whether the failure is a wrong URL (404 on a
       // typo'd org) or a genuine upstream outage.
@@ -447,18 +448,25 @@ export class PackageFetcher {
    * logged and never costs the caller its listing.
    *
    * @param marketplaceName - The source's name.
-   * @param failure - The error the attempt failed with, or `null` on success.
+   * @param startedAt - When the attempt started; decides which record is newer.
+   * @param outcome - The listing fetched, or the error the attempt failed with.
    */
-  private async recordFetch(marketplaceName: string, failure: unknown): Promise<void> {
+  private async recordFetch(
+    marketplaceName: string,
+    startedAt: string,
+    outcome: MarketplaceJson | unknown
+  ): Promise<void> {
+    const checkedAt = new Date().toISOString();
     try {
       await this.cache.writeFetchStatus(
         marketplaceName,
-        failure === null
-          ? { checkedAt: new Date().toISOString(), ok: true }
+        isFetchedListing(outcome)
+          ? { startedAt, checkedAt, ok: true, packageCount: outcome.plugins.length }
           : {
-              checkedAt: new Date().toISOString(),
+              startedAt,
+              checkedAt,
               ok: false,
-              reason: failure instanceof Error ? failure.message : String(failure),
+              reason: outcome instanceof Error ? outcome.message : String(outcome),
             }
       );
     } catch (err) {
@@ -795,6 +803,16 @@ export class PackageFetcher {
     });
     return `tmp-${Date.now()}`;
   }
+}
+
+/** True when a recorded outcome is a fetched listing rather than an error. */
+function isFetchedListing(outcome: unknown): outcome is MarketplaceJson {
+  return (
+    typeof outcome === 'object' &&
+    outcome !== null &&
+    !(outcome instanceof Error) &&
+    Array.isArray((outcome as { plugins?: unknown }).plugins)
+  );
 }
 
 /** True for a filesystem error that just means "no file there". */

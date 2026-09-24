@@ -351,7 +351,8 @@ describe('renderSourcesTable', () => {
   it('renders header + rows aligned to widest cell', () => {
     const table = renderSourcesTable([SOURCE_FIXTURE_A, SOURCE_FIXTURE_B]);
     const lines = table.split('\n');
-    expect(lines[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED\s+PACKAGES$/);
+    // A server older than DOR-2324 sends no lastFetch: no empty PACKAGES column.
+    expect(lines[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED$/);
     expect(lines[1]).toContain('dorkos-community');
     expect(lines[1]).toContain('https://github.com/dorkos/marketplace');
     expect(lines[1]).toContain('yes');
@@ -420,6 +421,7 @@ describe('renderSourcesTable', () => {
     ]);
     const row = (name: string) => table.split('\n').find((l) => l.startsWith(`${name} `)) ?? '';
 
+    expect(table.split('\n')[0]).toMatch(/^NAME\s+SOURCE\s+ENABLED\s+PACKAGES$/);
     expect(row('ok')).toMatch(/12 packages$/);
     expect(row('one')).toMatch(/1 package$/);
     expect(row('new')).toMatch(/not fetched yet$/);

@@ -79,10 +79,11 @@ function listingStatusOf(source: ListedMarketplaceSource): ListingStatus | null 
 }
 
 /** The status dot's label: an accurate one, not "Enabled" over a problem. */
-function statusLabel(enabled: boolean, listing: ListingStatus | null): string {
+function statusLabel(enabled: boolean, listing: ListingStatus | null, fetched: boolean): string {
   if (!enabled) return 'Disabled';
   if (listing?.kind === 'failed') return "Enabled, but its packages didn't load";
   if (listing?.kind === 'stale') return 'Enabled, but showing an older copy of its packages';
+  if (!fetched) return 'Enabled, not fetched yet';
   return 'Enabled';
 }
 
@@ -95,8 +96,10 @@ interface SourceCardProps {
   source: string;
   enabled: boolean;
   addedAt: string;
-  /** What went wrong with this source's listing on this visit, if anything. */
+  /** What went wrong with this source's listing, if anything. */
   listing: ListingStatus | null;
+  /** False until the server has fetched this source's listing at least once. */
+  fetched: boolean;
   onRefresh: () => void;
   isRefreshing: boolean;
   onRemove: () => void;
@@ -109,17 +112,22 @@ function SourceCard({
   enabled,
   addedAt,
   listing,
+  fetched,
   onRefresh,
   isRefreshing,
   onRemove,
   isRemoving,
 }: SourceCardProps) {
   const addedDate = formatWhen(addedAt);
+  // Neutral and hollow for a source nothing has fetched yet: green would claim
+  // packages are ready, and a filled grey dot already means Disabled.
   const dotColor = !enabled
-    ? 'text-muted-foreground'
+    ? 'fill-current text-muted-foreground'
     : listing
-      ? 'text-amber-500'
-      : 'text-emerald-500';
+      ? 'fill-current text-amber-500'
+      : fetched
+        ? 'fill-current text-emerald-500'
+        : 'fill-none text-muted-foreground';
 
   return (
     <div
@@ -128,8 +136,8 @@ function SourceCard({
     >
       <div className="flex min-w-0 items-start gap-3">
         <Circle
-          className={`mt-0.5 size-3 shrink-0 fill-current ${dotColor}`}
-          aria-label={statusLabel(enabled, listing)}
+          className={`mt-0.5 size-3 shrink-0 ${dotColor}`}
+          aria-label={statusLabel(enabled, listing, fetched)}
         />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{name}</p>
@@ -416,6 +424,8 @@ export function MarketplaceSourcesView() {
               enabled={s.enabled}
               addedAt={s.addedAt}
               listing={listingStatusOf(s)}
+              // An older server sends no record: say nothing rather than "not fetched".
+              fetched={s.lastFetch === undefined || s.lastFetch.state !== 'never'}
               onRefresh={() => handleRefresh(s.name)}
               isRefreshing={isRefreshing(s.name)}
               onRemove={() => removeSource.mutate(s.name)}

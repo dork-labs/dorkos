@@ -180,11 +180,21 @@ describe('MarketplaceSourcesView — each source listing (DOR-2304, DOR-2324)', 
     ).toBeInTheDocument();
   });
 
-  it('shows no note, and a plain Enabled dot, for a listing that loaded or was never fetched', async () => {
+  it('shows no note, and a plain Enabled dot, for a listing that loaded', async () => {
     record({ state: 'fetched', checkedAt: 'x', packageCount: 3 });
     renderView({});
     const row = await findRow('my-team');
     expect(within(row).getByLabelText('Enabled')).toBeInTheDocument();
+    expect(within(row).queryByText(/didn't load|Couldn't/)).not.toBeInTheDocument();
+  });
+
+  it('gives a never-fetched source a neutral dot that says so, and no note', async () => {
+    // Purpose: green would claim packages are ready; nothing has been fetched.
+    record({ state: 'never' });
+    renderView({});
+    const row = await findRow('my-team');
+    const dot = within(row).getByLabelText('Enabled, not fetched yet');
+    expect(dot.getAttribute('class')).not.toMatch(/emerald|amber/);
     expect(within(row).queryByText(/didn't load|Couldn't/)).not.toBeInTheDocument();
   });
 

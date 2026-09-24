@@ -458,8 +458,10 @@ describe('PackageFetcher', () => {
         await fetcher.fetchMarketplaceJson(buildSource());
 
         expect(cache.writeFetchStatus).toHaveBeenCalledWith('dorkos-community', {
+          startedAt: expect.any(String),
           checkedAt: expect.any(String),
           ok: true,
+          packageCount: buildMarketplaceJson().plugins.length,
         });
       });
 
@@ -477,6 +479,7 @@ describe('PackageFetcher', () => {
         await fetcher.fetchMarketplaceJson(buildSource());
 
         expect(cache.writeFetchStatus).toHaveBeenCalledWith('dorkos-community', {
+          startedAt: expect.any(String),
           checkedAt: expect.any(String),
           ok: false,
           reason: "there's no marketplace listing at that address",
@@ -495,6 +498,7 @@ describe('PackageFetcher', () => {
         ).rejects.toThrow();
 
         expect(cache.writeFetchStatus).toHaveBeenCalledWith('local', {
+          startedAt: expect.any(String),
           checkedAt: expect.any(String),
           ok: false,
           reason: "there's no marketplace listing in that folder",

@@ -139,8 +139,13 @@ export function renderSourcesTable(sources: MarketplaceSource[]): string {
   const sourceWidth = Math.max(headers.source.length, ...rows.map((r) => r.source.length));
   const enabledWidth = Math.max(headers.enabled.length, ...rows.map((r) => r.enabled.length));
 
+  // A server older than DOR-2324 sends no lastFetch at all: leave the column
+  // out rather than draw an empty one.
+  const showPackages = sources.some((s) => s.lastFetch !== undefined);
   const formatRow = (name: string, source: string, enabled: string, pkgs: string): string =>
-    `${padRight(name, nameWidth)}  ${padRight(source, sourceWidth)}  ${padRight(enabled, enabledWidth)}  ${pkgs}`.trimEnd();
+    `${padRight(name, nameWidth)}  ${padRight(source, sourceWidth)}  ${padRight(enabled, enabledWidth)}${
+      showPackages ? `  ${pkgs}` : ''
+    }`.trimEnd();
 
   const lines = [formatRow(headers.name, headers.source, headers.enabled, headers.packages)];
   for (const row of rows) {
