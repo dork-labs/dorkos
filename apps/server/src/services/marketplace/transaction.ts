@@ -425,7 +425,10 @@ async function runTransactionUnlocked<T>(opts: TransactionOptions<T>): Promise<T
   let record: InstallRecord;
   let superseded: InstallRecord[];
   try {
-    superseded = (await settleInterruptedInstall(opts.target)).kept;
+    // Our own staging dir sits beside the target with a record's name; the
+    // second check must not settle it out from under this transaction.
+    superseded = (await settleInterruptedInstall(opts.target, { ignore: new Set([stagingDir]) }))
+      .kept;
     record = await _internal.beginRecord(opts.target);
   } catch (err) {
     await runStageFailureCleanup(stagingDir);
@@ -583,15 +586,19 @@ export interface SettledInstallTarget {
  * this process is still writing the records it reads.
  *
  * @param target - Absolute path of the install target.
+ * @param opts - `ignore`: record paths to leave alone (this transaction's own staging dir).
  * @returns The records recovery kept, for the caller to release once its
  *   change finishes.
  * @throws When an interrupted install cannot be undone, or when another
  *   running DorkOS app may be mid-install on `target`; nothing was changed.
  */
-export async function settleInterruptedInstall(target: string): Promise<SettledInstallTarget> {
+export async function settleInterruptedInstall(
+  target: string,
+  opts: { ignore?: ReadonlySet<string> } = {}
+): Promise<SettledInstallTarget> {
   let report;
   try {
-    report = await recoverInterruptedInstall(target);
+    report = await recoverInterruptedInstall(target, opts);
   } catch (err) {
     throw new Error(
       `An earlier install at ${target} was interrupted and could not be undone, so nothing was changed: ${errMessage(err)}`,
