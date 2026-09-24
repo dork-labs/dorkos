@@ -4,6 +4,7 @@ covers:
   - 'fix(security): bound a git download while it runs, and its tree before checkout (DOR-2321)'
   - 'fix(security): size a blobless download before checkout, and stop git's whole process tree (DOR-2321)'
   - 'fix(security): give a git download one deadline and stop running git on exit (DOR-2321)'
+  - 'fix(shared): read file-open flags lazily, so a partial node:fs mock can import bounded-read (DOR-2321)'
 ---
 
 ### Security
