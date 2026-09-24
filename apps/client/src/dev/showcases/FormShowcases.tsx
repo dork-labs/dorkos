@@ -3,7 +3,6 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
-  Input,
   Textarea,
   Switch,
   Label,
@@ -32,7 +31,7 @@ import {
 } from '@/layers/shared/ui';
 import type { PermissionState } from '@dorkos/shared/permissions';
 
-/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, PermissionStateSwitch, Label, Command, BoundedNumberInput. */
+/** Client-local form showcases beyond the portable Input and Label pilot. */
 export function FormShowcases() {
   const [switchOn, setSwitchOn] = useState(true);
   const [checkA, setCheckA] = useState(true);
@@ -45,26 +44,6 @@ export function FormShowcases() {
 
   return (
     <>
-      <PlaygroundSection title="Input" description="Text input field variants.">
-        <ShowcaseLabel>Default</ShowcaseLabel>
-        <ShowcaseDemo>
-          <Input placeholder="Type something…" />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>With Label</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="space-y-1.5">
-            <Label htmlFor="demo-email">Email</Label>
-            <Input id="demo-email" type="email" placeholder="kai@example.com" />
-          </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Disabled</ShowcaseLabel>
-        <ShowcaseDemo>
-          <Input disabled placeholder="Disabled input" />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
       <PlaygroundSection title="Textarea" description="Multi-line text input.">
         <ShowcaseLabel>Default</ShowcaseLabel>
         <ShowcaseDemo>
@@ -341,21 +320,6 @@ export function FormShowcases() {
         <ShowcaseLabel>Disabled while saving</ShowcaseLabel>
         <ShowcaseDemo>
           <PermissionStateSwitch value="allowed" onChange={() => {}} disabled aria-label="Tasks" />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="Label"
-        description="Standalone label component for form accessibility."
-      >
-        <ShowcaseDemo>
-          <div className="space-y-3">
-            <Label>Default label</Label>
-            <div className="space-y-1.5">
-              <Label htmlFor="demo-label-input">Associated input</Label>
-              <Input id="demo-label-input" placeholder="Click the label above" />
-            </div>
-          </div>
         </ShowcaseDemo>
       </PlaygroundSection>
 

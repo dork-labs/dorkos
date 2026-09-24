@@ -39,7 +39,7 @@ We follow three principles inherited from Dieter Rams and Jony Ive:
 
 We avoid pure extremes. Pure white on screens produces glare; pure black creates harsh contrast. Instead, we use **off-white** and **near-black** — colors that feel natural and reduce eye strain.
 
-Tokens are defined as HSL custom properties in `:root`/`.dark` in `apps/client/src/index.css` and exposed to Tailwind via `@theme inline`. Use the Tailwind semantic class names in components, not raw hex values.
+Portable palette values live in `packages/ui/tokens.css` as namespaced HSL channels. The client bridges its existing semantic names in `apps/client/src/index.css`; sidebar, feature colors, fonts and geometry remain local. Use semantic classes, not raw hex values. See [shared UI ownership and release](shared-ui.md) for the package contract.
 
 ### Light Mode
 
@@ -61,7 +61,7 @@ Tokens are defined as HSL custom properties in `:root`/`.dark` in `apps/client/s
 | `bg-muted`              | `0 0% 9%`  | Subtle backgrounds       |
 | `bg-secondary`          | `0 0% 14%` | User message tint        |
 | `bg-card`               | `0 0% 4%`  | Elevated cards, popovers |
-| `text-foreground`       | `0 0% 93%` | Body text                |
+| `text-foreground`       | `0 0% 87%` | Body text                |
 | `text-muted-foreground` | `0 0% 64%` | Labels, metadata         |
 | `border-border`         | `0 0% 25%` | Card borders, inputs     |
 
@@ -1011,7 +1011,7 @@ Usage:
 
 **Parentheses, not brackets.** `size-(--size-icon-sm)` is Tailwind v4's syntax for "this arbitrary value is a custom property". The v3 spelling `size-[--size-icon-sm]` compiles to `width: --size-icon-sm`, which is not valid CSS — the browser drops it and the icon falls back to its intrinsic 24px. Two files shipped that way until DOR-1750; if an icon looks too big, check the brackets first.
 
-`Button` already applies `--size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Its `xs` and `icon-xs` sizes deliberately opt out and stay at a flat 12px — they are small chrome that should not grow.
+The shared `Button` applies its namespaced `--dui-size-icon-sm` to any `<svg>` a caller hands it unsized, so most icons inside a button need no class at all. Client-owned icon examples above keep the local token names. Its `xs` and `icon-xs` sizes deliberately opt out and stay at a flat 12px — they are small chrome that should not grow.
 
 ### Hover Pattern Mobile Alternatives
 

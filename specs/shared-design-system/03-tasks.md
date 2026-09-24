@@ -1,0 +1,145 @@
+# Shared UI foundations and first consumers — task breakdown
+
+Generated: 2026-09-23T20:14:23Z  
+Mode: full  
+Source: `specs/shared-design-system/02-specification.md`
+
+The JSON file is canonical. These tasks cover the frozen first slice; publication and private registry adoption remain gated.
+
+## Phase 1: Public foundations
+
+### Task 1.1: Create the public UI package and theme contract
+
+**Size:** large · **Priority:** high · **Depends on:** none · **Parallel with:** none
+
+Create packages/ui as @dork-labs/ui at 0.1.0 with ESM JavaScript, declarations, selected root/subpath exports, tokens.css and tailwind.css. Protect it from accidental publication while the package is under review. React and React DOM must be peers in the tested React 19 range and external to the build. The packed allowlist includes only necessary dist/CSS/metadata; CSS is marked as a side effect. Do not import apps, private code, credentials, transport, store, server, router, or the private @dorkos/icons package. Callers pass icons as children.
+
+Extract only portable palette values from apps/client/src/index.css into namespaced --dui-* HSL tokens. Supply .light and .dark explicit ancestor themes plus prefers-color-scheme fallback when no explicit theme is present; explicit choice wins. Preserve host font scaling, resets, editor/layer order, sidebar and feature colors. tailwind.css defines matching dui-* semantic colors and registers emitted package JavaScript as an explicit Tailwind 4 source. It must not add preflight, font imports, global reset, universal selectors, or a competing compiled utility sheet. Include standalone defaults for icon sizes. Establish stylesheet import order for Tailwind 4 consumers.
+
+Acceptance: package builds and resolves each documented export; source and packed file inspection show no private/app imports or extra files; a minimal theme fixture changes semantic colors under light, dark and system preference without host globals; the client palette bridge retains existing nonportable CSS and font scaling.
+
+### Task 1.2: Extract portable primitives and add Notice
+
+**Size:** large · **Priority:** high · **Depends on:** 1.1 · **Parallel with:** none
+
+Move the existing client Button, Input, Field, Label, Separator and pure touch-target support into packages/ui; use package-local cn implemented with clsx and tailwind-merge. Preserve prop APIs, ref forwarding, event behavior, data-slot attributes, Radix Slot/Label/Separator semantics, responsive sizes, reduced-motion behavior, existing 40px icon-sm/xs exceptions, and native Button default type=button. Keep PasswordInput and form-engine components local; the shared Input can be composed there. Use the namespaced dui-* colors from the package theme while retaining non-color sizing and interaction utilities.
+
+Add Notice with tone info/error/success, ordinary div props and children. Error tone defaults to role=alert; info and success do not announce by default, while callers may set role=status. Notice owns presentation only, with no parsing, dismissal, request or application-error logic. Empty app errors render nothing at the app boundary.
+
+Acceptance: original Button/Input/Field call patterns compile; native and Slot behavior, ref/event forwarding and explicit submit work; disabled and size variants render correctly; label/error IDs refer to mounted elements; Notice role behavior yields one intentional announcement; no application dependency is reachable from the package.
+
+### Task 1.3: Prove behavior and packed consumer distribution
+
+**Size:** large · **Priority:** high · **Depends on:** 1.1, 1.2 · **Parallel with:** none
+
+Add focused package behavior tests with purpose comments for Button native default type and explicit submit, Slot child event/ref composition, disabled state and preserved variants, Field label/error associations and error deduplication, and Notice role semantics. Fixtures must fail when a primitive does not render; no swallowed render errors.
+
+Build and pack @dork-labs/ui, then install that exact archive into a throwaway React 19 + Tailwind 4 consumer outside the monorepo/workspace, without source aliases. Build, typecheck and inspect rendered browser styles. Prove declarations and all selected exports resolve; React stays a single external peer instance; CSS files are present and side effects survive; Tailwind discovers classes in installed emitted JavaScript; light/dark/system plus explicit override, dark variants, opacity modifiers and responsive utilities produce actual styles. Inspect packed files and generated CSS size and reject unresolved workspace dependencies, private files and credentials. Record archive identity and tested tool versions for subsequent private local validation. Do not publish or use a fake registry version.
+
+Acceptance: focused package tests and independent consumer build/typecheck pass; browser-computed styles prove theme/source behavior; tarball inspection and dependency graph show only public files and dependencies; archive path and integrity are recorded for later tasks.
+
+## Phase 2: Public consumers
+
+### Task 2.1: Migrate the client facade and login form
+
+**Size:** large · **Priority:** high · **Depends on:** 1.3 · **Parallel with:** 2.2, 2.3, 2.5
+
+Make apps/client/src/layers/shared/ui/index.ts the supported FSD facade over @dork-labs/ui. Replace local pilot primitive implementations with re-exports, retaining necessary leaf re-exports where existing shared primitives import them, and remove duplicate ownership. Keep PasswordInput local and composed from package Input. Import package tokens.css and tailwind.css once, after Tailwind in the supported order, and bridge existing client color variables without changing sidebar/editor resets, feature colors, font scaling or layer order. Preserve embedded host styling boundaries.
+
+Update features/auth/ui/LoginScreen.tsx to use shared Field/Input/Button/Notice via the facade. Preserve password visibility, autocomplete/password-manager hints, submission including Enter, pending-disabled text, error detail/copy, focus, autofill and keyboard order. Give field errors real referenced IDs; render no Notice for empty errors; one failed request announces once. Ensure every intended submit uses type=submit because package Button defaults to button.
+
+Acceptance: client typecheck/build and focused auth/form tests pass; a real mocked login browser flow retains successful/failed submit, pending, visibility and keyboard behavior; theme and font-scale styles render in client and embedded CSS inspection finds no global leakage.
+
+### Task 2.2: Migrate Community Admission controls
+
+**Size:** large · **Priority:** high · **Depends on:** 1.3 · **Parallel with:** 2.1, 2.3, 2.5
+
+Add @dork-labs/ui to Community's public dependencies and consume package CSS once after Tailwind. In apps/community/src/browser/components/Admission.tsx use shared Field, FieldLabel, Input, Button and Notice for the selected sign-in controls. Change presentation only: preflight, invitation recovery, owner/member paths, account-mode toggles, focus, social sign-in, membership flow, copy and request logic remain local. Every action that submits must explicitly use type=submit; other actions use button semantics. Map package dui-* colors without globally renaming Community canvas/panel/ink tokens. Isolate or carefully layer the legacy unlayered input, button and :focus-visible selectors so they cannot override shared controls while preserving unconverted screens; remove obsolete class ownership only for converted controls.
+
+Acceptance: Community browser/component suites covering Admission, owner claim and member paths pass with mocked requests; keyboard focus, Enter submission, social actions, recovery, pending and one error announcement still work; computed styles show both explicit and system themes without unconverted screen regressions.
+
+### Task 2.3: Create a standalone catalog using package exports
+
+**Size:** large · **Priority:** medium · **Depends on:** 1.3 · **Parallel with:** 2.1, 2.2, 2.5
+
+Create apps/design-system as a standalone Vite React app named @dorkos/design-system that imports production @dork-labs/ui exports and package styles. It must not import the DorkOS client Transport, router singleton, app store, backend, credentials or private source. Render token swatches; Button variants/sizes, disabled and native/Slot form behavior; Input, Field labels/errors and Notice; light/dark/system controls; narrow-screen/long-label examples. Use real mounted components, never static replicas. Provide a deliberate error case and tests that fail on render errors rather than swallowing them.
+
+Make the app runnable with pnpm --filter @dorkos/design-system dev --port <port> --strictPort, using a caller-selected port. Do not wire it into root turbo dev or edit CI/pipeline/port infrastructure. Test production build and a browser smoke for visible fixtures, theme switching, keyboard operation and 390px layout.
+
+Acceptance: catalog runs independently, showcases real package exports and computed styles; no application provider or backend initialization occurs; build, fixture guard and browser smoke fail if a pilot primitive is missing or throws.
+
+### Task 2.4: Move pilot showcases and preserve the client playground
+
+**Size:** medium · **Priority:** medium · **Depends on:** 2.3, 2.1 · **Parallel with:** 2.2, 2.5
+
+Move only generic pilot token/Button/Input/Field/Notice showcase ownership from apps/client/src/dev into apps/design-system. Keep rooms, settings, simulator and other feature examples plus their mock transport, query/router and event providers in the client playground. Update playground-pages.ts, playground-registry.ts, navigation and links so each destination has a configurable URL. Preserve registry/coverage checks and the no-replica guard; expand or move guards to assert the catalog uses package exports and mount failures surface as test failures. Do not rewrite historical completed playground specs or migrate unrelated generic galleries.
+
+Acceptance: both destinations navigate to their proper examples; existing client feature simulations mount and registry tests pass; pilot galleries live in one catalog owner; a deliberately broken primitive causes catalog tests to fail.
+
+### Task 2.5: Prepare private sign-in adoption from the verified archive
+
+**Size:** large · **Priority:** medium · **Depends on:** 1.3 · **Parallel with:** 2.1, 2.2, 2.3
+
+In a separate private-repository worktree, prepare the account sign-in surface to consume the exact locally verified @dork-labs/ui archive. Keep private authentication, redirects, validation, notifications, copy and business components inside the private application. Adopt shared Button, Input, Field and Notice plus namespaced styles for one real sign-in form, preserving existing behavior. Any manifest change requiring a registry version that does not yet exist stays as a reviewable patch; never commit an absolute filesystem dependency, sibling-checkout link or fake published version. Refresh overlapping files against active work before integration. Keep private source paths, implementation details and credentials out of public artifacts and tracker descriptions.
+
+Acceptance: a reviewable private worktree/patch exists, local archive installation builds and typechecks independently, relevant private form suites and a mocked browser sign-in flow pass, and the public status records only contract-level results. This task is preparation, not released adoption.
+
+## Phase 3: Verification and docs
+
+### Task 3.1: Run public regression and browser proof
+
+**Size:** large · **Priority:** high · **Depends on:** 2.1, 2.2, 2.4 · **Parallel with:** 3.2, 3.3
+
+Inventory tests importing changed primitives directly and through parent components. Run focused package/client auth/form tests, the full client project suite because the FSD facade changes global ownership, and Community component/browser suites covering Admission, owner and member flows. Build/typecheck/lint affected public packages and the Obsidian plugin; inspect embedded CSS boundary without claiming unrun platform validation. Mock application requests and never invoke paid services.
+
+Run real browser checks of catalog and public forms in light, dark, system and explicit override; 390px and desktop; keyboard focus/Enter; disabled/loading/error; reduced motion; text scaling to 200%; long labels and overflow. Inspect computed styles and announcement semantics, not merely class strings. Check portal/host theme inheritance where used. Tests added for regressions include purpose comments and fail on missing rendered controls. Reconcile the open contrast correction work during integration without overwriting it; keep DOR-1808, DOR-1812, DOR-1861, DOR-1867 and DOR-1837 separate.
+
+Acceptance: required suites and builds pass with recorded commands/results; browser evidence demonstrates intended themes and interaction at narrow/wide sizes; no claim of desktop or embedded runtime verification is made from browser-only evidence.
+
+### Task 3.2: Validate the private preparation locally
+
+**Size:** medium · **Priority:** medium · **Depends on:** 2.5, 1.3 · **Parallel with:** 3.1, 3.3
+
+In the private worktree, install the exact locally packed public archive recorded by task 1.3 and run the private consumer's relevant build, typecheck, form tests and mocked browser sign-in proof. Verify one React installation, correct Tailwind source discovery from the installed package, theme choices, keyboard flow, pending state and error announcement. Check that auth and business logic remain private and no credentials or private files were copied into the public package. Reconcile any active file overlap before declaring the patch ready.
+
+Acceptance: private local validation has reproducible commands and results; the reviewable patch contains no absolute local dependency or fake published version; public task records contain only the package contract and pass/fail evidence. Publication-dependent delivery remains pending.
+
+### Task 3.3: Document ownership, styling and release procedure
+
+**Size:** medium · **Priority:** medium · **Depends on:** 1.3, 2.4 · **Parallel with:** 3.1, 3.2
+
+Update contributing/design-system.md, contributing/styling-theming.md, contributing/INDEX.md, the package README and catalog navigation instructions. Explain the public package ownership boundary, exports and tested React/Tailwind versions; CSS import order and explicit Tailwind 4 source discovery; dui-* theme activation/override behavior; app-local styling and intentional icon-sm/xs exceptions; catalog versus client feature playground; and the manual owner release procedure. Include package-name/organization authority check, intentional removal of publication guard, exact verified archive/version selection, private version pin/lockfile regeneration and consumer upgrade checks. State the private preparation/local validation result at contract level only and make publication and private delivery status explicit. Keep user-facing prose plain and avoid private implementation details.
+
+Acceptance: docs match implemented exports and commands, navigation links work, no claimed publication/adoption predates the gate, and the public ADR/manifest if present describes the final boundary accurately.
+
+### Task 3.4: Review the integrated release candidate
+
+**Size:** medium · **Priority:** high · **Depends on:** 3.1, 3.2, 3.3 · **Parallel with:** none
+
+Inspect the final public diff and packed archive against the frozen first-slice contract: one owner per pilot primitive, complete public forms, catalog using real exports, no dependency inversion, no private source/credential leakage, and all required proof. Refresh overlap against active public changes and carry forward the open contrast corrections. Run the repository's required verification gate and an independent review before any public PR; resolve findings, then present the exact package archive, version, integrity, test evidence and private local preparation status for human review. Do not imply the three-surface rollout is delivered until a published version is actually adopted privately.
+
+Acceptance: public PR-ready branch has passing required checks, independent review findings resolved or clearly recorded, reproducible archive identity and a reviewable release decision. Publication guard remains in place until explicit authorization.
+
+## Phase 4: Gated delivery
+
+### Task 4.1: Publish the reviewed package release
+
+**Size:** medium · **Priority:** high · **Depends on:** 3.4 · **Parallel with:** none
+
+GATED OUTWARD ACTION: wait for explicit human authorization of the exact reviewed @dork-labs/ui package release. Before enabling publication, confirm package-name availability and organization authority; intentionally remove the publication guard, choose a version, rebuild/pack and repeat independent packed-consumer checks against the exact archive. Publish only that verified archive through the approved owner procedure and record package version, integrity and release reference. Do not treat permission for another package as permission here. If authorization or authority is absent, leave this task pending and report the prepared candidate; do not call the project delivered.
+
+Acceptance: explicit authorization and authority are recorded, registry artifact matches verified archive/version, install from registry resolves JS/declarations/CSS with one React peer and computed styles, or task remains visibly pending with the reason.
+
+### Task 4.2: Pin the published version in the private sign-in consumer
+
+**Size:** medium · **Priority:** high · **Depends on:** 4.1, 2.5, 3.2 · **Parallel with:** none
+
+After the approved public version is available, replace the reviewable private local adoption patch with a normal registry dependency pinned to the real @dork-labs/ui version and regenerate its lockfile in the private repository. Re-run private build/typecheck, relevant form suites and mocked browser sign-in proof against the registry artifact; verify stylesheet source discovery and one React peer. Complete the normal private review/delivery gate without disclosing private details publicly. Preserve private auth, redirects, validation, notifications and business components. If publication is not authorized or not complete, leave this task pending; local archive proof from task 3.2 does not satisfy delivered adoption.
+
+Acceptance: private manifest and lockfile identify an actual published version, private validation passes using that installed registry artifact, and the public status records only contract-level completion evidence. The first slice is complete only when both public consumers and this private surface use the maintained package.
+
+## Dependency and gate summary
+
+Foundations (1.1 → 1.2 → 1.3) enable the client form, Community form, catalog and private preparation. The catalog and client facade enable showcase migration. Public and private proof plus documentation converge at integrated review (3.4). Publication (4.1) requires explicit human authorization; private version pin and delivery (4.2) requires the published release.
+
+The first slice is not delivered by the prepared private patch or by the public package alone. Tasks 4.1–4.2 stay pending until the release gate is satisfied.

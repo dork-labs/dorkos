@@ -162,6 +162,8 @@ export type {
 export { InlineCode } from './inline-code';
 export { Kbd } from './kbd';
 export { Label } from './label';
+export { Notice } from '@dork-labs/ui/notice';
+export type { NoticeProps, NoticeTone } from '@dork-labs/ui/notice';
 export { PasswordInput } from './password-input';
 export type { PasswordInputProps } from './password-input';
 export { ProvenanceChip } from './provenance-chip';

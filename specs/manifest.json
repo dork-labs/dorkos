@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260923-144507",
+      "slug": "shared-design-system",
+      "title": "One design system across DorkOS surfaces",
+      "created": "2026-09-23",
+      "status": "specified"
+    },
+    {
       "id": "260923-223844",
       "slug": "agent-permissions",
       "title": "Agent permissions: one default for everyone, a few agents set differently",

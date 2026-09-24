@@ -1,6 +1,6 @@
 import { useId, useState, type FormEvent } from 'react';
 import { Lock } from 'lucide-react';
-import { Button, Input, Label, PasswordInput } from '@/layers/shared/ui';
+import { Button, Field, FieldLabel, Input, Notice, PasswordInput } from '@/layers/shared/ui';
 import { describeAuthError } from '../lib/auth-error-copy';
 import { useSignIn } from '../model/use-auth-session';
 
@@ -17,6 +17,7 @@ interface LoginScreenProps {
 export function LoginScreen({ onSignedIn }: LoginScreenProps) {
   const emailId = useId();
   const passwordId = useId();
+  const errorId = useId();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const { run, isPending, error } = useSignIn();
@@ -46,37 +47,39 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor={emailId}>Email</Label>
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor={emailId}>Email</FieldLabel>
             <Input
               id={emailId}
               type="email"
               autoComplete="username"
+              aria-describedby={errorCopy ? errorId : undefined}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoFocus
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor={passwordId}>Password</Label>
+          </Field>
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor={passwordId}>Password</FieldLabel>
             <PasswordInput
               id={passwordId}
               autoComplete="current-password"
+              aria-describedby={errorCopy ? errorId : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-          </div>
+          </Field>
 
           {errorCopy && (
-            <div role="alert" className="space-y-1">
-              <p className="text-sm text-red-500">{errorCopy.message}</p>
+            <Notice id={errorId} tone="error" className="space-y-1">
+              <p>{errorCopy.message}</p>
               {/* The auth layer's own wording, kept so it can be searched or pasted. */}
               {errorCopy.detail && (
                 <p className="text-muted-foreground text-xs">{errorCopy.detail}</p>
               )}
-            </div>
+            </Notice>
           )}
 
           <Button type="submit" className="w-full" disabled={isPending}>

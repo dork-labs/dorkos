@@ -1,3 +1,4 @@
+import { Button, Field, FieldLabel, Input, Notice } from '@dork-labs/ui';
 import { useEffect, useRef, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, KeyRound, UsersRound } from 'lucide-react';
@@ -326,9 +327,9 @@ export function Admission({
         </h1>
         {intro && <p className="muted mb-7">{intro}</p>}
         {error && (
-          <div role="alert" className="notice error mb-4">
+          <Notice tone="error" className="mb-4">
             {error}
-          </div>
+          </Notice>
         )}
         {stage === 'failed' && failure ? (
           <AdmissionFailurePanel failure={failure} busy={busy} onRetry={() => void retryFailed()} />
@@ -359,9 +360,9 @@ export function Admission({
           <form className="panel" onSubmit={(event) => void preflight(event)}>
             {isOwner ? (
               <>
-                <div className="field">
-                  <label htmlFor="bootstrap-secret">Setup secret</label>
-                  <input
+                <Field className="mb-4 gap-1.5">
+                  <FieldLabel htmlFor="bootstrap-secret">Setup secret</FieldLabel>
+                  <Input
                     id="bootstrap-secret"
                     type="password"
                     autoComplete="off"
@@ -370,7 +371,7 @@ export function Admission({
                     required
                   />
                   <span className="hint">Provided by the person hosting this community.</span>
-                </div>
+                </Field>
               </>
             ) : (
               <div className="row mb-5">
@@ -378,14 +379,10 @@ export function Admission({
                 <span>Invitation link found</span>
               </div>
             )}
-            <button
-              className="button primary w-full"
-              type="submit"
-              disabled={busy || (!isOwner && !rawInvite)}
-            >
+            <Button className="w-full" type="submit" disabled={busy || (!isOwner && !rawInvite)}>
               {busy ? 'Checking…' : 'Continue'}
               <ArrowRight size={17} aria-hidden="true" />
-            </button>
+            </Button>
           </form>
         ) : (
           <form className="panel" onSubmit={(event) => void submitAccount(event)}>
@@ -393,41 +390,43 @@ export function Admission({
             {preview && <InvitationSummary preview={preview} />}
             {(isOwner || pendingAdmission) && (
               <div className="row mb-5" role="group" aria-label="Account">
-                <button
+                <Button
                   type="button"
                   aria-pressed={mode === 'signup'}
-                  className={`button ${mode === 'signup' ? 'primary' : ''}`}
+                  variant={mode === 'signup' ? 'default' : 'outline'}
+                  className="h-auto min-h-11 whitespace-normal md:min-h-9"
                   onClick={() => setMode('signup')}
                 >
                   {isOwner ? 'Create account' : 'Create an account on this host'}
-                </button>
+                </Button>
                 {!isOwner && (
-                  <button
+                  <Button
                     type="button"
                     aria-pressed={mode === 'signin'}
-                    className={`button ${mode === 'signin' ? 'primary' : ''}`}
+                    variant={mode === 'signin' ? 'default' : 'outline'}
+                    className="h-auto min-h-11 whitespace-normal md:min-h-9"
                     onClick={() => setMode('signin')}
                   >
                     Sign in to this host
-                  </button>
+                  </Button>
                 )}
               </div>
             )}
             {mode === 'signup' && (
-              <div className="field">
-                <label htmlFor="your-name">Your name</label>
-                <input
+              <Field className="mb-4 gap-1.5">
+                <FieldLabel htmlFor="your-name">Your name</FieldLabel>
+                <Input
                   id="your-name"
                   autoComplete="name"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
                   required
                 />
-              </div>
+              </Field>
             )}
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input
+            <Field className="mb-4 gap-1.5">
+              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <Input
                 id="email"
                 type="email"
                 autoComplete="email"
@@ -435,10 +434,10 @@ export function Admission({
                 onChange={(event) => setEmail(event.target.value)}
                 required
               />
-            </div>
-            <div className="field">
-              <label htmlFor="password">Password</label>
-              <input
+            </Field>
+            <Field className="mb-4 gap-1.5">
+              <FieldLabel htmlFor="password">Password</FieldLabel>
+              <Input
                 id="password"
                 type="password"
                 autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
@@ -452,31 +451,31 @@ export function Admission({
                   Forgot your password? Ask the person running this community for help.
                 </span>
               )}
-            </div>
+            </Field>
             {isOwner && (
               <>
                 <hr className="divider" />
-                <div className="field">
-                  <label htmlFor="community-name">Community name</label>
-                  <input
+                <Field className="mb-4 gap-1.5">
+                  <FieldLabel htmlFor="community-name">Community name</FieldLabel>
+                  <Input
                     id="community-name"
                     value={communityName}
                     onChange={(event) => setCommunityName(event.target.value)}
                     required
                   />
-                </div>
-                <div className="field">
-                  <label htmlFor="channel-name">First channel</label>
-                  <input
+                </Field>
+                <Field className="mb-4 gap-1.5">
+                  <FieldLabel htmlFor="channel-name">First channel</FieldLabel>
+                  <Input
                     id="channel-name"
                     value={channelName}
                     onChange={(event) => setChannelName(event.target.value)}
                     required
                   />
-                </div>
+                </Field>
               </>
             )}
-            <button className="button primary w-full" disabled={busy}>
+            <Button type="submit" className="w-full" disabled={busy}>
               {busy
                 ? 'Working…'
                 : isOwner
@@ -485,30 +484,30 @@ export function Admission({
                     ? 'Join community'
                     : 'Sign in'}
               <KeyRound size={16} aria-hidden="true" />
-            </button>
+            </Button>
           </form>
         )}
         {!isOwner && stage === 'account' && (providers.google || providers.github) && (
           <div className="row mt-4">
             {providers.google && (
-              <button
-                className="button"
+              <Button
+                variant="outline"
                 type="button"
                 disabled={busy}
                 onClick={() => void social('google')}
               >
                 Continue with Google
-              </button>
+              </Button>
             )}
             {providers.github && (
-              <button
-                className="button"
+              <Button
+                variant="outline"
                 type="button"
                 disabled={busy}
                 onClick={() => void social('github')}
               >
                 Continue with GitHub
-              </button>
+              </Button>
             )}
           </div>
         )}

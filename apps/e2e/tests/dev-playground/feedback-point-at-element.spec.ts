@@ -91,7 +91,7 @@ test.describe('Dev Playground — pointing at one element', () => {
     // Measured after the picker is up, not before: closing the dialog releases
     // its scroll lock, and a box read through a modal is a box read at a
     // different moment.
-    const target = page.getByRole('button', { name: 'Design Tokens' });
+    const target = page.getByRole('button', { name: 'Client Tokens' });
     const box = await target.boundingBox();
     expect(box, 'the spec needs a real, laid-out element to point at').not.toBeNull();
     if (!box) return;
@@ -215,7 +215,7 @@ test.describe('Dev Playground — pointing at one element', () => {
     );
 
     // The click was the picker's, not the nav button's. Pressing that control
-    // navigates to the Design Tokens page, which would unmount this showcase
+    // navigates to the Client Tokens page, which would unmount this showcase
     // and the dialog with it — so still being here IS the proof.
     //
     // Asked with the dialog CLOSED, and that is a finding rather than a tidy-up:

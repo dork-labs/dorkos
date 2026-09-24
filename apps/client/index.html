@@ -502,10 +502,11 @@
     </script>
     <script data-desktop-class-detect>
       (function () {
-        var t = localStorage.getItem('gateway-theme');
+        var t = localStorage.getItem('dorkos-theme');
         var dark =
           t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.classList.add('dark');
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.classList.toggle('light', !dark);
         // Desktop (Electron) shell detection, paint-safe: the preload script's
         // contextBridge runs before this inline script, so window.electronAPI
         // is already available here.
