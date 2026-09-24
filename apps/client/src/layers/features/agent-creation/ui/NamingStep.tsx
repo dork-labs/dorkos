@@ -18,6 +18,7 @@ import { FacePicker } from './FacePicker';
 import { RuntimePicker } from './RuntimePicker';
 import { AgentPreviewCard } from './AgentPreviewCard';
 import { OfferScheduleRows } from './OfferScheduleRows';
+import { PreviewRefusedNotice } from '@/layers/entities/marketplace';
 
 /** How many name suggestions to show per reroll. */
 const SUGGESTION_WINDOW = 4;
@@ -56,6 +57,8 @@ export interface NamingStepProps {
    * skipped. Always false for an agent designed from scratch — there is no package.
    */
   isCheckingOffer?: boolean;
+  /** The server's refusal of the offered package; blocks Create (DOR-2314). */
+  offerRefusal?: unknown;
 }
 
 /**
@@ -81,6 +84,7 @@ export function NamingStep({
   packageSchedules = [],
   offerCheckFailed = false,
   isCheckingOffer = false,
+  offerRefusal,
 }: NamingStepProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [rerollOffset, setRerollOffset] = useState(0);
@@ -284,6 +288,7 @@ export function NamingStep({
             />
           </dl>
         )}
+        {offerRefusal !== undefined && <PreviewRefusedNotice error={offerRefusal} />}
         {isCheckingOffer && (
           <p
             className="text-muted-foreground text-center text-xs"
@@ -296,7 +301,7 @@ export function NamingStep({
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={!form.canSubmit || isCreating || isCheckingOffer}
+          disabled={!form.canSubmit || isCreating || isCheckingOffer || offerRefusal !== undefined}
           data-testid="create-button"
         >
           {createLabel}

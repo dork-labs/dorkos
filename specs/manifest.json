@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260924-212851",
+      "slug": "agent-workspace-config",
+      "title": "An agent package can't ship its sessions' harness configuration",
+      "created": "2026-09-24",
+      "status": "specified",
+      "project": "Marketplace Package Management"
+    },
+    {
       "id": "260924-130508",
       "slug": "shared-ui-broader-adoption",
       "title": "Shared UI: broader primitive adoption and maintenance",

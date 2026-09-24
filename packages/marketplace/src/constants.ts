@@ -95,6 +95,17 @@ export const EFFECT_BEARING_PATHS = {
   // not list them yet, so no reader takes these two from here.
   agents: 'agents',
   outputStyles: 'output-styles',
+  // What a harness loads from an agent's working directory: Claude Code's
+  // settings, skills and subagents, Harness Sync's sources, Codex's, OpenCode's
+  // and Gemini CLI's project config (DOR-2314). No reader takes these from here; they
+  // are listed so none of them can be user-editable in any package.
+  claudeConfig: '.claude',
+  harnessSources: '.agents',
+  codexConfig: '.codex',
+  opencodeConfig: '.opencode',
+  opencodeJson: 'opencode.json',
+  opencodeJsonc: 'opencode.jsonc',
+  geminiConfig: '.gemini',
 } as const;
 
 /**

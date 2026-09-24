@@ -10,6 +10,7 @@ import { isSingleEmoji } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { CreationSeed } from '@/layers/shared/model';
 import { OfferScheduleRows } from './OfferScheduleRows';
+import { PreviewRefusedNotice } from '@/layers/entities/marketplace';
 
 /** Props for {@link ArrivalConfirm} — the M1 arrival confirm (one agent, no fork). */
 export interface ArrivalConfirmProps {
@@ -37,6 +38,12 @@ export interface ArrivalConfirmProps {
    * without a separate approval once the agent exists.
    */
   offerCheckFailed: boolean;
+  /**
+   * The server's refusal of the offered package, when its package checks
+   * refused it (DOR-2314). Unlike a failed check this blocks: the server will
+   * not install the package, so no agent is created from it.
+   */
+  offerRefusal?: unknown;
   /**
    * Where the agent will live once created (`defaultDirectory/slug`), using the
    * absolute directory the server reports. Empty until the config arrives — the
@@ -83,6 +90,7 @@ export function ArrivalConfirm({
   packageSchedules,
   isCheckingOffer,
   offerCheckFailed,
+  offerRefusal,
   resolvedDirectory,
   canSubmit,
   isCreating,
@@ -170,6 +178,8 @@ export function ArrivalConfirm({
         )}
       </dl>
 
+      {offerRefusal !== undefined && <PreviewRefusedNotice error={offerRefusal} />}
+
       {/* Actions */}
       <div className="flex flex-col gap-2">
         {!canSubmit && (
@@ -189,7 +199,7 @@ export function ArrivalConfirm({
         <Button
           size="lg"
           onClick={onCreate}
-          disabled={isCreating || !canSubmit || isCheckingOffer}
+          disabled={isCreating || !canSubmit || isCheckingOffer || offerRefusal !== undefined}
           data-testid="arrival-create"
         >
           {isCreating ? 'Creating…' : `Create ${displayName}`}
