@@ -68,8 +68,12 @@ export function AgentFilesAndCommandsRow({ agentId, files }: AgentFilesAndComman
     consent.run(next === 'autonomy', once);
   };
 
+  // The same words the area rows use; the source is added only when it is not
+  // simply the setting everyone has.
   const inheritedText = inherited
-    ? `${own ? 'Everyone else' : 'Same as everyone'}: ${stopLabel(inherited)} (${filesSourceText(files.inherited.source)})`
+    ? `${own ? `Everyone else: ${stopLabel(inherited)}` : `Same as everyone (${stopLabel(inherited)})`}${
+        files.inherited.source === 'runtime' ? ` · ${filesSourceText('runtime')}` : ''
+      }`
     : filesSourceText(files.inherited.source);
 
   return (

@@ -1,5 +1,6 @@
 import type { APIRequestContext } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { chooseFullPower, readPower, restorePower, type PowerSnapshot } from './full-power-preset';
 
 /**
  * Agent permissions, phase 1 (spec `agent-permissions`, DOR-2278): the session
@@ -61,12 +62,23 @@ async function roomExists(request: APIRequestContext, title: string): Promise<bo
 }
 
 test.describe('Agent permissions @permissions', () => {
+  // Full power moves the Files & commands stop too; put it back for the specs
+  // after this one on the same leg.
+  let prior: PowerSnapshot;
+  test.beforeAll(async ({ playwright }, testInfo) => {
+    const request = await playwright.request.newContext({ baseURL: testInfo.project.use.baseURL });
+    prior = await readPower(request);
+    await request.dispose();
+  });
+  test.afterAll(async ({ playwright }, testInfo) => {
+    const request = await playwright.request.newContext({ baseURL: testInfo.project.use.baseURL });
+    await restorePower(request, prior);
+    await request.dispose();
+  });
+
   test.beforeEach(async ({ request }) => {
     // Full power, as the first-run door leaves it; DorkBot back on the default.
-    const preset = await request.put('/api/permissions/preset', {
-      data: { preset: 'full', surface: 'api' },
-    });
-    expect(preset.ok()).toBe(true);
+    await chooseFullPower(request);
     const bot = await dorkbot(request);
     await request.patch(`/api/agents/${bot.id}/permissions`, {
       data: { areas: { rooms: null }, surface: 'api' },
@@ -158,5 +170,62 @@ test.describe('Agent permissions @permissions', () => {
     await request.patch('/api/permissions/defaults', {
       data: { areas: { rooms: null }, surface: 'api' },
     });
+  });
+
+  test('each preset sets every row, and Full power asks what Full autonomy means first', async ({
+    request,
+    page,
+  }) => {
+    // No acknowledgement on file, so Full power has to ask.
+    const cleared = await request.patch('/api/config', {
+      data: { ui: { autonomyAcknowledgedAt: null } },
+    });
+    expect(cleared.ok()).toBe(true);
+    await request.put('/api/permissions/preset', {
+      data: { preset: 'careful', surface: 'api' },
+    });
+
+    await page.goto('/?settings=permissions');
+    await page.waitForSelector('[data-testid="settings-dialog"]');
+    const picker = page.getByRole('radiogroup', { name: 'Preset' });
+    const row = (area: string) => page.getByTestId(`permission-row-${area}`);
+    /** A differing agent on this leg turns a preset choice into a question first. */
+    const keepTheirs = async () => {
+      const keep = page.getByRole('button', { name: 'Keep their settings' });
+      await keep.waitFor({ timeout: 1_500 }).then(
+        () => keep.click(),
+        () => undefined
+      );
+    };
+
+    // Careful, as chosen: every row follows its table.
+    await expect(picker.getByRole('radio', { name: 'Careful' })).toBeChecked();
+    await expect(row('rooms').getByRole('radio', { name: 'Ask' })).toBeChecked();
+    await expect(row('messages').getByRole('radio', { name: 'Allowed' })).toBeChecked();
+    await expect(row('reach').getByRole('radio', { name: 'Blocked' })).toBeChecked();
+    // A floor area never offers Allowed.
+    await expect(row('safety').getByRole('radio', { name: 'Allowed' })).toHaveCount(0);
+
+    // Balanced.
+    await picker.getByRole('radio', { name: 'Balanced' }).click();
+    await keepTheirs();
+    await expect(row('rooms').getByRole('radio', { name: 'Allowed' })).toBeChecked();
+    await expect(row('tasks').getByRole('radio', { name: 'Ask' })).toBeChecked();
+    await expect(row('reach').getByRole('radio', { name: 'Ask' })).toBeChecked();
+
+    // Full power goes through the consent step, and the yes is recorded with it.
+    await picker.getByRole('radio', { name: 'Full power' }).click();
+    await keepTheirs();
+    const consent = page.getByRole('alertdialog');
+    await expect(consent).toBeVisible();
+    await consent.getByRole('button', { name: /Turn on|Full autonomy/ }).click();
+    await expect(consent).toBeHidden();
+    await expect(row('tasks').getByRole('radio', { name: 'Allowed' })).toBeChecked();
+    await expect(row('packages').getByRole('radio', { name: 'Ask' })).toBeChecked();
+
+    const power = await readPower(request);
+    expect(power.trustStop).toBe('autonomy');
+    expect(power.autonomyAcknowledgedAt).not.toBeNull();
+    expect((await (await request.get('/api/permissions')).json()).preset).toBe('full');
   });
 });

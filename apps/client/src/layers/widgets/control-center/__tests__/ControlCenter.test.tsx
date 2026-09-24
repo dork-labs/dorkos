@@ -18,6 +18,9 @@ import { useAppStore } from '@/layers/shared/model';
 vi.mock('../ui/ControlCenterBody', () => ({
   ControlCenterBody: () => <div data-testid="cc-body" />,
 }));
+// The shell reads the permissions early so the picker is ready when it opens;
+// that read is the body's business, stubbed here with the body.
+vi.mock('@/layers/entities/permissions', () => ({ usePermissions: () => ({}) }));
 
 import { ControlCenter } from '../ui/ControlCenter';
 

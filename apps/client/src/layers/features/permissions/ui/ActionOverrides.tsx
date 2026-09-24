@@ -67,11 +67,14 @@ export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) 
   );
 
   return (
-    <div className="space-y-1" data-testid={`permission-actions-${area.id}`}>
+    <div
+      className="flex flex-col items-start gap-1 pb-3"
+      data-testid={`permission-actions-${area.id}`}
+    >
       {!open && own.length > 0 ? (
-        <ul className="space-y-1" data-testid={`permission-action-exceptions-${area.id}`}>
+        <ul className="w-full space-y-1" data-testid={`permission-action-exceptions-${area.id}`}>
           {own.map((action) => (
-            <li key={action.id} className="flex items-center justify-between gap-2 text-xs">
+            <li key={action.id} className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground min-w-0">
                 Except {action.title}: {STATE_LABEL[action.resolved.state]}
               </span>
@@ -84,7 +87,7 @@ export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) 
       <Button
         variant="ghost"
         size="sm"
-        className="text-muted-foreground h-7 self-start px-2 text-xs"
+        className="text-muted-foreground -ml-2 h-7 px-2 text-xs"
         aria-expanded={open}
         onClick={() => setOpen((was) => !was)}
       >
@@ -96,7 +99,7 @@ export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) 
       </Button>
 
       {open ? (
-        <ul className="divide-border divide-y" aria-label={`${area.label} actions`}>
+        <ul className="divide-border w-full divide-y" aria-label={`${area.label} actions`}>
           {area.actions.map((action) => {
             const here = setHere(action, scope);
             const hint = here

@@ -363,7 +363,7 @@ describe("an agent's Files & commands row", () => {
     render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
 
     const row = await screen.findByTestId('permission-row-files');
-    expect(within(row).getByText('Same as everyone: Act (The setting everyone has)')).toBeVisible();
+    expect(within(row).getByText('Same as everyone (Act)')).toBeVisible();
     expect(within(row).queryByRole('button', { name: /Reset/ })).not.toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('radio', { name: 'Ask first' }));
@@ -383,7 +383,7 @@ describe("an agent's Files & commands row", () => {
     render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
 
     const row = await screen.findByTestId('permission-row-files');
-    expect(within(row).getByText('Everyone else: Act (The setting everyone has)')).toBeVisible();
+    expect(within(row).getByText('Everyone else: Act')).toBeVisible();
     await userEvent.click(within(row).getByRole('button', { name: /Reset to default/ }));
     await waitFor(() =>
       expect(transport.patchAgentPermissions).toHaveBeenCalledWith('a1', {

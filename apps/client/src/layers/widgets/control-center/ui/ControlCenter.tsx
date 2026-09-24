@@ -6,6 +6,7 @@ import {
   ResponsivePopoverTrigger,
 } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { usePermissions } from '@/layers/entities/permissions';
 import { ControlCenterBody } from './ControlCenterBody';
 
 /**
@@ -32,6 +33,11 @@ export function ControlCenter() {
   const open = useAppStore((s) => s.controlCenterOpen);
   const setOpen = useAppStore((s) => s.setControlCenterOpen);
   const isMobile = useIsMobile();
+  // Read the permissions before the flyout opens, so its first control, the
+  // preset picker, is already there when the popover places focus. Loaded on
+  // open instead, the picker is still a placeholder at that moment and focus
+  // lands on whatever comes after it.
+  usePermissions();
 
   return (
     <ResponsivePopover open={open} onOpenChange={setOpen} modal>

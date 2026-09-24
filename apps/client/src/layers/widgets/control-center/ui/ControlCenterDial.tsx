@@ -21,24 +21,24 @@ export function ControlCenterDial() {
 
   return (
     <section className="@container flex flex-col gap-2" data-testid="control-center-dial">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">Power</p>
-          <p className="text-muted-foreground text-xs">
-            How much your agents may do without asking you first.
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground h-7 shrink-0 px-2 text-xs"
-          onClick={openAndClose(() => openSettings('permissions'))}
-        >
-          Edit permissions
-          <ChevronRight className="size-3.5" aria-hidden />
-        </Button>
+      <div>
+        <p className="text-sm font-medium">Power</p>
+        <p className="text-muted-foreground text-xs">
+          How much your agents may do without asking you first.
+        </p>
       </div>
       <PresetPicker surface="control-center" />
+      {/* After the picker, so the flyout's first focus lands on the choice
+          itself rather than on a link away from it. */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-muted-foreground h-7 self-start px-2 text-xs"
+        onClick={openAndClose(() => openSettings('permissions'))}
+      >
+        Edit permissions
+        <ChevronRight className="size-3.5" aria-hidden />
+      </Button>
     </section>
   );
 }

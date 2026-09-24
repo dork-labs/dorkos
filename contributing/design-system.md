@@ -928,19 +928,17 @@ Status indicators that depend on both per-entity configuration and global featur
 | `disabled-by-agent`  | Muted/dimmed appearance (`opacity-50`) | Agent manifest has explicitly opted out |
 | `disabled-by-server` | Hidden (not rendered)                  | Feature is disabled server-wide         |
 
-### 3-State Toggle Pattern (CapabilitiesTab)
+### Permission Override Pattern (`PermissionsPage`, `PermissionsTab`)
 
-The CapabilitiesTab uses a 3-state display for per-agent tool group toggles:
+The per-agent `enabledToolGroups` toggle this section used to describe is retired (spec `agent-permissions` D13); the reusable pattern lives on now as how the agent Permissions page (`apps/client/src/layers/features/profile/ui/pages/PermissionsPage.tsx`) and Settings → Permissions (`apps/client/src/layers/features/settings/ui/tabs/PermissionsTab.tsx`) display each area or action:
 
-| State                 | Visual                                        | Meaning                                               |
-| --------------------- | --------------------------------------------- | ----------------------------------------------------- |
-| Inherited (enabled)   | Switch ON, "Inherited" badge                  | Agent inherits the global default (enabled)           |
-| Overridden (disabled) | Switch OFF, "Overridden" badge                | Agent opts out of this tool group's documentation     |
-| Inherited (disabled)  | Switch OFF, disabled, "Server disabled" badge | Server feature flag is off; toggle is non-interactive |
+| State                                               | Visual                                              | Meaning                                                 |
+| --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------- |
+| Same as everyone                                    | "Same as everyone (Allowed)" label, no dot          | Agent inherits the install-wide default for this area   |
+| Set differently                                     | A dot beside the row, a **Reset to default** button | Agent has its own state for this area, set on this page |
+| Floor (Safety limits, Permissions, Reach & secrets) | Lock icon, Blocked/Ask only                         | The area can never resolve to Allowed at any layer      |
 
-The toggle writes to the agent manifest's `enabledToolGroups` field. When a toggle is flipped, it sets an explicit value; when reset, the field is removed (returning to inherited behavior).
-
-This pattern is reusable for any per-entity override of a global setting.
+Reading it back is three states resolved by one function (`resolvePermission`) rather than a boolean per toggle: Blocked, Ask, or Allowed, each carrying WHERE it came from (`source`: agent, default, preset, or floor) so the row can say "Same as everyone" versus "set here." This pattern — one dial with a resolved value and a labelled source, reset by clearing the override rather than flipping a switch — is reusable for any per-entity override of a global setting; it is not specific to permissions.
 
 ---
 

@@ -27,6 +27,8 @@ export interface PermissionRowProps {
   disabled?: boolean;
   /** Extra content under the switch, e.g. the "agents differ" chip. */
   footer?: ReactNode;
+  /** Full-width content under the whole row, e.g. the area's single actions. */
+  details?: ReactNode;
 }
 
 /**
@@ -48,6 +50,7 @@ export function PermissionRow({
   onReset,
   disabled = false,
   footer,
+  details,
 }: PermissionRowProps) {
   // Sized by its own width, not the viewport's: the agent page lives in a
   // narrow side panel on a wide screen, where a viewport breakpoint would put
@@ -95,6 +98,7 @@ export function PermissionRow({
           {footer}
         </div>
       </div>
+      {details}
     </div>
   );
 }

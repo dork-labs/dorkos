@@ -31,7 +31,7 @@ export interface PresetPickerProps {
 }
 
 /** "Full power, 2 changes"; "Full power" with none. */
-export function presetHeadline(preset: PermissionPreset, changeCount: number): string {
+function presetHeadline(preset: PermissionPreset, changeCount: number): string {
   if (changeCount === 0) return PRESET_LABEL[preset];
   return `${PRESET_LABEL[preset]}, ${changeCount} ${changeCount === 1 ? 'change' : 'changes'}`;
 }

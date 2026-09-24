@@ -77,12 +77,8 @@ function DefaultAreaRow({
         sourceText={defaultSourceText(area.resolved.source, overview.preset)}
         onChange={onChange}
         disabled={write.isPending}
-        footer={
-          <>
-            <ExceptionsChip area={area.id} areaLabel={area.label} agents={overriding} />
-            <ActionOverrides scope={{ kind: 'default' }} area={area} surface="settings" />
-          </>
-        }
+        footer={<ExceptionsChip area={area.id} areaLabel={area.label} agents={overriding} />}
+        details={<ActionOverrides scope={{ kind: 'default' }} area={area} surface="settings" />}
       />
       <ApplyToOverridesDialog
         open={pending !== null}
@@ -141,7 +137,7 @@ function AgentAreaRow({
       }}
       onReset={() => save(null)}
       disabled={write.isPending}
-      footer={
+      details={
         <ActionOverrides scope={{ kind: 'agent', agentId }} area={area} surface="agent-page" />
       }
     />

@@ -71,11 +71,13 @@ test.describe('Control Center @smoke', () => {
     // space must not silently flip a power setting the moment the flyout appears.
     await expect(page.locator('[role="switch"]:focus')).toHaveCount(0);
 
-    // It landed on the dial's selected stop — the first control in the flyout,
-    // inside the modal's focus scope, exactly where a keyboard user should
-    // resume. (The trigger is aria-hidden while the modal is open, which is the
-    // flip side of the same fact: focus is in the panel, not behind it.)
-    await expect(page.getByRole('radio', { name: 'Ask first' })).toBeFocused();
+    // It landed on the preset picker — the first control in the flyout, inside
+    // the modal's focus scope, exactly where a keyboard user should resume.
+    // (The trigger is aria-hidden while the modal is open, which is the flip
+    // side of the same fact: focus is in the panel, not behind it.) Which
+    // preset holds focus depends on this machine's choice, so the assertion is
+    // the group, not one radio.
+    await expect(controlCenter.presetPicker.locator('[role="radio"]:focus')).toHaveCount(1);
   });
 
   test('a power switch writes its config patch', async ({ controlCenter, page, request }) => {
@@ -176,5 +178,57 @@ test.describe('Control Center @smoke', () => {
     // top would obscure the glyph and this click would time out.
     await controlCenter.trigger.click();
     await expect(controlCenter.body).toBeVisible();
+  });
+
+  test("an agent's own permission is listed with a one-tap Reset", async ({
+    controlCenter,
+    basePage,
+    page,
+    request,
+  }) => {
+    // Give one agent a setting of its own through the same route the app uses.
+    const agents = (await (await request.get('/api/mesh/agents')).json()) as {
+      agents: { id: string }[];
+    };
+    const agentId = agents.agents[0]!.id;
+    const url = `/api/agents/${encodeURIComponent(agentId)}/permissions`;
+    const seeded = await request.patch(url, {
+      data: { areas: { rooms: 'blocked' }, surface: 'api' },
+    });
+    expect(seeded.ok()).toBe(true);
+
+    try {
+      await basePage.goto();
+      await basePage.waitForAppReady();
+      await controlCenter.open();
+
+      const row = page
+        .getByRole('listitem')
+        .filter({ has: controlCenter.overrideRow('agent-permission') })
+        .filter({ hasText: 'Rooms Blocked' });
+      await expect(row).toBeVisible();
+
+      const written = page.waitForResponse(
+        (response) => response.url().includes(url) && response.request().method() === 'PATCH'
+      );
+      await row.getByRole('button', { name: /^Reset / }).click();
+      expect((await written).ok()).toBe(true);
+
+      // The override is gone on disk, and one change was recorded from here.
+      await expect
+        .poll(async () => {
+          const view = (await (await request.get(url)).json()) as {
+            overrides: { areas?: Record<string, string> };
+          };
+          return view.overrides.areas?.rooms ?? null;
+        })
+        .toBeNull();
+      const history = (await (
+        await request.get(`/api/permissions/history?agentId=${agentId}&limit=1`)
+      ).json()) as { items: { metadata: { surface: string } }[] };
+      expect(history.items[0]?.metadata.surface).toBe('control-center');
+    } finally {
+      await request.patch(url, { data: { areas: { rooms: null }, surface: 'api' } });
+    }
   });
 });

@@ -9,7 +9,7 @@
  */
 export { PermissionList, type PermissionListProps } from './ui/PermissionList';
 export { PermissionHistory, type PermissionHistoryProps } from './ui/PermissionHistory';
-export { PresetPicker, presetHeadline, type PresetPickerProps } from './ui/PresetPicker';
+export { PresetPicker, type PresetPickerProps } from './ui/PresetPicker';
 export {
   DefaultFilesAndCommandsRow,
   type DefaultFilesAndCommandsRowProps,

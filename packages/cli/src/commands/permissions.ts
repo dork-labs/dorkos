@@ -41,7 +41,7 @@ import { printError, printJson, renderTable } from '../lib/operator-output.js';
 import { ACKNOWLEDGE_AUTONOMY_COMMAND, AUTONOMY_ACK_REQUIRED_CODE } from '../config-write.js';
 
 /** Help text for `dorkos permissions`. */
-export const PERMISSIONS_HELP = `Usage: dorkos permissions <subcommand> [options]
+const PERMISSIONS_HELP = `Usage: dorkos permissions <subcommand> [options]
 
 See and change what your agents may do without asking you first.
 
@@ -70,7 +70,7 @@ Examples:
 One agent's own settings: dorkos agent permissions <agent> --help`;
 
 /** Help text for `dorkos agent permissions`. */
-export const AGENT_PERMISSIONS_HELP = `Usage: dorkos agent permissions <agent> [subcommand] [options]
+const AGENT_PERMISSIONS_HELP = `Usage: dorkos agent permissions <agent> [subcommand] [options]
 
 See and change what one agent may do. <agent> is its id or its name.
 
@@ -226,7 +226,7 @@ interface RosterAgent {
  * @returns The agent's id.
  * @throws {Error} When no agent, or more than one, matches.
  */
-export async function resolveAgentRef(ref: string): Promise<{ id: string; name: string }> {
+async function resolveAgentRef(ref: string): Promise<{ id: string; name: string }> {
   const { agents } = await apiCall<{ agents: RosterAgent[] }>('GET', '/api/mesh/agents');
   const byId = agents.find((a) => a.id === ref);
   if (byId) return { id: byId.id, name: byId.displayName ?? byId.name };
@@ -268,7 +268,7 @@ function presetLine(overview: PermissionsResponse): string {
  * @param json - Print the raw overview.
  * @returns The intended process exit code.
  */
-export async function runPermissionsList(json: boolean): Promise<number> {
+async function runPermissionsList(json: boolean): Promise<number> {
   try {
     const overview = await apiCall<PermissionsResponse>('GET', '/api/permissions');
     if (json) {

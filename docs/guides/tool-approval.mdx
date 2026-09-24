@@ -40,8 +40,8 @@ When Claude wants to use a tool (writing a file, running a command, editing code
     **Click Approve** to allow this single action. Claude executes the tool and continues.
   </Step>
   <Step>
-    **Click Always Allow** (when available) to approve this action and grant a standing permission
-    so similar tool calls won't require approval for the rest of the session.
+    **Click Always Allow** (when available) to approve this action and skip approval for similar
+    tool calls for the rest of the session.
   </Step>
   <Step>
     **Or click Deny** to reject the tool call. Claude receives a denial and chooses a different
@@ -86,9 +86,17 @@ These tools never produce an approval card. That list is short and hand-picked, 
 When an approval card shows an **Always Allow** button, clicking it does two things:
 
 1. Approves the current tool call immediately
-2. Sends SDK permission updates back to Claude so that similar tool calls are auto-approved for the rest of the session
+2. Tells Claude to skip approval for similar tool calls for the rest of the session
 
-Not every approval card shows this button: it only appears when the SDK provides permission suggestions for the tool. The keyboard shortcut is <kbd>Shift+Enter</kbd>.
+Not every approval card shows this button: it only appears when Claude offers a permission suggestion for the tool. The keyboard shortcut is <kbd>Shift+Enter</kbd>.
+
+<Callout type="info">
+  This is a different setting from the **Always allow** you see on a request card at the top of
+  Home. This page's Always Allow remembers a specific tool call, for Claude's own file and command
+  work. The one on a request card is a permission for one agent and one DorkOS action — like opening
+  a room or removing a package — set on that agent's Permissions page. See
+  [Permissions](/docs/guides/permissions).
+</Callout>
 
 ## Batch Approvals
 
@@ -159,6 +167,10 @@ Each session has a trust setting — one dial with three stops — that decides 
 
 Plan mode is a separate toggle next to the composer, not a stop on the dial: it puts the session in read-only planning — Claude can investigate and propose a plan but cannot execute tools — and you switch it on for a stretch of work rather than leaving a session parked at it.
 
+### Where a new conversation starts
+
+This dial is what an agent's **Files & commands** setting decides for a new conversation before you touch it. DorkOS works out the starting stop in order: a session, task, or room turn you set yourself always wins; failing that, the agent's own Files & commands setting on its Permissions page; failing that, the setting for its runtime in **Settings → Runtimes**, if you set one; and otherwise the setting everyone has. Moving the dial here only ever changes this one conversation — to change where this agent's next conversation starts, set its Files & commands row on its Permissions page. See [Permissions](/docs/guides/permissions).
+
 <Callout type="info">
   **This covers what an agent does in a session: editing files, running commands, and working
   outside this project.** DorkOS's own risky actions still stop for you, like deleting a schedule or
@@ -223,7 +235,7 @@ Tools from MCP servers (prefixed with `mcp__`) are classified as **medium risk**
 ## Tips
 
 - **Read the full input.** Tool inputs can be long. Understanding the parameters before approving is worth the extra few seconds.
-- **Use Always Allow for repetitive approvals.** If Claude is performing many similar operations (e.g., editing multiple files), use Always Allow to grant a standing permission.
+- **Use Always Allow for repetitive approvals.** If Claude is performing many similar operations (e.g., editing multiple files), use Always Allow so it stops asking about that kind of call.
 - **Use batch actions for parallel operations.** When the batch bar appears, you can approve or deny all pending tools at once instead of handling them one by one.
 - **Deny when uncertain.** If you're not sure why Claude wants a tool, deny it and ask. Claude will explain.
 - **Check context first.** Claude often explains what it's about to do before requesting a tool. Read the assistant message before reviewing the approval card.

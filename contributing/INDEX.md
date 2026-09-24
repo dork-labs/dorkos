@@ -251,12 +251,11 @@ The **GitHub repo description** (the one-line tagline on github.com/dork-labs/do
 
 Cross-cutting renames that affect many docs at once. The Stop hook and `/docs:reconcile` should grep for these terms in `docs/` whenever source code removes them.
 
-| Old Term                  | New Term                  | Affected Docs                                                                                                                                        |
-| ------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Pulse`                   | `Tasks`                   | task-scheduler, relay-messaging, agent-coordination, configuration, cli-usage, index, quickstart, architecture, relay, agents, building-integrations |
-| `Damon`                   | `DorkBot`                 | agents, agent-coordination                                                                                                                           |
-| `pulse.db`                | `dork.db`                 | task-scheduler, architecture                                                                                                                         |
-| `agentContext.pulseTools` | `agentContext.tasksTools` | configuration                                                                                                                                        |
+| Old Term   | New Term  | Affected Docs                                                                                                                                        |
+| ---------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Pulse`    | `Tasks`   | task-scheduler, relay-messaging, agent-coordination, configuration, cli-usage, index, quickstart, architecture, relay, agents, building-integrations |
+| `Damon`    | `DorkBot` | agents, agent-coordination                                                                                                                           |
+| `pulse.db` | `dork.db` | task-scheduler, architecture                                                                                                                         |
 
 ### External Docs Maintenance
 
