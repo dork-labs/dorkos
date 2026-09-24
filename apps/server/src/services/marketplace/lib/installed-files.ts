@@ -168,9 +168,23 @@ function isAtOrUnder(posixPath: string, prefix: string): boolean {
  * @param absPath - The file to hash.
  */
 export async function hashFile(absPath: string): Promise<string> {
+  return `sha256:${await fileSha256Hex(absPath)}`;
+}
+
+/**
+ * The one per-file SHA-256 primitive: a file's bytes, streamed, as bare hex.
+ * {@link hashFile} spells it as the record does (`sha256:<hex>`); the package
+ * content hash (`content-hash.ts`, DOR-2306) folds it into a whole-tree hash.
+ * Every file DorkOS hashes goes through here, so there is one definition of a
+ * file's digest (DOR-2197).
+ *
+ * @param absPath - The file to hash.
+ * @returns 64 lowercase hex characters.
+ */
+export async function fileSha256Hex(absPath: string): Promise<string> {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(absPath)) hash.update(chunk as Buffer);
-  return `sha256:${hash.digest('hex')}`;
+  return hash.digest('hex');
 }
 
 /** What {@link lstatChain} found at a path. */

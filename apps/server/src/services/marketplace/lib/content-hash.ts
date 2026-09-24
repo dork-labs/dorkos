@@ -47,9 +47,9 @@
  * @module services/marketplace/lib/content-hash
  */
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { access, lstat, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { fileSha256Hex } from './installed-files.js';
 
 /**
  * Paths inside an install root that DorkOS writes after the package lands:
@@ -93,13 +93,6 @@ export class TreeUnhashableError extends Error {
   }
 }
 
-/** SHA-256 of a file's bytes, streamed. */
-async function hashFileBytes(absPath: string): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(absPath)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
-}
-
 /**
  * Hash every regular file under a tree: each file's path, execute bit and
  * byte hash, in path order. Links are never followed or recorded.
@@ -134,7 +127,7 @@ export async function hashTree(
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
   const outer = createHash('sha256');
   for (const file of files) {
-    const bytes = await hashFileBytes(file.abs);
+    const bytes = await fileSha256Hex(file.abs);
     outer.update(`F\0${file.rel}\0${file.executable ? 'x' : '-'}\0${bytes}\n`, 'utf8');
   }
   return `sha256:${outer.digest('hex')}`;

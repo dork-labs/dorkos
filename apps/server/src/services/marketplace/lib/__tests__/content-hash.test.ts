@@ -31,6 +31,16 @@ afterEach(async () => {
 });
 
 describe('hashTree', () => {
+  // Purpose (DOR-2197): an approval binds this hash (DOR-2306), so it must not
+  // change when the per-file digest is shared with the installed-files record's
+  // hashFile. Pinned for the fixture tree above; a different value here means
+  // every recorded approval would stop matching.
+  it('keeps the exact hash of a known tree', async () => {
+    expect(await hashTree(root)).toBe(
+      'sha256:40937766ce57782f21b212e574d747878ec991f8a45060cf809da1e79364ace6'
+    );
+  });
+
   it('changes when one file changes, even to the same size (the exploit)', async () => {
     // Purpose: approval binds bytes. A hostile script of the same length, or
     // any length, must not hash like the approved one.
