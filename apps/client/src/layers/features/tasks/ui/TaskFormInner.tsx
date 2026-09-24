@@ -523,7 +523,7 @@ export function ScheduleForm({
         >
           <p>{packageRefusal}</p>
           <p className="text-muted-foreground">
-            The package&apos;s schedule keeps running unless you switch it off.
+            The package’s schedule keeps running unless you switch it off.
           </p>
           {onMakeCopy && (
             <Button

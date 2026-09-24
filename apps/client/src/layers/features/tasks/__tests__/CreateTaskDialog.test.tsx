@@ -468,7 +468,7 @@ describe('CreateTaskDialog', () => {
 
       expect(await screen.findByText(REFUSAL)).toBeTruthy();
       expect(
-        screen.getByText("The package's schedule keeps running unless you switch it off.")
+        screen.getByText('The package’s schedule keeps running unless you switch it off.')
       ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Make my own copy' })).toBeTruthy();
     });

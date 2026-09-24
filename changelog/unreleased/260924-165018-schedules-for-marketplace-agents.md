@@ -2,6 +2,7 @@
 covers:
   - 'feat(tasks): read schedule ownership from the installed-files record (DOR-2272)'
   - 'feat(tasks): offer Make my own copy when an edit to a package schedule is refused (DOR-2272)'
+  - "fix(tasks): spell the copy notice's apostrophe the house way (DOR-2272)"
 ---
 
 ### Added
