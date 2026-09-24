@@ -27,7 +27,7 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, open, readdir, readFile, rename, rm, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
-import { INSTALLED_FILES_PATH, PackageTypeSchema } from '@dorkos/marketplace';
+import { INSTALLED_FILES_PATH, PACKAGE_DATA_DIR, PackageTypeSchema } from '@dorkos/marketplace';
 import { MARKETPLACE_UNINSTALL_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import { currentRecordOwner, formatRecordOwner } from './record-owner.js';
 import { readInstalledFiles, writeInstalledFiles, type InstalledFiles } from './installed-files.js';
@@ -162,8 +162,12 @@ async function listFiles(dir: string, rel = ''): Promise<string[]> {
   }
   for (const entry of entries) {
     const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...(await listFiles(dir, child)));
-    else out.push(child);
+    if (!entry.isDirectory()) out.push(child);
+    else {
+      // An empty folder counts: it is the person's, and keeps the root.
+      const inside = await listFiles(dir, child);
+      out.push(...(inside.length > 0 ? inside : [`${child}/`]));
+    }
   }
   return out;
 }
@@ -236,8 +240,8 @@ export async function rollBackUninstall(sibling: string, journal: UninstallJourn
 
 /**
  * Finish a committed uninstall: prune the root's record to the entries still
- * present and mark it uninstalled, then delete the sibling, and prune empty
- * directories. When nothing but the record would remain, the record and the
+ * present and mark it uninstalled, then delete the sibling, and remove the
+ * directories the uninstall emptied. When nothing but the record would remain, the record and the
  * root go too: an untouched package leaves nothing behind.
  *
  * @param sibling - The uninstall sibling.
@@ -252,7 +256,10 @@ export async function finishUninstall(sibling: string, journal: UninstallJournal
   // one the person deleted. Pruning again on a retry is harmless.
   if (record) await pruneRecord(root, record);
   await rm(sibling, { recursive: true, force: true });
-  await pruneEmptyDirs(root);
+  await pruneEmptiedDirs(
+    root,
+    journal.moves.map((m) => m.path)
+  );
   const remaining = await listFiles(root);
   if (remaining.length === 0 || (remaining.length === 1 && remaining[0] === INSTALLED_FILES_PATH)) {
     await rm(root, { recursive: true, force: true });
@@ -278,27 +285,20 @@ async function pruneRecord(root: string, record: InstalledFiles): Promise<void> 
   });
 }
 
-/** Remove empty directories under `root`, deepest first (never `root` itself). */
-async function pruneEmptyDirs(root: string, rel = ''): Promise<boolean> {
-  const dir = rel === '' ? root : fsPath(root, rel);
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return false;
+/**
+ * Remove the directories this uninstall emptied, deepest first: the folders
+ * that held a moved entry, and the package's data folder the installer made.
+ * Only those, so an empty folder the person made stays (never `root` itself).
+ */
+async function pruneEmptiedDirs(root: string, movedPaths: readonly string[]): Promise<void> {
+  const candidates = new Set<string>([PACKAGE_DATA_DIR, '.dork']);
+  for (const p of movedPaths) {
+    const segments = p.split('/');
+    for (let i = 1; i < segments.length; i++) candidates.add(segments.slice(0, i).join('/'));
   }
-  let empty = true;
-  for (const entry of entries) {
-    if (entry.isDirectory()) {
-      const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
-      if (!(await pruneEmptyDirs(root, child))) empty = false;
-    } else {
-      empty = false;
-    }
+  const deepestFirst = [...candidates].sort((a, b) => b.split('/').length - a.split('/').length);
+  for (const rel of deepestFirst) {
+    // rmdir refuses a directory that is not empty, which is the whole test.
+    await rmdir(fsPath(root, rel)).catch(() => undefined);
   }
-  if (empty && rel !== '') {
-    await rmdir(dir).catch(() => undefined);
-    return true;
-  }
-  return empty;
 }

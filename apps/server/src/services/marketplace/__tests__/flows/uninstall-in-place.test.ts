@@ -147,6 +147,24 @@ describe('in-place uninstall (DOR-2245)', () => {
     ).toContain('mine');
   });
 
+  // Purpose (code review 12, M23): an empty folder the person made is theirs,
+  // inside a package folder or not. It never moves with the package folder,
+  // and the tidy-up removes only folders the uninstall emptied.
+  it("keeps the person's empty folders, inside a package folder or not", async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { 'skills/a/SKILL.md': 's', 'skills/b/SKILL.md': 'b' });
+    await mkdir(path.join(root, 'skills', 'a', 'drafts'), { recursive: true });
+    await mkdir(path.join(root, 'inbox'), { recursive: true });
+    const result = await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
+    expect(await exists(path.join(root, 'skills', 'a', 'drafts'))).toBe(true);
+    // Never moved at all, so not reported as written during the uninstall.
+    expect(result.warnings).toBeUndefined();
+    expect(await exists(path.join(root, 'inbox'))).toBe(true);
+    expect(await exists(path.join(root, 'skills', 'a', 'SKILL.md'))).toBe(false);
+    expect(await exists(path.join(root, 'skills', 'b'))).toBe(false);
+  });
+
   // Purpose (code review 9): the .dork-old copy of an edited identity file is
   // made for an uninstall that finishes; a rolled-back one leaves no copy.
   it('removes the identity .dork-old copy when the uninstall rolls back', async () => {
