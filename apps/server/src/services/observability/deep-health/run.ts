@@ -23,9 +23,11 @@ import type { RoomSessionBinding } from '../../rooms/session-bindings/room-sessi
 import {
   checkAdapterEntries,
   checkDuplicateAgentIds,
+  checkInstalledPackages,
   checkRelayAccessRules,
   checkRelayBindingGhosts,
   checkRoomSessionTranscripts,
+  type InstalledPackageIntegrity,
   type RelayBinding,
 } from './checks.js';
 import { collectAgentManifests, listAgentHomeDirectories } from './collect.js';
@@ -53,6 +55,11 @@ export interface MeshAgentSource {
   listWithPaths(): ReadonlyArray<{ id: string; projectPath: string }>;
 }
 
+/** Every installation, verified against what was installed (DOR-2197). */
+export interface InstalledPackagesSource {
+  listIntegrity(): Promise<InstalledPackageIntegrity[]>;
+}
+
 /** Everything the deep checks may read. Each part is optional and degrades on its own. */
 export interface DeepHealthDeps {
   /** The resolved DorkOS data directory. */
@@ -68,6 +75,7 @@ export interface DeepHealthDeps {
   relay?: RelayAccessSource | undefined;
   adapters?: AdapterSource | undefined;
   mesh?: MeshAgentSource | undefined;
+  installedPackages?: InstalledPackagesSource | undefined;
   /**
    * Whether a missing subsystem is missing because it *failed*, rather than
    * because it was never turned on. An absent object cannot tell those apart,
@@ -94,6 +102,9 @@ export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckRe
     await contain('Chat connections are readable', () => adapterEntriesCheck(deps)),
     await contain('Chat connections point at real agents', () => bindingGhostCheck(deps)),
     await contain('Agent ids are unique', () => duplicateAgentIdCheck(deps)),
+    await contain('Installed packages match what was installed', () =>
+      installedPackagesCheck(deps)
+    ),
   ];
 }
 
@@ -167,6 +178,17 @@ function relayAccessCheck(deps: DeepHealthDeps): CheckResult {
     quarantined,
     ruleCount: quarantined ? 0 : deps.relay.listAccessRules().length,
   });
+}
+
+/** Installed packages that changed since install, or that an older DorkOS installed. */
+async function installedPackagesCheck(deps: DeepHealthDeps): Promise<CheckResult> {
+  if (!deps.installedPackages) {
+    return skipped(
+      'Installed packages match what was installed',
+      'the marketplace is not available'
+    );
+  }
+  return checkInstalledPackages({ installs: await deps.installedPackages.listIntegrity() });
 }
 
 /** Saved chat connections whose settings could not be read. */

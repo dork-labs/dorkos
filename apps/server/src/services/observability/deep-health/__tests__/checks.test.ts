@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   checkAdapterEntries,
   checkDuplicateAgentIds,
+  checkInstalledPackages,
   checkRelayAccessRules,
   checkRelayBindingGhosts,
   checkRoomSessionTranscripts,
@@ -185,5 +186,56 @@ describe('checkRelayBindingGhosts', () => {
     expect(result.label).toContain('1 chat connection is');
     expect(result.detail).toContain('chat connection that no longer exists');
     expect(result.detail).toContain('agent DorkOS does not know about');
+  });
+});
+
+describe('checkInstalledPackages (DOR-2197)', () => {
+  // Purpose: when every package matches what was installed, doctor says so.
+  it('passes when every installed package is as installed', () => {
+    const result = checkInstalledPackages({
+      installs: [
+        { name: 'flow', integrity: { status: 'clean', customized: [] } },
+        { name: 'dev', integrity: { status: 'unknown', reason: 'linked' } },
+      ],
+    });
+    expect(result).toEqual({
+      label: 'Installed packages match what was installed',
+      status: 'pass',
+    });
+  });
+
+  // Purpose: changed packages and packages an older DorkOS installed are named
+  // (names only, never paths), each with what to do about it.
+  it('names changed packages and older installs, with the fix', () => {
+    const result = checkInstalledPackages({
+      installs: [
+        {
+          name: 'flow',
+          integrity: { status: 'modified', changed: ['a'], missing: [], added: [], customized: [] },
+        },
+        { name: 'old', integrity: { status: 'unknown', reason: 'no-record' } },
+        { name: 'older', integrity: { status: 'unknown', reason: 'no-record' } },
+      ],
+    });
+    expect(result.status).toBe('warn');
+    expect(result.label).toBe('3 installed packages need a look');
+    expect(result.detail).toContain('Changed since install: flow.');
+    expect(result.detail).toContain('Installed by an older DorkOS: old, older.');
+    expect(result.fix).toContain('dorkos marketplace prepare old');
+    expect(result.detail).not.toMatch(/\//);
+  });
+
+  // Purpose: only changed packages means no prepare advice.
+  it('gives the update advice alone when nothing is an older install', () => {
+    const result = checkInstalledPackages({
+      installs: [
+        {
+          name: 'flow',
+          integrity: { status: 'modified', changed: [], missing: ['a'], added: [], customized: [] },
+        },
+      ],
+    });
+    expect(result.label).toBe('1 installed package changed since install');
+    expect(result.fix).not.toContain('prepare');
   });
 });

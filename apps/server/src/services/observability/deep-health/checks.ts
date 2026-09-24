@@ -13,6 +13,7 @@
  * @module services/observability/deep-health/checks
  */
 import type { CheckResult } from '@dorkos/shared/health-schemas';
+import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
 import type { RoomSessionBinding } from '../../rooms/session-bindings/room-session-ledger.js';
 
 /** Facts needed to judge whether room members still have a conversation to continue. */
@@ -243,6 +244,65 @@ export function checkRelayBindingGhosts(input: RelayBindingGhostInput): CheckRes
     detail: `${capitalize(parts.join('; '))}. Messages sent through them go nowhere.`,
     fix: 'Delete the stale connections on the Connections page, or re-add what they point at.',
   };
+}
+
+/** One installed package's name and integrity, as the installed list reports it. */
+export interface InstalledPackageIntegrity {
+  name: string;
+  integrity: InstallIntegrity;
+}
+
+/** Facts needed to judge the installed packages. */
+export interface InstalledPackagesInput {
+  /** Every installation, verified. */
+  installs: readonly InstalledPackageIntegrity[];
+}
+
+/**
+ * Installed packages whose files changed since install, and packages an older
+ * DorkOS installed without recording their files (DOR-2197).
+ *
+ * Names only, never paths: this response is content-free. A linked working
+ * copy, or a record that cannot be read, says nothing here; the Installed view
+ * and `dorkos marketplace installed --verify` show those.
+ *
+ * @param input - Every installation's integrity.
+ * @returns A `pass` when everything is as installed, otherwise a `warn`.
+ */
+export function checkInstalledPackages(input: InstalledPackagesInput): CheckResult {
+  const unique = (names: string[]): string[] => [...new Set(names)].sort();
+  const changed = unique(
+    input.installs.filter((i) => i.integrity.status === 'modified').map((i) => i.name)
+  );
+  const older = unique(
+    input.installs
+      .filter((i) => i.integrity.status === 'unknown' && i.integrity.reason === 'no-record')
+      .map((i) => i.name)
+  );
+  if (changed.length + older.length === 0) {
+    return { label: 'Installed packages match what was installed', status: 'pass' };
+  }
+  const total = changed.length + older.length;
+  const label =
+    older.length === 0
+      ? `${total} installed ${plural(total, 'package', 'packages')} changed since install`
+      : `${total} installed ${plural(total, 'package', 'packages')} need a look`;
+  const detail = [
+    changed.length > 0 && `Changed since install: ${changed.join(', ')}.`,
+    older.length > 0 &&
+      `Installed by an older DorkOS: ${older.join(', ')}. DorkOS can't tell their files from yours yet.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const fix = [
+    changed.length > 0 &&
+      'An update replaces the changed files and saves your copies beside them. See which files with:\n  dorkos marketplace installed --verify',
+    older.length > 0 &&
+      `Record an older install's files with:\n  dorkos marketplace prepare ${older[0]}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return { label, status: 'warn', detail, fix };
 }
 
 /** Singular/plural helper, matching the doctor renderer's. */

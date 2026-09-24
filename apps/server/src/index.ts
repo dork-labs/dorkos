@@ -250,6 +250,8 @@ import {
   rebuildLegacyRecords,
   type LegacySweepSummary,
 } from './services/marketplace/lib/integrity/legacy-record-sweep.js';
+import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
+import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -3763,6 +3765,19 @@ async function start() {
     relayFailedToStart: relayEnabled && !relayCore,
     adaptersFailedToStart: relayEnabled && Boolean(relayCore) && !adapterManager,
     meshFailedToStart: !meshCore,
+    // Every installation, verified against what was installed (DOR-2197): the
+    // same one-entry-per-installation scan the Installed view lists.
+    installedPackages: {
+      listIntegrity: async () => {
+        const scopes = (meshCore?.listWithPaths() ?? []).map((a) => ({
+          projectPath: a.projectPath,
+          id: a.id,
+          name: a.displayName ?? a.name,
+        }));
+        const verified = await withIntegrity(await scanInstallationsAcrossScopes(dorkHome, scopes));
+        return verified.map(({ name, integrity }) => ({ name, integrity }));
+      },
+    },
   } satisfies DeepHealthDeps;
 
   // The same live reads, for `GET /api/debug/*`. A separate bag from the one
