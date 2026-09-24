@@ -1,5 +1,6 @@
 /**
- * CLI handler for `dorkos update [name]`.
+ * CLI handler for `dorkos marketplace update [name]` (and its shorthand,
+ * `dorkos update [name]`).
  *
  * Advisory by default: prints one line per package — a newer version, up to
  * date, or could not check (and why). Pass `--apply` to reinstall the packages
@@ -18,13 +19,22 @@
  */
 import { parseArgs } from 'node:util';
 import type {
-  InstallationUpdateCheck,
   InstallationUpdatesResult,
   UpdateCheckResult,
   UpdateResult,
-  UpdateVersionSource,
 } from '@dorkos/shared/marketplace-schemas';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import {
+  formatUpdateLine,
+  formatVersion,
+  labelOf,
+  type PrintableCheck,
+} from '../lib/installation-label.js';
+import {
+  isOlderServer,
+  OLDER_SERVER_MESSAGE,
+  resolveProjectFlag,
+} from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runUpdate}. */
@@ -33,18 +43,15 @@ export interface UpdateArgs {
   name?: string;
   /** Apply the update (default: advisory only). */
   apply?: boolean;
-  /** Project path for project-local updates. */
+  /** Absolute project path for project-local updates, resolved against the caller's cwd. */
   projectPath?: string;
 }
 
-/** A check as this command prints it: any check, with its place when it has one. */
-type PrintableCheck = UpdateCheckResult & Partial<InstallationUpdateCheck>;
-
 /** One-line usage string surfaced in error messages. */
-const USAGE_LINE = 'Usage: dorkos update [<name>] [--apply] [--project <path>]';
+const USAGE_LINE = 'Usage: dorkos marketplace update [<name>] [--apply] [--project <path>]';
 
 /**
- * Parse the raw argv slice that follows `dorkos update`.
+ * Parse the raw argv slice that follows `dorkos marketplace update`.
  *
  * @param rawArgs - The argv slice after `update`.
  * @returns A typed {@link UpdateArgs} object.
@@ -62,19 +69,19 @@ export function parseUpdateArgs(rawArgs: string[]): UpdateArgs {
       strict: true,
     });
   } catch (err) {
-    rethrowUnknownOption(err, 'update', USAGE_LINE);
+    rethrowUnknownOption(err, 'marketplace update', USAGE_LINE);
   }
 
   const { values, positionals } = parsed;
   return {
     name: positionals[0],
     apply: Boolean(values.apply),
-    projectPath: typeof values.project === 'string' ? values.project : undefined,
+    projectPath: resolveProjectFlag(values.project),
   };
 }
 
 /**
- * Implements `dorkos update [name]`.
+ * Implements `dorkos marketplace update [name]`.
  *
  * @param args - Parsed update arguments.
  * @returns The intended process exit code: `0` on success, `1` when the server
@@ -130,17 +137,26 @@ async function updateOne(name: string, args: UpdateArgs): Promise<number> {
  * installation, so there is nothing left to loop over here.
  */
 async function updateAll(args: UpdateArgs): Promise<number> {
-  const result = args.apply
-    ? await apiCall<InstallationUpdatesResult>('POST', '/api/marketplace/updates', {
-        apply: true,
-        ...(args.projectPath && { projectPath: args.projectPath }),
-      })
-    : await apiCall<InstallationUpdatesResult>(
-        'GET',
-        `/api/marketplace/updates${
-          args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : ''
-        }`
-      );
+  let result: InstallationUpdatesResult;
+  try {
+    result = args.apply
+      ? await apiCall<InstallationUpdatesResult>('POST', '/api/marketplace/updates', {
+          apply: true,
+          ...(args.projectPath && { projectPath: args.projectPath }),
+        })
+      : await apiCall<InstallationUpdatesResult>(
+          'GET',
+          `/api/marketplace/updates${
+            args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : ''
+          }`
+        );
+  } catch (err) {
+    // This door has no 404 of its own (the CLI never sends `names`), so one is
+    // a DorkOS started before this CLI; anything else goes to the single catch.
+    if (!isOlderServer(err)) throw err;
+    console.error(OLDER_SERVER_MESSAGE);
+    return 1;
+  }
 
   if (result.checks.length === 0) {
     console.log('No installed packages to check.');
@@ -182,21 +198,6 @@ function couldNotCheck(packageName: string, reason: string): UpdateCheckResult {
 }
 
 /**
- * A package's name as a line starts with: bare for a global installation, and
- * followed by its agent (or project) for any other, so the same package in two
- * places reads as two different lines.
- */
-function labelOf(check: PrintableCheck): string {
-  const place = check.agentName ?? check.agentPath;
-  return place ? `${check.packageName} [${place}]` : check.packageName;
-}
-
-/** A version as a person reads it: a commit prints as `commit <short sha>`. */
-function formatVersion(version: string, source: UpdateVersionSource | undefined): string {
-  return source === 'commit' ? `commit ${version.slice(0, 7)}` : version;
-}
-
-/**
  * Print one line per check, then a summary that counts all three outcomes.
  * The summary never claims everything is up to date while any package could
  * not be checked.
@@ -204,16 +205,14 @@ function formatVersion(version: string, source: UpdateVersionSource | undefined)
 function renderUpdateChecks(checks: PrintableCheck[], apply: boolean): void {
   for (const check of checks) {
     const label = labelOf(check);
-    const installed = formatVersion(check.installedVersion, check.installedVersionSource);
     if (check.status === 'unknown') {
       console.log(`${label}  could not check: ${check.note ?? 'no reason given'}`);
       continue;
     }
     if (check.status === 'update-available') {
-      const latest = formatVersion(check.latestVersion, check.latestVersionSource);
-      const from = check.marketplace ? `  (${check.marketplace})` : '';
-      console.log(`${label}  ${installed} → ${latest}${from}`);
+      console.log(formatUpdateLine(check));
     } else {
+      const installed = formatVersion(check.installedVersion, check.installedVersionSource);
       console.log(`${label}  up to date (${installed})`);
     }
     // A caveat on a known answer: a rollback, or a check of the default branch.

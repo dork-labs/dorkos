@@ -36,7 +36,7 @@ describe('parseUninstallArgs', () => {
 
   it('throws on unknown option', () => {
     expect(() => parseUninstallArgs(['demo-pkg', '--nope'])).toThrow(
-      /Unknown option for 'uninstall': --nope/
+      /Unknown option for 'marketplace uninstall': --nope/
     );
   });
 });
@@ -131,5 +131,29 @@ describe('runUninstall', () => {
     expect(code).toBe(1);
     const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(allErr).toContain('Package not installed: demo-pkg');
+  });
+
+  it('prints the canonical retry command and exits 1 when a person must approve', async () => {
+    // Purpose: nothing was removed, so a script must not read success, and the
+    // retry line must name the canonical `dorkos marketplace uninstall`.
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      mockResponse(200, {
+        status: 'approval_required',
+        approvalId: 'appr_1',
+        approvalToken: 'appr_tok_1',
+        message: 'Removing demo-pkg needs your approval.',
+        retry: { instructions: 'Approve it in DorkOS, then retry.' },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const code = await runUninstall({ name: 'demo-pkg' });
+
+    expect(code).toBe(1);
+    const allErr = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allErr).toContain(
+      'Retry with: dorkos marketplace uninstall demo-pkg --approval appr_tok_1'
+    );
+    expect(logSpy).not.toHaveBeenCalled();
   });
 });

@@ -433,6 +433,12 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
   agentPath: z.string().optional(),
   agentId: z.string().optional(),
   agentName: z.string().optional(),
+  linked: z
+    .literal(true)
+    .optional()
+    .describe(
+      "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
+    ),
   applied: LocalInstallResultSchema.optional(),
   applyError: z.string().optional(),
 });
@@ -2276,6 +2282,12 @@ const InstalledPackageSchema = z.object({
   agentPath: z.string().optional(),
   agentId: z.string().optional(),
   agentName: z.string().optional(),
+  linked: z
+    .literal(true)
+    .optional()
+    .describe(
+      "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
+    ),
 });
 
 /**
