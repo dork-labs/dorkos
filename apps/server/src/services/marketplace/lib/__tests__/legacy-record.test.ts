@@ -5,7 +5,8 @@
  * is a fake at its seam.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -115,6 +116,38 @@ describe('rebuildInstalledFiles', () => {
     });
     expect(rejected.inferred).toBe(true);
   });
+
+  // Purpose (code review 3): the trust check runs under the install lock, so it
+  // must never open a FIFO (blocks forever) or follow a symlink (to /dev/zero,
+  // or to a huge file outside the root). Those count as differing files.
+  it(
+    'counts a FIFO and symlinks as differing without reading them',
+    { timeout: 10_000 },
+    async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 20; i++) files[`f${i}.md`] = `v${i}`;
+      const root = await legacyInstall(files);
+      const outside = await tree({ 'big.bin': 'v2' });
+      await rm(path.join(root, 'f0.md'));
+      execFileSync('mkfifo', [path.join(root, 'f0.md')]);
+      await rm(path.join(root, 'f1.md'));
+      await symlink('/dev/zero', path.join(root, 'f1.md'));
+      await rm(path.join(root, 'f2.md'));
+      await symlink(path.join(outside, 'big.bin'), path.join(root, 'f2.md'));
+
+      const record = await rebuildInstalledFiles(root, {
+        fetcher: fetcherFor(await tree(files)),
+        logger: noopLogger,
+      });
+
+      // 3 of 20 differ (15%, at least 3): the rebuild is rejected, and the
+      // fallback lists none of the three.
+      expect(record.inferred).toBe(true);
+      expect(Object.keys(record.files)).not.toEqual(expect.arrayContaining(['f0.md']));
+      expect(Object.keys(record.files)).not.toContain('f1.md');
+      expect(Object.keys(record.files)).not.toContain('f2.md');
+    }
+  );
 
   // Purpose: exactly 10% is still trusted (the rule is "more than 10%").
   it('accepts a rebuild at exactly 10% mismatches', async () => {

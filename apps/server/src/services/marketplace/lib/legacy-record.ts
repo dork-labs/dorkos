@@ -39,6 +39,7 @@ import {
   computeInstalledFiles,
   hashFile,
   isNeverCarried,
+  lstatChain,
   scanTree,
   writeInstalledFiles,
   type InstalledFiles,
@@ -178,7 +179,13 @@ export async function rebuildInstalledFiles(
   }
 }
 
-/** How many recorded files are present in the live root, and how many of those differ. */
+/**
+ * How many recorded files are present in the live root, and how many of those
+ * differ. Only a regular file reached through real directories is read: this
+ * runs under the install lock, and a FIFO would block it forever and a symlink
+ * could lead to `/dev/zero` or a huge file elsewhere. Anything else present at
+ * a recorded path is simply not the recorded file, so it counts as differing.
+ */
 async function compareWithLive(
   root: string,
   record: InstalledFiles
@@ -186,10 +193,10 @@ async function compareWithLive(
   let present = 0;
   let differing = 0;
   for (const [p, hash] of Object.entries(record.files)) {
-    const abs = fsPath(root, p);
-    if (!(await exists(abs))) continue;
+    const { kind } = await lstatChain(root, p);
+    if (kind === 'missing') continue;
     present++;
-    if ((await hashFile(abs)) !== hash) differing++;
+    if (kind !== 'file' || (await hashFile(fsPath(root, p))) !== hash) differing++;
   }
   return { present, differing };
 }
@@ -214,8 +221,12 @@ async function inferRecord(
   for (const [p, entry] of [...live.entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (entry.kind !== 'file' || !entry.hash || identityFiles.includes(p)) continue;
     for (const tree of opts.trees) {
-      const candidate = fsPath(tree, p);
-      if ((await exists(candidate)) && (await hashFile(candidate)) === entry.hash) {
+      // The trees hold package content, so the same care as the live root:
+      // only a regular file reached through real directories is read.
+      if (
+        (await lstatChain(tree, p)).kind === 'file' &&
+        (await hashFile(fsPath(tree, p))) === entry.hash
+      ) {
         files[p] = entry.hash;
         break;
       }
