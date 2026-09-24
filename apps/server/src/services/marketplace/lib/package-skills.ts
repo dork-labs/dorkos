@@ -16,39 +16,25 @@
  * under `commands/` (which plugin.json `commands` replaces). Every file is read
  * through {@link readPackageText}, so nothing outside the package is opened.
  *
- * ## Frontmatter is parsed as data only
- *
- * gray-matter evaluates `---js` frontmatter with `eval`. A package is untrusted
- * until a person approves it, and this preview runs before that, so every
- * engine but YAML and JSON is replaced with one that refuses; a file that asks
- * for one is reported unreadable, and so never approvable.
+ * Frontmatter is read with `parseFrontmatter`, which refuses anything but YAML
+ * or JSON (`---js` would otherwise run as code, DOR-2308) and anything that is
+ * not `key: value` fields. A file it refuses is reported unreadable, and so is
+ * never approvable.
  *
  * @module services/marketplace/lib/package-skills
  */
 import { lstat, readdir } from 'node:fs/promises';
 import { basename, dirname, join, normalize, posix } from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { PreviewSkillTools } from '../types.js';
 import { collectHooks, type PackageHooks } from './package-hooks.js';
-import { isRecord, readPackageText } from './package-declarations.js';
+import { readPackageText } from './package-declarations.js';
 
 /** What {@link readPackageSkills} found. */
 export interface PackageSkills extends PackageHooks {
   /** Every skill or command that lets the agent use tools without asking. */
   skillTools: PreviewSkillTools[];
 }
-
-/** An engine that refuses, for every frontmatter language that is not plain data. */
-const refuse = {
-  parse: (): never => {
-    throw new Error('only YAML and JSON frontmatter is read');
-  },
-};
-
-/** gray-matter options that parse YAML and JSON only, never code. */
-const DATA_ONLY = {
-  engines: { js: refuse, javascript: refuse, coffee: refuse, coffeescript: refuse, cson: refuse },
-};
 
 /** How deep a skills or commands folder is walked; deeper trees are unusual. */
 const MAX_DEPTH = 4;
@@ -169,8 +155,7 @@ export async function readPackageSkills(
     }
     let data: Record<string, unknown>;
     try {
-      const parsed = matter(read.text, DATA_ONLY);
-      data = isRecord(parsed.data) ? parsed.data : {};
+      data = parseFrontmatter(read.text).data;
     } catch {
       out.unreadable.push({ path });
       continue;
