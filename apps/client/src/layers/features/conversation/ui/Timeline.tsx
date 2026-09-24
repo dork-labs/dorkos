@@ -219,6 +219,25 @@ export interface ConversationTimelineProps {
 }
 
 /**
+ * Animate the jump to the newest message only when it is a short one.
+ *
+ * A long jump is instant on purpose. Past a burst of unmeasured rows the end
+ * moves on every frame as rows are measured, and the virtualizer re-aims a
+ * smooth scroll each time it does; each re-aim starts a new ease from where the
+ * last one had got to, so the scroll crawls. Measured in Chromium past forty
+ * new messages: more than five seconds to arrive, which reads as the button not
+ * working. Within one screen the rows are already drawn and measured, the end
+ * holds still, and the animation says where the reader went.
+ *
+ * @param scroller - The timeline's scrolling element, if it is mounted.
+ */
+function jumpBehavior(scroller: HTMLElement | null): ScrollBehavior {
+  if (scroller === null) return 'auto';
+  const remaining = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+  return remaining <= scroller.clientHeight ? 'smooth' : 'auto';
+}
+
+/**
  * Draw a conversation's history.
  *
  * **It is a feed** (WAI-ARIA `role="feed"`), which is what makes crossing a
@@ -461,6 +480,29 @@ export function ConversationTimeline({
   // must not leave an attribute on a row a later render reuses.
   useEffect(() => clearLandingMark, [clearLandingMark]);
 
+  /**
+   * Take the reader to the newest row: the jump button, the new-messages pill
+   * and a host's own handle all come through here.
+   *
+   * **The virtualizer does the scrolling, not the element** (DOR-2268). A row
+   * that has never been drawn is only an 80px estimate, so the scroller's
+   * `scrollHeight` at the moment of the press is where the end WOULD be if every
+   * unmeasured row were that tall. Aimed there, a smooth scroll past a burst of
+   * forty taller messages stopped two dozen rows short, and the reader pressed
+   * again, and again. `scrollToEnd` re-aims on every frame as rows come into
+   * view and are measured, so one press lands on the real end.
+   * `scroll.scrollToBottom` still runs first: it is what clears the pill and
+   * the button, and its element scroll is overtaken by the virtualizer's.
+   * How far the jump animates is {@link jumpBehavior}'s call.
+   */
+  const scrollToLatest = useCallback(
+    (opts?: { behavior?: ScrollBehavior }) => {
+      scroll.scrollToBottom(opts);
+      virtualizer.scrollToEnd({ behavior: opts?.behavior ?? 'auto' });
+    },
+    [scroll, virtualizer]
+  );
+
   useImperativeHandle(
     ref,
     () => ({
@@ -476,12 +518,9 @@ export function ConversationTimeline({
         requestAnimationFrame(() => focusRowElement(domId));
         return true;
       },
-      scrollToBottom(opts) {
-        scroll.scrollToBottom(opts);
-        virtualizer.scrollToEnd();
-      },
+      scrollToBottom: scrollToLatest,
     }),
-    [focusRowElement, domIdOf, rows, virtualizer, scroll]
+    [focusRowElement, domIdOf, rows, virtualizer, scrollToLatest]
   );
 
   const rowContext = useMemo(
@@ -642,7 +681,7 @@ export function ConversationTimeline({
         hasNewRows={scroll.hasNewRows}
         isAtBottom={scroll.isAtBottom}
         hasRows={rows.length > 0}
-        onJump={() => scroll.scrollToBottom({ behavior: 'smooth' })}
+        onJump={() => scrollToLatest({ behavior: jumpBehavior(scrollerRef.current) })}
       />
     </div>
   );

@@ -17,8 +17,10 @@ import {
   useRemoteCommunityRoom,
   useRemoteCommunityStream,
 } from '@/layers/entities/community';
+import type { ThreadReplySummary } from '@/layers/entities/room';
 import {
   Conversation,
+  ThreadReplyRow,
   type ConversationCapabilities,
   type ConversationRow,
   type ConversationTimelineHandle,
@@ -28,6 +30,12 @@ import type { ComposerInputHandle } from '@/layers/features/composer';
 import { RemoteCommunityAgents } from './RemoteCommunityAgents';
 import { useRemoteCommunityDrafts } from '../model/use-remote-community-drafts';
 import { RemoteCommunityMessage } from './RemoteCommunityMessage';
+import { remoteThreadReplies } from '../lib/remote-thread-replies';
+
+/** What a timeline row in a Community channel stands for. */
+type RemoteRow =
+  | { kind: 'message'; entry: RemoteCommunityEntry }
+  | { kind: 'replies'; rootId: string; summary: ThreadReplySummary };
 
 const CAPABILITIES: ConversationCapabilities = {
   reactions: false,
@@ -214,18 +222,47 @@ export function RemoteCommunitySurface({
   const visible = entries.filter((entry) =>
     threadId ? entry.id === threadId || entry.threadRootEntryId === threadId : entry.depth === 0
   );
-  const rows: ConversationRow[] = visible.map((entry) => ({
-    kind: 'message',
-    id: entry.id,
-    payload: entry,
-    grouping: { position: 'only' },
-    author: {
-      id: JSON.stringify([community, entry.authorId]),
-      kind: entry.authorKind,
-      displayName: entry.authorDisplayName,
-    },
-    at: entry.createdAt,
-  }));
+  // The reply line under each thread root, in the channel only: inside a
+  // thread the replies are on screen and the line would be counting them.
+  const replies = useMemo(
+    () =>
+      threadId
+        ? new Map<string, ThreadReplySummary>()
+        : remoteThreadReplies(history.data?.pages.flatMap((page) => page.entries) ?? [], entries),
+    [threadId, history.data, entries]
+  );
+  // One host row per timeline row, so `renderRow` can read back which it is.
+  const hostRows: RemoteRow[] = visible.flatMap((entry): RemoteRow[] => {
+    const summary = replies.get(entry.id);
+    return summary
+      ? [
+          { kind: 'message', entry },
+          { kind: 'replies', rootId: entry.id, summary },
+        ]
+      : [{ kind: 'message', entry }];
+  });
+  const rows: ConversationRow[] = hostRows.map((row) =>
+    row.kind === 'replies'
+      ? {
+          kind: 'thread-reply',
+          id: `${row.rootId}:replies`,
+          rootId: row.rootId,
+          replyCount: row.summary.count,
+          lastAt: row.summary.lastAt,
+        }
+      : {
+          kind: 'message',
+          id: row.entry.id,
+          payload: row.entry,
+          grouping: { position: 'only' },
+          author: {
+            id: JSON.stringify([community, row.entry.authorId]),
+            kind: row.entry.authorKind,
+            displayName: row.entry.authorDisplayName,
+          },
+          at: row.entry.createdAt,
+        }
+  );
   const target: ConversationTarget = {
     kind: 'room',
     id: JSON.stringify([community, roomId, threadId]),
@@ -460,9 +497,18 @@ export function RemoteCommunitySurface({
                   {history.isPending ? 'Loading messages…' : 'No messages here yet.'}
                 </p>
               }
-              renderRow={(_, context) => (
-                <RemoteCommunityMessage entry={visible[context.index]!} onThread={onThread} />
-              )}
+              renderRow={(_, context) => {
+                const row = hostRows[context.index]!;
+                if (row.kind === 'message')
+                  return <RemoteCommunityMessage entry={row.entry} onThread={onThread} />;
+                return (
+                  <ThreadReplyRow
+                    summary={row.summary}
+                    open={false}
+                    onOpen={() => onThread(row.rootId)}
+                  />
+                );
+              }}
             />
             {stream.deliveries
               .filter(

@@ -57,6 +57,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   channelMembers: '/api/v1/channels/:id/members',
   channelAgents: '/api/v1/channels/:id/agents',
   entries: '/api/v1/channels/:id/entries',
+  threads: '/api/v1/channels/:id/threads',
   channelAttachments: '/api/v1/channels/:id/attachments',
   channelReadCursor: '/api/v1/channels/:id/read-cursor',
   channelEvents: '/api/v1/channels/:id/events',
@@ -341,6 +342,48 @@ export const CommunityWireEntryPageQuerySchema = z.strictObject({
   cursor: cursor.optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
   thread: id.optional(),
+});
+
+/**
+ * Ask for the reply counts under up to one page of top-level entries, named by
+ * id as `roots=a,b,c`.
+ *
+ * A route of its own rather than a field on the entry, because every wire
+ * object is strict: a `thread` field on {@link CommunityWireEntrySchema} would
+ * make an older installation refuse every page an upgraded server sends. A
+ * caller that gets a 404 here is talking to a server from before this route
+ * and simply shows no counts.
+ */
+export const CommunityWireThreadSummaryQuerySchema = z.strictObject({
+  roots: z
+    .string()
+    .min(1)
+    .transform((roots) => roots.split(','))
+    .pipe(
+      z
+        .array(id)
+        .min(1)
+        .max(100)
+        .refine((ids) => new Set(ids).size === ids.length)
+    ),
+});
+/** One thread root's replies, as counted at one moment. */
+export const CommunityWireThreadSummarySchema = z.strictObject({
+  rootEntryId: id,
+  /** Replies below the root. Never counts the root itself, and never zero. */
+  replyCount: z.number().int().positive(),
+  lastReplyAt: timestamp,
+  /**
+   * The channel sequence of the newest reply counted. A reply the caller sees
+   * later with a higher `seq` arrived after this count and is not in it.
+   */
+  lastReplySeq: z.number().int().positive(),
+});
+/** One thread summary. See {@link CommunityWireThreadSummarySchema}. */
+export type CommunityWireThreadSummary = z.infer<typeof CommunityWireThreadSummarySchema>;
+/** Summaries for the asked-for roots that have replies; a root with none is left out. */
+export const CommunityWireThreadSummaryListSchema = z.strictObject({
+  threads: z.array(CommunityWireThreadSummarySchema).max(100),
 });
 
 /** A read cursor may only advance, and only to an authorized entry. */

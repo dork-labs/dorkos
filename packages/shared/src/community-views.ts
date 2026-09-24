@@ -61,6 +61,12 @@ export const RemoteCommunityEntrySchema = CommunityEntrySchema.extend({
   authorKind: z.enum(['human', 'agent']),
   /** Present only when the local owner's durable origin marker proves this install sent it. */
   originIdempotencyKey: z.string().min(1).max(128).optional(),
+  /**
+   * Beside `thread`, on a root read from history: the remote sequence of the
+   * newest reply that count includes. A reply loaded later with a higher
+   * `remoteSeq` arrived after the count and is added to it.
+   */
+  threadLastReplySeq: sequence.optional(),
   attachments: z.array(attachment).max(8),
 }).strict();
 /** Confirmed history; pending local output is a separate delivery state. */

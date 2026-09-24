@@ -1557,6 +1557,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /channels/:id/entries': 'ordinary posting',
   'GET /channels/:id/entries': 'ordinary reading',
   'GET /channels/:id/events': 'ordinary live stream',
+  'GET /channels/:id/threads': 'ordinary reading of reply counts',
   'GET /channels/:id/read-cursor': "the caller's own read position",
   'PUT /channels/:id/read-cursor': "the caller's own read position",
   'GET /attention': "the caller's own unread counts",

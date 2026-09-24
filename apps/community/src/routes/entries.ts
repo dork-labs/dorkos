@@ -6,6 +6,8 @@ import {
   CommunityWireEntryPageSchema,
   CommunityWireEntryPostRequestSchema,
   CommunityWireEntryPostResponseSchema,
+  CommunityWireThreadSummaryListSchema,
+  CommunityWireThreadSummaryQuerySchema,
   type CommunityWireEntry,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
@@ -23,6 +25,10 @@ import { ApiError, json, readJson } from '../http.js';
 import { resolveCommunityMentions } from '../mentions.js';
 import { attachmentsForEntries } from './attachments.js';
 import type { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
+
+/** Entry ids here are UUIDs; any other string names no entry and must not reach a `uuid` cast. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (value: string) => UUID.test(value);
 
 interface EntryRow {
   id: string;
@@ -356,5 +362,50 @@ export function registerEntryRoutes(
       };
     });
     return json(c, CommunityWireEntryPageSchema, page);
+  });
+
+  // Reply counts for up to one page of top-level entries. Read under the same
+  // channel lock and membership rule as the history the roots came from, so a
+  // caller can never learn more about a thread than it could read.
+  app.get('/channels/:id/threads', async (c) => {
+    const principal = await requirePrincipal(c, auth, pool, 'read');
+    const openedSession = principal.credentialHash
+      ? null
+      : await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!principal.credentialHash && !openedSession)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+    const parsed = CommunityWireThreadSummaryQuerySchema.parse(
+      Object.fromEntries(new URL(c.req.url).searchParams)
+    );
+    const threads = await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), principal, 'read');
+      requireJoined(channel);
+      await assertPrincipalCurrentInTransaction(
+        client,
+        principal,
+        'read',
+        openedSession?.session.id
+      );
+      const result = await client.query<{
+        root: string;
+        reply_count: string;
+        last_reply_at: Date;
+        last_reply_seq: string;
+      }>(
+        `SELECT thread_root_entry_id AS root, count(*)::text AS reply_count,
+                max(created_at) AS last_reply_at, max(seq)::text AS last_reply_seq
+           FROM entries
+          WHERE channel_id=$1 AND thread_root_entry_id = ANY($2::uuid[])
+          GROUP BY thread_root_entry_id`,
+        [channel.id, parsed.roots.filter(isUuid)]
+      );
+      return result.rows.map((row) => ({
+        rootEntryId: row.root,
+        replyCount: Number(row.reply_count),
+        lastReplyAt: row.last_reply_at.toISOString(),
+        lastReplySeq: Number(row.last_reply_seq),
+      }));
+    });
+    return json(c, CommunityWireThreadSummaryListSchema, { threads });
   });
 }

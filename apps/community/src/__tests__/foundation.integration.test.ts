@@ -304,6 +304,60 @@ describe('owner foundation over real HTTP and Postgres', () => {
     ).toBe(410);
   });
 
+  it('counts the replies under each asked-for root, and only those', async () => {
+    const postIn = async (body: Record<string, unknown>) =>
+      (await (await post(`/api/v1/channels/${channelId}/entries`, body, ownerCookie)).json())
+        .entry as { id: string; seq: number; createdAt: string };
+    const busy = await postIn({ text: 'busy root', idempotencyKey: 'count-root-busy' });
+    const quiet = await postIn({ text: 'quiet root', idempotencyKey: 'count-root-quiet' });
+    const replies = [];
+    for (const n of [1, 2, 3])
+      replies.push(
+        await postIn({ text: `reply ${n}`, parentEntryId: busy.id, idempotencyKey: `count-${n}` })
+      );
+    const summaries = async (roots: string) =>
+      request(`/api/v1/channels/${channelId}/threads?roots=${roots}`, {
+        headers: { cookie: ownerCookie },
+      });
+
+    const answer = await summaries(`${busy.id},${quiet.id},not-an-entry`);
+    expect(answer.status).toBe(200);
+    // The quiet root has no replies, so it is left out rather than sent as zero.
+    expect((await answer.json()).threads).toEqual([
+      {
+        rootEntryId: busy.id,
+        replyCount: 3,
+        lastReplyAt: replies[2]!.createdAt,
+        lastReplySeq: replies[2]!.seq,
+      },
+    ]);
+    // A later reply is counted on the next read, and its seq moves the watermark.
+    const fourth = await postIn({
+      text: 'reply 4',
+      parentEntryId: busy.id,
+      idempotencyKey: 'count-4',
+    });
+    const later = await (await summaries(busy.id)).json();
+    expect(later.threads[0]).toMatchObject({ replyCount: 4, lastReplySeq: fourth.seq });
+    // Another channel's roots are never counted through this one.
+    const other = (
+      await (await post('/api/v1/channels', { name: 'Counts elsewhere' }, ownerCookie)).json()
+    ).channel.id as string;
+    const foreign = await request(`/api/v1/channels/${other}/threads?roots=${busy.id}`, {
+      headers: { cookie: ownerCookie },
+    });
+    expect(foreign.status).toBe(200);
+    expect((await foreign.json()).threads).toEqual([]);
+    expect((await summaries('')).status).toBe(400);
+    // One page of roots at most: 101 is refused rather than silently cut.
+    const tooMany = Array.from({ length: 101 }, () => randomUUID()).join(',');
+    expect((await summaries(tooMany)).status).toBe(400);
+    // Nobody signed in reads nothing.
+    expect((await request(`/api/v1/channels/${channelId}/threads?roots=${busy.id}`)).status).toBe(
+      401
+    );
+  });
+
   it('keeps read cursors monotonic and rejects over-advance', async () => {
     const first = await request(`/api/v1/channels/${channelId}/read-cursor`, {
       headers: { cookie: ownerCookie },
@@ -359,6 +413,15 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(
       (await request(`/api/v1/channels/${channelId}/entries`, { headers: { cookie: bobCookie } }))
         .status
+    ).toBe(403);
+    // Reply counts follow the same rule as the history they describe: a
+    // community member who has not joined this channel reads neither.
+    expect(
+      (
+        await request(`/api/v1/channels/${channelId}/threads?roots=${randomUUID()}`, {
+          headers: { cookie: bobCookie },
+        })
+      ).status
     ).toBe(403);
     expect(
       (
@@ -491,6 +554,15 @@ describe('owner foundation over real HTTP and Postgres', () => {
     expect(
       (await request(`/api/v1/channels/${privateId}/entries`, { headers: { cookie: bobCookie } }))
         .status
+    ).toBe(404);
+    // A private channel the caller has not joined does not exist for them,
+    // reply counts included.
+    expect(
+      (
+        await request(`/api/v1/channels/${privateId}/threads?roots=${randomUUID()}`, {
+          headers: { cookie: bobCookie },
+        })
+      ).status
     ).toBe(404);
     expect(
       (
