@@ -36,6 +36,8 @@ import {
 import { commitAll } from '../services/rooms/repo/room-repo-git.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
+import { hashApprovalInput, type ApprovalService } from '../services/core/approvals/index.js';
+import { PERMISSION_AREA_IDS } from '@dorkos/shared/permissions';
 import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import { getRemoteConnectionStore } from '../services/communities/remote/state.js';
@@ -588,6 +590,56 @@ testControlRouter.post('/agent-token', async (req, res) => {
   res.json({ token });
 });
 
+/** What `POST /api/test/seed-approval` needs to raise one request card. */
+const seedApprovalSchema = z.object({
+  /** A real capability id, so the card's title and tier come from the registry. */
+  capabilityId: z.string().min(1),
+  /** The registered agent the card says asked. */
+  agentPath: z.string().min(1),
+  /** The permission area the request is in. A floor area draws the floor card. */
+  area: z.enum(PERMISSION_AREA_IDS),
+  /** The sentence the card shows. */
+  summary: z.string().min(1).max(500),
+});
+
+/**
+ * `POST /api/test/seed-approval` — raise a request card for an action no agent
+ * can reach yet in this phase, such as one in a floor area (spec
+ * `agent-permissions` phase 2 verification). It records the approval exactly
+ * as the gate's `ask()` would, through the real approval service, so the card a
+ * test answers is the production card. The agent must be registered here, for
+ * the reason `/agent-token` gives.
+ */
+testControlRouter.post('/seed-approval', async (req, res) => {
+  const parsed = seedApprovalSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+  }
+  const { capabilityId, agentPath, area, summary } = parsed.data;
+  const meshCore = req.app.locals.meshCore as
+    | { getByPath(projectPath: string): { name: string; displayName?: string } | undefined }
+    | undefined;
+  const agent = meshCore?.getByPath(agentPath);
+  if (!agent) {
+    return res.status(404).json({ error: `No agent is registered at ${agentPath}.` });
+  }
+  const approvals = req.app.locals.approvalService as ApprovalService | undefined;
+  if (!approvals) {
+    return res.status(503).json({ error: 'The approval service is not running on this server.' });
+  }
+  const ticket = approvals.request({
+    capabilityId,
+    inputHash: hashApprovalInput({ seeded: summary }),
+    summary,
+    requestedBy: agent.displayName ?? agent.name,
+    requestedByPath: agentPath,
+    area,
+  });
+  res.json({ approvalId: ticket.approvalId });
+});
+
 testControlRouter.post('/reset', async (_req, res) => {
   scenarioStore.reset();
   // Codes, DCR clients, and tokens the mock OAuth server minted. Without this a
@@ -636,7 +688,7 @@ testControlRouter.get('/connect-approved', (_req, res) => {
 
 const seedAgentSchema = z
   .object({
-    slot: z.enum(['shared', 'denied-access']).default('shared'),
+    slot: z.enum(['shared', 'denied-access', 'permission-requester']).default('shared'),
   })
   .default({ slot: 'shared' });
 
@@ -735,7 +787,7 @@ function fixtureAgentId(agentDir: string): string {
 const FIXTURE_AGENT_RUNTIME = 'codex';
 
 /**
- * Seed a test agent in one of two fixed slots inside the directory boundary —
+ * Seed a test agent in one of three fixed slots inside the directory boundary —
  * on disk AND in the mesh registry.
  *
  * Overwrites any existing manifest so tests always start with a clean agent.
@@ -762,7 +814,7 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * uses for a manifest already written by hand: it adopts the id on disk, adds
  * exactly one registry row, and announces nothing.
  *
- * **No cleanup is owed, because none accumulates.** Each of the two slots maps
+ * **No cleanup is owed, because none accumulates.** Each of the three slots maps
  * to one fixed directory and stable id. Re-seeding replaces that slot's row
  * rather than stacking rows. `POST /api/test/reset` does not touch mesh, and
  * does not need to.
@@ -789,12 +841,21 @@ testControlRouter.post('/seed-agent', async (req, res) => {
   const agentDir = e2eAgentDir(slot);
   const fixtureId = fixtureAgentId(agentDir);
   const deniedAccess = slot === 'denied-access';
+  // Its own agent, so the request-card spec's permission changes and its
+  // per-agent request limits never touch DorkBot, which other specs drive.
+  const requester = slot === 'permission-requester';
   const manifest: AgentManifest = {
     id: fixtureId,
-    name: deniedAccess ? 'E2E Denied Agent' : 'E2E Test Agent',
+    name: deniedAccess
+      ? 'E2E Denied Agent'
+      : requester
+        ? 'E2E Permission Requester'
+        : 'E2E Test Agent',
     description: deniedAccess
       ? 'Requests access that the owner denies.'
-      : 'Seeded by test setup — runs on the server default runtime',
+      : requester
+        ? 'Asks for permissions a person answers on the request card.'
+        : 'Seeded by test setup — runs on the server default runtime',
     runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
     // A fixture agent wears a face for the same reason a real one does: no

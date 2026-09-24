@@ -212,6 +212,15 @@ export interface CapabilityDefinition<
    */
   inSessionCard?: InSessionCardKind;
   /**
+   * This capability re-invokes ANOTHER action on the caller's behalf and passes
+   * a presented approval token on to it (spec `agent-permissions` D8). Only the
+   * request tool (`permissions.request_access`) declares it. It makes the tool
+   * advertise `approvalToken`, and hands the presented token to the handler as
+   * `context.approvalToken`, which no other handler ever receives. The token is
+   * still spent only by the gate, against the forwarded action's own binding.
+   */
+  forwardsApproval?: true;
+  /**
    * Resolve live server authority after parsing and before tier approval.
    *
    * Connector execution uses this hook so owner, actor, grant, target, and

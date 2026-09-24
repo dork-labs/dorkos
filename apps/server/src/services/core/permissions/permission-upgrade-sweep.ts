@@ -13,9 +13,10 @@
  *
  * It runs once per server version, after the mesh and Activity services are up,
  * behind the `permissions.upgradeSweptVersion` marker. It is a LIST of steps,
- * each returning the events it produced, so later phases add steps (ended
- * standing grants; the `tierCeiling` and `agentContext` folds) without
- * rewriting it. A step that fails on one agent logs it and moves on: an
+ * each returning the events it produced, so later phases add steps (the
+ * `tierCeiling` and `agentContext` folds) without rewriting it. Ended standing
+ * permissions are recorded beside it, not in it (`ended-standing-grants.ts`):
+ * they are owed whenever their capture file exists, not once per version. A step that fails on one agent logs it and moves on: an
  * unreadable manifest must never stop the server from booting.
  *
  * Agents discovered after the sweep are folded on read and written back on

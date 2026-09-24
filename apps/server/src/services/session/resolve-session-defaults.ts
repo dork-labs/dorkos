@@ -274,9 +274,8 @@ export function resolveSessionDefaults(opts: {
   // not filled in. Both mean the same thing and get the same answer: no
   // preference, so the runtime chooses. A missing setting is a reason to start
   // the session on the runtime's own default, never a reason to refuse to start
-  // it — the same tolerance `readStandingGrantVoidFloor`
-  // (`core/approvals/standing-grant-settings.ts`) and `resolveActiveClaudeRoot`
-  // already apply to this singleton, and for the same reason: the declared type
+  // it — the same tolerance `resolveActiveClaudeRoot` already applies to this
+  // singleton, and for the same reason: the declared type
   // does not admit that a boot-wired `let` is undefined before boot.
   const runtimes = opts.runtimes ?? configManager?.get('runtimes');
   const configured = section ? runtimes?.[section] : undefined;

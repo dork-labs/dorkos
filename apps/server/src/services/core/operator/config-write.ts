@@ -48,7 +48,6 @@ import {
 import { applyConfigPatch, deepMerge, describeConfigWrite } from './config-patch.js';
 import {
   describeOperatorOnlyRefusal,
-  findLoginRequiredPaths,
   findOperatorOnlyPaths,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
@@ -79,13 +78,12 @@ export interface ConfigWriteRefusal {
 }
 
 /**
- * Who is asking, expressed as the two questions a general-purpose door has to
- * put to its caller. Each returns `undefined` to allow, or the refusal to
- * answer with — and each is asked ONLY when the patch actually touches a
- * setting of that kind, so an authority is never consulted about a plain
- * preference.
+ * Who is asking, expressed as the question a general-purpose door has to put to
+ * its caller. It returns `undefined` to allow, or the refusal to answer with —
+ * and it is asked ONLY when the patch actually touches an `operator-only`
+ * setting, so an authority is never consulted about a plain preference.
  *
- * It is a pair of callbacks rather than a caller enum because the evidence
+ * It is a callback rather than a caller enum because the evidence
  * lives in different places: the HTTP route reads a session cookie and two
  * headers off the request, the CLI reads nothing at all. Keeping the SEQUENCE
  * here and the EVIDENCE at the caller is what lets one implementation serve a
@@ -93,13 +91,6 @@ export interface ConfigWriteRefusal {
  * of what counts as a person.
  */
 export interface ConfigWriteAuthority {
-  /**
-   * May this caller write settings that exist only when local login is on
-   * (`REQUIRES_LOGIN_CONFIG_PATHS`)?
-   *
-   * @param paths - The login-gated settings the patch touches.
-   */
-  refuseLoginRequired(paths: readonly string[]): ConfigWriteRefusal | undefined;
   /**
    * May this caller write `operator-only` settings — the ones whose change
    * removes or widens a control, or lets agents spend more on their own?
@@ -113,7 +104,7 @@ export interface ConfigWriteAuthority {
  * The identity `dorkos config set` writes under: the operator, at their own
  * terminal, on their own machine.
  *
- * ## Why it clears both bars
+ * ## Why it clears the operator bar
  *
  * The CLI is the person. It runs under their shell, in their session, on the
  * data directory they own — which is exactly the trust the cockpit has in the
@@ -123,17 +114,6 @@ export interface ConfigWriteAuthority {
  * person to `dorkos config edit`, which hands them the raw file with no policy,
  * no consent door and no log at all. A bar that is trivially walked around is
  * worse than none, because it reads like protection.
- *
- * The login bar is allowed for a sharper reason than that, and it is a decision
- * rather than an omission. `approvals.standingGrants` and its two siblings are
- * refused over HTTP while login is off because a caller could pre-arm them.
- * Applying the same rule here would refuse `dorkos config set
- * approvals.standingGrants false` — turning the switch OFF, the protective
- * direction, on the surface `standing-grant-posture.ts` names as the one that
- * has to work with no server running. The write is still recorded either way:
- * `ConfigManager` stamps `approvals.standingGrantsVoidBefore` on any narrowing
- * whichever process performs it, and boot re-checks the posture, so the CLI
- * cannot resurrect a permission by writing this file.
  *
  * ## What it does NOT clear
  *
@@ -173,22 +153,14 @@ export interface ConfigWriteAuthority {
  * nothing narrows the terminal half, because the terminal is the person.
  */
 export const LOCAL_OPERATOR_AUTHORITY: ConfigWriteAuthority = {
-  refuseLoginRequired: () => undefined,
   refuseOperatorOnly: () => undefined,
 };
 
 /**
  * The identity the `config_patch` operator tool writes under: an agent, acting
  * on the user's word, which may change preferences and nothing else.
- *
- * `refuseLoginRequired` allows, and that is not a hole: every path the login bar
- * guards is also `operator-only`, so the refusal below catches all three anyway.
- * Letting the operator-only bar answer is deliberate — "only a person can change
- * those settings" is the true and useful sentence for a model, where "turn
- * Require login on first" would send it to do something it also may not do.
  */
 export const OPERATOR_TOOL_AUTHORITY: ConfigWriteAuthority = {
-  refuseLoginRequired: () => undefined,
   refuseOperatorOnly: (paths) => ({
     status: 403,
     code: OPERATOR_ONLY_CONFIG_CODE,
@@ -321,14 +293,12 @@ function namesPermissions(patch: unknown): boolean {
 }
 
 /**
- * Apply a general-purpose config write: the two policy bars, the autonomy
- * consent door, the write itself, and the audit line — in that order, once.
+ * Apply a general-purpose config write: the policy bar, the autonomy consent
+ * door, the write itself, and the audit line — in that order, once.
  *
  * ## The order, and what each step of it decides
  *
- * 1. **The login bar.** Asked first so neither of the others can change the
- *    answer. Only three settings reach it, and only because the login-off
- *    posture would leave them pre-armable.
+ * 1. **The permissions refusal.** What agents may do is never written here.
  * 2. **The operator bar.** Which settings are the person's alone
  *    (`CONFIG_WRITE_POLICY`), and whether this caller counts as one.
  * 3. **The autonomy door.** Not an authority question: "may you" has already
@@ -342,17 +312,6 @@ function namesPermissions(patch: unknown): boolean {
  *
  * A refusal at any step writes nothing at all — the check runs before the merge
  * and the caller gets the reason, never a partial write.
- *
- * ## What is deliberately NOT here
- *
- * Ending standing permissions when a write narrows the posture
- * (`revokeStandingGrantsIfPostureNarrowed`) stays at the HTTP route. It acts on
- * an in-process store of live permissions, which exists in the server and
- * nowhere else; running it from `dorkos config set` would warn that a store it
- * never had is unwired. The invariant still holds for CLI writes by a different
- * route, spelled out in `standing-grant-posture.ts`: the gate re-reads the
- * switch on every call, boot re-checks the posture, and `ConfigManager` stamps
- * the void floor whichever process wrote.
  *
  * @param write - The patch, the caller's authority, and the source label.
  * @returns The stored config on success, or the refusal to answer with.
@@ -378,12 +337,6 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
         paths: ['permissions'],
       },
     };
-  }
-
-  const loginRequired = findLoginRequiredPaths(requested);
-  if (loginRequired.length > 0) {
-    const refusal = authority.refuseLoginRequired(loginRequired);
-    if (refusal) return { ok: false, kind: 'refused', refusal };
   }
 
   const operatorOnly = findOperatorOnlyPaths(requested);
@@ -470,14 +423,6 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
  * paths come out fully qualified because `section` is prefixed here. That is
  * exactly what a purpose-built writer can move, so a diff wider than its own
  * section would be reporting on nothing.
- *
- * The bound worth knowing: `ConfigManager.set` can move a leaf its caller never
- * named — it stamps `approvals.standingGrantsVoidBefore` when a write narrows
- * the standing-permission posture — and a section-scoped diff cannot see that.
- * It never bites today, because nothing on this list writes `auth` or
- * `approvals`. A writer that needs to should go through
- * {@link applyGuardedConfigWrite} instead, which diffs the whole config and
- * carries the policy that write would need anyway.
  *
  * Says nothing when nothing changed, so a writer that re-saves what is already
  * stored cannot fill the log.

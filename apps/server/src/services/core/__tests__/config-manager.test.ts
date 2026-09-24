@@ -4396,19 +4396,11 @@ describe('scrubRetiredOnboardingSteps migration (shorter first-run flow)', () =>
   });
 });
 
-describe('approvals section — standing permissions (DOR-501)', () => {
-  it('fresh install: the schema default has standing permissions switched OFF', () => {
-    // A safety feature does not arrive switched on. Nothing changes for anyone
-    // until they ask for it.
-    expect(USER_CONFIG_DEFAULTS.approvals).toEqual({
-      standingGrants: false,
-      trustWindowMinutes: 480,
-      // Nothing has been voided yet, which is the only honest starting point: an
-      // upgrade must not retroactively end permissions (DOR-520).
-      standingGrantsVoidBefore: null,
-    });
-  });
-
+describe('approvals section — the shipped 0.57.0 seed, frozen history (DOR-501)', () => {
+  // Standing permissions are retired (spec `agent-permissions` phase 2), and
+  // `'0.83.0'` deletes the section. The shipped `'0.57.0'` body still seeds it
+  // for an install upgrading from before it, and a shipped body may not change,
+  // so its behaviour stays pinned here.
   it('upgraded install: seeds the section OFF and leaves other settings alone', () => {
     const store = createMockStore({ auth: { enabled: true }, server: { port: 5000 } });
     backfillApprovalsDefaults(store);
@@ -4444,13 +4436,9 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // projectVersion is stated explicitly because SERVER_VERSION lags the
     // unreleased key this migration is filed under.
     //
-    // What this does NOT prove is that `backfillApprovalsDefaults` ran: suppress
-    // that body and every assertion here still passes (measured, DOR-1496).
-    // `approvals` is a whole TOP-LEVEL section, and conf merges `defaults` under
-    // the parsed file and WRITES the result before its first migration key, so
-    // the section reaches disk either way — unlike a nested seed such as
-    // `ui.promos`, where the body is the only writer. The body is pinned by the
-    // mock-store cases above; this one is about the upgrade boot surviving.
+    // The schema no longer declares `approvals`, so conf's pre-migration defaults
+    // merge no longer writes it: the `'0.57.0'` body is now the only writer, and
+    // `projectVersion` stops before `'0.83.0'` deletes it again.
     const dir = path.join(os.tmpdir(), 'test-dork-approvals-backfill-' + Date.now());
     const cfgPath = path.join(dir, 'config.json');
     fs.mkdirSync(dir, { recursive: true });
@@ -4500,233 +4488,6 @@ describe('approvals section — standing permissions (DOR-501)', () => {
     // thing this line is here to detect.
     expect(onDisk.ui.statusBar).toEqual({ pins: [] });
     fs.rmSync(dir, { recursive: true, force: true });
-  });
-});
-
-describe('the standing-permission posture floor (DOR-520)', () => {
-  // `ConfigManager` is the one seam every writer of these settings travels,
-  // including `dorkos config set` in a process with no database and no routes. It
-  // records the moment the settings stopped licensing standing permissions so the
-  // store can refuse the ones that moment invalidated. This describes the WRITE
-  // half; the read half is
-  // `services/core/approvals/__tests__/approval-grant-service.test.ts`.
-  let dir: string;
-
-  /** Both halves of the posture on, which is the only state a floor can move from. */
-  function licensed() {
-    const manager = initConfigManager(dir);
-    manager.setDot('auth.enabled', true);
-    manager.setDot('approvals.standingGrants', true);
-    return manager;
-  }
-
-  /** The stored floor, or `null` when nothing has narrowed. */
-  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
-    return manager.get('approvals').standingGrantsVoidBefore;
-  }
-
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-void-floor-'));
-  });
-
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('starts with no floor, because nothing has been voided', () => {
-    expect(floor(licensed())).toBeNull();
-  });
-
-  it('stamps the floor when the master switch is switched off', () => {
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor when login is switched off, which takes the same license away', () => {
-    const manager = licensed();
-    manager.setDot('auth.enabled', false);
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor on a whole-section write, which is how `PATCH /api/config` lands', () => {
-    const manager = licensed();
-    manager.set('approvals', {
-      standingGrants: false,
-      trustWindowMinutes: 480,
-      standingGrantsVoidBefore: null,
-    });
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor on `dorkos config reset`', () => {
-    const manager = licensed();
-    manager.reset();
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('stamps the floor on a reset of the approvals section alone', () => {
-    const manager = licensed();
-    manager.reset('approvals');
-    expect(floor(manager)).toEqual(expect.any(String));
-  });
-
-  it('moves nothing when an unrelated setting is written', () => {
-    // A floor that crept forward on every write would end standing permissions
-    // whenever anyone changed the log level — the same bug wearing better clothes.
-    const manager = licensed();
-    manager.setDot('logging.level', 'debug');
-    manager.set('ui', { ...manager.get('ui'), theme: 'dark' });
-    expect(floor(manager)).toBeNull();
-  });
-
-  it('moves nothing when a setting is switched ON', () => {
-    // Turning something on grants nothing and voids nothing. A permission is
-    // always a fresh human decision.
-    const manager = initConfigManager(dir);
-    manager.setDot('auth.enabled', true);
-    manager.setDot('approvals.standingGrants', true);
-    expect(floor(manager)).toBeNull();
-  });
-
-  it('leaves an existing floor alone when the settings are switched back on', () => {
-    // The stamp is what a later switch-on must NOT erase: erasing it is exactly
-    // how the permissions it voided would come back.
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const stamped = floor(manager);
-    manager.setDot('approvals.standingGrants', true);
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('records the narrowing a SECOND manager performs, which is what the CLI is', () => {
-    // The whole point of putting the marker in the config file: `dorkos config
-    // set` holds its own manager in its own process, so a marker anywhere the
-    // server owns would never be written at all.
-    const server = licensed();
-    const cli = new ConfigManager(dir);
-    cli.setDot('approvals.standingGrants', false);
-    cli.setDot('approvals.standingGrants', true);
-
-    expect(floor(server)).toEqual(expect.any(String));
-  });
-});
-
-describe('the posture floor is monotonic (DOR-520 review)', () => {
-  // The floor is only worth anything if it can never go backwards. The first
-  // version stamped on the licensed -> unlicensed TRANSITION, which meant any
-  // write performed while ALREADY narrowed could put the leaf back to its default
-  // and silently delete the marker. Review reproduced a live resurrection through
-  // `dorkos config reset` using only verbs this feature claims to cover.
-  let dir: string;
-
-  /** Both halves of the posture on. */
-  function licensed() {
-    const manager = initConfigManager(dir);
-    manager.setDot('auth.enabled', true);
-    manager.setDot('approvals.standingGrants', true);
-    return manager;
-  }
-
-  /** The stored floor, or `null` when nothing has narrowed. */
-  function floor(manager: ReturnType<typeof initConfigManager>): string | null {
-    return manager.get('approvals').standingGrantsVoidBefore;
-  }
-
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-floor-monotonic-'));
-  });
-
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('survives `dorkos config reset` performed while the switch is ALREADY off', () => {
-    // The reproduction. Every step is a verb this feature claims to cover.
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const stamped = floor(manager);
-    expect(stamped).toEqual(expect.any(String));
-
-    manager.reset();
-
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('survives `dorkos config reset approvals` performed while login is ALREADY off', () => {
-    // The same hole reached through the other half of the posture.
-    const manager = licensed();
-    manager.setDot('auth.enabled', false);
-    const stamped = floor(manager);
-    expect(stamped).toEqual(expect.any(String));
-
-    manager.reset('approvals');
-
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('survives a whole-section write that carries a stale null, while already narrowed', () => {
-    // What a batched `PATCH /api/config` does: `applyConfigPatch` computes the
-    // merged value ONCE from the pre-write snapshot, then writes each top-level
-    // section in turn. A section written after `auth` narrowed carries the
-    // snapshot's `standingGrantsVoidBefore: null` and used to erase the stamp.
-    const manager = licensed();
-    manager.setDot('auth.enabled', false);
-    const stamped = floor(manager);
-
-    manager.set('approvals', {
-      standingGrants: true,
-      trustWindowMinutes: 60,
-      standingGrantsVoidBefore: null,
-    });
-
-    expect(floor(manager)).toBe(stamped);
-  });
-
-  it('advances the floor on a SECOND narrowing rather than leaving the first one', () => {
-    // Defense in depth: the routes refuse to create a permission while the switch
-    // is off, so nothing can be granted between the two narrowings today. A floor
-    // that silently stopped moving would be a trap for whoever changes that.
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-07-26T10:00:00.000Z'));
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const first = floor(manager)!;
-
-    manager.setDot('approvals.standingGrants', true);
-    vi.setSystemTime(new Date('2026-07-26T11:00:00.000Z'));
-    manager.setDot('approvals.standingGrants', false);
-    const second = floor(manager)!;
-    vi.useRealTimers();
-
-    expect(first).toBe('2026-07-26T10:00:00.000Z');
-    expect(second).toBe('2026-07-26T11:00:00.000Z');
-  });
-
-  it('keeps the later floor when the clock goes backwards', () => {
-    // A floor that follows a backwards clock is a floor an NTP correction can
-    // lower. `max` is what makes the marker monotonic rather than merely current.
-    const manager = licensed();
-    manager.setDot('approvals.standingGrants', false);
-    const first = floor(manager)!;
-
-    manager.setDot('approvals.standingGrants', true);
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(Date.parse(first) - 60_000));
-    manager.setDot('approvals.standingGrants', false);
-    vi.useRealTimers();
-
-    expect(floor(manager)).toBe(first);
-  });
-
-  it('still writes nothing at all when the posture never narrowed', () => {
-    // The churn guard. A rule stated as "stamp whenever the posture is not
-    // licensed after the write" would move the floor on EVERY config write for the
-    // vast majority of installs, which never switch this feature on.
-    const manager = initConfigManager(dir);
-    manager.setDot('logging.level', 'debug');
-    manager.setDot('server.port', 4300);
-    expect(floor(manager)).toBeNull();
   });
 });
 

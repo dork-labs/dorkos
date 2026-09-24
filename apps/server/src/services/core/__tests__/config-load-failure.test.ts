@@ -267,7 +267,7 @@ describe('a genuinely damaged config is still replaced', () => {
         version: 1,
         mesh: { scanRoots: 'not-a-list' },
         auth: { enabled: true },
-        approvals: { trustWindowMinutes: 15 },
+        rooms: { maxAgentDepth: 5 },
         telemetry: {
           userHasDecided: true,
           install: false,
@@ -287,7 +287,7 @@ describe('a genuinely damaged config is still replaced', () => {
     expect(manager.get('mesh').scanRoots).toEqual([]);
     // DOR-584: a wipe may lose preferences, never a protection.
     expect(manager.get('auth').enabled).toBe(true);
-    expect(manager.get('approvals').trustWindowMinutes).toBe(15);
+    expect(manager.get('rooms').maxAgentDepth).toBe(5);
     expect(manager.get('telemetry').userHasDecided).toBe(true);
     expect(manager.validate()).toEqual({ valid: true });
   });

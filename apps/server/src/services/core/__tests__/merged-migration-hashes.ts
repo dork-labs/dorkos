@@ -133,5 +133,11 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.80.0': '35d415b132e1a80b',
   '0.81.0': '9d5bd3affde344ed',
   '0.82.0': '304b2cb442e3622c',
-  '0.83.0': 'fde96be2b94c64f8',
+  // Repinned once, by phase 2 of the agent-permissions programme, which extends
+  // this key with the retirement of standing permissions instead of opening
+  // `'0.84.0'` (a key above the release version never runs for upgraders). The
+  // population that could have run the earlier body is empty: the repository
+  // version is 0.82.0, so every build of it stops below this key, and no 0.83.0
+  // release exists yet. Once 0.83.0 is tagged the key is frozen.
+  '0.83.0': '3caf0bff7cecb43c',
 };

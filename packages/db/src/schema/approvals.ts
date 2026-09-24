@@ -1,10 +1,10 @@
-import { sqliteTable, text, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index, integer } from 'drizzle-orm/sqlite-core';
 
 /**
  * Approval records for capability invocations that need a human's consent
  * (spec `agent-trust` §3.3).
  *
- * One row per request: an agent asks to do something destructive, the operator
+ * One row per request: an agent asks to do something that needs a yes, the operator
  * grants or denies it in the cockpit, and the agent retries with the token it
  * was handed. The row is the whole state machine — `state` plus `decidedAt` and
  * `consumedAt` say exactly where a request stands, and nothing is deleted on
@@ -147,11 +147,33 @@ export const approvals = sqliteTable(
      *
      * Separate from `requestedBy` because that column is a display LABEL, built
      * from `displayName || agentPath` and swept for secrets, which makes it
-     * unusable as a key. A standing permission keys on the agent path, so the
-     * card it was created from has to carry the real one. Never rendered: the
-     * card keeps showing the label.
+     * unusable as a key. "Always allow" writes a setting onto the agent this
+     * path names, and the blocked-request rate limits key on it, so the card has
+     * to carry the real one. Never rendered: the card keeps showing the label.
      */
     requestedByPath: text('requested_by_path'),
+
+    /**
+     * The permission area of the requested action (spec `agent-permissions`
+     * D2), or null for an action with no area. Recorded when the request is
+     * made, so the card and the grant route's "Always allow" rules read what
+     * the gate decided on, not what a later build would say.
+     */
+    area: text('area'),
+
+    /**
+     * Whether the agent asked past a Blocked permission with
+     * `request_permission` (spec `agent-permissions` D8). The blocked-request
+     * rate limits read these rows, which is what keeps them from resetting on a
+     * restart.
+     */
+    blockedRequest: integer('blocked_request', { mode: 'boolean' }).notNull().default(false),
+
+    /**
+     * The reason the agent gave with a blocked request, capped and swept for
+     * secrets like the summary. Null on every other approval.
+     */
+    requestReason: text('request_reason'),
 
     /** Where the request stands before it is spent. */
     state: text('state', {
@@ -217,6 +239,12 @@ export const approvals = sqliteTable(
   (table) => [
     index('idx_approvals_state').on(table.state),
     index('idx_approvals_expires_at').on(table.expiresAt),
+    // The blocked-request rate limits: one agent's recent requests past Blocked.
+    index('idx_approvals_blocked_requester').on(
+      table.requestedByPath,
+      table.blockedRequest,
+      table.createdAt
+    ),
     index('approvals_connector_agent_connection_idx').on(
       table.connectorAgentId,
       table.connectorConnectionId,

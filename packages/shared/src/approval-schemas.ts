@@ -12,6 +12,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { CAPABILITY_TIERS } from './capabilities.js';
+import { PERMISSION_AREA_IDS } from './permissions/permission-ids.js';
 
 extendZodWithOpenApiOnce();
 
@@ -110,6 +111,12 @@ export const APPROVAL_ORIGINS = ['session', 'external-mcp'] as const;
 export type ApprovalOrigin = (typeof APPROVAL_ORIGINS)[number];
 
 /**
+ * Longest reason an agent may give when it asks past a Blocked permission. The
+ * `request_permission` tool caps its own input at the same bound.
+ */
+export const APPROVAL_REQUEST_REASON_MAX_LENGTH = 500;
+
+/**
  * An approval waiting on a person: what would run, why, and who asked. This is
  * exactly what the cockpit's approval card renders.
  */
@@ -128,24 +135,50 @@ export const PendingApprovalSchema = z
     /** Opaque label for who asked, when the request carried one. */
     requestedBy: z.string().optional(),
     /**
-     * Whether DorkOS knows WHICH agent asked, and can therefore stop asking about
-     * that agent doing this thing.
+     * Whether DorkOS knows WHICH agent asked: the gate recorded the agent's path,
+     * not just a display label.
      *
-     * The one bit a surface needs to decide whether to offer a standing
-     * permission. It is not the same question as `requestedBy`, and the difference
-     * is a trap worth naming: `requestedBy` is a display LABEL, and the marketplace
-     * confirmation flow sets it on approvals that carry no agent path at all — so a
-     * button drawn from `requestedBy` would appear on exactly the cards where
-     * pressing it is refused.
-     *
-     * Necessary, not sufficient: the button also needs `approvals.standingGrants`
-     * switched on, which is a setting rather than a property of one approval.
+     * Not the same question as `requestedBy`, and the difference is a trap worth
+     * naming: `requestedBy` is a display LABEL, and the marketplace confirmation
+     * flow sets it on approvals that carry no agent path at all.
      *
      * Required rather than optional on purpose. An absent boolean reads as `false`
      * by accident, which would be right today and silently wrong the first time a
      * client forgot to send it.
      */
     hasAgentPath: z.boolean(),
+    /**
+     * The permission area the requested action belongs to (spec
+     * `agent-permissions` D2), or `null` for an action with no area, whose tier
+     * alone made it ask. Recorded when the request was made.
+     */
+    area: z.enum(PERMISSION_AREA_IDS).nullable(),
+    /**
+     * Whether this card may offer "Always allow": the gate knows which agent
+     * asked, the action has an area, and that area is not a floor area (Safety
+     * limits, Permissions, Reach & secrets). Computed on the server with the same
+     * three rules the grant route enforces, so a surface never re-derives it. The
+     * route refuses `answer: 'always'` whenever this is false; hiding the button
+     * is not the check.
+     */
+    alwaysOffered: z.boolean(),
+    /**
+     * Set when the agent asked past a Blocked permission with
+     * `request_permission` (spec `agent-permissions` D8), rather than an Ask
+     * permission raising the card on its own.
+     */
+    blockedRequest: z.literal(true).optional(),
+    /**
+     * The reason the agent gave when it asked past a Blocked permission. The
+     * agent's own words, capped and swept for secrets where they are stored, and
+     * shown as a quote, never as DorkOS's own claim.
+     */
+    requestReason: z.string().max(APPROVAL_REQUEST_REASON_MAX_LENGTH).optional(),
+    /**
+     * The room whose turn raised this request, when the requesting session is a
+     * room turn. The room shows the card in its own timeline, to the owner only.
+     */
+    roomId: z.string().optional(),
     /** When the request was made. ISO 8601 UTC. */
     requestedAt: z.string(),
     /** When the request stops being honored. ISO 8601 UTC. */
@@ -249,21 +282,28 @@ export const CapabilityApprovalOutcomeSchema = z.enum(CAPABILITY_APPROVAL_OUTCOM
 /** How an in-session capability approval hold ended. */
 export type CapabilityApprovalOutcome = (typeof CAPABILITY_APPROVAL_OUTCOMES)[number];
 
+/**
+ * The two ways to say yes on a request card (spec `agent-permissions` D7).
+ *
+ * - `once` — allow this one call.
+ * - `always` — allow this call AND set this action to Allowed for this agent
+ *   from now on, through the same permission service Settings uses.
+ */
+export const APPROVAL_ANSWERS = ['once', 'always'] as const;
+
+/** One of {@link APPROVAL_ANSWERS}. */
+export type ApprovalAnswer = (typeof APPROVAL_ANSWERS)[number];
+
 /** Request body of `POST /api/approvals/:id/grant`. */
 export const GrantApprovalBodySchema = z
   .object({
     /**
-     * Also stop being asked about this agent doing this thing, for as long as
-     * `approvals.trustWindowMinutes` says.
-     *
-     * Needs a person signed in to DorkOS, so it needs Require login to be on: with
-     * login off there is no cookie, and DorkOS cannot tell the operator from an
-     * agent running as the same user. It is refused, never quietly downgraded to a
-     * plain one-time yes — a caller that asked for two things is told which one
-     * failed, because a silent fallback would leave a person believing they created
-     * a permission that does not exist.
+     * `once` (the default) allows this one call. `always` also sets this action
+     * to Allowed for the agent that asked. Refused with 409 `ALWAYS_NOT_OFFERED`
+     * when DorkOS does not know which agent asked, the action has no area, or its
+     * area is never Allowed; the card's `alwaysOffered` says so in advance.
      */
-    standing: z.boolean().optional(),
+    answer: z.enum(APPROVAL_ANSWERS).default('once'),
   })
   .openapi('GrantApprovalBody');
 
@@ -281,100 +321,6 @@ export const DenyApprovalBodySchema = z
 /** Request body of `POST /api/approvals/:id/deny`. */
 export type DenyApprovalBody = z.infer<typeof DenyApprovalBodySchema>;
 
-/**
- * One live standing permission, as the cockpit lists it.
- *
- * A permission a person cannot find is a dark pattern, so everything the two
- * surfaces that list one actually render is here: which agent, which action, and
- * when it runs out — plus the id the Stop-trusting button acts on.
- *
- * ## What is deliberately NOT here
- *
- * Who opened it, when, under which posture, and which card it came from. All four
- * are recorded — in the row and in the `approval.grant_created` Activity event, which
- * is where an audit question belongs — and none of them is rendered anywhere. A
- * response that carried them would be handing out the operator's account id to
- * answer a question nobody asked.
- */
-export const StandingPermissionSchema = z
-  .object({
-    /** ULID identifying the permission. Carries no secret. */
-    grantId: z.string(),
-    /**
-     * Absolute path to the agent's project directory — the stable key.
-     *
-     * Kept, unlike the fields above, because {@link agentLabel} is a folder name and
-     * two agents can share one. `--path` is required when an agent is created and
-     * nothing uniques an agent's NAME (only its path), so `--path ~/work/acme/helper`
-     * and `--path ~/work/beta/helper` are both allowed and both read as "helper". A
-     * list that cannot tell them apart is not a list a person can act on.
-     */
-    agentPath: z.string(),
-    /** The agent's directory name, which is the handle a person recognizes. */
-    agentLabel: z.string(),
-    /** The one action this covers, e.g. `marketplace.uninstall`. */
-    capabilityId: z.string(),
-    /** Human-facing title for that action, falling back to its id. */
-    capabilityTitle: z.string(),
-    /** When it stops working. ISO 8601 UTC. Absolute, and never extended by use. */
-    expiresAt: z.string(),
-  })
-  .openapi('StandingPermission');
-
-/** One live standing permission, as the cockpit lists it. */
-export type StandingPermission = z.infer<typeof StandingPermissionSchema>;
-
-/** Response body of `GET /api/approvals/grants`. */
-export const StandingPermissionsResponseSchema = z
-  .object({
-    grants: z.array(StandingPermissionSchema),
-  })
-  .openapi('StandingPermissionsResponse');
-
-/** Response body of `GET /api/approvals/grants`. */
-export type StandingPermissionsResponse = z.infer<typeof StandingPermissionsResponseSchema>;
-
-/** Response body of `DELETE /api/approvals/grants/:id`. */
-export const RevokeStandingPermissionResponseSchema = z
-  .object({
-    ok: z.literal(true),
-    /** ULID of the permission that was ended. */
-    grantId: z.string(),
-  })
-  .openapi('RevokeStandingPermissionResponse');
-
-/** Response body of `DELETE /api/approvals/grants/:id`. */
-export type RevokeStandingPermissionResponse = z.infer<
-  typeof RevokeStandingPermissionResponseSchema
->;
-
-/**
- * What `POST /api/approvals/:id/grant` answers when the one-time yes was recorded
- * but the standing permission was not.
- *
- * Its own schema rather than the generic error body, because the two extra fields
- * are the whole point: they say which half happened. A caller reading a bare error
- * cannot tell this from "nothing happened", and retrying the call would answer 409,
- * which reads like the permission exists.
- */
-export const StandingPermissionNotRecordedResponseSchema = z
-  .object({
-    /** One plain sentence saying which half happened. */
-    error: z.string(),
-    /** Discriminator. Always `STANDING_PERMISSION_NOT_RECORDED`. */
-    code: z.literal('STANDING_PERMISSION_NOT_RECORDED'),
-    /** ULID of the approval that WAS granted. */
-    approvalId: z.string(),
-    /** The decision that was recorded, so the caller knows the action may proceed once. */
-    outcome: z.literal('granted'),
-  })
-  .openapi('StandingPermissionNotRecordedResponse');
-
-/** Response body when the permission could not be recorded. */
-export type StandingPermissionNotRecordedResponse = z.infer<
-  typeof StandingPermissionNotRecordedResponseSchema
->;
-
 /** Response body of the grant and deny endpoints. */
 export const ApprovalDecisionResponseSchema = z
   .object({
@@ -383,16 +329,8 @@ export const ApprovalDecisionResponseSchema = z
     approvalId: z.string(),
     /** The decision that was recorded. */
     outcome: z.enum(['granted', 'denied']),
-    /**
-     * The standing permission this decision also opened, when the caller asked for
-     * one with `standing: true`.
-     *
-     * Present only on success. A request that asked for a permission and could not
-     * have one is refused outright rather than answered with this field missing,
-     * because "look for an absent field" is not how a person learns they did not get
-     * what they asked for.
-     */
-    standingPermission: StandingPermissionSchema.optional(),
+    /** On a yes: whether it was for this one call or from now on. */
+    answer: z.enum(APPROVAL_ANSWERS).optional(),
   })
   .openapi('ApprovalDecisionResponse');
 

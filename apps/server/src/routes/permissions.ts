@@ -73,7 +73,23 @@ function requirePerson(
     res.status(cookie.status).json({ error: ONLY_A_PERSON, code: cookie.code });
     return undefined;
   }
-  if (authority.posture === 'local-trust') return personWriter('local-trust');
+  return writerForPosture(authority.posture, res);
+}
+
+/**
+ * The permission writer for a caller that cleared the person bars: "Someone on
+ * this computer" with login off, the signed-in account with it on. Shared with
+ * the approval grant route, whose Always allow writes a permission too, so both
+ * doors record a person the same way.
+ *
+ * @param posture - The posture the person bars reported.
+ * @param res - The response carrying `sessionGate`'s resolved user.
+ */
+export function writerForPosture(
+  posture: 'local-trust' | 'signed-in-operator',
+  res: Response
+): PermissionWriter {
+  if (posture === 'local-trust') return personWriter('local-trust');
   const user = res.locals.user as RequestUser | undefined;
   const owner = readOwnerAccount();
   const name = owner && user && owner.id === user.userId ? owner.name : (user?.userId ?? 'you');

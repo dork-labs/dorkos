@@ -35,19 +35,13 @@ import {
   describeOperatorOnlyRefusal,
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
-  REQUIRES_LOGIN_CONFIG_ERROR,
 } from '../services/core/operator/config-write-policy.js';
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import {
   isLocalCaller,
   readCallerAuthority,
   requireOperatorCookieUnderLogin,
-  requireStandingGrantsLogin,
 } from '../lib/caller-authority.js';
-import {
-  readStandingGrantPosture,
-  revokeStandingGrantsIfPostureNarrowed,
-} from '../services/core/approvals/index.js';
 import { getLatestVersion } from '../services/core/update-checker.js';
 import { isTasksEnabled, getTasksInitError } from '../services/tasks/task-state.js';
 import { isRelayEnabled, getRelayInitError } from '../services/relay/relay-state.js';
@@ -316,10 +310,6 @@ router.get('/', async (req, res) => {
       aiMetadata: false,
     },
     auth: configManager.get('auth') ?? { enabled: false },
-    approvals: configManager.get('approvals') ?? {
-      standingGrants: false,
-      trustWindowMinutes: 480,
-    },
     // The two engaged-window ceilings, and the five automatic-reply limits.
     //
     // The ceilings are READ-ONLY here: the cockpit prints them inside the
@@ -414,28 +404,6 @@ router.get('/', async (req, res) => {
  */
 function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAuthority {
   return {
-    // ## THE LOGIN BAR — the standing-permission settings need login on at all
-    //
-    // The reason it is not folded into the cookie bar is written out at
-    // REQUIRES_LOGIN_CONFIG_PATHS: that bar allows every caller while login is
-    // off, and for these paths that would leave the switch pre-armable.
-    //
-    // These settings decide real behavior: the tier gate reads
-    // `approvals.standingGrants` on every gated call. The write also persists and
-    // nothing sweeps it, so a switch set while login is off would still be set
-    // once login is on, reading as something the person chose.
-    refuseLoginRequired(paths) {
-      const refusal = requireStandingGrantsLogin();
-      if (!refusal) return undefined;
-      return {
-        status: refusal.status,
-        code: refusal.code,
-        error: REQUIRES_LOGIN_CONFIG_ERROR,
-        message: refusal.error,
-        paths: [...paths],
-      };
-    },
-
     // The REST twin of the guard on `operator.config_patch` (DOR-467). PR #469
     // put the operator-only write policy on the capability surface, but this
     // route reaches the SAME write and had no policy check at all — and with
@@ -532,7 +500,6 @@ function requestConfigWriteAuthority(req: Request, res: Response): ConfigWriteAu
 
 router.patch('/', (req, res) => {
   try {
-    const postureBefore = readStandingGrantPosture();
     // The bars, the autonomy consent door, the write, and the audit line — the
     // sequence `dorkos config set` and the `config_patch` tool also run, so the
     // three doors cannot drift into meaning different things. What this route
@@ -561,13 +528,6 @@ router.patch('/', (req, res) => {
       const { status, error, code, paths, message } = result.refusal;
       return res.status(status).json({ error, code, paths, message });
     }
-
-    // Turning login off, or the master switch off, ends every live standing
-    // permission. Leaving them dormant would let them wake up later under a
-    // posture that can no longer justify them. It stays at the route rather than
-    // inside the shared step because it acts on an in-process store of live
-    // permissions, which exists in the server and nowhere else.
-    revokeStandingGrantsIfPostureNarrowed(postureBefore, readStandingGrantPosture());
 
     for (const warning of result.warnings) {
       logger.warn(`[Config] ${warning}`);

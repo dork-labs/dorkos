@@ -453,13 +453,14 @@ export class PermissionService {
    * Change one agent's own settings; `null` puts a key back to the default.
    *
    * @param agentId - The agent.
-   * @param input - The patch and where it came from.
+   * @param input - The patch, where it came from, and the approval it answered
+   *   (an Always allow on a request card).
    * @param writer - Who is making the change.
    * @returns Every change the write made.
    */
   async setAgent(
     agentId: string,
-    input: PermissionPatch & { surface: PermissionSurface },
+    input: PermissionPatch & { surface: PermissionSurface; approvalId?: string },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
     const actions = this.actionIndex();
@@ -473,8 +474,25 @@ export class PermissionService {
         compact({ ...stored, areas: next.areas, actions: next.actions })
       );
     }
-    await this.record({ changes, surface: input.surface, writer }, this.titleFor(actions));
+    await this.record(
+      {
+        changes,
+        surface: input.surface,
+        writer,
+        ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+      },
+      this.titleFor(actions)
+    );
     return changes;
+  }
+
+  /**
+   * The registered agent whose project directory this is, when there is one.
+   *
+   * @param agentPath - The agent's project directory.
+   */
+  agentByPath(agentPath: string): PermissionAgentRef | undefined {
+    return this.deps.agents.list().find((agent) => agent.projectPath === agentPath);
   }
 
   /** Resolve at the default layer: no agent. */

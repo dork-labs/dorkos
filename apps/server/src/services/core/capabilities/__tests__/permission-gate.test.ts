@@ -209,7 +209,7 @@ describe('the permission decision at the tier gate', () => {
 
       expect(await viaRegistry('rooms.create')).toMatchObject({
         reason: 'permission_blocked',
-        approvable: false,
+        approvable: true,
       });
       expect(await viaRegistry('rooms.merge')).toBe('ran');
     });
@@ -225,8 +225,12 @@ describe('the permission decision at the tier gate', () => {
       expect(await viaRegistry('rooms.create')).toMatchObject({
         status: 'denied',
         reason: 'permission_blocked',
-        approvable: false,
-        message: 'Managing rooms is blocked for this agent. Ask the person if you need it.',
+        // A person COULD say yes, through the request tool; a direct call still
+        // raises no card (spec `agent-permissions` D8).
+        approvable: true,
+        message:
+          'Rooms is blocked for this agent. You can ask the person with the tool ending in ' +
+          '`request_permission`: name the action, pass the exact arguments, and say why.',
       });
       const authorized = await viaAuthorize('rooms.create');
       expect(authorized).toMatchObject({
@@ -291,9 +295,18 @@ describe('the permission decision at the tier gate', () => {
       expect(ran).toEqual(['rooms.create']);
     });
 
-    it('never offers to make an act card standing', async () => {
+    it('records who asked and the area, so the card can offer Always allow', async () => {
       const payload = (await viaRegistry('rooms.create')) as { approvalId: string };
-      expect(approvals.standingPermissionScope(payload.approvalId)?.agentPath).toBeNull();
+      expect(approvals.answerScope(payload.approvalId)).toMatchObject({
+        agentPath: DORKBOT_PATH,
+        area: 'rooms',
+        alwaysOffered: true,
+        blockedRequest: false,
+      });
+      expect(approvals.getPending(payload.approvalId)).toMatchObject({
+        area: 'rooms',
+        alwaysOffered: true,
+      });
     });
   });
 

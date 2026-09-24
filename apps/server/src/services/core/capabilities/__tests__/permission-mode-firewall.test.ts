@@ -75,7 +75,7 @@ import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
 } from '../tier-enforcement.js';
-import { ApprovalGrantService, ApprovalService } from '../../approvals/index.js';
+import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { codeOnly } from '../../../../../../../scripts/lib/code-only.mjs';
 
@@ -103,17 +103,10 @@ const IDENTITY = {
 describe('no permission mode switches off the destructive gate', () => {
   beforeEach(() => {
     const db = createTestDb();
-    const grants = new ApprovalGrantService(db);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
-    // Wired exactly as boot wires it, standing permissions included, so nothing
-    // here passes because the feature was switched off for the test.
-    initCapabilityTierGate({
-      approvals: new ApprovalService(db),
-      standingGrants: {
-        enabled: () => true,
-        findLive: (agentPath, capabilityId) => grants.findLive(agentPath, capabilityId),
-      },
-    });
+    // Wired exactly as boot wires it, so nothing here passes because a feature
+    // was switched off for the test.
+    initCapabilityTierGate({ approvals: new ApprovalService(db) });
   });
 
   afterEach(() => {

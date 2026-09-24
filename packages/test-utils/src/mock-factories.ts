@@ -1086,11 +1086,6 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     getPermissionHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
-    // Standing permissions (spec `agent-approval-settings` §3.7)
-    listStandingPermissions: vi.fn().mockResolvedValue({ grants: [] }),
-    revokeStandingPermission: vi
-      .fn()
-      .mockImplementation((grantId: string) => Promise.resolve({ ok: true, grantId })),
     // Team roster (spec `identity-consistency` §W2.2). Honest-empty by default:
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
     // not opt into degradation never renders the banner by accident.

@@ -83,7 +83,7 @@
  *   rather than folded into this one: neither is an unchecked write today.
  * - **Consent about what leaves the machine.** All of `telemetry.*`, which is
  *   consent-gated by design.
- * - **Whether a person is asked at all.** `approvals.*`, the four
+ * - **Whether a person is asked at all.** `permissions`, the four
  *   `defaultTrustStop` leaves, and `ui.autonomyAcknowledgedAt`: the switches that
  *   decide whether an approval card ever appears, and the record of the consent
  *   behind them.
@@ -783,20 +783,6 @@ export const CONFIG_WRITE_POLICY = {
   // approval enforceable. See the module doc.
   'auth.enabled': 'operator-only',
 
-  // Whether standing permissions may exist, and how long one lasts. Switching
-  // them on removes the card in front of an irreversible action for a whole
-  // window, and lengthening the window widens the same hole, so both sit exactly
-  // on the line this module states. `operator-only` is NECESSARY here but not
-  // SUFFICIENT — see REQUIRES_LOGIN_CONFIG_PATHS.
-  'approvals.standingGrants': 'operator-only',
-  'approvals.trustWindowMinutes': 'operator-only',
-  // Machine-managed: the moment the settings last stopped licensing standing
-  // permissions (DOR-520). Nothing should write it by hand at all, and the reason
-  // it is classified rather than merely undocumented is that moving it BACKWARDS
-  // resurrects every permission a posture change voided — the exact failure the
-  // marker exists to prevent, reachable in one patch.
-  'approvals.standingGrantsVoidBefore': 'operator-only',
-
   // What agents may do (spec `agent-permissions` D10). `operator-only` is the
   // SECOND line here, not the first: the generic config writers refuse every
   // `permissions.*` key outright and point at the permission routes, because a
@@ -1030,9 +1016,6 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     stake: 'approvals',
     description: 'Whether the person is asked before work happens on their behalf',
     paths: [
-      'approvals.standingGrants',
-      'approvals.trustWindowMinutes',
-      'approvals.standingGrantsVoidBefore',
       'runtimes.defaultTrustStop',
       'runtimes.claudeCode.defaultTrustStop',
       'runtimes.codex.defaultTrustStop',
@@ -1163,64 +1146,8 @@ const OPERATOR_ONLY_FALLBACK_DESCRIPTION = 'Settings the person keeps for themse
 /** The machine-readable code every operator-only refusal carries. */
 export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
 
-/**
- * Config paths that may not be written at all while local login is OFF, on top of
- * the `operator-only` verdict above (spec `agent-approval-settings` §3.0-3.1,
- * narrowed by DOR-505).
- *
- * ## What DOR-505 took away from this list, and what it could not
- *
- * This started life as `REQUIRES_COOKIE_CONFIG_PATHS`: `approvals.*` needed a
- * session cookie, while every other `operator-only` path made do with the
- * `trustedCaller` escape on `PATCH /api/config`. DOR-505 gave the cookie
- * requirement to EVERY `operator-only` path under login-on, so the cookie half of
- * this list is now the general rule and has been deleted rather than kept as a
- * second check on the same writes.
- *
- * What survives is the half the general rule does not reach. That rule allows any
- * caller while login is off, because with no accounts there is no cookie to ask
- * for. For an ordinary setting that is the accepted residual. For these paths it
- * would be wrong, but be precise about WHY, because the imprecise version gets
- * this list deleted:
- *
- * **`approvals.standingGrants` decides real behavior.** The tier gate reads it on
- * every gated call, so an agent that could set it while login is off would be
- * arming the thing that makes DorkOS stop asking, not flipping an inert flag. The
- * write also PERSISTS and nothing sweeps it —
- * `revokeStandingGrantsIfPostureNarrowed` only fires on a narrowing, never on a
- * widening — so a switch set in the login-off posture is still set on the day the
- * person turns login on, reading as something they chose.
- *
- * This list was written before enforcement existed, as a forward-looking guard,
- * and the note it replaced said so at length because a reader who tested the
- * "attack" then found it inert. That is no longer the situation: the attack is live
- * and the guard is what stops it.
- *
- * So the two mechanisms no longer overlap: this one asks "is login on", the
- * general rule asks "with login on, is this a person". They compose.
- *
- * It does NOT cover the cookie requirement on creating a standing permission
- * itself. That one is a property of the approvals routes, not of the config write
- * path, and it stands on its own.
- */
-export const REQUIRES_LOGIN_CONFIG_PATHS: readonly string[] = [
-  'approvals.standingGrants',
-  'approvals.trustWindowMinutes',
-  // The posture floor decides real behavior for the same reason the master switch
-  // does — the store consults it on every lookup — and moving it backwards is the
-  // one write that can bring voided permissions back. With login off there is no
-  // cookie to ask for, so this bar is the only thing standing in front of it.
-  'approvals.standingGrantsVoidBefore',
-];
-
-/** The `error` field every login-required refusal on a config write carries. */
-export const REQUIRES_LOGIN_CONFIG_ERROR = 'Standing permissions need Require login turned on';
-
 /** {@link OPERATOR_ONLY_CONFIG_PATHS}, prepared for matching. */
 const OPERATOR_ONLY_GUARDED = prepareGuardedPaths(OPERATOR_ONLY_CONFIG_PATHS);
-
-/** {@link REQUIRES_LOGIN_CONFIG_PATHS}, prepared for matching. */
-const REQUIRES_LOGIN_GUARDED = prepareGuardedPaths(REQUIRES_LOGIN_CONFIG_PATHS);
 
 /**
  * Find the operator-only settings a patch tries to write.
@@ -1232,23 +1159,6 @@ const REQUIRES_LOGIN_GUARDED = prepareGuardedPaths(REQUIRES_LOGIN_CONFIG_PATHS);
  */
 export function findOperatorOnlyPaths(patch: unknown): string[] {
   return findGuardedPaths(patch, OPERATOR_ONLY_GUARDED);
-}
-
-/**
- * Find the settings a patch tries to write that additionally need local login to
- * be on ({@link REQUIRES_LOGIN_CONFIG_PATHS}).
- *
- * Matches the same way {@link findOperatorOnlyPaths} does, so `{ approvals: {} }`
- * and `{ approvals: true }` are caught as ancestors rather than sliding past a
- * leaf-exact comparison.
- *
- * @param patch - The raw patch a caller supplied (any shape; a non-object touches
- *   nothing).
- * @returns The offending policy paths, sorted, each named once. Empty when the
- *   patch touches none of them.
- */
-export function findLoginRequiredPaths(patch: unknown): string[] {
-  return findGuardedPaths(patch, REQUIRES_LOGIN_GUARDED);
 }
 
 /**

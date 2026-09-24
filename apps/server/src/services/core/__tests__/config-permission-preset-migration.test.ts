@@ -1,6 +1,8 @@
 /**
- * The `0.83.0` migration (spec `agent-permissions` D13, phase 1) across the real
- * `conf`/Ajv seam: the first-run power choice becomes the permission preset.
+ * The `0.83.0` migration (spec `agent-permissions` D13) across the real
+ * `conf`/Ajv seam: the first-run power choice becomes the permission preset
+ * (phase 1), and the retired standing-permission settings are deleted (phase 2,
+ * which extended this same unreleased key).
  *
  * A file of its own for the reason `config-full-power-defaults-migration.test.ts`
  * gives: `conf` runs a key only when it is `<= projectVersion`, and the version
@@ -33,7 +35,10 @@ afterEach(() => {
 });
 
 /** A temp data directory holding a config one release behind, with a door answer. */
-function seedUpgradeBoot(fullPowerChoice: 'full' | 'supervised' | null): string {
+function seedUpgradeBoot(
+  fullPowerChoice: 'full' | 'supervised' | null,
+  extra: Record<string, unknown> = {}
+): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-permission-preset-'));
   dirs.push(dir);
   fs.writeFileSync(
@@ -46,6 +51,7 @@ function seedUpgradeBoot(fullPowerChoice: 'full' | 'supervised' | null): string 
         fullPowerChoice,
       },
       runtimes: { default: 'claude-code', defaultTrustStop: 'act' },
+      ...extra,
       __internal__: { migrations: { version: STORED_VERSION } },
     })
   );
@@ -55,6 +61,7 @@ function seedUpgradeBoot(fullPowerChoice: 'full' | 'supervised' | null): string 
 /** The stored file, as the next boot will read it. */
 function readDisk(dir: string): {
   permissions?: { preset: unknown; defaults: unknown; upgradeSweptVersion: unknown };
+  approvals?: Record<string, unknown>;
   runtimes: { defaultTrustStop: unknown };
 } {
   return JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8'));
@@ -100,5 +107,34 @@ describe('the 0.83.0 migration on an upgrade boot (real conf + Ajv)', () => {
       defaults: { areas: {}, actions: {} },
       upgradeSweptVersion: null,
     });
+  });
+});
+
+describe('the 0.83.0 migration retires standing permissions (phase 2)', () => {
+  it('deletes all three settings, and the section once it is empty', () => {
+    const dir = seedUpgradeBoot('full', {
+      approvals: {
+        standingGrants: true,
+        trustWindowMinutes: 60,
+        standingGrantsVoidBefore: '2026-09-01T00:00:00.000Z',
+      },
+    });
+    new ConfigManager(dir);
+    expect(readDisk(dir)).not.toHaveProperty('approvals');
+  });
+
+  it('keeps anything else a newer build put in the section', () => {
+    const dir = seedUpgradeBoot(null, {
+      approvals: { standingGrants: false, trustWindowMinutes: 480, somethingNewer: true },
+    });
+    new ConfigManager(dir);
+    expect(readDisk(dir).approvals).toEqual({ somethingNewer: true });
+  });
+
+  it('does nothing to an install that never had the section', () => {
+    const dir = seedUpgradeBoot('supervised');
+    new ConfigManager(dir);
+    expect(readDisk(dir)).not.toHaveProperty('approvals');
+    expect(readDisk(dir).permissions?.preset).toBe('careful');
   });
 });

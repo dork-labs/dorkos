@@ -43,6 +43,7 @@ import path from 'node:path';
 import { MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { AgentManifestFileSchema } from '@dorkos/shared/mesh-schemas';
 import {
+  getPermissionArea,
   resolvePermission,
   type AgentPermissions,
   type PermissionAreaId,
@@ -232,34 +233,29 @@ export async function resolveCallPermission(request: {
   });
 }
 
-/** How each area reads in "… is blocked for this agent". */
-const BLOCKED_AREA_PHRASE: Record<PermissionAreaId, string> = {
-  rooms: 'Managing rooms',
-  tasks: 'Managing scheduled tasks',
-  agents: 'Managing other agents',
-  messages: 'Sending messages',
-  connections: 'Changing chat connections',
-  packages: 'Installing tools and packages',
-  settings: 'Changing DorkOS settings',
-  safety: 'Changing safety limits',
-  permissions: 'Changing permissions',
-  reach: 'Changing reach and secrets',
-};
+/**
+ * The name of the tool an agent asks past Blocked with, as the model is told to
+ * look for it: "the tool ending in `request_permission`". Every runtime prefixes
+ * its MCP tools differently, so the sentence names the suffix, which is the one
+ * part every surface shares.
+ */
+export const REQUEST_PERMISSION_TOOL = 'request_permission';
 
 /**
- * The phrase an area's Blocked refusal and its context line open with, e.g.
- * "Managing rooms".
+ * The name an area goes by in a sentence an agent reads, e.g. "Rooms".
  *
- * @param area - The blocked area.
+ * @param area - The area.
  */
-export function blockedAreaPhrase(area: PermissionAreaId): string {
-  return BLOCKED_AREA_PHRASE[area];
+export function permissionAreaLabel(area: PermissionAreaId): string {
+  return getPermissionArea(area)?.label ?? area;
 }
 
 /**
- * The sentence a refused agent reads for a Blocked permission. Phase 1 has no
- * request tool yet, so it says to ask the person; `approvable: false` travels
- * with it so the model does not loop asking the gate.
+ * The sentence a refused agent reads for a Blocked permission (spec
+ * `agent-permissions` D8). A direct call never raises a card; the sentence says
+ * how to ask on purpose instead. The two endings nobody can ask past (settings
+ * nobody could read, an identity that was turned off) say so and name no tool,
+ * and travel with `approvable: false`.
  *
  * @param permission - The resolved Blocked permission.
  */
@@ -273,7 +269,11 @@ export function blockedPermissionMessage(permission: CallPermission): string {
   if (permission.source === 'inactive') {
     return "This agent's access was turned off or ran out, so it cannot do this. Ask the person.";
   }
-  return `${blockedAreaPhrase(permission.area)} is blocked for this agent. Ask the person if you need it.`;
+  return (
+    `${permissionAreaLabel(permission.area)} is blocked for this agent. You can ask the person ` +
+    `with the tool ending in \`${REQUEST_PERMISSION_TOOL}\`: name the action, pass the exact ` +
+    'arguments, and say why.'
+  );
 }
 
 /**
@@ -281,14 +281,20 @@ export function blockedPermissionMessage(permission: CallPermission): string {
  * what decides whether its tool advertises the `approvalToken` retry argument.
  *
  * A destructive action always can. An `act` action can when it has an area,
- * because the person may set that area to Ask. An `observe` action never asks.
+ * because the person may set that area to Ask. An `observe` action never asks
+ * on its own. The request tool (`forwardsApproval`) always can: it raises the
+ * card of whatever action it asks for, and a retry presents that card's token.
  *
  * @param action - The action's tier and area.
  */
 export function canRaiseApproval(action: {
   tier: GatedAction['tier'];
   area?: PermissionAreaId | null;
+  forwardsApproval?: boolean;
 }): boolean {
+  // The request tool raises the card of the action it asks for, so it carries
+  // the token that answers it.
+  if (action.forwardsApproval === true) return true;
   if (action.tier === 'destructive') return true;
   return action.tier === 'act' && action.area !== undefined && action.area !== null;
 }

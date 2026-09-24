@@ -110,6 +110,14 @@ export interface CapabilityInvocationContext {
    */
   retryChannel?: ApprovalRetryChannel;
   /**
+   * Set only by the `request_permission` handler, on its own re-invocation of the
+   * action the agent asked for: the agent is deliberately asking past a Blocked
+   * permission, with this reason (spec `agent-permissions` D8). Forwarded to the
+   * gate and nowhere else. No surface reads it off the wire; each builds this
+   * context field by field.
+   */
+  blockedRequest?: { reason: string };
+  /**
    * The signed-in PERSON behind this call, when login is on and the surface
    * verified one — a session cookie or a per-user API key.
    *
@@ -201,6 +209,18 @@ export interface CapabilityHandlerContext {
    * invocation, so the operator answers one card instead of two.
    */
   approval?: GrantedApproval;
+  /**
+   * The approval token the caller presented, handed to the handler only for a
+   * capability that declares `forwardsApproval` (the request tool), which passes
+   * it on to the action it asked for. Every other handler never sees a token.
+   */
+  approvalToken?: string;
+  /**
+   * The retry channel the surface asked for, handed on with
+   * {@link approvalToken} and only to a `forwardsApproval` capability, so the
+   * action it re-invokes tells the caller to retry the way it can.
+   */
+  retryChannel?: ApprovalRetryChannel;
   /**
    * Present when the caller proved it may decide approvals. A handler running its
    * own confirmation flow treats this exactly like {@link approval}: the person
@@ -539,6 +559,12 @@ export function composeRegistry(
         );
       }
       if (preflight) invocationContext.preflight = preflight;
+      // Only the request tool forwards a token, to the action it asks for; see
+      // `CapabilityDefinition.forwardsApproval`.
+      if (capability.forwardsApproval) {
+        if (supplied.approvalToken) invocationContext.approvalToken = supplied.approvalToken;
+        if (supplied.retryChannel) invocationContext.retryChannel = supplied.retryChannel;
+      }
 
       // Existing trusted callers retain their ordinary bypass. A capability with
       // live preflight always reaches the tier gate, so destructive connector
@@ -579,12 +605,8 @@ export function composeRegistry(
                 },
               }
             : {}),
-          ...(preflight
-            ? {
-                connectorAuthority: preflight.authorityBinding.approvalScope,
-                standingGrantEligible: false,
-              }
-            : {}),
+          ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
+          ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
         if (decision.approval) invocationContext.approval = decision.approval;

@@ -19,7 +19,9 @@
  * @module services/core/permissions/permission-history
  */
 import {
+  PERMISSION_ANSWERED_EVENT,
   PERMISSION_CHANGED_EVENT,
+  PermissionAnsweredMetadataSchema,
   PermissionChangedMetadataSchema,
   getPermissionArea,
   type PermissionAttribution,
@@ -229,6 +231,15 @@ export async function recordPermissionChange(
   });
 }
 
+/**
+ * The Activity event one standing permission ended at upgrade is recorded as
+ * (`ended-standing-grants.ts`). Not a `permission.changed`: a standing
+ * permission was never a permission SETTING (it had no area and no state), so it
+ * has no place in a change's key. It lives in the `permissions` category, so it
+ * shows in the permission history.
+ */
+export const STANDING_GRANT_ENDED_EVENT = 'permission.standing_grant_ended';
+
 /** The honesty line a change DorkOS noticed rather than made carries. */
 const OUTSIDE_ACTOR_DETAIL =
   "This agent's settings file was edited directly. DorkOS follows the file, so the change is in effect.";
@@ -292,6 +303,45 @@ export async function listPermissionHistory(
           summary: row.summary,
           // A notice, not a change: no rows, and the outside-check's own labels.
           metadata: { changes: [], surface: 'file-edit', attribution: 'outside' },
+        });
+        if (items.length === query.limit) break;
+        continue;
+      }
+      if (row.eventType === STANDING_GRANT_ENDED_EVENT) {
+        // An upgrade line, not a change to a setting: a standing permission had
+        // no area and no state, so it carries no `changes` rows.
+        if (query.agentId && row.resourceId !== query.agentId) continue;
+        items.push({
+          id: row.id,
+          occurredAt: row.occurredAt,
+          actorLabel: row.actorLabel,
+          actorDetail: null,
+          summary: row.summary,
+          metadata: { changes: [], surface: 'upgrade', attribution: 'upgrade' },
+        });
+        if (items.length === query.limit) break;
+        continue;
+      }
+      if (row.eventType === PERMISSION_ANSWERED_EVENT) {
+        // An answer on a request card. Its own `permission.changed` row (for an
+        // Always allow) sits beside it; this one records the answer itself.
+        const answered = PermissionAnsweredMetadataSchema.safeParse(row.metadata);
+        if (!answered.success) continue;
+        if (query.agentId && row.resourceId !== query.agentId) continue;
+        const attribution: PermissionAttribution =
+          answered.data.posture === 'signed-in-operator' ? 'signed-in' : 'local-trust';
+        items.push({
+          id: row.id,
+          occurredAt: row.occurredAt,
+          actorLabel: row.actorLabel,
+          actorDetail: actorDetailFor(attribution),
+          summary: row.summary,
+          metadata: {
+            changes: [],
+            surface: 'request-card',
+            attribution,
+            approvalId: answered.data.approvalId,
+          },
         });
         if (items.length === query.limit) break;
         continue;

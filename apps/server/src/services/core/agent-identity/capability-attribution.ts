@@ -70,17 +70,14 @@ export function createCapabilityAttributionObserver(
         capabilityId: capability.id,
         tier: capability.tier,
         // Which of the two proofs of consent allowed the call, never just "there
-        // was one". A person deciding this exact action and a permission they
-        // opened hours ago are different facts, and a feed that flattened them
-        // could not answer the question standing permissions create: what ran
-        // while nobody was being asked.
+        // was one". A person deciding this exact action and a setting they made
+        // earlier are different facts, and a feed that flattened them could not
+        // answer the question an Always allow creates: what ran while nobody was
+        // being asked.
         ...(context.approval?.via === 'approval'
           ? { approvalId: context.approval.approvalId }
           : {}),
-        ...(context.approval?.via === 'standing-grant'
-          ? { grantId: context.approval.grantId }
-          : {}),
-        // The third proof: the action's permission is set to Allowed, so it ran
+        // The second proof: the action's permission is set to Allowed, so it ran
         // without a card. The source names the layer a person set it at (spec
         // `agent-permissions` D6).
         ...(context.approval?.via === 'permission'

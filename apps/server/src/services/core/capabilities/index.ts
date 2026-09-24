@@ -26,9 +26,10 @@ export { isTrustedCaller, trustedCaller, type TrustedCaller } from './trusted-ca
 export {
   // `resolveCallPermission` is exported for the tool-list builders, which hide a
   // Blocked action from the agent; the gate itself reads it inside its callers.
-  blockedAreaPhrase,
   canRaiseApproval,
   initPermissionGate,
+  permissionAreaLabel,
+  REQUEST_PERMISSION_TOOL,
   permissionGateSources,
   resetPermissionGate,
   resolveCallPermission,
@@ -54,7 +55,6 @@ export {
   type AutoApprovedAttempt,
   type CapabilityTierGateOptions,
   type GrantedApproval,
-  type StandingGrantLookup,
   type TierDeniedPayload,
   type TierDeniedReason,
   type TierEnforcementAttempt,
