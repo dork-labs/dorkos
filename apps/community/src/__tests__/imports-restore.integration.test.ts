@@ -263,6 +263,7 @@ it('restores an owner export exactly, and the claimant adopts the owner’s hist
     attachmentBytes: manifest.attachments.reduce((sum, file) => sum + file.byteSize, 0),
     countedBytes: manifest.attachments.reduce((sum, file) => sum + file.byteSize, 0),
     fitsStorageLimit: true,
+    shortened: 0,
   });
   // The report carries counts and sizes only: no key or value from the export's text or names.
   const reportText = JSON.stringify(checked);
@@ -999,11 +1000,6 @@ describe('an export past a member-API or host limit fails and leaves nothing', (
       'IMPORT_ARCHIVE_INVALID',
     ],
     [
-      'a channel name over 80 characters',
-      (m) => void (m.channels[0].name = 'c'.repeat(81)),
-      'IMPORT_ARCHIVE_INVALID',
-    ],
-    [
       'a message newer than the upload',
       (m) => {
         m.entries.push({
@@ -1203,4 +1199,24 @@ it('cancels an import whose community moved on, and keeps that community', async
       created.communityId,
     ])
   ).toBe(0);
+});
+
+// Purpose: a channel name or description longer than this host allows is shortened with an
+// ellipsis and counted in the report, never a reason to refuse the whole export.
+it('shortens an over-long channel name and description instead of refusing', async () => {
+  const name = `${'n'.repeat(79)}👋tail`;
+  const archive = handBuilt((manifest) => {
+    manifest.channels[0].name = name;
+    manifest.channels[0].description = 'd'.repeat(1_500);
+  });
+  const { importId, communityId } = await importArchive(archive);
+  expect((await readImport(h, importId, key)).report).toMatchObject({ shortened: 2 });
+  await commit(importId);
+  const channel = await h.pool.query<{ name: string; description: string }>(
+    'SELECT name,description FROM channels WHERE community_id=$1',
+    [communityId]
+  );
+  expect(channel.rows[0].name).toBe(`${'n'.repeat(79)}…`);
+  expect(Array.from(channel.rows[0].description)).toHaveLength(1_000);
+  expect(channel.rows[0].description.endsWith('…')).toBe(true);
 });

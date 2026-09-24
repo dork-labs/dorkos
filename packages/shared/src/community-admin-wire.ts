@@ -378,6 +378,8 @@ export const CommunityAdminImportReportSchema = z.strictObject({
   /** The bytes that will count against the community's storage limit. */
   countedBytes: bytes,
   fitsStorageLimit: z.boolean(),
+  /** Channel names and descriptions longer than this host allows, shortened with an ellipsis. */
+  shortened: z.int().nonnegative(),
 });
 /**
  * Why an import failed, redacted: a code, never a value from the export.

@@ -921,6 +921,7 @@ const actions: Action<unknown>[] = [
             attachmentBytes: 0,
             countedBytes: 0,
             fitsStorageLimit: true,
+            shortened: 0,
           }),
         ]
       );
