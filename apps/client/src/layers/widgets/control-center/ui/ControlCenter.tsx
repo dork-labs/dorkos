@@ -6,7 +6,6 @@ import {
   ResponsivePopoverTrigger,
 } from '@/layers/shared/ui';
 import { useAppStore, useIsMobile } from '@/layers/shared/model';
-import { usePermissions } from '@/layers/entities/permissions';
 import { ControlCenterBody } from './ControlCenterBody';
 
 /**
@@ -27,20 +26,17 @@ import { ControlCenterBody } from './ControlCenterBody';
  * always present" choice.)
  *
  * `modal`, because the flyout is a task — you change something and dismiss it —
- * not a glance. Escape and an outside click both close it.
+ * not a glance. Escape and an outside click both close it. `autoFocus`, so the
+ * phone's sheet puts focus on its first control, the preset picker, the way
+ * the desktop popover does, rather than leaving it on the glyph the sheet hides.
  */
 export function ControlCenter() {
   const open = useAppStore((s) => s.controlCenterOpen);
   const setOpen = useAppStore((s) => s.setControlCenterOpen);
   const isMobile = useIsMobile();
-  // Read the permissions before the flyout opens, so its first control, the
-  // preset picker, is already there when the popover places focus. Loaded on
-  // open instead, the picker is still a placeholder at that moment and focus
-  // lands on whatever comes after it.
-  usePermissions();
 
   return (
-    <ResponsivePopover open={open} onOpenChange={setOpen} modal>
+    <ResponsivePopover open={open} onOpenChange={setOpen} modal autoFocus>
       <ResponsivePopoverTrigger asChild>
         <button
           type="button"

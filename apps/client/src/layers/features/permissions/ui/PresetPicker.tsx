@@ -81,7 +81,23 @@ export function PresetPicker({ surface }: PresetPickerProps) {
   if (overview.isError) {
     return <p className="text-muted-foreground text-sm">Couldn’t read the permissions.</p>;
   }
-  if (!overview.data) return <Skeleton className="h-16 w-full" />;
+  if (!overview.data) {
+    // The three choices are drawn while the permissions load, so a surface that
+    // places focus on open (the Control Center) lands it here rather than on
+    // whatever comes after. Nothing can be chosen until the answer arrives.
+    return (
+      <div className="flex flex-col gap-3" data-testid="preset-picker" aria-busy="true">
+        <SegmentedControl aria-label="Preset" className="w-full" value="" onValueChange={() => {}}>
+          {PERMISSION_PRESETS.map((preset) => (
+            <SegmentedControlItem key={preset} value={preset} aria-label={PRESET_LABEL[preset]}>
+              <span className="truncate">{PRESET_LABEL[preset]}</span>
+            </SegmentedControlItem>
+          ))}
+        </SegmentedControl>
+        <Skeleton className="h-4 w-2/3" />
+      </div>
+    );
+  }
   const data = overview.data;
 
   const send = (preset: PermissionPreset, applyToAgents?: string[]) => {

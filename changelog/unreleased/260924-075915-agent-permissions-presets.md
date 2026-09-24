@@ -5,6 +5,10 @@ covers:
   - 'feat(permissions): presets set the Files & commands stop, and each agent can have its own'
   - 'feat(cli): add dorkos permissions and dorkos agent permissions'
   - 'feat(permissions): the preset picker, every area, individual actions and Files & commands in the app'
+  - 'fix(permissions): decide a config patch by the strictest area it reaches'
+  - 'fix(cli): check an action id before changing it, and fix the example'
+  - 'fix(permissions): count an unset Files & commands stop as a change from the preset'
+  - 'fix(control-center): open the phone sheet on the preset picker, and read permissions only when it opens'
 ---
 
 ### Added
@@ -30,3 +34,4 @@ covers:
 - If you are on Careful, agents now ask before they touch tasks and schedules, other agents, chat connections or rooms, where before some of those ran without asking
 - An agent you had limited to "observe" now has every area Blocked. It can still post and react in conversations
 - An Agent context switch you had turned off becomes that area Blocked for every agent. The history records each of these as an upgrade
+- An agent you had switched a tool group on for (rooms, tasks, messages, other agents or chat connections) gets that area Allowed as its own setting, shown as an exception you can reset. It could already use those tools, so nothing it can do has widened
