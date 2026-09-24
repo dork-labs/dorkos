@@ -1003,6 +1003,23 @@ describe('InstalledPackagesView', () => {
       expect(note).not.toHaveTextContent('.dork-old');
     });
 
+    // Purpose (review 2, item 4): on a phone the long "Updating…" sentence moves
+    // inside the disclosure, so the closed note stays one short line; from sm up
+    // it sits in the summary.
+    it('moves what an update does inside the disclosure on small screens', () => {
+      showRows([FLOW], [staleCheck(FLOW, '0.7.3')]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+      render(<InstalledPackagesView />);
+      const note = screen.getByTestId('installation-integrity');
+      const wide = within(note.querySelector('summary')!).getByText(/^Updating replaces/);
+      expect(wide.className).toContain('hidden');
+      expect(wide.className).toContain('sm:inline');
+      const narrow = [...note.querySelectorAll('p')].find((p) =>
+        p.textContent?.startsWith('Updating replaces')
+      )!;
+      expect(narrow.className).toContain('sm:hidden');
+    });
+
     // Purpose (review 3): with no update on offer, the note says what changed
     // and nothing about updating.
     it('says nothing about updating when there is no update', () => {
@@ -1080,7 +1097,7 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
-        'Installed by an older DorkOS. Compares this package with the version you installed, so updates keep your edits.'
+        'Installed by an older DorkOS. Check files to compare it with the version you installed, so updates keep your edits.'
       );
       await user.click(screen.getByRole('button', { name: 'Check the files of Flow on Alpha' }));
       expect(checkFilesMutate).toHaveBeenCalledWith({
@@ -1099,17 +1116,37 @@ describe('InstalledPackagesView', () => {
         { source: 'local' },
         'Installed from a folder by an older DorkOS, so there’s no version to compare it with. Reinstall it so updates keep your edits.',
       ],
-      [
-        'found to differ',
-        { source: 'fetchable', last: { outcome: 'mismatch', message: 'Some files differ.' } },
-        'Some files differ.',
-      ],
     ])('offers no Check files for an install %s, and says why', (_label, check, text) => {
       showRows([FLOW], [makeCheck(FLOW)]);
       setIntegrity({ [FLOW.installPath]: legacy(check as never) });
       render(<InstalledPackagesView />);
       expect(screen.getByTestId('installation-integrity')).toHaveTextContent(text);
       expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
+    });
+
+    // Purpose (review 2, item 6): after the files were found to differ, the
+    // note gives the reason and a small Try again, not the full button: the
+    // person may have put their edits back and want to check again.
+    it('gives the reason and a Try again after the files were found to differ', async () => {
+      const user = userEvent.setup();
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: legacy({
+          source: 'fetchable',
+          last: { outcome: 'mismatch', message: 'Some files differ.' },
+        } as never),
+      });
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity');
+      expect(note).toHaveTextContent('Some files differ.');
+      expect(
+        screen.queryByRole('button', { name: 'Check the files of Flow' })
+      ).not.toBeInTheDocument();
+      await user.click(within(note).getByRole('button', { name: 'Check the files of Flow again' }));
+      expect(checkFilesMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'flow', options: { installRoot: FLOW.installPath } })
+      );
     });
 
     // Purpose: a check that could not reach the network says so, and can be

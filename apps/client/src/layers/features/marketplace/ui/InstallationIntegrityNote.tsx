@@ -16,9 +16,9 @@ import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
 /** A modified installation's integrity. */
 export type ModifiedIntegrity = Extract<InstallIntegrity, { status: 'modified' }>;
 
-/** What "Check files" does, said beside the button and in the CLI's help. */
+/** What the note beside the "Check files" button says it does. */
 export const CHECK_FILES_EXPLANATION =
-  'Compares this package with the version you installed, so updates keep your edits.';
+  'Check files to compare it with the version you installed, so updates keep your edits.';
 
 /** "the file you edited" / "the 3 files you edited". */
 function theFiles(count: number, verb: string): string {
@@ -95,13 +95,22 @@ function PathGroup({ title, paths }: { title: string; paths: string[] }) {
  *
  * @param props.integrity - The installation's integrity, when verification has answered.
  * @param props.updateAvailable - Whether this row offers an update, so the note says what it would do.
+ * @param props.label - The row's name ("Flow on Alpha"), for the Try again link's accessible name.
+ * @param props.onCheckFiles - Check this installation's files again (after a mismatch).
+ * @param props.isCheckingFiles - A check of this installation is running.
  */
 export function InstallationIntegrityNote({
   integrity,
   updateAvailable,
+  label,
+  onCheckFiles,
+  isCheckingFiles = false,
 }: {
   integrity?: InstallIntegrity;
   updateAvailable: boolean;
+  label?: string;
+  onCheckFiles?: () => void;
+  isCheckingFiles?: boolean;
 }) {
   if (integrity?.status === 'modified') {
     const consequence = updateAvailable ? updateConsequence(integrity) : undefined;
@@ -113,7 +122,10 @@ export function InstallationIntegrityNote({
             aria-hidden
           />
           <span>
-            {changeSummary(integrity)}.{consequence && ` ${consequence}`}
+            {changeSummary(integrity)}.
+            {/* On a phone the long consequence waits inside the disclosure, so
+                the closed note stays one short line. */}
+            {consequence && <span className="hidden sm:inline"> {consequence}</span>}
           </span>
           <ChevronRight
             className="mt-0.5 size-3 shrink-0 transition-transform duration-200 group-open/files:rotate-90"
@@ -121,6 +133,7 @@ export function InstallationIntegrityNote({
           />
         </summary>
         <div className="text-muted-foreground mt-1.5 space-y-1.5 pl-4">
+          {consequence && <p className="sm:hidden">{consequence}</p>}
           <PathGroup title="Edited" paths={integrity.changed} />
           <PathGroup title="Added" paths={integrity.added} />
           <PathGroup title="Removed" paths={integrity.missing} />
@@ -137,6 +150,9 @@ export function InstallationIntegrityNote({
       : last
         ? last.message
         : `Installed by an older DorkOS. ${CHECK_FILES_EXPLANATION}`;
+    // After the files were found to differ, a small Try again instead of the
+    // full button: the person may have put their edits back since.
+    const retry = !local && last?.outcome === 'mismatch' && onCheckFiles;
     return (
       <p
         data-testid="installation-integrity"
@@ -146,7 +162,23 @@ export function InstallationIntegrityNote({
           className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400"
           aria-hidden
         />
-        <span>{text}</span>
+        <span>
+          {text}
+          {retry && (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={onCheckFiles}
+                disabled={isCheckingFiles}
+                aria-label={`Check the files of ${label ?? 'this package'} again`}
+                className="text-foreground focus-ring rounded-sm underline underline-offset-2 disabled:opacity-50"
+              >
+                {isCheckingFiles ? 'Checking…' : 'Try again'}
+              </button>
+            </>
+          )}
+        </span>
       </p>
     );
   }

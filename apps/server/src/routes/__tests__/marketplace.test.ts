@@ -1968,7 +1968,7 @@ describe('Marketplace Routes', () => {
     // Purpose: a package that is not installed is a 404, like update and uninstall.
     it('returns 404 when the package is not installed', async () => {
       const res = await request(fixtureServer)
-        .post('/api/marketplace/packages/nowhere/prepare')
+        .post('/api/marketplace/packages/nowhere/check-files')
         .send({});
       expect(res.status).toBe(404);
     });

@@ -23,7 +23,11 @@
 import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { INSTALLED_FILES_PATH, matchesUserEditable } from '@dorkos/marketplace';
+import {
+  INSTALL_METADATA_POSIX_PATH,
+  INSTALLED_FILES_PATH,
+  matchesUserEditable,
+} from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { readInstallMetadataStrict, type InstallMetadata } from '../../installed-metadata.js';
 import type { PackageFetcher } from '../../package-fetcher.js';
@@ -140,6 +144,16 @@ export async function rebuildRecordStrict(
         // it may have changed what stands here.
         const now = await legacyState(root);
         if (now !== 'legacy') return { outcome: 'not-needed', why: now };
+        // An older DorkOS sharing this data directory does not honour the lock:
+        // if it reinstalled the package while the fetch ran, the sidecar names
+        // another commit and the fetched tree is no longer the installed one.
+        const current = fetchableSourceOf(await readInstallMetadataStrict(root).catch(() => null));
+        if (
+          current?.commitSha !== source.commitSha ||
+          JSON.stringify(current.sourceKey) !== JSON.stringify(source.sourceKey)
+        ) {
+          return { outcome: 'mismatch', differing: [INSTALL_METADATA_POSIX_PATH] };
+        }
 
         const differing: string[] = [];
         for (const [p, hash] of Object.entries(record.files)) {

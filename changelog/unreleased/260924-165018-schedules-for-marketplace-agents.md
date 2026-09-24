@@ -11,7 +11,7 @@ covers:
 
 ### Added
 
-- You can now make schedules for an agent you installed from the marketplace, the same way as for any other agent, and they are kept when the package updates. Until now DorkOS turned every one of them down. Two cases are still refused, each with a note saying why: a name the package already uses for one of its own schedules, and any schedule for an agent whose package was installed by an older version of DorkOS, which works after that package's next update. If no update comes out for that package, there is not yet a button to prepare it by hand; that is coming (DOR-2272)
+- You can now make schedules for an agent you installed from the marketplace, the same way as for any other agent, and they are kept when the package updates. Until now DorkOS turned every one of them down. Two cases are still refused, each with a note saying why: a name the package already uses for one of its own schedules, and any schedule for an agent whose package was installed by an older version of DorkOS, until you choose **Check files** on that package in Marketplace's **Installed** tab (DOR-2272)
 - A schedule that came with a package now says so as soon as you open it. You can still switch it on or off and change when it runs; its name, instructions and settings are shown but can't be changed there, because the package's next update would put them back. **Make my own copy** opens a new schedule for the same agent with everything filled in and a name that isn't taken yet. By default, creating the copy also switches the package's schedule off, so the same work doesn't run twice (DOR-2272)
 
 ### Fixed

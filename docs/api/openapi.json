@@ -5864,6 +5864,19 @@
             "type": "boolean",
             "default": false
           },
+          "packageOwned": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "record",
+              "legacy",
+              null
+            ],
+            "default": null,
+            "description": "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own)."
+          },
           "agentId": {
             "type": [
               "string",
@@ -21640,7 +21653,7 @@
         "tags": [
           "Marketplace"
         ],
-        "summary": "Prepare a package an older DorkOS installed",
+        "summary": "Check the files of a package an older DorkOS installed",
         "description": "Give an install made before DorkOS recorded a package's files its installed-files record, from the exact commit it was installed at, only when that commit matches the installed files byte for byte. Otherwise nothing is written and the answer says why (DOR-2320).",
         "parameters": [
           {
@@ -21672,7 +21685,7 @@
         },
         "responses": {
           "200": {
-            "description": "What preparing did, and one sentence saying so",
+            "description": "What the check did, and one sentence saying so",
             "content": {
               "application/json": {
                 "schema": {

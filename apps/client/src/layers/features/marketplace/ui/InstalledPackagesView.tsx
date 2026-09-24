@@ -262,6 +262,9 @@ function PackageRow({
           updateAvailable={
             updateState.kind === 'update-available' || updateState.kind === 'applying'
           }
+          label={label}
+          onCheckFiles={onCheckFilesClick}
+          isCheckingFiles={isCheckingFiles}
         />
         {/* A package whose npm libraries did not install is on disk and usable
             but incomplete, and that outlives the toast the person dismissed at

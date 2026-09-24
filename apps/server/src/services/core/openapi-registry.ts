@@ -2808,7 +2808,7 @@ registry.registerPath({
   method: 'post',
   path: '/api/marketplace/packages/{name}/check-files',
   tags: ['Marketplace'],
-  summary: 'Prepare a package an older DorkOS installed',
+  summary: 'Check the files of a package an older DorkOS installed',
   description:
     "Give an install made before DorkOS recorded a package's files its installed-files record, " +
     'from the exact commit it was installed at, only when that commit matches the installed ' +
@@ -2833,7 +2833,7 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: 'What preparing did, and one sentence saying so',
+      description: 'What the check did, and one sentence saying so',
       content: {
         'application/json': {
           schema: z.object({

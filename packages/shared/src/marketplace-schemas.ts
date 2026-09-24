@@ -806,7 +806,7 @@ export interface CheckFilesOptions {
 }
 
 /**
- * What preparing a package an older DorkOS installed did (DOR-2320): only
+ * What checking the files of a package an older DorkOS installed did (DOR-2320): only
  * `rebuilt` wrote anything, and `message` says the outcome in one sentence.
  */
 export interface CheckFilesResult {

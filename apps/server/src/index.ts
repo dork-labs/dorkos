@@ -4232,7 +4232,7 @@ async function start() {
     // Give packages an older DorkOS installed an exact installed-files record,
     // in the background once interrupted installs are settled (DOR-2197). It
     // never blocks startup and writes nothing it cannot prove; what it cannot
-    // rebuild waits for the next boot or the "Prepare" action.
+    // rebuild waits for the next boot or the "Check files" action.
     void projectInstallRecovery
       .then(() => removeRecordTempLeftovers())
       .then(() =>

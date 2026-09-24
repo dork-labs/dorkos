@@ -387,6 +387,28 @@ describe('rebuildRecordStrict', () => {
     expect((await pending).outcome).toBe('rebuilt');
   });
 
+  // Purpose (review 2, item 5): an older DorkOS sharing this data directory
+  // does not honour the install lock. If it reinstalled the package while the
+  // fetch ran, the sidecar names another commit: the fetched tree is no longer
+  // the installed one, so nothing is written.
+  it('writes nothing when the sidecar names another commit by the time the lock is held', async () => {
+    const root = await legacyInstall(shipped());
+    const fetched = await tree(shipped());
+    const fetcher = {
+      fetchAtCommit: vi.fn(async () => {
+        const sidecar = path.join(root, '.dork/install-metadata.json');
+        const meta = JSON.parse(await readFile(sidecar, 'utf8'));
+        await writeFile(sidecar, JSON.stringify({ ...meta, commitSha: 'b'.repeat(40) }));
+        return { path: fetched, commitSha: SHA, fromCache: false };
+      }),
+    };
+
+    const result = await rebuildRecordStrict(root, { fetcher, logger: noopLogger });
+
+    expect(result).toEqual({ outcome: 'mismatch', differing: ['.dork/install-metadata.json'] });
+    expect(await readInstalledFiles(root)).toBeNull();
+  });
+
   // Purpose: a FIFO or a symlink at a recorded path is not the recorded file,
   // and is never opened (a FIFO would block the lock forever).
   it(

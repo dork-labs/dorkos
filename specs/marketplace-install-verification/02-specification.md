@@ -190,4 +190,5 @@ The first adversarial review asked for these; the implementation log records eac
 - **Not a dead end.** A `no-record` integrity carries `check: { source: 'fetchable' | 'local'; last? }`. The button is hidden for a local install and after a mismatch; the note gives the reason. The last answer lives in memory; the boot sweep answers again after a restart.
 - **Minors.** Staging runs outside the install lock. The sweep is cancellable on shutdown. Boot removes rebuild scratch folders older than an hour. An editable path turned into a folder or link verifies as customized.
 - **DOR-2272 follow-through.** Its older-install refusals now point at Check files instead of "after the package's next update".
+- **Round 2:** after a mismatch the note offers a small Try again instead of hiding the action; on phones the "Updating…" sentence moves inside the disclosure; the rebuild re-reads the sidecar under the lock and writes nothing if it now names another commit (an older DorkOS sharing the data directory does not honour the lock).
 - **Deferred as DOR-2322:** update and uninstall trying the strict rebuild first (an offline product decision).

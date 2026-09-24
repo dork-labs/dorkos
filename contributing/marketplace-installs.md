@@ -340,7 +340,7 @@ Each flow copies the notices (`InstallResult.fileNotices`) onto its result, with
 
 A marketplace **agent** keeps its identity: `createAgentWorkspace(input, meshCore, { marketplace: true })` adopts a readable `agent.json` (restoring a parked one first), writes `SOUL.md`/`NOPE.md`/`MEMORY.md` only where absent, does not re-announce an agent still on the team, and lifts a Mesh denial on its own folder. A same-named agent package from a different source (clone URL and subpath; the ref is ignored) sets the old identity files aside as `.dork-old` and starts fresh.
 
-### 5.3 Verifying an install, and preparing older ones (DOR-2197, DOR-2320)
+### 5.3 Verifying an install, and checking the files of older ones (DOR-2197, DOR-2320)
 
 The record is also the answer to "is this still what was installed?" (spec `specs/marketplace-install-verification/`). Everything lives in `lib/integrity/`:
 
