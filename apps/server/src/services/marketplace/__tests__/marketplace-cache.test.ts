@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile, mkdir, stat, access, utimes, readdir } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { MarketplaceJson } from '@dorkos/marketplace';
-import { MarketplaceCache } from '../marketplace-cache.js';
+import { IN_USE_GRACE_MS, MarketplaceCache, subpathDigest } from '../marketplace-cache.js';
 import { PathEscapeError } from '../lib/package-paths.js';
 
 /** Build a minimal valid MarketplaceJson document for round-trip tests. */
@@ -133,6 +133,17 @@ describe('MarketplaceCache', () => {
     });
   });
 
+  const HOUR_MS = 60 * 60 * 1000;
+
+  /**
+   * Set an entry's last-use stamp (its mtime) to `agoMs` before now. The
+   * stamp is the real filesystem mtime, so it is set by hand, not by timers.
+   */
+  async function ageEntry(path: string, agoMs: number): Promise<void> {
+    const then = new Date(Date.now() - agoMs);
+    await utimes(path, then, then);
+  }
+
   /** A full commit id made of one repeated hex digit. */
   const sha = (digit: string): string => digit.repeat(40);
 
@@ -167,7 +178,18 @@ describe('MarketplaceCache', () => {
       expect(result!.packageName).toBe('code-review-suite');
       expect(result!.commitSha).toBe(sha('a'));
       expect(result!.path).toBe(path);
-      expect(result!.cachedAt).toBeInstanceOf(Date);
+      expect(result!.lastUsedAt).toBeInstanceOf(Date);
+    });
+
+    it('stamps the entry as used when it hands the entry out', async () => {
+      // Purpose: the stamp is what spares an entry a request is reading from
+      // a sweep; a hit that does not stamp leaves the reader exposed.
+      const path = await seed('code-review-suite', sha('a'));
+      await ageEntry(path, HOUR_MS);
+
+      await cache.getPackage('code-review-suite', sha('a'), '');
+
+      expect(Date.now() - (await stat(path)).mtimeMs).toBeLessThan(IN_USE_GRACE_MS);
     });
 
     it('does not serve an empty entry directory', async () => {
@@ -236,10 +258,22 @@ describe('MarketplaceCache', () => {
       expect(await cache.getPackage('flow', sha('a'), 'docs')).toBeNull();
     });
 
-    it('lists a sparse entry under its package and commit', async () => {
+    it('lists a sparse entry under its package, commit and subfolder digest', async () => {
       await cache.materializePackage('flow', sha('a'), 'plugins/flow', fakeFetch(sha('a')));
-      const [entry] = await cache.listPackages();
-      expect(entry).toMatchObject({ packageName: 'flow', commitSha: sha('a') });
+      await cache.materializePackage('flow', sha('a'), '', fakeFetch(sha('a')));
+      const entries = await cache.listPackages();
+      expect(entries).toHaveLength(2);
+      expect(entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            packageName: 'flow',
+            commitSha: sha('a'),
+            subpathDigest: subpathDigest('plugins/flow'),
+          }),
+          expect.objectContaining({ packageName: 'flow', commitSha: sha('a'), subpathDigest: '' }),
+        ])
+      );
+      expect(subpathDigest('plugins/flow')).toMatch(/^[0-9a-f]{12}$/);
     });
   });
 
@@ -374,6 +408,18 @@ describe('MarketplaceCache', () => {
       expect(await cache.getPackage('flow', sha('b'), '')).not.toBeNull();
     });
 
+    it('removes entries a crashed sweep renamed aside but never deleted', async () => {
+      // Purpose: a sweep renames an entry to `.tmp-prune-*` before deleting
+      // it; a crash in between must not leave that copy on disk for ever.
+      const leftover = join(cache.cacheRoot, 'trees', '.tmp-prune-0f8e');
+      await mkdir(leftover, { recursive: true });
+      await writeFile(join(leftover, 'README.md'), 'x');
+
+      await cache.removeLeftovers();
+
+      await expect(access(leftover)).rejects.toThrow();
+    });
+
     it('is a no-op when there is no legacy root', async () => {
       await expect(cache.removeLeftovers()).resolves.toBeUndefined();
     });
@@ -412,55 +458,172 @@ describe('MarketplaceCache', () => {
     });
   });
 
-  describe('prune', () => {
-    /**
-     * Stamp every package's mtime explicitly. `cachedAt` comes from the real
-     * filesystem mtime, so fake timers do not influence it — we have to set
-     * mtime by hand to get deterministic ordering across the matrix.
-     */
-    async function stampMtime(path: string, secondsFromEpoch: number): Promise<void> {
-      await utimes(path, secondsFromEpoch, secondsFromEpoch);
-    }
+  describe('removeUnused', () => {
+    /** Keep nothing: every entry is up for removal unless it is in use. */
+    const keepNone = (): ReadonlySet<string> => new Set();
 
-    it('keeps the most recent SHA per package and removes the rest by default', async () => {
-      const old = await seed('code-review-suite', sha('1'));
-      const fresh = await seed('code-review-suite', sha('2'));
-      const only = await seed('release-manager', sha('3'));
+    it('removes an entry the caller does not keep and reports the bytes it freed', async () => {
+      // Purpose: the basic contract — an unkept, unused entry leaves disk, and
+      // the report says how much space that gave back.
+      const path = await seed('flow', sha('a'));
+      await ageEntry(path, HOUR_MS);
 
-      await stampMtime(old, 1_000);
-      await stampMtime(fresh, 2_000);
-      await stampMtime(only, 3_000);
+      const result = await cache.removeUnused(keepNone);
 
-      const result = await cache.prune();
-
-      expect(result.removed).toHaveLength(1);
-      expect(result.removed[0]?.packageName).toBe('code-review-suite');
-      expect(result.removed[0]?.commitSha).toBe(sha('1'));
-
-      const remaining = await cache.listPackages();
-      const remainingIds = remaining.map((p) => `${p.packageName}@${p.commitSha}`).sort();
-      expect(remainingIds).toEqual([
-        `code-review-suite@${sha('2')}`,
-        `release-manager@${sha('3')}`,
-      ]);
+      expect(result.removed.map((e) => e.commitSha)).toEqual([sha('a')]);
+      expect(result.freedBytes).toBe('content\n'.length);
+      expect(result.failed).toEqual([]);
+      await expect(access(path)).rejects.toThrow();
     });
 
-    it('respects a custom keepLastN', async () => {
-      const sha1 = await seed('code-review-suite', sha('1'));
-      const sha2 = await seed('code-review-suite', sha('2'));
-      const sha3 = await seed('code-review-suite', sha('3'));
+    it('keeps an entry whose path the caller keeps', async () => {
+      // Purpose: the caller's rule decides; the cache never overrides a keep.
+      const kept = await seed('flow', sha('a'));
+      const dropped = await seed('flow', sha('b'));
+      await ageEntry(kept, HOUR_MS);
+      await ageEntry(dropped, HOUR_MS);
 
-      await stampMtime(sha1, 1_000);
-      await stampMtime(sha2, 2_000);
-      await stampMtime(sha3, 3_000);
+      const result = await cache.removeUnused((entries) => {
+        // The rule sees the whole listing, so it can compare entries.
+        expect(entries.map((e) => e.path).sort()).toEqual([kept, dropped].sort());
+        return new Set([kept]);
+      });
 
-      const result = await cache.prune({ keepLastN: 2 });
-      expect(result.removed).toHaveLength(1);
-      expect(result.removed[0]?.commitSha).toBe(sha('1'));
+      expect(result.removed.map((e) => e.path)).toEqual([dropped]);
+      await expect(access(kept)).resolves.toBeUndefined();
+    });
 
-      const remaining = await cache.listPackages();
-      const remainingShas = remaining.map((p) => p.commitSha).sort();
-      expect(remainingShas).toEqual([sha('2'), sha('3')]);
+    it('spares an entry used inside the grace window even when the caller drops it', async () => {
+      // Purpose: a reader holds an entry's path for the seconds it takes to
+      // copy it; the grace is what keeps a sweep from pulling it away.
+      const recent = await seed('flow', sha('a'));
+      await ageEntry(recent, IN_USE_GRACE_MS - 60_000);
+      const stale = await seed('flow', sha('b'));
+      await ageEntry(stale, IN_USE_GRACE_MS + 60_000);
+
+      const result = await cache.removeUnused(keepNone);
+
+      expect(result.removed.map((e) => e.path)).toEqual([stale]);
+      await expect(access(recent)).resolves.toBeUndefined();
+    });
+
+    it('never touches an in-progress fetch', async () => {
+      // Purpose: a `.tmp-fetch-*` directory is a fetch running right now.
+      const inProgress = join(cache.cacheRoot, 'trees', '.tmp-fetch-abc123');
+      await mkdir(inProgress, { recursive: true });
+      await writeFile(join(inProgress, 'partial'), 'x');
+      await ageEntry(inProgress, HOUR_MS);
+
+      await cache.removeUnused(keepNone);
+
+      await expect(access(join(inProgress, 'partial'))).resolves.toBeUndefined();
+    });
+
+    it('leaves nothing renamed aside behind', async () => {
+      // Purpose: an entry is renamed out of the way before it is deleted; the
+      // renamed copy must go too, or the sweep only moved the disk use.
+      const path = await seed('flow', sha('a'));
+      await ageEntry(path, HOUR_MS);
+
+      await cache.removeUnused(keepNone);
+
+      expect(await readdir(join(cache.cacheRoot, 'trees'))).toEqual([]);
+    });
+
+    it.each([
+      ['hit first', true],
+      ['sweep first', false],
+    ])('never hands out a path a concurrent sweep removes (%s)', async (_label, hitFirst) => {
+      // Purpose: the lock makes "check and stamp" and "re-check and remove"
+      // exclusive, so a reader that got a path still has its tree.
+      const path = await seed('flow', sha('a'));
+      await ageEntry(path, HOUR_MS);
+
+      const hit = cache.getPackage('flow', sha('a'), '');
+      const sweep = cache.removeUnused(keepNone);
+      const [found, swept] = hitFirst
+        ? [await hit, await sweep]
+        : await Promise.all([hit, sweep]).then(([f, s]) => [f, s] as const);
+
+      if (found) {
+        await expect(access(found.path)).resolves.toBeUndefined();
+        expect(swept.removed).toEqual([]);
+      } else {
+        expect(swept.removed.map((e) => e.path)).toEqual([path]);
+      }
+    });
+
+    it('spares the entry a concurrent fetch serves from its fast path', async () => {
+      // Purpose: the same guarantee for materializePackage's cache hit, which
+      // the update apply takes (force skips getPackage, not this).
+      const path = await seed('flow', sha('a'));
+      await ageEntry(path, HOUR_MS);
+      const fetch = vi.fn(fakeFetch(sha('a')));
+
+      const [served] = await Promise.all([
+        cache.materializePackage('flow', sha('a'), '', fetch),
+        cache.removeUnused(keepNone),
+      ]);
+
+      await expect(access(join(served.path, '.dork-manifest'))).resolves.toBeUndefined();
+    });
+  });
+
+  describe('stamping when a fetch lands', () => {
+    it('stamps a fetched entry even when the fetch took longer than the grace', async () => {
+      // Purpose: a slow fetch leaves the temp directory's time from when it
+      // started; unstamped, the entry would land already "unused" and a sweep
+      // could take it from the request that is about to read it.
+      const result = await cache.materializePackage('flow', sha('a'), '', async (dir) => {
+        await writeFile(join(dir, 'README.md'), 'tree\n');
+        await ageEntry(dir, HOUR_MS);
+        return sha('a');
+      });
+
+      expect(Date.now() - (await stat(result.path)).mtimeMs).toBeLessThan(IN_USE_GRACE_MS);
+    });
+
+    it('stamps the entry another process landed first', async () => {
+      // Purpose: when the fetch finds its commit already cached (the ref moved
+      // onto an old entry), that old entry is what the caller reads now.
+      const existing = await seed('flow', sha('b'));
+      await ageEntry(existing, HOUR_MS);
+
+      const result = await cache.materializePackage('flow', sha('a'), '', fakeFetch(sha('b')));
+
+      expect(result.path).toBe(existing);
+      expect(Date.now() - (await stat(existing)).mtimeMs).toBeLessThan(IN_USE_GRACE_MS);
+    });
+  });
+
+  describe('onEntryWritten', () => {
+    it('tells the listener when a fetch lands a new entry, and not on a hit', async () => {
+      // Purpose: this is the one door the cache grows through, so it is the
+      // one signal a sweep needs; a hit adds nothing and must not trigger one.
+      const listener = vi.fn();
+      const unsubscribe = cache.onEntryWritten(listener);
+
+      await seed('flow', sha('a'));
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      await cache.materializePackage('flow', sha('a'), '', fakeFetch(sha('a')));
+      await cache.getPackage('flow', sha('a'), '');
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      unsubscribe();
+      await seed('flow', sha('b'));
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not tell the listener when the fetch fails', async () => {
+      const listener = vi.fn();
+      cache.onEntryWritten(listener);
+
+      await expect(
+        cache.materializePackage('flow', sha('a'), '', fakeFetch('not-a-commit'))
+      ).rejects.toThrow();
+
+      expect(listener).not.toHaveBeenCalled();
     });
   });
 

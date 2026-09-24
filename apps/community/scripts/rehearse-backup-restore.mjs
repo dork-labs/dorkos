@@ -37,6 +37,13 @@ let restoreProcess;
 let runDirectory;
 /** Containers this run started, by name; cleanup never touches any other container. */
 const ownedContainers = new Set();
+/**
+ * Set once a signal handler owns cleanup. `main()` then unwinds as its resources vanish, and its
+ * `finally` must not stop the same processes and containers a second time.
+ */
+let interrupting = false;
+/** Every Community server this run started. They sit in their own process group (see below). */
+const ownedProcesses = new Set();
 
 function fail(message) {
   throw new Error(`Community backup rehearsal: ${message}`);
@@ -106,6 +113,9 @@ function startCommunity(databaseUrl, blobDirectory, port) {
   const child = spawn(process.execPath, ['dist-server/main.js'], {
     cwd: community,
     stdio: ['ignore', 'ignore', 'pipe'],
+    // Its own process group, so Ctrl-C reaches only this script, which then stops the server
+    // with exactly one SIGTERM. A second signal would make the server exit at once, with code 1.
+    detached: true,
     env: {
       ...Object.fromEntries(
         INHERITED_ENV.filter((name) => process.env[name] !== undefined).map((name) => [
@@ -121,6 +131,8 @@ function startCommunity(databaseUrl, blobDirectory, port) {
       COMMUNITY_PORT: String(port),
     },
   });
+  ownedProcesses.add(child);
+  child.once('exit', () => ownedProcesses.delete(child));
   let error = '';
   child.stderr.on('data', (chunk) => (error += chunk));
   child.once('exit', (code) => {
@@ -344,7 +356,27 @@ async function stopOwnedContainers() {
   );
 }
 
+function killOwnedProcesses() {
+  for (const child of ownedProcesses) child.kill('SIGKILL');
+}
+
+let signals = 0;
+/**
+ * The first signal stops the servers gracefully and removes everything this run made. A second
+ * one skips the graceful wait: it kills the servers outright, still removes the containers, and
+ * exits. A third exits at once. Handlers stay installed (`process.on`), because the servers are in
+ * their own process group and a signal that fell to Node's default action would orphan them.
+ */
 async function interrupted(signal) {
+  signals += 1;
+  if (signals > 2) process.exit(130);
+  if (signals === 2) {
+    process.stderr.write(`Community backup rehearsal: ${signal} again, stopping at once\n`);
+    killOwnedProcesses();
+    await stopOwnedContainers();
+    process.exit(130);
+  }
+  interrupting = true;
   process.stderr.write(
     `Community backup rehearsal: ${signal} received, removing owned resources\n`
   );
@@ -492,8 +524,12 @@ async function main() {
   );
 }
 
-process.once('SIGINT', () => void interrupted('SIGINT'));
-process.once('SIGTERM', () => void interrupted('SIGTERM'));
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'])
+  process.on(signal, () => void interrupted(signal));
+// Last resort for any way out that skipped cleanup (a crash outside main(), a forced exit): no
+// server outlives the script. Only synchronous work runs here, so containers are left to the
+// cleanup paths above.
+process.on('exit', killOwnedProcesses);
 
 main()
   .catch((error) => {
@@ -501,6 +537,7 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
+    if (interrupting) return;
     await Promise.allSettled([stopOwned(sourceProcess), stopOwned(restoreProcess)]);
     await stopOwnedContainers();
     // Preserve only the non-secret proof manifest. All database dumps, blob copies and generated secrets stay in the private fixture directory.

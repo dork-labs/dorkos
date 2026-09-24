@@ -59,7 +59,7 @@ pnpm --filter @dorkos/community build
 DORKOS_COMMUNITY_BACKUP_REHEARSAL=1 pnpm --filter @dorkos/community test:backup-restore
 ```
 
-The command removes its containers, databases, blob directories, and generated secrets, including when you stop it with Ctrl-C. It removes only the containers it started. It prints the temporary path of a small non-secret proof manifest that records source revision and the verified stable IDs. Treat a failure as a failed rehearsal: the command removes private fixtures but leaves no production resources to recover.
+The command removes its containers, databases, blob directories, and generated secrets, including when you stop it with Ctrl-C or close the terminal. Press Ctrl-C a second time to stop it at once: it still stops its Community processes and removes its containers, but leaves its temporary folder behind. It removes only the containers it started. If the command itself is force-killed (SIGKILL), it cannot clean up and its containers can be left running. Each one carries the `dorkos.backup-rehearsal` label, so `docker ps --filter label=dorkos.backup-rehearsal` lists them for you to remove with `docker rm -f`. It prints the temporary path of a small non-secret proof manifest that records source revision and the verified stable IDs. Treat a failure as a failed rehearsal: the command removes private fixtures but leaves no production resources to recover.
 
 ## Upgrade and roll back
 

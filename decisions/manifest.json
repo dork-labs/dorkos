@@ -6044,6 +6044,38 @@
       ]
     },
     {
+      "id": "260923-193906",
+      "slug": "package-cache-sweeps-itself-on-write",
+      "title": "The marketplace package cache keeps what installs need and sweeps itself on write",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "marketplace-cache-retention",
+      "specSlug": "marketplace-cache-retention",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/marketplace/marketplace-cache.ts",
+        "apps/server/src/services/marketplace/package-cache-retention.ts",
+        "apps/server/src/routes/marketplace.ts",
+        "packages/cli/src/commands/cache-commands.ts"
+      ]
+    },
+    {
+      "id": "260923-163034",
+      "slug": "updates-are-per-installation-in-their-own-scope",
+      "title": "An update is checked and applied per installation, in the installation's own scope",
+      "status": "draft",
+      "created": "2026-09-23",
+      "extractedFrom": "marketplace-update-all",
+      "specSlug": "marketplace-update-all",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/marketplace/flows/update.ts",
+        "apps/server/src/services/marketplace/installed-scanner.ts",
+        "apps/server/src/routes/marketplace.ts",
+        "packages/cli/src/commands/update.ts"
+      ]
+    },
+    {
       "id": "260923-214401",
       "slug": "host-hold-keeps-connections",
       "title": "A host hold keeps connections, agents, and invitations; only suspension and deletion revoke",

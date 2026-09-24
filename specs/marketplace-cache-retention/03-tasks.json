@@ -1,0 +1,65 @@
+{
+  "spec": "specs/marketplace-cache-retention/02-specification.md",
+  "slug": "marketplace-cache-retention",
+  "generatedAt": "2026-09-23T19:40:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Cache retention",
+      "subject": "[marketplace-cache-retention] [P1] Stamp use, lock, removeUnused and write listener in MarketplaceCache",
+      "description": "In apps/server/src/services/marketplace/marketplace-cache.ts: rename CachedPackage.cachedAt to lastUsedAt and add subpathDigest ('' for a whole-repository entry); export IN_USE_GRACE_MS = 15 min and subpathDigest(subpath) ('' for ''); add an in-process promise-chain lock; getPackage and materializePackage's fast path check-and-stamp (utimes now) under the lock; fetchAndPromote's land step (discard-if-landed / rm partial / rename) runs under the lock and stamps, and notifies onEntryWritten listeners only after its own rename; add onEntryWritten(listener) returning an unsubscribe; add removeUnused(keep) that lists entries, skips kept ones, and under the lock re-stats and renames an entry to trees/.tmp-prune-<uuid> only when its stamp is older than IN_USE_GRACE_MS, then measures (lib/directory-size.ts, moved from the route's sumDirectorySize) and deletes it, logging-free, returning { removed, freedBytes }; one entry's failure does not stop the rest; remove prune(); removeLeftovers also deletes .tmp-prune-*. Update the module header. Tests first in __tests__/marketplace-cache.test.ts: stamping on hit and fast path; removeUnused honours keep, grace, freed bytes, ignores .tmp-fetch-*; concurrent getPackage + removeUnused never leaves getPackage holding a deleted path; listener fires on promote not on hit; removeLeftovers deletes .tmp-prune-*; listPackages reports subpathDigest.",
+      "activeForm": "Building cache retention mechanism",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Cache retention",
+      "subject": "[marketplace-cache-retention] [P1] Add PackageCacheRetention: the keep rule and its owner",
+      "description": "New apps/server/src/services/marketplace/package-cache-retention.ts: RecordedTree { name, commitSha, subpath? }; listRecordedTrees(dorkHome, agents) from scanInstallationsAcrossScopes + readInstallMetadata, skipping installs without a real commit; keepRule(entries, recorded) pure: keep an entry whose commit is recorded (subfolder digest must match when the sidecar has a sourceKey; name ignored), and the most recently used entry of each (packageName, subpathDigest) group an installation belongs to (name equal, digest equal when known); class PackageCacheRetention({ cache, dorkHome, listAgentScopes, logger }) with start() (subscribe to cache.onEntryWritten -> background sweep; sweep once in background) and sweep() coalesced (one running, at most one queued; callers during a run share the queued one). A failing installation scan removes nothing and warns; background sweeps log removals at info and errors at warn, never throw. Tests first in __tests__/package-cache-retention.test.ts per the spec's Testing Strategy.",
+      "activeForm": "Adding the cache retention owner",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": ["1.1"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Cache retention",
+      "subject": "[marketplace-cache-retention] [P1] Wire the owner into the server, route and CLI",
+      "description": "index.ts: construct PackageCacheRetention after listAgentScopes exists, start() it, pass cacheRetention to createMarketplaceRouter. routes/marketplace.ts: required dep cacheRetention; POST /cache/prune body z.object({}).strict(); calls cacheRetention.sweep(); response removed[] with lastUsedAt; status endpoint uses lib/directory-size.ts. openapi-registry.ts: body and response schemas, summary. packages/cli cache-commands.ts + cache-dispatcher.ts: prune takes no options (unknown-option error names the usage), messages per the spec's User Experience. Update tests in routes/__tests__/marketplace.test.ts and packages/cli/src/__tests__/cache-commands.test.ts first.",
+      "activeForm": "Wiring cache retention",
+      "size": "small",
+      "priority": "high",
+      "dependencies": ["1.2"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "phaseName": "Cache retention",
+      "subject": "[marketplace-cache-retention] [P1] Docs, OpenAPI export and changelog fragment",
+      "description": "contributing/marketplace-installs.md (cache section, API table row, the --keep-last-n note), contributing/api-reference.md prune row, docs/guides/cli-usage.mdx cache prune line, regenerate docs/api/openapi.json (pnpm docs:export-api), one changelog fragment in changelog/unreleased/ written per writing-for-humans, 04-implementation.md, spec manifest status implemented.",
+      "activeForm": "Updating docs",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": ["1.3"],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}

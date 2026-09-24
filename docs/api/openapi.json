@@ -17674,7 +17674,7 @@
           "Marketplace"
         ],
         "summary": "List installed marketplace packages",
-        "description": "Without projectPath: one entry per installation across all scopes (global roots plus every registered agent's local installs), each tagged with scope and agent identity. With projectPath: the merged view for that single project — one entry per package name.",
+        "description": "Without projectPath: one entry per installation across all scopes (global roots plus every registered agent's local installs), each tagged with scope and agent identity. With projectPath: the merged view for that single project — one entry per install root and name — scanned at the canonical path, so its install paths match `GET /updates`.",
         "parameters": [
           {
             "schema": {
@@ -17753,6 +17753,26 @@
                   "required": [
                     "packages"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "projectPath given more than once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "projectPath outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -17897,7 +17917,7 @@
         "summary": "Marketplace cache status",
         "responses": {
           "200": {
-            "description": "Cache counts and total size",
+            "description": "Cache counts, total size, and whether automatic cleanup is paused",
             "content": {
               "application/json": {
                 "schema": {
@@ -17914,12 +17934,39 @@
                     "totalSizeBytes": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "cleanup": {
+                      "type": "object",
+                      "properties": {
+                        "paused": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "since": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "paused",
+                        "reason",
+                        "since"
+                      ],
+                      "description": "Automatic cleanup of cached packages. Paused while the server cannot read every install, in which case nothing is removed; `reason` says what it could not read."
                     }
                   },
                   "required": [
                     "marketplaces",
                     "packages",
-                    "totalSizeBytes"
+                    "totalSizeBytes",
+                    "cleanup"
                   ]
                 }
               }
@@ -17944,18 +17991,15 @@
         "tags": [
           "Marketplace"
         ],
-        "summary": "Garbage-collect cached packages, keeping the N most recent per name",
+        "summary": "Remove cached packages no install needs",
+        "description": "Runs the same sweep the server runs after every fetch and at startup. Keeps every tree an installation records, the most recently used tree of each installed package, and anything used in the last 15 minutes. Takes no options.",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {
-                  "keepLastN": {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
+                "properties": {},
+                "additionalProperties": false
               }
             }
           }
@@ -17982,7 +18026,7 @@
                           "path": {
                             "type": "string"
                           },
-                          "cachedAt": {
+                          "lastUsedAt": {
                             "type": "string"
                           }
                         },
@@ -17990,7 +18034,7 @@
                           "packageName",
                           "commitSha",
                           "path",
-                          "cachedAt"
+                          "lastUsedAt"
                         ]
                       }
                     },
@@ -19295,6 +19339,549 @@
           },
           "404": {
             "description": "Package not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The package's git remote could not be reached, or its fetch failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/updates": {
+      "get": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Check every installed package for updates",
+        "description": "Advisory: one check per installation in view. No installed package changes, though a check may stage a newer version into the package cache. Without `projectPath`, every installation in every scope (global, then each registered agent's project); with it, that project's merged view. Each check carries the installation's identity; `installPath` matches the installed list's.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "projectPath",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One check per installation, in scan order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "packageName": {
+                            "type": "string"
+                          },
+                          "installedVersion": {
+                            "type": "string"
+                          },
+                          "latestVersion": {
+                            "type": "string"
+                          },
+                          "hasUpdate": {
+                            "type": "boolean"
+                          },
+                          "marketplace": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "current",
+                              "update-available",
+                              "unknown"
+                            ]
+                          },
+                          "installedVersionSource": {
+                            "type": "string",
+                            "enum": [
+                              "package",
+                              "index",
+                              "commit"
+                            ]
+                          },
+                          "latestVersionSource": {
+                            "type": "string",
+                            "enum": [
+                              "package",
+                              "index",
+                              "commit"
+                            ]
+                          },
+                          "note": {
+                            "type": "string"
+                          },
+                          "installPath": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "plugin",
+                              "skill-pack",
+                              "adapter",
+                              "shape"
+                            ]
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "global",
+                              "agent-local",
+                              "override"
+                            ]
+                          },
+                          "agentPath": {
+                            "type": "string"
+                          },
+                          "agentId": {
+                            "type": "string"
+                          },
+                          "agentName": {
+                            "type": "string"
+                          },
+                          "applied": {
+                            "type": "object",
+                            "properties": {
+                              "ok": {
+                                "type": "boolean"
+                              },
+                              "packageName": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "agent",
+                                  "plugin",
+                                  "skill-pack",
+                                  "adapter",
+                                  "shape"
+                                ]
+                              },
+                              "installPath": {
+                                "type": "string"
+                              },
+                              "manifest": {
+                                "type": "object",
+                                "properties": {
+                                  "schemaVersion": {
+                                    "type": "number"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "agent",
+                                      "plugin",
+                                      "skill-pack",
+                                      "adapter",
+                                      "shape"
+                                    ]
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "schemaVersion",
+                                  "name",
+                                  "version",
+                                  "type"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "warnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "dependencyWarnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "ok",
+                              "packageName",
+                              "version",
+                              "type",
+                              "installPath",
+                              "manifest",
+                              "warnings"
+                            ]
+                          },
+                          "applyError": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "packageName",
+                          "installedVersion",
+                          "latestVersion",
+                          "hasUpdate",
+                          "marketplace",
+                          "status",
+                          "installPath",
+                          "type",
+                          "scope"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "checks"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "projectPath given more than once",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "projectPath outside the directory boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Update every stale installed package, or the named ones",
+        "description": "Reinstalls every installation in view whose check is `update-available`, each in the scope it was found in, one at a time. A failed reinstall is reported on its installation as `applyError` and the rest carry on. Each reinstall is authorized as `marketplace.install` before anything runs. A batch that would need a person to approve each install is refused (`batch_update_needs_approval`); use the one-package route instead. `names` selects every installation of those packages; `installPaths` selects exactly the installations a check reported. The response is the record of what changed.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "apply": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "names": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "installPaths": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "minItems": 1
+                  },
+                  "projectPath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "apply"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One check per installation, with `applied` or `applyError` where one ran",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "packageName": {
+                            "type": "string"
+                          },
+                          "installedVersion": {
+                            "type": "string"
+                          },
+                          "latestVersion": {
+                            "type": "string"
+                          },
+                          "hasUpdate": {
+                            "type": "boolean"
+                          },
+                          "marketplace": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "current",
+                              "update-available",
+                              "unknown"
+                            ]
+                          },
+                          "installedVersionSource": {
+                            "type": "string",
+                            "enum": [
+                              "package",
+                              "index",
+                              "commit"
+                            ]
+                          },
+                          "latestVersionSource": {
+                            "type": "string",
+                            "enum": [
+                              "package",
+                              "index",
+                              "commit"
+                            ]
+                          },
+                          "note": {
+                            "type": "string"
+                          },
+                          "installPath": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "agent",
+                              "plugin",
+                              "skill-pack",
+                              "adapter",
+                              "shape"
+                            ]
+                          },
+                          "scope": {
+                            "type": "string",
+                            "enum": [
+                              "global",
+                              "agent-local",
+                              "override"
+                            ]
+                          },
+                          "agentPath": {
+                            "type": "string"
+                          },
+                          "agentId": {
+                            "type": "string"
+                          },
+                          "agentName": {
+                            "type": "string"
+                          },
+                          "applied": {
+                            "type": "object",
+                            "properties": {
+                              "ok": {
+                                "type": "boolean"
+                              },
+                              "packageName": {
+                                "type": "string"
+                              },
+                              "version": {
+                                "type": "string"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "agent",
+                                  "plugin",
+                                  "skill-pack",
+                                  "adapter",
+                                  "shape"
+                                ]
+                              },
+                              "installPath": {
+                                "type": "string"
+                              },
+                              "manifest": {
+                                "type": "object",
+                                "properties": {
+                                  "schemaVersion": {
+                                    "type": "number"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "version": {
+                                    "type": "string"
+                                  },
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "agent",
+                                      "plugin",
+                                      "skill-pack",
+                                      "adapter",
+                                      "shape"
+                                    ]
+                                  },
+                                  "description": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "schemaVersion",
+                                  "name",
+                                  "version",
+                                  "type"
+                                ],
+                                "additionalProperties": {}
+                              },
+                              "warnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "dependencyWarnings": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              }
+                            },
+                            "required": [
+                              "ok",
+                              "packageName",
+                              "version",
+                              "type",
+                              "installPath",
+                              "manifest",
+                              "warnings"
+                            ]
+                          },
+                          "applyError": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "packageName",
+                          "installedVersion",
+                          "latestVersion",
+                          "hasUpdate",
+                          "marketplace",
+                          "status",
+                          "installPath",
+                          "type",
+                          "scope"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "checks"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error (including a body without `apply: true`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused by the permission check, or projectPath outside the boundary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "A named package or install path is not installed in view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "packageNames": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "installPaths": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "packageNames",
+                    "installPaths"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The package's git remote could not be reached, or its fetch failed",
             "content": {
               "application/json": {
                 "schema": {

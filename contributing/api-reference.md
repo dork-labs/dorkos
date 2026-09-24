@@ -66,9 +66,9 @@ The marketplace routes are mounted at `/api/marketplace` and backed by injected 
 | `POST`   | `/api/marketplace/sources/:name/refresh`    | Force-refetch a source's `marketplace.json`                                 |
 | `GET`    | `/api/marketplace/installed`                | List installed packages from `~/.dork/plugins/` and `~/.dork/agents/`       |
 | `GET`    | `/api/marketplace/installed/:name`          | Get a single installed package by name                                      |
-| `GET`    | `/api/marketplace/cache`                    | Cache status (marketplace count, package count, total bytes)                |
+| `GET`    | `/api/marketplace/cache`                    | Cache status (counts, total bytes, whether automatic cleanup is paused)     |
 | `DELETE` | `/api/marketplace/cache`                    | Wipe the entire marketplace cache                                           |
-| `POST`   | `/api/marketplace/cache/prune`              | Prune old cached packages (`{ keepLastN? }`)                                |
+| `POST`   | `/api/marketplace/cache/prune`              | Remove cached packages no install needs (no options)                        |
 | `GET`    | `/api/marketplace/packages`                 | Aggregate packages from all enabled sources                                 |
 | `GET`    | `/api/marketplace/packages/:name`           | Fetch and validate a single package entry (`?marketplace=` to pin source)   |
 | `POST`   | `/api/marketplace/packages/:name/preview`   | Build a `PermissionPreview` without installing                              |

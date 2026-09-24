@@ -1,7 +1,7 @@
 /**
  * Marketplace management routes -- sources, cache status, installed
  * package listing, plus package discovery/preview/install/uninstall/update
- * under `/api/marketplace/*`.
+ * and the all-packages update check under `/api/marketplace/*`.
  *
  * The router is constructed via a factory that injects its dependencies
  * (source manager, cache, fetcher, installer, uninstall flow, update flow,
@@ -11,7 +11,7 @@
  * @module routes/marketplace
  */
 import { Router, type Request, type Response } from 'express';
-import { lstat, open, readdir, stat } from 'node:fs/promises';
+import { lstat, open, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import {
@@ -22,7 +22,12 @@ import {
 } from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../lib/logger.js';
-import type { MarketplaceCache, CachedPackage } from '../services/marketplace/marketplace-cache.js';
+import type { MarketplaceCache } from '../services/marketplace/marketplace-cache.js';
+import {
+  UnreadableInstallsError,
+  type PackageCacheRetention,
+} from '../services/marketplace/package-cache-retention.js';
+import { directorySize } from '../services/marketplace/lib/directory-size.js';
 import type { MarketplaceSourceManager } from '../services/marketplace/marketplace-source-manager.js';
 import type { PackageFetcher } from '../services/marketplace/package-fetcher.js';
 import type { InstallerLike } from '../services/marketplace/marketplace-installer.js';
@@ -40,9 +45,23 @@ import {
 } from '../services/marketplace/flows/uninstall.js';
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
 import {
+  GitCommitNotFoundError,
+  GitFetchError,
+  GitRefNotFoundError,
+  GitRemoteUnreachableError,
+} from '../services/marketplace/lib/git-tree.js';
+import {
   PackageNotInstalledForUpdateError,
+  pickInstallation,
   type UpdateFlow,
 } from '../services/marketplace/flows/update.js';
+import {
+  applyInstalledUpdates,
+  callerSpelling,
+  checkInstalledUpdates,
+  scanUpdateView,
+  type InstalledUpdatesDeps,
+} from '../services/marketplace/flows/update-installed.js';
 import {
   assertPackageName,
   MarketplacePathError,
@@ -55,13 +74,12 @@ import {
 import { updatedAtProvider, enrichWithUpdatedAt } from '../services/marketplace/updated-at.js';
 import type { MarketplaceSource, NotifyPluginsChanged } from '../services/marketplace/types.js';
 import {
-  scanInstalledPackages,
+  scanInstallationRecords,
   scanInstallationsAcrossScopes,
   computeProvides,
   type AgentScopeRef,
-  type InstalledPackage,
 } from '../services/marketplace/installed-scanner.js';
-import { updateNameOf } from '../services/marketplace/lib/install-roots.js';
+import { installationUpdateName } from '../services/marketplace/flows/update.js';
 import { validateBoundary, BoundaryError } from '../lib/boundary.js';
 import {
   APPROVAL_TOKEN_HEADER,
@@ -93,6 +111,8 @@ export interface MarketplaceRouteDeps {
   sourceManager: MarketplaceSourceManager;
   /** Cache abstraction for marketplace.json documents and cloned packages. */
   cache: MarketplaceCache;
+  /** The package cache's retention owner; `POST /cache/prune` runs its sweep. */
+  cacheRetention: PackageCacheRetention;
   /** Fetcher that resolves marketplace.json documents and package clones. */
   fetcher: PackageFetcher;
   /** Installer orchestrator for preview and install dispatch. */
@@ -168,10 +188,26 @@ const UpdateRequestBodySchema = z.object({
   projectPath: z.string().optional(),
 });
 
-/** Body schema for `POST /api/marketplace/cache/prune`. */
-const PruneCacheBodySchema = z.object({
-  keepLastN: z.number().int().nonnegative().optional(),
+/**
+ * Body schema for `POST /api/marketplace/updates`. `apply` must be the literal
+ * `true`: the read is `GET /updates`, and an empty or advisory POST must never
+ * be the request that reinstalls every package.
+ */
+const ApplyUpdatesBodySchema = z.object({
+  apply: z.literal(true),
+  names: z.array(z.string().min(1)).min(1).optional(),
+  installPaths: z.array(z.string().min(1)).min(1).optional(),
+  projectPath: z.string().optional(),
 });
+
+/** Machine-readable code on the 403 for a batch that would need approval per install. */
+const BATCH_UPDATE_NEEDS_APPROVAL_CODE = 'batch_update_needs_approval';
+
+/**
+ * Body schema for `POST /api/marketplace/cache/prune`: no options. Strict, so
+ * the retired `keepLastN` is refused rather than silently ignored.
+ */
+const PruneCacheBodySchema = z.object({}).strict();
 
 /** Query schema for `GET /api/marketplace/packages/:name`. */
 const GetPackageQuerySchema = z.object({
@@ -219,7 +255,10 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
     return { status: 404, body: { error: err.message } };
   }
   if (err instanceof PackageNotInstalledForUpdateError) {
-    return { status: 404, body: { error: err.message } };
+    return {
+      status: 404,
+      body: { error: err.message, packageNames: err.packageNames, installPaths: err.installPaths },
+    };
   }
   if (err instanceof PackageNotFoundError) {
     return { status: 404, body: { error: err.message } };
@@ -232,6 +271,17 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
   // forms do work, so it goes back verbatim.
   if (err instanceof UnsupportedSourceUrlError) {
     return { status: 400, body: { error: err.message } };
+  }
+  // Git's own failures (DOR-2248). A branch, tag or commit the repository does
+  // not have is a not-found; a remote that could not be reached, or a fetch that
+  // failed or could not be verified, is the upstream's fault — a bad gateway.
+  // Each message already says what went wrong in words, and names the remote
+  // without credentials, so it goes back verbatim.
+  if (err instanceof GitRefNotFoundError || err instanceof GitCommitNotFoundError) {
+    return { status: 404, body: { error: err.message } };
+  }
+  if (err instanceof GitRemoteUnreachableError || err instanceof GitFetchError) {
+    return { status: 502, body: { error: err.message } };
   }
   return {
     status: 500,
@@ -259,6 +309,8 @@ function mapErrorToStatus(err: unknown): { status: number; body: Record<string, 
  * - `POST /packages/:name/install` — install a package
  * - `POST /packages/:name/uninstall` — uninstall a package
  * - `POST /packages/:name/update` — advisory update check (with `apply: true` option)
+ * - `GET /updates` — advisory update check of every installation in view
+ * - `POST /updates` — reinstall every stale installation in view, or the named ones
  *
  * @param deps - Injected dependencies (source manager, cache, fetcher,
  *   installer, uninstall flow, update flow, dorkHome).
@@ -267,6 +319,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   const {
     sourceManager,
     cache,
+    cacheRetention,
     fetcher,
     installer,
     uninstallFlow,
@@ -408,6 +461,44 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       }
       throw err;
     }
+  };
+
+  /** What the all-packages update door needs, shared with the MCP tools (DOR-2195). */
+  const updateDeps: InstalledUpdatesDeps = {
+    dorkHome,
+    updateFlow,
+    listAgentScopes,
+    onPluginsChanged,
+  };
+
+  /**
+   * Read `?projectPath` as at most one string. Express parses a repeated key as
+   * an array, which used to be dropped silently and answer for every scope;
+   * that is a 400 now.
+   *
+   * @returns `{ refused }` carrying the sent 400, or `{ projectPath }`.
+   */
+  const readProjectPathQuery = (
+    req: Request,
+    res: Response
+  ): { refused: Response } | { refused?: undefined; projectPath?: string } => {
+    const value = req.query.projectPath;
+    if (value === undefined || typeof value === 'string') {
+      return value ? { projectPath: value } : {};
+    }
+    return { refused: res.status(400).json({ error: 'projectPath may be given only once' }) };
+  };
+
+  /**
+   * Whether `marketplace.install` could ask a person to approve this caller's
+   * reinstall. A batch cannot carry one approval token per package, so a batch
+   * that could need one is refused before any gate runs — calling the gate would
+   * raise an approval request nobody could ever redeem.
+   */
+  const batchNeedsApproval = (req: Request, res: Response): boolean => {
+    const tier = capabilityRegistry()?.get('marketplace.install')?.tier;
+    if (tier === undefined || tier === 'observe' || tier === 'act') return false;
+    return !trustedCaller(readCallerAuthority(req, res));
   };
 
   /**
@@ -557,21 +648,19 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   // alone would let a project's agents/foo swallow the global plugins/foo —
   // two different packages the conflict detector allows to coexist — so the
   // merged view can return two entries sharing a name (DOR-994).
+  //
+  // The project view is scanned at the CANONICAL path the boundary resolved,
+  // exactly as `GET /updates` scans it, so a project reached through a symlink
+  // lists the same `installPath`s its update checks carry and the two join.
   router.get('/installed', async (req, res) => {
     try {
-      const projectPath =
-        typeof req.query.projectPath === 'string' ? req.query.projectPath : undefined;
-      if (projectPath) {
-        await validateBoundary(projectPath);
-      }
-      const packages: InstalledPackage[] = projectPath
-        ? await scanInstalledPackages(dorkHome, projectPath)
-        : await scanInstallationsAcrossScopes(dorkHome, listAgentScopes?.() ?? []);
-      res.json({ packages });
+      const query = readProjectPathQuery(req, res);
+      if (query.refused) return query.refused;
+      const confined = await confineProjectPath(res, query.projectPath);
+      if (confined.refused) return confined.refused;
+      const records = await scanUpdateView(updateDeps, confined.projectPath);
+      return res.json({ packages: records.map((r) => r.package) });
     } catch (err) {
-      if (err instanceof BoundaryError) {
-        return res.status(403).json({ error: 'Access denied: projectPath outside boundary' });
-      }
       logger.error('[Marketplace] Failed to list installed packages', err);
       return res.status(500).json({ error: 'Failed to list installed packages' });
     }
@@ -602,11 +691,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // GET /cache -- cache status (marketplace count, package count, total bytes)
+  // GET /cache -- cache status (marketplace count, package count, total bytes,
+  // and whether automatic cleanup is paused)
   router.get('/cache', async (_req, res) => {
     try {
       const status = await computeCacheStatus(cache);
-      res.json(status);
+      res.json({ ...status, cleanup: cacheRetention.status() });
     } catch (err) {
       logger.error('[Marketplace] Failed to read cache status', err);
       res.status(500).json({ error: 'Failed to read cache status' });
@@ -624,7 +714,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
   });
 
-  // POST /cache/prune -- garbage-collect cached packages by keepLastN
+  // POST /cache/prune -- remove cached packages no install needs (the same
+  // sweep that runs after every fetch; see package-cache-retention.ts)
   router.post('/cache/prune', async (req, res) => {
     const parsed = PruneCacheBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -634,33 +725,27 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     }
 
     try {
-      // Snapshot package sizes before pruning so we can report freed bytes —
-      // the descriptors returned from `prune()` point at deleted directories
-      // that can no longer be stat'd.
-      const sizesBeforePrune = new Map<string, number>();
-      const cachedBefore = await cache.listPackages();
-      await Promise.all(
-        cachedBefore.map(async (pkg) => {
-          sizesBeforePrune.set(pkg.path, await sumDirectorySize(pkg.path));
-        })
-      );
-
-      const { removed } = await cache.prune(parsed.data);
-      const freedBytes = removed.reduce(
-        (sum, pkg) => sum + (sizesBeforePrune.get(pkg.path) ?? 0),
-        0
-      );
-
+      const { removed, freedBytes } = await cacheRetention.sweep();
       return res.json({
         removed: removed.map((pkg) => ({
           packageName: pkg.packageName,
           commitSha: pkg.commitSha,
           path: pkg.path,
-          cachedAt: pkg.cachedAt.toISOString(),
+          lastUsedAt: pkg.lastUsedAt.toISOString(),
         })),
         freedBytes,
       });
     } catch (err) {
+      if (err instanceof UnreadableInstallsError) {
+        // Names the folder only in the log: it spells the operator's home.
+        logger.warn('[Marketplace] cache prune stopped: could not read every install', {
+          error: err.message,
+        });
+        return res.status(503).json({
+          error:
+            "Couldn't check every installed package, so nothing was removed. The server log names the folder it couldn't read.",
+        });
+      }
       logger.error('[Marketplace] Failed to prune cache', err);
       return res.status(500).json({ error: 'Failed to prune marketplace cache' });
     }
@@ -865,47 +950,53 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     try {
       const confined = await confineProjectPath(res, parsed.data.projectPath);
       if (confined.refused) return confined.refused;
+      const name = req.params.name;
+      const requested = {
+        projectPath: confined.projectPath,
+        callerProjectPath: parsed.data.projectPath,
+      };
+      // The flow checks one installation in this request's scope, so it cannot
+      // tell "installed in another scope" (a scoped `unknown` result) from
+      // "installed nowhere". The route can see every scope, so it answers the
+      // second as a 404. Without a project, the scope is the global slice of the
+      // every-scope scan, so nothing is walked twice.
+      const everywhere = await scanInstallationRecords(dorkHome, {
+        agents: listAgentScopes?.() ?? [],
+      });
+      const inScope = confined.projectPath
+        ? await scanInstallationRecords(dorkHome, { projectPath: confined.projectPath })
+        : everywhere.filter((r) => r.package.scope === 'global');
+      if (![...everywhere, ...inScope].some((r) => installationUpdateName(r) === name)) {
+        throw new PackageNotInstalledForUpdateError(name);
+      }
+      const installation = pickInstallation(inScope, name);
+      // The project the reinstall will actually touch: none for a global
+      // installation, even when the request named a project.
+      const touched = installation
+        ? callerSpelling(installation.package.agentPath, requested)
+        : parsed.data.projectPath;
       // Only an APPLIED update is an effect. Without `apply` this route reports
       // what a newer version would change and touches nothing, so gating it would
       // be gating a read. An applied update reinstalls the package in place
       // (`MarketplaceInstaller.update` = uninstall then install), which is why it
-      // is authorized as `marketplace.install` rather than under an id of its own.
+      // is authorized as `marketplace.install` rather than under an id of its own
+      // — with the scope the reinstall touches, so an approval binds to it.
       if (parsed.data.apply) {
         const decision = authorize(req, res, 'marketplace.install', {
-          name: req.params.name,
-          ...(parsed.data.projectPath !== undefined && { projectPath: parsed.data.projectPath }),
+          name,
+          ...(touched !== undefined && { projectPath: touched }),
         });
         if (decision.outcome !== 'allowed') return gateResponse(res, decision);
       }
-      // The flow walks only this request's scope, so it cannot tell "installed
-      // in another scope" (a scoped `unknown` result) from "installed nowhere".
-      // The route can see every scope, so it answers the second as a 404.
-      const everywhere = await scanInstallationsAcrossScopes(dorkHome, listAgentScopes?.() ?? []);
-      const inProject = confined.projectPath
-        ? await scanInstalledPackages(dorkHome, confined.projectPath)
-        : [];
-      // Named exactly as the flow names each install (`updateNameOf`).
-      const installedAnywhere = [...everywhere, ...inProject].some(
-        (p) => updateNameOf(p.name, p.installPath) === req.params.name
-      );
-      if (!installedAnywhere) {
-        throw new PackageNotInstalledForUpdateError(req.params.name);
-      }
-      const result = await updateFlow.run({
-        name: req.params.name,
-        ...parsed.data,
-        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
-      });
+      const result = await updateFlow.run({ name, installation, apply: parsed.data.apply });
       // An applied in-place update reinstalls the package, so its skills and
       // commands may have changed: treat it like an install for projection +
-      // command-cache refresh, matching the install/uninstall routes. Advisory
-      // checks (no apply, empty `applied`) change nothing and stay silent.
-      // One event per applied result, each carrying its RESOLVED manifest name
-      // (never the raw route param, which may be empty or an identifier —
-      // DOR-264); a bulk `apply` can reinstall several packages.
+      // command-cache refresh, in the scope it landed in, carrying the RESOLVED
+      // manifest name (never the raw route param — DOR-264). Advisory checks
+      // (no apply, empty `applied`) change nothing and stay silent.
       for (const applied of result.applied) {
         onPluginsChanged({
-          projectPath: parsed.data.projectPath,
+          projectPath: touched,
           packageName: applied.packageName,
           action: 'install',
         });
@@ -913,6 +1004,76 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       return res.json(result);
     } catch (err) {
       logger.error(`[Marketplace] Failed to update package ${req.params.name}`, err);
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  // GET /updates -- advisory update check of every installation in view.
+  //
+  // One scan, handed to the flow, which answers one check per installation with
+  // that installation's identity (`installPath` joins it to `GET /installed`).
+  // A read: nothing installed changes, so it is not gated, exactly like the
+  // per-package route without `apply`.
+  router.get('/updates', async (req, res) => {
+    try {
+      const query = readProjectPathQuery(req, res);
+      if (query.refused) return query.refused;
+      const confined = await confineProjectPath(res, query.projectPath);
+      if (confined.refused) return confined.refused;
+      return res.json(await checkInstalledUpdates(updateDeps, confined.projectPath));
+    } catch (err) {
+      logger.error('[Marketplace] Failed to check installed packages for updates', err);
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
+  // POST /updates -- reinstall every stale installation in view, or only the
+  // installations of the named packages. Each reinstall stays in the scope its
+  // installation was found in; a failed one is reported on that installation
+  // and the rest carry on.
+  router.post('/updates', async (req, res) => {
+    const parsed = ApplyUpdatesBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+
+    try {
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
+      if (batchNeedsApproval(req, res)) {
+        return res.status(403).json({
+          error:
+            'Updating several packages at once cannot wait for a person to approve each ' +
+            'install. Update them one at a time with POST /api/marketplace/packages/:name/update.',
+          code: BATCH_UPDATE_NEEDS_APPROVAL_CODE,
+        });
+      }
+      // Every reinstall is authorized as `marketplace.install` — what the
+      // per-package route asks for one — BEFORE any network work, with the
+      // per-package input shape. The first refusal ends the batch unrun.
+      const outcome = await applyInstalledUpdates(
+        updateDeps,
+        {
+          projectPath: confined.projectPath,
+          callerProjectPath: parsed.data.projectPath,
+          names: parsed.data.names,
+          installPaths: parsed.data.installPaths,
+        },
+        (input) => {
+          const decision = authorize(req, res, 'marketplace.install', input);
+          return decision.outcome === 'allowed' ? undefined : decision;
+        }
+      );
+      if ('refused' in outcome) return gateResponse(res, outcome.refused);
+      // The response is the record of what changed: each installation's
+      // `applied` or `applyError`.
+      return res.json(outcome.result);
+    } catch (err) {
+      logger.error('[Marketplace] Failed to apply updates', err);
       const mapped = mapErrorToStatus(err);
       return res.status(mapped.status).json(mapped.body);
     }
@@ -1057,7 +1218,7 @@ async function computeCacheStatus(cache: MarketplaceCache): Promise<{
   const packages = await cache.listPackages();
 
   const [marketplacesBytes, packagesBytes] = await Promise.all([
-    sumDirectorySize(marketplacesRoot),
+    directorySize(marketplacesRoot),
     sumPackageSizes(packages),
   ]);
 
@@ -1068,39 +1229,11 @@ async function computeCacheStatus(cache: MarketplaceCache): Promise<{
   };
 }
 
-/** Sum the recursive size of every file under `root`. Returns 0 if absent. */
-async function sumDirectorySize(root: string): Promise<number> {
-  let total = 0;
-  const walk = async (dir: string): Promise<void> => {
-    let entries: string[];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const entryPath = join(dir, entry);
-      try {
-        const info = await stat(entryPath);
-        if (info.isDirectory()) {
-          await walk(entryPath);
-        } else if (info.isFile()) {
-          total += info.size;
-        }
-      } catch {
-        // Race with prune/clear — skip silently.
-      }
-    }
-  };
-  await walk(root);
-  return total;
-}
-
 /** Sum the recursive size of every cached package directory. */
-async function sumPackageSizes(packages: CachedPackage[]): Promise<number> {
+async function sumPackageSizes(packages: { path: string }[]): Promise<number> {
   let total = 0;
   for (const pkg of packages) {
-    total += await sumDirectorySize(pkg.path);
+    total += await directorySize(pkg.path);
   }
   return total;
 }

@@ -154,7 +154,7 @@ dorkos update <package> --apply                   # Install an available update
 dorkos update <package> --project <path>          # Check or apply within a specific project
 ```
 
-For each package, `dorkos update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds.
+For each package, `dorkos update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds. Each package is updated where it's installed. A package installed for one agent is shown with that agent's name, like `flow [Alpha]`.
 
 **`dorkos marketplace`**: manage the marketplace sources that list available packages.
 
@@ -175,11 +175,11 @@ dorkos package init <name> --type plugin|agent|skill-pack|adapter
 dorkos package validate <path>
 ```
 
-**`dorkos cache`**: manage the package clone cache at `~/.dork/cache/`.
+**`dorkos cache`**: manage the package clone cache at `~/.dork/cache/`. DorkOS tidies it on its own: after each download it keeps what your installed packages need, plus a waiting update, and removes the rest. `prune` does the same right away. If DorkOS can't read one of your projects (say, on a drive that isn't plugged in), it removes nothing until it can, and `list` tells you so.
 
 ```bash
-dorkos cache list                      # Show cache counts and total size
-dorkos cache prune [--keep-last-n <N>] # Remove older cached package versions (default: keep 1)
+dorkos cache list                      # Show cache counts and size, and whether cleanup is paused
+dorkos cache prune                     # Remove cached packages nothing installed needs
 dorkos cache clear                     # Wipe the entire cache
 ```
 

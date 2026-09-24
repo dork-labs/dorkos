@@ -4414,6 +4414,14 @@ export interface ConfigManagerOptions {
 export interface ConfigChange {
   /** Top-level sections this write touched, e.g. `['runtimes']`. */
   sections: readonly string[];
+  /**
+   * The exact key paths this write stored, e.g. `['runtimes.default']` for a
+   * dot-path write, `['ui']` for a whole section. A subscriber that must tell
+   * one field inside a section from the rest of it — the settings broadcast
+   * leaving remembered Community navigation out, for one — reads this; every
+   * other subscriber keeps to `sections`.
+   */
+  paths: readonly string[];
 }
 
 /** Called after a settings write lands. See {@link ConfigManager.onChange}. */
@@ -4752,7 +4760,7 @@ export class ConfigManager {
     const floorBefore = this.standingGrantVoidFloor();
     this.write(key, value);
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
-    this.emitChange([key as string]);
+    this.emitChange([key as string], [key as string]);
   }
 
   /**
@@ -4836,10 +4844,10 @@ export class ConfigManager {
     };
   }
 
-  /** Notify subscribers that the named top-level sections were just written. */
-  private emitChange(sections: string[]): void {
+  /** Notify subscribers that the named sections, at the named key paths, were just written. */
+  private emitChange(sections: string[], paths: string[]): void {
     if (this.listeners.size === 0) return;
-    const change: ConfigChange = { sections };
+    const change: ConfigChange = { sections, paths };
     for (const listener of this.listeners) {
       try {
         listener(change);
@@ -4861,7 +4869,7 @@ export class ConfigManager {
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     // Subscribers speak in top-level sections, so a dot-path reports the section
     // it wrote into: `runtimes.default` and `runtimes` are the same news.
-    this.emitChange([key.split('.')[0]!]);
+    this.emitChange([key.split('.')[0]!], [key]);
     return result;
   }
 
@@ -4914,7 +4922,8 @@ export class ConfigManager {
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     // A whole-config reset is news about every section, so subscribers that
     // applied something once get to apply it again.
-    this.emitChange(key ? [key] : Object.keys(this.store.store));
+    const sections = key ? [key] : Object.keys(this.store.store);
+    this.emitChange(sections, sections);
   }
 
   /**

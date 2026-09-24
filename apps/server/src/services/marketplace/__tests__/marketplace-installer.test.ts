@@ -46,6 +46,12 @@ vi.mock('../installed-metadata.js', () => ({
   writeInstallMetadata: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock the project-install record so its calls can be asserted without a real
+// data directory.
+vi.mock('../lib/project-install-index.js', () => ({
+  recordProjectInstall: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { validatePackage } from '@dorkos/marketplace/package-validator';
 import {
   ConflictError,
@@ -58,10 +64,12 @@ import { disclosedEffectsOf } from '../disclosed-effects.js';
 import { UnsupportedSourceUrlError } from '../source-url-policy.js';
 import { reportInstallEvent } from '../telemetry-hook.js';
 import { writeInstallMetadata } from '../installed-metadata.js';
+import { recordProjectInstall } from '../lib/project-install-index.js';
 
 const mockedValidatePackage = vi.mocked(validatePackage);
 const mockedReportInstallEvent = vi.mocked(reportInstallEvent);
 const mockedWriteInstallMetadata = vi.mocked(writeInstallMetadata);
+const mockedRecordProjectInstall = vi.mocked(recordProjectInstall);
 
 /** Build a no-op logger that satisfies the {@link Logger} interface. */
 function buildLogger(): Logger {
@@ -1148,6 +1156,77 @@ describe('MarketplaceInstaller', () => {
       expect(logger.warn).toHaveBeenCalledWith(
         expect.stringContaining('install-metadata'),
         expect.objectContaining({ packageName: 'metadata-fails' })
+      );
+    });
+  });
+
+  describe('project install record', () => {
+    it('records a project install under dorkHome, so the package cache can find it', async () => {
+      // Purpose: a project that is not a registered agent is otherwise
+      // invisible to the cache's sweep, which would delete the tree it records
+      // (DOR-2249).
+      const { deps, resolver, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'project-plugin' });
+      wireLocalResolution(resolver, 'project-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue({
+        ...buildInstallResult(manifest),
+        installPath: '/work/app/.dork/plugins/project-plugin',
+      });
+
+      await new MarketplaceInstaller(deps).install({
+        name: 'project-plugin',
+        projectPath: '/work/app',
+      });
+
+      expect(mockedRecordProjectInstall).toHaveBeenCalledWith('/fake/dorkhome', {
+        projectPath: '/work/app',
+        installRoot: '/work/app/.dork/plugins/project-plugin',
+        name: 'project-plugin',
+      });
+    });
+
+    it('records nothing for an install that landed in dorkHome', async () => {
+      // Purpose: global installs are scanned directly; a Shape ignores the
+      // project and lands globally too.
+      const { deps, resolver, pluginFlow, previewBuilder } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'global-plugin' });
+      wireLocalResolution(resolver, 'global-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+
+      await new MarketplaceInstaller(deps).install({
+        name: 'global-plugin',
+        projectPath: '/work/app',
+      });
+      await new MarketplaceInstaller(deps).install({ name: 'global-plugin' });
+
+      expect(mockedRecordProjectInstall).not.toHaveBeenCalled();
+    });
+
+    it('does not fail the install when the record cannot be written', async () => {
+      const { deps, resolver, pluginFlow, previewBuilder, logger } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'project-plugin' });
+      wireLocalResolution(resolver, 'project-plugin');
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue({
+        ...buildInstallResult(manifest),
+        installPath: '/work/app/.dork/plugins/project-plugin',
+      });
+      mockedRecordProjectInstall.mockRejectedValueOnce(new Error('disk full'));
+
+      const result = await new MarketplaceInstaller(deps).install({
+        name: 'project-plugin',
+        projectPath: '/work/app',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('project install'),
+        expect.objectContaining({ packageName: 'project-plugin' })
       );
     });
   });
