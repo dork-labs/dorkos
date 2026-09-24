@@ -23,9 +23,9 @@
  * 2. The block is capped at {@link FRONTMATTER_LIMITS}`.maxBlockBytes` UTF-8
  *    bytes before anything else looks at it, whitespace and comments included.
  * 3. YAML is parsed by js-yaml v4 with its default schema, which has no
- *    JavaScript types, and with a nesting limit. Explicit `? ` keys are
- *    refused. YAML aliases (`*name`) are shared references, so a few hundred
- *    bytes can describe billions of values. While parsing, aliases are
+ *    JavaScript types, and with a nesting limit. YAML aliases (`*name`) are
+ *    shared references, so a few hundred bytes can describe billions of
+ *    values. While parsing, aliases are
  *    counted and every list and mapping is sized with its aliases expanded,
  *    and parsing stops at the first one past its limit. Recursive aliases are
  *    refused. js-yaml itself caps keys copied by `<<` merges and refuses
@@ -179,11 +179,49 @@ interface YamlListenerState {
 }
 
 /**
- * An alias node: separation space or whole comment lines, then `*`, at a
- * node's start. A comment must run to its line break, so a `*` inside one is
+ * The expanded size of a finished value no listener event sized, counted with
+ * the sizes already known and refused the moment it passes the budget, so the
+ * count never costs more than the budget.
+ *
+ * @param value - The value to size.
+ * @param sizes - Sizes of the collections js-yaml has finished composing.
+ * @returns Its expanded size.
+ * @throws {OversizedFrontmatterError} When it expands past the budget.
+ */
+function walkedSize(value: object, sizes: WeakMap<object, number>): number {
+  let total = 0;
+  const stack: unknown[] = [value];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    const known = node !== null && typeof node === 'object' ? sizes.get(node) : undefined;
+    if (known !== undefined) {
+      total += known;
+    } else if (node === null || typeof node !== 'object') {
+      total += primitiveSize(node);
+    } else {
+      total += 1;
+      if (Array.isArray(node)) {
+        for (const child of node) stack.push(child);
+      } else {
+        for (const [key, child] of Object.entries(node)) {
+          total += key.length;
+          stack.push(child);
+        }
+      }
+    }
+    if (total > FRONTMATTER_LIMITS.maxExpanded) throw tooExpanded();
+  }
+  return total;
+}
+
+/**
+ * An alias node from its start: separation space or whole comment lines, `*`
+ * and the alias name, then the separation space js-yaml skips after it. A node
+ * is an alias only when this runs to where the node closed, so a mapping whose
+ * first key is an alias (`*l : 1`) is not one, and a `*` inside a comment is
  * never taken for an alias.
  */
-const ALIAS_AT = /(?:[ \t\r\n]|#[^\n]*\n)*\*/y;
+const ALIAS_NODE = /(?:[ \t\r\n]|#[^\n]*\n)*\*[^ \t\r\n,[\]{}]+(?:[ \t\r\n]|#[^\n]*(?:\n|$))*/y;
 
 /**
  * A js-yaml listener that bounds aliases while the document is parsed, before
@@ -204,13 +242,14 @@ function aliasBudgetListener(): (event: 'open' | 'close', state: YamlListenerSta
   const starts: number[] = [];
   let aliases = 0;
 
-  const sizeOf = (value: unknown): number => {
+  /**
+   * The size of a finished child. Collections js-yaml composed were sized
+   * when they closed; a value a type built afterwards (`!!pairs`, `!!omap`,
+   * a timestamp) is walked, within the budget.
+   */
+  const childSize = (value: unknown): number => {
     if (value === null || typeof value !== 'object') return primitiveSize(value);
-    const known = sizes.get(value);
-    if (known === undefined) {
-      throw new OversizedFrontmatterError('an alias (*name) refers to a value that contains it');
-    }
-    return known;
+    return sizes.get(value) ?? walkedSize(value, sizes);
   };
 
   return (event, state) => {
@@ -219,37 +258,37 @@ function aliasBudgetListener(): (event: 'open' | 'close', state: YamlListenerSta
       return;
     }
     const start = starts.pop() ?? state.position;
-    ALIAS_AT.lastIndex = start;
-    if (ALIAS_AT.test(state.input)) {
+    ALIAS_NODE.lastIndex = start;
+    if (ALIAS_NODE.test(state.input) && ALIAS_NODE.lastIndex >= state.position) {
       aliases += 1;
       if (aliases > FRONTMATTER_LIMITS.maxAliases) {
         throw new OversizedFrontmatterError(
           `it uses more than ${FRONTMATTER_LIMITS.maxAliases} YAML aliases (*name)`
         );
       }
-      // Resolves the target now, so a recursive alias is refused here.
-      sizeOf(state.result);
+      // Every finished list or mapping was sized when it closed, so a target
+      // with no size is one still being composed: the alias is inside the
+      // value it names, and would expand forever.
+      const target = state.result;
+      if (target !== null && typeof target === 'object' && !sizes.has(target)) {
+        throw new OversizedFrontmatterError(
+          'an alias (*name) refers to a value that contains it, so it never ends'
+        );
+      }
       return;
     }
     const value = state.result;
     if (value === null || typeof value !== 'object' || sizes.has(value)) return;
     let size = 1;
     if (Array.isArray(value)) {
-      for (const child of value) size += sizeOf(child);
+      for (const child of value) size += childSize(child);
     } else {
-      for (const [key, child] of Object.entries(value)) size += key.length + sizeOf(child);
+      for (const [key, child] of Object.entries(value)) size += key.length + childSize(child);
     }
     if (size > FRONTMATTER_LIMITS.maxExpanded) throw tooExpanded();
     sizes.set(value, size);
   };
 }
-
-/**
- * An explicit YAML key (`? `), at the start of a line (after indentation and
- * any `- `) or right after a flow `[`, `{` or `,`. Such keys can be whole lists
- * or mappings, which js-yaml turns into strings by joining them while it parses.
- */
-const EXPLICIT_KEY = /^[ \t]*(?:-[ \t]+)*\?(?:[ \t]|$)|[[{,][ \t]*\?(?:[ \t]|$)/m;
 
 /**
  * The data parsers, each bounded by {@link FRONTMATTER_LIMITS}. Exported only
@@ -259,15 +298,10 @@ const EXPLICIT_KEY = /^[ \t]*(?:-[ \t]+)*\?(?:[ \t]|$)|[[{,][ \t]*\?(?:[ \t]|$)/
  */
 export const FRONTMATTER_PARSERS = {
   /**
-   * Parse a YAML block, refusing explicit keys, deep nesting, too many aliases
+   * Parse a YAML block, refusing deep nesting, too many aliases
    * and oversized expansions while it parses, then walking the result.
    */
   yaml: (block: string): unknown => {
-    if (EXPLICIT_KEY.test(block)) {
-      throw new OversizedFrontmatterError(
-        'it uses an explicit "? " key, which DorkOS does not read'
-      );
-    }
     let value: unknown;
     try {
       // js-yaml 4.3 has `maxDepth`; @types/js-yaml 4.0.9 does not know it yet.
@@ -316,9 +350,11 @@ interface SplitFrontmatter {
  * - A leading byte-order mark is dropped.
  * - Frontmatter opens with `---` at the very start, not followed by another
  *   `-`. Whatever else is on that line, trimmed, is the language.
- * - The block ends at the first line that starts with `---`; the rest of that
- *   line, and then one line break, are dropped. Without a closing line the
- *   whole rest of the file is the block and the body is empty.
+ * - The block ends at the first line that starts with `---`. Only those three
+ *   dashes are dropped: anything after them on that line starts the body, and
+ *   a line break right after them (`\r`, `\n` or both) is dropped too.
+ *   Without a closing line the whole rest of the file is the block and the
+ *   body is empty.
  *
  * Linear in the content's length.
  *
@@ -378,7 +414,7 @@ function isBlankBlock(block: string): boolean {
  * @throws {UnsupportedFrontmatterError} When the block is written in a language
  *   other than YAML or JSON (for example `---js`).
  * @throws {OversizedFrontmatterError} When the block is too long, uses too many
- *   aliases, expands too large, nests too deep, or uses an explicit `? ` key
+ *   aliases, expands too large, nests too deep, or has a recursive alias
  *   (DOR-2311).
  * @throws {NonMappingFrontmatterError} When the block is a lone value or a
  *   list rather than `key: value` fields.

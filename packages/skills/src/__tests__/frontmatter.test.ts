@@ -352,13 +352,52 @@ describe('nothing costs much before a limit refuses it (DOR-2311 review)', () =>
     expect(refusedWithin(content)).toBeLessThan(FAST_MS);
   });
 
-  // Purpose: explicit `? ` keys are refused outright; no real file uses them.
-  it.each(['? a\n: 1', 'm: {? a : 1}', '- ? a\n  : 1'])(
-    'refuses the explicit key in %j',
-    (block) => {
-      expect(() => parseFrontmatter(`---\n${block}\n---\n`)).toThrow(/explicit "\? " key/);
-    }
-  );
+  // Purpose: an explicit `? ` key naming a large aliased list is joined into
+  // a string while js-yaml parses. Sizing each list as it finishes refuses it,
+  // with no special rule for `? ` keys.
+  it('refuses aliased lists used as explicit keys, quickly', () => {
+    const content = `---\ns: &s "${'x'.repeat(25_000)}"\nl: &l [${Array(39).fill('*s').join(',')}]\nm: [${Array(60).fill('{? *l : 1}').join(',')}]\n---\n`;
+    expect(Buffer.byteLength(content)).toBeLessThan(FRONTMATTER_LIMITS.maxBlockBytes);
+    expect(refusedWithin(content)).toBeLessThan(FAST_MS);
+    expect(() => parseFrontmatter(content)).toThrow(/expands to more than/);
+  });
+
+  // Purpose: ordinary explicit keys, and `?` in quoted values and block
+  // scalars, read as they always did.
+  it.each([
+    ['an explicit key', '? a\n: 1', { a: 1 }],
+    ['a quoted value', 'q: "What, ? really"', { q: 'What, ? really' }],
+    ['a block scalar line', 'd: |\n  ? not a key\n  more', { d: '? not a key\nmore\n' }],
+  ])('reads %s', (_label, block, data) => {
+    expect(parseFrontmatter(`---\n${block}\n---\n`).data).toEqual(data);
+  });
+
+  // Purpose: a typed collection such as `!!pairs` builds new values after its
+  // children close; sizing it must not mistake them for a recursive alias.
+  it('reads !!pairs', () => {
+    expect(parseFrontmatter('---\na: !!pairs [ {x: 1}, {y: 2} ]\n---\n').data).toEqual({
+      a: [
+        ['x', 1],
+        ['y', 2],
+      ],
+    });
+  });
+
+  // Purpose: a typed collection's built values are sized too, so a large one
+  // is refused. (Counting them as 1 would still be refused by the walk after
+  // parsing; this pins that the size is right, not only that a net exists.)
+  it('refuses a !!pairs that expands past the budget', () => {
+    const content = `---\ns: &s "${'x'.repeat(25_000)}"\nl: &l [${Array(30).fill('*s').join(',')}]\np: !!pairs [ {a: *l}, {b: *l} ]\n---\n`;
+    expect(() => parseFrontmatter(content)).toThrow(/expands to more than/);
+  });
+
+  // Purpose: a mapping whose first key is an alias is not itself an alias.
+  it('reads an alias used as a key in a list item', () => {
+    expect(parseFrontmatter('---\nl: &l [a, b]\nm:\n  - *l : 1\n---\n').data).toEqual({
+      l: ['a', 'b'],
+      m: [{ 'a,b': 1 }],
+    });
+  });
 
   // Purpose: a question mark in prose is not a key.
   it('reads a question mark inside a value', () => {
