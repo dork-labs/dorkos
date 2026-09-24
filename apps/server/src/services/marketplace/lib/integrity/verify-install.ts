@@ -121,3 +121,32 @@ async function addedEffectFiles(root: string, record: InstalledFiles): Promise<s
   }
   return [...added];
 }
+
+/** How many installs {@link withIntegrity} verifies at once, like update checks. */
+export const VERIFY_CONCURRENCY = 4;
+
+/**
+ * Each installation with its {@link InstallIntegrity} added, verified at most
+ * {@link VERIFY_CONCURRENCY} at a time, in the order given.
+ *
+ * @param installations - Installed packages, each naming its `installPath`.
+ */
+export async function withIntegrity<T extends { installPath: string }>(
+  installations: readonly T[]
+): Promise<(T & { integrity: InstallIntegrity })[]> {
+  const out: (T & { integrity: InstallIntegrity })[] = new Array(installations.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < installations.length) {
+      const i = next++;
+      out[i] = {
+        ...installations[i],
+        integrity: await verifyInstall(installations[i].installPath),
+      };
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(VERIFY_CONCURRENCY, installations.length) }, worker)
+  );
+  return out;
+}

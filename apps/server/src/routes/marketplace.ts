@@ -131,6 +131,7 @@ import {
   marketplaceSourceRefusalError,
   type MarketplaceSourceAction,
 } from '../services/marketplace/source-write-policy.js';
+import { withIntegrity } from '../services/marketplace/lib/integrity/verify-install.js';
 
 /**
  * Re-export the canonical {@link InstalledPackage} type from this route module
@@ -318,6 +319,16 @@ const PruneCacheBodySchema = z.object({}).strict();
 const GetPackageQuerySchema = z.object({
   marketplace: z.string().optional(),
 });
+
+/**
+ * Whether a list request asked for each install's integrity (`?verify=true`,
+ * DOR-2197). Opt-in, because verifying hashes every shipped file.
+ *
+ * @param req - The request.
+ */
+function wantsVerify(req: Request): boolean {
+  return req.query.verify === 'true';
+}
 
 /**
  * Centralized error → HTTP status mapping. Shared by every install-related
@@ -863,13 +874,13 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           },
         ])
       );
-      return res.json({
-        packages: records.map((r) => {
-          const held =
-            r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
-          return held ? { ...r.package, heldBack: held } : r.package;
-        }),
+      const packages = records.map((r) => {
+        const held =
+          r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
+        return held ? { ...r.package, heldBack: held } : r.package;
       });
+      // Verification hashes every shipped file, so it is asked for (DOR-2197).
+      return res.json({ packages: wantsVerify(req) ? await withIntegrity(packages) : packages });
     } catch (err) {
       logger.error('[Marketplace] Failed to list installed packages', err);
       return res.status(500).json({ error: 'Failed to list installed packages' });
@@ -894,7 +905,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           provides: await computeProvides(match.installPath),
         }))
       );
-      return res.json({ installations });
+      return res.json({
+        installations: wantsVerify(req) ? await withIntegrity(installations) : installations,
+      });
     } catch (err) {
       logger.error(`[Marketplace] Failed to get installed package ${req.params.name}`, err);
       return res.status(500).json({ error: 'Failed to get installed package' });

@@ -479,6 +479,56 @@ describe('Marketplace Routes', () => {
       expect(plugin.installPath).toBe(pluginDir);
     });
 
+    // Purpose (DOR-2197): `?verify=true` adds each install's integrity, and a
+    // plain list is unchanged (verification hashes files, so it is opt-in).
+    it('adds integrity only when asked to verify', async () => {
+      const pluginDir = join(dorkHome, 'plugins', 'my-plugin');
+      writePackageManifest(pluginDir, {
+        manifest: 1,
+        type: 'plugin',
+        name: 'my-plugin',
+        version: '1.0.0',
+      });
+      const { computeInstalledFiles, writeInstalledFiles } =
+        await import('../../services/marketplace/lib/installed-files.js');
+      await writeInstalledFiles(
+        pluginDir,
+        await computeInstalledFiles(pluginDir, {
+          identity: { name: 'my-plugin', type: 'plugin' },
+          userEditable: [],
+          npmRan: false,
+        })
+      );
+      const legacyDir = join(dorkHome, 'plugins', 'old-plugin');
+      writePackageManifest(legacyDir, {
+        manifest: 1,
+        type: 'plugin',
+        name: 'old-plugin',
+        version: '1.0.0',
+      });
+
+      const plain = await request(fixtureServer).get('/api/marketplace/installed');
+      expect(plain.body.packages.every((p: object) => !('integrity' in p))).toBe(true);
+
+      const verified = await request(fixtureServer).get('/api/marketplace/installed?verify=true');
+      const byName = Object.fromEntries(
+        verified.body.packages.map((p: { name: string; integrity: unknown }) => [
+          p.name,
+          p.integrity,
+        ])
+      );
+      expect(byName['my-plugin']).toEqual({ status: 'clean', customized: [] });
+      expect(byName['old-plugin']).toEqual({ status: 'unknown', reason: 'no-record' });
+
+      const one = await request(fixtureServer).get(
+        '/api/marketplace/installed/old-plugin?verify=true'
+      );
+      expect(one.body.installations[0].integrity).toEqual({
+        status: 'unknown',
+        reason: 'no-record',
+      });
+    });
+
     it('returns empty list when no packages installed', async () => {
       const res = await request(fixtureServer).get('/api/marketplace/installed');
       expect(res.status).toBe(200);

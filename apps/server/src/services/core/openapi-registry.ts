@@ -2350,6 +2350,30 @@ const InstalledPackageSchema = z.object({
     .describe(
       'Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder.'
     ),
+  integrity: z
+    .union([
+      z.object({
+        status: z.literal('clean'),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('modified'),
+        changed: z.array(z.string()),
+        missing: z.array(z.string()),
+        added: z.array(z.string()),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('unknown'),
+        reason: z.enum(['no-record', 'unreadable-record', 'linked']),
+      }),
+    ])
+    .optional()
+    .describe(
+      'Present only with verify=true: whether the installed files still match what was installed (DOR-2197).'
+    ),
 });
 
 /**
@@ -2517,7 +2541,13 @@ registry.registerPath({
     'With projectPath: the merged view for that single project — one entry per install root ' +
     'and name — scanned at the canonical path, so its install paths match `GET /updates`.',
   request: {
-    query: z.object({ projectPath: z.string().optional() }),
+    query: z.object({
+      projectPath: z.string().optional(),
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
@@ -2549,6 +2579,12 @@ registry.registerPath({
     'each enriched with capability counts (commands, skills, hooks).',
   request: {
     params: z.object({ name: z.string() }),
+    query: z.object({
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
