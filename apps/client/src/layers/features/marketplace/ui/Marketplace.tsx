@@ -6,6 +6,7 @@ import { PackageDetailSheet } from './PackageDetailSheet';
 import { InstallConfirmationDialog } from './InstallConfirmationDialog';
 import { InstalledPackagesView } from './InstalledPackagesView';
 import { useMarketplaceParams } from '../model/use-marketplace-params';
+import { useInstalledUpdatesView } from '../model/use-installed-updates-view';
 import type { MarketplaceView } from '../model/marketplace-search';
 
 /**
@@ -19,6 +20,11 @@ import type { MarketplaceView } from '../model/marketplace-search';
  * `useMarketplaceParams`), so it survives refresh and is shareable, matching
  * PR #71's URL-driven browse state.
  *
+ * The Installed tab carries a count of installations with a newer version, so
+ * staleness is visible from Browse. It reads the same one update check the
+ * Installed view reads (`useInstalledUpdatesView`), so opening the Marketplace
+ * asks once, whichever tab is showing.
+ *
  * `PackageDetailSheet` and `InstallConfirmationDialog` are rendered at the root
  * in both views so a deep link like `?view=installed&pkg=flow` opens the drawer
  * over either surface. The detail sheet reads its open state from the URL
@@ -26,6 +32,7 @@ import type { MarketplaceView } from '../model/marketplace-search';
  */
 export function Marketplace() {
   const { view, setView } = useMarketplaceParams();
+  const updateCount = useInstalledUpdatesView().summary.available.length;
 
   return (
     <div className="space-y-8">
@@ -45,7 +52,22 @@ export function Marketplace() {
         <Tabs value={view} onValueChange={(next) => setView(next as MarketplaceView)}>
           <TabsList aria-label="Marketplace view">
             <TabsTrigger value="browse">Browse</TabsTrigger>
-            <TabsTrigger value="installed">Installed</TabsTrigger>
+            <TabsTrigger value="installed">
+              Installed
+              {updateCount > 0 && (
+                <>
+                  <span
+                    aria-hidden
+                    className="bg-status-info-bg text-status-info-fg text-2xs ml-1.5 rounded-full px-1.5 font-medium tabular-nums"
+                  >
+                    {updateCount}
+                  </span>
+                  <span className="sr-only">
+                    , {updateCount} {updateCount === 1 ? 'update' : 'updates'} available
+                  </span>
+                </>
+              )}
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>

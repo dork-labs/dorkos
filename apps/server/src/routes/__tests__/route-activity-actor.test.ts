@@ -46,8 +46,8 @@
  * a legal half must not launder an illegal one.
  *
  * The sites in {@link EXEMPT_SITES} are redacted from the source before rule 2
- * scans it, rather than their whole FILE being skipped. `approvals.ts` writes
- * `actorType: 'user'` in two reasoned places; skipping the file for that reason
+ * scans it, rather than their whole FILE being skipped. `relay.ts` names its
+ * actor from the message in two reasoned places; skipping the file for that reason
  * would also license a hoisted operator const anywhere else in it, which is the
  * hole rule 2 exists to close.
  *
@@ -81,15 +81,13 @@ const EXEMPT_SITES: Record<string, Array<{ contains: string; reason: string }>> 
   ],
   'approvals.ts': [
     {
-      contains: "'approval.granted'",
+      contains: 'PERMISSION_ANSWERED_EVENT',
       reason:
-        'The label comes from `resolveDecisionAuthority`, which has already refused every ' +
-        'caller naming itself an agent — so it can only be a person, and `decidedBy` says ' +
-        'WHICH account, which is strictly more than the header reader knows.',
-    },
-    {
-      contains: "'approval.grant_created'",
-      reason: 'Same verified decision authority as the row above.',
+        'The actor comes from the permission writer (`writerForPosture`), after ' +
+        '`resolveDecisionAuthority` has already refused every caller naming itself an ' +
+        'agent, so it can only be a person. It follows the permission honesty rule instead ' +
+        'of the header reader: with login off it says "Someone on this computer", never ' +
+        '"You", which is what every other permission line says too.',
     },
   ],
   'relay.ts': [

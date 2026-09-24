@@ -822,7 +822,9 @@ describe('ClaudeCodeAdapter', () => {
     expect(ensureCall[1]).not.toHaveProperty('cwd');
 
     const sendCall = vi.mocked(agentManager.sendMessage).mock.calls[0];
-    expect(sendCall[2]).toEqual({ permissionMode: 'default' });
+    // A relay-delivered turn never holds for an approval card: nobody is
+    // watching it in the app (spec `agent-permissions` D6).
+    expect(sendCall[2]).toEqual({ permissionMode: 'default', unattendedApprovals: true });
     expect(sendCall[2]).not.toHaveProperty('cwd');
   });
 

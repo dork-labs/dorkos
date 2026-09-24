@@ -13,6 +13,9 @@
  * - **Joining** opens the invitation link the person was sent; **running your
  *   own server** opens the guide. Neither pairs this installation, and neither
  *   creates a Community on a host someone else runs.
+ * - **Creating** a Community opens a host's own administration page, and only
+ *   for a host that just told this installation its person runs it. The page
+ *   signs them in and checks host authority again before creating anything.
  * - **Starting or moving a hosted community** asks the person's DorkOS
  *   account, through this DorkOS's own server. Those rows exist only while
  *   this DorkOS is linked to an account; unlinked, they are not drawn at all
@@ -26,6 +29,7 @@ import {
   ArrowDown,
   ArrowUp,
   BookOpen,
+  CirclePlus,
   Building2,
   PackageOpen,
   Sparkles,
@@ -44,6 +48,25 @@ import type { SidebarMenuNode } from '@/layers/shared/ui';
 /** Where "Run your own community" leads: the CLI guide's community server section. */
 export const COMMUNITY_DEPLOY_GUIDE_URL =
   'https://dorkos.ai/docs/guides/cli-usage#community-server';
+
+/**
+ * The hosts on which the person may be offered "Create a community": each
+ * distinct origin, in the given order, that at least one connection's host
+ * just confirmed they run (`hostOperator`, set only on a verified
+ * connection). A host that is offline, too old to say, or says no is left out.
+ *
+ * @param connections - The owner's connections, in switcher order.
+ * @returns The hosts' pinned origins, each once.
+ */
+export function communityCreationOrigins(
+  connections: readonly CommunityConnectionDescriptor[]
+): string[] {
+  const origins: string[] = [];
+  for (const connection of connections)
+    if (connection.hostOperator === true && !origins.includes(connection.pinnedOrigin))
+      origins.push(connection.pinnedOrigin);
+  return origins;
+}
 
 /** What one selected Community allows from this menu, derived from its descriptor. */
 export interface CommunityActionAvailability {
@@ -105,6 +128,10 @@ export interface CommunityContextActionsModel {
   onConnect: () => void;
   /** Ask for an invitation link to open. */
   onJoin: () => void;
+  /** Hosts the person runs, from {@link communityCreationOrigins}; empty offers no creation. */
+  creationOrigins: readonly string[];
+  /** Open one host's administration page, where a community is created. */
+  onCreate: (origin: string) => void;
   /** Open the guide to running a community server. */
   onDeploy: () => void;
   /**
@@ -266,6 +293,24 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
         opensInput: true,
         run: model.onJoin,
       },
+      // One row per host the person runs. With one there is nothing to tell
+      // apart, so the row keeps the short name; the host is in its accessible
+      // name and its external mark either way.
+      ...model.creationOrigins.map((origin): SidebarMenuNode => ({
+        kind: 'action',
+        id:
+          model.creationOrigins.length === 1
+            ? 'add-community-create'
+            : `add-community-create-${hostName(origin)}`,
+        label:
+          model.creationOrigins.length === 1
+            ? 'Create a community'
+            : `Create a community on ${hostName(origin)}`,
+        icon: CirclePlus,
+        opensInput: true,
+        external: { host: hostName(origin) },
+        run: () => model.onCreate(origin),
+      })),
       ...hostingNodes(model.hosting),
       {
         kind: 'action',

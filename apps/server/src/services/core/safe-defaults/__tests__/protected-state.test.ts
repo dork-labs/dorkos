@@ -7,7 +7,6 @@ import {
   salvageTelemetryDecision,
   salvageProtectedState,
   applyProtectedState,
-  latestInstant,
   PROTECTIVE_CARRYOVERS,
 } from '../protected-state.js';
 import { ConfigManager } from '../../config-manager.js';
@@ -169,7 +168,6 @@ describe('salvageProtectedState', () => {
       {
         auth: { enabled: false },
         mcp: { enabled: true },
-        approvals: { standingGrants: true, trustWindowMinutes: 1440 },
         rooms: { maxAgentDepth: 99 },
       },
       fresh
@@ -233,23 +231,6 @@ describe('salvageProtectedState', () => {
       fresh
     );
     expect(salvaged.leaves).toEqual({});
-  });
-
-  it('carries the standing-grant void floor, which outlives the config file', () => {
-    const floor = '2026-07-20T10:00:00.000Z';
-    const salvaged = salvageProtectedState(
-      { approvals: { standingGrantsVoidBefore: floor } },
-      fresh
-    );
-    expect(salvaged.leaves['approvals.standingGrantsVoidBefore']).toBe(floor);
-  });
-
-  it('drops a void floor that is not a real timestamp instead of letting it sort above every real one', () => {
-    const salvaged = salvageProtectedState(
-      { approvals: { standingGrantsVoidBefore: 'whenever' } },
-      fresh
-    );
-    expect(salvaged.leaves['approvals.standingGrantsVoidBefore']).toBeUndefined();
   });
 
   it('survives an unreadable input without throwing — the caller is already failing', () => {
@@ -332,16 +313,6 @@ describe('applyProtectedState', () => {
   it('writes nothing at all when there is nothing to protect', () => {
     const store = createStore(USER_CONFIG_DEFAULTS as unknown as Record<string, unknown>);
     expect(applyProtectedState(store, { leaves: {}, dropped: [] })).toEqual([]);
-  });
-});
-
-describe('latestInstant', () => {
-  it('picks the later instant and treats a missing one as no floor', () => {
-    expect(latestInstant(null, null)).toBeNull();
-    expect(latestInstant('2026-01-01T00:00:00.000Z', null)).toBe('2026-01-01T00:00:00.000Z');
-    expect(latestInstant('2026-01-01T00:00:00.000Z', '2026-06-01T00:00:00.000Z')).toBe(
-      '2026-06-01T00:00:00.000Z'
-    );
   });
 });
 
@@ -464,18 +435,10 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     expect(new ConfigManager(dir).get('telemetry').install).toBe(false);
   });
 
-  it('keeps a login gate and a void floor across recovery', () => {
-    const floor = '2026-07-20T10:00:00.000Z';
-    const { dir } = seedInvalidConfig({
-      auth: { enabled: true },
-      approvals: { standingGrants: true, trustWindowMinutes: 30, standingGrantsVoidBefore: floor },
-    });
+  it('keeps a login gate across recovery', () => {
+    const { dir } = seedInvalidConfig({ auth: { enabled: true } });
     const manager = new ConfigManager(dir);
     expect(manager.get('auth').enabled).toBe(true);
-    expect(manager.get('approvals').standingGrantsVoidBefore).toBe(floor);
-    expect(manager.get('approvals').trustWindowMinutes).toBe(30);
-    // The permissive half of that section is NOT carried.
-    expect(manager.get('approvals').standingGrants).toBe(false);
   });
 
   it('falls back to plain defaults when the file cannot be parsed at all', () => {
@@ -496,13 +459,8 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
    */
   describe('a carried value can never stop the server booting', () => {
     const OUT_OF_RANGE: Array<[string, Record<string, unknown>]> = [
-      ['a trust window below the schema minimum', { approvals: { trustWindowMinutes: 1 } }],
       ['a negative room depth', { rooms: { maxAgentDepth: -1 } }],
-      ['a date-only void floor', { approvals: { standingGrantsVoidBefore: '2026-07-27' } }],
-      [
-        'a human-readable void floor',
-        { approvals: { standingGrantsVoidBefore: 'December 31, 2020' } },
-      ],
+      ['a zero upload cap', { uploads: { maxFiles: 0 } }],
     ];
 
     for (const [name, stored] of OUT_OF_RANGE) {
@@ -511,8 +469,7 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
         const manager = new ConfigManager(dir);
         expect(manager.validate()).toEqual({ valid: true });
         // Dropped, not clamped: we do not invent a value the person never chose.
-        expect(manager.get('approvals').trustWindowMinutes).toBe(480);
-        expect(manager.get('approvals').standingGrantsVoidBefore).toBeNull();
+        expect(manager.get('uploads').maxFiles).toBe(10);
         expect(manager.get('rooms').maxAgentDepth).toBe(30);
       });
     }
@@ -591,10 +548,10 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
       // An operator whose bound was discarded has only the log to find out.
       const warn = vi.mocked(logger.warn);
       warn.mockClear();
-      const { dir } = seedInvalidConfig({ approvals: { trustWindowMinutes: 1 } });
+      const { dir } = seedInvalidConfig({ welcomeBack: { absenceThresholdMinutes: 20_000 } });
       new ConfigManager(dir);
       const lines = warn.mock.calls.map((call) => String(call[0]));
-      expect(lines.some((line) => line.includes('approvals.trustWindowMinutes'))).toBe(true);
+      expect(lines.some((line) => line.includes('welcomeBack.absenceThresholdMinutes'))).toBe(true);
       expect(lines.some((line) => line.includes('Could not keep'))).toBe(true);
     });
 
@@ -604,22 +561,13 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
       const { dir } = seedInvalidConfig({
         auth: { enabled: true },
         mcp: { enabled: false },
-        approvals: { trustWindowMinutes: 2 },
+        welcomeBack: { absenceThresholdMinutes: 20_000 },
       });
       const manager = new ConfigManager(dir);
       expect(manager.validate()).toEqual({ valid: true });
       expect(manager.get('auth').enabled).toBe(true);
       expect(manager.get('mcp').enabled).toBe(false);
-      expect(manager.get('approvals').trustWindowMinutes).toBe(480);
-    });
-
-    it('keeps the fresh void floor when the stored one is unparseable garbage', () => {
-      // "December 31, 2020" sorts above every real timestamp as text, so an
-      // unvalidated compare would LOWER a floor that had voided permissions.
-      const { dir } = seedInvalidConfig({
-        approvals: { standingGrantsVoidBefore: 'December 31, 2020' },
-      });
-      expect(new ConfigManager(dir).get('approvals').standingGrantsVoidBefore).toBeNull();
+      expect(manager.get('welcomeBack').absenceThresholdMinutes).toBe(240);
     });
   });
 

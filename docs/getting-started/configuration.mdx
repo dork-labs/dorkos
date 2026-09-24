@@ -838,29 +838,36 @@ DorkOS runs with no login by default: no login screen, no user concept, instant 
 
 Session cookies are signed by Better Auth. Production deployments should set the `BETTER_AUTH_SECRET` environment variable so sessions survive server restarts.
 
-### Standing permissions
+### Standing permissions (removed)
 
-These settings let you answer one approval once instead of every time, for one agent doing one named thing, for a set number of hours. They are off to start with, and turning them on needs local login to be on too — without a sign-in, DorkOS cannot tell you apart from an agent running on the same machine.
+The `approvals` section is gone. Its settings (`approvals.standingGrants`, `approvals.trustWindowMinutes` and `approvals.standingGrantsVoidBefore`) are removed from your config file the first time the new version starts. **Always allow** on a request card replaced standing permissions: it is a permission setting for one agent and one action, changed on the Permissions page. See [Always allow](/docs/guides/action-approvals#always-allow).
 
-Switching either one off ends every permission you have open, right away. It stays ended: turning the setting back on later never brings an old permission back, however you switch it, and whether or not DorkOS was running at the time. Granting a permission again is always a fresh decision you make.
+### Agent permissions
+
+What your agents may do on their own, what waits for your yes, and what they cannot do at all. See the [Permissions guide](/docs/guides/permissions).
+
+These are changed on the Permissions page (Settings → Permissions, or an agent's own Permissions page), never here, so that every change DorkOS makes is recorded in the history. (An edit made straight to an agent's settings file is recorded too, as changed outside DorkOS.) `PATCH /api/config` and `dorkos config set` refuse any `permissions` key and say where to go instead.
 
 <TypeTable
   type={{
-    'approvals.standingGrants': {
-      description: 'Whether standing permissions may exist at all.',
-      type: 'boolean',
-      default: 'false',
-    },
-    'approvals.trustWindowMinutes': {
+    'permissions.preset': {
       description:
-        'How long a new standing permission lasts, in minutes, counted from the moment you grant it. Using it never extends it. The longest allowed is one day.',
-      type: 'number (5-1440)',
-      default: '480',
+        'The starting point for every area: `careful`, `balanced` or `full`. `null` means you have not chosen yet, and agents work as they did before permissions existed.',
+      type: "'careful' | 'balanced' | 'full' | null",
+      default: 'null',
+    },
+    'permissions.defaults': {
+      description:
+        'The changes you made on top of the preset, as `areas` and `actions`, each mapping to `blocked`, `ask` or `allowed`.',
+      type: 'object',
+      default: '{ areas: {}, actions: {} }',
     },
   }}
 />
 
-DorkOS keeps one more value in this section, `approvals.standingGrantsVoidBefore`. It writes that one itself to remember when you last switched standing permissions off, and it is what stops an old permission waking up later. Leave it alone — editing the config file by hand here can bring back a permission you meant to end.
+DorkOS keeps one more value here, `permissions.upgradeSweptVersion`. It records which version last carried your old settings across on upgrade; leave it alone.
+
+Each agent's own differences live in its `.dork/agent.json`, under `permissions`.
 
 ### Full autonomy
 
@@ -897,7 +904,7 @@ Reset takes effect everywhere within about half a minute. A browser tab you left
   }}
 />
 
-This is a confirmation for you, not a lock against your agents. It makes sure a person cannot arrive in Full autonomy without having been told what it means. It is not a defence against a program on your machine calling the API directly — that is what [standing permissions](#standing-permissions) and local login are for.
+This is a confirmation for you, not a lock against your agents. It makes sure a person cannot arrive in Full autonomy without having been told what it means. It is not a defence against a program on your machine calling the API directly — that is what local login is for.
 
 ### Cloud link
 

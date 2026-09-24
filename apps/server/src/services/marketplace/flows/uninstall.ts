@@ -71,6 +71,13 @@ export interface UninstallRequest {
    * external callers always get the honest clear-on-remove behavior.
    */
   deactivateShape?: boolean;
+  /**
+   * Internal (installer-only): the exact install root to remove, when the
+   * caller already resolved which installation it means — the installer's
+   * `update()` replacing the installation an update check found. See
+   * `LocateInstallInput.installRoot`; not exposed by the HTTP body schema.
+   */
+  installRoot?: string;
 }
 
 /** The outcome of a successful uninstall. */
@@ -360,7 +367,7 @@ export class UninstallFlow {
    * used to miss by hardcoding `plugins` (DOR-994). A project's roots stay
    * ahead of the global ones because a project install shadows a global package
    * of the same name for that project, matching the installed scanner's merged
-   * view and the update flow's walk.
+   * view, which the update flow checks.
    *
    * Shared with `MarketplaceInstaller.update()`, which probes the same order to
    * decide which target to lock across its whole uninstall-then-install round
@@ -373,6 +380,7 @@ export class UninstallFlow {
       dorkHome: this.deps.dorkHome,
       name: req.name,
       projectPath: req.projectPath,
+      installRoot: req.installRoot,
     });
   }
 

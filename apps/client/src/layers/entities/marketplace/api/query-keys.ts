@@ -41,4 +41,17 @@ export const marketplaceKeys = {
   installedDetail: (name: string) => [...marketplaceKeys.all, 'installed', 'detail', name] as const,
 
   sources: () => [...marketplaceKeys.all, 'sources'] as const,
+
+  // The update check for the installations in one view: every scope (no
+  // projectPath, what the Installed view lists) or one project's merged view.
+  // A sibling of `installed`, not under it, so refreshing the installed list
+  // never re-runs the check (which reaches out to every package's source).
+  updates: (projectPath?: string) =>
+    projectPath
+      ? ([...marketplaceKeys.all, 'updates', { projectPath }] as const)
+      : ([...marketplaceKeys.all, 'updates'] as const),
+
+  // Mutation key for applying updates, so every in-flight apply can be found
+  // (`useApplyingInstallPaths`) however many rows started one.
+  applyUpdates: () => [...marketplaceKeys.all, 'apply-updates'] as const,
 };

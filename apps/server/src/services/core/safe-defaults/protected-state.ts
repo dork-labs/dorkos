@@ -69,9 +69,8 @@
  * back unchecked is re-validated by `conf`'s Ajv on `set()`, and that throw
  * escapes the catch and takes down the boot this code exists to rescue.
  *
- * A `typeof` check is not enough: `trustWindowMinutes: 1` is a number and
- * violates `.min(5)`; `standingGrantsVoidBefore: '2026-07-27'` is a string and
- * violates `.datetime()`. So every candidate is parsed against its real section
+ * A `typeof` check is not enough: a type-correct value is not a valid one when
+ * its schema carries a bound or a format. So every candidate is parsed against its real section
  * schema before being promised ({@link sectionSchemaAccepts}), each section is
  * re-checked as assembled, and each write is wrapped. Values are judged one at a
  * time, so one unreadable field never costs another, and a section that still
@@ -85,37 +84,12 @@ import type { UserConfig } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 
 /**
- * The later of two posture-floor instants, treating a missing one as "no floor".
- *
- * Ordering fixed-width UTC strings as text orders them as instants, the same
- * property the grant store's own comparison relies on.
- *
- * That holds ONLY for genuine `Date.prototype.toISOString()` output, so **every
- * caller must validate first**. This is not a theoretical caveat: the salvage
- * path reads from a file that already failed validation, and
- * `'December 31, 2020'` sorts above every real 2026 timestamp as text, which
- * would LOWER a floor that had already voided standing permissions. The
- * `'later'` branch of `moreProtective` checks {@link IsoInstantSchema} before
- * calling for exactly that reason.
- *
- * @param a - One instant, or `null`.
- * @param b - The other instant, or `null`.
- * @returns The later of the two, or `null` when both are absent.
- */
-export function latestInstant(a: string | null, b: string | null): string | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  return a > b ? a : b;
-}
-
-/**
  * How a stored value is compared against the fresh default to decide which one
  * protects the person more.
  *
  * - `boolean` — one of the two values is the protective one, named outright.
  * - `lower` — a bound, where a smaller number is a tighter limit.
  * - `higher` — a threshold, where a LARGER number is the quieter setting.
- * - `later` — a monotonic floor, where a later instant voids more.
  * - `restricted` — an allow-list whose default is a catch-all
  *   ({@link ProtectiveCarryover.wildcard}); protective when the stored list
  *   excludes it, denying at least one thing the default would have allowed.
@@ -140,7 +114,7 @@ export function latestInstant(a: string | null, b: string | null): string | null
  * list that omits it denies something the default would have allowed,
  * regardless of what else the list contains (DOR-1505).
  */
-export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'later' | 'restricted';
+export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'restricted';
 
 /** One config leaf whose default is permissive, and the direction that protects. */
 export interface ProtectiveCarryover {
@@ -174,8 +148,7 @@ export interface ProtectiveCarryover {
  * 1. A default on the permissive side, where any protective value is worth
  *    keeping (`auth.enabled`, `mcp.enabled`, the `agentContext.*` tools).
  * 2. A default that is ALREADY a real bound but can be tightened past
- *    (`rooms.*`, `uploads.max*`, `mcp.rateLimit.maxPerWindow`,
- *    `approvals.trustWindowMinutes`). A `safe` verdict means the shipped value
+ *    (`rooms.*`, `uploads.max*`, `mcp.rateLimit.maxPerWindow`). A `safe` verdict means the shipped value
  *    protects, not that it is the tightest a person might want, so recovery
  *    still has to preserve what they set.
  *
@@ -258,17 +231,6 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     direction: 'lower',
     reason:
       'A tightened request ceiling on the external /mcp endpoint. Only the count is carried; `windowSecs` is deliberately not, because a shorter window with the same count allows MORE traffic, not less.',
-  },
-  {
-    path: 'approvals.standingGrantsVoidBefore',
-    direction: 'later',
-    reason:
-      'The void floor is the only durable record that standing permissions were revoked (DOR-520). Permissions live in SQLite and outlive the config file, so losing the floor wakes every one of them.',
-  },
-  {
-    path: 'approvals.trustWindowMinutes',
-    direction: 'lower',
-    reason: 'A shortened trust window is a tightened bound; a wipe must not lengthen it.',
   },
   {
     path: 'rooms.maxAgentDepth',
@@ -473,8 +435,7 @@ export interface SalvagedProtections {
    * Values found on the protective side that could NOT be carried, and why.
    *
    * Populated when a stored value is more protective than the default but fails
-   * its own schema — a hand-edited `trustWindowMinutes: 1`, a `voidBefore` that
-   * is not a real timestamp. Those are dropped rather than written, and an
+   * its own schema — a hand-edited number below its own floor, say. Those are dropped rather than written, and an
    * operator whose tightened setting was discarded has to be able to find out
    * which one, so the caller logs these. An empty list is the normal case.
    */
@@ -498,16 +459,15 @@ function readPath(root: unknown, path: string): unknown {
  * `typeof`. Everything here runs inside the recovery `catch`, so a value written
  * back unchecked is re-validated by `conf`'s Ajv on `set()`, and that throw
  * escapes the catch and takes down the boot this code exists to rescue. A
- * type-correct value is not a valid one: `approvals.trustWindowMinutes: 1` is a
- * number and violates `.min(5)`; `standingGrantsVoidBefore: '2026-07-27'` is a
- * string and violates `.datetime()`.
+ * type-correct value is not a valid one: a number below its schema's `.min()`,
+ * or a string that is not the `.datetime()` its schema asks for.
  *
  * Parses the whole assembled section rather than the leaf alone, which needs no
  * Zod-internals walk to find a leaf schema and catches cross-field rules for
  * free. The base is always the fresh section, which is valid by construction, so
  * a failure is attributable to the one carried value.
  *
- * @param section - Top-level config key (e.g. `approvals`).
+ * @param section - Top-level config key (e.g. `rooms`).
  * @param draft - The candidate value for that whole section.
  */
 function sectionSchemaAccepts(section: string, draft: unknown): boolean {
@@ -518,9 +478,6 @@ function sectionSchemaAccepts(section: string, draft: unknown): boolean {
   if (!schema) return false;
   return schema.safeParse(draft).success;
 }
-
-/** A strict ISO-8601 instant, matching `z.string().datetime()` on the leaf. */
-const IsoInstantSchema = z.string().datetime();
 
 /** Write a dot-path into a nested patch object, creating containers as needed. */
 function writePath(root: Record<string, unknown>, path: string, value: unknown): void {
@@ -636,17 +593,6 @@ function moreProtective(
       if (typeof stored !== 'number' || !Number.isFinite(stored)) return undefined;
       if (typeof fresh !== 'number') return undefined;
       return stored > fresh ? stored : undefined;
-    }
-    case 'later': {
-      // Validated as a strict ISO instant BEFORE comparing, not merely parsed as
-      // a date. `latestInstant` orders fixed-width UTC strings as text, and that
-      // only orders instants when both really are fixed-width UTC: `Date.parse`
-      // accepts `'December 31, 2020'`, which sorts above every genuine 2026
-      // floor and would lower a floor that had already voided permissions.
-      if (!IsoInstantSchema.safeParse(stored).success) return undefined;
-      const freshFloor = IsoInstantSchema.safeParse(fresh).success ? (fresh as string) : null;
-      const winner = latestInstant(freshFloor, stored as string);
-      return winner !== null && winner !== fresh ? winner : undefined;
     }
     case 'restricted': {
       // See the CarryoverDirection doc: this compares STORED against the fresh

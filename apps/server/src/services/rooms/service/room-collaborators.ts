@@ -103,12 +103,14 @@ export function createRoomCollaborators(
   const authority = new RoomAuthority(core);
   const projection = new RoomProjection(core);
   const publisher = new RoomPublisher(core);
-  const updates = new RoomUpdates(core, visibility, authority, projection);
-  const lifecycle = new RoomLifecycle(core, visibility, authority, projection, updates);
   const notifier = new RoomMessageNotifier(core);
   const writer = new RoomEntryWriter(core, publisher, notifier);
   const posting = new RoomPosting(core, visibility, writer);
   const systemPosts = new RoomSystemPosts(core, visibility, publisher, posting);
+  // After `systemPosts`: an agent archiving a channel posts the room's notice
+  // before the archive lands (spec `agent-permissions` D12).
+  const updates = new RoomUpdates(core, visibility, authority, projection, systemPosts);
+  const lifecycle = new RoomLifecycle(core, visibility, authority, projection, updates);
   const bridgeCreation = new RoomBridgeCreation(core, projection);
   const bridgeLifecycle = new RoomBridgeLifecycle(
     core,

@@ -110,6 +110,8 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     summary: 'Uninstall "sentry-monitor"',
     requestedBy: '/Users/dev/agents/dorkbot',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 8.5 * 60_000).toISOString(),
     ...overrides,
@@ -772,7 +774,7 @@ describe('PinnedTriageHeader', () => {
 
     expect(grantApproval).toHaveBeenCalledWith('01JZ0000000000000000000001', undefined);
     // Confirmed on the card while the request is still in flight.
-    expect(await screen.findByText('Allowed')).toBeInTheDocument();
+    expect(await screen.findByText('Allowed once')).toBeInTheDocument();
 
     listPendingApprovals.mockResolvedValue({ approvals: [] });
     settle();
@@ -819,12 +821,12 @@ describe('PinnedTriageHeader', () => {
 
     // Still there, still saying what happened, inside a group that has not
     // collapsed around it.
-    expect(screen.getByText('Allowed')).toBeInTheDocument();
+    expect(screen.getByText('Allowed once')).toBeInTheDocument();
     expect(screen.getByText('Waiting on you')).toBeInTheDocument();
 
     // And it does let go: a hold that never released would pin a decided card
     // to the header forever. The window is the hold plus the card's own melt.
-    await waitFor(() => expect(screen.queryByText('Allowed')).not.toBeInTheDocument(), {
+    await waitFor(() => expect(screen.queryByText('Allowed once')).not.toBeInTheDocument(), {
       timeout: 4_000,
     });
   });

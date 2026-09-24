@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  AgentManifestFileSchema,
   AgentManifestSchema,
   AgentRuntimeSchema,
   EnabledToolGroupsSchema,
@@ -437,5 +438,85 @@ describe('UpdateAgentRequestSchema — account', () => {
 
   it('refuses an empty account — a caller gets told, unlike a file on disk', () => {
     expect(UpdateAgentRequestSchema.safeParse({ account: '' }).success).toBe(false);
+  });
+});
+
+describe('AgentManifestFileSchema — the roomsManage read-time fold (spec agent-permissions D13)', () => {
+  // A legacy manifest file keeps meaning what a person set: the retired grant
+  // becomes the Rooms area of the agent's permissions, and the key disappears.
+  it('folds roomsManage: true into Rooms Allowed and drops the key', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { roomsManage: true },
+    });
+    expect(m.permissions).toEqual({ areas: { rooms: 'allowed' } });
+    expect(m.enabledToolGroups).toEqual({});
+    expect(m.enabledToolGroups).not.toHaveProperty('roomsManage');
+  });
+
+  it('folds roomsManage: false into Rooms Blocked (an explicit choice)', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { roomsManage: false },
+    });
+    expect(m.permissions).toEqual({ areas: { rooms: 'blocked' } });
+  });
+
+  it('adds no permissions when roomsManage is absent (inherit)', () => {
+    const m = AgentManifestFileSchema.parse({ ...baseManifest, enabledToolGroups: {} });
+    expect(m.permissions).toBeUndefined();
+  });
+
+  it('never overwrites an explicit Rooms setting', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { roomsManage: true },
+      permissions: { areas: { rooms: 'ask' }, actions: { 'rooms.merge': 'blocked' } },
+    });
+    expect(m.permissions).toEqual({
+      areas: { rooms: 'ask' },
+      actions: { 'rooms.merge': 'blocked' },
+    });
+  });
+
+  it('folds per key even when permissions already exists, and keeps other areas', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      enabledToolGroups: { roomsManage: false, tasks: false },
+      permissions: { areas: { tasks: 'ask' } },
+    });
+    expect(m.permissions).toEqual({ areas: { tasks: 'ask', rooms: 'blocked' } });
+    // The four documentation keys keep their meaning in this phase.
+    expect(m.enabledToolGroups).toEqual({ tasks: false });
+  });
+
+  it('parses an area key a newer build knows', () => {
+    const m = AgentManifestFileSchema.parse({
+      ...baseManifest,
+      permissions: { areas: { future: 'allowed' } },
+    });
+    expect(m.permissions?.areas).toEqual({ future: 'allowed' });
+  });
+
+  it('fails the parse loudly on a state that is not one of the three', () => {
+    expect(
+      AgentManifestFileSchema.safeParse({
+        ...baseManifest,
+        permissions: { areas: { rooms: 'yes' } },
+      }).success
+    ).toBe(false);
+    expect(
+      AgentManifestSchema.safeParse({ ...baseManifest, permissions: { areas: { rooms: 'yes' } } })
+        .success
+    ).toBe(false);
+  });
+
+  it('never lets the generic agent PATCH carry permissions', () => {
+    const parsed = UpdateAgentRequestSchema.parse({
+      permissions: { areas: { rooms: 'allowed' } },
+      enabledToolGroups: { roomsManage: true, tasks: false },
+    });
+    expect(parsed).not.toHaveProperty('permissions');
+    expect(parsed.enabledToolGroups).toEqual({ tasks: false });
   });
 });

@@ -73,6 +73,9 @@ import { gatedToolRegistrar } from './mcp-tool-gate.js';
  *   machine is calling — see `CapabilityInvocationContext.agentIdentityPresented`
  *   (DOR-1361). A revoked or expired token is no longer such a case: it fills
  *   `identity` with an `inactive` mark instead (DOR-486).
+ * @param hiddenToolNames - Tools this caller is not shown because their
+ *   permission resolves to Blocked (spec `agent-permissions` D15): the calling
+ *   agent's own settings when it identified itself, the defaults otherwise.
  */
 export function createExternalMcpServer(
   deps: McpToolDeps,
@@ -80,7 +83,8 @@ export function createExternalMcpServer(
   registry?: CapabilityRegistry,
   identity?: AgentIdentity,
   userId?: string,
-  agentIdentityPresented?: boolean
+  agentIdentityPresented?: boolean,
+  hiddenToolNames?: ReadonlySet<string>
 ): McpServer {
   const server = new McpServer({
     name: 'dorkos',
@@ -131,7 +135,7 @@ export function createExternalMcpServer(
           ...(userId ? { userId } : {}),
         }
       : undefined;
-  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external', caller);
+  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external', caller, hiddenToolNames);
 
   // ── Read-only resources ──────────────────────────────────────────────────
   // Same call the in-session server makes. This surface has no per-request `cwd`

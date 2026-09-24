@@ -451,7 +451,15 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 103 -> 104 for `feedback_draft` (DOR-2056), on the same terms: no prompt
     // block names it, so it stays deferred and unprefixed too.
-    expect(advertised.size).toBe(104);
+    //
+    // 104 -> 105 for `archive_room` (spec `agent-permissions` D12), on the same
+    // terms: deferred and unprefixed.
+    //
+    // 105 -> 107 for `request_permission` and `list_my_permissions` (spec
+    // `agent-permissions` D8, D9). No claude-code prompt block names either bare:
+    // the Blocked-area line names the request tool by its ENDING, the form that
+    // survives every runtime's prefix.
+    expect(advertised.size).toBe(107);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [
@@ -692,6 +700,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'dorkos-tool-names.ts',
       'gen-ui-context.ts',
       'mcp-content.ts',
+      'permission-tool-filter.ts',
       'resolve-agent-runtime-type.ts',
       'resolve-binary.ts',
       'room-context-block.ts',

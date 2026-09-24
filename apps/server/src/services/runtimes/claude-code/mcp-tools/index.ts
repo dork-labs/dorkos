@@ -288,13 +288,18 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  *   the marketplace surface is unavailable (relay disabled / not yet wired)
  * @param registry - The shared boot-composed capability registry. When omitted,
  *   one is composed on the spot from `deps` + `marketplaceDeps`.
+ * @param hiddenToolNames - Tools this agent is not shown because their
+ *   permission resolves to Blocked (spec `agent-permissions` D15). Left out of
+ *   the list only; the gate refuses a Blocked call whatever the list says.
  */
 export function createDorkOsToolServer(
   deps: McpToolDeps,
-  session?: McpToolSession & Pick<import('../agent-types.js').AgentSession, 'connectorTurn'>,
+  session?: McpToolSession &
+    Pick<import('../agent-types.js').AgentSession, 'connectorTurn' | 'unattendedApprovals'>,
   sessionId?: string,
   marketplaceDeps?: MarketplaceMcpDeps,
-  registry?: CapabilityRegistry
+  registry?: CapabilityRegistry,
+  hiddenToolNames: ReadonlySet<string> = new Set()
 ) {
   // Operator + marketplace + self-description tools, all generated from the
   // Capability Registry (shared boot instance, or composed on the spot).
@@ -333,7 +338,18 @@ export function createDorkOsToolServer(
   // queue to render the inline card into) and the approval primitive can a fresh
   // destructive call hold inline and resume. Absent either — the introspection
   // stub, a hermetic test — capabilities keep the token/poll flow untouched.
-  const hold = session && deps.approvals ? { session, approvals: deps.approvals } : undefined;
+  //
+  // An unattended turn (a scheduled run, a chat binding, a connector event)
+  // keeps the seam but never holds: `unattended` is read per call, because one
+  // warm session serves turns of both kinds (spec `agent-permissions` D6).
+  const hold =
+    session && deps.approvals
+      ? {
+          session,
+          approvals: deps.approvals,
+          unattended: () => session.unattendedApprovals === true,
+        }
+      : undefined;
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as
     // `mcp__<name>__<tool>`, so this string is half of what the model must type
@@ -359,7 +375,7 @@ export function createDorkOsToolServer(
         ...(hold ? { hold } : {}),
       }),
       ...capabilityMcpTools(capabilityRegistry, 'in-session', resolveCapabilityContext, hold),
-    ],
+    ].filter((tool) => !hiddenToolNames.has(tool.name)),
   });
 
   if (session?.connectorTurn) {

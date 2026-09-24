@@ -40,8 +40,8 @@
  * ## Not the same question as carryover
  *
  * `protected-state.ts` asks what must SURVIVE a wipe; this asks what a default
- * IS. They overlap but do not coincide: `approvals.standingGrants` defaults
- * `safe` and needs no carryover rule, while `rooms.maxTurnsPerAgentPerCascade`
+ * IS. They overlap but do not coincide: `auth.enabled` defaults `permissive`
+ * and a protective value carries, while `rooms.maxTurnsPerAgentPerCascade`
  * defaults to a real bound (`safe`) and still needs one, because a person may
  * have tightened it further. The guard checks the one relationship that must hold: a carryover
  * rule only makes sense for a leaf that can lose something.
@@ -137,6 +137,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // outcome and costs one dialog.
   'ui.fullPowerDecidedAt',
   'ui.fullPowerChoice',
+  // Bookkeeping for the one-shot permission upgrade sweep: which server version
+  // already ran it. It grants nothing and no gate reads it.
+  'permissions.upgradeSweptVersion',
   // How loud DorkOS is, and how long before it tries a louder channel. No data
   // moves on any of these: the sounds and the browser notification are this
   // machine talking to the person at it, and `phoneAfterMinutes` cannot deliver
@@ -253,12 +256,17 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
  *
  * Most need no carryover rule in `protected-state.ts` — a wipe lands on them for
  * free. **Several do have one anyway**, and the distinction matters: the
- * `rooms.*` bounds, `approvals.trustWindowMinutes` and
- * `approvals.standingGrantsVoidBefore` all ship at a real bound, and a person
- * can tighten PAST it. Landing back on the shipped default would still loosen
+ * `rooms.*` bounds all ship at a real bound, and a person can tighten PAST
+ * them. Landing back on the shipped default would still loosen
  * what they set.
  */
 export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
+  // No permission preset chosen: every action keeps exactly the behavior it had
+  // before permissions existed, which grants nothing new (Rooms stays Blocked),
+  // and the person's own defaults start empty (spec `agent-permissions`).
+  'permissions.preset': null,
+  'permissions.defaults.areas': {},
+  'permissions.defaults.actions': {},
   // Public exposure starts off, with no hostname, token, or edge passcode.
   'tunnel.enabled': false,
   // The external A2A surface starts unmounted, so no agent outside DorkOS can
@@ -385,11 +393,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'runtimes.opencode.baseURL': null,
   'runtimes.codex.credentialRef': null,
   providers: {},
-  // Standing permissions cannot exist until asked for; the void floor is
-  // vacuously null because no grant exists yet on a fresh install.
-  'approvals.standingGrants': false,
-  'approvals.trustWindowMinutes': 480,
-  'approvals.standingGrantsVoidBefore': null,
   // No standing answer to "how much may a new session do without asking", so
   // every runtime keeps its own default — and no shipped runtime defaults to a
   // stop that stops asking (pinned across the whole set by

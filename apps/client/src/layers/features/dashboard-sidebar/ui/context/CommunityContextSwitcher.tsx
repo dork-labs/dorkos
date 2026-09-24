@@ -4,6 +4,7 @@ import { ChevronDown, HardDrive, UsersRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import {
+  COMMUNITY_HOST_ADMIN_PATH,
   communitySettingsPath,
   type CommunitySettingsSection,
 } from '@dorkos/shared/community-wire';
@@ -17,6 +18,7 @@ import {
 } from '@/layers/shared/model';
 import {
   cn,
+  formatRelativeTime,
   getCommunityAuthority,
   isCommunityAuthorityCurrent,
   openExternalLink,
@@ -50,6 +52,7 @@ import { useHeaderBlockMenu } from './use-header-block-menu';
 import {
   buildCommunityContextNodes,
   communityActionAvailability,
+  communityCreationOrigins,
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
 import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
@@ -112,6 +115,10 @@ function orderedConnections(
   });
 }
 
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function navigationDescriptor(connection: CommunityConnectionDescriptor) {
   const lifecycle = connection.access?.lastKnown?.lifecycle;
   return {
@@ -135,7 +142,6 @@ function navigationDescriptor(connection: CommunityConnectionDescriptor) {
           : 'unknown',
     unreadCount: connection.attention?.unreadCount ?? null,
     mentionCount: connection.attention?.mentionCount ?? null,
-    attentionStale: connection.attention?.state === 'stale',
   };
 }
 
@@ -229,6 +235,9 @@ export function CommunityContextSwitcher({
     onDisconnect: () => setDisconnecting(selected),
     onConnect: () => openConnections('messaging'),
     onJoin: () => setJoinOpen(true),
+    creationOrigins: communityCreationOrigins(destinations),
+    // The pinned origin again: the only host these connections talked to.
+    onCreate: (origin) => openExternalLink(new URL(COMMUNITY_HOST_ADMIN_PATH, origin).toString()),
     onDeploy: () => openExternalLink(COMMUNITY_DEPLOY_GUIDE_URL),
     hosting: hosting
       ? {
@@ -541,8 +550,10 @@ export function CommunityContextSwitcher({
               const attention = [
                 mentions > 0 ? `${mentions} ${mentions === 1 ? 'mention' : 'mentions'}` : null,
                 otherUnread > 0 ? `${otherUnread} other unread` : null,
-                descriptor.attentionStale && descriptor.unreadCount !== null
-                  ? 'last checked'
+                // The Community did not answer in time, so these are the last
+                // counts it confirmed; say when, rather than pass them off as now.
+                connection.attention?.state === 'stale'
+                  ? `last checked ${lowerFirst(formatRelativeTime(connection.attention.verifiedAt))}`
                   : null,
               ]
                 .filter(Boolean)

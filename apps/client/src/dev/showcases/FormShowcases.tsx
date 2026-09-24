@@ -21,6 +21,7 @@ import {
   RadioGroupItem,
   SegmentedControl,
   SegmentedControlItem,
+  PermissionStateSwitch,
   Command,
   CommandInput,
   CommandList,
@@ -29,8 +30,9 @@ import {
   CommandItem,
   BoundedNumberInput,
 } from '@/layers/shared/ui';
+import type { PermissionState } from '@dorkos/shared/permissions';
 
-/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, Label, Command, BoundedNumberInput. */
+/** Form component showcases: Input, Textarea, Switch, Select, Tabs, Checkbox, RadioGroup, SegmentedControl, PermissionStateSwitch, Label, Command, BoundedNumberInput. */
 export function FormShowcases() {
   const [switchOn, setSwitchOn] = useState(true);
   const [checkA, setCheckA] = useState(true);
@@ -38,6 +40,8 @@ export function FormShowcases() {
   const [radioValue, setRadioValue] = useState('claude-code');
   const [segmentValue, setSegmentValue] = useState('ask');
   const [segmentPair, setSegmentPair] = useState('grouped');
+  const [permission, setPermission] = useState<PermissionState>('ask');
+  const [floorPermission, setFloorPermission] = useState<PermissionState>('ask');
 
   return (
     <>
@@ -312,6 +316,31 @@ export function FormShowcases() {
             <SegmentedControlItem value="edits">Edits</SegmentedControlItem>
             <SegmentedControlItem value="full">Full autonomy</SegmentedControlItem>
           </SegmentedControl>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="PermissionStateSwitch"
+        description="What an agent may do in one area: Blocked, Ask, or Allowed. A floor area offers only the first two."
+      >
+        <ShowcaseLabel>Three states</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionStateSwitch value={permission} onChange={setPermission} aria-label="Rooms" />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Floor area (never Allowed)</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionStateSwitch
+            value={floorPermission}
+            onChange={setFloorPermission}
+            floor
+            aria-label="Reach & secrets"
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Disabled while saving</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PermissionStateSwitch value="allowed" onChange={() => {}} disabled aria-label="Tasks" />
         </ShowcaseDemo>
       </PlaygroundSection>
 

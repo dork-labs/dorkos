@@ -17,13 +17,11 @@
  * option restricted a session's tool set. It does not; it auto-approves. See
  * ADR-260726-171347 for the current position and ADR-0070 for the full history.
  *
- * **One key beside these four now does block, and it is not in this table.**
- * `EnabledToolGroups.roomsManage` (`mesh-schemas.ts`) is a per-agent grant the
- * server's capability choke point reads on every call, so a capability that
- * declares that group is refused without it. It is deliberately absent here for
- * the same reason every registry-generated tool is (see the "Adding a tool" note
- * below): the capability declares its own group, and restating it here would be a
- * second copy of the fact this table exists to remove.
+ * **What does block is a permission, and it is not in this table.** Each
+ * capability declares its own permission `area` beside its tier, and the
+ * capability gate resolves it on every call (`@dorkos/shared/permissions`, spec
+ * `agent-permissions`). Restating area membership here would be a second copy of
+ * the fact this table exists to remove.
  *
  * What stops an agent from doing something consequential is the permission tier
  * on the tool, enforced in `apps/server/src/services/core/mcp-tool-gate.ts` below
@@ -99,23 +97,6 @@
 
 /** A tool-group toggle a person can set per agent, or globally as the default. */
 export type ToolDomainKey = 'tasks' | 'relay' | 'mesh' | 'adapter';
-
-/**
- * A per-agent grant the server ENFORCES — the other kind of key in
- * `EnabledToolGroups` (DOR-1611, ADR 260828-123331).
- *
- * Deliberately a separate union from {@link ToolDomainKey} rather than a wider
- * one, because the two answer different questions and widening would invite a
- * caller to treat them alike. A `ToolDomainKey` decides what an agent is TOLD
- * about and has a global default; one of these decides whether the call RUNS,
- * has no global default, and cannot be set by the agent it governs.
- *
- * Which capabilities sit behind a grant is NOT listed here, and must not be:
- * each capability declares its own `toolGroup`, and the catalog is where the
- * cockpit and the docs read it. A list here would be the fourth copy of the fact
- * this module exists to keep in one place.
- */
-export type CapabilityToolGroupKey = 'roomsManage';
 
 /**
  * A named slice of the hand-registered tool surface.

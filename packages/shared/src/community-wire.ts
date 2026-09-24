@@ -67,6 +67,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   me: '/api/v1/me',
   connectionAccess: '/api/v1/me/connection-access',
   meConnection: '/api/v1/me/connection',
+  hostAccess: '/api/v1/me/host-access',
   members: '/api/v1/members',
   authOptions: '/api/v1/auth-options',
   memberRole: '/api/v1/members/:id/role',
@@ -597,6 +598,24 @@ export type CommunityConnectionAccess = z.infer<typeof CommunityConnectionAccess
 export const CommunityWireConnectionAccessResponseSchema = z.strictObject({
   access: CommunityConnectionAccessSchema,
 });
+/**
+ * Whether the account behind the exact installation grant making the request
+ * runs this host, and so may create communities on it.
+ *
+ * A separate read rather than a field on the connection-access response, which
+ * is strict: an installation built before this field existed would reject the
+ * whole access check, and so mark a working connection offline. A host built
+ * before this read answers 404, which a caller treats as "not an operator".
+ *
+ * The answer only decides whether an installation OFFERS a way to the host's
+ * own creation page. It grants nothing: that page signs the person in and
+ * checks host authority again before creating anything.
+ */
+export const CommunityWireHostAccessResponseSchema = z.strictObject({
+  hostOperator: z.boolean(),
+});
+/** Host authority of the account behind one installation grant. */
+export type CommunityWireHostAccessResponse = z.infer<typeof CommunityWireHostAccessResponseSchema>;
 /** A grant description the member can inspect and revoke without seeing its token. */
 export const CommunityWireGrantSchema = z.strictObject({
   id,
@@ -737,6 +756,12 @@ export function communitySettingsPath(
   const base = `/c/${encodeURIComponent(communityId)}/settings`;
   return section ? `${base}/${section}` : base;
 }
+
+/**
+ * The path of a host's administration page, where a host operator creates a
+ * community. It sits on the host's origin, not under any one community.
+ */
+export const COMMUNITY_HOST_ADMIN_PATH = '/host';
 
 /**
  * Read a settings path back.

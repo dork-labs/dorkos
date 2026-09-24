@@ -262,7 +262,7 @@ export async function updateAgentManifest(opts: {
   // **First, before the schema parse and before the manifest read**, unlike the
   // two value-shaped checks below. The refusal is about WHO may write a field,
   // and that answer cannot be contingent on the rest of the patch being
-  // well-formed — `{"roomsManage": null}` fails the boolean schema, and reporting
+  // well-formed — `{"enabledToolGroups": {"tasks": null}}` fails the boolean schema, and reporting
   // that as a validation error would tell an agent to fix its types and try again
   // at a field it may never write. Naming the field at all (`true`, `false`,
   // `null`, or any object above it — including one whose keys DorkOS does not
@@ -275,8 +275,9 @@ export async function updateAgentManifest(opts: {
   //
   // The operator's own surface, `PATCH /api/mesh/agents/:id`, writes every one of
   // these and does not come through here. **A cockpit that edits an operator-only
-  // field must use that route** — the Tools tab does, for both the tool groups
-  // and the rooms-management grant.
+  // field must use that route** — the Tools tab does, for the tool groups. An
+  // agent's `permissions` are refused here too and have their own routes (spec
+  // `agent-permissions` D10).
   const refusedPaths = findOperatorOnlyAgentPaths(rawBody);
   if (refusedPaths.length > 0) {
     throw new AgentUpdateError('OPERATOR_ONLY', describeAgentOperatorOnlyRefusal(refusedPaths));
@@ -316,7 +317,7 @@ export async function updateAgentManifest(opts: {
   //
   // The operator's own surface, `PATCH /api/mesh/agents/:id`, does not come
   // through here and sets any ceiling. **A cockpit that edits the ceiling must
-  // use that route** — the same split `enabledToolGroups.roomsManage` uses.
+  // use that route** — the same split the four tool groups use.
   //
   // **The comparison and the write are not atomic**, and that is unchanged from
   // every other guard on this seam: read, decide, write, with no lock over

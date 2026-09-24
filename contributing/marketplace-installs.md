@@ -80,7 +80,8 @@ All marketplace install code lives under `apps/server/src/services/marketplace/`
 apps/server/src/services/marketplace/
 ├── marketplace-installer.ts     # Top-level orchestrator + error classes
 ├── marketplace-source-manager.ts # ~/.dork/marketplaces.json CRUD
-├── marketplace-cache.ts         # ~/.dork/cache/marketplace/ with TTL
+├── marketplace-cache.ts         # ~/.dork/cache/marketplace/ with TTL; stamps use, removeUnused
+├── package-cache-retention.ts   # What the package cache keeps; sweeps after each new entry
 ├── package-resolver.ts          # name@source → resolved source descriptor
 ├── package-fetcher.ts           # Verified git fetch through the cache + marketplace.json fetch
 ├── permission-preview.ts        # Build human-readable preview
@@ -107,6 +108,7 @@ apps/server/src/services/marketplace/
 │   ├── marketplace-installer.test.ts
 │   ├── marketplace-source-manager.test.ts
 │   ├── marketplace-cache.test.ts
+│   ├── package-cache-retention.test.ts
 │   ├── package-resolver.test.ts
 │   ├── permission-preview.test.ts
 │   ├── conflict-detector.test.ts
@@ -176,7 +178,7 @@ Advisory by default. See [ADR-0233](../decisions/0233-marketplace-update-is-advi
 
 The question it answers is "what would installing this package right now give me?", read by Claude Code's own version rule ([ADR 260923-122615](../decisions/260923-122615-package-version-resolved-like-an-install.md)). A package's version is, in order: the `version` it declares (`plugin.json`, else `.dork/manifest.json`, via `readDeclaredVersion`), else its marketplace entry's `version`, else the commit it was fetched at (`resolvePackageVersion` in `@dorkos/marketplace`). Our own marketplace sets no entry `version`, so the entry step is for third-party marketplaces.
 
-1. **Enumerate installs** in the request's scope (a project's roots first, then `dorkHome`). Each install is read through the installed scanner's `readInstalledIdentity`, the same reader the Installed list uses. It never gates on validity, so Claude-Code-only installs and installs whose version files disagree are checked too. Its `.dork/install-metadata.json` sidecar supplies `commitSha`, `entryVersion` and `sourceKey`.
+1. **Take the installations from one scan.** The flow does not walk install roots itself. It checks `InstallationRecord`s from the installed scanner's `scanInstallationRecords(dorkHome, view)`, the same walk the Installed list is a view of. The view is `{ agents }` (every scope: global, then each registered agent's project, one record per installation) or `{ projectPath }` (that project's merged view, where a project install shadows a global one in the same root). Each record carries the listing's `InstalledPackage`, the install root it was found in, the declared version (`readDeclaredVersion`), and the `.dork/install-metadata.json` sidecar with `commitSha`, `entryVersion` and `sourceKey`. The identity read never gates on validity, so Claude-Code-only installs and installs whose version files disagree are checked too.
 2. **Find where it would be reinstalled from.** A direct install (`name@url`, `github:`; no `installedFrom`) is checked against its own recorded source. Anything else searches marketplaces: `installedFrom` first if enabled, then every enabled source. The MATCHED source's name is what the installer receives, never `installedFrom` blindly.
 3. **Ask the installer** (`MarketplaceInstaller.resolveLatest`). It reuses the install pipeline (resolve → stage into the SHA-keyed cache → `validatePackage`), with one short-circuit: when **all three** of these equal what the install recorded, the package is `unchanged` and nothing is staged or cloned:
    - the same `sourceKey` (clone URL, subpath, effective ref, normalized by `sourceKeyOf`);
@@ -190,18 +192,29 @@ The question it answers is "what would installing this package right now give me
    - `current` when equal, or when the marketplace is on an older version (with a `rollback` note: a downgrade is never offered as an update);
    - `unknown`, with a `note` saying why: the source could not be reached, no enabled marketplace lists the package, the new version can't be installed, the install records no version at all, or a named package is not installed in this scope.
 
-   Nothing is dropped, and an `unknown` check is never reported as current. `hasUpdate` is kept and always equals `status === 'update-available'`. The route answers 404 for a name installed in no scope at all, since it can see every scope and the flow cannot.
+   Nothing is dropped, and an `unknown` check is never reported as current. `hasUpdate` is kept and always equals `status === 'update-available'`.
 
-5. **If and only if `apply: true` was set**, reinstall every `update-available` package through the injected `InstallerLike.update()`. The installer handles uninstall-without-purge → reinstall, which preserves `.dork/data/` and `.dork/secrets.json` across versions, and runs the full install pipeline, validation included. It installs with `force: true`, so conflicts are detected but do not block the reinstall. An apply never runs on `unknown` or `current`.
+5. **If and only if `apply: true` was set**, reinstall every `update-available` installation through the injected `InstallerLike.update()`, **in the scope the installation was found in**: its project for a project or agent install, none for a global one ([ADR 260923-163034](../decisions/260923-163034-updates-are-per-installation-in-their-own-scope.md)). It also passes the exact install root the check resolved (`InstallRequest.installRoot`), which `update()` and the uninstall flow use to narrow their by-name probe, so a plugin and an agent sharing a name never have the wrong one replaced. It never uses the scope the request named, because the installer uninstalls by probing project roots then global ones, and reinstalls into whatever `projectPath` it is given. Before DOR-2194 an apply passed the request's `projectPath`, so updating a global package with `--project` deleted the global install and reinstalled it into the project. The installer handles uninstall-without-purge → reinstall, which preserves `.dork/data/` and `.dork/secrets.json` across versions, and runs the full install pipeline, validation included. It installs with `force: true`, so conflicts are detected but do not block the reinstall. An apply never runs on `unknown` or `current`.
 
-**Memos.** `UpdateFlow` is one instance per server and holds two memos for 60 seconds (`UPDATE_MEMO_TTL_MS`): the commit lookup per (clone URL, ref) and the marketplace index per source. The CLI sends one request per package, so a per-run memo would never span packages. Each stores the in-flight promise, so concurrent checks share one lookup, and a failure or placeholder commit is dropped as soon as it settles. Both are cleared after every apply and by `POST /sources/:name/refresh` (`dorkos marketplace refresh`). The honest claim is "shared within one CLI run or UI burst": without a refresh, a push from the last minute can still read as current.
+**Two doors.**
+
+- `UpdateFlow.run({ name, installation, apply? })` is the per-package route's (`POST /packages/:name/update`). The route scans the global scope plus the project's merged view and resolves the installation with `pickInstallation` (the project's own first), so it can authorize and notify with the scope the reinstall actually touches — none for a global installation. `run` returns `{ checks, applied }`. A name missing from its scope is one `unknown` check ("not installed in this scope"). The route answers 404 for a name installed in no scope at all, since it can see every scope and the flow cannot. A failed reinstall throws, so the route maps it to a status.
+- `UpdateFlow.checkInstallations({ installations, apply? })` is the all-packages door's (`GET` / `POST /updates`). The caller scans once and hands the records in. That is why `marketplace_list_installed { checkUpdates }` (DOR-2195) can list and check from one walk. It returns `{ checks: InstallationUpdateCheck[] }`: one entry per installation, in scan order, each with the installation's identity in the installed list's own field names (`installPath`, `type`, `scope`, `agentPath`, `agentId`, `agentName`). `installPath` is the join key, the same one the Installed view keys rows on. After an apply, an entry carries `applied` (the `InstallResult`) or `applyError` (why it failed). `selectInstallations(records, { names, installPaths })` narrows a scan: `names` to every installation of those packages, `installPaths` to exactly the installations a check reported (what a confirm step showed). Any unmatched name or path throws `PackageNotInstalledForUpdateError`, whose 404 body carries `packageNames` and `installPaths`, before anything runs. A symlinked install (a working copy linked into place; the record's `linked`) is checked as `unknown` with "linked install — update its source instead" and never reinstalled.
+
+The door's orchestration lives in `flows/update-installed.ts` so the HTTP route and the MCP tools share it: `scanUpdateView`, `callerSpelling`, `checkInstalledUpdates`, and `applyInstalledUpdates(deps, request, gate)`, where only the permission step (a `ReinstallGate`) is surface-specific. `GET /installed?projectPath` scans at the same canonical path, so its rows and these checks join on `installPath` even through a symlinked project.
+
+**Cost and ordering.** Every check, from either door and any number of concurrent requests, takes a slot from one FIFO semaphore on the `UpdateFlow` instance: at most `UPDATE_CHECK_CONCURRENCY` (4) run at once across the whole server. Results come back in scan order. A check that throws becomes that installation's `unknown` ("couldn't check this package: …") and releases its slot, so it can neither fail the request nor stall the queue. Each check's remote work is bounded by the fetcher's own timeouts (`ls-remote`, clone). A slow or unreachable repository holds only its own slot and ends as that installation's `unknown`, so a slow agent scope never blocks the rest. Because the memo stores in-flight promises, concurrent checks of one repository share one index fetch and one `ls-remote`, including a failing one, which a sequential run would repeat. Concurrent staging of the same `<name>@<sha>` is safe because `MarketplaceCache.materializePackage` dedupes in-flight clones and renames atomically; keep that true when changing the cache. Applies run one at a time, in order. A failed reinstall is recorded on its installation, the rest carry on, and the memos are cleared at the end either way.
+
+**Authorizing a batch.** When `marketplace.install`'s tier could ask a person (above `act`) and the caller is not trusted, the batch is refused with a 403 `batch_update_needs_approval` before any gate call, so no approval request nobody could redeem is raised. Otherwise `POST /updates` authorizes every reinstall as `marketplace.install`, with the per-package route's input shape (`{ name, projectPath? }`, the caller's own spelling for the requested project), before any network work. It stops at the first refusal, with nothing run. A batch cannot carry one approval token per package, which is why the approval case is refused up front. The route then fires `onPluginsChanged` once per `applied`, with that installation's project (none for a global one).
+
+**Memos.** `UpdateFlow` is one instance per server and holds two memos for 60 seconds (`UPDATE_MEMO_TTL_MS`): the commit lookup per (clone URL, ref) and the marketplace index per source. A named `dorkos update <name>` and the app's per-row Update send one request per package, so a per-request memo would never span them. Each stores the in-flight promise, so concurrent checks share one lookup, and a failure or placeholder commit is dropped as soon as it settles. Both are cleared after every apply and by `POST /sources/:name/refresh` (`dorkos marketplace refresh`). The honest claim is "shared within one CLI run or UI burst": without a refresh, a push from the last minute can still read as current.
 
 **Known limits.**
 
-- The package cache has no automatic pruning owner (DOR-2249). Each check that observes a new marketplace commit adds one cache entry per installed package from that repository.
+- Each check that observes a new marketplace commit stages one cache entry per installed package from that repository. The cache's retention owner (section 8) removes the superseded ones after the check, so this no longer accumulates.
 - A direct install (`name@url`, `github:`) is always fetched from the default branch today: neither form can carry a ref or subpath, so its recorded `sourceKey` is always `ref: 'HEAD'` (`'main'` in sidecars written before DOR-2248, which `resolvedFromSourceKey` reads as `HEAD` and `matchesRecordedKey` accepts against `HEAD`), `subpath: ''`, and applying an update reinstalls from the same place. If install requests gain a structured source, apply must carry the recorded key too. A direct install recorded before `sourceKey` existed is checked against the default branch, and its check says so in `note`.
 
-The update flow never touches disk on its own. Anything that mutates state lives inside the installer's transaction.
+The update flow never changes an installed package on its own. Anything that mutates installed state lives inside the installer's transaction. A check may stage a new version into the package cache, as the per-package advisory always has.
 
 ## 5. Transaction lifecycle
 
@@ -417,9 +430,23 @@ ${dorkHome}/cache/marketplace/
 Two cache disciplines side by side:
 
 - **`marketplace.json` — 1h TTL.** Past the TTL, the cached entry is still served but flagged `stale: true` so the caller can choose to refresh in the background. On network failure, the stale entry is served verbatim — this is the offline fallback.
-- **Package trees — never expire.** The tree of commit `a1b2c3d…` is the same today, tomorrow, and a year from now, so TTL would only ever make things worse. Garbage collection is explicit: `dorkos cache prune` (keeps the last N SHAs per package name, default 1) or `dorkos cache clear` (wipes everything).
+- **Package trees — never expire, but are swept.** The tree of commit `a1b2c3d…` is the same today, tomorrow, and a year from now, so a TTL would only ever make things worse. What bounds them is retention (below); `dorkos cache clear` wipes everything.
 
-**An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, subpath, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. A sparse checkout is a different tree from the whole repository at the same commit, so a `git-subdir` entry's key carries the first 12 hex digits of its subfolder's SHA-256 (`flow@<sha>~<digest>`), and `getPackage` takes the subfolder too. Entries from before this rule lived under `packages/`; nothing reads them. At startup, before any route exists, the server calls `removeLeftovers`, which deletes that directory and any `trees/.tmp-fetch-*` a crash left behind.
+**Retention** ([ADR 260923-193906](../decisions/260923-193906-package-cache-sweeps-itself-on-write.md), DOR-2249, `services/marketplace/package-cache-retention.ts`). An entry is kept when any of these holds, and a sweep removes it otherwise:
+
+1. **In use:** it was handed out in the last `IN_USE_GRACE_MS` (15 minutes). `getPackage`, `materializePackage`'s fast path and the landing of a fetch stamp the entry's mtime, so an entry's mtime (`CachedPackage.lastUsedAt`) is its last use. The cache enforces this itself in `removeUnused`; no caller can waive it. Stamping is best-effort: a tree DorkOS can read but not stamp (root-owned, read-only disk) is still served.
+2. **Recorded:** an installation records its commit (`commitSha`, plus `sourceKey.subpath` when present; a sidecar without a `sourceKey` protects every entry at that commit). Matched by commit, never by name: a direct `name@url` install keys the cache by the typed name, while the sidecar records the manifest's. Rebuilding an install's file record fetches this commit (DOR-2245).
+3. **Newest of an installed package:** among the entries rule 2 does not already keep, the most recently used of each `(name, subfolder digest)` group an installation belongs to — the staged update when one is pending. Excluding rule 2's entries means re-reading the installed commit never costs the staged update its place; after an update is applied, the superseded tree can hold this slot until the next update is staged. Groups nothing installed belongs to keep nothing beyond rule 1, so browsing and previewing never pin entries.
+
+The cache therefore holds at most two entries per installed package. `PackageCacheRetention` is the one owner: `MarketplaceCache.onEntryWritten` fires after a fetch lands a new entry (the only way the cache grows), and the owner runs a sweep; it also sweeps once at startup and on `POST /cache/prune` (`dorkos cache prune`). Sweeps are coalesced — one runs, at most one waits, and every request in between shares it — so a 20-package update check costs one or two. There is no timer and no size budget: the rule already bounds the cache by what is installed. Uninstalling frees disk at the next sweep, not immediately.
+
+**What installs record is read strictly** (`listRecordedTrees`), because a sweep deletes whatever that read misses. It reads the global install roots, every registered agent's project, and the **project install record** (`lib/project-install-index.ts`, `<dorkHome>/marketplace/project-installs.json`). The installer writes one entry there per install that lands inside a project (`recordProjectInstall`, called from `MarketplaceInstaller.install` right after the sidecar, best-effort), with its commit and subfolder. That is how installs in folders that are not registered agents — including those an unregistered agent left behind — are found. The sweep removes nothing, and logs why (`POST /cache/prune` answers 503), when: the agent registry is unavailable; a registered agent's project folder is missing (an unplugged drive looks exactly like this); an install root or a sidecar exists but cannot be read; or a sidecar or the record does not parse. A folder that does not exist is simply empty, and the install engine's own siblings (`isInstallSiblingName`, such as a crash-left backup) are skipped: they are bookkeeping, and a restored one is read as an install from then on. A recorded install that cannot be reached is protected by its record, which is dropped only when its project folder exists and its install folder does not (it was uninstalled) — never on an error. The drop is a compare-and-delete inside the record's write chain: it re-checks that the install folder is still missing and that the record still names the commit the sweep read, so a reinstall that recorded in between keeps its record. A deleted project's records stay (they look like an unplugged drive) and pin their commits' trees, a small bounded leak. Writes are fsynced before their atomic rename; a record file that still does not parse stops sweeps until the next project install moves it aside to `project-installs.json.corrupt-<time>` and starts fresh. Project installs made before the record existed are found only through the agent registry.
+
+**A paused cleanup is visible.** `PackageCacheRetention.status()` keeps the last sweep's outcome, and `GET /cache` returns it as `cleanup: { paused, reason, since }` (`reason` is a plain fragment such as `couldn't read /Volumes/Work/app (the folder is missing)`). `dorkos cache list` prints `Automatic cleanup is paused: <reason>` while it is. The pause is logged at warn once per change of reason, not on every sweep, and its end at info. A missing registered-agent folder normally stops pausing within a day, when the mesh reconciler removes the unreachable agent (24 hours).
+
+Concurrency: every reader of a cache entry is in this server process (one server holds a data directory, `lib/instance-lock.ts`). "Exists? stamp it" (both read paths and the landing of a fetch) and "still unused? rename it aside" (a sweep) run under one in-process lock (`exclusive`, a promise chain), so a sweep can never remove an entry between a reader's check and its stamp, and the grace covers the reader afterwards. A swept entry is renamed to `trees/.tmp-prune-<uuid>` and deleted outside the lock; `removeLeftovers` deletes any a crash left. Sizes (`lib/directory-size.ts`, also used by `GET /cache`) never follow symlinks: git keeps them, and `a -> .` would otherwise walk for ever.
+
+**An entry's key is the commit its checkout holds** ([ADR 260923-162950](../decisions/260923-162950-cache-entry-keyed-by-the-verified-checkout.md), DOR-2248). There is one way in, `MarketplaceCache.materializePackage(name, expectedSha, subpath, fetch)`: the fetch populates a temp directory and returns the commit it checked out, the cache names the entry after that commit, and it refuses anything that is not a full commit id (`isFullCommitSha`). `expectedSha` only short-circuits a tree already cached under it and de-duplicates concurrent fetches. So no entry is ever keyed by a lookup, a placeholder, or a guess. A sparse checkout is a different tree from the whole repository at the same commit, so a `git-subdir` entry's key carries the first 12 hex digits of its subfolder's SHA-256 (`flow@<sha>~<digest>`), and `getPackage` takes the subfolder too. Entries from before this rule lived under `packages/`; nothing reads them. At startup, before any route exists, the server calls `removeLeftovers`, which deletes that directory and any `trees/.tmp-fetch-*` or `trees/.tmp-prune-*` a crash left behind.
 
 **How a tree is fetched** (`lib/git-tree.ts`, behind `PackageFetcher.fetchGitTree`, which all three git forms share):
 
@@ -550,23 +577,25 @@ If the new type introduces its own collision class (e.g. theme IDs must be globa
 
 All endpoints mount under `/api/marketplace/*`. The router factory is `createMarketplaceRouter(deps)` in `apps/server/src/routes/marketplace.ts`. Every response is JSON.
 
-| Method | Path                        | Body                         | Response                                                             |
-| ------ | --------------------------- | ---------------------------- | -------------------------------------------------------------------- |
-| GET    | `/sources`                  | —                            | `{ sources: MarketplaceSource[] }`                                   |
-| POST   | `/sources`                  | `{ name, source, enabled? }` | `MarketplaceSource` (201)                                            |
-| DELETE | `/sources/:name`            | —                            | 204                                                                  |
-| POST   | `/sources/:name/refresh`    | —                            | `{ marketplace: MarketplaceJson, fetchedAt }`                        |
-| GET    | `/installed`                | `?projectPath=<path>`        | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16 |
-| GET    | `/installed/:name`          | —                            | `{ installations: InstalledPackage[] }` — one per scope; see §16     |
-| GET    | `/cache`                    | —                            | `{ marketplaces, packages, totalSizeBytes }`                         |
-| DELETE | `/cache`                    | —                            | 204                                                                  |
-| POST   | `/cache/prune`              | `{ keepLastN? }`             | `{ removed: CachedPackage[], freedBytes }`                           |
-| GET    | `/packages`                 | —                            | `{ packages: AggregatedPackage[] }`                                  |
-| GET    | `/packages/:name`           | `?marketplace=<name>`        | `{ manifest, packagePath, preview }`                                 |
-| POST   | `/packages/:name/preview`   | `InstallRequestBody`         | `{ preview, manifest, packagePath }`                                 |
-| POST   | `/packages/:name/install`   | `InstallRequestBody`         | `InstallResult`                                                      |
-| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`   | `UninstallResult`                                                    |
-| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`   | `UpdateResult`                                                       |
+| Method | Path                        | Body                                                   | Response                                                                                                         |
+| ------ | --------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| GET    | `/sources`                  | —                                                      | `{ sources: MarketplaceSource[] }`                                                                               |
+| POST   | `/sources`                  | `{ name, source, enabled? }`                           | `MarketplaceSource` (201)                                                                                        |
+| DELETE | `/sources/:name`            | —                                                      | 204                                                                                                              |
+| POST   | `/sources/:name/refresh`    | —                                                      | `{ marketplace: MarketplaceJson, fetchedAt }`                                                                    |
+| GET    | `/installed`                | `?projectPath=<path>`                                  | `{ packages: InstalledPackage[] }` — cross-scope by default; see §16                                             |
+| GET    | `/installed/:name`          | —                                                      | `{ installations: InstalledPackage[] }` — one per scope; see §16                                                 |
+| GET    | `/cache`                    | —                                                      | `{ marketplaces, packages, totalSizeBytes, cleanup: { paused, reason, since } }`                                 |
+| DELETE | `/cache`                    | —                                                      | 204                                                                                                              |
+| POST   | `/cache/prune`              | — (no options)                                         | `{ removed: [{ packageName, commitSha, path, lastUsedAt }], freedBytes }`; 503 when it cannot read every install |
+| GET    | `/packages`                 | —                                                      | `{ packages: AggregatedPackage[] }`                                                                              |
+| GET    | `/packages/:name`           | `?marketplace=<name>`                                  | `{ manifest, packagePath, preview }`                                                                             |
+| POST   | `/packages/:name/preview`   | `InstallRequestBody`                                   | `{ preview, manifest, packagePath }`                                                                             |
+| POST   | `/packages/:name/install`   | `InstallRequestBody`                                   | `InstallResult`                                                                                                  |
+| POST   | `/packages/:name/uninstall` | `{ purge?, projectPath? }`                             | `UninstallResult`                                                                                                |
+| POST   | `/packages/:name/update`    | `{ apply?, projectPath? }`                             | `UpdateResult`                                                                                                   |
+| GET    | `/updates`                  | `?projectPath=<path>`                                  | `{ checks: InstallationUpdateCheck[] }` — advisory, one per installation                                         |
+| POST   | `/updates`                  | `{ apply: true, names?, installPaths?, projectPath? }` | `{ checks: InstallationUpdateCheck[] }` — with `applied` / `applyError`                                          |
 
 Where `InstallRequestBody` is:
 
@@ -582,14 +611,17 @@ Where `InstallRequestBody` is:
 
 Error mapping is centralised in `mapErrorToStatus()`:
 
-| Error class                | HTTP status |
-| -------------------------- | ----------- |
-| `InvalidPackageError`      | 400         |
-| `ConflictError`            | 409         |
-| `PackageNotInstalledError` | 404         |
-| `PackageNotFoundError`     | 404         |
-| `MarketplaceNotFoundError` | 404         |
-| (anything else)            | 500         |
+| Error class                                     | HTTP status |
+| ----------------------------------------------- | ----------- |
+| `InvalidPackageError`                           | 400         |
+| `ConflictError`                                 | 409         |
+| `PackageNotInstalledError`                      | 404         |
+| `PackageNotInstalledForUpdateError`             | 404         |
+| `GitRefNotFoundError`, `GitCommitNotFoundError` | 404         |
+| `GitRemoteUnreachableError`, `GitFetchError`    | 502         |
+| `PackageNotFoundError`                          | 404         |
+| `MarketplaceNotFoundError`                      | 404         |
+| (anything else)                                 | 500         |
 
 SSE streaming for clone progress is planned (the spec mentions it following the `discovery/scan` pattern) but deliberately not shipped with this spec — a half-implemented SSE is worse than a unary JSON response that works. A follow-up `POST /packages/:name/install/stream` variant will land in a dedicated task. The current `POST /packages/:name/install` handler has a `// TODO` marker for the wiring point.
 
@@ -597,51 +629,60 @@ The router is mounted in `apps/server/src/index.ts` under the conditional `if (e
 
 ## 11. CLI command reference
 
-All marketplace CLI subcommands are thin HTTP clients that talk to a running DorkOS server via the API above. Server URL precedence: `DORKOS_PORT` env var → `~/.dork/config.json` → default 4242.
+All marketplace CLI subcommands are thin HTTP clients that talk to a running DorkOS server via the API above. Server URL precedence: `DORKOS_PORT` env var → `~/.dork/config.json` → default 4242. None of them starts a server; an unreachable one is an error (`Cannot reach DorkOS server at …`).
+
+**One home: `dorkos marketplace <verb>`.** Package management and source management share the `marketplace` namespace (`commands/marketplace-dispatcher.ts`), matching every other multi-verb domain in the CLI (`cache`, `agent`, `connections`, …) and keeping a bare `dorkos update` from reading as "update DorkOS". The top-level `dorkos install`, `dorkos update` and `dorkos uninstall` are permanent shorthand: `cli.ts` hands them to the same dispatcher, so both spellings run one handler and print one help text (`__tests__/marketplace-shorthand.test.ts` pins that). Usage and error lines name the canonical form. There is no top-level shorthand for `installed` or `outdated`.
 
 ```bash
-# Install
-dorkos install <name>                         # Latest from any configured marketplace
-dorkos install <name>@<marketplace>           # Specific marketplace
-dorkos install <name>@<source>                # Direct git URL
-dorkos install github:user/repo               # Git shorthand
-dorkos install ./local/path                   # Local directory
-dorkos install --type plugin <name>           # Force install flow type (rare)
-dorkos install --force <name>                 # Override conflict warnings
-dorkos install --yes <name>                   # Skip confirmation prompt (CI / non-TTY)
-dorkos install --project ./apps/web <name>    # Project-local install
+# Install (shorthand: dorkos install)
+dorkos marketplace install <name>                         # Latest from any configured marketplace
+dorkos marketplace install <name>@<marketplace>           # Specific marketplace
+dorkos marketplace install <name> --source <url>          # Direct git or marketplace.json URL
+dorkos marketplace install --force <name>                 # Override conflict warnings
+dorkos marketplace install --yes <name>                   # Skip confirmation prompt (CI / non-TTY)
+dorkos marketplace install --project ./apps/web <name>    # Project-local install
 
-# Uninstall
-dorkos uninstall <name>                       # Remove package, preserve secrets/data
-dorkos uninstall --purge <name>               # Remove everything including data
-dorkos uninstall --project ./apps/web <name>  # Project-local uninstall
+# Uninstall (shorthand: dorkos uninstall)
+dorkos marketplace uninstall <name>                       # Remove package, preserve secrets/data
+dorkos marketplace uninstall --purge <name>               # Remove everything including data
+dorkos marketplace uninstall --project ./apps/web <name>  # Project-local uninstall
 
-# Update
-dorkos update                                 # Notify of all available updates
-dorkos update <name>                          # Notify of update for specific package
-dorkos update --apply <name>                  # Actually update (advisory off)
-dorkos update --apply                         # Apply every available update (iterates installed list)
+# Update (shorthand: dorkos update)
+dorkos marketplace update                                 # Check every installation (one request)
+dorkos marketplace update <name>                          # Check one package
+dorkos marketplace update --apply <name>                  # Actually update (advisory off)
+dorkos marketplace update --apply                         # Apply every available update (one request)
+
+# What is installed, and what is behind
+dorkos marketplace installed [--project <p>] [--json]     # GET /installed: one row per installation
+dorkos marketplace outdated [--project <p>] [--json]      # GET /updates: stale + unchecked only; exit 0/1/2
 
 # Marketplace source management
-dorkos marketplace add <url> [--name=<n>]     # Add a marketplace source
-dorkos marketplace remove <name>              # Remove a source
-dorkos marketplace list                       # List configured sources
-dorkos marketplace refresh [<name>]           # Force-refetch marketplace.json
+dorkos marketplace add <url> [--name=<n>]                 # Add a marketplace source
+dorkos marketplace remove <name>                          # Remove a source
+dorkos marketplace list                                   # List configured sources
+dorkos marketplace refresh [<name>]                       # Force-refetch marketplace.json
 
 # Cache management
 dorkos cache list                             # Show cache counts and total size
-dorkos cache prune                            # Keep the last SHA per package (default --keep-last-n 1)
-dorkos cache prune --keep-last-n <N>          # Keep the last N SHAs per package name
+dorkos cache prune                            # Remove cached packages no install needs (also automatic)
+                                              # (`cache list` says when automatic cleanup is paused, and why)
 dorkos cache clear -y                         # Wipe the entire cache (requires -y/--yes in non-TTY)
 ```
 
-`--keep-last-n` on `cache prune` was added during spec implementation — it did not appear in the original spec's CLI block. The endpoint that backs it is `POST /api/marketplace/cache/prune`; `MarketplaceCache.prune({ keepLastN })` is the underlying primitive, defaulting to `keepLastN: 1`.
+`cache prune` runs the same sweep the server runs after every fetch (section 8) through `POST /api/marketplace/cache/prune`, and takes no options. Its old `--keep-last-n` (and the endpoint's `keepLastN`) were removed in DOR-2249: a per-name "keep N" deleted the commits installs record.
 
 `dorkos cache clear` requires an explicit `-y`/`--yes` flag in non-interactive mode and prompts interactively otherwise. The confirmation prompt follows the same TTY-aware pattern as `lib/confirm-prompt.ts` used by the install flow.
 
 `dorkos marketplace add <url>` derives a default name from the URL's last path segment (minus `.git`); pass `--name` as the explicit escape hatch. `dorkos marketplace refresh` without a name iterates every configured source via `Promise.allSettled`, so a single failing source never aborts the batch.
 
-`dorkos update` without a package name lists installs across every scope (forwarding `--project` when given) and checks each one in the scope it was found in, so an agent's install is checked with that agent's directory as its project. A server error for one package prints as `could not check` and the run continues. There is no `update-all` endpoint on the server yet (DOR-2194).
+`dorkos marketplace update` without a package name is one request to the all-packages door: `GET /updates` to check, `POST /updates { apply: true }` with `--apply`, forwarding `--project` either way. A line for a non-global installation names where it lives (`flow [Alpha]  0.7.2 → 0.7.3`), so the same package in two places reads as two lines. `--apply` lists what it reinstalled and what it could not, and exits 1 when anything failed. A named `dorkos marketplace update <name>` still uses the per-package route.
+
+`dorkos marketplace installed` renders `GET /installed` (`?projectPath=` for `--project`) as NAME / VERSION / TYPE / WHERE, where WHERE is `global` or the agent's name (else its project path). A NOTES column appears only when some row has a note: `linked` (the row carries `linked: true`, a symlinked working copy the update flow never reinstalls), `overrides global` (`scope: 'override'`), or `libraries incomplete` (`dependencyWarnings`). `--json` prints `{ installed }` wrapping the server's `packages` rows untouched (an object, like `outdated`'s, so fields can be added without breaking a reader).
+
+`dorkos marketplace outdated` is one `GET /updates` (`?projectPath=` for `--project`). It prints the `update-available` checks with the same line `update` uses (`lib/installation-label.ts`), then the `unknown` ones under `Could not check:`, and never applies anything. Its exit code follows `diff`: **0** every installation checked and current (or none installed); **1** at least one `update-available`, which wins over unknowns because it is the actionable fact; **2** could not tell, meaning nothing known stale but at least one `unknown`, or the request failed (server down, 4xx/5xx, bad arguments; the dispatcher maps its parse errors to 2, not the generic 1). The route has no 404 of its own, so the app's unknown-route 404 (`code: 'API_NOT_FOUND'`, or a code-less 404) is read as a DorkOS started before the CLI was upgraded and says to restart it; name-less `update` does the same (`lib/package-commands.ts`).
+
+Every package command resolves `--project` against the caller's working directory before sending it (`resolveProjectFlag`). The server would resolve a relative path against its own cwd, which for the desktop app or a server started elsewhere is not the terminal's. A linked install's check carries `linked: true` (set by `UpdateFlow`'s `withIdentity` from the scanner record); `outdated` prints those under `Linked, not checked:` and leaves them out of the exit code, since they are unchecked by design and would otherwise pin the answer at 2. `--json` prints `{ outdated, unknown, linked }`, each the server's own `InstallationUpdateCheck` objects; current ones are left out, and stdout stays empty on failure.
 
 ## 12. Telemetry hook
 

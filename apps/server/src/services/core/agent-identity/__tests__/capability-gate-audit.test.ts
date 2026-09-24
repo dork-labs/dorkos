@@ -1,12 +1,12 @@
 /**
  * What the Activity feed says about a call nobody was asked about
- * (spec `agent-approval-settings` §3.6).
+ * (spec `agent-permissions` D6).
  *
- * This is the answer to the question a standing permission creates: what did my
- * agent do while I was not being asked? A window in which DorkOS goes quiet must not
- * also be a window in which it goes blind, so the gate writes one
- * `capability.auto_approved` line every time a permission lets a destructive call
- * through.
+ * This is the answer to the question an Always allow creates: what did my agent
+ * do while I was not being asked? A stretch in which DorkOS goes quiet must not
+ * also be one in which it goes blind, so the gate writes one
+ * `capability.auto_approved` line every time an action-level Allowed lets a
+ * destructive call through.
  *
  * ## Where the line comes from, and why that placement matters
  *
@@ -35,13 +35,16 @@ import {
   composeRegistry,
   defineCapability,
   initCapabilityTierGate,
+  initPermissionGate,
   resetCapabilityTierGate,
+  resetPermissionGate,
+  type CallPermission,
   type CapabilityDeps,
   type CapabilityRegistry,
 } from '../../capabilities/index.js';
 import { enforceCapabilityTier } from '../../capabilities/tier-enforcement.js';
 import { gatedActionForMcpTool } from '../../mcp-tool-tiers.js';
-import { ApprovalGrantService, ApprovalService } from '../../approvals/index.js';
+import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { createCapabilityAttributionObserver } from '../capability-attribution.js';
 import { createCapabilityGateAuditObserver } from '../capability-gate-audit.js';
@@ -60,15 +63,23 @@ const DESTROY = defineCapability({
   title: 'Destroy a thing',
   description: 'Cannot be undone.',
   tier: 'destructive',
+  area: 'rooms',
   input: z.object({}),
   output: z.object({ ok: z.boolean() }),
   surfaces: {},
   invoke: async () => ({ ok: true }),
 });
 
-describe('the gate records a call a standing permission let through', () => {
+/** An action-level Allowed (an Always allow), as the gate receives it. */
+const ALWAYS_ALLOWED: CallPermission = {
+  area: 'rooms',
+  state: 'allowed',
+  source: 'agent-action',
+  layer: 'agent',
+};
+
+describe('the gate records a call an action-level Allowed let through', () => {
   let db: Db;
-  let grants: ApprovalGrantService;
   let activity: ActivityService;
 
   /** Activity writes are fire-and-forget; let the microtask queue drain. */
@@ -76,38 +87,32 @@ describe('the gate records a call a standing permission let through', () => {
 
   beforeEach(() => {
     db = createTestDb();
-    grants = new ApprovalGrantService(db);
     activity = new ActivityService(db);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     initCapabilityTierGate({
       approvals: new ApprovalService(db),
       onAttempt: createCapabilityGateAuditObserver(activity),
-      standingGrants: {
-        enabled: () => true,
-        findLive: (agentPath, capabilityId) => grants.findLive(agentPath, capabilityId),
-      },
     });
   });
 
   afterEach(() => {
     resetCapabilityTierGate();
+    resetPermissionGate();
     vi.restoreAllMocks();
   });
 
-  /** Open a permission covering the destructive capability. */
+  /** Set the destructive capability to Allowed for the agent, as an Always allow would. */
   function permit() {
-    return grants.create({
-      agentPath: IDENTITY.agentPath,
-      capabilityId: DESTROY.id,
-      grantedBy: 'user_owner',
-      posture: 'signed-in-operator',
-      windowMinutes: 480,
+    initPermissionGate({
+      readConfig: () => ({ preset: 'full', defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => ({ actions: { [DESTROY.id]: 'allowed' } }),
     });
   }
 
   /** Reach the gate the way the hand-registered MCP tools do: directly. */
-  function gateDirectly() {
+  function gateDirectly(permission: CallPermission | null = ALWAYS_ALLOWED) {
     return enforceCapabilityTier({
+      permission,
       action: DESTROY,
       input: {},
       identity: IDENTITY,
@@ -116,8 +121,6 @@ describe('the gate records a call a standing permission let through', () => {
   }
 
   it('writes one auto_approved row naming the agent, the action, and the permission', async () => {
-    const row = permit();
-
     expect(gateDirectly().outcome).toBe('allowed');
     await flush();
 
@@ -132,12 +135,14 @@ describe('the gate records a call a standing permission let through', () => {
       resourceType: 'capability',
       resourceId: 'demo.destroy',
       resourceLabel: 'Destroy a thing',
-      summary: 'Researcher ran Destroy a thing under a standing permission you granted',
+      summary: 'Researcher ran Destroy a thing because its permission is set to Allowed',
     });
     expect(JSON.parse(rows[0].metadata!)).toEqual({
       capabilityId: 'demo.destroy',
       tier: 'destructive',
-      grantId: row.id,
+      via: 'permission',
+      source: 'agent-action',
+      permission: { state: 'allowed', source: 'agent-action' },
     });
   });
 
@@ -146,14 +151,6 @@ describe('the gate records a call a standing permission let through', () => {
     // capabilities, so they never reach `registry.invoke` and never reach the
     // attribution observer — an approved `tasks_delete` used to leave a "waiting for
     // approval" line and then silence about the deletion itself.
-    grants.create({
-      agentPath: IDENTITY.agentPath,
-      capabilityId: 'tasks_delete',
-      grantedBy: 'user_owner',
-      posture: 'signed-in-operator',
-      windowMinutes: 480,
-    });
-
     // The REAL table, not a hand-built literal. A literal would keep this test green
     // if `tasks_delete` were demoted to `act` tomorrow — the tool would stop being
     // gated at all and the claim in this test's name would quietly stop being true.
@@ -161,6 +158,7 @@ describe('the gate records a call a standing permission let through', () => {
     expect(action.tier, 'this case only says anything while the tool is gated').toBe('destructive');
 
     const decision = enforceCapabilityTier({
+      permission: { ...ALWAYS_ALLOWED, area: 'tasks' },
       action,
       input: { id: 'task_01' },
       identity: IDENTITY,
@@ -176,7 +174,7 @@ describe('the gate records a call a standing permission let through', () => {
   });
 
   it('writes nothing extra when the same call has to ask a person', async () => {
-    expect(gateDirectly().outcome).toBe('approval_required');
+    expect(gateDirectly(null).outcome).toBe('approval_required');
     await flush();
 
     const rows = db.select().from(activityEvents).all();
@@ -193,7 +191,7 @@ describe('the gate records a call a standing permission let through', () => {
       deps,
       createCapabilityAttributionObserver(activity)
     );
-    const row = permit();
+    permit();
 
     await registry.invoke(DESTROY.id, {}, { identity: IDENTITY });
     await flush();
@@ -205,10 +203,10 @@ describe('the gate records a call a standing permission let through', () => {
     ]);
     // The invocation row names the permission rather than an approval id, so the two
     // proofs of consent stay distinguishable in the feed.
-    expect(JSON.parse(rows[1].metadata!)).toEqual({
+    expect(JSON.parse(rows[1].metadata!)).toMatchObject({
       capabilityId: 'demo.destroy',
       tier: 'destructive',
-      grantId: row.id,
+      permissionSource: 'agent-action',
     });
   });
 });

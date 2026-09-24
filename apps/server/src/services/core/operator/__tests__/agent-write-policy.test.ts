@@ -89,8 +89,10 @@ describe('AGENT_WRITE_POLICY drift guard', () => {
         'enabledToolGroups.mesh',
         'enabledToolGroups.relay',
         'enabledToolGroups.tasks',
-        // The one real grant of the five (DOR-1611).
-        'enabledToolGroups.roomsManage',
+        // What the agent may do: written only through the permission routes, and
+        // refused by name here even though the wire never carries it (spec
+        // `agent-permissions` D10).
+        'permissions',
         // The slug every other agent addresses this one by.
         'name',
         // Which other agents this one can reach.
@@ -157,6 +159,15 @@ describe('AGENT_WRITE_POLICY drift guard', () => {
 });
 
 describe('findOperatorOnlyAgentPaths', () => {
+  it('refuses permissions by name, at any depth, though the wire never carries it', () => {
+    // Stripped silently, a permissions patch would answer 200 having written
+    // nothing (the DOR-1253 shape). Only the permission routes write it.
+    expect(findOperatorOnlyAgentPaths({ permissions: { areas: { rooms: 'allowed' } } })).toEqual([
+      'permissions',
+    ]);
+    expect(findOperatorOnlyAgentPaths({ permissions: {} })).toEqual(['permissions']);
+  });
+
   it('finds a nested field the caller named exactly', () => {
     expect(findOperatorOnlyAgentPaths({ enabledToolGroups: { relay: true } })).toEqual([
       'enabledToolGroups.relay',
@@ -170,7 +181,6 @@ describe('findOperatorOnlyAgentPaths', () => {
         'enabledToolGroups.adapter',
         'enabledToolGroups.mesh',
         'enabledToolGroups.relay',
-        'enabledToolGroups.roomsManage',
         'enabledToolGroups.tasks',
       ].sort()
     );
@@ -186,7 +196,7 @@ describe('findOperatorOnlyAgentPaths', () => {
    * no policy key, sits under none, and sits above none. And that patch WRITES:
    * Zod strips the unknown key, the raw body still names `enabledToolGroups`, and
    * the merge REPLACES the stored object. Measured before the fix: 200, `{}` on
-   * disk, `roomsManage: true` gone.
+   * disk, the rooms grant that object then carried gone.
    */
   describe('an object carrying only keys nobody classified', () => {
     it('refuses every leaf it would have replaced', () => {
@@ -195,7 +205,6 @@ describe('findOperatorOnlyAgentPaths', () => {
           'enabledToolGroups.adapter',
           'enabledToolGroups.mesh',
           'enabledToolGroups.relay',
-          'enabledToolGroups.roomsManage',
           'enabledToolGroups.tasks',
         ].sort()
       );
@@ -261,11 +270,11 @@ describe('findOperatorOnlyAgentPaths', () => {
 
 describe('describeAgentOperatorOnlyRefusal', () => {
   it('says what was refused, why, and who can change it', () => {
-    const message = describeAgentOperatorOnlyRefusal(['enabledToolGroups.roomsManage']);
+    const message = describeAgentOperatorOnlyRefusal(['permissions']);
 
     expect(message).toContain('DorkOS changed nothing.');
     expect(message).toMatch(/set by a person/i);
-    expect(message).toContain('enabledToolGroups.roomsManage');
+    expect(message).toContain('permissions');
   });
 
   it('gives each stake its own sentence rather than one blanket claim', () => {

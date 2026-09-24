@@ -41,7 +41,9 @@ describe('GlobalTrustRow — what the stop does not cover (DOR-2102)', () => {
     renderRow({ stop: 'autonomy', effectiveStop: 'autonomy' });
     expect(scopeNote()).toBeInTheDocument();
     expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
-    expect(scopeNote()).toHaveTextContent(/Standing permissions, in Settings under Access/);
+    expect(scopeNote()).toHaveTextContent(
+      /choose Always allow on its card, or change it in Settings under Permissions/
+    );
   });
 
   it('says nothing at a stop that still asks', () => {

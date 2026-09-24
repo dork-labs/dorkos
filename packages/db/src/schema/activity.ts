@@ -27,7 +27,7 @@ export const activityEvents = sqliteTable(
 
     /** Event category for filtering. */
     category: text('category', {
-      enum: ['tasks', 'relay', 'agent', 'config', 'system'],
+      enum: ['tasks', 'relay', 'agent', 'config', 'system', 'permissions'],
     }).notNull(),
 
     /**

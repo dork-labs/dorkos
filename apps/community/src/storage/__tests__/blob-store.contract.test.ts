@@ -177,6 +177,82 @@ function contract(
       ).rejects.toMatchObject({ code: 'BLOB_TOO_LARGE' });
     });
 
+    it('reads the first byte, the last byte, a middle slice, and the whole object by range', async () => {
+      const bytes = Buffer.concat([
+        png,
+        Buffer.from(Array.from({ length: 70_000 }, (_, i) => i % 251)),
+      ]);
+      const stored = await fixture.store.put({
+        source: Readable.from([bytes]),
+        displayName: 'ranged.png',
+        maxBytes: bytes.length,
+      });
+      try {
+        const last = bytes.length - 1;
+        for (const [start, end] of [
+          [0, 0],
+          [last, last],
+          [4097, 51_234],
+          [0, last],
+        ]) {
+          const read = await fixture.reopen().get(stored.key, { range: { start, end } });
+          expect(read.byteSize).toBe(end - start + 1);
+          expect(await readAll(read.body)).toEqual(bytes.subarray(start, end + 1));
+        }
+        for (const range of [
+          { start: 0, end: bytes.length },
+          { start: bytes.length, end: bytes.length + 5 },
+          { start: 5, end: 4 },
+          { start: -1, end: 4 },
+        ]) {
+          await expect(fixture.store.get(stored.key, { range })).rejects.toMatchObject({
+            code: 'BLOB_RANGE_NOT_SATISFIABLE',
+          });
+        }
+        await expect(
+          fixture.store.get('0'.repeat(64), { range: { start: 0, end: 0 } })
+        ).rejects.toMatchObject({ code: 'BLOB_NOT_FOUND' });
+      } finally {
+        await fixture.store.delete(stored.key);
+      }
+    });
+
+    it('accepts an export segment that starts any ZIP record a segment can start with', async () => {
+      for (const signature of ['504b0304', '504b0102', '504b0606']) {
+        const segment = Buffer.concat([Buffer.from(signature, 'hex'), Buffer.alloc(60, 7)]);
+        const stored = await fixture.store.put({
+          source: Readable.from([segment]),
+          displayName: 'segment.zip',
+          kind: 'export_segment',
+          maxBytes: 1024,
+        });
+        expect(stored.contentType).toBe('application/zip');
+        await fixture.store.delete(stored.key);
+      }
+      for (const body of [
+        Buffer.from('504b050600000000', 'hex'),
+        Buffer.from('plain text is not a segment'),
+        png,
+      ]) {
+        await expect(
+          fixture.store.put({
+            source: Readable.from([body]),
+            displayName: 'segment.zip',
+            kind: 'export_segment',
+            maxBytes: 8192,
+          })
+        ).rejects.toMatchObject({ code: 'BLOB_TYPE_REJECTED' });
+      }
+      await expect(
+        fixture.store.put({
+          source: Readable.from([Buffer.from('504b0304', 'hex')]),
+          displayName: 'segment.zip',
+          kind: 'export_segment',
+          maxBytes: 1024 * 1024 * 1024 + 1,
+        })
+      ).rejects.toMatchObject({ code: 'BLOB_TOO_LARGE' });
+    });
+
     it('refuses spoofed active and invalid UTF-8 content', async () => {
       for (const body of [
         Buffer.from('  <!doctype html><script>alert(1)</script>'),
@@ -229,6 +305,71 @@ function contract(
     });
   });
 }
+
+describe('S3 ranged reads', () => {
+  function storeAnswering(answer: () => Promise<unknown>) {
+    const store = new S3BlobStore({ bucket: 'test', region: 'us-east-1' });
+    const send = vi.fn(answer);
+    Object.defineProperty(store, 'client', { value: { send } });
+    return { store, send };
+  }
+
+  it('sends an inclusive Range and reports the range length', async () => {
+    const { store, send } = storeAnswering(async () => ({
+      Body: Readable.from([Buffer.from('cdef')]),
+      ContentRange: 'bytes 2-5/100',
+      ContentLength: 4,
+    }));
+    const read = await store.get('a'.repeat(64), { range: { start: 2, end: 5 } });
+    expect(read.byteSize).toBe(4);
+    expect(await readAll(read.body)).toEqual(Buffer.from('cdef'));
+    expect((send.mock.calls[0] as unknown[])[0]).toMatchObject({
+      input: { Bucket: 'test', Key: 'a'.repeat(64), Range: 'bytes=2-5' },
+    });
+  });
+
+  it('refuses a shortened or missing Content-Range and destroys the body', async () => {
+    for (const answer of [
+      { ContentRange: 'bytes 2-3/4', ContentLength: 2 },
+      { ContentRange: undefined, ContentLength: 100 },
+      { ContentRange: 'bytes 2-5/100', ContentLength: 3 },
+    ]) {
+      const body = Readable.from([Buffer.from('cd')]);
+      const { store } = storeAnswering(async () => ({ Body: body, ...answer }));
+      await expect(
+        store.get('a'.repeat(64), { range: { start: 2, end: 5 } })
+      ).rejects.toMatchObject({ code: 'BLOB_RANGE_NOT_SATISFIABLE' });
+      expect(body.destroyed).toBe(true);
+    }
+  });
+
+  it('maps InvalidRange and refuses a malformed range before any request', async () => {
+    const invalid = Object.assign(new Error('The requested range is not satisfiable'), {
+      name: 'InvalidRange',
+    });
+    const { store, send } = storeAnswering(async () => {
+      throw invalid;
+    });
+    await expect(
+      store.get('a'.repeat(64), { range: { start: 100, end: 200 } })
+    ).rejects.toMatchObject({ code: 'BLOB_RANGE_NOT_SATISFIABLE' });
+    const statusOnly = Object.assign(new Error('Unknown'), {
+      name: 'Unknown',
+      $metadata: { httpStatusCode: 416 },
+    });
+    const byStatus = storeAnswering(async () => {
+      throw statusOnly;
+    });
+    await expect(
+      byStatus.store.get('a'.repeat(64), { range: { start: 100, end: 200 } })
+    ).rejects.toMatchObject({ code: 'BLOB_RANGE_NOT_SATISFIABLE' });
+    send.mockClear();
+    await expect(store.get('a'.repeat(64), { range: { start: 3, end: 2 } })).rejects.toMatchObject({
+      code: 'BLOB_RANGE_NOT_SATISFIABLE',
+    });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
 
 describe('S3 namespace pagination', () => {
   it('exhausts every page before returning one sorted snapshot', async () => {

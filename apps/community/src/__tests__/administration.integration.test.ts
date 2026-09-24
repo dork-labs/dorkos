@@ -641,6 +641,20 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   });
   expect(created.status).toBe(201);
   const channel = (await created.json()).channel.id;
+  // A private channel refuses a non-member with the same 404 as a missing one,
+  // so it would hide a missing tenant check. Every channel probe also runs
+  // against this public one, which a non-member of B could otherwise read.
+  // Two routes gain nothing from it: GET /channels/:id/read-cursor and
+  // GET /channels/:id/events answer 404 to any non-member, public or not
+  // (liveChannel in routes/events.ts). What keeps them in their tenant is that
+  // membership rows carry tenant foreign keys, so no member of A can ever be a
+  // member of a channel in B.
+  const createdPublic = await jsonRequest(`${other}/channels`, 'POST', {
+    name: 'Tenant isolation public',
+    visibility: 'public',
+  });
+  expect(createdPublic.status).toBe(201);
+  const publicChannel = (await createdPublic.json()).channel.id;
   const posted = await jsonRequest(`${other}/channels/${channel}/entries`, 'POST', {
     text: 'Only in the other tenant',
     idempotencyKey: 'isolation-positive-entry',
@@ -767,6 +781,10 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     `/channels/${channel}/entries`,
     `/channels/${channel}/members`,
     `/channels/${channel}/read-cursor`,
+    `/channels/${publicChannel}`,
+    `/channels/${publicChannel}/entries`,
+    `/channels/${publicChannel}/members`,
+    `/channels/${publicChannel}/read-cursor`,
     `/exports/${archive}`,
   ]) {
     const response = await request(`${other}${path}`, { headers: { cookie: ownerCookie } });
@@ -814,6 +832,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     archive,
     admission: foreignAdmission,
   };
+  const foreignPublic: Ids = { ...foreign, channel: publicChannel };
   // The same shapes with ids that exist nowhere: a foreign id must be refused
   // exactly as a nonexistent one is, so the response reveals nothing.
   const missing: Ids = {
@@ -1062,6 +1081,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'DELETE /me/grants': "revokes all of the caller's own grants; takes only a password",
     'GET /me/connection-access': 'the calling grant only',
     'DELETE /me/connection': 'the calling grant revokes itself only',
+    'GET /me/host-access': "the calling grant's own account; takes no id",
     'GET /me/grants': "lists the caller's own grants",
     'GET /members': 'lists the URL community',
     'GET /channels': 'lists the URL community',
@@ -1118,12 +1138,35 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     return { status: response.status, body: await response.text() };
   }
 
+  // A probe reads the channel id exactly when swapping it changes the call.
+  const variants = probes.flatMap((probe, index) => {
+    const label = `${probe.route} #${index}`;
+    const readsChannel =
+      JSON.stringify(probe.call(foreign, 'shape')) !==
+      JSON.stringify(probe.call(foreignPublic, 'shape'));
+    return [
+      { probe, label, ids: foreign, attempt: `foreign-${index}` },
+      ...(readsChannel
+        ? [
+            {
+              probe,
+              label: `${label} (public channel)`,
+              ids: foreignPublic,
+              attempt: `foreign-public-${index}`,
+            },
+          ]
+        : []),
+    ];
+  });
+  // The number of probes that take the channel id. Update it when you add or
+  // remove a channel probe; it stops the public run from silently shrinking.
+  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(16);
+
   const before = await isolationSnapshot([communityId, otherId]);
   let executed = 0;
-  for (const [index, probe] of probes.entries()) {
-    const label = `${probe.route} #${index}`;
-    const refused = await send(probe, foreign, `foreign-${index}`);
-    const unknown = await send(probe, missing, `missing-${index}`);
+  for (const { probe, label, ids, attempt } of variants) {
+    const refused = await send(probe, ids, attempt);
+    const unknown = await send(probe, missing, `missing-${attempt}`);
     expect(refused.status, `${label} must be refused`).toBeGreaterThanOrEqual(400);
     // A malformed, unauthenticated or cross-site probe would be refused before
     // any lookup, and would then match the nonexistent id for the wrong reason.
@@ -1135,7 +1178,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     expect(refused, `${label} must match a nonexistent id`).toEqual(unknown);
     executed++;
   }
-  expect(executed).toBe(probes.length);
+  expect(executed).toBe(variants.length);
   expect(await isolationSnapshot([communityId, otherId])).toEqual(before);
 
   // POST /agents looks up the caller's existing agent by its local id, then

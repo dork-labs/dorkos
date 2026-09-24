@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { describeViolation, runAxe } from '../../axe.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
@@ -279,15 +280,12 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       await disconnect(completed.connectionId);
 
       const removePath = `**/api/connectors/connections/${completed.connectionId}/remove`;
-      await page.route(
-        removePath,
-        (route) =>
-          route.fulfill({
-            status: 503,
-            contentType: 'application/json',
-            body: JSON.stringify({ error: 'Synthetic removal failure' }),
-          }),
-        { times: 1 }
+      await interceptNext(page, removePath, (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Synthetic removal failure' }),
+        })
       );
       await row(completed.connectionId).getByRole('button').click();
       await detail.getByTestId('remove-account').click();

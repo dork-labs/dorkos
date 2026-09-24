@@ -34,6 +34,12 @@ export interface ProfileRowModel {
   kind: ProfileRowKind;
   /** The left-hand label. Never wraps. */
   label: string;
+  /**
+   * What a screen reader hears instead of the label, when the label alone is
+   * ambiguous on a screen that has another control of the same name. It must
+   * contain the visible label (WCAG 2.5.3, label in name).
+   */
+  accessibleLabel?: string;
   /** The right-hand value, or `null` when the row has nothing to show yet. */
   value: string | null;
   /** Dimmed trailing detail — "last 2 h", "next 9:00". */
@@ -370,6 +376,18 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
           value: countValue(ctx.facts?.tools, 'server', 'servers'),
           page: 'tools',
         },
+        // What this agent may do, where it differs from everyone (spec
+        // `agent-permissions`).
+        {
+          id: 'permissions',
+          kind: 'nav',
+          label: 'Permissions',
+          // The chat's status bar has its own "Permissions" control (the
+          // session's permission mode), visible beside the docked profile.
+          accessibleLabel: 'Agent permissions',
+          value: null,
+          page: 'permissions',
+        },
         { id: 'connections', kind: 'nav', label: 'Connections', value: null, page: 'connections' },
         {
           id: 'instructions',
@@ -476,6 +494,18 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
           label: 'Tools & MCP',
           value: countValue(ctx.facts?.tools, 'server', 'servers'),
           page: 'tools',
+        },
+        // DorkBot's permissions are a person's to set like any agent's: it is
+        // the agent that most often needs Rooms (spec `agent-permissions`).
+        {
+          id: 'permissions',
+          kind: 'nav',
+          label: 'Permissions',
+          // The chat's status bar has its own "Permissions" control (the
+          // session's permission mode), visible beside the docked profile.
+          accessibleLabel: 'Agent permissions',
+          value: null,
+          page: 'permissions',
         },
       ],
     },

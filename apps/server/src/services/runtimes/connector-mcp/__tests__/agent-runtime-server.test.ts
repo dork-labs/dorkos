@@ -19,6 +19,7 @@ import {
   scriptedRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
 import { createAgentRuntimeMcpServer } from '../agent-runtime-server.js';
+import { permissionsDomain } from '../../../core/permissions/permission-capabilities.js';
 import { uiDomain } from '../../../session/browser-seat/ui-capabilities.js';
 import { devtoolsCaptureStore } from '../../../session/devtools-capture-store.js';
 import { AgentIdentitySnapshotPrincipalPort } from '../agent-identity-snapshots.js';
@@ -112,6 +113,7 @@ describe('createAgentRuntimeMcpServer', () => {
           title: 'Read probe',
           description: 'Read a harmless probe.',
           tier: 'observe',
+          area: null,
           input: z.object({}),
           output: z.object({ ok: z.boolean() }),
           surfaces: { mcp: { toolName: 'read_probe', servers: ['in-session'] } },
@@ -122,6 +124,7 @@ describe('createAgentRuntimeMcpServer', () => {
           title: 'Owner-only probe',
           description: 'A probe excluded from agent sessions.',
           tier: 'observe',
+          area: null,
           input: z.object({}),
           output: z.object({ ok: z.boolean() }),
           surfaces: { mcp: { toolName: 'owner_only_probe', servers: ['external'] } },
@@ -132,6 +135,7 @@ describe('createAgentRuntimeMcpServer', () => {
           title: 'Private probe',
           description: 'A private capability with no projected surface.',
           tier: 'observe',
+          area: null,
           input: z.object({}),
           output: z.object({ ok: z.boolean() }),
           surfaces: {},
@@ -167,6 +171,7 @@ describe('createAgentRuntimeMcpServer', () => {
               title: 'Change probe',
               description: 'Change a probe reversibly.',
               tier: 'act',
+              area: null,
               input: z.object({}),
               output: z.object({ ok: z.boolean() }),
               surfaces: { mcp: { toolName: 'change_probe', servers: ['in-session'] } },
@@ -441,5 +446,68 @@ describe('the `ui` domain over the loopback runtime server', () => {
         })
       )
     ).toMatchObject({ success: true, action: 'show_toast' });
+  });
+});
+
+describe('request_permission on the Codex and OpenCode listener (spec agent-permissions D8)', () => {
+  /**
+   * A registry holding the request tool, one action the listener lists, and
+   * one surface-less action of the kind a principal-bound connector is: it
+   * reads the server principal the listener forwards, so reaching it from here
+   * would be reaching it without its own server.
+   */
+  function registryWithUnlisted() {
+    const ranUnlisted = vi.fn();
+    const probe: CapabilityDomain = {
+      name: 'probe',
+      capabilities: [
+        defineCapability({
+          id: 'probe.unlisted',
+          title: 'Unlisted probe',
+          description: 'A capability no MCP server lists.',
+          tier: 'act',
+          area: null,
+          areaNote: 'a test probe',
+          input: z.object({}),
+          output: z.unknown(),
+          surfaces: {},
+          invoke: async () => {
+            ranUnlisted();
+            return { ran: true };
+          },
+        }),
+      ],
+    };
+    const deps = { logger: noopLogger } as Parameters<typeof composeRegistry>[1];
+    const registry = composeRegistry([probe, permissionsDomain], deps);
+    deps.registry = registry;
+    return { registry, ranUnlisted };
+  }
+
+  it('cannot name an action no tool list on this surface offers', async () => {
+    const { registry, ranUnlisted } = registryWithUnlisted();
+    const client = await connect(createAgentRuntimeMcpServer(registry, principal, identity));
+
+    const result = await client.callTool({
+      name: 'request_permission',
+      arguments: { action: 'probe.unlisted', arguments: {}, reason: 'I need it.' },
+    });
+
+    expect(payload(result)).toMatchObject({ code: 'UNKNOWN_ACTION' });
+    expect(ranUnlisted).not.toHaveBeenCalled();
+  });
+
+  it('reads a server principal with no named server as the in-session surface', async () => {
+    // Fails toward the narrower list: a caller that forgot to say which server
+    // it came through still cannot reach the whole registry.
+    const { registry, ranUnlisted } = registryWithUnlisted();
+    await expect(
+      registry.invoke(
+        'permissions.request_access',
+        { action: 'probe.unlisted', arguments: {}, reason: 'I need it.' },
+        { identity, serverPrincipal: principal }
+      )
+    ).rejects.toMatchObject({ payload: { code: 'UNKNOWN_ACTION' } });
+    expect(ranUnlisted).not.toHaveBeenCalled();
   });
 });

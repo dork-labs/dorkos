@@ -53,7 +53,9 @@ describe('parseUpdateArgs', () => {
   });
 
   it('throws on unknown option', () => {
-    expect(() => parseUpdateArgs(['--nope'])).toThrow(/Unknown option for 'update': --nope/);
+    expect(() => parseUpdateArgs(['--nope'])).toThrow(
+      /Unknown option for 'marketplace update': --nope/
+    );
   });
 });
 
@@ -167,51 +169,6 @@ describe('runUpdate', () => {
     expect(out).toContain('1 up to date, 1 could not be checked.');
   });
 
-  it('keeps going when one target fails, and exits 0 in advisory mode', async () => {
-    // Purpose: one broken install used to abort the whole name-less run.
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        mockResponse(200, { packages: [{ name: 'a' }, { name: 'b' }, { name: 'c' }] })
-      )
-      .mockResolvedValueOnce(
-        mockResponse(200, { checks: [check({ packageName: 'a' })], applied: [] })
-      )
-      .mockResolvedValueOnce(mockResponse(500, { error: 'Marketplace cache unreadable' }))
-      .mockResolvedValueOnce(
-        mockResponse(200, { checks: [check({ packageName: 'c' })], applied: [] })
-      );
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runUpdate({});
-
-    expect(code).toBe(0);
-    const out = printed(logSpy);
-    expect(out).toContain('a  1.2.0 → 1.3.0');
-    expect(out).toContain('b  could not check: Marketplace cache unreadable');
-    expect(out).toContain('c  1.2.0 → 1.3.0');
-    expect(out).toContain('2 updates available, 1 could not be checked.');
-  });
-
-  it('stays at exit 0 when a listed package vanishes before its check', async () => {
-    // Purpose: only a NAMED run treats a 404 as a failure. In a name-less run
-    // the 404 means the package was removed between the listing and its check,
-    // which is a race, not a typo, so the run still exits 0.
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockResponse(200, { packages: [{ name: 'a' }, { name: 'gone' }] }))
-      .mockResolvedValueOnce(
-        mockResponse(200, { checks: [check({ packageName: 'a' })], applied: [] })
-      )
-      .mockResolvedValueOnce(mockResponse(404, { error: 'Package not installed: gone' }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const code = await runUpdate({});
-
-    expect(code).toBe(0);
-    expect(printed(logSpy)).toContain('gone  could not check: Package not installed: gone');
-  });
-
   it('exits 1 when a named package is installed nowhere', async () => {
     // Purpose: `dorkos update <typo>` must fail loudly for a script, as it did
     // before the per-target isolation turned the 404 into a printed line.
@@ -267,83 +224,188 @@ describe('runUpdate', () => {
     expect(out).not.toContain('Run again with --apply');
   });
 
-  it('checks each agent install in its own scope, and each global one with none', async () => {
-    // Purpose: without --project the listing spans every scope; the check
-    // must walk the same scope the listing found each package in.
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
+  describe('without a name: the all-packages door', () => {
+    /** One installation's check; defaults describe a global update. */
+    function installation(overrides: Record<string, unknown> = {}) {
+      return {
+        ...check({ packageName: 'flow', installedVersion: '0.7.2', latestVersion: '0.7.3' }),
+        installPath: '/home/me/.dork/plugins/flow',
+        type: 'plugin',
+        scope: 'global',
+        ...overrides,
+      };
+    }
+
+    it('checks every installation with one request, naming where each non-global one lives', async () => {
+      // Purpose: a name-less run used to list installs and then send one
+      // request per package; the same package in two places must still read
+      // as two different lines.
+      const fetchMock = vi.fn().mockResolvedValueOnce(
         mockResponse(200, {
-          packages: [
-            { name: 'global-pkg', scope: 'global' },
-            { name: 'agent-pkg', scope: 'agent-local', agentPath: '/agents/alpha' },
+          checks: [
+            installation({ hasUpdate: false, status: 'current', latestVersion: '0.7.2' }),
+            installation({
+              scope: 'override',
+              agentPath: '/work/alpha',
+              agentName: 'Alpha',
+              installPath: '/work/alpha/.dork/plugins/flow',
+            }),
+            installation({
+              scope: 'agent-local',
+              agentPath: '/work/beta',
+              installPath: '/work/beta/.dork/plugins/flow',
+              status: 'unknown',
+              hasUpdate: false,
+              latestVersion: '',
+              marketplace: '',
+              note: "couldn't reach github.com",
+            }),
           ],
         })
-      )
-      .mockResolvedValue(mockResponse(200, ADVISORY_RESULT));
-    vi.stubGlobal('fetch', fetchMock);
+      );
+      vi.stubGlobal('fetch', fetchMock);
 
-    await runUpdate({});
+      const code = await runUpdate({});
 
-    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/marketplace\/installed$/);
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ apply: false });
-    expect(fetchMock.mock.calls[2][0]).toContain('/api/marketplace/packages/agent-pkg/update');
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
-      apply: false,
-      projectPath: '/agents/alpha',
+      expect(code).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/marketplace\/updates$/);
+      expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+      const out = printed(logSpy);
+      expect(out).toContain('flow  up to date (0.7.2)');
+      expect(out).toContain('flow [Alpha]  0.7.2 → 0.7.3  (dorkos-community)');
+      expect(out).toContain("flow [/work/beta]  could not check: couldn't reach github.com");
+      expect(out).toContain('1 update available, 1 up to date, 1 could not be checked.');
     });
-  });
 
-  it('forwards --project to the installed listing and checks every target there', async () => {
-    // Purpose: with --project the listing is that project's merged view, and
-    // every check is scoped to it.
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(mockResponse(200, { packages: [{ name: 'p1' }] }))
-      .mockResolvedValue(mockResponse(200, ADVISORY_RESULT));
-    vi.stubGlobal('fetch', fetchMock);
+    it("checks one project's view with --project", async () => {
+      const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, { checks: [] }));
+      vi.stubGlobal('fetch', fetchMock);
 
-    await runUpdate({ projectPath: '/work/my app' });
+      await runUpdate({ projectPath: '/work/my app' });
 
-    expect(fetchMock.mock.calls[0][0]).toContain(
-      `/api/marketplace/installed?projectPath=${encodeURIComponent('/work/my app')}`
+      expect(fetchMock.mock.calls[0][0]).toContain(
+        `/api/marketplace/updates?projectPath=${encodeURIComponent('/work/my app')}`
+      );
+    });
+
+    it.each([false, true])(
+      'says the running DorkOS is older than the CLI when it has no updates door (apply: %s)',
+      async (apply) => {
+        // Purpose: a server started before this CLI answers the router's bare
+        // "Not found"; a person needs to hear "restart DorkOS" instead.
+        vi.stubGlobal(
+          'fetch',
+          vi
+            .fn()
+            .mockResolvedValueOnce(mockResponse(404, { error: 'Not found', code: 'API_NOT_FOUND' }))
+        );
+
+        const code = await runUpdate({ apply });
+
+        expect(code).toBe(1);
+        expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toMatch(
+          /older than this CLI.*Restart DorkOS/s
+        );
+      }
     );
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
-      apply: false,
-      projectPath: '/work/my app',
-    });
-  });
 
-  it('checks a package listed twice in one scope only once', async () => {
-    // Purpose: a plugin and an agent of one name in one scope are one request,
-    // since the route checks by name.
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
+    it('says so when nothing is installed', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(mockResponse(200, { checks: [] })));
+
+      const code = await runUpdate({});
+
+      expect(code).toBe(0);
+      expect(printed(logSpy)).toContain('No installed packages to check.');
+    });
+
+    it('--apply sends one POST and lists what it reinstalled, by place', async () => {
+      // Purpose: applying is one request too, and the output says which copy
+      // of a package was updated.
+      const fetchMock = vi.fn().mockResolvedValueOnce(
         mockResponse(200, {
-          packages: [
-            { name: 'twin', scope: 'global' },
-            { name: 'twin', scope: 'global' },
-            { name: 'twin', scope: 'agent-local', agentPath: '/agents/a' },
+          checks: [
+            installation({
+              scope: 'override',
+              agentPath: '/work/alpha',
+              agentName: 'Alpha',
+              applied: {
+                ok: true,
+                packageName: 'flow',
+                version: '0.7.3',
+                installPath: '/work/alpha/.dork/plugins/flow',
+              },
+            }),
           ],
         })
-      )
-      .mockResolvedValue(mockResponse(200, ADVISORY_RESULT));
-    vi.stubGlobal('fetch', fetchMock);
+      );
+      vi.stubGlobal('fetch', fetchMock);
 
-    await runUpdate({});
+      const code = await runUpdate({ apply: true, projectPath: '/work/alpha' });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
+      expect(code).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/marketplace\/updates$/);
+      expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        apply: true,
+        projectPath: '/work/alpha',
+      });
+      const out = printed(logSpy);
+      expect(out).toContain('Applied:');
+      expect(out).toContain('  flow [Alpha]@0.7.3 → /work/alpha/.dork/plugins/flow');
+      expect(out).not.toContain('Run again with --apply');
+    });
 
-  it('without a name and zero installed packages: prints "No installed packages"', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(200, { packages: [] }));
-    vi.stubGlobal('fetch', fetchMock);
+    it('exits 1 and says why when a reinstall failed, after listing the ones that landed', async () => {
+      // Purpose: a script running --apply must be able to tell that an update
+      // did not land, and a person must see which one and why.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValueOnce(
+          mockResponse(200, {
+            checks: [
+              installation({
+                applied: { ok: true, packageName: 'flow', version: '0.7.3', installPath: '/p' },
+              }),
+              installation({
+                packageName: 'broken',
+                scope: 'agent-local',
+                agentPath: '/work/alpha',
+                agentName: 'Alpha',
+                applyError: 'disk full',
+              }),
+            ],
+          })
+        )
+      );
 
-    const code = await runUpdate({});
+      const code = await runUpdate({ apply: true });
 
-    expect(code).toBe(0);
-    expect(printed(logSpy)).toContain('No installed packages to check.');
+      expect(code).toBe(1);
+      const out = printed(logSpy);
+      expect(out).toContain('  flow@0.7.3 → /p');
+      expect(out).toContain('Could not update:');
+      expect(out).toContain('  broken [Alpha]: disk full');
+    });
+
+    it('exits 1 with the server’s reason when the request itself fails', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(
+            mockResponse(403, { error: 'Access denied: projectPath outside boundary' })
+          )
+      );
+
+      const code = await runUpdate({ projectPath: '/etc' });
+
+      expect(code).toBe(1);
+      expect(errSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+        'Access denied: projectPath outside boundary'
+      );
+    });
   });
 
   it('exits 1 with the "Cannot reach" message when the server is unreachable', async () => {

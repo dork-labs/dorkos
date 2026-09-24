@@ -24,6 +24,7 @@ export type SettingsTab =
   | 'remote-access'
   | 'runtimes'
   | 'rooms'
+  | 'permissions'
   | 'privacy'
   | 'danger'
   | 'experiments'

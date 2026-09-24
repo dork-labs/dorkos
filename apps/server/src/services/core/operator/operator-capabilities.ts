@@ -26,7 +26,11 @@ import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
 import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
 import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
 
-import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
+import {
+  AREA_PENDING_PHASE_3,
+  defineCapability,
+  type CapabilityDomain,
+} from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
 import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
@@ -198,6 +202,8 @@ export const operatorDomain: CapabilityDomain = {
         'Filter by categories (comma-separated), actorType, actorId, and a time window ' +
         '(before/since ISO timestamps); paginate with limit and the returned nextCursor.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(ListActivityQuerySchema.shape),
       output: z.unknown(),
       surfaces: {
@@ -229,6 +235,8 @@ export const operatorDomain: CapabilityDomain = {
         'plus providersConfigured (the provider ids that have a credential), so you can see what is set up ' +
         'without seeing where the material lives.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -248,6 +256,8 @@ export const operatorDomain: CapabilityDomain = {
         'Check for a DorkOS update: returns the running server version and the latest ' +
         'version published to npm. latestVersion is null in dev builds or if the registry is unreachable.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({}),
       output: z.unknown(),
       surfaces: {
@@ -267,6 +277,8 @@ export const operatorDomain: CapabilityDomain = {
         'Show which agents were active recently. Returns each agent joined with the timestamp of ' +
         'its most-recent session, newest first — the same per-agent latest-activity map the app uses.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object(RecentSessionsQuerySchema.shape),
       output: z.unknown(),
       surfaces: {
@@ -327,6 +339,8 @@ export const operatorDomain: CapabilityDomain = {
         'opens this same page, and `dorkos feedback` does it from a terminal. Nothing stops you ' +
         'running that command either.',
       tier: 'observe',
+      area: null,
+      areaNote: 'reading',
       input: z.object({
         kind: z
           .enum(['bug', 'feature', 'runtime'])
@@ -390,6 +404,8 @@ export const operatorDomain: CapabilityDomain = {
         'Target the agent by agent_id or cwd. The slug (name) is immutable, and system agents (e.g. DorkBot) ' +
         'reject identity changes. Editing your OWN agent is fine; before editing a DIFFERENT agent, confirm with the user first.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({
         ...agentSelectorSchema,
         displayName: z.string().optional().describe('Human-facing display name'),
@@ -521,6 +537,8 @@ export const operatorDomain: CapabilityDomain = {
         'A person approves every call, your own boundaries included, so say plainly what you want to ' +
         'change and why before you ask.',
       tier: 'destructive',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({
         ...agentSelectorSchema,
         nopeContent: z
@@ -581,6 +599,8 @@ export const operatorDomain: CapabilityDomain = {
         'directories DorkOS reads and writes (server.boundary, workspace.rootPath, relay.dataDir, ' +
         'agents.defaultDirectory, mesh.scanRoots). Ask the person to change those in Settings themselves.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({
         // Not `z.record()`: a record anywhere in an in-session tool's schema
         // crashes the whole `tools/list` answer on claude-agent-sdk 0.3.257+ with
@@ -658,6 +678,8 @@ export const operatorDomain: CapabilityDomain = {
         'the tool whose name ends in `sidebar_remove_from_group`. This rearranges the ' +
         "user's own sidebar, so only do it when they have asked for it.",
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({
         ...sidebarGroupSelectorSchema,
         items: sidebarItemsSchema('file there'),
@@ -700,6 +722,8 @@ export const operatorDomain: CapabilityDomain = {
         "name ends in `sidebar_add_to_group`. This rearranges the user's own sidebar, so only " +
         'do it when they have asked for it.',
       tier: 'act',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
       input: z.object({
         ...sidebarGroupSelectorSchema,
         items: sidebarItemsSchema('take out'),

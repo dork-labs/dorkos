@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { CallerPrincipal } from '../../../../lib/caller-principal.js';
 import { eventFanOut } from '../../event-fan-out.js';
-import {
-  broadcastApprovalPending,
-  broadcastApprovalResolved,
-  broadcastStandingPermissionsChanged,
-} from '../approval-events.js';
+import { broadcastApprovalPending, broadcastApprovalResolved } from '../approval-events.js';
 
 /** One broadcast: the name, the payload, and the audience it named. */
 type Broadcast = [string, unknown, ((principal: CallerPrincipal) => boolean) | undefined];
@@ -20,6 +16,8 @@ const APPROVAL: PendingApproval = {
   tier: 'destructive',
   summary: 'Would uninstall the flow plugin from this project',
   hasAgentPath: true,
+  area: null,
+  alwaysOffered: false,
   requestedAt: '2026-08-20T00:00:00.000Z',
   expiresAt: '2026-08-20T00:05:00.000Z',
 };
@@ -63,16 +61,10 @@ describe('approval_pending is addressed (research §6 item 11)', () => {
   });
 });
 
-describe('the two events beside it stay unaddressed on purpose', () => {
+describe('the event beside it stays unaddressed on purpose', () => {
   it('sends a resolution to every connection: an id and an outcome describe nothing', () => {
     broadcastApprovalResolved(APPROVAL.approvalId, 'granted');
     expect(sent[0][0]).toBe('approval_resolved');
-    expect(sent[0][2]).toBeUndefined();
-  });
-
-  it('sends a permission-list change to every connection: it says only THAT one moved', () => {
-    broadcastStandingPermissionsChanged('created', 'grant-1');
-    expect(sent[0][0]).toBe('approval_grant_changed');
     expect(sent[0][2]).toBeUndefined();
   });
 });

@@ -1548,6 +1548,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'DELETE /me/grants/:id': "revokes one of the caller's own grants",
   'GET /me/connection-access': 'the calling grant only',
   'DELETE /me/connection': 'the calling grant revokes itself',
+  'GET /me/host-access': "the calling grant's own account; takes no id",
   'GET /channels': 'ordinary reading; visible channels only',
   'GET /channels/:id': 'ordinary reading',
   'POST /channels/:id/join': 'the caller joins a public channel',

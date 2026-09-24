@@ -580,7 +580,7 @@ function notYetInstalled(probe: unknown): boolean {
  * CONVERSATION, not to a turn: `run-eval.ts` starts the driver once before
  * `driveConversation` and stops it once after, so the poll loop has no idea
  * turns exist. But a grant is only a database write
- * (`services/core/approvals/approval-grant-service.ts`); nothing on the server
+ * (`services/core/approvals/approval-service.ts`); nothing on the server
  * resumes a stalled turn when it lands. In the real cockpit a person sends a
  * follow-up message after clicking Approve, so a single-turn drive was asking
  * for something the product does not do: four credentialed runs against the

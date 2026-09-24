@@ -16,7 +16,7 @@ export interface InstallPackageArgs {
  *
  * Invalidates the installed-packages list, the all-packages browse cache, and
  * the individual package-detail cache on success so the UI reflects the new
- * installed state without a manual refresh.
+ * installed state without a manual refresh, and marks the update check stale.
  */
 export function useInstallPackage() {
   const transport = useTransport();
@@ -38,6 +38,13 @@ export function useInstallPackage() {
       // invalidate here too so the palette catches up even when the SSE event
       // is missed or the in-process (Obsidian) transport yields no events (UX-12).
       void queryClient.invalidateQueries({ queryKey: ['commands'] });
+      // The new installation has no update check yet. Mark the check stale
+      // without re-running it: the next view that mounts asks again, and an
+      // install never sets off a sweep of every package's source.
+      void queryClient.invalidateQueries({
+        queryKey: marketplaceKeys.updates(),
+        refetchType: 'none',
+      });
     },
   });
 }

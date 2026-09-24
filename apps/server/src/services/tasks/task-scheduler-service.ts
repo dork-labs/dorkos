@@ -172,6 +172,11 @@ export interface SchedulerAgentManager {
       cwd?: string;
       systemPromptAppend?: string;
       /**
+       * Nobody can answer an approval card inside this turn, so it must not hold
+       * for one (`MessageOpts.unattendedApprovals`, spec `agent-permissions` D6).
+       */
+      unattendedApprovals?: boolean;
+      /**
        * Sent again, for the same reason the permission mode and the cwd are: the
        * runtime contract resolves a turn as per-send override → persisted → its
        * own default, and a runtime whose sessions are not held in memory sees
@@ -1401,6 +1406,10 @@ export class TaskSchedulerService {
         cwd: effectiveCwd,
         systemPromptAppend: taskAppend,
         ...execution.settings,
+        // The same line as `unattended` above, for approval cards: a timer fire
+        // does not hold its turn for one, a Run now a person pressed does
+        // (spec `agent-permissions` D6).
+        unattendedApprovals: !attended,
       });
 
       const stopped = await consumeRunStream(

@@ -16,6 +16,7 @@ import { z } from 'zod';
 import {
   stableStringify,
   type CapabilityCatalog,
+  type McpServerId,
   type SerializedCapability,
 } from '@dorkos/shared/capabilities';
 
@@ -32,7 +33,8 @@ import {
   type GrantedApproval,
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
-import { enforceToolGroupGrant } from './tool-group-enforcement.js';
+import { resolveCallPermission } from './permission-enforcement.js';
+import { resolveApprovalSubject } from '../approvals/approval-subject.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 import { isServerPrincipal } from '../../connectors/principal/server-principal.js';
 import {
@@ -109,6 +111,14 @@ export interface CapabilityInvocationContext {
    */
   retryChannel?: ApprovalRetryChannel;
   /**
+   * Set only by the `request_permission` handler, on its own re-invocation of the
+   * action the agent asked for: the agent is deliberately asking past a Blocked
+   * permission, with this reason (spec `agent-permissions` D8). Forwarded to the
+   * gate and nowhere else. No surface reads it off the wire; each builds this
+   * context field by field.
+   */
+  blockedRequest?: { reason: string };
+  /**
    * The signed-in PERSON behind this call, when login is on and the surface
    * verified one — a session cookie or a per-user API key.
    *
@@ -145,6 +155,13 @@ export interface CapabilityInvocationContext {
    */
   cwd?: string;
   /** Process-authenticated caller resolved by a server-owned boundary. */
+  /**
+   * Which MCP server's tool list this call arrived through, set by the MCP
+   * projections; absent on HTTP and the CLI. Informational: it decides no
+   * tier. The request tool uses it to reach only actions this same surface
+   * lists (spec `agent-permissions` D8).
+   */
+  mcpServer?: McpServerId;
   serverPrincipal?: ServerPrincipalProof;
   /** Abort only this capability call; never reused as a turn-lifetime signal. */
   signal?: AbortSignal;
@@ -201,6 +218,18 @@ export interface CapabilityHandlerContext {
    */
   approval?: GrantedApproval;
   /**
+   * The approval token the caller presented, handed to the handler only for a
+   * capability that declares `forwardsApproval` (the request tool), which passes
+   * it on to the action it asked for. Every other handler never sees a token.
+   */
+  approvalToken?: string;
+  /**
+   * The retry channel the surface asked for, handed on with
+   * {@link approvalToken} and only to a `forwardsApproval` capability, so the
+   * action it re-invokes tells the caller to retry the way it can.
+   */
+  retryChannel?: ApprovalRetryChannel;
+  /**
    * Present when the caller proved it may decide approvals. A handler running its
    * own confirmation flow treats this exactly like {@link approval}: the person
    * whose consent that flow would go and fetch is the one already calling.
@@ -220,6 +249,8 @@ export interface CapabilityHandlerContext {
    */
   cwd?: string;
   /** Process-authenticated caller resolved by the server boundary. */
+  /** See {@link CapabilityInvocationContext.mcpServer}. */
+  mcpServer?: McpServerId;
   serverPrincipal?: ServerPrincipalProof;
   /** Abort only this capability call. */
   signal?: AbortSignal;
@@ -247,6 +278,12 @@ export type CapabilityInvocationObserver = (event: {
   context: CapabilityHandlerContext;
   /** Whether the handler completed without throwing. */
   ok: boolean;
+  /**
+   * What the handler threw, when it did. Lets the observer tell a refusal the
+   * request tool passed on (a card raised, a request held back by its limits)
+   * from a real failure.
+   */
+  error?: unknown;
 }) => void;
 
 /**
@@ -287,9 +324,9 @@ export interface CapabilityRegistry {
    * @returns The capability's plain output.
    * @throws If no capability is registered under `id`; if `input` fails schema
    *   validation (a `ZodError`); if the context carries both a trusted marker and
-   *   an agent identity; or, when either gate does not allow the call — the
-   *   per-agent tool-group grant (`tool-group-enforcement.ts`) or the tier gate —
-   *   a {@link CapabilityGateRefusal} carrying the payload to return to the caller.
+   *   an agent identity; or, when the gate (tier and permission together) does
+   *   not allow the call, a {@link CapabilityGateRefusal} carrying the payload to
+   *   return to the caller.
    */
   invoke(id: string, input: unknown, context?: CapabilityInvocationContext): Promise<unknown>;
   /**
@@ -306,12 +343,11 @@ export interface CapabilityRegistry {
  * Convert one capability to its serializable catalog entry: drop `invoke` and
  * render both Zod schemas as JSON Schema via Zod v4's native conversion.
  *
- * `toolGroup` is OMITTED rather than nulled when a capability declares none, so
- * the catalog stays byte-identical for every capability that has no grant and
- * the content hash does not move for them. It is carried at all because the
+ * `area` is always present (`null` for an area-less capability), because the
  * declaration on the definition is meant to have exactly one answer everywhere:
- * the gate enforces it, the cockpit reads it off the live catalog instead of a
- * static list that would drift, and the docs projection reports the same field.
+ * the gate resolves it, the permissions pages read each area's actions off the
+ * live catalog instead of a static list that would drift, and the docs
+ * projection reports the same field.
  *
  * @param capability - The runtime capability definition.
  * @returns The serialized, wire-safe entry.
@@ -325,7 +361,7 @@ export function serializeCapability(capability: CapabilityDefinition): Serialize
     inputSchema: z.toJSONSchema(capability.input),
     outputSchema: z.toJSONSchema(capability.output),
     surfaces: capability.surfaces,
-    ...(capability.toolGroup ? { toolGroup: capability.toolGroup } : {}),
+    area: capability.area,
   };
 }
 
@@ -339,10 +375,11 @@ function notify(
   observer: CapabilityInvocationObserver,
   capability: CapabilityDefinition,
   context: CapabilityInvocationContext,
-  ok: boolean
+  ok: boolean,
+  error?: unknown
 ): void {
   try {
-    observer({ capability, context, ok });
+    observer({ capability, context, ok, ...(ok ? {} : { error }) });
   } catch {
     // Deliberately ignored — see the TSDoc above.
   }
@@ -522,6 +559,7 @@ export function composeRegistry(
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
+        ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),
         ...(supplied.signal ? { signal: supplied.signal } : {}),
         ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
         ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
@@ -529,22 +567,6 @@ export function composeRegistry(
       const invocationContext: CapabilityHandlerContext = supplied.trusted
         ? { trusted: supplied.trusted, ...surface }
         : { ...(supplied.identity ? { identity: supplied.identity } : {}), ...surface };
-
-      // The generic tool-group gate stays unchanged for trusted callers. Domain
-      // preflight runs after it and for EVERY caller, because trust may decide an
-      // ordinary approval but cannot stand in for live connector authority.
-      if (!supplied.trusted) {
-        // The per-agent tool-group grant, BEFORE the tier gate on purpose: a
-        // capability this caller may never reach must not mint an approval card
-        // for an action that was never going to run. Ungated capabilities — every
-        // one but the few that declare a `toolGroup` — pay one `undefined` check
-        // here and nothing else.
-        const grant = await enforceToolGroupGrant({
-          action: capability,
-          ...(supplied.identity ? { identity: supplied.identity } : {}),
-        });
-        if (grant.outcome !== 'allowed') throw new CapabilityGateRefusal(grant);
-      }
 
       const preflight = capability.preflight
         ? await capability.preflight(deps, parsed, supplied)
@@ -555,14 +577,35 @@ export function composeRegistry(
         );
       }
       if (preflight) invocationContext.preflight = preflight;
+      // Only the request tool forwards a token, to the action it asks for; see
+      // `CapabilityDefinition.forwardsApproval`.
+      if (capability.forwardsApproval) {
+        if (supplied.approvalToken) invocationContext.approvalToken = supplied.approvalToken;
+        if (supplied.retryChannel) invocationContext.retryChannel = supplied.retryChannel;
+      }
 
       // Existing trusted callers retain their ordinary bypass. A capability with
       // live preflight always reaches the tier gate, so destructive connector
       // execution still consumes a bound approval even for a trusted operator.
       if (!supplied.trusted || preflight) {
+        // The permission, resolved fresh for THIS call (spec `agent-permissions`
+        // D6). A trusted caller is a person, whom no agent permission governs, so
+        // it passes `null` and the tier alone decides, exactly as before.
+        const permission = supplied.trusted
+          ? null
+          : await resolveCallPermission({
+              action: capability,
+              ...(supplied.identity ? { identity: supplied.identity } : {}),
+            });
+        // Named here rather than in the gate, which is synchronous (DOR-1929):
+        // an action that can raise a card and declares its subject gets a card
+        // that says WHICH thing it is about.
+        const subject = await resolveApprovalSubject(capability.approvalSubject, parsed);
         const decision = enforceCapabilityTier({
           action: capability,
           input: parsed,
+          permission,
+          ...(subject ? { subject } : {}),
           ...(supplied.identity ? { identity: supplied.identity } : {}),
           ...(supplied.approvalToken ? { approvalToken: supplied.approvalToken } : {}),
           retryChannel: supplied.retryChannel ?? 'http-header',
@@ -580,12 +623,8 @@ export function composeRegistry(
                 },
               }
             : {}),
-          ...(preflight
-            ? {
-                connectorAuthority: preflight.authorityBinding.approvalScope,
-                standingGrantEligible: false,
-              }
-            : {}),
+          ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
+          ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
         if (decision.approval) invocationContext.approval = decision.approval;
@@ -613,7 +652,7 @@ export function composeRegistry(
         notify(onInvocation, capability, invocationContext, true);
         return result;
       } catch (err) {
-        notify(onInvocation, capability, invocationContext, false);
+        notify(onInvocation, capability, invocationContext, false, err);
         throw err;
       }
     },

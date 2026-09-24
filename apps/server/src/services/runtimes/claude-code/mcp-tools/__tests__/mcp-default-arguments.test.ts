@@ -354,6 +354,7 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
       title: 'Substituting field fixture',
       description: 'Exercises the two substituting wrappers the product does not use yet.',
       tier: 'observe',
+      area: null,
       input: z.object({
         prefaulted: z.coerce.number().int().min(1).prefault(7).describe('a prefaulted field'),
         defaultedThenOptional: z.array(z.string()).default([]).optional().describe('both wrappers'),

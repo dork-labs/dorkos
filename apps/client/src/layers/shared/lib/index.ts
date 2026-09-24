@@ -384,4 +384,4 @@ export { isNewer } from './version-compare';
 // families answer things a server can refuse — capability approvals and the
 // Ask — and one of them would otherwise have to reach into the other's lib.
 export { describeDecisionRefusal } from './decision-refusal';
-export type { DecisionRefusal, RefusalTone } from './decision-refusal';
+export type { DecisionRefusal } from './decision-refusal';

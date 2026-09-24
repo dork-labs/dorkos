@@ -16,6 +16,10 @@
  */
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import { buildRoomToolsBlock } from '../../shared/room-tools-context.js';
+import {
+  renderBlockedAreaLines,
+  resolveToolVisibilityFor,
+} from '../../shared/permission-tool-filter.js';
 import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
 
 /**
@@ -51,7 +55,10 @@ export async function buildOpenCodeTurnContext(
   dorkosApplied: boolean
 ): Promise<string> {
   const neutralContext = (await buildAgentContextAppend(cwd)).text;
-  return dorkosApplied
-    ? `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`
-    : neutralContext;
+  if (!dorkosApplied) return neutralContext;
+  // One line per Blocked permission area (spec `agent-permissions` D15); the
+  // runtime listener hides the same area's tools from this turn's list.
+  const blocked = renderBlockedAreaLines((await resolveToolVisibilityFor(cwd)).blockedAreas);
+  const withRooms = `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`;
+  return blocked ? `${withRooms}\n\n${blocked}` : withRooms;
 }

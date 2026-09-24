@@ -64,6 +64,10 @@ import {
 import { buildSystemPromptAppend, renderContextEntry } from './context-builder.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
 import {
+  renderBlockedAreaLines,
+  resolveToolVisibilityFor,
+} from '../../shared/permission-tool-filter.js';
+import {
   AUTO_DOWNGRADE_STATUS,
   UNKNOWN_MODE_STATUS,
   resolveEffectivePermissionMode,
@@ -201,11 +205,18 @@ export async function resolveLaunch(args: {
   // there would claim the tools are loaded for a session whose tool server had
   // already decided otherwise — the failure inverted, and worse than the
   // original, because a wrong "no lookup needed" costs the whole turn.
+  // What a Blocked permission hides from this agent (spec `agent-permissions`
+  // D15), resolved against the SAME cwd the tool server keys the session's
+  // identity on, for the reason the agent-to-agent flag above gives. The list
+  // and the one context line per Blocked area come from one resolution, so the
+  // prompt never names an area the tools disagree with.
+  const toolVisibility = await resolveToolVisibilityFor(session.cwd ?? effectiveCwd);
   const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(session.cwd && opts.meshCore?.getByPath(session.cwd)),
       isRelayEnabled()
     ),
+    blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
   });
   // Concatenate caller-supplied append (e.g. Tasks scheduler context) after the
   // base — onto BOTH halves, so the caller's own per-run instructions are
@@ -514,7 +525,9 @@ export async function resolveLaunch(args: {
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
   if (opts.mcpServerFactory) {
-    sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId);
+    sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId, {
+      hiddenToolNames: toolVisibility.hiddenToolNames,
+    });
   }
 
   // Nothing here sets `allowedTools`, on purpose (DOR-519). The tool-group toggles

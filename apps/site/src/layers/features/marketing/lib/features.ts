@@ -645,7 +645,7 @@ export const features: Feature[] = [
     benefits: [
       'See where new sessions stop for approval, at a glance',
       'Let agents message across projects with one switch',
-      "Make 'stop asking' stick for one agent, one action",
+      'Cap how far agents keep replying to each other, with one switch',
       'Keep agents warm between messages, and cap concurrent scheduled runs',
       'An Exceptions list links straight to what to fix',
     ],

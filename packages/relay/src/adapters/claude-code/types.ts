@@ -193,6 +193,13 @@ export interface AgentRuntimeLike {
       permissionMode?: PermissionMode;
       cwd?: string;
       systemPromptAppend?: string;
+      /**
+       * Nobody can answer a DorkOS approval card inside this turn. Mirrors
+       * `MessageOpts.unattendedApprovals`: a relay-delivered turn is started
+       * by a message, not by a person watching the app, so a capability call
+       * that needs a person returns at once instead of holding the turn.
+       */
+      unattendedApprovals?: boolean;
     }
   ): AsyncGenerator<StreamEvent>;
   /**

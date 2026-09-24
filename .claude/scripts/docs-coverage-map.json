@@ -801,6 +801,16 @@
       ]
     },
     {
+      "doc": "docs/guides/permissions.mdx",
+      "description": "Agent permissions: states, areas, presets, the floor, the history",
+      "patterns": [
+        "packages/shared/src/permissions/",
+        "services/core/permissions/",
+        "permission-enforcement",
+        "features/permissions/"
+      ]
+    },
+    {
       "doc": "docs/guides/operating-dorkos.mdx",
       "description": "What an agent can do for you in DorkOS, in plain language",
       "patterns": [

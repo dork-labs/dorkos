@@ -1463,6 +1463,8 @@ function pendingApproval(overrides: Partial<PendingApproval> = {}): PendingAppro
     summary: 'Write src/index.ts',
     requestedBy: 'alpha',
     hasAgentPath: true,
+    area: null,
+    alwaysOffered: false,
     requestedAt: new Date(Date.now() - 540_000).toISOString(),
     expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
     ...overrides,

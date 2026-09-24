@@ -9,8 +9,8 @@
  * /api/agents/current` and the `operator.update_agent` MCP tool (tier `act`, so
  * nothing asks a person) both land there. What it accepted used to be "whatever
  * `UpdateAgentRequestSchema` picks", minus three hand-written guards bolted on as
- * each field earned one: `account`, `enabledToolGroups.roomsManage`, and the
- * direction check on `tierCeiling`.
+ * each field earned one: `account`, the retired `enabledToolGroups.roomsManage`
+ * grant, and the direction check on `tierCeiling`.
  *
  * Three guards is not a policy, and the shape of the defect they leave is
  * mechanical: a field added to that schema's `.pick(...)` list becomes
@@ -53,7 +53,7 @@
  * FIRST, before the schema parse and before the manifest is read, unlike the
  * value-shaped `tighten-only` check below it. The answer is about WHO may write
  * a field, and it must not be contingent on the rest of the patch being
- * well-formed (`{"roomsManage": null}` fails a boolean schema, and reporting that
+ * well-formed (`{"enabledToolGroups": {"tasks": null}}` fails a boolean schema, and reporting that
  * as a validation error tells a model to fix its types and try the same door
  * again) or on which agent is at the path.
  *
@@ -65,7 +65,7 @@
  * - **The operator's own route is untouched.** `PATCH /api/mesh/agents/:id`
  *   (`routes/mesh.ts`) writes every field here and does not come through this
  *   module. A cockpit surface that edits an operator-only field must use it —
- *   the Tools tab's tool-group switches and its rooms-management grant both do.
+ *   the Tools tab's tool-group switches do. Permissions have their own routes.
  * - **A shell-capable agent bypasses any route guard.** With local login off the
  *   server cannot tell the person in the cockpit from a process running as the
  *   same user, and an agent with Bash can edit `.dork/agent.json` directly. This
@@ -189,7 +189,7 @@ export const AGENT_WRITE_POLICY = {
   // `runtimes.claudeCode.defaultAccount` on.
   account: 'operator-only',
 
-  // The five per-agent tool groups, all operator-only — the DOR-1506 closure.
+  // The four per-agent tool groups, all operator-only — the DOR-1506 closure.
   //
   // The four documentation keys were writable here while their global twins
   // (`agentContext.*`) were refused at the config seam, and per-agent values
@@ -208,11 +208,6 @@ export const AGENT_WRITE_POLICY = {
   'enabledToolGroups.relay': 'operator-only',
   'enabledToolGroups.mesh': 'operator-only',
   'enabledToolGroups.adapter': 'operator-only',
-  // The fifth is a real grant rather than a documentation key: the capability
-  // gate enforces it, so an agent that could write it could turn its own hard
-  // filter off and the filter would be theatre (spec `rooms-management-tools`
-  // §D6, DOR-1611).
-  'enabledToolGroups.roomsManage': 'operator-only',
 
   // The most this agent is ever allowed to do. The one field whose verdict is a
   // DIRECTION: lowering it is an agent giving something up — the honest way to
@@ -230,6 +225,19 @@ export const AGENT_WRITE_POLICY = {
   memoryContent: 'agent-writable',
 } as const satisfies Record<string, AgentWriteAccess>;
 
+/**
+ * Manifest fields this seam's wire does not carry at all, refused by name
+ * anyway.
+ *
+ * `permissions` is not picked by `UpdateAgentRequestSchema`, so a patch naming it
+ * would be silently stripped and answered as if it had worked, which is the
+ * DOR-1253 shape. What an agent may do is only ever written by a person through
+ * the permission routes (spec `agent-permissions` D10), and a caller that tries
+ * here is told so. Kept out of {@link AGENT_WRITE_POLICY} because that table
+ * mirrors the wire exactly and its drift guard asserts it.
+ */
+export const REFUSED_OFF_WIRE_AGENT_PATHS: readonly string[] = ['permissions'];
+
 /** Paths from {@link AGENT_WRITE_POLICY} carrying one verdict. */
 function pathsWithAccess(access: AgentWriteAccess): readonly string[] {
   return Object.entries(AGENT_WRITE_POLICY)
@@ -241,7 +249,10 @@ function pathsWithAccess(access: AgentWriteAccess): readonly string[] {
  * The manifest leaves the agent-reachable seam refuses outright, derived from
  * {@link AGENT_WRITE_POLICY} rather than listed twice.
  */
-export const OPERATOR_ONLY_AGENT_PATHS: readonly string[] = pathsWithAccess('operator-only');
+export const OPERATOR_ONLY_AGENT_PATHS: readonly string[] = [
+  ...pathsWithAccess('operator-only'),
+  ...REFUSED_OFF_WIRE_AGENT_PATHS,
+];
 
 /**
  * The manifest leaves an agent may move only toward LESS capability.
@@ -289,7 +300,7 @@ const CLASSIFIED_AGENT_PATHS: ReadonlySet<string> = new Set(Object.keys(AGENT_WR
  * `patchPaths` emits LEAVES, and the matcher compares a touched path against a
  * guarded one by equality, ancestor, or descendant. `{ enabledToolGroups: {} }`
  * is therefore caught — it stops above the guarded leaves, so it matches all
- * five as an ancestor. `{ enabledToolGroups: { zzz: 1 } }` was NOT: it emits
+ * four as an ancestor. `{ enabledToolGroups: { zzz: 1 } }` was NOT: it emits
  * `enabledToolGroups.zzz`, which equals no policy key, is under none, and is
  * above none either.
  *
@@ -299,8 +310,8 @@ const CLASSIFIED_AGENT_PATHS: ReadonlySet<string> = new Set(Object.keys(AGENT_WR
  * empty object survived into a write that REPLACED the stored one. Measured
  * against a real manifest: `{"enabledToolGroups":{"zzz":1}}` answered 200 and
  * left `{}` on disk, clearing two documentation keys a person had turned off AND
- * `roomsManage: true`, which is a grant only a person may write — DOR-1506's own
- * defect, reachable through a key nobody had to guess right.
+ * the rooms grant that object then carried, which only a person may write —
+ * DOR-1506's own defect, reachable through a key nobody had to guess right.
  * `{"behavior":{"zzz":1}}` was worse in kind: `AgentBehaviorSchema` defaults
  * `responseMode`, so the write re-armed the MOST permissive setting (`always`)
  * and dropped `escalationThreshold`. A nested `{"__proto__":{…}}` took the same
@@ -398,9 +409,9 @@ export const AGENT_OPERATOR_ONLY_STAKES: readonly {
       "Which tool groups an agent is told about is set by a person, in the agent's Tools settings",
   },
   {
-    paths: ['enabledToolGroups.roomsManage'],
+    paths: ['permissions'],
     description:
-      "Whether an agent may manage rooms is set by a person, in the agent's Tools settings",
+      "What an agent is allowed to do is set by a person, on the agent's Permissions page",
   },
 ];
 

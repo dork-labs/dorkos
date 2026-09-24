@@ -60,12 +60,9 @@
  *   writes those with no prompt and no shell — the DOR-511 lesson, and a much
  *   lower bar than the shell-access adversary in `approvals/decision-authority.ts`.
  *   An approval an agent can write is not an approval.
- * - **A standing permission** (`approval_grants`). Verified unusable, twice over: a
- *   grant keys on `requestedByPath`, which only the `destructive` branch of
- *   `tier-enforcement.ts` ever writes (the `act` branch early-returns), and
- *   minting one additionally requires BOTH `auth.enabled` and
- *   `approvals.standingGrants`, which are both off in the shipped default. A gate
- *   that only exists in a non-default posture is not a gate.
+ * - **An agent permission** (`permissions`). Loading an extension is not an
+ *   agent action, so no permission area covers it, and an "Always allow" answers
+ *   one agent's request to run one action, not a person's choice to trust code.
  *
  * User config is where this repo already keeps "only a person may change this":
  * the `operator-only` table, its build-failing drift guard, the cookie bar on

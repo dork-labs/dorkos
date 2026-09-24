@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CommunityLiveGateError,
   receiveClipboard,
@@ -147,6 +147,71 @@ describe('waiting while the resumed launcher runs', () => {
   it('does not end the wait when the launcher exits cleanly', async () => {
     const work = new Promise<string>((resolve) => setTimeout(() => resolve('proof'), 30));
     await expect(whileLauncherRuns(Promise.resolve(), work)).resolves.toBe('proof');
+  });
+
+  // A resumed launcher that exits cleanly without sending the second secret used to hold the run
+  // for the rest of a twelve-minute capture timeout, with every resource it created still live.
+  describe('after a clean launcher exit, with a grace', () => {
+    const grace = { ms: 1_000, step: 'bootstrap-capture-after-launcher-exit' };
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('fails as the named step once the grace runs out, long before the work would', async () => {
+      vi.useFakeTimers();
+      const work = new Promise<string>((resolve) => setTimeout(() => resolve('late'), 12 * 60_000));
+      const outcome = whileLauncherRuns(Promise.resolve(), work, grace).then(
+        () => 'resolved',
+        (reason: unknown) => reason
+      );
+      await vi.advanceTimersByTimeAsync(grace.ms - 1);
+      let settled = false;
+      void outcome.then(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const reason = await outcome;
+      expect(reason).toBeInstanceOf(CommunityLiveGateError);
+      expect((reason as CommunityLiveGateError).step).toBe(grace.step);
+    });
+
+    it('still takes a secret that arrives within the grace', async () => {
+      vi.useFakeTimers();
+      const work = new Promise<string>((resolve) => setTimeout(() => resolve(SECRET), 500));
+      const outcome = whileLauncherRuns(Promise.resolve(), work, grace);
+      await vi.advanceTimersByTimeAsync(500);
+      await expect(outcome).resolves.toBe(SECRET);
+    });
+
+    it('never starts the grace while the launcher is still running', async () => {
+      vi.useFakeTimers();
+      const work = new Promise<string>((resolve) => setTimeout(() => resolve(SECRET), 5_000));
+      const outcome = whileLauncherRuns(new Promise<void>(() => undefined), work, grace);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(outcome).resolves.toBe(SECRET);
+    });
+
+    it('leaves no timer behind when the work finished before the launcher exited', async () => {
+      vi.useFakeTimers();
+      let exitLauncher!: () => void;
+      const launcher = new Promise<void>((resolve) => {
+        exitLauncher = resolve;
+      });
+      await expect(whileLauncherRuns(launcher, Promise.resolve(SECRET), grace)).resolves.toBe(
+        SECRET
+      );
+      exitLauncher();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('still reports a launcher failure as that failure', async () => {
+      const launcher = Promise.reject(new CommunityLiveGateError('launcher-timeout'));
+      await expect(
+        whileLauncherRuns(launcher, new Promise<never>(() => undefined), grace)
+      ).rejects.toMatchObject({ step: 'launcher-timeout' });
+    });
   });
 });
 

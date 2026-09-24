@@ -36,6 +36,8 @@ import type {
   CapabilityPreflightResult,
 } from './registry.js';
 import type { InSessionCardKind } from './in-session-card.js';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
+import type { ApprovalSubjectDeclaration } from '../approvals/approval-subject.js';
 
 /**
  * The service-dependency bag threaded into every capability's `invoke` at boot,
@@ -55,14 +57,11 @@ export interface CapabilityDeps {
 }
 
 /**
- * A per-agent grant a capability may require, keyed by the name it carries in an
- * agent manifest's `enabledToolGroups` (`packages/shared/src/mesh-schemas.ts`).
- *
- * One member today. These are the HARD keys of that object: unlike the four
- * documentation keys beside them, a capability naming one here is refused for an
- * agent that does not hold it. See {@link CapabilityDefinition.toolGroup}.
+ * The `areaNote` of every area-less action whose area is assigned later in the
+ * permission programme (spec `agent-permissions`, phase 3). A named constant so
+ * the phase-3 census can assert none remain.
  */
-export type CapabilityToolGroup = 'roomsManage';
+export const AREA_PENDING_PHASE_3 = 'Area assigned in agent-permissions phase 3';
 
 /**
  * A capability declared by a service domain: the single source of truth every
@@ -111,6 +110,22 @@ export interface CapabilityDefinition<
    * `tier-enforcement.ts`).
    */
   tier: CapabilityTier;
+  /**
+   * The permission area this action belongs to, or `null` for an action that is
+   * always allowed on its tier alone (spec `agent-permissions` D2).
+   *
+   * Required, so a new capability cannot ship without somebody deciding it. The
+   * capability gate resolves the area on every call (`permission-enforcement.ts`):
+   * Blocked refuses, Ask raises the approval card, Allowed runs. Membership lives
+   * here, beside the tier, and nowhere else (one fact per tool, DOR-499).
+   */
+  area: PermissionAreaId | null;
+  /**
+   * Why an action with `area: null` is always allowed. Required whenever `area`
+   * is `null` (the conformance suite and the area census both check it), so the
+   * absence of a switch is a recorded decision rather than a missing line.
+   */
+  areaNote?: string;
   /** Zod input contract; validated before `invoke`, projected as JSON Schema. */
   input: In;
   /** Zod output contract; projected as JSON Schema in the catalog. */
@@ -172,6 +187,14 @@ export interface CapabilityDefinition<
    */
   approvalDetailField?: string;
   /**
+   * Which argument names the thing being acted on, and which registry knows it
+   * by name (DOR-1929). Expected on any action that can raise a card and whose
+   * target is an opaque id, so the card says WHICH room, agent or task it is
+   * about. `registry.invoke` resolves it before the gate; see
+   * `approvals/approval-subject.ts`.
+   */
+  approvalSubject?: ApprovalSubjectDeclaration;
+  /**
    * Draw an inline CARD in the conversation this capability was called from
    * (DOR-1004) — a surface the person acts on, in the chat, instead of a link
    * pasted into the agent's reply.
@@ -189,25 +212,14 @@ export interface CapabilityDefinition<
    */
   inSessionCard?: InSessionCardKind;
   /**
-   * The per-agent grant this capability requires, if any.
-   *
-   * Declaring it makes the capability HARD-GATED: `registry.invoke` refuses the
-   * call unless the resolved caller is an identified agent holding the grant.
-   * Undeclared (the default, and every capability today) means ungated — the tier
-   * gate is the only gate.
-   *
-   * Unlike the four `enabledToolGroups` keys in `mcp-tool-groups.ts`, which shape
-   * documentation only (ADR 260726-171347), this field is a real boundary. Do not
-   * add one without reading that ADR's condition on agent-writable grants: a
-   * grant the governed agent can set for itself is not a grant, which is why
-   * `updateAgentManifest` refuses the field on the agent-reachable write path.
-   *
-   * Declarative for the same reason `inSessionCard` is: the capability states
-   * WHICH grant it needs and a seam elsewhere decides what to do about it
-   * (`tool-group-enforcement.ts`). The handler never learns the answer, because a
-   * refused call has no handler run.
+   * This capability re-invokes ANOTHER action on the caller's behalf and passes
+   * a presented approval token on to it (spec `agent-permissions` D8). Only the
+   * request tool (`permissions.request_access`) declares it. It makes the tool
+   * advertise `approvalToken`, and hands the presented token to the handler as
+   * `context.approvalToken`, which no other handler ever receives. The token is
+   * still spent only by the gate, against the forwarded action's own binding.
    */
-  toolGroup?: CapabilityToolGroup;
+  forwardsApproval?: true;
   /**
    * Resolve live server authority after parsing and before tier approval.
    *

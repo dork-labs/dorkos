@@ -119,7 +119,7 @@ export interface AgentIdentity {
    * | Consumer                  | What an inactive identity gets                    |
    * | ------------------------- | ------------------------------------------------- |
    * | `enforceCapabilityTier`   | `revoked` → capped at `observe`; `expired` → its recorded ceiling |
-   * | `enforceToolGroupGrant`   | holds nothing, both states                        |
+   * | `resolveCallPermission`   | every action with an area is Blocked, both states |
    * | `routes/room-caller.ts`   | `AGENT_IDENTITY_UNVERIFIED`, both states          |
    * | Activity attribution      | named as itself — knowing WHO tried is the point  |
    *

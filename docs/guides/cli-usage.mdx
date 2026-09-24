@@ -97,11 +97,11 @@ dorkos --debug-trace
 ### Subcommands
 
 <Callout type="info">
-  `install`, `uninstall`, `update`, `marketplace`, `cache`, and the operator commands (`agent`,
-  `task`, `activity`, `version --check`) all talk to a DorkOS server that's already running. They
-  don't start one for you, so run `dorkos` first in another terminal (or make sure it's already
-  running) before using them. The one exception: `version --check` still answers from a local cache
-  when no server is running.
+  `marketplace` (and its shorter forms `install`, `uninstall`, `update`), `cache`, and the operator
+  commands (`agent`, `task`, `activity`, `version --check`) all talk to a DorkOS server that's
+  already running. They don't start one for you, so run `dorkos` first in another terminal (or make
+  sure it's already running) before using them. The one exception: `version --check` still answers
+  from a local cache when no server is running.
 </Callout>
 
 #### Configuration
@@ -135,36 +135,54 @@ dorkos init --yes    # Accept all defaults
 
 #### Marketplace
 
-**`dorkos install` / `dorkos uninstall` / `dorkos update`**: install, remove, and update marketplace packages.
+**`dorkos marketplace`**: everything to do with marketplace packages lives here. You can install, update and remove packages, see what you have, and manage the sources packages come from.
 
 ```bash
-dorkos install <package>                          # Install from any configured source
-dorkos install <package> --marketplace <name>     # Install from a specific marketplace
-dorkos install <package> --source <url>           # Install from an explicit Git or marketplace.json URL
-dorkos install <package> --force                  # Override warning-level conflicts
-dorkos install <package> --yes                    # Skip the confirmation prompt
-dorkos install <package> --project <path>         # Install into a specific project
+dorkos marketplace install <package>                      # Install from any configured source
+dorkos marketplace install <package> --marketplace <name> # Install from a specific marketplace
+dorkos marketplace install <package> --source <url>       # Install from an explicit Git or marketplace.json URL
+dorkos marketplace install <package> --force              # Override warning-level conflicts
+dorkos marketplace install <package> --yes                # Skip the confirmation prompt
+dorkos marketplace install <package> --project <path>     # Install into a specific project
 
-dorkos uninstall <package>                        # Remove an installed package
-dorkos uninstall <package> --purge                # Also remove preserved data and secrets
-dorkos uninstall <package> --project <path>        # Uninstall from a specific project
+dorkos marketplace uninstall <package>                    # Remove an installed package
+dorkos marketplace uninstall <package> --purge            # Also remove preserved data and secrets
+dorkos marketplace uninstall <package> --project <path>   # Uninstall from a specific project
 
-dorkos update                                     # Check every installed package, wherever it's installed
-dorkos update <package> --apply                   # Install an available update
-dorkos update <package> --project <path>          # Check or apply within a specific project
+dorkos marketplace installed                              # List every installed package, and where
+dorkos marketplace outdated                               # List only the packages that have an update
+dorkos marketplace update                                 # Check every installed package, wherever it's installed
+dorkos marketplace update <package> --apply               # Install an available update
+dorkos marketplace update --apply                         # Install every available update
+dorkos marketplace update <package> --project <path>      # Check or apply within a specific project
+
+dorkos marketplace add <url> [--name <name>]              # Register a new source (you only)
+dorkos marketplace remove <name>                          # Remove a source (you only)
+dorkos marketplace list                                   # List configured sources
+dorkos marketplace refresh [<name>]                       # Re-fetch one or every source's listing
+dorkos marketplace validate <path-or-url>                 # Validate a marketplace.json before publishing
 ```
 
-For each package, `dorkos update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds.
+`dorkos install`, `dorkos update` and `dorkos uninstall` are shorter names for the same three commands. They take the same options and do exactly the same thing, so use whichever you like.
 
-**`dorkos marketplace`**: manage the marketplace sources that list available packages.
+`installed` shows one row per installation. A package you installed for everyone and for two agents shows up three times, and each row says where it lives: `global`, or the agent's name. A row marked `linked` is a folder linked to a working copy on your computer. DorkOS never updates a linked package, so update its source instead.
 
-```bash
-dorkos marketplace add <url> [--name <name>]   # Register a new source (you only)
-dorkos marketplace remove <name>               # Remove a source (you only)
-dorkos marketplace list                        # List configured sources
-dorkos marketplace refresh [<name>]            # Re-fetch one or every source's listing
-dorkos marketplace validate <path-or-url>      # Validate a marketplace.json before publishing
-```
+For each package, `update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds. Each package is updated where it's installed. A package installed for one agent is shown with that agent's name, like `flow [Alpha]`.
+
+`outdated` asks the same question but only prints the packages that are behind, plus any it couldn't check. It never changes anything. Its exit code tells a script or a scheduled job what it found:
+
+| Exit code | Meaning                                                                                                                                 |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`       | Every installed package is up to date (or nothing is installed).                                                                        |
+| `1`       | At least one package has an update.                                                                                                     |
+| `2`       | DorkOS couldn't tell: nothing has an update, but a package couldn't be checked, or the check itself failed (say, DorkOS isn't running). |
+
+A package linked to a working copy is never checked, so `outdated` lists it under "Linked, not checked" and leaves it out of the exit code. In a script, update only on exit code `1`. Exit code `2` means the check failed, not that anything is behind.
+
+`installed` and `outdated` both take `--project <path>` to look only at what one project sees. `--project .` means the folder you're in, even when DorkOS was started somewhere else. Both also take `--json`, which prints the result for a program to read:
+
+- `installed --json` prints `{ "installed": [...] }`, one entry per installation.
+- `outdated --json` prints `{ "outdated": [...], "unknown": [...], "linked": [...] }`. Each entry is one installation's check, with its name, both versions, where it lives, and a `note` saying why when it couldn't be checked. Packages that are up to date are left out.
 
 `add` and `remove` are yours alone. A source is a place DorkOS will download and run code from, so an agent that runs either one is turned down with a plain refusal telling it to ask you. See [Marketplace sources](/docs/marketplace#marketplace-sources).
 
@@ -175,11 +193,11 @@ dorkos package init <name> --type plugin|agent|skill-pack|adapter
 dorkos package validate <path>
 ```
 
-**`dorkos cache`**: manage the package clone cache at `~/.dork/cache/`.
+**`dorkos cache`**: manage the package clone cache at `~/.dork/cache/`. DorkOS tidies it on its own: after each download it keeps what your installed packages need, plus a waiting update, and removes the rest. `prune` does the same right away. If DorkOS can't read one of your projects (say, on a drive that isn't plugged in), it removes nothing until it can, and `list` tells you so.
 
 ```bash
-dorkos cache list                      # Show cache counts and total size
-dorkos cache prune [--keep-last-n <N>] # Remove older cached package versions (default: keep 1)
+dorkos cache list                      # Show cache counts and size, and whether cleanup is paused
+dorkos cache prune                     # Remove cached packages nothing installed needs
 dorkos cache clear                     # Wipe the entire cache
 ```
 

@@ -73,10 +73,6 @@ vi.mock('../../lib/logger.js', () => ({
   logError: vi.fn(() => ({})),
 }));
 
-vi.mock('@dorkos/shared/manifest', () => ({
-  readManifest: vi.fn().mockResolvedValue(null),
-}));
-
 /**
  * The two install facts `callerAuthor` reads per call — the same stub shape
  * `services/rooms/__tests__/room-capabilities.test.ts` uses, for the same reason:
@@ -107,13 +103,11 @@ vi.mock('../../services/core/config-manager.js', async (importOriginal) => ({
 }));
 
 import { z } from 'zod';
-import { readManifest } from '@dorkos/shared/manifest';
 import {
   composeRegistry,
   defineCapability,
-  initToolGroupGate,
-  manifestToolGroupGrants,
-  resetToolGroupGate,
+  initPermissionGate,
+  resetPermissionGate,
   type CapabilityRegistry,
 } from '../../services/core/capabilities/index.js';
 import { roomsDomain } from '../../services/rooms/room-capabilities.js';
@@ -453,50 +447,51 @@ describe('an unverifiable agent token on the rooms capability surfaces', () => {
 });
 
 /**
- * The per-agent tool-group grant, over the SAME two real surfaces (DOR-1611,
- * spec `rooms-management-tools` §D1 and Acceptance 1–4).
+ * The Rooms permission, over the SAME real surfaces (spec `agent-permissions`
+ * D6; the boundary the retired DOR-1611 grant used to draw).
  *
  * It lives in this file for the reason the header above gives about the rooms
  * refusal: the registry-level tests hand `identity` straight in, and the defect
- * class that matters is in the WIRING. A grant proved only at `registry.invoke`
- * would say nothing about whether the external `/mcp` server reaches that gate,
- * or about what a refusal looks like once it has been through the MCP envelope.
+ * class that matters is in the WIRING. A permission proved only at
+ * `registry.invoke` would say nothing about whether the external `/mcp` server
+ * reaches that gate, or about what a refusal looks like once it has been through
+ * the MCP envelope.
  *
- * No rooms verb declares a `toolGroup` until PR2 ships the five management verbs,
- * so the subject here is a probe capability that declares one and is composed
- * beside the rooms domain, onto the same server, through the same adapters. That
- * is deliberate rather than a shortcut: the boundary is a property of
- * `registry.invoke` and its adapters, not of the rooms domain, and proving it
- * against a fixture is what lets PR2 add the verbs without re-proving it.
+ * The subject is a probe capability in the Rooms area, composed beside the rooms
+ * domain onto the same server, through the same adapters: the boundary is a
+ * property of `registry.invoke` and its adapters, not of the rooms domain.
  *
- * The grant is read by the REAL production lookup (`manifestToolGroupGrants`)
- * through the module mock at the top of this file, so the manifest shape it reads
- * is the manifest shape it will read in production.
+ * The install's config is "no preset chosen" (Unchanged), where Rooms is
+ * Blocked, and the agent's own setting comes from a reader this file moves.
  */
-describe('a capability behind the rooms-management grant, on the real surfaces', () => {
+describe('a capability in the Rooms permission area, on the real surfaces', () => {
   let harness: RoomHarness;
   let registry: CapabilityRegistry;
   /** Set by the probe's handler. Must stay false for every refused row. */
   let probeRan = false;
+  /** The install's preset, moved per test. */
+  let preset: 'full' | null = null;
+  /** What the agent's manifest says about Rooms, or a read that throws. */
+  let agentRooms: 'allowed' | 'blocked' | undefined | Error = undefined;
 
   /** The probe's MCP tool name, as the external adapter registers it. */
   const PROBE_TOOL = 'grant_probe';
 
-  /** A capability that declares the hard group and nothing else remarkable. */
+  /** A capability in the Rooms area and nothing else remarkable. */
   const probeDomain = {
     name: 'grantprobe',
     capabilities: [
       defineCapability({
         id: 'grantprobe.run',
         title: 'Grant probe',
-        description: 'A fixture capability standing in for the five rooms-management verbs.',
+        description: 'A fixture capability standing in for the rooms-management verbs.',
         tier: 'act' as const,
+        area: 'rooms' as const,
         input: z.object({}),
         output: z.unknown(),
         surfaces: {
           mcp: { toolName: PROBE_TOOL, servers: ['in-session' as const, 'external' as const] },
         },
-        toolGroup: 'roomsManage' as const,
         invoke: async () => {
           probeRan = true;
           return { ok: true };
@@ -505,28 +500,9 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
     ],
   };
 
-  /** The manifest `readManifest` answers with, for the given grant state. */
-  function manifestGranting(roomsManage?: boolean) {
-    return {
-      id: '01M054RMQAMZPXHWHRKPGY9Z87',
-      name: 'ana',
-      description: '',
-      runtime: 'claude-code',
-      capabilities: [],
-      behavior: { responseMode: 'always' },
-      registeredAt: '2026-08-16T00:00:00.000Z',
-      registeredBy: 'test',
-      personaEnabled: true,
-      enabledToolGroups: roomsManage === undefined ? {} : { roomsManage },
-      mcpServers: [],
-    };
-  }
-
-  /** Point the mocked manifest reader at a grant state for the next call. */
-  function grantIs(roomsManage?: boolean): void {
-    vi.mocked(readManifest).mockResolvedValue(
-      manifestGranting(roomsManage) as unknown as Awaited<ReturnType<typeof readManifest>>
-    );
+  /** Point the agent's Rooms setting at a state for the next call. */
+  function grantIs(state?: boolean): void {
+    agentRooms = state === undefined ? undefined : state ? 'allowed' : 'blocked';
   }
 
   beforeEach(() => {
@@ -534,22 +510,26 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
     installState.ownerId = null;
     installState.loginEnabled = false;
     resetAgentIdentityService();
-    resetToolGroupGate();
+    preset = null;
+    agentRooms = undefined;
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
     initAgentIdentityService(harness.db);
     registry = composeRegistry([roomsDomain, probeDomain], {
       logger: { debug() {}, info() {}, warn() {}, error() {} },
       roomDeps: { rooms: harness.service },
     });
-    // The REAL production lookup, over the mocked manifest reader.
-    initToolGroupGate({ grants: manifestToolGroupGrants() });
-    vi.mocked(readManifest).mockResolvedValue(null);
+    initPermissionGate({
+      readConfig: () => ({ preset, defaults: { areas: {}, actions: {} } }),
+      readAgentPermissions: async () => {
+        if (agentRooms instanceof Error) throw agentRooms;
+        return agentRooms ? { areas: { rooms: agentRooms } } : undefined;
+      },
+    });
   });
 
   afterEach(() => {
     resetAgentIdentityService();
-    resetToolGroupGate();
-    vi.mocked(readManifest).mockResolvedValue(null);
+    resetPermissionGate();
   });
 
   /** A token that really does resolve to Ana. */
@@ -625,7 +605,7 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       return JSON.parse(body.result!.content![0]!.text!);
     }
 
-    it('refuses an identified agent whose manifest does not carry the grant', async () => {
+    it('refuses an identified agent that inherits Rooms Blocked', async () => {
       grantIs(undefined);
       const token = await anaToken();
 
@@ -634,15 +614,17 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       expect(payload).toMatchObject({
         status: 'denied',
         capabilityId: 'grantprobe.run',
-        reason: 'tool_group_disabled',
-        // No approval can ever unlock this, so the model must not loop asking.
-        approvable: false,
+        reason: 'permission_blocked',
+        // A person could say yes, but only if the agent asks on purpose: the
+        // direct call raises no card and names the request tool instead.
+        approvable: true,
       });
-      expect(String(payload.message)).toContain('Manage rooms');
+      expect(String(payload.message)).toContain('Rooms is blocked');
+      expect(String(payload.message)).toContain('request_permission');
       expect(probeRan).toBe(false);
     });
 
-    it('runs the same call for the same agent once the grant is on', async () => {
+    it('runs the same call for the same agent once its Rooms is Allowed', async () => {
       // The discrimination pair. The ONLY difference between this row and the one
       // above is the value in the manifest — without it, a refusal would also pass
       // for a tool that was simply broken.
@@ -655,33 +637,36 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       expect(probeRan).toBe(true);
     });
 
-    it('refuses `roomsManage: false` as firmly as an absent key', async () => {
+    it('refuses an agent set to Blocked even when the defaults allow Rooms', async () => {
       grantIs(false);
+      preset = 'full';
       const token = await anaToken();
 
       expect(refusalPayload(await rpc(toolCall(PROBE_TOOL, {}), token))).toMatchObject({
-        reason: 'tool_group_disabled',
+        reason: 'permission_blocked',
       });
       expect(probeRan).toBe(false);
     });
 
-    it('refuses a caller that presented no agent header at all', async () => {
-      // Dropping the header is the cheapest attack there is, and it must narrow
-      // rather than widen: an unidentified caller holds no grant.
+    it('gives a caller that presented no agent header the defaults, never the agent layer', async () => {
+      // Dropping the header must never reach an agent's own Allowed (spec D11):
+      // an unidentified caller resolves against the install's defaults only,
+      // which are Blocked here.
       grantIs(true);
 
       expect(refusalPayload(await rpc(toolCall(PROBE_TOOL, {})))).toMatchObject({
-        reason: 'tool_group_disabled',
+        reason: 'permission_blocked',
       });
       expect(probeRan).toBe(false);
     });
 
     it('refuses when the manifest read THROWS, rather than reading a broken disk as a yes', async () => {
-      vi.mocked(readManifest).mockRejectedValue(new Error('EIO'));
+      agentRooms = new Error('EIO');
+      preset = 'full';
       const token = await anaToken();
 
       expect(refusalPayload(await rpc(toolCall(PROBE_TOOL, {}), token))).toMatchObject({
-        reason: 'tool_group_disabled',
+        reason: 'permission_blocked',
       });
       expect(probeRan).toBe(false);
     });
@@ -735,7 +720,7 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       expect(names).toContain(PROBE_TOOL);
     });
 
-    it('refuses an identified agent whose manifest does not carry the grant', async () => {
+    it('refuses an identified agent that inherits Rooms Blocked', async () => {
       grantIs(undefined);
 
       const result = await inSessionProbe(ANA_IDENTITY);
@@ -745,13 +730,13 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       expect(payload).toMatchObject({
         status: 'denied',
         capabilityId: 'grantprobe.run',
-        reason: 'tool_group_disabled',
-        approvable: false,
+        reason: 'permission_blocked',
+        approvable: true,
       });
       expect(probeRan).toBe(false);
     });
 
-    it('runs the same call for the same agent once the grant is on', async () => {
+    it('runs the same call for the same agent once its Rooms is Allowed', async () => {
       grantIs(true);
 
       const result = await inSessionProbe(ANA_IDENTITY);
@@ -766,7 +751,7 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       const result = await inSessionProbe();
 
       const payload = JSON.parse(result.content[0]!.text!);
-      expect(payload.reason).toBe('tool_group_disabled');
+      expect(payload.reason).toBe('permission_blocked');
       expect(probeRan).toBe(false);
     });
   });
@@ -781,7 +766,7 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
       return server;
     }
 
-    it('answers 403 — refused, and no retry will change that', async () => {
+    it('answers 403 — refused, with no card minted', async () => {
       grantIs(undefined);
       const token = await anaToken();
 
@@ -790,15 +775,15 @@ describe('a capability behind the rooms-management grant, on the real surfaces',
         .set('X-DorkOS-Agent', token)
         .send({});
 
-      // 403, not 202: a 202 would tell the caller to come back after a person
-      // decided something, and there is nothing here for a person to decide.
+      // 403, not 202: a direct call raises no card, so there is nothing to come
+      // back for. The agent may ask on purpose, with the request tool.
       expect(res.status).toBe(403);
-      expect(res.body.reason).toBe('tool_group_disabled');
-      expect(res.body.approvable).toBe(false);
+      expect(res.body.reason).toBe('permission_blocked');
+      expect(res.body.approvable).toBe(true);
       expect(probeRan).toBe(false);
     });
 
-    it('answers 200 for the same agent once the grant is on', async () => {
+    it('answers 200 for the same agent once its Rooms is Allowed', async () => {
       grantIs(true);
       const token = await anaToken();
 

@@ -11,7 +11,8 @@
  *   - `apps/server/src/services/marketplace/types.ts` — PermissionPreview, InstallResult,
  *     InstallRequest, MarketplaceSource, ConflictReport
  *   - `apps/server/src/services/marketplace/flows/uninstall.ts` — UninstallResult
- *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult
+ *   - `apps/server/src/services/marketplace/flows/update.ts` — UpdateResult, UpdateCheckResult,
+ *     InstallationUpdateCheck, InstallationUpdatesResult
  *   - `apps/server/src/services/shapes/apply-shape.ts` — ApplyShapeResult, AppliedShape,
  *     OfferedAgent, ShapeLayout (DOR-355 §5/§9)
  *   - `apps/server/src/services/shapes/shape-services.ts` — InstalledShapeSummary
@@ -511,16 +512,6 @@ export interface UninstallResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Options for `POST /api/marketplace/packages/:name/update`.
- */
-export interface UpdateOptions {
-  /** Apply the update (default: advisory check only). */
-  apply?: boolean;
-  /** Project path for project-local updates. */
-  projectPath?: string;
-}
-
-/**
  * Where a package's version came from, in Claude Code's order: the version
  * the package declares, its marketplace entry's, or the commit it was fetched
  * at. Declared here as a literal union because this package does not depend
@@ -562,6 +553,77 @@ export interface UpdateResult {
   checks: UpdateCheckResult[];
   /** Populated only when `apply: true`; one entry per successful reinstall. */
   applied: InstallResult[];
+}
+
+/**
+ * One installation's update check, returned by `GET /api/marketplace/updates`
+ * and `POST /api/marketplace/updates`: the check, the installation's identity in
+ * the installed list's own field names (`installPath` joins the two), and after
+ * an apply, what happened to it.
+ *
+ * Mirrors `InstallationUpdateCheck` in `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+export interface InstallationUpdateCheck extends UpdateCheckResult {
+  /** Absolute path to the installation; unique per installation, unlike the name. */
+  installPath: string;
+  /** The installed package's type. */
+  type: MarketplacePackageType;
+  /** `global`, or `agent-local` / `override` for a project or agent install. */
+  scope: PackageScope;
+  /** The project directory holding a non-global installation. */
+  agentPath?: string;
+  /** Registered agent id owning `agentPath`, when known. */
+  agentId?: string;
+  /** Registered agent display name owning `agentPath`, when known. */
+  agentName?: string;
+  /**
+   * The installation is a symbolic link to a developer's working copy. Present,
+   * and `true`, only then: its check is always `unknown` and it is never
+   * reinstalled, so this tells "not checked, by design" from "the check failed".
+   */
+  linked?: true;
+  /** Set when an apply reinstalled this installation: what is installed now. */
+  applied?: InstallResult;
+  /** Set when an apply tried to reinstall this installation and failed: why. */
+  applyError?: string;
+}
+
+/**
+ * One installation an apply is asked to update, as a check reported it.
+ *
+ * An object rather than a bare path so a later binding can travel with its
+ * installation (DOR-2306 will bind each apply to the disclosure a person saw
+ * for that installation's new version).
+ */
+export interface ApplyUpdateTarget {
+  /** The installation, exactly as a check reported it. */
+  installPath: string;
+}
+
+/**
+ * Options for `POST /api/marketplace/updates`, which always applies: the
+ * transport sends `apply: true` itself.
+ *
+ * `targets` is required and non-empty, so a client can only ever apply the
+ * installations a check reported and a person confirmed, never an unnamed
+ * "update everything". The route's `names` filter is left out on purpose: no
+ * client surface selects by name.
+ */
+export interface ApplyUpdatesOptions {
+  /** The installations to update. */
+  targets: [ApplyUpdateTarget, ...ApplyUpdateTarget[]];
+  /** The project whose view the targets came from; omit for the every-scope view. */
+  projectPath?: string;
+}
+
+/**
+ * The all-packages update result: one check per installation in view, in scan
+ * order (global installations first, then each agent's).
+ *
+ * Mirrors `InstallationUpdatesResult` in `apps/server/src/services/marketplace/flows/update.ts`.
+ */
+export interface InstallationUpdatesResult {
+  checks: InstallationUpdateCheck[];
 }
 
 // ---------------------------------------------------------------------------
@@ -626,6 +688,12 @@ export interface InstalledPackage {
    * package is on disk but incomplete, and name the command that fixes it.
    */
   dependencyWarnings?: string[];
+  /**
+   * The install folder is a symbolic link to a developer's working copy.
+   * Present, and `true`, only then. Such an install is never updated in place:
+   * its update check is `unknown` and says to update the source instead.
+   */
+  linked?: true;
 }
 
 // ---------------------------------------------------------------------------

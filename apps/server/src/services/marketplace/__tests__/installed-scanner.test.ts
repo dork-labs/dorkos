@@ -2,12 +2,13 @@
  * @vitest-environment node
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   scanInstalledPackages,
   scanInstallationsAcrossScopes,
+  scanInstallationRecords,
   computeProvides,
   readInstalledIdentity,
 } from '../installed-scanner.js';
@@ -634,6 +635,185 @@ describe('scanInstallationsAcrossScopes', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].agentId).toBe('a');
+  });
+});
+
+describe('scanInstallationRecords', () => {
+  let dorkHome: string;
+  let agentA: string;
+
+  beforeEach(async () => {
+    dorkHome = await mkdtemp(join(tmpdir(), 'dorkos-records-'));
+    agentA = await mkdtemp(join(tmpdir(), 'dorkos-records-agent-'));
+  });
+
+  afterEach(async () => {
+    await rm(dorkHome, { recursive: true, force: true });
+    await rm(agentA, { recursive: true, force: true });
+  });
+
+  it('keeps the declared version and the whole sidecar the update check needs', async () => {
+    // Purpose: the listing used to read both and throw them away, so the
+    // update check had to walk every scope a second time to get them back.
+    const pluginDir = join(dorkHome, 'plugins', 'flow');
+    await writeManifest(pluginDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '0.6.0',
+    });
+    await mkdir(join(pluginDir, '.claude-plugin'), { recursive: true });
+    await writeFile(
+      join(pluginDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'flow', version: '0.7.2' })
+    );
+    await writeMetadata(pluginDir, {
+      name: 'flow',
+      version: '0.7.2',
+      type: 'plugin',
+      installedFrom: 'dorkos-community',
+      installedAt: '2026-09-01T00:00:00.000Z',
+      commitSha: 'a'.repeat(40),
+      entryVersion: '0.7.2',
+    });
+
+    const [record] = await scanInstallationRecords(dorkHome, { agents: [] });
+
+    expect(record).toMatchObject({
+      kind: 'plugins',
+      declaredVersion: '0.7.2',
+      metadata: { commitSha: 'a'.repeat(40), entryVersion: '0.7.2' },
+      package: { name: 'flow', version: '0.7.2', scope: 'global', installPath: pluginDir },
+    });
+  });
+
+  it('reports no declared version for a Claude-Code-only package that states none', async () => {
+    // Purpose: a synthesized 0.0.0 must never read as a real version, or the
+    // check would compare against a number nobody declared.
+    const pluginDir = join(dorkHome, 'plugins', 'bare');
+    await mkdir(join(pluginDir, '.claude-plugin'), { recursive: true });
+    await writeFile(
+      join(pluginDir, '.claude-plugin', 'plugin.json'),
+      JSON.stringify({ name: 'bare', description: 'no version here' })
+    );
+
+    const [record] = await scanInstallationRecords(dorkHome, { agents: [] });
+
+    expect(record?.package.name).toBe('bare');
+    expect(record?.declaredVersion).toBeUndefined();
+    expect(record?.metadata).toBeNull();
+  });
+
+  it('gives one record per installation across scopes, with the agent identity', async () => {
+    // Purpose: the all-packages update door checks exactly what the installed
+    // list shows, so the same package in two places is two records.
+    for (const root of [
+      join(dorkHome, 'plugins', 'flow'),
+      join(agentA, '.dork', 'plugins', 'flow'),
+    ]) {
+      await writeManifest(root, {
+        schemaVersion: 1,
+        type: 'plugin',
+        name: 'flow',
+        version: '1.0.0',
+      });
+    }
+
+    const records = await scanInstallationRecords(dorkHome, {
+      agents: [{ projectPath: agentA, id: 'a', name: 'Alpha' }],
+    });
+
+    expect(records.map((r) => r.package.scope)).toEqual(['global', 'override']);
+    expect(records[1]?.package).toMatchObject({
+      agentPath: agentA,
+      agentId: 'a',
+      agentName: 'Alpha',
+    });
+  });
+
+  it('marks a symlinked install as linked, and a fetched one as not', async () => {
+    // Purpose: a developer's working copy linked into place must be told apart
+    // from a checkout, so an update can never replace it with a fresh fetch.
+    const source = join(agentA, 'working-copy');
+    await writeManifest(source, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'dev',
+      version: '1.0.0',
+    });
+    await mkdir(join(dorkHome, 'plugins'), { recursive: true });
+    await symlink(source, join(dorkHome, 'plugins', 'dev'));
+    await writeManifest(join(dorkHome, 'plugins', 'fetched'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'fetched',
+      version: '1.0.0',
+    });
+
+    const records = await scanInstallationRecords(dorkHome, { agents: [] });
+
+    expect(Object.fromEntries(records.map((r) => [r.package.name, r.linked]))).toEqual({
+      dev: true,
+      fetched: false,
+    });
+  });
+
+  it('flags a symlinked install on the listing, and leaves a fetched one unflagged', async () => {
+    // Purpose: `GET /installed` (and `dorkos marketplace installed`) must say
+    // which installs are a developer's linked working copy, since those are
+    // never updated in place. The flag is present only when true, so a fetched
+    // install's listing entry is unchanged.
+    const source = join(agentA, 'working-copy');
+    await writeManifest(source, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'dev',
+      version: '1.0.0',
+    });
+    await mkdir(join(dorkHome, 'plugins'), { recursive: true });
+    await symlink(source, join(dorkHome, 'plugins', 'dev'));
+    await writeManifest(join(dorkHome, 'plugins', 'fetched'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'fetched',
+      version: '1.0.0',
+    });
+
+    const listed = await scanInstallationsAcrossScopes(dorkHome, []);
+
+    expect(listed.find((p) => p.name === 'dev')?.linked).toBe(true);
+    expect(listed.find((p) => p.name === 'fetched')).not.toHaveProperty('linked');
+  });
+
+  it("gives one project's merged view when asked for a project", async () => {
+    // Purpose: with a project, a project install shadows the global one in the
+    // same root, exactly as the installed list's project view does.
+    await writeManifest(join(dorkHome, 'plugins', 'flow'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '1.0.0',
+    });
+    await writeManifest(join(dorkHome, 'plugins', 'other'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'other',
+      version: '1.0.0',
+    });
+    await writeManifest(join(agentA, '.dork', 'plugins', 'flow'), {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'flow',
+      version: '2.0.0',
+    });
+
+    const records = await scanInstallationRecords(dorkHome, { projectPath: agentA });
+
+    expect(records.map((r) => [r.package.name, r.package.scope, r.package.version])).toEqual([
+      ['flow', 'override', '2.0.0'],
+      ['other', 'global', '1.0.0'],
+    ]);
+    expect(records[0]?.package.agentPath).toBe(agentA);
   });
 });
 
