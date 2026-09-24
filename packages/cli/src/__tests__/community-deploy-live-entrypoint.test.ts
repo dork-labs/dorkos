@@ -116,4 +116,31 @@ describe('credentialed live gate entrypoint', () => {
       /bootstrap = await whileLauncherRuns\(resumed, capture\.next\(TIMEOUT_MS\), \{\s*ms: DELIVERED_CAPTURE_MS,\s*step: 'bootstrap-capture-after-launcher-exit',\s*\}\)/u
     );
   });
+
+  // The provenance receipt (DOR-2238 phase 2) is only worth anything if it reads the resources
+  // before cleanup deletes them, and asks about the leftover network only after. A real run costs
+  // money, so this pins the order in main; the probes themselves are unit-tested beside them.
+  it('records the provenance receipt before cleanup and the network check after it', async () => {
+    const source = await readFile(
+      resolve(import.meta.dirname, '../../scripts/test-community-deploy-live.ts'),
+      'utf8'
+    );
+    const main = source.slice(source.indexOf('async function main()'));
+    const probes = main.indexOf(
+      'provenance = await guardCommunityLiveProvenance(() =>\n        probeCommunityLiveProvenance(journal, {'
+    );
+    const cleanup = main.indexOf('await cleanupCommunityLiveGate(');
+    const cleanedUp = main.indexOf('cleanedUp = true;');
+    const network = main.indexOf('await probeCommunityLiveNetworkAfterCleanup(');
+    expect(probes).toBeGreaterThan(0);
+    expect(probes).toBeLessThan(cleanup);
+    expect(network).toBeGreaterThan(cleanedUp);
+    expect(main).toMatch(/provenance: \{ \.\.\.provenance, networkAfterCleanup \}/u);
+    expect(main).toContain("args: ['ssh', 'console', '--app', name, '--command', 'true']");
+    // Every probe call, including the unknown-app name, runs inside the guard's callback.
+    const guarded = main.slice(probes, cleanup);
+    expect(guarded).toContain('unknownAppName: () =>');
+    expect(main.slice(0, probes)).not.toContain('probeCommunityLiveProvenance(');
+    expect(main.slice(0, probes)).not.toContain('unknownAppName');
+  });
 });
