@@ -154,6 +154,7 @@ dorkos marketplace outdated                               # List only the packag
 dorkos marketplace update                                 # Check every installed package, wherever it's installed
 dorkos marketplace update <package> --apply               # Install an available update
 dorkos marketplace update --apply                         # Install every available update
+dorkos marketplace update <package> --project <path>      # Check or apply within a specific project
 
 dorkos marketplace add <url> [--name <name>]              # Register a new source (you only)
 dorkos marketplace remove <name>                          # Remove a source (you only)
@@ -170,13 +171,18 @@ For each package, `update` tells you one of three things: a newer version is ava
 
 `outdated` asks the same question but only prints the packages that are behind, plus any it couldn't check. It never changes anything. Its exit code tells a script or a scheduled job what it found:
 
-| Exit code | Meaning                                                                                                      |
-| --------- | ------------------------------------------------------------------------------------------------------------ |
-| `0`       | Every installed package is up to date (or nothing is installed).                                             |
-| `1`       | At least one package has an update.                                                                          |
-| `2`       | DorkOS couldn't tell: a package couldn't be checked, or the check itself failed (say, DorkOS isn't running). |
+| Exit code | Meaning                                                                                                                                 |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`       | Every installed package is up to date (or nothing is installed).                                                                        |
+| `1`       | At least one package has an update.                                                                                                     |
+| `2`       | DorkOS couldn't tell: nothing has an update, but a package couldn't be checked, or the check itself failed (say, DorkOS isn't running). |
 
-In a script, update only on exit code `1`. Exit code `2` means the check failed, not that anything is behind. `installed` and `outdated` both take `--project <path>` to look only at what one project sees, and `--json` to print the result for a program to read.
+A package linked to a working copy is never checked, so `outdated` lists it under "Linked, not checked" and leaves it out of the exit code. In a script, update only on exit code `1`. Exit code `2` means the check failed, not that anything is behind.
+
+`installed` and `outdated` both take `--project <path>` to look only at what one project sees. `--project .` means the folder you're in, even when DorkOS was started somewhere else. Both also take `--json`, which prints the result for a program to read:
+
+- `installed --json` prints `{ "installed": [...] }`, one entry per installation.
+- `outdated --json` prints `{ "outdated": [...], "unknown": [...], "linked": [...] }`. Each entry is one installation's check, with its name, both versions, where it lives, and a `note` saying why when it couldn't be checked. Packages that are up to date are left out.
 
 `add` and `remove` are yours alone. A source is a place DorkOS will download and run code from, so an agent that runs either one is turned down with a plain refusal telling it to ask you. See [Marketplace sources](/docs/marketplace#marketplace-sources).
 

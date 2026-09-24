@@ -5,7 +5,7 @@
  * and prints one row per installation: a package installed globally and on two
  * agents is three rows, each naming where it lives. Without `--project` that is
  * every scope; with it, the view one project sees (global installs plus its
- * own). `--json` prints the server's rows untouched.
+ * own). `--json` prints `{ installed }`, the server's rows untouched.
  *
  * @module commands/marketplace-installed
  */
@@ -14,19 +14,26 @@ import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
 import { apiCall } from '../lib/api-client.js';
 import { placeOf } from '../lib/installation-label.js';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
+import { resolveProjectFlag } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runMarketplaceInstalled}. */
 export interface MarketplaceInstalledArgs {
   /** List this project's view (global installs plus its own) instead of every scope. */
   projectPath?: string;
-  /** Print the server's rows as JSON instead of a table. */
+  /** Print `{ installed }` as JSON instead of a table. */
   json: boolean;
 }
 
 /** Response shape for `GET /api/marketplace/installed`. */
 interface InstalledResponseBody {
   packages: InstalledPackage[];
+}
+
+/** The `--json` document: an object, like `outdated`'s, so fields can be added later. */
+export interface InstalledJson {
+  /** The server's rows, untouched, in its order: one per installation. */
+  installed: InstalledPackage[];
 }
 
 /** One-line usage string surfaced in error messages. */
@@ -55,7 +62,7 @@ export function parseMarketplaceInstalledArgs(rawArgs: string[]): MarketplaceIns
   }
   const { values } = parsed;
   return {
-    projectPath: typeof values.project === 'string' ? values.project : undefined,
+    projectPath: resolveProjectFlag(values.project),
     json: Boolean(values.json),
   };
 }
@@ -116,7 +123,7 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
   }
 
   if (args.json) {
-    printJson(packages);
+    printJson({ installed: packages } satisfies InstalledJson);
     return 0;
   }
   if (packages.length === 0) {

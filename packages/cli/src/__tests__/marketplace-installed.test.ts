@@ -157,15 +157,18 @@ describe('runMarketplaceInstalled', () => {
     expect(printed(logSpy)).toContain('No packages installed.');
   });
 
-  it('--json writes the server rows untouched and nothing else', async () => {
-    // Purpose: the JSON shape is the API's own installed list, for scripts.
+  it('--json writes { installed } with the server rows untouched, and nothing else', async () => {
+    // Purpose: the JSON shape is a contract scripts read: an object, like
+    // outdated's, holding the API's own rows.
     fetchMock.mockResolvedValueOnce(mockResponse(200, { packages: [GLOBAL_FLOW, ALPHA_FLOW] }));
 
     const code = await runMarketplaceInstalled({ json: true });
 
     expect(code).toBe(0);
     expect(writeSpy).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(writeSpy.mock.calls[0]?.[0]))).toEqual([GLOBAL_FLOW, ALPHA_FLOW]);
+    expect(JSON.parse(String(writeSpy.mock.calls[0]?.[0]))).toEqual({
+      installed: [GLOBAL_FLOW, ALPHA_FLOW],
+    });
     expect(logSpy).not.toHaveBeenCalled();
   });
 

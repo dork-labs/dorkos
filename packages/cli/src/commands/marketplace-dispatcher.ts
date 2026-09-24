@@ -148,7 +148,7 @@ is installed. A package installed globally and for two agents is three rows.
 
 Options:
       --project <path>  List what this project sees (global installs plus its own)
-      --json            Print the rows as JSON instead of a table
+      --json            Print { "installed": [...] } instead of a table
 
 Examples:
   dorkos marketplace installed
@@ -163,14 +163,17 @@ to install the updates.
 
 Options:
       --project <path>  Check what this project sees (global installs plus its own)
-      --json            Print { "outdated": [...], "unknown": [...] } instead of lines
+      --json            Print { "outdated": [...], "unknown": [...], "linked": [...] }
+                        instead of lines
 
 Exit codes:
   0  Every installed package is up to date (or nothing is installed)
   1  At least one package has an update
-  2  Could not tell: nothing is known to be out of date, but a package could
-     not be checked, or the check itself failed (for example, DorkOS is not
-     running)
+  2  Could not tell: nothing has an update, but a package could not be
+     checked, or the check itself failed (for example, DorkOS is not running)
+
+A package linked to a working copy on this computer is never checked. It is
+listed under "Linked, not checked" and does not change the exit code.
 
 Examples:
   dorkos marketplace outdated

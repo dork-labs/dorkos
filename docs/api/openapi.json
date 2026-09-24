@@ -19476,6 +19476,13 @@
                           "agentName": {
                             "type": "string"
                           },
+                          "linked": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
+                          },
                           "applied": {
                             "type": "object",
                             "properties": {
@@ -19734,6 +19741,13 @@
                           },
                           "agentName": {
                             "type": "string"
+                          },
+                          "linked": {
+                            "type": "boolean",
+                            "enum": [
+                              true
+                            ],
+                            "description": "Present only for an install linked to a developer's working copy: always unknown, never reinstalled."
                           },
                           "applied": {
                             "type": "object",

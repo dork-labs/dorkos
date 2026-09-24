@@ -43,6 +43,17 @@ const CURRENT = check({
   status: 'current',
 });
 
+const LINKED = check({
+  packageName: 'dev',
+  installPath: '/home/u/.dork/plugins/dev',
+  latestVersion: '',
+  hasUpdate: false,
+  marketplace: '',
+  status: 'unknown',
+  note: 'linked install — update its source instead',
+  linked: true,
+});
+
 const UNKNOWN = check({
   packageName: 'offline-pkg',
   installPath: '/home/u/.dork/plugins/offline-pkg',
@@ -215,24 +226,48 @@ describe('runMarketplaceOutdated', () => {
     expect(out).toContain('1 update available, 1 could not be checked.');
   });
 
-  it('prints a linked install as could-not-check with its reason', async () => {
-    // Purpose: a linked working copy is never reported stale or current.
-    serverAnswers([
-      check({
-        packageName: 'dev',
-        installPath: '/home/u/.dork/plugins/dev',
-        latestVersion: '',
-        hasUpdate: false,
-        marketplace: '',
-        status: 'unknown',
-        note: 'linked install — update its source instead',
-      }),
-    ]);
+  it('sets a linked install apart and leaves it out of the exit code', async () => {
+    // Purpose: a linked working copy is never checked, by design. Counting it
+    // as "could not check" would make `outdated` exit 2 forever on any machine
+    // with a linked package, so a script could never read a clean 0.
+    serverAnswers([CURRENT, LINKED]);
 
     const code = await runMarketplaceOutdated({ json: false });
 
-    expect(code).toBe(2);
-    expect(printed(logSpy)).toContain('dev: linked install — update its source instead');
+    expect(code).toBe(0);
+    const out = printed(logSpy);
+    expect(out).toContain('Linked, not checked:');
+    expect(out).toContain('  dev: linked install — update its source instead');
+    expect(out).not.toContain('Could not check:');
+    expect(out).toContain('1 linked, not checked. Everything else is up to date (1 checked).');
+  });
+
+  it('still exits 1 for a stale package beside a linked one', async () => {
+    serverAnswers([check(), LINKED]);
+
+    expect(await runMarketplaceOutdated({ json: false })).toBe(1);
+    expect(printed(logSpy)).toContain('1 update available, 1 linked, not checked.');
+  });
+
+  it('prints the caveat note under a stale row', async () => {
+    // Purpose: a note on a known answer (a rollback, a default-branch check)
+    // must reach the person, indented under its row.
+    serverAnswers([check({ note: 'checked the default branch' })]);
+
+    await runMarketplaceOutdated({ json: false });
+
+    const lines = logSpy.mock.calls.map((c) => String(c[0]));
+    const row = lines.indexOf('flow  0.7.2 → 0.7.3  (dorkos-community)');
+    expect(row).toBeGreaterThanOrEqual(0);
+    expect(lines[row + 1]).toBe('  checked the default branch');
+  });
+
+  it('quotes a project path in the hint so it pastes back into a shell', async () => {
+    serverAnswers([check()]);
+
+    await runMarketplaceOutdated({ projectPath: '/work/my app', json: false });
+
+    expect(printed(logSpy)).toContain("dorkos marketplace update --apply --project '/work/my app'");
   });
 
   it('exits 2 with the reason on stderr when the server cannot be reached', async () => {
@@ -265,7 +300,9 @@ describe('runMarketplaceOutdated', () => {
   it('says the server is older than the CLI when it has no updates door', async () => {
     // Purpose: a DorkOS started before this CLI was installed answers 404 for
     // the route; "Not found" alone tells a person nothing they can act on.
-    fetchMock.mockResolvedValueOnce(mockResponse(404, { error: 'Not found' }));
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(404, { error: 'Not found', code: 'API_NOT_FOUND' })
+    );
 
     const code = await runMarketplaceOutdated({ json: false });
 
@@ -282,16 +319,16 @@ describe('runMarketplaceOutdated', () => {
       return JSON.parse(String(writeSpy.mock.calls[0]?.[0]));
     }
 
-    it('writes the stale and unchecked installations, as the server sent them, and nothing else', async () => {
-      // Purpose: the JSON shape is a contract scripts read: two arrays of the
+    it('writes the stale, unchecked and linked installations, as the server sent them', async () => {
+      // Purpose: the JSON shape is a contract scripts read: three arrays of the
       // server's own check objects, current ones left out.
       const stale = check();
-      serverAnswers([stale, CURRENT, UNKNOWN]);
+      serverAnswers([stale, CURRENT, UNKNOWN, LINKED]);
 
       const code = await runMarketplaceOutdated({ json: true });
 
       expect(code).toBe(1);
-      expect(written()).toEqual({ outdated: [stale], unknown: [UNKNOWN] });
+      expect(written()).toEqual({ outdated: [stale], unknown: [UNKNOWN], linked: [LINKED] });
       expect(logSpy).not.toHaveBeenCalled();
     });
 
@@ -301,7 +338,7 @@ describe('runMarketplaceOutdated', () => {
       const code = await runMarketplaceOutdated({ json: true });
 
       expect(code).toBe(0);
-      expect(written()).toEqual({ outdated: [], unknown: [] });
+      expect(written()).toEqual({ outdated: [], unknown: [], linked: [] });
     });
 
     it('uses the same exit codes as the human output', async () => {

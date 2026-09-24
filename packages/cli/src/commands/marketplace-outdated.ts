@@ -16,6 +16,10 @@
  *   installation could not be checked, or the request itself failed (the server
  *   is not running, refused the request, or the arguments were wrong).
  *
+ * A linked install (a folder linked to a working copy, `linked: true`) is never
+ * checked by design. It is printed under its own heading and counts toward no
+ * exit code, so a machine with one can still answer a clean `0`.
+ *
  * @module commands/marketplace-outdated
  */
 import { parseArgs } from 'node:util';
@@ -23,16 +27,22 @@ import type {
   InstallationUpdateCheck,
   InstallationUpdatesResult,
 } from '@dorkos/shared/marketplace-schemas';
-import { ApiError, apiCall } from '../lib/api-client.js';
+import { apiCall } from '../lib/api-client.js';
 import { formatUpdateLine, labelOf } from '../lib/installation-label.js';
 import { printError, printJson } from '../lib/operator-output.js';
+import {
+  isOlderServer,
+  OLDER_SERVER_MESSAGE,
+  resolveProjectFlag,
+  shellWord,
+} from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runMarketplaceOutdated}. */
 export interface MarketplaceOutdatedArgs {
   /** Check this project's view (global installs plus its own) instead of every scope. */
   projectPath?: string;
-  /** Print `{ outdated, unknown }` as JSON instead of lines. */
+  /** Print `{ outdated, unknown, linked }` as JSON instead of lines. */
   json: boolean;
 }
 
@@ -50,8 +60,10 @@ export const OUTDATED_EXIT = {
 export interface OutdatedJson {
   /** Every installation whose check is `update-available`, in scan order. */
   outdated: InstallationUpdateCheck[];
-  /** Every installation whose check is `unknown`, each with its `note`. */
+  /** Every installation whose check is `unknown` for a reason, each with its `note`. */
   unknown: InstallationUpdateCheck[];
+  /** Every linked installation (`linked: true`): never checked, never in the exit code. */
+  linked: InstallationUpdateCheck[];
 }
 
 /** One-line usage string surfaced in error messages. */
@@ -81,7 +93,7 @@ export function parseMarketplaceOutdatedArgs(rawArgs: string[]): MarketplaceOutd
   }
   const { values } = parsed;
   return {
-    projectPath: typeof values.project === 'string' ? values.project : undefined,
+    projectPath: resolveProjectFlag(values.project),
     json: Boolean(values.json),
   };
 }
@@ -98,21 +110,20 @@ export async function runMarketplaceOutdated(args: MarketplaceOutdatedArgs): Pro
     const query = args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : '';
     result = await apiCall<InstallationUpdatesResult>('GET', `/api/marketplace/updates${query}`);
   } catch (err) {
-    // The route has no 404 of its own, so a 404 is a DorkOS started before this
-    // CLI was installed: say that, rather than the router's bare "Not found".
-    if (err instanceof ApiError && err.status === 404) {
-      console.error(
-        'Error: the running DorkOS is older than this CLI and cannot check for updates ' +
-          'this way. Restart DorkOS, then try again.'
-      );
-    } else {
-      printError(err);
-    }
+    // The route has no 404 of its own, so one is a DorkOS started before this
+    // CLI: say that, rather than the router's bare "Not found".
+    if (isOlderServer(err)) console.error(OLDER_SERVER_MESSAGE);
+    else printError(err);
     return OUTDATED_EXIT.unknown;
   }
 
+  // A linked install is never checked, by design, so it is neither stale nor
+  // "could not check": it is set apart and left out of the exit code, or any
+  // machine with a linked package would answer 2 forever.
   const outdated = result.checks.filter((c) => c.status === 'update-available');
-  const unknown = result.checks.filter((c) => c.status === 'unknown');
+  const linked = result.checks.filter((c) => c.linked === true);
+  const unknown = result.checks.filter((c) => c.status === 'unknown' && c.linked !== true);
+  const current = result.checks.filter((c) => c.status === 'current');
   const code =
     outdated.length > 0
       ? OUTDATED_EXIT.outdated
@@ -121,7 +132,7 @@ export async function runMarketplaceOutdated(args: MarketplaceOutdatedArgs): Pro
         : OUTDATED_EXIT.current;
 
   if (args.json) {
-    printJson({ outdated, unknown } satisfies OutdatedJson);
+    printJson({ outdated, unknown, linked } satisfies OutdatedJson);
     return code;
   }
 
@@ -129,23 +140,34 @@ export async function runMarketplaceOutdated(args: MarketplaceOutdatedArgs): Pro
     console.log('No installed packages to check.');
     return code;
   }
-  if (code === OUTDATED_EXIT.current) {
-    const n = result.checks.length;
+  if (code === OUTDATED_EXIT.current && linked.length === 0) {
+    const n = current.length;
     console.log(`Everything is up to date (${n} ${n === 1 ? 'package' : 'packages'} checked).`);
     return code;
   }
 
-  for (const check of outdated) {
-    console.log(formatUpdateLine(check));
-    // A caveat on a known answer, such as a check of the default branch.
-    if (check.note) console.log(`  ${check.note}`);
-  }
-  if (unknown.length > 0) {
-    if (outdated.length > 0) console.log('');
-    console.log('Could not check:');
-    for (const check of unknown) {
-      console.log(`  ${labelOf(check)}: ${check.note ?? 'no reason given'}`);
-    }
+  const sections: string[][] = [
+    outdated.flatMap((check) => [
+      formatUpdateLine(check),
+      // A caveat on a known answer, such as a check of the default branch.
+      ...(check.note ? [`  ${check.note}`] : []),
+    ]),
+    unknown.length > 0
+      ? [
+          'Could not check:',
+          ...unknown.map((c) => `  ${labelOf(c)}: ${c.note ?? 'no reason given'}`),
+        ]
+      : [],
+    linked.length > 0
+      ? [
+          'Linked, not checked:',
+          ...linked.map((c) => `  ${labelOf(c)}: ${c.note ?? 'linked to a working copy'}`),
+        ]
+      : [],
+  ].filter((lines) => lines.length > 0);
+  for (const [i, lines] of sections.entries()) {
+    if (i > 0) console.log('');
+    for (const line of lines) console.log(line);
   }
 
   console.log('');
@@ -153,18 +175,18 @@ export async function runMarketplaceOutdated(args: MarketplaceOutdatedArgs): Pro
     outdated.length > 0 &&
       `${outdated.length} ${outdated.length === 1 ? 'update' : 'updates'} available`,
     unknown.length > 0 && `${unknown.length} could not be checked`,
+    linked.length > 0 && `${linked.length} linked, not checked`,
   ].filter(Boolean);
+  const rest =
+    code === OUTDATED_EXIT.current
+      ? ` Everything else is up to date (${current.length} checked).`
+      : '';
   const hint =
     outdated.length > 0
       ? ` Run \`dorkos marketplace update --apply${
           args.projectPath ? ` --project ${shellWord(args.projectPath)}` : ''
         }\` to install ${outdated.length === 1 ? 'it' : 'them'}.`
       : '';
-  console.log(`${parts.join(', ')}.${hint}`);
+  console.log(`${parts.join(', ')}.${rest}${hint}`);
   return code;
-}
-
-/** A path as it can be pasted back into a shell: quoted when it holds whitespace or a quote. */
-function shellWord(value: string): string {
-  return /[\s'"]/.test(value) ? `'${value.replace(/'/g, `'\\''`)}'` : value;
 }

@@ -586,6 +586,12 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
   agentId?: string;
   /** Registered agent display name owning `agentPath`, when known. */
   agentName?: string;
+  /**
+   * The installation is a symbolic link to a developer's working copy. Present,
+   * and `true`, only then: its check is always `unknown` and it is never
+   * reinstalled, so this tells "not checked, by design" from "the check failed".
+   */
+  linked?: true;
   /** Set when an apply reinstalled this installation: what is installed now. */
   applied?: InstallResult;
   /** Set when an apply tried to reinstall this installation and failed: why. */

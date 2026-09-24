@@ -771,6 +771,11 @@ describe('marketplace install pipeline — integration', () => {
 
         const agentRoot = path.join(dorkHome, 'agents', 'valid-agent');
         expect(checks.find((c) => c.installPath === linkPath)).toMatchObject({ status: 'unknown' });
+        // The linked check says so as a field (DOR-2193), so `dorkos marketplace
+        // outdated` can set it apart from a check that failed; a fetched
+        // installation's check carries no such field.
+        expect(checks.find((c) => c.installPath === linkPath)?.linked).toBe(true);
+        expect(checks.find((c) => c.installPath === agentRoot)).not.toHaveProperty('linked');
         expect(checks.find((c) => c.installPath === agentRoot)?.applied?.version).toBe('1.1.0');
         expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
         expect(await pathExists(path.join(workingCopy, '.claude-plugin', 'plugin.json'))).toBe(

@@ -30,6 +30,11 @@ import {
   labelOf,
   type PrintableCheck,
 } from '../lib/installation-label.js';
+import {
+  isOlderServer,
+  OLDER_SERVER_MESSAGE,
+  resolveProjectFlag,
+} from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runUpdate}. */
@@ -38,7 +43,7 @@ export interface UpdateArgs {
   name?: string;
   /** Apply the update (default: advisory only). */
   apply?: boolean;
-  /** Project path for project-local updates. */
+  /** Absolute project path for project-local updates, resolved against the caller's cwd. */
   projectPath?: string;
 }
 
@@ -71,7 +76,7 @@ export function parseUpdateArgs(rawArgs: string[]): UpdateArgs {
   return {
     name: positionals[0],
     apply: Boolean(values.apply),
-    projectPath: typeof values.project === 'string' ? values.project : undefined,
+    projectPath: resolveProjectFlag(values.project),
   };
 }
 
@@ -132,17 +137,26 @@ async function updateOne(name: string, args: UpdateArgs): Promise<number> {
  * installation, so there is nothing left to loop over here.
  */
 async function updateAll(args: UpdateArgs): Promise<number> {
-  const result = args.apply
-    ? await apiCall<InstallationUpdatesResult>('POST', '/api/marketplace/updates', {
-        apply: true,
-        ...(args.projectPath && { projectPath: args.projectPath }),
-      })
-    : await apiCall<InstallationUpdatesResult>(
-        'GET',
-        `/api/marketplace/updates${
-          args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : ''
-        }`
-      );
+  let result: InstallationUpdatesResult;
+  try {
+    result = args.apply
+      ? await apiCall<InstallationUpdatesResult>('POST', '/api/marketplace/updates', {
+          apply: true,
+          ...(args.projectPath && { projectPath: args.projectPath }),
+        })
+      : await apiCall<InstallationUpdatesResult>(
+          'GET',
+          `/api/marketplace/updates${
+            args.projectPath ? `?projectPath=${encodeURIComponent(args.projectPath)}` : ''
+          }`
+        );
+  } catch (err) {
+    // This door has no 404 of its own (the CLI never sends `names`), so one is
+    // a DorkOS started before this CLI; anything else goes to the single catch.
+    if (!isOlderServer(err)) throw err;
+    console.error(OLDER_SERVER_MESSAGE);
+    return 1;
+  }
 
   if (result.checks.length === 0) {
     console.log('No installed packages to check.');

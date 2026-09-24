@@ -15,6 +15,7 @@
  */
 import { parseArgs } from 'node:util';
 import { ApiError, apiCall } from '../lib/api-client.js';
+import { resolveProjectFlag } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
 /** Parsed CLI arguments accepted by {@link runUninstall}. */
@@ -23,7 +24,7 @@ export interface UninstallArgs {
   name: string;
   /** Remove preserved data and secrets in addition to package files. */
   purge?: boolean;
-  /** Project path for project-local uninstalls. */
+  /** Absolute project path for project-local uninstalls, resolved against the caller's cwd. */
   projectPath?: string;
   /** Approval token from a previous run that came back awaiting approval. */
   approvalToken?: string;
@@ -97,7 +98,7 @@ export function parseUninstallArgs(rawArgs: string[]): UninstallArgs {
   return {
     name,
     purge: Boolean(values.purge),
-    projectPath: typeof values.project === 'string' ? values.project : undefined,
+    projectPath: resolveProjectFlag(values.project),
     approvalToken: typeof values.approval === 'string' ? values.approval : undefined,
   };
 }

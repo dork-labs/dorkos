@@ -72,6 +72,15 @@ describe('runMarketplaceDispatcher', () => {
     }
   );
 
+  it('prints help for `install <name> --help` instead of installing', async () => {
+    // Purpose: a help flag anywhere in the arguments shows help. Before, only a
+    // first-position flag did, and `dorkos install foo --help` failed parsing.
+    expect(await runMarketplaceDispatcher('install', ['foo', '--help'])).toBe(0);
+
+    expect(printed(logSpy)).toContain('Usage: dorkos marketplace install');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('documents the outdated exit codes in its help', async () => {
     await runMarketplaceDispatcher('outdated', ['-h']);
 
