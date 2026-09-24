@@ -80,6 +80,8 @@ export interface ApprovedSchedule {
   prompt: string;
   /** The row's cron, `''` for a task with no timer. */
   cron: string;
+  /** The timezone the row's cron runs in (DOR-2307). */
+  timezone: string;
   /**
    * The content key a person approved, or `null` when nobody has. The arm
    * grant — see {@link holdsGrantFor}.
@@ -93,10 +95,17 @@ export interface IncomingTaskContent {
   prompt: string;
   /** The file's `cron:` frontmatter, `''` when absent. */
   cron: string;
+  /**
+   * The timezone that cron runs in. Part of the approved work since DOR-2307:
+   * the same cron in another zone runs at another time — up to a day away —
+   * so a person who approved one did not approve the other.
+   */
+  timezone: string;
 }
 
 /**
- * The identity of a piece of approved work: what it does, and when.
+ * The identity of a piece of approved work: what it does, and when — the
+ * prompt, the cron, and the timezone the cron is read in (DOR-2307).
  *
  * **One helper, two gates.** The bypass keep-grant below and the arm gate
  * further down both answer "is this the same schedule a person already looked
@@ -114,7 +123,36 @@ export interface IncomingTaskContent {
  * @returns A string that is equal exactly when the content is.
  */
 export function scheduleContentKey(content: IncomingTaskContent): string {
-  return JSON.stringify([content.prompt, content.cron]);
+  return JSON.stringify([content.prompt, content.cron, content.timezone]);
+}
+
+/**
+ * Move a grant recorded before the key carried a timezone onto today's key
+ * (DOR-2307), or return `null` when it needs no moving.
+ *
+ * A legacy key is `[prompt, cron]`. It never said which timezone was approved,
+ * and the only timezone it has ever been checked against is the one the row
+ * runs in now — a timezone change never withdrew it. So the grant is extended
+ * with exactly that timezone: what was running approved keeps running
+ * approved, and nothing else is approved by the upgrade. A legacy key that no
+ * longer matches the row's prompt and cron still does not match after it, so a
+ * grant that was about to be withdrawn is withdrawn just the same.
+ *
+ * @param key - The stored grant.
+ * @param timezone - The timezone the row runs in now.
+ * @returns The upgraded key, or `null` for a key that is already current or
+ *   is not one this build wrote.
+ */
+export function upgradeLegacyContentKey(key: string, timezone: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(key);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length !== 2) return null;
+  if (!parsed.every((part) => typeof part === 'string')) return null;
+  return JSON.stringify([parsed[0], parsed[1], timezone]);
 }
 
 /**
@@ -144,8 +182,11 @@ function keepsApprovedBypass(
   if (existing.permissionMode !== 'bypassPermissions') return false;
   if (existing.status !== 'active') return false;
   return (
-    scheduleContentKey({ prompt: existing.prompt, cron: existing.cron }) ===
-    scheduleContentKey(incoming)
+    scheduleContentKey({
+      prompt: existing.prompt,
+      cron: existing.cron,
+      timezone: existing.timezone,
+    }) === scheduleContentKey(incoming)
   );
 }
 

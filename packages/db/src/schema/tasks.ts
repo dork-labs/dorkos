@@ -68,7 +68,7 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   reasonSource: text('reason_source', { enum: ['dorkos'] }),
   /**
    * The schedule content a person has actually approved, as a content key
-   * (prompt + cron; `scheduleContentKey` in `schedule-permission-clamp.ts`).
+   * (prompt + cron + timezone since DOR-2307; `scheduleContentKey` in `schedule-permission-clamp.ts`).
    *
    * This is the arm grant, and it is POSITIVE on purpose. It used to be inferred
    * from `status`, and that inference sprang a leak every time some other writer

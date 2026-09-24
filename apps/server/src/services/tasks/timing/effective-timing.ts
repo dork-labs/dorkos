@@ -13,7 +13,7 @@
  *
  * Two sources of timing on one row is exactly the shape that drifts: one reader
  * forgets the override and runs the package's timing, another remembers it, and
- * the approval grant — keyed on `[prompt, cron]` — is recorded against one and
+ * the approval grant — keyed on `[prompt, cron, timezone]` — is recorded against one and
  * checked against the other. So the rule "the override wins" is written once,
  * here, and everything that reads the raw columns goes through it: the row
  * mapper (which is how the scheduler, the registrar, the preview and the API
@@ -63,16 +63,18 @@ export function effectiveTiming(row: TimingColumns): EffectiveTiming {
 /**
  * The approval key of what this row actually runs.
  *
- * The same `[prompt, cron]` key both content gates share
- * ({@link scheduleContentKey}), with cron meaning the one that runs. A person
- * approving a schedule approved WHEN it runs, so a grant recorded against the
- * package's cron while the person's ran would cover work nobody looked at.
+ * The same `[prompt, cron, timezone]` key both content gates share
+ * ({@link scheduleContentKey}), with cron and timezone meaning the ones that
+ * run. A person approving a schedule approved WHEN it runs, so a grant
+ * recorded against the package's timing while the person's ran would cover
+ * work nobody looked at.
  *
  * @param row - The row's prompt and its four timing columns.
  * @returns The content key to record or compare a grant against.
  */
 export function effectiveContentKey(row: TimingColumns & { prompt: string }): string {
-  return scheduleContentKey({ prompt: row.prompt, cron: effectiveTiming(row).cron });
+  const { cron, timezone } = effectiveTiming(row);
+  return scheduleContentKey({ prompt: row.prompt, cron, timezone });
 }
 
 /**

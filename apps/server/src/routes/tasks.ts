@@ -456,10 +456,17 @@ export function createTasksRouter(
     const promptChangesApprovedWork = data.prompt !== undefined && data.prompt !== existing.prompt;
     const cronChangesApprovedWork =
       data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '');
+    // The same cron in another timezone runs at another time, so it is another
+    // piece of work (DOR-2307).
+    const timezoneChangesApprovedWork =
+      data.timezone !== undefined && (data.timezone ?? 'UTC') !== (existing.timezone ?? 'UTC');
     const nameChangesApprovedWork = data.name !== undefined && data.name !== existing.name;
     if (
       !trusted &&
-      (promptChangesApprovedWork || cronChangesApprovedWork || nameChangesApprovedWork)
+      (promptChangesApprovedWork ||
+        cronChangesApprovedWork ||
+        timezoneChangesApprovedWork ||
+        nameChangesApprovedWork)
     ) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
       if (clamp.clamped) clampTo = clamp.mode;
@@ -484,7 +491,11 @@ export function createTasksRouter(
     const { changesFile, timingLandsOn } = fileOutcome;
     // What the approval covered before this write, measured as it RUNS — the
     // one thing `settleTimingChange` below compares against.
-    const previousKey = scheduleContentKey({ prompt: existing.prompt, cron: existing.cron ?? '' });
+    const previousKey = scheduleContentKey({
+      prompt: existing.prompt,
+      cron: existing.cron ?? '',
+      timezone: existing.timezone ?? 'UTC',
+    });
 
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;

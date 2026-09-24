@@ -108,15 +108,18 @@ export class FileSyncGates {
     // approve. A changed prompt still is. An override this sync drops runs no
     // longer, so it is not part of what arrives.
     const dropsTimingOverride = this.dropsTimingOverride(existing, options);
+    // The timezone is part of what runs, and of the approval, since DOR-2307.
     const incoming = {
       prompt: def.body,
       cron: (dropsTimingOverride ? null : existing?.cronOverride) ?? fileCron,
+      timezone:
+        (dropsTimingOverride ? null : existing?.timezoneOverride) ?? def.meta.schedule.timezone,
     };
     const approved = existing && {
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
       prompt: existing.prompt,
-      cron: effectiveTiming(existing).cron,
+      ...effectiveTiming(existing),
       approvedContentKey: existing.approvedContentKey,
     };
 

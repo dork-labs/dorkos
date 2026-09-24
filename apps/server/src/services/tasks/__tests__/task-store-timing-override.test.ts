@@ -77,7 +77,7 @@ describe('a person’s own timing on a package’s schedule', () => {
     store.updateTask(id, { cron }, { timingLandsOn: 'row' });
     store.settleTimingChange(
       id,
-      scheduleContentKey({ prompt: before.prompt, cron: before.cron! }),
+      scheduleContentKey({ prompt: before.prompt, cron: before.cron!, timezone: before.timezone! }),
       {
         trusted: true,
       }
@@ -143,7 +143,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       store.updateTask(id, { status: 'active' });
       expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON })
+        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
       );
 
       expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
@@ -233,11 +233,12 @@ describe('a person’s own timing on a package’s schedule', () => {
       const outcome = store.rekeyMigratedFile(FILE_PATH, '/moved/SKILL.md', {
         prompt: PROMPT,
         cron: PACKAGE_CRON,
+        timezone: 'UTC',
       });
 
       expect(outcome).toBe('rekeyed');
       expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON })
+        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
       );
     });
   });
@@ -308,14 +309,14 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleTimingChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON }),
+        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
         { trusted: true }
       );
 
       expect(outcome).toBe('rekeyed');
       expect(store.getTask(id)!.status).toBe('active');
       expect(row(id).approvedContentKey).toBe(
-        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON })
+        scheduleContentKey({ prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
       );
     });
 
@@ -326,9 +327,13 @@ describe('a person’s own timing on a package’s schedule', () => {
       store.markRemovedByFilePath(FILE_PATH);
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      store.settleTimingChange(id, scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON }), {
-        trusted: true,
-      });
+      store.settleTimingChange(
+        id,
+        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        {
+          trusted: true,
+        }
+      );
 
       expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
     });
@@ -340,7 +345,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleTimingChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON }),
+        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
         { trusted: true }
       );
 
@@ -356,7 +361,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleTimingChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON }),
+        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
         { trusted: false }
       );
 
@@ -378,7 +383,7 @@ describe('a person’s own timing on a package’s schedule', () => {
 
       const outcome = store.settleTimingChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON }),
+        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
         { trusted: false }
       );
 
@@ -386,15 +391,31 @@ describe('a person’s own timing on a package’s schedule', () => {
       expect(store.getTask(id)!.status).toBe('paused');
     });
 
-    it('does nothing when the timing that runs did not change', () => {
-      // Purpose: a timezone is not in the approval key, so changing it alone
-      // neither re-keys nor parks.
+    it('parks an approved schedule when an agent changes only its timezone (DOR-2307)', () => {
+      // Purpose: the timezone moves the real run time, so it is part of what a
+      // person approved — an agent changing it alone must not keep it live.
       const id = approvedSchedule();
-      store.updateTask(id, { timezone: 'Asia/Tokyo' }, { timingLandsOn: 'row' });
+      store.updateTask(id, { timezone: 'Pacific/Kiritimati' }, { timingLandsOn: 'row' });
 
       const outcome = store.settleTimingChange(
         id,
-        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON }),
+        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
+        { trusted: false }
+      );
+
+      expect(outcome).toBe('parked');
+      expect(store.getTask(id)!.status).toBe('pending_approval');
+    });
+
+    it('does nothing when the timing that runs did not change', () => {
+      // Purpose: an update that leaves the prompt, cron and timezone as they
+      // were changes no approved work.
+      const id = approvedSchedule();
+      store.updateTask(id, { enabled: false });
+
+      const outcome = store.settleTimingChange(
+        id,
+        scheduleContentKey({ prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC' }),
         { trusted: false }
       );
 

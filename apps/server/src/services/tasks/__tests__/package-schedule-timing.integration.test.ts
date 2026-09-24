@@ -108,7 +108,11 @@ async function patch(
   if (!outcome.changesFile) {
     store.settleTimingChange(
       existing.id,
-      scheduleContentKey({ prompt: existing.prompt, cron: existing.cron ?? '' }),
+      scheduleContentKey({
+        prompt: existing.prompt,
+        cron: existing.cron ?? '',
+        timezone: existing.timezone ?? 'UTC',
+      }),
       { trusted }
     );
   }

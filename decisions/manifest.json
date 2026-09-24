@@ -6279,6 +6279,25 @@
         "apps/server/src/routes/tasks.ts",
         "apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts"
       ]
+    },
+    {
+      "id": "260924-101531",
+      "slug": "timezone-is-part-of-the-approved-schedule",
+      "title": "A schedule's timezone is part of what a person approves",
+      "status": "draft",
+      "created": "2026-09-24",
+      "extractedFrom": "DOR-2307",
+      "specSlug": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/tasks/schedule-permission-clamp.ts",
+        "apps/server/src/services/tasks/timing/effective-timing.ts",
+        "apps/server/src/services/tasks/file-sync-gates.ts",
+        "apps/server/src/services/tasks/task-store.ts",
+        "apps/server/src/routes/tasks.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/task-tools.ts",
+        "apps/server/src/index.ts"
+      ]
     }
   ]
 }

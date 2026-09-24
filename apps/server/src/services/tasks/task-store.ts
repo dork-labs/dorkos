@@ -30,11 +30,16 @@ import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
 import { FileSyncGates, type FileSyncSource } from './file-sync-gates.js';
-import { scheduleContentKey, type IncomingTaskContent } from './schedule-permission-clamp.js';
+import {
+  scheduleContentKey,
+  upgradeLegacyContentKey,
+  type IncomingTaskContent,
+} from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
 import {
   AGENT_TIMING_CHANGE_REASON,
   effectiveContentKey,
+  effectiveTiming,
   timingColumnWrites,
   type TimingLandsOn,
 } from './timing/effective-timing.js';
@@ -352,6 +357,7 @@ export class TaskStore {
         approvedContentKey: scheduleContentKey({
           prompt: input.prompt,
           cron: input.cron ?? '',
+          timezone: input.timezone ?? 'UTC',
         }),
         filePath: input.filePath,
         reason: input.reason ?? null,
@@ -469,7 +475,7 @@ export class TaskStore {
    * Keep a schedule's approval honest after its timing changed on the row
    * alone — a package's schedule, whose file DorkOS never writes (DOR-2302).
    *
-   * A timing change is a change to the approved work (`[prompt, cron]`), and
+   * A timing change is a change to the approved work (`[prompt, cron, timezone]`), and
    * nothing else will notice this one: no file was written, so no watcher
    * fires, and the next sync is up to five minutes away. So it is settled here,
    * in the request that made it, one of two ways:
@@ -607,6 +613,7 @@ export class TaskStore {
         ...existing,
         prompt: rewritten.prompt,
         cron: rewritten.cron,
+        timezone: rewritten.timezone,
       });
       const agrees = effectiveContentKey(existing) === fileKey;
 
@@ -639,6 +646,49 @@ export class TaskStore {
         .run();
       return 'moved';
     });
+  }
+
+  /**
+   * Move every approval recorded before the approval key carried a timezone
+   * onto today's key (DOR-2307).
+   *
+   * Runs once at boot, before any watcher starts, and before
+   * {@link backfillApprovalGrants} would have anything to say about these rows.
+   * Without it, every approved schedule's stored key would stop matching the
+   * key the gates now compute, and the first sync of each would park it — an
+   * upgrade that silently takes every schedule a person approved off the clock.
+   *
+   * What each grant is extended with, and why that widens nothing, is
+   * {@link upgradeLegacyContentKey}'s to explain: the timezone the row runs in
+   * now, the only one the old grant was ever checked against. Every row with a
+   * grant is upgraded, whatever its status — a paused or switched-off schedule a
+   * person approved is still approved when it comes back.
+   *
+   * Idempotent: a key already carrying a timezone is left alone, so a second
+   * boot changes nothing. Computed in JS row by row for the reason
+   * {@link backfillApprovalGrants} gives.
+   *
+   * @returns How many grants were upgraded.
+   */
+  upgradeLegacyApprovalKeys(): number {
+    const rows = this.db
+      .select()
+      .from(pulseSchedules)
+      .where(isNotNull(pulseSchedules.approvedContentKey))
+      .all();
+
+    let upgraded = 0;
+    for (const row of rows) {
+      const key = upgradeLegacyContentKey(row.approvedContentKey!, effectiveTiming(row).timezone);
+      if (key === null) continue;
+      this.db
+        .update(pulseSchedules)
+        .set({ approvedContentKey: key })
+        .where(eq(pulseSchedules.id, row.id))
+        .run();
+      upgraded++;
+    }
+    return upgraded;
   }
 
   /**
@@ -1450,6 +1500,7 @@ export class TaskStore {
                     ...existing,
                     prompt: def.body,
                     cron: incomingCron,
+                    timezone: schedule.timezone,
                   }),
                 }
               : {}),
@@ -1489,7 +1540,11 @@ export class TaskStore {
         // grant. A discovered file never does; it has to be looked at first.
         approvedContentKey: arm
           ? null
-          : scheduleContentKey({ prompt: def.body, cron: incomingCron }),
+          : scheduleContentKey({
+              prompt: def.body,
+              cron: incomingCron,
+              timezone: schedule.timezone,
+            }),
         filePath: def.filePath,
         tags: '[]',
         createdAt: now,

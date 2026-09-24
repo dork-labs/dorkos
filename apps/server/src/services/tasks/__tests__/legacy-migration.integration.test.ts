@@ -298,7 +298,7 @@ describe('the boot migration off the legacy task directories', () => {
 
       await migrate();
 
-      expect(grantFor(seeded.id)).toBe(JSON.stringify(['Do the thing.', '0 3 * * *']));
+      expect(grantFor(seeded.id)).toBe(JSON.stringify(['Do the thing.', '0 3 * * *', 'UTC']));
     });
 
     it('leaves a parked row parked, with the story it already carried', async () => {

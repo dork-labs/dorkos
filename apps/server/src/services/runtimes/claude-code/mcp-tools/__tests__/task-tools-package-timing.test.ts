@@ -21,7 +21,7 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { hasSchedule } from '@dorkos/skills';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools, REAPPROVAL_NOTE, TIMING_REAPPROVAL_NOTE } from '../task-tools.js';
+import { getTasksTools, TIMING_REAPPROVAL_NOTE } from '../task-tools.js';
 import { raiseStanding } from '../../../../notifications/standing-events.js';
 
 vi.mock('../../../../notifications/standing-events.js', async (importOriginal) => ({
@@ -135,16 +135,18 @@ describe('tasks_update and a package’s schedule’s timing', () => {
     expect(payload.note).toBe(TIMING_REAPPROVAL_NOTE);
   });
 
-  it('lets a timezone-only change through without asking again', async () => {
-    // Purpose: the approval key has never included the timezone, and a package's
-    // schedule must not be stricter than any other.
+  it('stops the schedule when an agent changes only its timezone (DOR-2307)', async () => {
+    // Purpose: the review's repro — an agent set `Pacific/Kiritimati` and the
+    // schedule stayed live, moving its real run time by up to a day unseen.
     const task = approvedSchedule();
 
-    const { payload } = await call('tasks_update', { id: task.id, timezone: 'Asia/Tokyo' });
+    const { payload } = await call('tasks_update', { id: task.id, timezone: 'Pacific/Kiritimati' });
 
-    expect(payload.schedule).toMatchObject({ timezone: 'Asia/Tokyo', status: 'active' });
-    expect(payload.needsReapproval).toBeUndefined();
-    expect(payload.note).not.toBe(REAPPROVAL_NOTE);
+    expect(payload.schedule).toMatchObject({
+      timezone: 'Pacific/Kiritimati',
+      status: 'pending_approval',
+    });
+    expect(payload).toMatchObject({ needsReapproval: true, note: TIMING_REAPPROVAL_NOTE });
   });
 
   it('refuses a reset sent with a new timing, and changes nothing', async () => {
