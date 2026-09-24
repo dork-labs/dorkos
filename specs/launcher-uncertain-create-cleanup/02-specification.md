@@ -1,9 +1,9 @@
 ---
 slug: launcher-uncertain-create-cleanup
-id: 260924-003404
+id: 260924-004728
 created: 2026-09-24
 status: specified
-linearIssue: DOR-2238
+linear-issue: DOR-2238
 project: Community Self-Hosting
 ---
 
@@ -17,244 +17,301 @@ project: Community Self-Hosting
 
 ## Overview
 
-`dorkos community deploy` stops with `CREATION_OUTCOME_UNCERTAIN` when a create request may have worked but the launcher could not confirm it. The operator is then left to find and delete that resource by hand, and the run can never be resumed. This spec adds the smallest command that fixes both problems:
+`dorkos community deploy` stops with `CREATION_OUTCOME_UNCERTAIN` when a create request may have worked but the launcher could not confirm it. When no id was recorded, the run can never be resumed, and the operator has to find and delete the leftover resource by hand. This spec adds the smallest command that fixes that:
 
 ```
-dorkos community deploy --remove-uncertain <run-id> [--confirm <resource-id>]
+dorkos community deploy --remove-uncertain <run-id> [--confirm <token>]
 ```
 
-It checks the run's one unresolved resource against the service. It deletes that resource only when it can **prove** the run created it. The operator has to type the resource's id before anything is removed. After a verified removal, the journal returns to its last confirmed step, so `--resume` can continue with the same plan.
+It checks the run's one unresolved resource against the service. It deletes that resource only when it can **prove** the run created it, and only after the operator confirms with a token taken from a fresh read of that resource. Just before deleting, it checks again. After a verified removal, the journal goes back to its last confirmed step, so `--resume` can continue with the same plan.
 
-The proof is a random marker. The launcher writes it into the journal before the create, sends it with the create, and later reads it back from the service. When that proof is missing, the command never deletes. It reports what it found and how to remove it by hand.
+The proof is a random marker. The launcher writes it into the journal before the create, sends it with the create, and later reads it back from the service. When the proof is missing, the command never deletes. It reports what it found and how to remove it by hand.
 
 ## Background
 
 Measured against `origin/main` at `be6fa42b2`:
 
-- `execute.ts` `executeCreationStep` records `pendingIntent { provider, organizationId, resourceName }` and then calls `create()`. Every post-spawn failure from `runProviderMutation` is classified as uncertain. On one, the launcher writes `state: 'uncertain'` and `lastSafeError.code: 'CREATION_OUTCOME_UNCERTAIN'`, and throws `CommunityCreationUncertainError`. There are two shapes:
-  - **A — no id.** The create failed or its output was lost. `pendingIntent` is set, and `resources.<key>` is absent.
-  - **B — id but no proof.** The create returned an id and it was journaled, but the exact readback failed. `pendingIntent` is set, and `resources.<key>` is present.
-- On resume, either shape throws again before any write, because `pendingIntent` is non-null for the step. There is no path forward except a new run with new names. The old resource keeps any charges running until someone deletes it.
-- `formatCommunityRecovery` prints per-service read-only commands under "Manual reconciliation required", along with "Automatic cleanup was not attempted."
-- `LaunchJournalSchema.pendingIntent` already reserves `provenanceMarker` and `idempotencyKey`. Nothing writes either one.
-- Deletion wrappers already exist and are exercised by the live gate: `destroyFlyApp(name)`, `deleteNeonProject(id)`, and `FlyTigrisGraphqlClient.deleteTigris(name)`. `packages/cli/scripts/community-deploy-live-cleanup.ts` shows the rule this spec keeps: delete only after fresh readback matches the journal exactly, and stop on the first ambiguity.
-- The seen case (DOR-2169 gate, 2026-09-23) was shape A on Fly. flyctl v0.4.104 printed `apps create --json` with a blank organization name, and the parser rejected the output of a create that had worked. #2012 fixed that parse and added a fallback listing by name and slug. Shape A on Fly can still happen: flyctl waits for the new app after creating it, so a timeout, a non-zero exit, a cancelled run or a failed fallback listing all land there.
+- `execute.ts` `executeCreationStep` records `pendingIntent { provider, organizationId, resourceName }` and then calls `create()`. Every failure after the provider process starts is classified as uncertain (`runProviderMutation`). There are two shapes:
+  - **Shape A — no id.** The create failed or its output was lost. `pendingIntent` is set and `resources.<key>` is absent. Resume throws `CommunityCreationUncertainError` because `!existingId`. The run is stuck for good, and the orphan keeps any charges running.
+  - **Shape B — id recorded, readback failed.** On resume, the check (`!existingId || provider !== step.service`) passes. The create is skipped and `inspect(createdId)` runs again, and preflight accepts the recorded app. **`--resume` already handles shape B**, and this spec leaves it alone.
+- `formatCommunityRecovery` prints read-only commands for each service under "Manual reconciliation required", then "Automatic cleanup was not attempted."
+- `LaunchJournalSchema.pendingIntent` reserves `provenanceMarker` and `idempotencyKey`. Nothing writes either one.
+- `withCrossProcessLock` (`journal.ts`) is held only for the length of each `writeLaunchJournal`. It is not a lock on the run. Concurrent processes are kept apart only by the revision check inside each write.
+- The deletion wrappers `destroyFlyApp(name)`, `deleteNeonProject(id)` and `FlyTigrisGraphqlClient.deleteTigris(name)` already run in the live gate's cleanup (`packages/cli/scripts/community-deploy-live-cleanup.ts`). The gate's rule is kept here: delete only after a fresh readback matches exactly.
+- The seen case (DOR-2169 gate, 2026-09-23) was shape A on Fly. flyctl v0.4.104's `apps create --json` printed a blank organization name, so the parser rejected the output of a create that had worked. #2012 fixed that parse and added a fallback listing by name and slug. Shape A on Fly can still happen after a timeout, a non-zero exit, a cancelled run or a failed fallback listing.
+- **Fly reads today cannot see a network.** fly-go's `GetApp` and `getAppsPage` do not select `network`, and the fixtures show `"Network": ""`. `App.id` is the app name (fixture `"ID": "community-fixture-app"`). The GraphQL `App` type exposes `network`, `createdAt`, `internalNumericId` and `appNameAvailable(name)` (fly-go v0.9.15 `schema.graphql`).
+- **`NAME_CONFLICT` is never emitted.** `runProviderMutation` turns every failure after the process starts into uncertain. `assertFlyAppNameAvailable` is not called in production.
+- **Tigris removal leaves secrets.** flyctl v0.4.104 `ext tigris destroy` only calls `DeleteAddOn`. The client never unsets `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` on the app.
+
+Versions named here are the ones the fixtures were derived from. `minimumFlyctlVersion` and `minimumNeonCliVersion` are floors, not pins.
 
 ## Goals
 
-- An operator can remove a resource left by an uncertain create with one command, without opening a provider console.
-- Nothing is deleted unless a marker written before the create is read back from that exact resource. For Tigris, the equivalent is a binding to the run's already-proved Fly app.
-- Every deletion needs the resource's provider-issued id, typed at a prompt or passed in `--confirm`. A matching name is never enough.
-- After a verified removal, the same run can be resumed.
-- Runs are idempotent and safe to interrupt. Every step is journaled before and after the provider call.
+- An operator can remove a resource left by a shape-A uncertain create with one command, without opening a provider console.
+- Nothing is deleted unless a marker written before the create is read back from that exact resource, and the resource's creation time falls inside the create window. For Tigris, the equivalent is a binding to a Fly app the run proved with its own marker.
+- Every deletion needs a confirmation token from fresh readback. For Fly that is `internalNumericId`, never the app name. For Neon it is the project id, and for Tigris the add-on id.
+- After a verified removal, the same run can be resumed, including when Fly still holds the app name for a while.
+- A process that works on the run at the same time as the removal can never cause a deletion the operator did not confirm.
 - Ordinary tests never contact Fly, Neon or Tigris.
 
 ## Non-goals
 
-- Tearing down a whole run, including resources that were confirmed and completed (see Open decision 2).
-- Adopting a proved resource into the run instead of removing it. The same proof would allow that later; this item does not build it.
-- Removing anything from a journal that has no marker. That includes every run started before this ships, and the 2026-09-23 orphan, which was already removed by hand.
-- Releasing an unresolved intent when nothing was found. The command reports `absent` and changes nothing (see Edge cases).
-- Uncertainty outside the three create steps, such as the "runtime secrets exist without a proven journal checkpoint" stop in `deploy.ts`.
+- Shape B. The verdict points to `--resume`.
+- Tearing down a whole run. See Follow-ups.
+- Adopting a proved resource into the run instead of removing it.
+- Removing anything a run without markers left behind. That includes every run started before this ships.
+- Releasing an unresolved intent when nothing was found. The command reports `absent` and changes nothing.
+- The "runtime secrets exist without a proven journal checkpoint" stop in `deploy.ts`. The command recognizes it and says so (§2), but removes nothing.
 - Any `--yes` mode, or any change to the live gate's defaults or arms.
 
 ## Detailed design
 
-### 1. Provenance markers at create time
+### 1. Provenance at create time
 
-`executeCreationStep` generates a marker when it records the intent, after `prepare()` and before `create()`:
+When `executeCreationStep` records the intent, after `prepare()` and before `create()`, it adds two fields:
 
 ```ts
-const marker = randomBytes(16).toString('hex'); // 128 bits, lowercase hex, 32 chars
-pendingIntent: { provider, organizationId, resourceName, provenanceMarker: marker }
+pendingIntent: {
+  provider, organizationId, resourceName,
+  provenanceMarker: randomBytes(16).toString('hex'), // 128 bits, 32 lowercase hex chars
+  requestedAt: now(),                                 // new optional field
+}
 ```
 
-`CreationBoundary.create()` becomes `create(marker: string)`. The marker is durable before any provider request, because `persistNext` writes the intent revision first.
+`CreationBoundary.create()` becomes `create(marker: string)`. The intent revision is durable before any provider request.
 
-| Service           | How the marker is written                                                                                                                                                                                                                                                                            | How it is read back                                                                                                                                                                                                                                          | What counts as proof                                                                                                                                                                                                                                                                                               |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Fly app**       | `fly apps create <name> --org <slug> --network dorkos-<marker> --json --yes`. The app's private network name is the only field the Machines API create accepts that can be read back (`app_name`, `org_slug`, `network`, `enable_subdomains`; no labels or metadata).                                | A new pinned GraphQL query `DorkosReadAppProvenance($name)` returning `app { id name network createdAt organization { slug } machines { totalCount } volumes { totalCount } }` (`App.network` and `App.createdAt` exist in fly-go v0.9.15 `schema.graphql`). | Exactly one app named `pendingIntent.resourceName`, in organization slug `pendingIntent.organizationId`, whose `network` equals `dorkos-<marker>`. For shape B, its id must also equal the journaled `flyAppId`.                                                                                                   |
-| **Neon project**  | Role name `community_<marker>` instead of the fixed `community_owner`: `neonctl projects create … --role community_<marker>`. `ProjectCreateRequest` has no project tags. Branch annotations exist in the REST API but not in `neonctl`, and the launcher uses only the signed-in `neonctl` profile. | Existing `readNeonProjects(org)` filtered to `name === resourceName`, then the existing `readNeonBranchTopology` role list on each candidate's default branch.                                                                                               | Exactly one project in `pendingIntent.organizationId`, in the plan's region, named `resourceName`, whose default branch has the role `community_<marker>`. For shape B, its id must also equal the journaled `neonProjectId`.                                                                                      |
-| **Tigris bucket** | No change. `CreateAddOnInput` has no field that can be read back: `clientMutationId` is not stored, and `options` is provider-validated JSON the launcher must not rely on.                                                                                                                          | A new pinned GraphQL query `DorkosFindTigrisOnApp($name)` returning `app { id addOns(type: tigris, first: 5) { nodes { id name createdAt organization { slug } addOnProvider { name } } } }`.                                                                | The Tigris step starts only after `fly_app_created` is complete, so `flyAppId` is already proved as this run's app. Proof is exactly one Tigris add-on named `resourceName`, bound to that app id, in the run's Fly organization. Tigris bucket names are globally unique, so no other bucket can carry that name. |
+The markers are **not secret**. They show up as a Fly network name and a Postgres role name, which anyone in the organization can see. They prove that a resource came from a run; they are not credentials. The **create window** is the span from `requestedAt − 2 min` to `requestedAt + the create deadline + 2 min`. The two-minute margin allows for clock skew between the operator's machine and the service. Every proof below also requires the resource's creation time to fall inside that window.
 
-After a completed create, the marker leaves `pendingIntent` along with the rest of the intent. The Neon marker is kept anyway, because the role name is already journaled as `resources.neonRoleId`. The Fly marker moves into a new optional `provenance.flyNetwork` field, so the live gate and any later teardown can re-prove the app.
+| Service           | Marker written as                                                                                                        | Read back with                                                                                                                                                                                                                                                           | Proof                                                                                                                                                                             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Fly app**       | `fly apps create <name> --org <slug> --network dorkos-<marker> --json --yes`                                             | A new minimal GraphQL query, `DorkosReadAppProvenance($name)`: `app(name:) { id internalNumericId name network createdAt organization { slug } machines { totalCount } volumes { totalCount } ipAddresses { totalCount } certificates { totalCount } secrets { name } }` | Exactly one app named `resourceName` in organization slug `organizationId`, with `network === "dorkos-<marker>"` and `createdAt` inside the window.                               |
+| **Neon project**  | Role `community_<marker>` instead of the fixed `community_owner` (`neonctl projects create … --role community_<marker>`) | Existing `readNeonProjects(org)`, filtered by name, then the role list from `readNeonBranchTopology` on each candidate's default branch                                                                                                                                  | Exactly one project in the organization and the plan's region, named `resourceName`, with `created_at` inside the window, whose default branch has the role `community_<marker>`. |
+| **Tigris bucket** | Nothing. The service offers no field a run can read back.                                                                | A new minimal GraphQL query, `DorkosFindTigrisOnApp($name)`: `app(name:) { internalNumericId network addOns(type: tigris) { totalCount nodes { id name createdAt organization { slug } } } }`                                                                            | See the carve-out below.                                                                                                                                                          |
 
-Other changes the markers require:
+**Tigris carve-out.** Tigris is the one service proved by binding rather than by its own marker. The binding counts as proof only when the bound app is itself re-proved in the same readback:
 
-- `runtime/default-services.ts` `exactNeonProject` stops matching the literal `community_owner`. It matches the journaled role name, or for a run still in progress, `community_<pendingIntent.provenanceMarker>`. `runtime/default-deploy.ts` already reads `neonRoleId`.
-- The #2012 fallback in `createFlyApp` identifies an app by name and slug when create output is unreadable. It must also check `network === dorkos-<marker>`. This closes the gap where a same-name app created in the same organization between preflight and create would have been adopted.
-- **Contract gate.** A marker counts as proof only after its round trip is pinned. That means checked-in fixtures derived from the pinned flyctl and neonctl sources, plus one live-gate receipt that shows it (see Testing). Two facts must be settled there, not assumed: Fly accepts `dorkos-<32 hex>` as a network name and returns it unchanged from `App.network`, and Neon accepts and returns `community_<32 hex>` as a role name. Until the Fly or Neon round trip is proved, that service's verdict is always `unproved`.
+- `completedSteps` includes `fly_app_created`.
+- The journal has `provenance.flyNetwork`, which was read back from the service (see below), and the app's `network` equals it now. An app without `provenance.flyNetwork`, which means a run started before this ships, makes the verdict `unproved`.
+- `addOns.totalCount` equals the number of nodes returned. If they differ, the list was cut short, and the verdict is `unproved`.
+- Exactly one add-on is named `resourceName`, it belongs to the run's Fly organization, and its `createdAt` is inside the window.
 
-A private network per Community app changes nothing that Community uses. It reaches Neon over public TLS and Tigris over its public endpoint (parent spec, "Storage and recovery contract"). It does isolate the app from other apps in the same Fly organization. That is a real product choice, and it is Open decision 1.
+**Changes to the create path that the markers require:**
+
+- **Fly create and inspect use the new query.** When a Fly create step completes, `inspect()` calls `DorkosReadAppProvenance` and asserts that `network` equals `dorkos-<marker>`. The completing revision stores that value, **as read back from the service**, in a new `provenance.flyNetwork` field. It is never copied from the intent.
+- **The #2012 fallback uses it too.** When create output is unreadable, `createFlyApp` identifies the app by name and slug. It now also requires `network === dorkos-<marker>`, and never trusts the listing's `Network`, which is always `""`.
+- **Neon.** `exactNeonProject` in `runtime/default-services.ts` matches the journaled `neonRoleId`, or, while a run is still in flight, `community_<pendingIntent.provenanceMarker>`, instead of the literal `community_owner`. `runtime/default-deploy.ts` already reads `neonRoleId`.
+- **Tigris secrets must be new after a removal.** Before a Tigris removal, the command records the non-secret digests of `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` from the app's secret list in the removal record. When a resumed run creates the bucket again, its Tigris step requires both digests to differ from the recorded ones, the same rule `provesFreshStage` applies to runtime secrets. If they do not, the step stops with `INVALID_RESPONSE` and never deploys with stale bucket credentials.
+- **The Fly name may still be held after a removal.** `prepare()` for the Fly step runs before the intent is recorded. When the journal's `removals` contains a Fly entry with the same name, `prepare()` calls `appNameAvailable(name)`. If Fly still holds the name, it stops before recording any intent: "Fly is still releasing the name community-acme. Try `--resume` again in a few minutes." Because no intent is recorded, this stop can never become a new uncertain stop, so removing and then resuming cannot dead-end.
+
+**Contract gate.** The Fly and Neon proofs are safe only if the round trip is real. That means Fly accepts `dorkos-<32 hex>` as a network name and returns it unchanged, and Neon accepts `community_<32 hex>` as a role name. The mechanism:
+
+```ts
+// packages/cli/src/commands/community-deploy/provenance-gate.ts
+/** Services whose marker round trip a live-gate receipt has shown. Flip only in a PR that cites the receipt. */
+export const PROVENANCE_ROUND_TRIP_PROVED = { fly: false, neon: false } as const;
+```
+
+- While a flag is `false`, that service's verdict is always `unproved`, with the reason "DorkOS has not yet confirmed this proof with Fly (or Neon)". Tigris depends on the Fly flag.
+- The constant is passed into `evaluateUncertainResource` as a dependency with this default, so unit tests can override it. There is no environment variable or CLI flag that can override it. A packaged CLI always uses the committed value.
+- A flag is flipped in its own PR. That PR links the live-gate receipt showing the round trip and updates the packaged scenario's expectation from `unproved` to `proved` (§ Implementation phases).
 
 ### 2. Verdicts
 
-`--remove-uncertain <run-id>` loads the journal read-only, then asks only the service named by `pendingIntent.provider` for one of five verdicts:
+`--remove-uncertain <run-id>` reads the journal once and keeps its `revision` as `verdictRevision`. It contacts only the service named in `pendingIntent.provider`. Every organization, name, region and time it needs comes from `recoveryContext` and `pendingIntent`. The command handles a journal as follows:
 
-| Verdict           | Meaning                                                                                                                                                                                                                                                              | Action                                                                                                                                        |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `proved`          | Exactly one resource matches the proof rule above.                                                                                                                                                                                                                   | Show it, and offer removal.                                                                                                                   |
-| `absent`          | Nothing with the intended name exists in the organization.                                                                                                                                                                                                           | No change. Report that the create probably never landed, and that the run cannot be resumed (the same as today).                              |
-| `unproved`        | Something with the intended name exists, but the marker is missing or different, the intent has no marker (legacy journal), it sits in another organization or region, more than one candidate carries the marker, or the service's contract gate is not yet passed. | Never delete. Print what was found (id, organization, created time, and why it is not proof) with the manual inspection and deletion command. |
-| `unreachable`     | A read failed, timed out, or returned output that failed its schema.                                                                                                                                                                                                 | No change. Say that it is safe to run again.                                                                                                  |
-| `nothing-pending` | `pendingIntent` is null, and `pendingRemoval` (below) is null too.                                                                                                                                                                                                   | Exit 0: "This run has no unresolved resource."                                                                                                |
+| Journal                                                      | Verdict                   | Action                                                                                                                                     |
+| ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pendingRemoval` set                                         | (restart; see §4)         | Finish or re-offer the removal.                                                                                                            |
+| `pendingIntent` set, `resources.<key>` **present** (shape B) | `resume-first`            | "This run recorded the app's id, so `--resume` can check it itself: `dorkos community deploy --resume …`" Nothing is contacted or changed. |
+| `pendingIntent` set, no id (shape A)                         | one of the verdicts below | See below.                                                                                                                                 |
+| `pendingIntent` null, `state: 'uncertain'`                   | `not-a-create`            | "This run stopped while checking secrets, not while creating something. There is nothing to remove." It then points to the manual steps.   |
+| Anything else                                                | `nothing-pending`         | "This run has no unresolved resource." Exit 0.                                                                                             |
 
-A `proved` resource that already holds more than the launcher's own create would have made is downgraded to `unproved` with the reason "something was added after the run stopped", and is not deleted. For Fly, that is any Machine or volume. For Neon, it is any branch beyond the default branch, or any role or database beyond the marker role and `community`. Whatever the operator added is theirs to judge.
+The shape-A verdicts:
 
-The command needs only `run-id`. Every organization, name and region comes from the journal's `recoveryContext` and `pendingIntent`. A journal without `recoveryContext` gets `unproved` ("this run is too old to check").
+| Verdict       | Meaning                                                                                                                                                                                                                                                                                                                                   | Action                                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `proved`      | Exactly one resource meets the proof rule in §1, and the service's contract-gate flag is `true`.                                                                                                                                                                                                                                          | Show it and ask for confirmation (§3).                                                                          |
+| `absent`      | Nothing with the intended name exists in the organization.                                                                                                                                                                                                                                                                                | No change. Report that the create probably never landed, and that this run cannot be resumed.                   |
+| `unproved`    | Something with the intended name exists but fails the proof. The reason is printed: no marker in the journal, a different marker, another organization or region, created outside the window, more than one candidate, an incomplete add-on list, a bound app that cannot be re-proved, a contract gate not yet passed, or grown (below). | Never delete. Print the id, organization, created time and reason, plus the manual inspect and delete commands. |
+| `unreachable` | A read failed, timed out, or failed its schema.                                                                                                                                                                                                                                                                                           | No change. Say it is safe to run again.                                                                         |
 
-### 3. Confirmation
+**Grown resources are `unproved`.** A proved resource that holds more than the launcher's create would have made is downgraded to `unproved`, with the reason "something was added after the run stopped".
 
-**Interactive** (stdin and stdout are a TTY, no `--confirm`):
+- Fly: any Machine, volume, IP address, certificate or secret.
+- Neon: any branch beyond the default, or any role or database beyond `community_<marker>` and `community`.
+- Tigris: nothing is added to the check. Reading bucket contents is not in the query.
+
+A journal without `recoveryContext` is `unproved` ("this run is too old to check").
+
+### 3. Confirmation and the check before deletion
+
+**Interactive** (stdin and stdout are a TTY, and there is no `--confirm`):
 
 ```
 Run 3f2c9a1e stopped while creating a Fly app. DorkOS can prove that run made it:
 
-  Fly app     community-acme  (id: 1a2b3c4d5e)
+  Fly app     community-acme  (internal id 4817203)
   Owner       Fly organization acme
   Created     2026-09-23 10:31:07 UTC, 4 seconds after the run asked for it
   Proof       its private network is dorkos-7f3e…c21a, the name this run recorded before creating it
-  Contents    no Machines, no volumes
+  Contents    no Machines, volumes, IP addresses, certificates or secrets
 
 Removing it deletes this app. Nothing else from this run is touched.
-Type the app id to remove it, or press Enter to keep it:
+Type the internal id to remove it, or press Enter to keep it:
 ```
 
-- The operator types the **provider-issued id**, not the name. The consent to launch was typing the app name, so asking for a different string stops a reflexive repeat.
-- Enter, a wrong id, Control-C or EOF each keep the resource. The command exits 0 after a clean decline, and 1 after a wrong id.
-- Every string shown is validated with `ExternalIdentifierSchema` or `ExternalLabelSchema` first, so a name or id cannot inject terminal controls.
+- **The confirmation token always comes from fresh readback.** For Fly it is `internalNumericId`. For Neon it is the project id, and for Tigris the add-on id. For Fly, the token is never the app name, which is also `App.id`, and which the operator already typed once to consent to the launch.
+- Enter, EOF or Control-C keeps the resource and exits 0. A wrong token keeps it and exits 1.
+- Every string shown is validated with `ExternalIdentifierSchema` or `ExternalLabelSchema` before it is printed.
 
-**Non-interactive** (`--confirm <resource-id>`):
+**Non-interactive** (`--confirm <token>`):
 
-- The command still computes the verdict from scratch. `--confirm` is one more condition, never a bypass. It deletes only when the verdict is `proved` **and** the given id equals the proved resource's id exactly.
-- Without a TTY and without `--confirm`, the command prints the verdict and the exact `--confirm` command, and exits 0 without writing. This is the read-only check. It needs no separate flag.
-- There is no `--yes`, and no environment variable arms deletion.
+- The verdict is always computed from scratch. `--confirm` is one more condition, never a bypass. The command deletes only when the verdict is `proved` and the token equals the proved resource's token exactly.
+- Without a TTY and without `--confirm`, the command prints the verdict and the exact `--confirm` command, then exits 0 without writing. That is the read-only check.
+- There is no `--yes`, and no environment variable can arm deletion.
 
-This design keeps a real app with a colliding name safe in three independent ways. The name alone never matches: proof needs a 128-bit marker the other app cannot carry. The organization must match. And the operator types an id the command has just shown them from fresh readback.
+**Check again just before deleting.** After confirmation, and immediately before the delete call, the command runs `find()` again. It requires the same token, the same proof and the same "not grown" result. It also re-reads the journal and requires its revision to be the one the command itself wrote in step 1 of §4. Any difference aborts without deleting.
 
-### 4. Journal changes (`journal.ts`)
+### 4. Journal and ordering
 
-All fields are optional additions to schema version 1. A launcher older than this one rejects a journal that carries them, because the schema is strict. That fails closed and is acceptable. The help and docs say to finish a run with the version that started it.
+New optional fields on schema version 1:
 
 ```ts
+pendingIntent: { …, requestedAt: z.iso.datetime().optional() },
 provenance: z.object({ flyNetwork: SafeIdentifierSchema.optional() }).strict().optional(),
 pendingRemoval: z.object({
   provider: z.enum(['fly', 'neon', 'tigris']),
-  resourceId: SafeIdentifierSchema,
+  token: SafeIdentifierSchema,          // internalNumericId / project id / add-on id
   resourceName: SafeIdentifierSchema,
   proof: z.enum(['marker', 'binding']),
+  priorSecretDigests: z.record(…).optional(), // Tigris only: AWS_* digests before removal
   requestedAt: z.iso.datetime(),
 }).strict().nullable().optional(),
-removals: z.array(z.object({
-  provider: z.enum(['fly', 'neon', 'tigris']),
-  resourceId: SafeIdentifierSchema,
-  resourceName: SafeIdentifierSchema,
-  proof: z.enum(['marker', 'binding']),
-  removedAt: z.iso.datetime(),
-}).strict()).max(8).optional(),
+removals: z.array(/* same fields plus removedAt */).max(8).optional(),
 ```
 
-Add `REMOVAL_OUTCOME_UNCERTAIN` to `LaunchSafeErrorCodeSchema`.
+Add `REMOVAL_OUTCOME_UNCERTAIN` to `LaunchSafeErrorCodeSchema`. A launcher older than this one rejects a journal that carries these fields, because the schema is strict. That fails closed. The docs say to finish a run with the version that started it.
 
-The removal runs under the existing revision check and the cross-process journal lock. Each step is one `writeLaunchJournal` revision:
+**The run is not locked.** Correctness comes from revision checks alone.
 
-1. **Record intent to remove.** Write `pendingRemoval` with the proved id and proof kind.
-2. **Delete** through the existing wrapper: `destroyFlyApp(name)`, `deleteNeonProject(id)`, or `deleteTigris(name)`. Its exit code is advisory only. Like a create, a delete can succeed remotely and still report an error.
-3. **Confirm absence** with the same read used for the verdict. Poll with capped backoff for up to 60 seconds, because Fly app destruction and Neon project deletion finish asynchronously.
-4. **Record the outcome.**
-   - _Gone:_ append to `removals`. Clear `pendingRemoval` and `pendingIntent`. Remove the resource's key from `resources`, which only matters for shape B. Set `state` to the last entry of `completedSteps`, and set `lastSafeError: null`. The run can then be resumed.
-   - _Still present, or the read fails:_ keep `pendingRemoval`. Write `state: 'uncertain'` and `lastSafeError: { category: 'uncertain', code: 'REMOVAL_OUTCOME_UNCERTAIN' }`. Tell the operator that running the same command again is safe.
+1. **Record intent to remove.** Write `pendingRemoval` with `expectedRevision = verdictRevision`. On `LaunchJournalConflictError`, abort without deleting: "This run changed while DorkOS was checking it. Run the command again." This catches a concurrent `--resume` or a second removal.
+2. **Check again** (§3). This includes checking that the journal revision is still the one step 1 wrote.
+3. **Delete** through the existing wrapper. Its exit code is only advisory, because a delete can succeed remotely and still report an error.
+4. **Confirm absence** with the same query used for the verdict. Poll with capped backoff for up to 60 seconds, because Fly and Neon deletions finish asynchronously. For Fly, also call `appNameAvailable` once, and say in the result whether the name is free yet.
+5. **Record the outcome** against the revision written in step 1.
+   - **Gone:** append to `removals`, carrying Tigris `priorSecretDigests` forward. Clear `pendingRemoval` and `pendingIntent`. Set `state` to the last entry of `completedSteps` and `lastSafeError` to null. The run can be resumed.
+   - **Still present, or the read failed:** keep `pendingRemoval`, write `state: 'uncertain'` and `lastSafeError.code: 'REMOVAL_OUTCOME_UNCERTAIN'`, and say it is safe to run the command again.
 
-**Idempotency and restart.** When the command starts with `pendingRemoval` set, it re-reads before doing anything else:
+**Other processes.**
 
-- The resource is gone: finish step 4 as _Gone_ with no further prompt.
-- It is present, and its marker or binding still proves it with the same id: go back to the confirmation prompt. A second deletion needs a second confirmation.
-- Anything else: `unproved`. Stop without deleting.
+- `--resume` refuses to run while `pendingRemoval` is set.
+- A `--resume` that read the journal before step 1 cannot write after it, because its next write fails the revision check. In shape A it throws before writing anyway.
+- The deploy dispatcher's cancel handler currently rewrites the journal to `CREATION_OUTCOME_UNCERTAIN` whenever `pendingIntent` is set. It must not rewrite a journal that carries `pendingRemoval`.
+- Removal mode has its own cancel handler. It aborts the active provider process and writes `REMOVAL_OUTCOME_UNCERTAIN` only if step 1 has landed.
 
-A second run after success reports `nothing-pending`. `--resume` refuses while `pendingRemoval` is set, and `--remove-uncertain` refuses a journal whose `state` is not `uncertain` and has no `pendingRemoval`. A run that is still active holds the lock, and the command fails with the existing `JOURNAL_LOCKED` message.
+**Restart with `pendingRemoval` set.** The command re-reads before doing anything else:
 
-**Order and partial failure.** `execute.ts` stops at the first uncertain create, so a run has at most one unresolved resource, and the command touches exactly one. Resources the run confirmed earlier are listed as kept (Open decision 2). If the orphan is a Tigris bucket, the app is not touched. Once the bucket is removed, a resume re-creates it bound to the same app, and the secrets check (`verifyTigrisSecretNames`) runs again.
+- The resource is gone: finish step 5 as **Gone** with no prompt.
+- It is present, and still proved with the same token: go back to the confirmation prompt. A second deletion needs a second confirmation.
+- Anything else: `unproved`, and stop.
+
+**Order.** `execute.ts` stops at the first uncertain create, so there is at most one unresolved resource, and the command touches exactly that one. Resources confirmed earlier are listed as kept. When the orphan is a Tigris bucket, the app is not touched.
 
 ### 5. Command surface and output
 
-- `community-dispatcher.ts` gets `--remove-uncertain <run-id>` and `--confirm <resource-id>`. The two are mutually exclusive with `--resume`, `--dry-run` and every plan flag. `--confirm` without `--remove-uncertain` is an error.
-- `COMMUNITY_DEPLOY_HELP` changes "never removes resources automatically" to: "never removes a resource without proof that this run made it and your typed confirmation." It also lists both flags.
-- `formatCommunityRecovery`, when `pendingIntent` is set, adds one line after the manual steps: `Check whether DorkOS can prove this run made it and remove it: dorkos community deploy --remove-uncertain <run-id>`. "Automatic cleanup was not attempted." stays.
+- `community-dispatcher.ts` gains `--remove-uncertain <run-id>` and `--confirm <token>`. They cannot be combined with `--resume`, `--dry-run`, `--list-incomplete` or any plan flag. `--confirm` without `--remove-uncertain` is an error.
+- `COMMUNITY_DEPLOY_HELP` changes "never removes resources automatically" to "never removes a resource without proof that this run made it and your typed confirmation", and lists both flags.
+- `formatCommunityRecovery` adds one line, only for shape A: `Check whether DorkOS can prove this run made it and remove it: dorkos community deploy --remove-uncertain <run-id>`.
 - `--list-incomplete` shows `removal pending` for a journal with `pendingRemoval`.
-- Only the service in the intent is contacted. Fly needs the local `fly` session (the GraphQL queries use `readFlySessionCredential`, as Tigris does today). Neon needs the local `neonctl` profile. Both paths keep the existing secret rules: no token in argv, env, the journal or output.
+- Only the service in the intent is contacted. Fly reads use the in-memory session credential through `readFlySessionCredential`, as Tigris does today, and Neon uses the local `neonctl` profile. No token reaches argv, the environment, the journal or the output.
 
 ### 6. Module layout
 
-- `uncertain-removal.ts` (new): the pure verdict and removal state machine behind an `UncertainResourceProbe` port:
+- `provenance-gate.ts` (new): `PROVENANCE_ROUND_TRIP_PROVED`.
+- `uncertain-removal.ts` (new): the pure verdict function and the removal state machine, behind:
   ```ts
   interface UncertainResourceProbe {
     find(intent: PendingIntent, journal: LaunchJournal): Promise<ProbeResult>; // candidates + proof facts
-    remove(target: ProvedResource): Promise<void>; // one delete call
-    isGone(target: ProvedResource): Promise<boolean>; // absence readback
+    remove(target: ProvedResource): Promise<void>;
+    isGone(target: ProvedResource): Promise<boolean>;
   }
   ```
-- `runtime/default-removal.ts` (new): the Fly, Neon and Tigris probes over the existing read and mutate wrappers plus the two new GraphQL operations.
-- `fly-graphql-contract.ts` and `fly-graphql-client.ts`: add `DorkosReadAppProvenance` and `DorkosFindTigrisOnApp`, pinned and minimal. They never request `password`, `environment`, `ssoLink` or `metadata`.
-- `execute.ts`, `fly-mutate.ts`, `runtime/default-services.ts`: marker generation and use as described in §1.
+- `runtime/default-removal.ts` (new): the Fly, Neon and Tigris probes.
+- `fly-graphql-contract.ts` and `fly-graphql-client.ts`: add `DorkosReadAppProvenance`, `DorkosFindTigrisOnApp` and `DorkosAppNameAvailable`. They never select `password`, `environment`, `ssoLink`, `metadata` or secret values; `secrets { name }` is names only.
+- `execute.ts`, `fly-mutate.ts`, `runtime/default-services.ts`, `journal.ts`: the create-path changes in §1.
 
 ## User experience
 
-1. A launch stops. The recovery text names the unresolved resource and gives the `--remove-uncertain` command.
-2. The operator runs it. Within a few seconds they see either a proved resource, with its owner, created time, proof and contents, or a plain explanation of why DorkOS will not delete it.
-3. They type the id. The command deletes the resource, waits until the service confirms it is gone, and prints:
-   `Removed Fly app community-acme (1a2b3c4d5e). Continue the launch with: dorkos community deploy --resume …`
-4. `--resume` picks up from the last confirmed step, with a new marker for the new create.
-
-Every exit answers what was removed, what was kept, whether charges may continue, and what to run next.
+1. A launch stops in shape A. The recovery text gives the `--remove-uncertain` command.
+2. The operator runs it and sees one of two things: the resource DorkOS can prove, with its owner, created time, proof and contents, or a plain reason why DorkOS will not delete it.
+3. They type the token. The command deletes the resource and waits until the service confirms it is gone. Then it prints: `Removed Fly app community-acme (internal id 4817203). Fly has released the name. Continue with: dorkos community deploy --resume …`. If the name is not free yet, the message says to wait a few minutes before resuming.
+4. `--resume` continues from the last confirmed step with a fresh marker.
 
 ## Edge cases
 
-- **Legacy journal (no marker):** `unproved`, "this run started before DorkOS recorded proof". The operator gets the existing manual steps plus what was found.
-- **Same name, another organization:** a Fly app name taken in another organization makes the create fail. The launcher classifies that as uncertain. The verdict is `absent` in the run's organization, and nothing that belongs to someone else is read further or deleted.
-- **Same name, same organization, no marker** (a teammate's app, or the operator's own second run): `unproved`, never deleted.
-- **Two Neon projects with the same name**, one carrying the marker: only that one is proved. The other is listed as "not from this run". Two carrying the marker cannot happen by chance with a 128-bit random value. If it did, the verdict would be `unproved`.
-- **Resource grew after the stop:** `unproved` ("something was added after the run stopped").
-- **Fly name reuse after destroy:** the resumed create uses the same app name. If Fly still reserves the name for a short time, the resumed create fails before submission with `NAME_CONFLICT`, not uncertain, and the operator retries. The live gate records whether this happens.
-- **Cancelled during removal:** Control-C aborts the active provider process. The journal keeps `pendingRemoval`, and the restart rules in §4 apply.
-- **Journal edited by hand to point at someone else's resource:** the marker cannot be forged without also creating the resource with it. A hand-edited `resources` id in shape B must still carry the marker, so editing the journal alone never makes a foreign resource deletable.
+- **Legacy journal (no marker):** `unproved`, "this run started before DorkOS recorded proof".
+- **Same name in another organization:** the create fails and is classified as uncertain. The verdict is `absent` in the run's organization. Nothing belonging to someone else is read further or deleted.
+- **Same name in the same organization, without the marker:** `unproved`.
+- **Two Neon projects with the same name:** only the one with the marker, created inside the window, is proved. The other is listed as "not from this run".
+- **Name held after removal:** handled by the `appNameAvailable` check in `prepare()` (§1).
+- **Stale Tigris credentials after removal:** handled by the digest rule in §1.
+- **Cancelled during removal:** the journal keeps `pendingRemoval`, and the restart rules apply.
+- **Journal tampering is outside the threat model.** The journal is trusted local state. Someone who can write it could copy a network name they can see into it, but they could also delete the resource with the operator's own `fly` login. The proof guards against name collisions, a teammate's resources and operator mistakes, not against a local attacker.
 
 ## Testing strategy
 
 No test contacts a live service. Everything runs at the provider seam.
 
-- **Unit (`uncertain-removal.test.ts`)** with an in-memory `UncertainResourceProbe`. Covers every verdict for each service and both shapes (A and B); legacy journals; a marker mismatch; an organization or region mismatch; a grown resource; `--confirm` with the right id, a wrong id, and a correct id on an `unproved` verdict (refused); a clean decline; the restart matrix for `pendingRemoval`; the post-removal journal (state rewound, intent cleared, `removals` appended, resume-ready); and `REMOVAL_OUTCOME_UNCERTAIN` when absence never arrives.
-- **Execution:** `execute.test.ts` asserts that the intent revision carrying the marker is persisted before `create(marker)` is called, and that the marker reaches the create call.
-- **Contract fixtures:** sanitized JSON for `DorkosReadAppProvenance` and `DorkosFindTigrisOnApp`, derived from fly-go v0.9.15 `schema.graphql`. Add a `neonctl roles list` fixture with a `community_<hex>` role. Mutation fixtures remove or rename `network`, `organization.slug` and the add-on `app.id`, to prove a malformed success yields `unproved`, never `proved`.
-- **Fake executables:** `test:community-package` gains one scenario. The fake `fly` creates the app and then exits non-zero, so the run stops uncertain. `--remove-uncertain` shows the proof. A PTY answer with the id removes the app. `--resume` completes the launch. Final fake-provider state shows exactly one app, one project and one bucket. A second scenario seeds a same-name app without the marker and asserts that it survives and the command prints `unproved`.
-- **Security:** terminal escapes in names and ids, a symlinked journal, a journal locked by a live pid, and no secret or token in argv, the journal, stdout or stderr. These reuse the existing harnesses.
-- **Live gate** (`pnpm --filter dorkos test:community-live`, behind its existing six arms, never a default): no new arm and no induced failure. After the launch and before cleanup, the gate runs the read-only verdict probes against the three resources it just created. It asserts that the Fly `network` equals `provenance.flyNetwork`, that the Neon role equals `community_<marker>`, and that the bucket is bound to the app. It records the results in its receipt. That receipt is the contract gate in §1. Deletion needs no new live proof, because the gate already exercises the same three delete wrappers in its cleanup. Inducing a real uncertain create live is not added: it depends on timing, and the fake-executable scenario covers the logic.
+- **Unit (`uncertain-removal.test.ts`)** with an in-memory probe and an injected gate:
+  - Every verdict for each service: `resume-first`, `not-a-create`, `nothing-pending`, and the four shape-A verdicts.
+  - Proof failures: legacy journal, different marker, wrong organization or region, created outside the window, more than one candidate, incomplete add-on list, Tigris with an app lacking `provenance.flyNetwork` or with a different network now, each Fly "grown" field, and gate `false`.
+  - Confirmation: `--confirm` with the right token, a wrong token, the Fly app name (always refused), and a right token on an `unproved` verdict (refused); a clean decline.
+  - The check again before deleting: the token changes between prompt and delete, a Machine appears, or the journal revision moves. Each aborts without deleting.
+  - The restart matrix, the rewound journal after removal, and `REMOVAL_OUTCOME_UNCERTAIN`.
+- **Concurrency:** a shape-A journal. A simulated concurrent `--resume` writes a revision between the verdict and step 1. The test asserts that `pendingRemoval` is never written and that `remove()` is never called. A second case lands a resume write between step 1 and the check before deleting, and asserts the abort.
+- **Create path:** `execute.test.ts` asserts that the intent revision carrying `provenanceMarker` and `requestedAt` is persisted before `create(marker)` is called. `default-services` tests assert that the #2012 fallback rejects an app whose provenance `network` is empty or different, and that `provenance.flyNetwork` equals the value read back from the service, even when a fake returns a different value from the intent. The Tigris re-create test rejects unchanged `AWS_*` digests after a recorded removal. The `prepare()` test stops before the intent while `appNameAvailable` is false.
+- **Contract fixtures:** the three new GraphQL operations, derived from fly-go v0.9.15 `schema.graphql`, and a `neonctl roles list` fixture with a `community_<hex>` role. Mutation fixtures drop or rename `network`, `internalNumericId`, `createdAt`, `organization.slug` and `addOns.totalCount` to prove that a malformed success yields `unproved`.
+- **Fake executables (`scripts/test-community-deploy-package.ts`):** the fake `neonctl` echoes the requested `--role` in `roles`, in `databases.owner_name` and in the `connection-string` user, instead of the hard-coded `community_owner` (lines 112–115 today). The fake `fly` and GraphQL stand-in return the requested network. Scenarios follow the phases below.
+- **Live gate** (`pnpm --filter dorkos test:community-live`, behind its existing six arms, never a default): no new arm and no induced uncertain create.
+  - After the launch and before cleanup, the gate runs the read-only probes and records in its receipt the Fly `network` against `provenance.flyNetwork`, the Neon role against `community_<marker>`, and the Tigris binding.
+  - It also records that `fly ssh console --app <app> --command true` works on the custom network.
+  - After cleanup, it records whether the custom network still exists.
+  - That receipt is what the gate-flip PR cites. Deletion needs no new live proof: the gate already exercises the same three delete wrappers.
 
 ## Documentation
 
-- `apps/community/FLY.md` guided-launch section: one paragraph on what "uncertain" means, the `--remove-uncertain` command, and the fact that DorkOS removes only what it can prove it made.
-- Changelog fragment at implementation time, written for the operator ("If a Community launch stops unsure whether it created something, DorkOS can now check and, once you confirm, remove it").
+- `apps/community/FLY.md` guided-launch section: what "uncertain" means, the `--remove-uncertain` command, the rule that DorkOS removes only what it can prove it made, and the leftover private network (Decision 1).
+- A changelog fragment at implementation time, written for the operator.
 
 ## Implementation phases
 
-1. Markers: journal fields, `create(marker)`, `--network`, the Neon role, the tightened #2012 fallback, and fixtures.
-2. `uncertain-removal.ts`, the probes, the two GraphQL operations, and the dispatcher flags and output.
-3. The fake-executable scenarios, the live-gate read-only probe, docs, and the changelog.
+1. **Markers and readback.** Journal fields; `create(marker)`; `--network`; the Neon role; the new Fly provenance query in `inspect()` and the #2012 fallback; `provenance.flyNetwork` from readback; the Tigris digest rule; fixtures; the fake `neonctl` role echo; `PROVENANCE_ROUND_TRIP_PROVED` committed as all `false`. Ships in a release.
+2. **Live receipt.** Run the live gate on that release. It records the marker round trip, `fly ssh console` on the custom network, and whether the network is left behind.
+3. **Removal command.** `uncertain-removal.ts`, the probes, the name-availability check in `prepare()`, the dispatcher flags and output, and the unit and concurrency tests with the gate overridden. The packaged scenario uses the committed gate. It asserts that a shape-A Fly orphan with the right marker gets `unproved`, with the reason "not yet confirmed", and survives. A second scenario seeds a same-name app without the marker and asserts that it survives.
+4. **Gate flip.** Its own PR, citing the phase-2 receipt, sets `fly` and `neon` to `true`. It changes the packaged scenario to: the fake `fly` creates the app and then exits non-zero; `--remove-uncertain` proves it; a PTY answer with the internal id removes it; `--resume` completes. The final fake state shows exactly one app, one project and one bucket.
 
-Phase 1 must land before phase 2 can prove anything. Runs started before phase 1 stay unprovable forever.
+Runs started before phase 1 ships can never be proved.
 
-## Open decisions for the operator
+## Decisions
 
-1. **Put each Community's Fly app on its own private network.** This is the only field a run can attach to a Fly app and read back, so it is what lets DorkOS prove, and remove, the orphan class actually seen. The cost is that the Community app cannot reach other apps in the same Fly organization over Fly's private network. It does not need to today.
-   **Recommended default: yes.** The alternative is to accept weaker evidence for Fly: the name journaled before the create, plus the organization, a created time inside the create window, and an empty app. That is strong but not proof, and it would break the parent spec's rule that a name match is never proof.
-2. **Remove only the unresolved resource, or offer to tear down the whole run.** The issue asks for the first. The second is what an operator who gives up on a run usually wants, and the live gate's cleanup already does it for complete runs.
-   **Recommended default: only the unresolved resource in this item.** File a whole-run teardown as its own item that reuses these probes. Completed resources are already proved by exact id, so that item is small.
-3. **Allow a non-interactive `--confirm <resource-id>`.** The launcher deliberately has no `--yes`. `--confirm` is not a `--yes`: it must equal the id the command has just proved, and it never skips the proof.
-   **Recommended default: yes, exactly as specified.** It makes scripted recovery, and the fake-executable tests, possible without a PTY, and it keeps typed-consent semantics.
+The operator delegated these calls. They are the spec's defaults. **The operator may override any of them.**
+
+1. **Each Community's Fly app gets its own private network: yes.** It is the only field a run can attach to a Fly app and read back, and it is what lets DorkOS prove the orphan class actually seen.
+   - Costs: the app cannot reach other apps in the same Fly organization over Fly's private network, which Community does not need today. A custom network also persists after its apps are destroyed, so one network is left behind per launch attempt, per live-gate run and per remove-and-resume cycle.
+   - Before phase 4 flips the Fly gate, the live gate must show that `fly ssh console` still works on the custom network. The `createdAt` window check applies too.
+2. **Scope: the unresolved resource only.** Whole-run teardown is a follow-up.
+3. **Non-interactive `--confirm`: yes.** The token comes only from fresh readback: Fly `internalNumericId`, the Neon project id, or the Tigris add-on id. It is never the Fly app name.
+
+## Follow-ups
+
+- **Whole-run teardown:** remove every resource a run confirmed, in the live gate's order (Tigris, Neon, Fly), reusing these probes and `provenance.flyNetwork`. Filed separately.
+- **Tidy leftover private networks** from launch attempts, if the live receipt shows they accumulate.
 
 ## Related
 
 - Parent spec: `specs/community-self-host-launcher/02-specification.md` (§"Partial failure, retry, and cancellation")
 - ADR `260920-200112`: Community self-hosting starts with a local guided launcher
 - DOR-2169 (live gate), #2012 (flyctl output fix and name/slug fallback)
-- [Fly Machines API: apps](https://docs.fly.io/machines/api/apps-resource/), [flyctl v0.4.104 `apps create`](https://github.com/superfly/flyctl/blob/v0.4.104/internal/command/apps/create.go), [fly-go v0.9.15 schema](https://github.com/superfly/fly-go/blob/v0.9.15/schema.graphql)
+- [Fly Machines API: apps](https://docs.fly.io/machines/api/apps-resource/), [flyctl v0.4.104 `apps create`](https://github.com/superfly/flyctl/blob/v0.4.104/internal/command/apps/create.go), [flyctl v0.4.104 `ext tigris destroy`](https://github.com/superfly/flyctl/blob/v0.4.104/internal/command/extensions/tigris/destroy.go), [fly-go v0.9.15 schema](https://github.com/superfly/fly-go/blob/v0.9.15/schema.graphql)
 - [Neon create project API](https://api-docs.neon.tech/reference/createproject), [neonctl projects](https://neon.com/docs/reference/cli-projects)

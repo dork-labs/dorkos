@@ -2,7 +2,7 @@
   "version": 1,
   "specs": [
     {
-      "id": "260924-003404",
+      "id": "260924-004728",
       "slug": "launcher-uncertain-create-cleanup",
       "title": "Remove a resource left by an uncertain Community launch create, with proof and confirmation",
       "created": "2026-09-24",
