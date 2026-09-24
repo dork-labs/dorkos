@@ -60,6 +60,32 @@ https://community.example.com/api/auth/callback/github
 
 Use the same origin for `COMMUNITY_PUBLIC_URL`. Do not register a preview, internal, or local address as a production callback. Changing the public address requires updating these callbacks before people can sign in again.
 
+## Optional single sign-on (OpenID Connect)
+
+You can let people sign in through your own OpenID Connect provider, beside email and password. Set all three of these, or none:
+
+| Setting                        | Must be                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `COMMUNITY_OIDC_ISSUER_URL`    | The issuer's `https://` address (`http://` only on localhost)                     |
+| `COMMUNITY_OIDC_CLIENT_ID`     | The client ID your provider gave this Community                                   |
+| `COMMUNITY_OIDC_CLIENT_SECRET` | That client's secret                                                              |
+| `COMMUNITY_OIDC_LABEL`         | Optional. The button text, 1 to 40 characters. Default: "Single sign-on"          |
+| `COMMUNITY_OIDC_SCOPES`        | Optional. Space-separated, must include `openid`. Default: `openid email profile` |
+
+Register this redirect URI with your provider. The service also prints it when it starts:
+
+```text
+https://community.example.com/api/auth/callback/oidc
+```
+
+The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. It uses PKCE and checks the signed ID token against the provider's published keys.
+
+Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified, or sign-in is refused. If someone's email already belongs to an account here, single sign-on does not attach to it on its own: they sign in with their password, then choose **Link** under Settings, Account.
+
+Email and password sign-in always stays on. Someone who joined through single sign-on can add a password under Settings, Account, within five minutes of signing in, so they can still get in when your provider is down. Exporting, leaving, transferring ownership, and other careful actions still ask for a password. Until someone adds one, those actions say "Set a password in your account to do this." Confirming these actions through your provider instead is planned as a separate change.
+
+To turn single sign-on off, unset the variables. Accounts made through it stay, and can sign in with a password if they added one.
+
 ## Optional terms, privacy, and report links
 
 If other people sign up on your Community, you can link your own terms, privacy notice, and a way to report abuse. Each link is optional. Leave one unset and nothing shows for it.

@@ -19,6 +19,7 @@ import {
 } from './AdmissionPanels.js';
 import type { Community } from '../types.js';
 import { HostPolicyLinks } from './HostLinks.js';
+import { returnHere, takeSignInError, useSignInOptions } from '../sign-in-options.js';
 
 /**
  * What the clean join URL found on the server before this component mounted: a live join
@@ -83,20 +84,15 @@ export function Admission({
   const [communityName, setCommunityName] = useState('');
   const [channelName, setChannelName] = useState('general');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [providers, setProviders] = useState({ google: false, github: false });
+  // A provider round trip that failed returns here with `?error=`; say why once.
+  const [error, setError] = useState(() => takeSignInError() ?? '');
+  const providers = useSignInOptions();
   const heading = useRef<HTMLHeadingElement>(null);
   const focusedStage = useRef(stage);
   const retry = useRef<(() => Promise<void>) | null>(null);
   const resumeOnMount = useRef(resumed?.account ? resumed : null);
   const isOwner = !community && !hostSignIn;
   const pendingAdmission = preview !== null;
-
-  useEffect(() => {
-    void request<{ google: boolean; github: boolean }>('/api/v1/auth-options')
-      .then(setProviders)
-      .catch(() => {});
-  }, []);
 
   // Move focus to the new heading on every step change, so keyboard and screen-reader users
   // land on what changed instead of on a control that just disappeared.
@@ -169,14 +165,11 @@ export function Admission({
     await join(pending, context);
   }
 
-  async function social(provider: 'google' | 'github') {
+  async function social(provider: 'google' | 'github' | 'oidc') {
     setBusy(true);
     setError('');
     try {
-      const result = await authClient.signIn.social({
-        provider,
-        callbackURL: window.location.origin + window.location.pathname,
-      });
+      const result = await authClient.signIn.social({ provider, ...returnHere() });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
     } catch (cause) {
       setError(describeError(cause));
@@ -488,30 +481,42 @@ export function Admission({
             </Button>
           </form>
         )}
-        {!isOwner && stage === 'account' && (providers.google || providers.github) && (
-          <div className="row mt-4">
-            {providers.google && (
-              <Button
-                variant="outline"
-                type="button"
-                disabled={busy}
-                onClick={() => void social('google')}
-              >
-                Continue with Google
-              </Button>
-            )}
-            {providers.github && (
-              <Button
-                variant="outline"
-                type="button"
-                disabled={busy}
-                onClick={() => void social('github')}
-              >
-                Continue with GitHub
-              </Button>
-            )}
-          </div>
-        )}
+        {!isOwner &&
+          stage === 'account' &&
+          (providers.google || providers.github || providers.oidc) && (
+            <div className="row mt-4">
+              {providers.google && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void social('google')}
+                >
+                  Continue with Google
+                </Button>
+              )}
+              {providers.github && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void social('github')}
+                >
+                  Continue with GitHub
+                </Button>
+              )}
+              {providers.oidc && (
+                <Button
+                  variant="outline"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void social('oidc')}
+                >
+                  Continue with {providers.oidc.label}
+                </Button>
+              )}
+            </div>
+          )}
         <HostPolicyLinks />
       </main>
     </div>

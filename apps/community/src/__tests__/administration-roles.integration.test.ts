@@ -1781,6 +1781,8 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /account/erasures': "the caller's own erasure requests",
   'POST /account/erasures': 'the caller erases their own membership or account',
   'POST /account/erasures/:id/cancel': 'the caller cancels their own erasure',
+  'GET /account/sign-in-methods': "how the caller's own account signs in",
+  'POST /account/password': 'the caller adds a first password to their own account',
   'GET /owner/erasures':
     'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
 };

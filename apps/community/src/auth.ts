@@ -3,6 +3,7 @@ import { APIError, createAuthMiddleware } from 'better-auth/api';
 import type { Pool } from 'pg';
 import type { CommunityConfig } from './config.js';
 import { accountErasureRunning } from './erasure/guards.js';
+import { communityOidc } from './oidc.js';
 import { hashSecret, readCookie, verifyValue } from './security.js';
 
 /** Create one independent Better Auth instance for a community deployment. */
@@ -54,7 +55,11 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
       ...(config.oauth.google ? { google: config.oauth.google } : {}),
       ...(config.oauth.github ? { github: config.oauth.github } : {}),
     },
+    // An OIDC or social identity whose email matches an existing account is refused, never
+    // silently attached; a person links one from their account page after signing in.
     account: { accountLinking: { disableImplicitLinking: true } },
+    // The host's optional OpenID Connect sign-in. Unset, nothing is registered or fetched.
+    plugins: config.oidc ? [communityOidc(config.oidc)] : [],
     session: { expiresIn: 60 * 60 * 24 * 7, updateAge: 60 * 60 * 24 },
     advanced: {
       useSecureCookies: config.publicUrl.startsWith('https:'),
@@ -80,7 +85,9 @@ export function createCommunityAuth(pool: Pool, config: CommunityConfig) {
         create: {
           before: async (user, ctx) => {
             if (!(await checkAdmission(ctx?.headers?.get('cookie') ?? null))) {
+              // The code lets an OAuth or OIDC callback redirect with `?error=invitation_required`.
               throw new APIError('FORBIDDEN', {
+                code: 'invitation_required',
                 message: 'An invitation or owner grant is required.',
               });
             }

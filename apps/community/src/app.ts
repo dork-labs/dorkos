@@ -44,6 +44,7 @@ import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
 import { resolveCommunityContext } from './tenant-context.js';
 import { createPasswordConfirmation } from './password-confirmation.js';
+import { accountHasPassword, registerAccountPasswordRoutes } from './routes/account-password.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -98,6 +99,7 @@ export function createCommunityApp({
     ceiling: config.limits.reauthAttemptsPerMinute,
     spend: limitAttempts,
     refund: refundAttempt,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
@@ -313,6 +315,7 @@ export function createCommunityApp({
   });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
+  registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();
@@ -353,6 +356,7 @@ export function createCommunityApp({
     json(c, CommunityWireAuthOptionsSchema, {
       google: Boolean(config.oauth.google),
       github: Boolean(config.oauth.github),
+      oidc: config.oidc ? { label: config.oidc.label } : null,
     })
   );
 
