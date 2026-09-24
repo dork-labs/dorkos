@@ -92,6 +92,19 @@ describe('"N changes" counts the stops that differ from the preset', () => {
     });
   });
 
+  it('counts an unset global stop under a chosen preset as a change', async () => {
+    // A preset recorded by an upgrade, or a stop cleared later: new sessions do
+    // not start where the preset says, so the picker must not read "no changes".
+    const world = createPermissionWorld({ preset: 'careful', trustStop: null });
+    const overview = await world.service.getOverview();
+    expect(overview.changeCount).toBe(1);
+  });
+
+  it('counts nothing when every stop matches the preset', async () => {
+    const world = createPermissionWorld({ preset: 'balanced', trustStop: 'act' });
+    expect((await world.service.getOverview()).changeCount).toBe(0);
+  });
+
   it('counts no stop as a change on an undecided install, which has no preset stop', async () => {
     const world = createPermissionWorld({ preset: null, trustStop: 'autonomy' });
     const overview = await world.service.getOverview();

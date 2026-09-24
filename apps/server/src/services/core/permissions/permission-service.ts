@@ -739,13 +739,16 @@ export class PermissionService {
     const runtimeStops = Object.entries(stops.perRuntime).flatMap(([runtime, stop]) =>
       stop ? [{ runtime, stop }] : []
     );
-    // "Custom" is never stored: it is the default changes, plus each stored stop
-    // that differs from the one the preset sets. Undecided installs have no
-    // preset stop, so their stops are not changes to anything.
+    // "Custom" is never stored: it is the default changes, plus the global stop
+    // when it is not the one the preset sets (an unset stop included: an install
+    // whose preset came from an upgrade, or whose stop was cleared, does not
+    // start where its preset says), plus each per-runtime stop that differs.
+    // Undecided installs have no preset stop, so their stops are not changes to
+    // anything.
     const stopChanges =
       presetStop === null
         ? 0
-        : (stops.global !== null && stops.global !== presetStop ? 1 : 0) +
+        : (stops.global !== presetStop ? 1 : 0) +
           runtimeStops.filter((entry) => entry.stop !== presetStop).length;
     return {
       preset: config.preset,
