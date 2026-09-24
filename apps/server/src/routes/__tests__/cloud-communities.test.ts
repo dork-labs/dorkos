@@ -61,6 +61,23 @@ const START_CLAIM_URL = startFixture.claim.claimUrl;
 const FRESH_CLAIM_URL = 'https://community.example.invalid/claim/ct_opaque_fresh';
 const UPLOAD_TOKEN = moveStartFixture.upload.token;
 
+/**
+ * An instant `ms` after now.
+ *
+ * The fixtures' expiry times are fixed instants, only in the future on the
+ * day they were written, and the code under test compares them with the real
+ * clock. A test that needs an open window builds one here instead (the move
+ * fixture's upload window closed on 2026-09-24 and took six tests with it).
+ */
+function fromNow(ms: number): string {
+  return new Date(Date.now() + ms).toISOString();
+}
+
+/** A start answer whose held claim link is still valid. */
+function startAnswer() {
+  return { ...startFixture, claim: { ...startFixture.claim, expiresAt: fromNow(3_600_000) } };
+}
+
 /** One request the fake service or upload route received. */
 interface Received {
   method: string;
@@ -96,7 +113,7 @@ function defaultScript(): Script {
   return {
     list: listFixture,
     startStatus: 200,
-    startBody: startFixture,
+    startBody: startAnswer(),
     moveStartStatus: 200,
     moveStartBody: null,
     moveBody: moveImportingFixture,
@@ -192,11 +209,15 @@ function fakeOrigin() {
   return `http://127.0.0.1:${(fake.address() as AddressInfo).port}`;
 }
 
-/** A move-start answer whose upload goes to the fake upload route. */
+/** A move-start answer whose upload goes to the fake upload route, with its window open. */
 function moveStartAnswer() {
   return {
     ...moveStartFixture,
-    upload: { ...moveStartFixture.upload, url: `${fakeOrigin()}/upload/imp_0001` },
+    upload: {
+      ...moveStartFixture.upload,
+      url: `${fakeOrigin()}/upload/imp_0001`,
+      expiresAt: fromNow(3_600_000),
+    },
   };
 }
 
@@ -365,6 +386,8 @@ describe('starting a community and claiming it', () => {
   // Fails if the start relays the service body, or if the held link is never
   // used (a second, needless mint) or used twice.
   it('holds the first claim link back, hands it out once, then asks for a fresh one', async () => {
+    const answer = startAnswer();
+    script.startBody = answer;
     const start = await request(server)
       .post('/api/cloud/communities')
       .send({ idempotencyKey: 'key-1', name: 'Night shift', shortName: 'night-shift' })
@@ -384,7 +407,7 @@ describe('starting a community and claiming it', () => {
     expect(first.body).toEqual({
       ok: true,
       claimUrl: START_CLAIM_URL,
-      expiresAt: startFixture.claim.expiresAt,
+      expiresAt: answer.claim.expiresAt,
     });
     expect(serviceRequests().filter((r) => r.path.endsWith('/claim-link'))).toHaveLength(0);
 
