@@ -553,7 +553,11 @@ async function migrateOneSchedule(
   const outcome = deps.store.rekeyMigratedFile(
     oldFile,
     newFile,
-    { prompt: rewrite.block?.prompt ?? raw.body, cron: rewrite.block?.cron ?? '' },
+    {
+      prompt: rewrite.block?.prompt ?? raw.body,
+      cron: rewrite.block?.cron ?? '',
+      timezone: rewrite.block?.timezone ?? 'UTC',
+    },
     collision
   );
 
@@ -568,7 +572,11 @@ async function migrateOneSchedule(
     const reverted = deps.store.rekeyMigratedFile(
       newFile,
       oldFile,
-      { prompt: rewrite.block?.prompt ?? raw.body, cron: rewrite.block?.cron ?? '' },
+      {
+        prompt: rewrite.block?.prompt ?? raw.body,
+        cron: rewrite.block?.cron ?? '',
+        timezone: rewrite.block?.timezone ?? 'UTC',
+      },
       moveFailedReason(oldDir, path.join(destination.parent, destination.name))
     );
     if (reverted !== 'no-row') report.parked++;

@@ -184,6 +184,32 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     expect(await fs.readFile(filePath, 'utf-8')).toBe(SKILL);
   });
 
+  it('parks the schedule when an agent changes only its timezone (DOR-2307)', async () => {
+    // Purpose: a timezone moves the real run time; an agent must not move it
+    // on an approved schedule without a person seeing it.
+    const task = await approvedTask();
+
+    const res = await request(fixtureTarget.server)
+      .patch(`/api/tasks/${task.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ timezone: 'Pacific/Kiritimati' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ timezone: 'Pacific/Kiritimati', status: 'pending_approval' });
+  });
+
+  it('keeps a person’s own timezone change approved', async () => {
+    // Purpose: the person changing it is the approval, as with the cron.
+    const task = await approvedTask();
+
+    const res = await request(fixtureTarget.server)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ timezone: 'Asia/Tokyo' });
+
+    expect(res.body).toMatchObject({ timezone: 'Asia/Tokyo', status: 'active' });
+    expect((await resync()).status).toBe('active');
+  });
+
   it('puts the package’s timing back on a reset, still approved', async () => {
     // Purpose: the Schedules page's "Reset to the package's default".
     const task = await approvedTask();

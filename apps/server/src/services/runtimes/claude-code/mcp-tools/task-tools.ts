@@ -91,9 +91,9 @@ export const PARKED_SCHEDULE_NOTE =
  * What `tasks_update` tells an agent when its edit costs the schedule its
  * approval (DOR-1625 review).
  *
- * A person's approval is keyed on the schedule's CONTENT — the prompt and the
- * cron (`scheduleContentKey`) — so changing either means nobody has read this
- * piece of work. The next sync therefore parks the task at `pending_approval`,
+ * A person's approval is keyed on the schedule's CONTENT — the prompt, the
+ * cron and, since DOR-2307, the timezone (`scheduleContentKey`) — so changing
+ * any of them means nobody has read this piece of work. The next sync therefore parks the task at `pending_approval`,
  * within seconds via the file watcher and within five minutes regardless.
  *
  * That is the right behavior and it is NOT what the reply looked like. The row
@@ -111,7 +111,7 @@ export const PARKED_SCHEDULE_NOTE =
  * loud.
  */
 export const REAPPROVAL_NOTE =
-  'This edit changed what the schedule DOES, so the person has to approve it again. Within a ' +
+  'This edit changed what the schedule does or when it runs, so the person has to approve it again. Within a ' +
   'few minutes DorkOS will stop the schedule and put it back in front of them — your change is ' +
   'saved, it just will not run until they say yes. Tell them so in your reply: name the ' +
   'scheduled task and say it is waiting on them. Do not end the turn as if the work were done.';
@@ -656,20 +656,23 @@ export function createUpdateScheduleHandler(
     // `name` belongs beside prompt and cron because it is not inert: a scheduled
     // run is told `Job: ${task.name}` in its system prompt
     // (`services/tasks/task-append.ts`), so a rename changes what the unattended
-    // run reads. A metadata-only edit (enabled/timezone/maxRuntime) changes no
+    // run reads. A metadata-only edit (enabled/maxRuntime) changes no
     // approved work, so it never clamps — a legitimate on/off toggle keeps the
     // grant. The change must be REAL: a field re-sent at its current value is not
     // a new piece of work, mirroring the route's `!== existing` predicate.
     //
     // The two predicates are separate because the gates they feed are not the
-    // same width. `scheduleContentKey` is `[prompt, cron]` and nothing else, so
-    // those two alone decide whether a person's APPROVAL still covers this
+    // same width. `scheduleContentKey` is `[prompt, cron, timezone]` and nothing
+    // else (the timezone since DOR-2307), so those three alone decide whether a person's APPROVAL still covers this
     // schedule ({@link REAPPROVAL_NOTE}); the clamp below is deliberately wider,
     // because a rename changes what the unattended run is told without touching
     // the key.
     const changesApprovedContent =
       (args.prompt !== undefined && args.prompt !== existing.prompt) ||
-      (args.cron !== undefined && (args.cron ?? '') !== (existing.cron ?? ''));
+      (args.cron !== undefined && (args.cron ?? '') !== (existing.cron ?? '')) ||
+      // Part of the approved work since DOR-2307: the same cron in another
+      // timezone runs at another time.
+      (args.timezone !== undefined && args.timezone !== (existing.timezone ?? 'UTC'));
     const changesApprovedWork =
       changesApprovedContent || (args.name !== undefined && args.name !== existing.name);
     // Handed to the file step rather than set on the patch, so a package's
@@ -724,7 +727,11 @@ export function createUpdateScheduleHandler(
       ? 'unchanged'
       : deps.taskStore!.settleTimingChange(
           updated.id,
-          scheduleContentKey({ prompt: existing.prompt, cron: existing.cron ?? '' }),
+          scheduleContentKey({
+            prompt: existing.prompt,
+            cron: existing.cron ?? '',
+            timezone: existing.timezone ?? 'UTC',
+          }),
           { trusted: false }
         );
     if (settled === 'parked') {
@@ -872,7 +879,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
     tool(
       'tasks_update',
       'Update an existing scheduled task. Only the fields you send are changed. Changing the ' +
-        'prompt or the cron of a task the person already approved means they have to approve it ' +
+        'prompt, the cron or the timezone of a task the person already approved means they have to approve it ' +
         'again, and it stops running until they do. A task that came with an installed package ' +
         'can still be switched on or off and given a new cron or timezone — DorkOS keeps those, ' +
         "the package is not edited — and resetTiming puts it back on the package's own timing.",

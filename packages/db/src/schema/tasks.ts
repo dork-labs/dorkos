@@ -26,7 +26,8 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   /**
    * A person's own timezone for a package's schedule, beside
    * {@link cronOverride} and for the same reason. NULL means "the file's
-   * timezone". Not part of the approval key, exactly as `timezone` is not.
+   * timezone". Part of the approval key when set, as the timezone that runs
+   * (DOR-2307).
    */
   timezoneOverride: text('timezone_override'),
   prompt: text('prompt').notNull(),
@@ -68,7 +69,7 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   reasonSource: text('reason_source', { enum: ['dorkos'] }),
   /**
    * The schedule content a person has actually approved, as a content key
-   * (prompt + cron; `scheduleContentKey` in `schedule-permission-clamp.ts`).
+   * (prompt + cron + timezone since DOR-2307; `scheduleContentKey` in `schedule-permission-clamp.ts`).
    *
    * This is the arm grant, and it is POSITIVE on purpose. It used to be inferred
    * from `status`, and that inference sprang a leak every time some other writer

@@ -452,23 +452,40 @@ describe('tasks_update closes the keeps-approved-bypass window (security)', () =
   });
 
   it('leaves the grant alone when an agent edits only metadata (the clamp is narrow)', async () => {
-    // enabled / timezone / maxRuntime do not change the approved WORK, so a
-    // legitimate toggle must keep the bypass — or flipping a task off and on would
-    // silently strip its autonomy.
+    // enabled / maxRuntime do not change the approved WORK, so a legitimate
+    // toggle must keep the bypass — or flipping a task off and on would silently
+    // strip its autonomy. (The timezone did until DOR-2307; it moves the real
+    // run time now, so it is work — see the case below.)
     const task = seedApprovedBypass();
 
     const { isError } = await call('tasks_update', {
       id: task.id,
       enabled: false,
-      timezone: 'America/New_York',
       maxRuntime: '10m',
     });
     expect(isError).toBe(false);
 
     const after = store.getTask(task.id)!;
     expect(after.enabled).toBe(false);
-    expect(after.timezone).toBe('America/New_York');
     expect(after.permissionMode).toBe('bypassPermissions');
+  });
+
+  it('drops the bypass when an agent moves the timezone (DOR-2307)', async () => {
+    // Purpose: the same cron in another zone runs at another time, so an agent
+    // changing only the timezone is rewriting the approved work and must not
+    // keep a full-power grant made for the old one.
+    const task = seedApprovedBypass();
+
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      timezone: 'Pacific/Kiritimati',
+    });
+    expect(isError).toBe(false);
+
+    const after = store.getTask(task.id)!;
+    expect(after.timezone).toBe('Pacific/Kiritimati');
+    expect(after.permissionMode).toBe('acceptEdits');
+    expect(payload.needsReapproval).toBe(true);
   });
 
   it('leaves the grant alone when prompt/cron/name are re-sent unchanged', async () => {

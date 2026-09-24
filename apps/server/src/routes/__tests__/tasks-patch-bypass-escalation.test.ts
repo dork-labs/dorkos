@@ -212,6 +212,23 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     expect(resynced.permissionMode).toBe('acceptEdits');
   });
 
+  it('drops the bypass when an agent moves the timezone (DOR-2307)', async () => {
+    // Purpose: the same cron in another zone runs at another time, so a
+    // timezone change is a change to the approved work, exactly like the cron.
+    const { id, filePath } = await seedApprovedBypassTask();
+
+    const res = await request(fixtureServer)
+      .patch(`/api/tasks/${id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ timezone: 'Pacific/Kiritimati' });
+
+    expect(res.status).toBe(200);
+    expect(store.getTask(id)!.permissionMode).toBe('acceptEdits');
+    expect(await filePermission(filePath)).toBe('acceptEdits');
+    // And a resync cannot bring the grant back.
+    expect((await resync(filePath)).permissionMode).toBe('acceptEdits');
+  });
+
   it('drops the bypass when an agent renames the approved task', async () => {
     // `name` is not inert — a scheduled run is told `Job: ${task.name}` in its
     // system prompt (`task-append.ts`) — so a non-trusted rename changes what the

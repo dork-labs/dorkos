@@ -63,14 +63,18 @@ describe('effectiveContentKey', () => {
     // runs would cover work nobody approved.
     expect(
       effectiveContentKey({ ...PACKAGE_TIMING, cronOverride: '0 9 * * *', prompt: 'Drain.' })
-    ).toBe(scheduleContentKey({ prompt: 'Drain.', cron: '0 9 * * *' }));
+    ).toBe(scheduleContentKey({ prompt: 'Drain.', cron: '0 9 * * *', timezone: 'UTC' }));
   });
 
-  it('ignores the timezone, exactly as the approval key always has', () => {
-    // Purpose: a timezone-only change must never re-park an approved schedule.
+  it('keys the grant on the timezone that runs too (DOR-2307)', () => {
+    // Purpose: the same cron in another zone runs at another time — up to a
+    // day away — so a timezone-only change is new work to approve.
     expect(
       effectiveContentKey({ ...PACKAGE_TIMING, timezoneOverride: 'Asia/Tokyo', prompt: 'Drain.' })
-    ).toBe(scheduleContentKey({ prompt: 'Drain.', cron: '0 * * * *' }));
+    ).toBe(scheduleContentKey({ prompt: 'Drain.', cron: '0 * * * *', timezone: 'Asia/Tokyo' }));
+    expect(effectiveContentKey({ ...PACKAGE_TIMING, prompt: 'Drain.' })).not.toBe(
+      effectiveContentKey({ ...PACKAGE_TIMING, timezoneOverride: 'Asia/Tokyo', prompt: 'Drain.' })
+    );
   });
 });
 
