@@ -42,7 +42,7 @@ function packages(count: number): string {
 function detailSentences(summary: UpdatesSummary): string[] {
   const sentences: string[] = [];
   if (summary.current > 0) sentences.push(`${packagesAre(summary.current)} up to date.`);
-  if (summary.unknown > 0) sentences.push(`${packages(summary.unknown)} couldn't be checked.`);
+  if (summary.unknown > 0) sentences.push(`${packages(summary.unknown)} couldn’t be checked.`);
   return sentences;
 }
 
@@ -59,7 +59,7 @@ function describeSummary(summary: UpdatesSummary): { headline: string; allCurren
     return { headline: 'All packages are up to date.', allCurrent: true };
   }
   if (summary.current === 0 && summary.unknown === 0) {
-    return { headline: "These packages haven't been checked for updates yet.", allCurrent: false };
+    return { headline: 'These packages haven’t been checked for updates yet.', allCurrent: false };
   }
   return { headline: 'No updates found.', allCurrent: false };
 }
@@ -90,7 +90,7 @@ export function InstalledUpdatesSummary({
             Checking your packages for updates…
           </span>
         ) : error ? (
-          <span>Couldn&apos;t check for updates: {error.message}</span>
+          <span>Couldn’t check for updates: {error.message}</span>
         ) : (
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             {allCurrent && (

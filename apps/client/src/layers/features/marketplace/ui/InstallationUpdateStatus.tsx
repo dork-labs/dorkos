@@ -1,6 +1,6 @@
 /**
  * One Installed row's update line: checking, an update from one version to
- * another, updating, up to date, or why it couldn't be checked — plus the
+ * another, updating, up to date, or why it couldn’t be checked — plus the
  * reason a last attempt to update it failed.
  *
  * @module features/marketplace/ui/InstallationUpdateStatus
@@ -57,7 +57,7 @@ export function InstallationUpdateStatus({ state }: { state: RowUpdateState }) {
           {check.applyError && (
             <p className={`${LINE} text-status-error-fg`}>
               <TriangleAlert className={ICON} aria-hidden />
-              <span>Couldn&apos;t update: {check.applyError}</span>
+              <span>Couldn’t update: {check.applyError}</span>
             </p>
           )}
         </div>
@@ -78,7 +78,7 @@ export function InstallationUpdateStatus({ state }: { state: RowUpdateState }) {
         <p className={`${LINE} text-muted-foreground`}>
           <CircleHelp className={ICON} aria-hidden />
           <span>
-            Couldn&apos;t check for updates
+            Couldn’t check for updates
             {state.check.note ? `: ${state.check.note}` : ''}
           </span>
         </p>

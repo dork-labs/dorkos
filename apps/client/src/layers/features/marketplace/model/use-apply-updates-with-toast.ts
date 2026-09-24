@@ -3,7 +3,7 @@
  *
  * Wraps `useApplyUpdates`: one loading toast per apply, replaced in place
  * (sonner's `{ id }`) by the outcome. One installation gets its own sentence
- * ("Updated Reviewer on Alpha to v1.3.0", "Couldn't update Reviewer: <why>");
+ * ("Updated Reviewer on Alpha to v1.3.0", "Couldn’t update Reviewer: <why>");
  * several get a count, and the rows carry each installation's detail, so the
  * toast never has to list them.
  *
@@ -44,16 +44,16 @@ function describeOne(label: string, check: InstallationUpdateCheck | undefined):
     return { kind: 'success', message: `Updated ${label} to ${version}` };
   }
   if (check?.applyError) {
-    return { kind: 'error', message: `Couldn't update ${label}: ${check.applyError}` };
+    return { kind: 'error', message: `Couldn’t update ${label}: ${check.applyError}` };
   }
   if (check?.status === 'current') {
     return { kind: 'success', message: `${label} is already up to date` };
   }
   if (check?.status === 'unknown') {
     const why = check.note ? `: ${check.note}` : '';
-    return { kind: 'warning', message: `Couldn't check ${label} for updates${why}` };
+    return { kind: 'warning', message: `Couldn’t check ${label} for updates${why}` };
   }
-  return { kind: 'warning', message: `${label} wasn't updated` };
+  return { kind: 'warning', message: `${label} wasn’t updated` };
 }
 
 /** Describe several installations' outcomes as counts; the rows hold the detail. */
@@ -70,7 +70,7 @@ function describeMany(checks: readonly InstallationUpdateCheck[]): ApplyOutcomeT
   }
   if (failed > 0) {
     const count = failed === total ? `${total}` : `${failed} of ${total}`;
-    return { kind: 'error', message: `Couldn't update ${count} packages. Each package shows why.` };
+    return { kind: 'error', message: `Couldn’t update ${count} packages. Each package shows why.` };
   }
   if (checks.every((c) => c.status === 'current')) {
     return { kind: 'success', message: `These ${total} packages are already up to date` };

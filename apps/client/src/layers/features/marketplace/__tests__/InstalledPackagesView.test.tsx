@@ -443,7 +443,7 @@ describe('InstalledPackagesView', () => {
     });
 
     it('says why a row could not be checked, and offers no Update there', () => {
-      // Purpose: DorkOS never calls a package current when it couldn't check it,
+      // Purpose: DorkOS never calls a package current when it couldn’t check it,
       // and a blind Update is exactly what this row must not get.
       showRows(
         [REVIEWER],
@@ -461,7 +461,7 @@ describe('InstalledPackagesView', () => {
       const reviewer = row('Reviewer');
       expect(
         within(reviewer).getByText(
-          "Couldn't check for updates: linked install — update its source instead"
+          'Couldn’t check for updates: linked install — update its source instead'
         )
       ).toBeInTheDocument();
       expect(within(reviewer).queryByText('Up to date')).not.toBeInTheDocument();
@@ -477,7 +477,7 @@ describe('InstalledPackagesView', () => {
 
       expect(screen.getAllByText('Checking for updates…')).toHaveLength(2);
       expect(screen.getByRole('status')).toHaveTextContent('Checking your packages for updates…');
-      expect(screen.queryByText(/couldn't/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/couldn’t/i)).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^update/i })).not.toBeInTheDocument();
     });
 
@@ -527,7 +527,7 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       const reviewer = row('Reviewer');
-      expect(within(reviewer).getByText("Couldn't update: disk full")).toBeInTheDocument();
+      expect(within(reviewer).getByText('Couldn’t update: disk full')).toBeInTheDocument();
       expect(within(reviewer).getByRole('button', { name: /^update reviewer/i })).toBeEnabled();
     });
 
@@ -554,7 +554,7 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       expect(screen.getByRole('status')).toHaveTextContent(
-        "1 update available.1 package is up to date.1 package couldn't be checked."
+        '1 update available.1 package is up to date.1 package couldn’t be checked.'
       );
     });
 
@@ -567,7 +567,7 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       expect(screen.getByRole('status')).toHaveTextContent(
-        "Couldn't check for updates: Failed to fetch"
+        'Couldn’t check for updates: Failed to fetch'
       );
       expect(within(row('Reviewer')).queryByText('Up to date')).not.toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Try again' }));

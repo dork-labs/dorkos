@@ -155,7 +155,7 @@ describe('useApplyUpdatesWithToast', () => {
   it('reports one failed reinstall with the reason', () => {
     runApply([makeCheck()], { result: { checks: [makeCheck({ applyError: 'disk full' })] } });
 
-    expect(toastMock.error).toHaveBeenCalledWith("Couldn't update Reviewer: disk full", {
+    expect(toastMock.error).toHaveBeenCalledWith('Couldn’t update Reviewer: disk full', {
       id: 'toast-id',
     });
   });
@@ -180,14 +180,14 @@ describe('useApplyUpdatesWithToast', () => {
             status: 'unknown',
             hasUpdate: false,
             latestVersion: '',
-            note: "couldn't reach github.com",
+            note: 'couldn’t reach github.com',
           }),
         ],
       },
     });
 
     expect(toastMock.warning).toHaveBeenCalledWith(
-      "Couldn't check Reviewer for updates: couldn't reach github.com",
+      'Couldn’t check Reviewer for updates: couldn’t reach github.com',
       { id: 'toast-id' }
     );
   });
@@ -221,7 +221,7 @@ describe('useApplyUpdatesWithToast', () => {
     });
 
     expect(toastMock.error).toHaveBeenCalledWith(
-      "Couldn't update 2 packages. Each package shows why.",
+      'Couldn’t update 2 packages. Each package shows why.',
       { id: 'toast-id' }
     );
   });
@@ -238,7 +238,7 @@ describe('useApplyUpdatesWithToast', () => {
     });
 
     expect(toastMock.error).toHaveBeenCalledWith(
-      "Couldn't update 1 of 2 packages. Each package shows why.",
+      'Couldn’t update 1 of 2 packages. Each package shows why.',
       { id: 'toast-id' }
     );
   });
