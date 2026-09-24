@@ -12,6 +12,7 @@ import {
   CommunityWireCommunitySchema,
   CommunityWireHostAccessResponseSchema,
   CommunityWirePairingStartResponseSchema,
+  CommunityWireShortNameLookupSchema,
   type CommunityConnectionAccess,
 } from '@dorkos/shared/community-wire';
 import {
@@ -25,6 +26,7 @@ import {
 } from './connection-store.js';
 import {
   communityApiPath,
+  isCommunityId,
   parseCommunityLink,
   parseCommunityOrigin,
   pinnedJson,
@@ -141,6 +143,14 @@ export interface RemoteAccessTiming {
 }
 
 const NO_CAPABILITIES = { read: false, post: false, enrollAgent: false, stream: false };
+
+/** A `/<name>` link whose host knows no community by that name. */
+export class RemoteCommunityNameNotFoundError extends Error {
+  constructor() {
+    super('No community answers to this short name');
+    this.name = 'RemoteCommunityNameNotFoundError';
+  }
+}
 
 /** Pairing orchestration scoped to the local owner's verified author ID. */
 export class RemoteCommunityPairingService {
@@ -347,7 +357,13 @@ export class RemoteCommunityPairingService {
 
   /** Begin a ten-minute verifier-bound request at the checked deployment origin. */
   async start(ownerKey: string, url: string, installName: string): Promise<RemotePairingStart> {
-    const target = parseCommunityLink(url);
+    const link = parseCommunityLink(url);
+    const target = link.shortName
+      ? {
+          origin: link.origin,
+          communityId: await this.resolveShortName(link.origin, link.shortName),
+        }
+      : link;
     const discoveryPath = target.communityId
       ? communityApiPath(target.communityId, COMMUNITY_API_V1_ROUTES.community)
       : COMMUNITY_API_V1_ROUTES.community;
@@ -407,6 +423,30 @@ export class RemoteCommunityPairingService {
       verifier
     );
     return { connection, approvalUrl: approval.toString() };
+  }
+
+  /**
+   * Resolve a short name to its community's UUID through the host's public lookup, over the
+   * same pinned, redirect-free socket as every other call. From here on the connection only
+   * knows the UUID, so a later rename or release of the name never changes which community it
+   * talks to.
+   */
+  private async resolveShortName(origin: URL, shortName: string): Promise<string> {
+    let answer: unknown;
+    try {
+      answer = await pinnedJson(
+        origin,
+        COMMUNITY_API_V1_ROUTES.communityName.replace(':name', shortName)
+      );
+    } catch (error) {
+      if (error instanceof PinnedHttpError && error.status === 404)
+        throw new RemoteCommunityNameNotFoundError();
+      throw error;
+    }
+    const parsed = CommunityWireShortNameLookupSchema.safeParse(answer);
+    if (!parsed.success || !isCommunityId(parsed.data.communityId))
+      throw new PinnedOriginError('REMOTE_RESPONSE');
+    return parsed.data.communityId;
   }
 
   /** Poll once, exchanging an approved code only into the encrypted store. */

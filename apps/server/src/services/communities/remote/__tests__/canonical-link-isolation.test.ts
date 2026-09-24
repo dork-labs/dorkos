@@ -40,6 +40,7 @@ describe('canonical community links', () => {
     expect(parseCommunityLink(`https://community.example:8443/c/${communityId}`)).toEqual({
       origin: new URL('https://community.example:8443'),
       communityId,
+      shortName: null,
     });
     for (const invalid of [
       `https://owner:secret@community.example/c/${communityId}`,

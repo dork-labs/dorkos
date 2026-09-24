@@ -40,6 +40,7 @@ vi.mock('../../services/communities/remote/state.js', () => ({
 import { createCommunityConnectionsRouter } from '../community-connections.js';
 import { RemoteConnectionStore } from '../../services/communities/remote/connection-store.js';
 import {
+  RemoteCommunityNameNotFoundError,
   RemoteCommunityPairingService,
   RemoteCommunitySelectionRequiredError,
   RemoteCommunityUpgradeRequiredError,
@@ -157,6 +158,33 @@ describe('local connection route authority and public projection', () => {
     } finally {
       await new Promise<void>((resolve) => upgradeServer.close(() => resolve()));
       await rm(upgradeDirectory, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: a /<name> link the host does not know gets a plain 404 with a stable code,
+  // not the generic "unavailable" 502.
+  it('answers 404 with a stable code when a short name resolves to nothing', async () => {
+    const nameDirectory = await mkdtemp(join(tmpdir(), 'community-connections-name-'));
+    const nameService = new RemoteCommunityPairingService(new RemoteConnectionStore(nameDirectory));
+    vi.spyOn(nameService, 'start').mockRejectedValue(new RemoteCommunityNameNotFoundError());
+    const nameApp = express();
+    nameApp.use(express.json());
+    nameApp.use('/api/community-connections', createCommunityConnectionsRouter(nameService));
+    const nameServer = nameApp.listen(0, '127.0.0.1');
+    await once(nameServer, 'listening');
+    try {
+      const response = await request(nameServer)
+        .post('/api/community-connections')
+        .set('x-test-author', 'author-a')
+        .send({ url: 'https://community.example/acme', installName: 'Desktop' });
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({
+        code: 'COMMUNITY_NAME_NOT_FOUND',
+        error: 'No community at this address. Check the link and try again.',
+      });
+    } finally {
+      await new Promise<void>((resolve) => nameServer.close(() => resolve()));
+      await rm(nameDirectory, { recursive: true, force: true });
     }
   });
 
