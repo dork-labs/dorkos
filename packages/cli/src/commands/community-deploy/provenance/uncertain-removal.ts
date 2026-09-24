@@ -90,6 +90,8 @@ export type RemovalOutcome =
       provider: RemovalProvider;
       reason: UnprovedReason;
       candidates: CandidateSummary[];
+      /** Set when a removal was already under way: the resource must now be removed by hand. */
+      removalPending?: true;
     }
   | { outcome: 'unreachable'; provider: RemovalProvider }
   | { outcome: 'check-only'; target: ProvedResource; notFromRun: CandidateSummary[] }
@@ -324,9 +326,10 @@ export async function runUncertainRemoval(
 
   const verdict = await evaluate(journal);
   if (verdict.verdict === 'unreachable') return { outcome: 'unreachable', provider };
+  const pendingFlag = restart ? { removalPending: true as const } : {};
   if (verdict.verdict === 'absent') {
     return restart
-      ? { outcome: 'unproved', provider, reason: 'not-the-same', candidates: [] }
+      ? { outcome: 'unproved', provider, reason: 'not-the-same', candidates: [], ...pendingFlag }
       : { outcome: 'absent', provider };
   }
   if (verdict.verdict === 'unproved') {
@@ -335,6 +338,7 @@ export async function runUncertainRemoval(
       provider,
       reason: verdict.reason,
       candidates: verdict.candidates,
+      ...pendingFlag,
     };
   }
   const proved = verdict.target;
@@ -344,6 +348,7 @@ export async function runUncertainRemoval(
       provider,
       reason: 'not-the-same',
       candidates: [summary({ ...proved, name: proved.resourceName }, 'not-the-same')],
+      ...pendingFlag,
     };
   }
   if (!restart && (journal.removals?.length ?? 0) >= MAX_REMOVALS) {
@@ -395,6 +400,8 @@ export async function runUncertainRemoval(
       .catch(() => undefined);
   };
 
+  // Whether this run has sent the delete. Before that, a cancel changes nothing at the service.
+  let deleteSent = false;
   try {
     // Step 2: find and prove it again, then check the journal is still at the claimed revision.
     const again = await evaluate(claimed);
@@ -412,12 +419,15 @@ export async function runUncertainRemoval(
     }
     if (dependencies.signal?.aborted) throw new RemovalCancelledError();
     // Steps 3 to 5.
+    deleteSent = true;
     return await deleteAndRecord(dependencies, probe, target, claim);
   } catch (error) {
     if (error instanceof LaunchJournalConflictError) return { outcome: 'changed' };
     if (dependencies.signal?.aborted) {
-      // Cancelled after the claim landed: the delete may have been sent, so say so.
-      await recordRemovalUncertain(dependencies, claimed).catch(() => undefined);
+      // After the delete was sent it may have reached the service, so say the outcome is
+      // uncertain. Before that, nothing was deleted: give the claim back instead.
+      if (deleteSent) await recordRemovalUncertain(dependencies, claimed).catch(() => undefined);
+      else await release();
     }
     throw error;
   }

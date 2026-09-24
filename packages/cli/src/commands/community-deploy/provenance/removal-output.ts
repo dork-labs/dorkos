@@ -251,6 +251,12 @@ export function formatRemovalOutcome(
     case 'unproved':
       return done([
         `DorkOS will not remove anything for this run: ${unprovedReasonText(outcome.reason, outcome.provider)}.`,
+        ...(outcome.removalPending
+          ? [
+              'A removal was already started for this run, and DorkOS can no longer prove the resource is this run’s. Remove it yourself with the commands below.',
+              `Then run ${removeCommand(context.runId)} again. It will see the resource is gone and finish the removal, and --resume will work again.`,
+            ]
+          : []),
         ...(outcome.candidates.length > 0
           ? [
               'Found:',

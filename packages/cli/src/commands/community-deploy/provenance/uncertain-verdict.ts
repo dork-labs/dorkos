@@ -6,6 +6,7 @@
  * @module commands/community-deploy/provenance/uncertain-verdict
  */
 import type { LaunchJournal } from '../journal.js';
+import { COMMUNITY_SERVICE_TIMEOUT_MS } from '../provider-process.js';
 import {
   PROVENANCE_ROUND_TRIP_PROVED,
   flyProvenanceNetwork,
@@ -27,8 +28,24 @@ export interface ProvenanceGate {
   neon: boolean;
 }
 
-/** Deadline each create request ran under; the create window adds two minutes either side. */
-export const DEFAULT_CREATE_DEADLINE_MS = 30_000;
+/** Deadline a Fly or Neon create ran under: one bounded service call. */
+export const DEFAULT_CREATE_DEADLINE_MS = COMMUNITY_SERVICE_TIMEOUT_MS;
+
+/**
+ * How long after its recorded request time a Tigris create can still reach the service. The
+ * intent is written before `create()`, and the Tigris `create()` makes three bounded reads before
+ * it sends `createAddOn`: the Fly app listing, `fly auth token`, and the terms check. The window
+ * is widened by those three calls instead of writing a second request time just before the
+ * mutation, because that would add a journal write inside the create, and a failed write there
+ * would strand a run whose create may already be under way. Widening only loosens the time check
+ * for Tigris, whose proof still needs its app re-proved by marker, the exact name and the org.
+ */
+export const TIGRIS_CREATE_DEADLINE_MS = 4 * COMMUNITY_SERVICE_TIMEOUT_MS;
+
+/** The deadline a create for this service ran under, for the create window. */
+export function createDeadlineFor(provider: RemovalProvider): number {
+  return provider === 'tigris' ? TIGRIS_CREATE_DEADLINE_MS : DEFAULT_CREATE_DEADLINE_MS;
+}
 
 /** A Fly app with the intended name in the run's organization, as one read reported it. */
 export interface FlyAppFacts {
@@ -407,7 +424,7 @@ export function evaluateUncertainResource(
   const precheck = precheckUncertainCreate(journal, intent);
   if (precheck) return { verdict: 'unproved', reason: precheck, candidates: [] };
   const gate = options.gate ?? PROVENANCE_ROUND_TRIP_PROVED;
-  const deadline = options.createDeadlineMs ?? DEFAULT_CREATE_DEADLINE_MS;
+  const deadline = options.createDeadlineMs ?? createDeadlineFor(intent.provider);
   if (found.kind === 'absent') return { verdict: 'absent' };
   if (found.kind === 'fly' && intent.provider === 'fly') {
     return evaluateFly(journal, intent, found.app, gate, deadline);

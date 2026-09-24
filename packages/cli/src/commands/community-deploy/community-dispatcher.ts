@@ -38,6 +38,7 @@ import {
   createInitialCommunityLaunchJournal,
 } from './resume.js';
 import { runRemoveUncertainCommand } from './provenance/removal-command.js';
+import { COMMUNITY_SERVICE_TIMEOUT_MS } from './provider-process.js';
 
 /** Human-facing help for the guided deployment command. */
 export const COMMUNITY_DEPLOY_HELP = `
@@ -261,9 +262,19 @@ export async function runCommunityDispatcher(
       journalPath: launchJournalPath(context.dorkHome, removeRunId),
       confirmToken: parsed.values.confirm,
       serviceOptions: (signal) => ({
-        fly: { executable: 'fly', env: context.processEnv, timeoutMs: 30_000, signal },
-        neon: { executable: 'neonctl', env: context.processEnv, timeoutMs: 30_000, signal },
-        graphqlTimeoutMs: 30_000,
+        fly: {
+          executable: 'fly',
+          env: context.processEnv,
+          timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+          signal,
+        },
+        neon: {
+          executable: 'neonctl',
+          env: context.processEnv,
+          timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+          signal,
+        },
+        graphqlTimeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
         signal,
       }),
       input: process.stdin,
@@ -317,14 +328,19 @@ export async function runCommunityDispatcher(
   process.once('SIGINT', cancel);
   process.once('SIGTERM', cancel);
   const serviceOptions = {
-    fly: { executable: 'fly', env: childEnv, timeoutMs: 30_000, signal: cancellation.signal },
+    fly: {
+      executable: 'fly',
+      env: childEnv,
+      timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
+      signal: cancellation.signal,
+    },
     neon: {
       executable: 'neonctl',
       env: childEnv,
-      timeoutMs: 30_000,
+      timeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
       signal: cancellation.signal,
     },
-    graphqlTimeoutMs: 30_000,
+    graphqlTimeoutMs: COMMUNITY_SERVICE_TIMEOUT_MS,
     signal: cancellation.signal,
   };
   const trusted: TrustedReleaseIdentity = {

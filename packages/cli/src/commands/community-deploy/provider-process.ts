@@ -6,6 +6,12 @@
 import { spawn } from 'node:child_process';
 
 const DEFAULT_MAX_BYTES = 1024 * 1024;
+
+/**
+ * Deadline for each Community launch service call: every `fly` and `neonctl` process and every Fly
+ * GraphQL request. The removal command's create window is sized from the same value.
+ */
+export const COMMUNITY_SERVICE_TIMEOUT_MS = 30_000;
 const TERMINATION_GRACE_MS = 250;
 
 /** Sanitized result from a provider response parser. */

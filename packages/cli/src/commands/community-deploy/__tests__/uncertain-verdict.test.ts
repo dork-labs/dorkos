@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { LaunchJournal } from '../journal.js';
 import { PROVENANCE_ROUND_TRIP_PROVED } from '../provenance/provenance-gate.js';
+import { COMMUNITY_SERVICE_TIMEOUT_MS } from '../provider-process.js';
 import {
+  DEFAULT_CREATE_DEADLINE_MS,
+  TIGRIS_CREATE_DEADLINE_MS,
   evaluateUncertainResource,
   tokenConfirms,
   type FlyAppFacts,
@@ -186,6 +189,30 @@ describe('uncertain removal verdicts', () => {
     });
     expect(evaluate(shapeA('tigris'), found.tigris({ totalCount: 0, addOns: [] }))).toEqual({
       verdict: 'absent',
+    });
+  });
+
+  // The Tigris create makes three bounded reads (app listing, fly auth token, terms check) after
+  // its intent is written and before createAddOn, so its window is wider than one call's.
+  it('sizes the Tigris create window for its reads before createAddOn, and only Tigris', () => {
+    expect(DEFAULT_CREATE_DEADLINE_MS).toBe(COMMUNITY_SERVICE_TIMEOUT_MS);
+    expect(TIGRIS_CREATE_DEADLINE_MS).toBe(4 * COMMUNITY_SERVICE_TIMEOUT_MS);
+    const late = '2026-09-23T10:34:40Z'; // 3 min 37 s after the request
+    const addOn = (createdAt: string) => ({
+      addOns: [{ token: 'addon-5', name: 'community-acme', organization: 'acme', createdAt }],
+    });
+    expect(evaluate(shapeA('tigris'), found.tigris(addOn(late)))).toMatchObject({
+      verdict: 'proved',
+    });
+    expect(evaluate(shapeA('fly'), found.fly({ createdAt: late }))).toMatchObject({
+      reason: 'outside-window',
+    });
+    expect(evaluate(shapeA('neon'), found.neon(neonProject({ createdAt: late })))).toMatchObject({
+      reason: 'outside-window',
+    });
+    // Past the request plus four calls plus the two-minute margin.
+    expect(evaluate(shapeA('tigris'), found.tigris(addOn('2026-09-23T10:35:04Z')))).toMatchObject({
+      reason: 'outside-window',
     });
   });
 

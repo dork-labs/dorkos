@@ -181,6 +181,17 @@ describe('--remove-uncertain output', () => {
     [{ outcome: 'removal-uncertain' as const, target }, 1, 'could not confirm it is gone'],
     [{ outcome: 'removed' as const, target, nameReleased: false }, 0, 'wait a few minutes'],
     [{ outcome: 'removed' as const, target, nameReleased: true }, 0, 'Fly has released the name'],
+    [
+      {
+        outcome: 'unproved' as const,
+        provider: 'fly' as const,
+        reason: 'not-the-same' as const,
+        candidates: [],
+        removalPending: true as const,
+      },
+      0,
+      `Then run dorkos community deploy --remove-uncertain ${RUN_ID} again. It will see the resource is gone and finish the removal, and --resume will work again.`,
+    ],
   ])('explains %o', (outcome, exitCode, phrase) => {
     const result = formatRemovalOutcome(outcome, context);
     expect(result.exitCode).toBe(exitCode);

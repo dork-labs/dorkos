@@ -376,9 +376,37 @@ describe('uncertain removal restarts', () => {
     await expect(runUncertainRemoval(dependencies)).resolves.toMatchObject({
       outcome: 'unproved',
       reason: 'not-the-same',
+      removalPending: true,
     });
     expect(confirm).not.toHaveBeenCalled();
     expect(probe.remove).not.toHaveBeenCalled();
+  });
+
+  it('after a hand removal of an unprovable resource, the next run finishes the removal', async () => {
+    await setup(interrupted());
+    const { probe, state } = memoryProbe('fly', found.fly({ machines: 1 }));
+    const { dependencies } = deps(probe, confirmWith('4817203'));
+    await expect(runUncertainRemoval(dependencies)).resolves.toMatchObject({
+      outcome: 'unproved',
+      reason: 'grown',
+      removalPending: true,
+    });
+    state.present = false; // the operator removed it by hand
+    await expect(runUncertainRemoval(dependencies)).resolves.toMatchObject({ outcome: 'removed' });
+    expect(await readLaunchJournal(journalPath)).toMatchObject({
+      pendingRemoval: null,
+      pendingIntent: null,
+      state: 'planned',
+    });
+  });
+
+  it('never marks a first-time unproved verdict as a removal already under way', async () => {
+    await setup(shapeA('fly'));
+    const { probe } = memoryProbe('fly', found.fly({ machines: 1 }));
+    const { dependencies } = deps(probe, confirmWith('4817203'));
+    const outcome = await runUncertainRemoval(dependencies);
+    expect(outcome).toMatchObject({ outcome: 'unproved', reason: 'grown' });
+    expect(outcome).not.toHaveProperty('removalPending');
   });
 
   it('reports unreachable when it cannot tell whether the resource is gone', async () => {
@@ -451,6 +479,24 @@ describe('uncertain removal under concurrent writers', () => {
       lastSafeError: { code: 'REMOVAL_OUTCOME_UNCERTAIN' },
       pendingRemoval: { token: '4817203' },
     });
+  });
+
+  it('gives the claim back when cancelled after the claim but before the delete is sent', async () => {
+    await setup(shapeA('fly'));
+    const cancellation = new AbortController();
+    const { probe } = memoryProbe('fly');
+    probe.find.mockResolvedValueOnce(found.fly()).mockImplementationOnce(async () => {
+      cancellation.abort();
+      return found.fly();
+    });
+    const { dependencies } = deps(probe, confirmWith('4817203'), {
+      signal: cancellation.signal,
+    });
+    await expect(runUncertainRemoval(dependencies)).rejects.toThrow('cancelled');
+    expect(probe.remove).not.toHaveBeenCalled();
+    const journal = await readLaunchJournal(journalPath);
+    expect(journal?.pendingRemoval).toBeNull();
+    expect(journal?.lastSafeError?.code).toBe('CREATION_OUTCOME_UNCERTAIN');
   });
 
   it('writes nothing when cancelled at the prompt', async () => {
