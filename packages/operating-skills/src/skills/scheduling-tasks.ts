@@ -7,7 +7,8 @@ export const schedulingTasks: OperatingSkill = {
   description:
     'Use when scheduling recurring work, creating or editing a task, running a task now, ' +
     'or checking whether past task runs succeeded. Covers cron schedules, the task approval ' +
-    'gate, retiming a schedule that came with an installed package, and reading run history.',
+    'gate, scheduling for an agent installed from the marketplace, retiming or copying a ' +
+    "package's own schedule, and reading run history.",
   body: `# Scheduling tasks
 
 ${TOOL_NAME_NOTE}
@@ -42,8 +43,7 @@ Read current state before changing anything:
   --target <agent-id-or-global> [--cron <expr>] [--timezone <tz>]
   [--runtime <id>] [--model <id>] [--effort <level>]\`.
 
-Only the CLI can create a manual-only task: omit \`--cron\` and trigger it by hand.
-The tool requires a cron expression.
+Only the CLI can create a manual-only task (omit \`--cron\`); the tool requires a cron.
 
 ### Where it runs, and on what
 
@@ -82,7 +82,10 @@ summary is waiting for you."
 task under yourself, so it lives in your folder and its runs happen there against
 your files, or \`"global"\` for a task that belongs to no agent. A task
 filed in the wrong place runs against the wrong files, so DorkOS will not guess.
-An agent it has never heard of is refused and nothing is created.
+An agent it has never heard of is refused and nothing is created. Under an agent
+installed from the marketplace, your task stays through the package's updates; it
+is refused (\`schedule_package_owned\`) if the package uses that name itself, or if
+the package came from an older DorkOS (it works after the package's next update).
 
 Where a task lives is decided once. \`tasks_update\` refuses \`target\` or
 \`agentId\` (the whole call); to move a task, delete it and create it again.
@@ -98,20 +101,17 @@ Moving a task to \`active\` IS that approval, so it is not yours to do:
 
 **Editing an approved task sends it back for approval.** The user approved the
 \`prompt\`, the \`cron\` and the \`timezone\` together, since a new timezone moves
-when it runs. Change any of the three and DorkOS stops the task and asks them
-again. Your edit is saved, it just waits, and the reply says so with
+when it runs. Change any of the three and DorkOS stops the task at once and asks
+them again. Your edit is saved, it just waits, and the reply says so with
 \`needsReapproval: true\`. Name the task and tell the user it is waiting on them.
 Every other field is free, \`enabled\` included: that is how you turn a task on or off.
 
-This is the tasks scheduler's own gate, and it covers both moments. It is not the
-capability approval flow in operating-dorkos: there is no \`approvalToken\` to retry
-with, and nothing for you to do except tell the user and wait. Deleting a task runs
-the other kind of gate; see below.
+This is the tasks scheduler's own gate, not the capability approval flow in
+operating-dorkos: there is no \`approvalToken\`, only telling the user and waiting.
 
 ## Edit or disable a task (tools only, no CLI)
 
-Both of these are MCP tools with no \`dorkos task\` equivalent. Without the
-\`tasks_*\` tools in your session there is no way to do either.
+Both are MCP tools with no \`dorkos task\` equivalent, so without them, neither.
 
 - Tool: \`tasks_update\` with the schedule \`id\` and any of \`name\`, \`prompt\`, \`cron\`,
   \`enabled\` (true/false to turn it on or off), \`timezone\`, \`maxRuntime\`
@@ -124,6 +124,8 @@ given a new \`cron\` or \`timezone\`; any other change is refused
 package's files alone, and keeps it through the package's updates. Send
 \`resetTiming: true\`, on its own, to put it back on the package's timing. Either
 timing change stops an approved schedule at once until the user approves it again.
+To change what it does, the user can press **Make my own copy** on it in DorkOS: a
+new schedule for the same agent, filled in, and by default the package's one off.
 
 - \`tasks_delete\` removes a task permanently, and it is \`destructive\` tier. It does
   NOT run until a person approves it: the first call comes back with the
@@ -142,8 +144,7 @@ user to open the task in DorkOS for those.
 
 ## Run a task now
 
-- CLI: \`dorkos task trigger <id>\` starts a run immediately and returns a run id.
-- Use this to test a task, or to run an on-demand (cron-less) task.
+\`dorkos task trigger <id>\` starts a run now (to test one, or run a cron-less one).
 
 ## Cron quick reference
 

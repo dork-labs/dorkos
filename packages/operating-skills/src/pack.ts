@@ -276,10 +276,15 @@ export interface OperatingSkill {
  *   (`.dork-old` / `.dork-new`, and what `userEditable` may not cover), and
  *   global packages held back until a person approves them, which an agent
  *   cannot do itself. `scheduling-tasks` says the timezone is part of what a
- *   person approves (DOR-2307), and that a package's schedule takes only on/off
- *   and a new timing, with `resetTiming` to undo it (DOR-2302). An agent seeded
- *   at 27 would retime a package schedule believing it stays live, or try to
- *   approve a held-back package it installed.
+ *   person approves (DOR-2307), that an agent's edit stops an approved schedule
+ *   at once (DOR-2313), that a package's schedule takes only on/off and a new
+ *   timing, with `resetTiming` to undo it (DOR-2302), and that schedules under a
+ *   marketplace agent now work, with Make my own copy for a package's own
+ *   (DOR-2272). `using-the-marketplace` also says adding a source fetches its
+ *   list at once and a refresh that can't reach it says so (DOR-2304). An agent
+ *   seeded at 27 would retime a package schedule believing it stays live, tell
+ *   a person a package agent can't have schedules, or try to approve a
+ *   held-back package it installed.
  */
 export const OPERATING_SKILLS_VERSION = 28;
 

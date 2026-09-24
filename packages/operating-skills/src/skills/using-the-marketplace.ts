@@ -130,7 +130,9 @@ exactly like the paths above, so it is not a way around an approval.
 
 A source is a feed this install fetches and runs code from, so the list is the
 person's to set. You can run \`dorkos marketplace list\`, \`refresh [<name>]\`, and
-\`validate <path-or-url>\` (checks a marketplace file, changes nothing).
+\`validate <path-or-url>\` (checks a marketplace file, changes nothing). A refresh
+always checks again; if a source can't be reached it says so, and how old the
+copy still shown is. Pass that on rather than calling it refreshed.
 
 \`dorkos marketplace add\` and \`remove\` refuse you with a 403 and
 \`code: "operator_only_marketplace_source"\`. No approval unlocks it, so do not
@@ -140,7 +142,9 @@ retry or look for another route. Hand the person the line instead, then wait:
 dorkos marketplace add <url> --name <name>
 \`\`\`
 
-They can also add it on the Marketplace sources screen. Then \`install\` works.
+They can also add it on the Marketplace sources screen. Adding fetches its list
+of packages at once, so \`install\` works next; if the source can't be reached
+yet, it is still added and the reply names the \`refresh\` that tries again.
 
 ## Scaffold your own package (tier: act)
 
