@@ -1,8 +1,20 @@
 import { constants } from 'node:fs';
 import { link, mkdir, open, readdir, rm, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import type { BlobRead, BlobStore, PutBlobInput, StoredBlob } from './blob-store.js';
-import { assertNotAborted, BlobStoreError, stageBlob, validateBlobKey } from './blob-store.js';
+import type {
+  BlobGetOptions,
+  BlobRead,
+  BlobStore,
+  PutBlobInput,
+  StoredBlob,
+} from './blob-store.js';
+import {
+  assertNotAborted,
+  BlobStoreError,
+  stageBlob,
+  validateBlobKey,
+  validateBlobRange,
+} from './blob-store.js';
 
 /** Persistent-volume implementation; files are addressed only by server-generated keys. */
 export class FileSystemBlobStore implements BlobStore {
@@ -24,9 +36,11 @@ export class FileSystemBlobStore implements BlobStore {
     }
   }
 
-  /** Open a stored object without following a key-named symlink. */
-  async get(key: string, options: { signal?: AbortSignal } = {}): Promise<BlobRead> {
+  /** Open a stored object, or an inclusive range of it, without following a key-named symlink. */
+  async get(key: string, options: BlobGetOptions = {}): Promise<BlobRead> {
     validateBlobKey(key);
+    const { range } = options;
+    if (range) validateBlobRange(range);
     assertNotAborted(options.signal);
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     let handle;
@@ -35,8 +49,15 @@ export class FileSystemBlobStore implements BlobStore {
       const stat = await handle.stat();
       if (!stat.isFile()) throw new BlobStoreError('BLOB_NOT_FOUND', 'Blob not found');
       assertNotAborted(options.signal);
-      const body = handle.createReadStream({ autoClose: true, signal: options.signal });
-      return { body, byteSize: stat.size };
+      if (range && range.end >= stat.size) {
+        throw new BlobStoreError('BLOB_RANGE_NOT_SATISFIABLE', 'Range is past the end of the blob');
+      }
+      const body = handle.createReadStream({
+        autoClose: true,
+        signal: options.signal,
+        ...(range ? { start: range.start, end: range.end } : {}),
+      });
+      return { body, byteSize: range ? range.end - range.start + 1 : stat.size };
     } catch (error) {
       await handle?.close();
       if (options.signal?.aborted)
