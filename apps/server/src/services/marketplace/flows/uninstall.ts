@@ -563,7 +563,11 @@ export class UninstallFlow {
   private async settleAndReread(
     probed: LocatedPackage
   ): Promise<{ located: LocatedPackage; kept: InstallRecord[] } | undefined> {
-    const { kept } = await settleInterruptedInstall(probed.installRoot);
+    const { kept, restoredAgent } = await settleInterruptedInstall(probed.installRoot);
+    // An earlier uninstall of this agent, interrupted after it left the team,
+    // was just rolled back: register it again, as startup recovery does, so
+    // this uninstall takes it off the team with the full cascade.
+    if (restoredAgent) await this.deps.agentRegistry?.restoreAtPath(probed.installRoot);
     if (!(await hasPackageIdentity(probed.installRoot))) return undefined;
     const manifest = await readManifestIfPresent(probed.installRoot);
     return {

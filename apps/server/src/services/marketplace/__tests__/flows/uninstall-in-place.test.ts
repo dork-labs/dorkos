@@ -13,6 +13,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rename,
   rm,
   stat,
   symlink,
@@ -443,6 +444,43 @@ describe('uninstalling an agent package (DOR-2245 §5)', () => {
     await new UninstallFlow(deps(dorkHome, { agentRegistry })).uninstall({ name: 'bot' });
     expect(await readFile(path.join(root, '.dork', 'agent.json'), 'utf8')).toContain('01AGENT');
     expect(await exists(path.join(root, '.dork', 'uninstalled-agent.json'))).toBe(true);
+  });
+
+  // Purpose (delta review 4): the in-lock settle that runs before an uninstall
+  // can roll back an EARLIER interrupted uninstall that had already taken the
+  // agent off the team. Its agent.json comes back, so the agent is registered
+  // again (as startup recovery does) before this uninstall removes it properly.
+  it('registers again an agent whose interrupted uninstall the settle rolled back', async () => {
+    const dorkHome = await home();
+    const root = await agentRoot(dorkHome);
+    // An earlier uninstall, killed after it parked agent.json and unregistered.
+    const sibling = await journalModule.createUninstallSibling(root);
+    await mkdir(path.join(sibling), { recursive: true });
+    await put(sibling, 'AGENTS.md', 'x');
+    await rm(path.join(root, 'AGENTS.md'));
+    await rename(
+      path.join(root, '.dork', 'agent.json'),
+      path.join(root, '.dork', 'uninstalled-agent.json')
+    );
+    await journalModule.writeJournal(sibling, {
+      version: 1,
+      root,
+      package: { name: 'bot', type: 'agent' },
+      moves: [{ path: 'AGENTS.md' }],
+      phase: 'side-effects',
+      agentUnregistered: true,
+    });
+    const agentRegistry = {
+      unregisterAtPath: vi.fn().mockResolvedValue({ id: '01AGENT', directoryDenied: false }),
+      restoreAtPath: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await new UninstallFlow(deps(dorkHome, { agentRegistry })).uninstall({ name: 'bot' });
+
+    expect(agentRegistry.restoreAtPath).toHaveBeenCalledWith(root);
+    expect(agentRegistry.restoreAtPath.mock.invocationCallOrder[0]).toBeLessThan(
+      agentRegistry.unregisterAtPath.mock.invocationCallOrder[0]
+    );
   });
 
   // Purpose: an update's uninstall half keeps the agent registered.

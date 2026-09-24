@@ -39,9 +39,8 @@
  *
  * @module services/marketplace/backup-janitor
  */
-import { lstat, readdir } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { AGENT_MANIFEST_PATH } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { agentSkillsRoot, globalSkillsRoot } from '../tasks/skills-roots.js';
@@ -51,6 +50,7 @@ import {
   keptReason,
   parseInstallRecordName,
   recoverInterruptedInstall,
+  restoredAnAgent,
 } from './install-recovery.js';
 import { withInstallTargetLock } from './transaction.js';
 
@@ -236,17 +236,11 @@ async function settleTargets(
       }
       for (const { record, outcome } of report.settled) {
         summary.settled++;
-        if (
-          record.kind === 'uninstall' &&
-          outcome === 'rolled-back' &&
-          (await hasAgentManifest(target))
-        ) {
-          summary.restoredAgentRoots.push(target);
-        }
         logger.info(
           `[marketplace/backup-janitor] settled an interrupted install at ${target} (${record.kind}: ${outcome})`
         );
       }
+      if (await restoredAnAgent(target, report)) summary.restoredAgentRoots.push(target);
       for (const record of report.kept) {
         summary.kept++;
         logger.warn(
@@ -292,12 +286,6 @@ async function readNames(dir: string): Promise<string[]> {
  * `./transaction.ts`, which sidesteps the "cannot spy on a `node:fs/promises`
  * named export" ESM limitation.
  */
-/** Whether `root` holds an agent manifest. */
-async function hasAgentManifest(root: string): Promise<boolean> {
-  const stats = await lstat(path.join(root, ...AGENT_MANIFEST_PATH.split('/'))).catch(() => null);
-  return stats?.isFile() ?? false;
-}
-
 export const _internal = {
   readNames,
 };

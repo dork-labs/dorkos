@@ -166,6 +166,7 @@ import {
   discardSupersededRecords,
   keptReason,
   recoverInterruptedInstall,
+  restoredAnAgent,
   rollBackInstallRecord,
   settleableBy,
   type InstallRecord,
@@ -590,6 +591,13 @@ export interface SettledInstallTarget {
    * target has finished.
    */
   kept: InstallRecord[];
+  /**
+   * Settling rolled back an interrupted agent uninstall and put its
+   * `agent.json` back ({@link restoredAnAgent}); the caller registers the agent
+   * again. An agent install does so by adopting it; the uninstall flow through
+   * its agent registry.
+   */
+  restoredAgent: boolean;
 }
 
 /**
@@ -644,7 +652,7 @@ export async function settleInterruptedInstall(
       `[marketplace/transaction] failed to remove finished install leftovers ${record.path}: ${errMessage(error)}`
     );
   }
-  return { kept: report.kept };
+  return { kept: report.kept, restoredAgent: await restoredAnAgent(target, report) };
 }
 
 /**

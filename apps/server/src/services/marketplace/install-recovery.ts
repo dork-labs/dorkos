@@ -101,6 +101,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { AGENT_MANIFEST_PATH } from '@dorkos/marketplace';
 import {
   MARKETPLACE_BACKUP_DIR_MARKER,
   MARKETPLACE_STAGE_DIR_MARKER,
@@ -334,9 +335,8 @@ const INSTALL_RECORD_POLICIES: readonly InstallRecordPolicy[] = [
           return 'rolled-forward';
         }
         // An agent the uninstall already took off the team gets its manifest
-        // back here; the startup sweep names the folder
-        // (`restoredAgentRoots`) and the server registers it again once Mesh
-        // is up.
+        // back here, and whoever settled registers it again (see
+        // `restoredAnAgent`).
         await rollBackUninstall(record.path, journal);
         await restoreParkedAgent(target);
         return 'rolled-back';
@@ -578,6 +578,27 @@ export async function recoverInterruptedInstall(
     else report.settled.push({ record, outcome });
   }
   return report;
+}
+
+/**
+ * Whether settling `target` rolled back an interrupted agent uninstall and put
+ * its `agent.json` back (DOR-2245). That uninstall had already taken the agent
+ * off the team, so whoever settled must register it again: the startup sweep
+ * once Mesh is up, an in-lock settle through its agent registry.
+ *
+ * @param target - The install target that was settled.
+ * @param report - What {@link recoverInterruptedInstall} did there.
+ */
+export async function restoredAnAgent(
+  target: string,
+  report: Pick<InstallRecoveryReport, 'settled'>
+): Promise<boolean> {
+  const rolledBack = report.settled.some(
+    (s) => s.record.kind === 'uninstall' && s.outcome === 'rolled-back'
+  );
+  if (!rolledBack) return false;
+  const stats = await lstat(path.join(target, ...AGENT_MANIFEST_PATH.split('/'))).catch(() => null);
+  return stats?.isFile() ?? false;
 }
 
 /**
