@@ -89,10 +89,16 @@ describe('readTextFileWithin', () => {
     else if (kind === 'stdin') await symlink('/dev/stdin', target);
     else await symlink(dir, target);
     const started = Date.now();
-    await expect(readTextFileWithin(target, 1024, 'The file')).rejects.toThrow(
-      'The file is not a regular file, so DorkOS will not read it.'
+    const error = await readTextFileWithin(target, 1024, 'The file').then(
+      () => new Error('read'),
+      (err: unknown) => err as Error
     );
     expect(Date.now() - started).toBeLessThan(2_000);
+    // /dev/stdin may itself be missing where the test runs without a terminal
+    // or pipe (Linux CI gives ENXIO at open). Either way the read is refused
+    // at once; where it opens, it is refused as not a regular file.
+    if ((error as NodeJS.ErrnoException).code === 'ENXIO') return;
+    expect(error.message).toBe('The file is not a regular file, so DorkOS will not read it.');
   });
 
   // Purpose: other read errors pass through unchanged, so callers that treat
