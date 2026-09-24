@@ -258,7 +258,8 @@ export class FileSyncGates {
    * (`carrySwitchIntoReleasedFile`). A lapse is reachable: a later version
    * that stops shipping the file, a legacy record rebuilt without proof of it,
    * a record edited by hand, or a row older than the column (`unknown`), which
-   * may have been a package's under the old rule. The release lasts until the
+   * may have been a package's under the old rule; for that last one only an OFF
+   * switch is kept, since the file may be the person's own choice. The release lasts until the
    * file agrees ({@link FileSyncGates.packageOwnedToWrite}).
    *
    * @param existing - The row the file is landing on, when there is one.
@@ -273,8 +274,12 @@ export class FileSyncGates {
   ): boolean {
     if (existing === undefined || options?.packageOwned === undefined) return false;
     if (options.packageOwned !== null) return arm?.status === 'active';
-    const released = existing.packageOwned !== null;
-    return released && (existing.enabled === false || arm?.status === 'active');
+    if (existing.packageOwned === null) return false;
+    // A row older than the column (`unknown`) may have been the person's all
+    // along, whose file then says what they last chose; only an OFF row is kept
+    // against it, the safe direction, never an ON one (DOR-2272 review, T4).
+    if (existing.packageOwned === 'unknown') return existing.enabled === false;
+    return existing.enabled === false || arm?.status === 'active';
   }
 
   /** Forget what was said about a path, because its file went away. */

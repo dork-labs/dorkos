@@ -6,6 +6,7 @@ covers:
   - "fix(tasks): keep a person's switch when a file stops being a package's (DOR-2272)"
   - 'feat(tasks): show package ownership when a schedule opens, and switch the original off with a copy (DOR-2272)'
   - "fix(tasks): make a package schedule's release two-phase and cover pre-upgrade rows (DOR-2272)"
+  - 'fix(tasks): an old row keeps only an OFF switch against its file (DOR-2272)'
 ---
 
 ### Added

@@ -339,6 +339,26 @@ describe('a package schedule the record stops listing', () => {
     expect(await fs.readFile(ownFile, 'utf-8')).toBe(before);
   });
 
+  it("lets an old row follow the person's own OFF in its file (T4)", async () => {
+    // `unknown` only protects an OFF row. A person's approved, running schedule
+    // whose file they switched off while DorkOS was down must go off: an ON row
+    // under a standing approval is not a reason to overrule their file.
+    const approved = await sweep(ownFile);
+    await patch(approved, { status: 'active', enabled: true });
+    expect((await sweep(ownFile)).enabled).toBe(true);
+    db.run(sql`UPDATE pulse_schedules SET package_owned = 'unknown' WHERE id = ${approved.id}`);
+    const text = await fs.readFile(ownFile, 'utf-8');
+    await fs.writeFile(
+      ownFile,
+      text.replace('schedule:\n', 'schedule:\n  enabled: false\n'),
+      'utf-8'
+    );
+
+    expect((await sweep(ownFile)).enabled).toBe(false);
+    expect((await sweep(ownFile)).enabled).toBe(false);
+    expect(ownershipColumn(approved.id)).toBeNull();
+  });
+
   it('keeps the switch through a failed write, and writes it on a later sweep (T3)', async () => {
     // One-shot protection lost the switch whenever the write failed. The row
     // now stays the package's until the file agrees, so every sweep keeps OFF
