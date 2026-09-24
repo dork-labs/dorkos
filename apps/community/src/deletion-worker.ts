@@ -4,6 +4,9 @@ import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-na
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
 
 const DELETE_BATCH = 25;
+// An expired export whose sweep already deleted its object and its managed-blob row keeps its
+// archive row (with `deleted_at`) for the audit trail. It owns no object any more, so it is not
+// missing inventory: counting it would refuse the community's deletion forever.
 const MISSING_DELETION_INVENTORY_SQL = `
   SELECT a.blob_key FROM attachments a
   LEFT JOIN managed_blobs m ON m.blob_key=a.blob_key
@@ -13,7 +16,8 @@ const MISSING_DELETION_INVENTORY_SQL = `
   SELECT e.blob_key FROM export_archives e
   LEFT JOIN managed_blobs m ON m.blob_key=e.blob_key
     AND m.community_id=e.community_id AND m.purpose='export'
-  WHERE e.community_id=$1 AND (m.blob_key IS NULL OR m.state<>'committed')
+  WHERE e.community_id=$1 AND e.deleted_at IS NULL
+    AND (m.blob_key IS NULL OR m.state<>'committed')
   UNION ALL
   SELECT c.icon_blob_key FROM communities c
   LEFT JOIN managed_blobs m ON m.blob_key=c.icon_blob_key
