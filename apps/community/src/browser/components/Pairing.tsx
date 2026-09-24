@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, KeyRound, Laptop2, ShieldCheck } from 'lucide-react';
 import { describeError, RequestError, request } from '../api.js';
+import { HostPolicyLinks } from './HostLinks.js';
 
 type PairingStatus = {
   pairingId: string;
@@ -202,6 +203,7 @@ export function Pairing({ search = location.search }: { search?: string }) {
             )}
           </div>
         )}
+        <HostPolicyLinks />
       </main>
     </div>
   );

@@ -32,6 +32,7 @@ import { registerMembershipRoutes } from './routes/memberships.js';
 import { registerHostLimitRoutes } from './routes/host-limits.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
+import { registerHostLinkRoutes } from './routes/host-links.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
@@ -292,6 +293,7 @@ export function createCommunityApp({
     limitKeyMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
+  registerHostLinkRoutes(app, { config });
   const hostApi = new Hono();
   registerHostRoutes(hostApi, { pool, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });

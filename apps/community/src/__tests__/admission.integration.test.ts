@@ -543,6 +543,10 @@ describe('signed admission over real HTTP and Postgres', () => {
     const options = await call('/api/v1/auth-options', 'GET');
     expect(options.status).toBe(200);
     expect(await options.json()).toEqual({ google: false, github: false });
+    // A host that sets no links (every self-hoster) answers three nulls, signed out, untenanted.
+    const links = await call('/api/v1/host-links', 'GET');
+    expect(links.status).toBe(200);
+    expect(await links.json()).toEqual({ termsUrl: null, privacyUrl: null, reportAbuseUrl: null });
     expect((await call('/api/v1/me', 'GET')).status).toBe(401);
     const self = await call('/api/v1/me', 'GET', undefined, ownerCookie);
     expect(self.status).toBe(200);

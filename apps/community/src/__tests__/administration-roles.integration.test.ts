@@ -1540,6 +1540,7 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /bootstrap/complete': 'first installation; runs once on an empty host',
   'GET /community': 'public name and description of the URL community',
   'GET /auth-options': 'public sign-in options',
+  'GET /host-links': "the host's public terms, privacy and report links",
   'GET /me': "the caller's own membership",
   'POST /me/leave': 'the caller leaves; no authority over anyone else',
   'POST /me/export': "the caller's personal export",

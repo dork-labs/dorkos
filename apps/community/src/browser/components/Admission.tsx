@@ -18,6 +18,7 @@ import {
   ReactivationReview,
 } from './AdmissionPanels.js';
 import type { Community } from '../types.js';
+import { HostPolicyLinks } from './HostLinks.js';
 
 /**
  * What the clean join URL found on the server before this component mounted: a live join
@@ -511,6 +512,7 @@ export function Admission({
             )}
           </div>
         )}
+        <HostPolicyLinks />
       </main>
     </div>
   );

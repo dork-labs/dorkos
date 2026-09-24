@@ -454,6 +454,7 @@ export function CommunityApp() {
         ) : selected ? (
           <ChannelView
             key={selected.id}
+            communityId={community!.id}
             channel={selected}
             onChanged={onChanged}
             readOnly={readOnly}

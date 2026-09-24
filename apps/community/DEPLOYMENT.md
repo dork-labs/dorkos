@@ -55,6 +55,18 @@ https://community.example.com/api/auth/callback/github
 
 Use the same origin for `COMMUNITY_PUBLIC_URL`. Do not register a preview, internal, or local address as a production callback. Changing the public address requires updating these callbacks before people can sign in again.
 
+## Optional terms, privacy, and report links
+
+If other people sign up on your Community, you can link your own terms, privacy notice, and a way to report abuse. Each link is optional. Leave one unset and nothing shows for it.
+
+| Setting                      | Must be                                   | Where it shows                                   |
+| ---------------------------- | ----------------------------------------- | ------------------------------------------------ |
+| `COMMUNITY_TERMS_URL`        | An `https://` page                        | Under the sign-in form, and in Settings, Account |
+| `COMMUNITY_PRIVACY_URL`      | An `https://` page                        | Under the sign-in form, and in Settings, Account |
+| `COMMUNITY_REPORT_ABUSE_URL` | An `https://` page or a `mailto:` address | On each message, and in Settings, Account        |
+
+A report from a message opens your page with `?community=<id>&entry=<id>` added, so you can find what was reported. A report from Settings adds only the community. For a `mailto:` address the same IDs go in the email body. The message text, the author's name, and the reporter's name are never added. The service checks each link before it starts and refuses a plain `http://` one. It never contacts your pages itself.
+
 ## Optional Render deployment
 
 Render is an optional managed deployment. It does not change Community identity or access rules. The Community still owns its own database, secrets, and files.

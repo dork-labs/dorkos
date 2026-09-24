@@ -70,6 +70,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   hostAccess: '/api/v1/me/host-access',
   members: '/api/v1/members',
   authOptions: '/api/v1/auth-options',
+  hostLinks: '/api/v1/host-links',
   memberRole: '/api/v1/members/:id/role',
   meGrants: '/api/v1/me/grants',
   meExport: '/api/v1/me/export',
@@ -212,6 +213,46 @@ export const CommunityWireAuthOptionsSchema = z.strictObject({
   google: z.boolean(),
   github: z.boolean(),
 });
+
+const REPORT_MAILBOX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+
+/**
+ * Whether `value` is a `mailto:` report address a Report link can safely add its own body to:
+ * exactly one mailbox, with no query, fragment, second recipient or header of its own, even
+ * once percent-decoded. Returns the canonical `mailto:<address>`, or `null` when refused.
+ */
+export function parseCommunityReportMailto(value: string): string | null {
+  if (!value.startsWith('mailto:')) return null;
+  const raw = value.slice('mailto:'.length);
+  // A bare trailing `?` or `#` parses as an empty query or fragment, and would swallow the body.
+  if (/[?#]/u.test(raw)) return null;
+  let address: string;
+  try {
+    address = decodeURIComponent(raw);
+  } catch {
+    return null;
+  }
+  if (/[,;&?%\s\p{Cc}]/u.test(address) || !REPORT_MAILBOX.test(address)) return null;
+  return `mailto:${address}`;
+}
+
+/**
+ * The host's own terms, privacy notice and abuse-report address, each `null` when the host set
+ * none. Terms and privacy are `https:` pages; a report address may also be one bare `mailto:`
+ * mailbox (see {@link parseCommunityReportMailto}).
+ */
+export const CommunityWireHostLinksSchema = z.strictObject({
+  termsUrl: z.url({ protocol: /^https$/ }).nullable(),
+  privacyUrl: z.url({ protocol: /^https$/ }).nullable(),
+  reportAbuseUrl: z
+    .union([
+      z.url({ protocol: /^https$/ }),
+      z.string().refine((value) => parseCommunityReportMailto(value) === value),
+    ])
+    .nullable(),
+});
+/** Host-set public links shown on sign-in, in account settings and on each message. */
+export type CommunityWireHostLinks = z.infer<typeof CommunityWireHostLinksSchema>;
 
 /** Public channel projection. `joined` is for the current caller only. */
 export const CommunityWireChannelSchema = z.strictObject({

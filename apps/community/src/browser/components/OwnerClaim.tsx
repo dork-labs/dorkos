@@ -13,6 +13,7 @@ import {
   readPendingOwnerClaim,
   rememberPendingOwnerClaim,
 } from '../owner-claim.js';
+import { HostPolicyLinks } from './HostLinks.js';
 
 type Stage =
   'loading' | 'enter' | 'found' | 'account' | 'confirm' | 'claimed' | 'unavailable' | 'taken';
@@ -489,6 +490,7 @@ export function OwnerClaim() {
             </a>
           </div>
         )}
+        <HostPolicyLinks />
       </main>
     </div>
   );
