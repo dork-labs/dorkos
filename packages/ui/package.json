@@ -2,14 +2,14 @@
   "name": "@dork-labs/ui",
   "version": "0.1.0",
   "description": "Shared visual foundations for DorkOS interfaces",
-  "private": true,
   "type": "module",
   "license": "MIT",
   "files": [
     "dist",
     "tokens.css",
     "tailwind.css",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "sideEffects": [
     "./tokens.css",
@@ -57,7 +57,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
-    "prepublishOnly": "node -e \"throw new Error('Publication requires an approved owner release')\""
+    "prepublishOnly": "pnpm run build"
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -81,5 +81,13 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.11",
     "jsdom": "^27.3.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dork-labs/dorkos.git",
+    "directory": "packages/ui"
   }
 }
