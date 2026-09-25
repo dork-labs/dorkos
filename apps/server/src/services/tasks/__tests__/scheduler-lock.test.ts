@@ -1,8 +1,54 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, chmodSync, rmSync, readFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  mkdtempSync,
+  chmodSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+/**
+ * The logger is observed so a test can tell a reported failure from a silent
+ * one, and `writeSync` is wrapped so a test can fail a write AFTER the lock file
+ * was opened — the one moment a real filesystem cannot be made to fail on cue.
+ * Every other call goes to the real `fs`.
+ */
+const { taggedLogger, injected } = vi.hoisted(() => ({
+  taggedLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  injected: { writeSyncError: null as NodeJS.ErrnoException | null },
+}));
+
+vi.mock('../../../lib/logger.js', () => ({ createTaggedLogger: () => taggedLogger }));
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    writeSync: ((...args: Parameters<typeof actual.writeSync>) => {
+      const err = injected.writeSyncError;
+      if (err !== null) {
+        injected.writeSyncError = null;
+        throw err;
+      }
+      return actual.writeSync(...args);
+    }) as typeof actual.writeSync,
+  };
+});
+
 import { SchedulerLock } from '../scheduler-lock.js';
+
+/** An errno-shaped error, as `fs` throws it. */
+const errnoError = (code: string): NodeJS.ErrnoException =>
+  Object.assign(new Error(`${code}: simulated`), { code });
+
+beforeEach(() => {
+  taggedLogger.warn.mockClear();
+  injected.writeSyncError = null;
+});
 
 /**
  * The dorkHome-keyed leader lock (ADR-285): exactly one leader per lock path; a
@@ -198,5 +244,121 @@ describe('SchedulerLock — an unwritable lock never kills the process (FB-17)',
 
     expect(lock.isLeaderNow).toBe(true);
     expect(JSON.parse(readFileSync(join(tasksDir, 'scheduler.lock'), 'utf8')).pid).toBe(4242);
+  });
+});
+
+/**
+ * A lock file that exists but cannot be parsed must never keep the scheduler
+ * off for good (DOR-2131).
+ *
+ * The old `createExclusive` wrote straight to the lock path, so a write that
+ * failed after the file was created (a full disk, a crash) left an empty or
+ * half-written `scheduler.lock` behind. Every later acquire then read `null`,
+ * hit `EEXIST`, took that as a lost race, and stayed a follower: no process
+ * ever became leader again and no scheduled task ever ran, silently, across
+ * restarts.
+ */
+describe('SchedulerLock — an unreadable lock file is replaced, not obeyed (DOR-2131)', () => {
+  let dorkHome: string;
+  let lockPath: string;
+  let clock: number;
+  const now = () => clock;
+
+  beforeEach(() => {
+    dorkHome = mkdtempSync(join(tmpdir(), 'sched-lock-debris-'));
+    lockPath = join(dorkHome, 'tasks', 'scheduler.lock');
+    clock = 3_000_000;
+  });
+
+  afterEach(() => {
+    rmSync(dorkHome, { recursive: true, force: true });
+  });
+
+  const makeLock = (pid: number) =>
+    new SchedulerLock({ dorkHome, now, pid, hostname: 'host', staleTtlMs: 30_000 });
+
+  it.each([
+    ['an empty', ''],
+    ['a truncated', '{"pid":7,"hostname":"ho'],
+  ])('takes leadership over %s lock file', (_label, contents) => {
+    const lock = makeLock(1);
+    writeFileSync(lockPath, contents);
+
+    expect(lock.tryAcquire()).toBe(true);
+    expect(lock.isLeaderNow).toBe(true);
+    // Replaced by a whole record, and only through the temp-file-plus-rename
+    // path: no temp file is left beside it.
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(1);
+    expect(readdirSync(join(dorkHome, 'tasks'))).toEqual(['scheduler.lock']);
+  });
+
+  it('respects the lock that replaced the debris like any live lock', () => {
+    const first = makeLock(1);
+    const second = makeLock(2);
+    writeFileSync(lockPath, '');
+
+    expect(first.tryAcquire()).toBe(true);
+    expect(second.tryAcquire()).toBe(false);
+  });
+
+  it('removes its own half-written lock file when the write fails after the create', () => {
+    const lock = makeLock(1);
+    injected.writeSyncError = errnoError('ENOSPC');
+
+    expect(lock.tryAcquire()).toBe(false);
+    // The file it had just created is gone, so nothing unreadable is left for
+    // every later acquire to trip over.
+    expect(existsSync(lockPath)).toBe(false);
+    expect(taggedLogger.warn).toHaveBeenCalledTimes(1);
+    expect(String(taggedLogger.warn.mock.calls[0]?.[0])).toContain('The disk is full.');
+
+    // And the next attempt, with the disk back, simply wins.
+    expect(lock.tryAcquire()).toBe(true);
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(1);
+  });
+});
+
+/**
+ * A second spell of failed lock writes is reported like the first (DOR-2132).
+ *
+ * Failures are logged once per spell, and a successful write ends the spell.
+ * Only the rename path used to end it, so a spell that ended with a fresh
+ * create (the normal first acquire after a clean shutdown) left the flag set
+ * and every later outage went unreported.
+ */
+describe('SchedulerLock — every failure spell is reported (DOR-2132)', () => {
+  let dorkHome: string;
+  let tasksDir: string;
+  let clock: number;
+  const now = () => clock;
+
+  beforeEach(() => {
+    dorkHome = mkdtempSync(join(tmpdir(), 'sched-lock-spell-'));
+    tasksDir = join(dorkHome, 'tasks');
+    clock = 4_000_000;
+  });
+
+  afterEach(() => {
+    chmodSync(tasksDir, 0o755);
+    rmSync(dorkHome, { recursive: true, force: true });
+  });
+
+  it('warns again after a recovery that went through the exclusive create', () => {
+    const lock = new SchedulerLock({ dorkHome, now, pid: 4242, hostname: 'host' });
+
+    // Spell one: no lock file yet, so the create is what fails.
+    chmodSync(tasksDir, 0o555);
+    expect(lock.tryAcquire()).toBe(false);
+    expect(taggedLogger.warn).toHaveBeenCalledTimes(1);
+
+    // Recovery through the create, not through a rename.
+    chmodSync(tasksDir, 0o755);
+    expect(lock.tryAcquire()).toBe(true);
+
+    // Spell two: the heartbeat's rename fails, and that is news again.
+    chmodSync(tasksDir, 0o555);
+    lock.heartbeat();
+    expect(lock.isLeaderNow).toBe(false);
+    expect(taggedLogger.warn).toHaveBeenCalledTimes(2);
   });
 });
