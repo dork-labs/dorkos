@@ -171,6 +171,13 @@ export interface WorkspaceCreateRequest {
   path: string;
   source: string;
   branch: string;
+  /**
+   * Whether a person asked for it, so git runs their repository's own hooks
+   * (`post-checkout`, `core.hooksPath`) as their own `git` would. Absent or
+   * false for anyone else, whose git runs with hooks and fsmonitor off
+   * (DOR-2335). Server-internal: never read from a request body.
+   */
+  personGit?: boolean;
 }
 
 /** What a provider returns after provisioning a checkout. */

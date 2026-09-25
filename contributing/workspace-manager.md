@@ -93,6 +93,17 @@ checkout another agent is working in (DOR-1056).
     for exactly the same request, instead of raising a second one.
   - **Boot.** `sweepStaging` clears `<root>/.staging/` before anything can
     stage.
+  - **Git's own hooks.** Making a checkout runs git in DorkOS's process
+    (`worktree add`, `clone`, `checkout -b`). A gate built by
+    `personWorkspaceGate` carries `person: true`, and only then does the
+    service set `personGit`, so the provider uses `PERSON_REPO_GIT_CONFIG` and
+    the person's `post-checkout`, `core.hooksPath` (`.husky`) and template
+    hooks run as their own git would. Every other gate gets
+    `internalGitConfig()`, with hooks and fsmonitor off (DOR-2326's setting).
+    It is never read from a request body. DorkOS turns them off rather than
+    detecting hooks and raising a card, because hooks can come from `.git/hooks`,
+    `core.hooksPath`, includes, global config or `init.templateDir`, and a
+    detector that misses one runs it.
 
 - **Ports.** The server is the authority for managed workspaces (allocate block →
   write `.env`). `worktree-setup.sh`'s hash derivation is the offline fallback for
