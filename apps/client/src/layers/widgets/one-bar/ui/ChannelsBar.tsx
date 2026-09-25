@@ -141,8 +141,16 @@ function LocalChannelsBar() {
   // widget may not import another widget; both read the same room list, so they
   // cannot disagree about which room is #team.
   const leavingForHome = room !== null && team.room?.id === room.id;
+  // **Unknown is not "not #team"** (DOR-2141). The open room and the room list
+  // are two requests; when the room lands first, `team.room` is still `null`, so
+  // the check above read "not #team" and the bar named #team for the moment
+  // before the list arrived. The page draws nothing while `useTeamRoomRedirect`
+  // says `pending`, and this is the same answer in the header: the neutral bar
+  // until the list says which room #team is.
+  const teamUnknown = team.status === 'loading';
 
-  if (room === null || leavingForHome) return <OneBar identity={<BarTitle>Channels</BarTitle>} />;
+  if (room === null || leavingForHome || teamUnknown)
+    return <OneBar identity={<BarTitle>Channels</BarTitle>} />;
 
   const name = roomDisplayTitle(room);
 
