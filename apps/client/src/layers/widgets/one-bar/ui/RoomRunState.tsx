@@ -79,10 +79,16 @@ interface RoomHaltButtonProps {
  * they already said stays — and red would put the room's most ordinary recovery
  * action in the same register as deleting something.
  *
- * The word rides beside the icon rather than being hidden at narrow widths:
- * {@link RoomRunState} does not draw this button on a phone at all (spec §4), so
- * every width that renders it has room for the word — and "Stop" spelled out is
- * worth more than the ~30px on the one surface that has the space.
+ * **The word yields before anything else in the row does (DOR-1816 F1).**
+ * "Stop" spelled out is worth its ~30px wherever the bar has them, and a
+ * docked sidebar at a 768px window leaves the bar only 472px. There, Home's
+ * tab strip is already at its floor and every chip is `shrink-0`, so the
+ * word's width came straight out of the row: the health dot painted past its
+ * own box, further with every digit the team's head count grew (17px at 120
+ * members). Below the `xl` bar width (576px — the bar's own, via
+ * `@container/bar`, never the window's) the button drops to its icon, the
+ * same 24px square as the bar's other icon buttons. Nothing is lost: the
+ * accessible name and the tooltip still say what it stops.
  */
 export function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
   const halt = useHaltRoom();
@@ -97,9 +103,12 @@ export function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
           aria-label={`Stop all agents in ${roomName}`}
           disabled={halt.isPending}
           onClick={() => halt.mutate({ roomId })}
+          className="@max-xl/bar:size-6 @max-xl/bar:px-0"
         >
           <CircleStop aria-hidden className="size-3.5" />
-          Stop
+          <span data-slot="room-halt-label" className="@max-xl/bar:hidden">
+            Stop
+          </span>
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
