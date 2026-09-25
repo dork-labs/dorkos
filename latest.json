@@ -10,7 +10,7 @@
   "3 of 28 days missing to 2026-09-24 (2026-09-09 to 09-11).",
   "Thin sample: review-recovery (n=3 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
- "api_calls": 700,
+ "api_calls": 490,
  "slos": [
   {
    "id": "headroom",
@@ -71,7 +71,7 @@
    "kind": "quality",
    "from": "2026-08-28",
    "to": "2026-09-24",
-   "n": 602,
+   "n": 678,
    "min_n": 1,
    "stats": {
     "red_episodes": 14,
@@ -194,8 +194,8 @@
  },
  "safeguards_ok": true,
  "triggers": {
-  "red": 4,
-  "amber": 13,
+  "red": 5,
+  "amber": 12,
   "top": "main canary red on b83a80c since 2026-09-25 00:17Z: test.yml ×1."
  }
 }

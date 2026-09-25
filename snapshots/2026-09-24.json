@@ -68,7 +68,7 @@
     "min_n": 1000
    },
    "main-green": {
-    "n": 602,
+    "n": 678,
     "min_n": 1
    },
    "review-completes": {
@@ -100,11 +100,7 @@
     "min_n": 20
    }
   },
-  "series_gaps": [
-   "2026-09-09",
-   "2026-09-10",
-   "2026-09-11"
-  ],
+  "series_gaps": [],
   "local_exports": {
    "clone-71ebf1f648": {
     "last": "2026-09-22",

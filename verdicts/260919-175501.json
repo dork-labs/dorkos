@@ -3,7 +3,7 @@
  "id": "260919-175501",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-09-30T10:45:58Z; the verdict is computed on 2026-10-01.",
- "computed_at": "2026-09-25T10:06:45.932Z",
+ "computed_at": "2026-09-25T19:16:48.593Z",
  "hypothesis_hash": "8f5e34ebba61a075",
  "metric": "gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group",
  "anchor": "2026-09-23T10:45:58Z",

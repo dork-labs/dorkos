@@ -1,7 +1,7 @@
 {
  "schema": 1,
  "date": "2026-09-24",
- "computed_at": "2026-09-25T10:06:45.932Z",
+ "computed_at": "2026-09-25T19:16:48.593Z",
  "constraint": "queue-green",
  "canary_since": "2026-09-21T05:17:15Z",
  "open": [
@@ -32,7 +32,7 @@
    "rule": "slo-floor",
    "severity": "red",
    "scope": "main-green",
-   "what": "main-green under floor: red_episodes 14, restore_p90 65.8 (n=602, 2026-08-28 to 2026-09-24).",
+   "what": "main-green under floor: red_episodes 14, restore_p90 65.8 (n=678, 2026-08-28 to 2026-09-24).",
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175509",
    "first_fired": "2026-09-20",
@@ -47,6 +47,17 @@
    "action": "Take its path from ci/slos.yaml.",
    "ledger_entry": "260919-175500",
    "first_fired": "2026-09-20",
+   "last_fired": "2026-09-24"
+  },
+  {
+   "id": "verdict:260830-213616",
+   "rule": "verdict",
+   "severity": "red",
+   "scope": "260830-213616",
+   "what": "260830-213616 failed: gate.wf.test.test-shard.duration_p50@merge_group 12.2 vs target 10.",
+   "action": "Revert it (status: reverted, name the PR), or re-state the hypothesis.",
+   "ledger_entry": null,
+   "first_fired": "2026-09-24",
    "last_fired": "2026-09-24"
   },
   {
@@ -98,7 +109,7 @@
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.changelog-fragment-check.fragment-present",
-   "what": "wf.changelog-fragment-check.fragment-present failed 4.5%, was 1.5% (3.02x). 7d vs 6d, n=1234/475.",
+   "what": "wf.changelog-fragment-check.fragment-present failed 4.5%, was 1.4% (3.11x). 7d vs 7d, n=1234/628.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-09-23",
@@ -109,7 +120,7 @@
    "rule": "gate-failure-spike",
    "severity": "amber",
    "scope": "wf.test.test",
-   "what": "wf.test.test failed 21.3%, was 7.9% (2.69x). 7d vs 6d, n=801/328.",
+   "what": "wf.test.test failed 21.3%, was 6.8% (3.16x). 7d vs 7d, n=801/444.",
    "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
    "ledger_entry": null,
    "first_fired": "2026-09-23",
@@ -153,7 +164,7 @@
    "rule": "gate-cost",
    "severity": "amber",
    "scope": "tracked.job-minutes-per-merged-pr",
-   "what": "Job minutes per merged PR 563.2, was 357.4 (+57.6%). 7d vs 6d.",
+   "what": "Job minutes per merged PR 563.2, was 358.9 (+56.9%). 7d vs 7d.",
    "action": "A job added to a required path, or more runs thrown away. Both land here.",
    "ledger_entry": null,
    "first_fired": "2026-09-23",
@@ -164,7 +175,7 @@
    "rule": "gate-cost",
    "severity": "amber",
    "scope": "wf.merge-tail.arm",
-   "what": "wf.merge-tail.arm p90 0.6 min, was 0.4 (+58.3%). 7d vs 6d.",
+   "what": "wf.merge-tail.arm p90 0.6 min, was 0.4 (+58.3%). 7d vs 7d.",
    "action": "Find the step that grew. Cheaper now than a timeout raise later.",
    "ledger_entry": null,
    "first_fired": "2026-09-23",
@@ -175,12 +186,14 @@
    "rule": "gate-cost",
    "severity": "amber",
    "scope": "wf.test.community-pg",
-   "what": "wf.test.community-pg p90 4.4 min, was 2.1 (+106.6%). 7d vs 6d.",
+   "what": "wf.test.community-pg p90 4.4 min, was 2.1 (+106.6%). 7d vs 7d.",
    "action": "Find the step that grew. Cheaper now than a timeout raise later.",
    "ledger_entry": null,
    "first_fired": "2026-09-24",
    "last_fired": "2026-09-24"
-  },
+  }
+ ],
+ "cleared": [
   {
    "id": "stale-ledger:260830-213616",
    "rule": "stale-ledger",
@@ -191,30 +204,6 @@
    "ledger_entry": "260919-175503",
    "first_fired": "2026-09-21",
    "last_fired": "2026-09-24"
-  }
- ],
- "cleared": [
-  {
-   "id": "slo-floor:pr-feedback",
-   "rule": "slo-floor",
-   "severity": "amber",
-   "scope": "pr-feedback",
-   "what": "pr-feedback under floor: p50 9.6, p90 42.4 (n=197, 2026-09-17 to 2026-09-23).",
-   "action": "Take its path from ci/slos.yaml.",
-   "ledger_entry": "260919-175502",
-   "first_fired": "2026-09-20",
-   "last_fired": "2026-09-23"
-  },
-  {
-   "id": "gate-failure-spike:wf.browser-test.browser-test",
-   "rule": "gate-failure-spike",
-   "severity": "amber",
-   "scope": "wf.browser-test.browser-test",
-   "what": "wf.browser-test.browser-test failed 10.3%, was 8.2% (1.26x). 7d vs 5d, n=601/318.",
-   "action": "What changed for it in 7 days? Usually one flaky test or one new step.",
-   "ledger_entry": null,
-   "first_fired": "2026-09-23",
-   "last_fired": "2026-09-23"
   }
  ]
 }
