@@ -6,7 +6,7 @@ status: active
 actor: agent
 gates:
   - wf.ci-steward.collect
-prs: []
+prs: [2122]
 ratchet-release: []
 field-changes: []
 ---
