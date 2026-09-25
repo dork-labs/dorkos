@@ -38,6 +38,8 @@ import { ejectionLegs, legName } from './ejections.ts';
 import type { LedgerEntry } from './verdicts.ts';
 import type { WorkflowModel } from './workflows.ts';
 import { mainCanary } from './canary.ts';
+import { mainEpisodes } from './main-episodes.ts';
+import { deadlineMinutes, effectiveTimeouts } from './slo.ts';
 import { machineSaturated } from './machine.ts';
 
 /** The twelve rules, in the order `ci/config.yaml` documents them. */
@@ -170,7 +172,17 @@ interface GateWindow {
 /** Every gate's window, by gate id. */
 type GateWindows = Map<string, GateWindow>;
 
-function gateWindow(snaps: readonly Snapshot[]): GateWindows {
+/**
+ * Every gate's runs over a window.
+ *
+ * @param snaps - The window's snapshots.
+ * @param deadlines - Inner deadlines by gate (`deadlineMinutes`): headroom
+ *   ratios are read against the deadline that fires first, as the SLO reads them.
+ */
+function gateWindow(
+  snaps: readonly Snapshot[],
+  deadlines: Readonly<Record<string, number>>
+): GateWindows {
   const out = new Map<string, GateWindow>();
   // Decided once, over the whole window: see `mergePathGates`.
   const onPath = mergePathGates(snaps);
@@ -196,7 +208,7 @@ function gateWindow(snaps: readonly Snapshot[]): GateWindows {
       w.failed += c('failure') + c('timed_out');
       for (const [, sec] of g.durations) w.minutes.push(sec / 60);
     }
-    for (const [gate, timeout] of Object.entries(s.timeouts)) {
+    for (const [gate, timeout] of Object.entries(effectiveTimeouts(s.timeouts, deadlines))) {
       if (timeout <= 0) continue;
       const w = get(gate);
       for (const g of gateDays(s.gates, gate, undefined, onPath))
@@ -439,37 +451,33 @@ function repeatEjection(inp: TriageInput, all: readonly Snapshot[]): NewTrigger[
  * @param from - The first day of the 7-day window closed spells are listed over.
  */
 function mainRed(all: readonly Snapshot[], from: string): NewTrigger[] {
-  const commits = all.flatMap((s) => s.main).sort((a, b) => a.at.localeCompare(b.at));
   const out: NewTrigger[] = [];
-  let open: { sha: string; done: string } | null = null;
-  for (const c of commits) {
-    if (c.red && open === null) open = { sha: c.sha, done: c.done };
-    else if (!c.red && open !== null) {
-      const minutes = round((Date.parse(c.done) - Date.parse(open.done)) / 60_000, 1);
-      // Only spells inside the window are listed; older ones are history.
-      if (open.done.slice(0, 10) >= from)
-        out.push({
-          id: `main-red:${open.sha}`,
-          rule: 'main-red',
-          severity: 'amber',
-          scope: 'main-green',
-          what: `main red ${round(minutes, 0)} min (${open.sha.slice(0, 7)}).`,
-          action: `Why did the queue miss it? If nothing did, this one is history.`,
-          ledger_entry: null,
-        });
-      open = null;
+  for (const e of mainEpisodes(all.flatMap((s) => s.main))) {
+    if (e.closed === null) {
+      out.push({
+        id: `main-red-open:${e.sha}`,
+        rule: 'main-red',
+        severity: 'red',
+        scope: 'main-green',
+        what: `main red since ${e.sha.slice(0, 7)}, still red.`,
+        action: `Fix main first. Everything merging behind it inherits the red.`,
+        ledger_entry: null,
+      });
+      continue;
     }
-  }
-  if (open)
+    // Only spells inside the window are listed; older ones are history.
+    if (e.opened.slice(0, 10) < from) continue;
+    const minutes = (Date.parse(e.closed) - Date.parse(e.opened)) / 60_000;
     out.push({
-      id: `main-red-open:${open.sha}`,
+      id: `main-red:${e.sha}`,
       rule: 'main-red',
-      severity: 'red',
+      severity: 'amber',
       scope: 'main-green',
-      what: `main red since ${open.sha.slice(0, 7)}, still red.`,
-      action: `Fix main first. Everything merging behind it inherits the red.`,
+      what: `main red ${round(minutes, 0)} min (${e.sha.slice(0, 7)}).`,
+      action: `Why did the queue miss it? If nothing did, this one is history.`,
       ledger_entry: null,
     });
+  }
   return out;
 }
 
@@ -574,8 +582,9 @@ export function triage(inp: TriageInput): Triggers {
   const today = inp.latest.date;
   const cur = inp.snapshots.filter((s) => s.date >= windowFrom(inp) && s.date <= today);
   const prev = inp.snapshots.filter((s) => s.date >= prevFrom(inp) && s.date < windowFrom(inp));
-  const curGates = gateWindow(cur);
-  const prevGates = gateWindow(prev);
+  const deadlines = deadlineMinutes(inp.files.config);
+  const curGates = gateWindow(cur, deadlines);
+  const prevGates = gateWindow(prev, deadlines);
   const windows: Windows = { curDays: cur.length, prevDays: prev.length };
   const found: NewTrigger[] = [
     ...sloFloor(inp.latest.slos),

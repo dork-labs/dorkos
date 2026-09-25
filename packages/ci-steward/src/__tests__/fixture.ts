@@ -82,8 +82,14 @@ export function baseSpec(): FixtureSpec {
             workflow: 'browser-test.yml',
             pattern: 'browser-results-shard-*',
             format: 'playwright',
+            gate: 'wf.browser-test.browser-shard',
           },
-          { workflow: 'test.yml', pattern: 'vitest-shard-report-*', format: 'vitest' },
+          {
+            workflow: 'test.yml',
+            pattern: 'vitest-shard-report-*',
+            format: 'vitest',
+            gate: 'wf.test.test-shard',
+          },
         ],
       },
       quarantine: {

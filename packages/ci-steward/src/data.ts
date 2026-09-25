@@ -91,9 +91,25 @@ const CanaryRunSchema = z
 /** One main-canary run. */
 export type CanaryRun = z.infer<typeof CanaryRunSchema>;
 
-/** One commit on the default branch and whether its push checks went red. */
+/**
+ * One commit on the default branch and whether its push checks went red.
+ *
+ * `workflows` says which push workflows ran on it and whether each went red,
+ * keyed by file name. It is what lets a red spell end only when the workflow
+ * that FAILED goes green again, rather than at the next commit whose push
+ * checks happened to be a different, path-filtered set (`mainEpisodes`).
+ * Optional, because commits collected before it existed have only `red`; the
+ * collector refreshes those days (`refreshDerived` in collect.ts) while Actions
+ * still keeps their runs.
+ */
 const MainCommitSchema = z
-  .object({ sha: z.string(), at: z.string(), done: z.string(), red: z.boolean() })
+  .object({
+    sha: z.string(),
+    at: z.string(),
+    done: z.string(),
+    red: z.boolean(),
+    workflows: z.record(z.string(), z.boolean()).optional(),
+  })
   .strict();
 /** One commit on the default branch. */
 export type MainCommit = z.infer<typeof MainCommitSchema>;
@@ -221,6 +237,13 @@ export const SnapshotSchema = z
          * Defaulted, because snapshots written before the canary have no key.
          */
         canary_minutes: z.number().default(0),
+        /**
+         * Failed-checks ejections that repeat an earlier one on the same PR
+         * head (`tracked.repeat-ejections`, `repeatEjections` in prs.ts).
+         * Absent, not 0, on a day collected before it was computed: a day that
+         * was never measured must not read as a day with no repeats.
+         */
+        repeat_ejections: z.number().optional(),
       })
       .strict(),
     /** Which tests flaked, on which build. Defaulted, so snapshots written before it read fine. */
@@ -248,7 +271,11 @@ export const SnapshotSchema = z
     canary: z.array(CanaryRunSchema).default([]),
     releases: z.array(z.object({ tag: z.string(), published_at: z.string() }).strict()),
     cache: z.object({ bytes: z.number(), count: z.number() }).strict().nullable(),
-    /** Each gate's timeout-minutes when the day was collected; empty for a backfilled day. */
+    /**
+     * Each gate's deadline when the day was collected: its timeout-minutes, or
+     * an inner deadline that fires first (`deadlines:` in ci/config.yaml).
+     * Empty for a backfilled day.
+     */
     timeouts: z.record(z.string(), z.number()),
   })
   .strict();

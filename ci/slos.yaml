@@ -26,7 +26,7 @@ slos:
       event_source: Actions job records (commits/{sha}/check-runs) for every job with a timeout-minutes
       population: every completed, non-skipped job run, grouped by gate id
       exclusions: [cancelled runs, workflow_dispatch runs]
-      aggregation: per gate, p95 job duration divided by its timeout-minutes; the SLO reads the worst gate
+      aggregation: per gate, p95 job duration divided by the deadline that fires first — its timeout-minutes, or an inner deadline from ci/config.yaml `deadlines:` (the browser shards' Playwright globalTimeout, since 2026-09-25); the SLO reads the worst gate
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 10
       fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts
@@ -71,10 +71,19 @@ slos:
     kind: quality
     title: Tests pass without needing a retry
     definition:
-      event_source: the queue's vitest flake-reporter output and Playwright JSON reports (retries 1 in CI)
-      population: every test execution in merge_group runs
+      event_source: the queue's vitest flake-reporter output and Playwright JSON reports (retries 1 in CI), from the gates ci/config.yaml `collect.artifacts` names
+      population: every test execution in the sampled merge_group runs of those gates
       exclusions: [tests skipped by design, cancelled runs]
-      aggregation: executions that failed then passed on retry, divided by all executions
+      aggregation: >-
+        executions that failed then passed on retry, divided by all executions.
+        Since 2026-09-25 the reading is `unmeasured` ("coverage unknown") when
+        any red queue build in the window failed a job outside those gates
+        (credential-free-build, harness-windows, community-packaged,
+        community-pg, a fan-in failing on its own step): the share cannot see a
+        flake there, so it cannot claim the window. The share and the counts
+        (failed_jobs, unreported_failed_jobs) stay in the stats. A test that
+        fails every attempt and passes on the re-queued build is a flake this
+        share never sees either; wasted-queue-builds counts those.
       window: 7-day non-overlapping, plus 28-day trend
       min_n: 1000
       fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts (the floor is still set after 2 weeks of collection)
@@ -90,7 +99,15 @@ slos:
       event_source: push-to-main workflow runs
       population: runs on main after each merge
       exclusions: [workflow_dispatch runs, schedule runs (the main canary), cancelled runs]
-      aggregation: count of red episodes (first red run to next all-green run), plus p90 time to restore
+      aggregation: >-
+        count of red episodes, plus p90 time to restore. Since 2026-09-25 an
+        episode ends only when every push workflow that went red in it has gone
+        green on main again (packages/ci-steward/src/main-episodes.ts), not at
+        the next commit whose push checks happened to be green: push workflows
+        are path-filtered differently, so that commit often never ran the one
+        that failed. A red workflow that stops reporting for 7 days is dropped.
+        The main canary's reds are counted by its own trigger and
+        tracked.time-to-detect, never here.
       window: 28-day rolling
       min_n: 1
       fixture: packages/ci-steward/src/__tests__/fixtures/week-2026-09-12.snapshots.json.gz, pinned in slo.test.ts

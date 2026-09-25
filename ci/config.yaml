@@ -108,9 +108,44 @@ collect:
   review_workflow: claude-code-review.yml
   # Playwright's JSON reporter counts flaky tests (failed, then passed on the
   # retry); the vitest shard reports carry executions and the flake list.
+  #
+  # `gate` is the job that writes each report. flaky-test-runs can only see a
+  # flake in a job listed here, so a failed queue job in any OTHER gate is
+  # counted as coverage it does not have, and the SLO reads `unmeasured` rather
+  # than claim a share over tests it never saw. The other jobs that fail queue
+  # builds are not missing from this list by accident: credential-free-build
+  # and harness-windows upload no test report at all, and community-packaged
+  # and community-pg write Playwright JSON at `retries: 0`, where a flake can
+  # only ever show up as a hard failure, never as "failed, then passed".
   artifacts:
-    - { workflow: browser-test.yml, pattern: browser-results-shard-*, format: playwright }
-    - { workflow: test.yml, pattern: vitest-shard-report-*, format: vitest }
+    - {
+        workflow: browser-test.yml,
+        pattern: browser-results-shard-*,
+        format: playwright,
+        gate: wf.browser-test.browser-shard,
+      }
+    - {
+        workflow: test.yml,
+        pattern: vitest-shard-report-*,
+        format: vitest,
+        gate: wf.test.test-shard,
+      }
+
+# Deadlines that end a job before its own `timeout-minutes` does. `headroom`
+# (the SLO and trigger rule 8) reads each gate against the smaller of the two,
+# because that is the deadline that actually fires. A browser shard's
+# timeout-minutes is 45, the outermost rung of browser-test.yml's ladder, which
+# is built never to fire; Playwright's own globalTimeout stops the suite at 30.
+# Measured against 45, a shard at 29 minutes read as 65% used when it was 97%.
+#
+# The job's duration includes about 2.5 minutes of setup before Playwright
+# starts, so the ratio reads that much high. That is the safe side for a
+# tripwire. The number is checked against playwright.config.ts's derivation and
+# the workflow's shard count by slo.test.ts, so it cannot drift silently.
+deadlines:
+  - gate: wf.browser-test.browser-shard
+    minutes: 30
+    source: apps/e2e/playwright.config.ts globalTimeout in CI, derived per shard from E2E_SHARD_TOTAL
 
 # The quarantine lane (plan §4.9 L1): a test data has classified flaky runs and
 # reports as usual, but does not fail the blocking queue job.
