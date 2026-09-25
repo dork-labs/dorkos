@@ -2438,9 +2438,10 @@ describe('Marketplace Routes', () => {
       expect(res.body).toEqual({
         outcome: 'sorted',
         message:
-          'Checked the files old-plugin kept: removed 1 left over from the version you had before, and kept 1 as yours.',
+          'Checked the files old-plugin kept: set aside 1 left over from the version you had before (old.md.dork-old), and kept 1 as yours.',
       });
       expect(existsSync(join(root, 'old.md'))).toBe(false);
+      expect(existsSync(join(root, 'old.md.dork-old'))).toBe(true);
       expect(existsSync(join(root, 'notes.txt'))).toBe(true);
     });
 

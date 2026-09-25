@@ -216,10 +216,10 @@ Decision (coordinator, 2026-09-25):
    - **An inferred record** (an older install whose update was rolled back, or which was only recorded by guessing) counts as not yet recorded. Verify reports it `unknown` with reason `inferred`, and Check files and the sweep after boot run the strict rebuild on it.
    - **An install whose record lists unproven files:**
      - Check files fetches `from`.
-     - It removes each kept file whose bytes are exactly the old version's copy and which the current version does not ship. Those are leftovers an online update would have removed.
+     - It sets aside (renames to a free `.dork-old` name, execute bits cleared; never deletes) each kept file whose bytes are exactly the old version's copy and which the current version does not ship. Those are leftovers an online update would have replaced.
      - It keeps the rest as the person's, then drops the list.
-     - It fetches nothing and removes nothing when `from` is absent or the fetch fails, and says why.
-   - **The sweep after boot** never removes anything: resolving unproven files is a person's action.
+     - It moves nothing when `from` is absent or the fetch fails, and says why.
+   - **The sweep after boot** never moves anything: resolving unproven files is a person's action.
 6. **Surfacing.**
    - Verify: `clean` and `modified` gain `unproven`, excluded from `added`.
    - App: the Installed row note names the kept files and offers Check files; a single update's toast shows its warnings; the uninstall toast shows its warnings.

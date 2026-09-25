@@ -142,7 +142,7 @@ function UnprovenNote({
           kept them.{' '}
           {local
             ? 'Delete any you don’t need.'
-            : 'Check files removes the leftovers and keeps yours.'}
+            : 'Check files sets aside the leftovers and keeps yours.'}
         </p>
         {unproven.check.last && <p>{unproven.check.last.message}</p>}
         <PathGroup title="Kept" paths={unproven.files} />

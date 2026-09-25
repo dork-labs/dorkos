@@ -61,7 +61,7 @@ export const STRICT_MISMATCH_LIST_LIMIT = 50;
  */
 export type StrictRebuildResult =
   | { outcome: 'rebuilt'; files: number }
-  | { outcome: 'sorted'; removed: string[]; kept: string[] }
+  | { outcome: 'sorted'; setAside: { path: string; savedAs: string }[]; kept: string[] }
   | { outcome: 'not-needed'; why: 'has-record' | 'not-installed' | 'linked' }
   | { outcome: 'no-source'; unproven?: true }
   | { outcome: 'fetch-failed'; message: string; unproven?: true }
@@ -222,12 +222,13 @@ export function describeStrictRebuild(name: string, result: StrictRebuildResult)
     case 'rebuilt':
       return `Checked ${name}. Its files match the version you installed, so updates will keep your edits.`;
     case 'sorted': {
-      const removed = result.removed.length;
+      const aside = result.setAside.length;
       const kept = result.kept.length;
-      if (removed === 0) {
+      if (aside === 0) {
         return `Checked the files ${name} kept: ${kept === 1 ? 'the 1 file is yours, so it stays' : `all ${kept} are yours, so they stay`}.`;
       }
-      return `Checked the files ${name} kept: removed ${removed} left over from the version you had before${kept > 0 ? `, and kept ${kept} as yours` : ''}.`;
+      const where = result.setAside.map((f) => f.savedAs).join(', ');
+      return `Checked the files ${name} kept: set aside ${aside} left over from the version you had before (${where})${kept > 0 ? `, and kept ${kept} as yours` : ''}.`;
     }
     case 'not-needed':
       return `${name}'s files are already checked.`;

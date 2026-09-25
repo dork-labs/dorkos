@@ -1223,7 +1223,7 @@ describe('InstalledPackagesView', () => {
       await user.click(note.querySelector('summary')!);
       expect(within(note).getByRole('list', { name: 'Kept' })).toHaveTextContent('notes.txt');
       expect(note).toHaveTextContent(
-        'DorkOS couldn’t tell whether these were yours or left over from the earlier version, so it kept them. Check files removes the leftovers and keeps yours.'
+        'DorkOS couldn’t tell whether these were yours or left over from the earlier version, so it kept them. Check files sets aside the leftovers and keeps yours.'
       );
       expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
     });

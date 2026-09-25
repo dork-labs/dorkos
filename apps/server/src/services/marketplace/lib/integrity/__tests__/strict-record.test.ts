@@ -6,7 +6,17 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { noopLogger } from '@dorkos/shared/logger';
@@ -499,22 +509,27 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
     expect(Object.keys(record!.files).sort()).toEqual(Object.keys(shipped()).sort());
   });
 
-  // Purpose: THE re-verification. A kept file whose bytes are exactly the old
-  // version's copy, and which the current version does not ship, is a leftover
-  // an online update would have removed: it goes. A file with other bytes is
-  // the person's and stays; so does one the current version ships. The list is
-  // then dropped. Fails if a person's file is removed, a leftover survives, or
-  // the list stays.
-  it('removes proven leftovers, keeps the rest as yours, and drops the list', async () => {
+  // Purpose: THE re-verification (review 2: set aside, never delete). A kept
+  // file whose bytes are exactly the old version's copy, and which the current
+  // version does not ship, is a leftover an online update would have replaced:
+  // it is moved to a free `<path>.dork-old` name, with its execute bits
+  // cleared, so it stops running and nothing is lost. One already under a
+  // set-aside name stays put. A file with other bytes is the person's and
+  // stays; so does one the current version ships. The list is then dropped.
+  // Fails if anything is deleted, a leftover stays where it runs, a person's
+  // file moves, or the list stays.
+  it('sets proven leftovers aside, keeps the rest as yours, and drops the list', async () => {
     const old = await tree({
       'old.md': 'old v1',
       'a.md': 'a v1',
       'skills/b/SKILL.md': 'b v1',
+      'skills/gone/SKILL.md': 'gone skill',
+      'bin/tool': 'tool v1',
       'settings.json': 'same default',
     });
     // settings.json: the current version ships it too, with the same bytes as
     // the earlier one (an editable file the update kept in place). It is the
-    // package's own file now, so it is never removed.
+    // package's own file now, so it is never moved.
     const root = await recordedWithUnproven(
       {
         '.dork/manifest.json': MANIFEST,
@@ -524,19 +539,26 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
       },
       {
         'old.md': 'old v1',
+        'old.md.dork-old': 'an older copy the person kept',
         'a.md.dork-old': 'a v1',
         'mine.txt': 'mine',
         'skills/b/SKILL.md.dork-old': 'b edited',
+        'skills/gone/SKILL.md': 'gone skill',
+        'bin/tool': 'tool v1',
       },
       {
         'old.md': 'old.md',
         'a.md.dork-old': 'a.md',
         'mine.txt': 'mine.txt',
         'skills/b/SKILL.md.dork-old': 'skills/b/SKILL.md',
+        'skills/gone/SKILL.md': 'skills/gone/SKILL.md',
+        'bin/tool': 'bin/tool',
         'a.md': 'a.md',
         'settings.json': 'settings.json',
       }
     );
+    await chmod(path.join(root, 'bin', 'tool'), 0o755);
+    const before = await snapshot(root);
 
     const result = await rebuildRecordStrict(
       root,
@@ -546,16 +568,33 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
 
     expect(result).toEqual({
       outcome: 'sorted',
-      removed: ['a.md.dork-old', 'old.md'],
+      setAside: [
+        { path: 'a.md.dork-old', savedAs: 'a.md.dork-old' },
+        { path: 'bin/tool', savedAs: 'bin/tool.dork-old' },
+        { path: 'old.md', savedAs: 'old.md.dork-old.2' },
+        { path: 'skills/gone/SKILL.md', savedAs: 'skills/gone/SKILL.md.dork-old' },
+      ],
       kept: ['a.md', 'mine.txt', 'settings.json', 'skills/b/SKILL.md.dork-old'],
     });
-    expect(await readFile(path.join(root, 'settings.json'), 'utf8')).toBe('same default');
     const after = await snapshot(root);
+    // Nothing is lost: every file that was there is still there (the record,
+    // which drops its list, aside).
+    const RECORD = '.dork/installed-files.json';
+    const contents = (tree: Record<string, string>) =>
+      Object.entries(tree)
+        .filter(([p]) => p !== RECORD)
+        .map(([, c]) => c)
+        .sort();
+    expect(contents(after)).toEqual(contents(before));
     expect(after['old.md']).toBeUndefined();
-    expect(after['a.md.dork-old']).toBeUndefined();
+    expect(after['old.md.dork-old.2']).toBe('old v1');
+    expect(after['old.md.dork-old']).toBe('an older copy the person kept');
+    expect(after['skills/gone/SKILL.md']).toBeUndefined();
+    expect(after['bin/tool']).toBeUndefined();
+    expect((await stat(path.join(root, 'bin', 'tool.dork-old'))).mode & 0o111).toBe(0);
     expect(after['mine.txt']).toBe('mine');
     expect(after['a.md']).toBe('a v2');
-    expect(after['skills/b/SKILL.md.dork-old']).toBe('b edited');
+    expect(after['settings.json']).toBe('same default');
     expect((await readInstalledFiles(root))?.unproven).toBeUndefined();
   });
 
@@ -650,17 +689,30 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
   });
 
   // Purpose: the answer a person reads after sorting says what went and what stayed.
-  it('says what sorting removed and kept', () => {
+  it('says what sorting set aside, where, and what it kept', () => {
     expect(
-      describeStrictRebuild('flow', { outcome: 'sorted', removed: ['a', 'b'], kept: ['c'] })
+      describeStrictRebuild('flow', {
+        outcome: 'sorted',
+        setAside: [
+          { path: 'old.md', savedAs: 'old.md.dork-old' },
+          { path: 'x.dork-old', savedAs: 'x.dork-old' },
+        ],
+        kept: ['c'],
+      })
     ).toBe(
-      'Checked the files flow kept: removed 2 left over from the version you had before, and kept 1 as yours.'
+      'Checked the files flow kept: set aside 2 left over from the version you had before (old.md.dork-old, x.dork-old), and kept 1 as yours.'
     );
-    expect(describeStrictRebuild('flow', { outcome: 'sorted', removed: [], kept: ['c'] })).toBe(
+    expect(describeStrictRebuild('flow', { outcome: 'sorted', setAside: [], kept: ['c'] })).toBe(
       'Checked the files flow kept: the 1 file is yours, so it stays.'
     );
-    expect(describeStrictRebuild('flow', { outcome: 'sorted', removed: ['a'], kept: [] })).toBe(
-      'Checked the files flow kept: removed 1 left over from the version you had before.'
+    expect(
+      describeStrictRebuild('flow', {
+        outcome: 'sorted',
+        setAside: [{ path: 'a', savedAs: 'a.dork-old' }],
+        kept: [],
+      })
+    ).toBe(
+      'Checked the files flow kept: set aside 1 left over from the version you had before (a.dork-old).'
     );
   });
 });
