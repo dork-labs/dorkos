@@ -509,16 +509,16 @@ describe('an offline update of an install made before records existed (DOR-2322)
     const second = (await readInstalledFiles(target))?.unproven;
     expect(second?.files).toEqual({
       'a.md.dork-old': 'a.md',
-      'notes.dork-old/one.md': 'notes/one.md',
-      'notes.dork-old/two.md': 'notes/two.md',
+      '.dork/saved/notes.dork-old/one.md': 'notes/one.md',
+      '.dork/saved/notes.dork-old/two.md': 'notes/two.md',
     });
-    expect(await read(target, 'notes.dork-old/one.md')).toBe('mine 1');
+    expect(await read(target, '.dork/saved/notes.dork-old/one.md')).toBe('mine 1');
     expect(await read(target, 'notes')).toBe('a file now');
 
     // 3: an ordinary update leaves the list as it was.
     const { warnings } = await install(target, { 'a.md': 'a v4', notes: 'a file now' });
     expect((await readInstalledFiles(target))?.unproven).toEqual(second);
-    expect(await read(target, 'notes.dork-old/two.md')).toBe('mine 2');
+    expect(await read(target, '.dork/saved/notes.dork-old/two.md')).toBe('mine 2');
     expect(warnings.join(' ')).toMatch(/An earlier update of pkg kept 3 files/);
   });
 

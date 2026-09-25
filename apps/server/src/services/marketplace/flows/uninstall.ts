@@ -76,6 +76,7 @@ import {
   settleInterruptedInstall,
   withInstallTargetLock,
 } from '../transaction.js';
+import { freeSavedFileName, makeInert } from '../lib/saved-copies/saved-copies.js';
 
 /** Everything removing an agent from the team takes away (the unregister cascade). */
 const AGENT_REMOVAL_EFFECTS: AgentRemovedSummary['removed'] = [
@@ -525,13 +526,14 @@ export class UninstallFlow {
         if (!(p in record.files) || (await isProvenPackageFile(root, p, record))) continue;
         const abs = path.join(root, ...p.split('/'));
         if (!(await pathExists(abs))) continue;
-        let saved = `${abs}.dork-old`;
-        for (let n = 2; await pathExists(saved); n++) saved = `${abs}.dork-old.${n}`;
+        const rel = await freeSavedFileName(root, p);
+        const saved = path.join(root, ...rel.split('/'));
         // Journaled before it is written, so a rollback removes it.
-        const rel = path.relative(root, saved).split(path.sep).join('/');
         journaled.journal.savedCopies = [...(journaled.journal.savedCopies ?? []), rel];
         await writeJournal(journaled.sibling, journaled.journal);
         await copyFile(abs, saved);
+        // Kept to read, never to run (DOR-2340).
+        await makeInert(saved);
       }
     }
     return moves;

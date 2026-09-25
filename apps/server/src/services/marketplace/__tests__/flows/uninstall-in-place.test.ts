@@ -8,6 +8,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  chmod,
   lstat,
   mkdir,
   mkdtemp,
@@ -142,11 +143,18 @@ describe('in-place uninstall (DOR-2245)', () => {
     const root = path.join(dorkHome, 'plugins', 'pkg');
     await installed(root, { '.claude-plugin/plugin.json': '{"name":"pkg"}' });
     await put(root, '.claude-plugin/plugin.json', '{"name":"pkg","mine":true}');
+    // Made runnable, to show the kept copy never is (DOR-2340).
+    const edited = path.join(root, '.claude-plugin', 'plugin.json');
+    if (process.platform !== 'win32') await chmod(edited, 0o755);
     await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
     expect(await exists(path.join(root, '.claude-plugin', 'plugin.json'))).toBe(false);
     expect(
       await readFile(path.join(root, '.claude-plugin', 'plugin.json.dork-old'), 'utf8')
     ).toContain('mine');
+    if (process.platform !== 'win32') {
+      const kept = path.join(root, '.claude-plugin', 'plugin.json.dork-old');
+      expect((await lstat(kept)).mode & 0o111).toBe(0);
+    }
   });
 
   // Purpose (code review 12, M23): an empty folder the person made is theirs,

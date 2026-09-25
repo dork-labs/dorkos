@@ -62,6 +62,15 @@ export const UNINSTALLED_AGENT_PATH = '.dork/uninstalled-agent.json';
  */
 export const PACKAGE_DATA_DIR = '.dork/data';
 
+/**
+ * Where an update or uninstall keeps a FOLDER it saves aside (DOR-2340), such
+ * as a person's own `skills/mine/` that a new version now ships a file over.
+ * A saved folder left beside the original (`skills/mine.dork-old/`) still
+ * matches `skills/<name>/SKILL.md`, so Claude Code and every harness would load it;
+ * nothing scans here. Always the person's: a package may never ship into it.
+ */
+export const SAVED_COPIES_DIR = '.dork/saved';
+
 /** The per-package secrets file. Always the person's; a package may never ship it. */
 export const PACKAGE_SECRETS_PATH = '.dork/secrets.json';
 

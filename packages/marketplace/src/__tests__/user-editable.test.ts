@@ -18,6 +18,9 @@ describe('isReservedPackagePath', () => {
     '.dork/install-metadata.json',
     '.dork/installed-files.json',
     '.dork/uninstalled-agent.json',
+    // Where saved folders go (DOR-2340).
+    '.dork/saved',
+    '.dork/saved/skills__mine.dork-old/SKILL.md',
     'skills/x/SKILL.md.dork-old',
     'config/defaults.json.dork-new',
     'x.dork-new.3',
@@ -75,6 +78,7 @@ describe('UserEditablePathSchema', () => {
     ['dir/*', 'wildcard'],
     ['a?b', 'wildcard'],
     ['.dork/data/**', 'reserved'],
+    ['.dork/saved/**', 'reserved'],
     ['.dork/secrets.json', 'reserved'],
     ['.dork/**', 'reserved'],
     ['.dork/manifest.json', 'identity'],

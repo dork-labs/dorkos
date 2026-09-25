@@ -280,6 +280,8 @@ import {
 } from './services/marketplace/lib/integrity/legacy-record-sweep.js';
 import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
+import { migrateSavedCopies } from './services/marketplace/lib/saved-copies/migrate-saved-copies.js';
+import { withInstallTargetLock } from './services/marketplace/transaction.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -2419,6 +2421,25 @@ async function start() {
         .then((summary) => logInstallSweep('project installs', summary))
         .catch((err: unknown) => {
           logger.warn('[Marketplace] Project install recovery failed', logError(err));
+        })
+        // Once installs are settled: copies an earlier version saved aside
+        // stop being runnable, and saved folders move where nothing loads
+        // them (DOR-2340). Idempotent, so every boot re-checks.
+        .then(async () => {
+          const scopes = (meshCore?.listWithPaths() ?? []).map((a) => ({
+            projectPath: a.projectPath,
+            id: a.id,
+            name: a.displayName ?? a.name,
+          }));
+          const installs = await scanInstallationsAcrossScopes(dorkHome, scopes);
+          await migrateSavedCopies(
+            installs.map((i) => i.installPath),
+            withInstallTargetLock,
+            logger
+          );
+        })
+        .catch((err: unknown) => {
+          logger.warn('[Marketplace] Could not check saved copies', logError(err));
         });
     } catch (err) {
       logger.warn('[Marketplace] Project install recovery failed', logError(err));
