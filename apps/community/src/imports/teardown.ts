@@ -85,6 +85,7 @@ export async function teardownImport(
       // A ready import that the host abandoned has restored rows. They go first, children
       // before parents, so every file below is unreferenced.
       for (const table of IMPORTED_TABLES) {
+        // content-change: import-teardown
         await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
       }
     }
