@@ -22,8 +22,28 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initBoundary } from '../../../lib/boundary.js';
 import { CloneProvider } from '../providers/clone.js';
-import { runGit } from '../providers/git.js';
+import { runGit, UnsafeWorkspaceSourceError } from '../providers/git.js';
 import { WorktreeProvider } from '../providers/worktree.js';
+
+/** Every git the code under test starts, counted by a pass-through mock. */
+const gitRuns = vi.hoisted(() => ({ count: 0 }));
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>();
+  const { promisify } = await import('node:util');
+  const counted = ((...args: Parameters<typeof actual.execFile>) => {
+    gitRuns.count += 1;
+    return actual.execFile(...args);
+  }) as typeof actual.execFile;
+  // Keep execFile's own promisified form, which resolves `{ stdout, stderr }`.
+  const promised = promisify(actual.execFile);
+  Object.defineProperty(counted, promisify.custom, {
+    value: (...args: unknown[]) => {
+      gitRuns.count += 1;
+      return (promised as (...a: unknown[]) => unknown)(...args);
+    },
+  });
+  return { ...actual, execFile: counted };
+});
 
 let base: string;
 let root: string;
@@ -118,5 +138,47 @@ describe.skipIf(process.platform === 'win32')('workspace creation keeps the pers
       { force: true }
     );
     expect(existsSync(req.path)).toBe(false);
+  });
+});
+
+// A caller-supplied source must never become a git option or a transport
+// helper that runs a program (DOR-2326). Both are refused before git runs.
+describe('a workspace source git could misread', () => {
+  it.each([
+    ['a source starting with -', (m: string) => `--upload-pack=touch '${m}'`],
+    ['an ext:: source', (m: string) => `ext::sh -c touch% '${m}'`],
+    ['an fd:: source', () => 'fd::3'],
+  ])('refuses %s before git runs', async (_label, make) => {
+    gitRuns.count = 0;
+    const source = make(marker);
+    for (const provider of [new CloneProvider(root), new WorktreeProvider(root)]) {
+      await expect(provider.create(request(source, 'bad'))).rejects.toBeInstanceOf(
+        UnsafeWorkspaceSourceError
+      );
+    }
+    expect(gitRuns.count).toBe(0);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('confines git to transports that run no program, even past the check', async () => {
+    // Purpose: the transport allowlist stands behind the check, even for a
+    // person whose own git config allows ext:: (GIT_ALLOW_PROTOCOL wins).
+    vi.stubEnv('GIT_CONFIG_COUNT', '1');
+    vi.stubEnv('GIT_CONFIG_KEY_0', 'protocol.ext.allow');
+    vi.stubEnv('GIT_CONFIG_VALUE_0', 'always');
+    try {
+      await expect(
+        runGit(['ls-remote', '--end-of-options', `ext::sh -c touch% ${marker}`], base)
+      ).rejects.toThrow();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  it('still clones a local folder and an ordinary path', async () => {
+    const req = request(source, 'ok');
+    await new CloneProvider(root).create(req);
+    expect(existsSync(path.join(req.path, '.git'))).toBe(true);
   });
 });

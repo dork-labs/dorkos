@@ -30,6 +30,7 @@ import type { WorkspaceStore } from './workspace-store.js';
 import type { PortAllocator } from './port-allocator.js';
 import { loadWorkspaceHookConfig, runHooks } from './hooks.js';
 import { writePortEnv } from './port-env.js';
+import { assertSafeWorkspaceSource } from './providers/git.js';
 
 /** Resolved `workspace` config the service needs. */
 export interface WorkspaceServiceConfig {
@@ -63,6 +64,9 @@ export class WorkspaceService implements WorkspaceManager {
       return touched;
     }
 
+    // Refused before anything is recorded or run (DOR-2326); each provider
+    // asks again before its own git.
+    assertSafeWorkspaceSource(req.source);
     const providerType = req.provider ?? this.deps.config.defaultProvider;
     const provider = this.deps.providers[providerType];
     const path = this.deps.store.checkoutPath(req.projectKey, key);

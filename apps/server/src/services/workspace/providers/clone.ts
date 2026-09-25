@@ -15,7 +15,12 @@ import type {
   ProviderResult,
   DirtyState,
 } from '@dorkos/shared/workspace';
-import { runGit, computeDirtyState, PERSON_REPO_GIT_CONFIG } from './git.js';
+import {
+  assertSafeWorkspaceSource,
+  computeDirtyState,
+  PERSON_REPO_GIT_CONFIG,
+  runGit,
+} from './git.js';
 
 /** Provisions workspaces as fresh clones of a source repo URL or path. */
 export class CloneProvider implements WorkspaceProvider {
@@ -30,8 +35,12 @@ export class CloneProvider implements WorkspaceProvider {
 
   async create(req: WorkspaceCreateRequest): Promise<ProviderResult> {
     await validateBoundary(req.path, this.root);
+    assertSafeWorkspaceSource(req.source);
     // The person's own repository: their hooks run, as for their own git.
-    await runGit(['clone', req.source, req.path], this.root, { config: PERSON_REPO_GIT_CONFIG });
+    // `--end-of-options`: the source and path are values, never flags.
+    await runGit(['clone', '--end-of-options', req.source, req.path], this.root, {
+      config: PERSON_REPO_GIT_CONFIG,
+    });
     await runGit(['checkout', '-b', req.branch], req.path, { config: PERSON_REPO_GIT_CONFIG });
     return { path: req.path, branch: req.branch };
   }
