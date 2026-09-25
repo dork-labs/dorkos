@@ -24,6 +24,8 @@ Every override belongs to exactly one of these, and the map is ordered so the tw
 | `jose`                                 | Deduped to keep `@better-auth/core` a single instance. See below (DOR-1538)                                                                                                                                                                                                                                                          |
 | `@better-auth/utils`                   | Deduped so `better-auth@1.7.2` and the `better-call@1.4.0` it pulls in share one copy; two copies fork `@better-auth/core` the same way `jose` does. Added by #1577. Goes when `better-auth` and `better-call` agree on a range again                                                                                                |
 
+An exact-version pin rewrites every workspace spec for its package, and Dependabot cannot see it: a group bump moves the manifests and leaves the pin behind, so five manifests claimed `lucide-react 1.47.0` over a lockfile on `1.44.0`. Every manifest that declares a package with an exact pin must declare the pin's version (a caret on the same version is fine), and `scripts/__tests__/dependabot-lockstep-families.test.ts` fails when one does not. Move the pin and the specs in one commit.
+
 ### `jose` — why a dedupe pin, and when it goes
 
 `@a2a-js/sdk@1.0` requires `jose@^6.2.3`, against a lockfile that held `6.2.2` for `better-auth`. Both specs are satisfiable, so pnpm did the reasonable thing and kept two copies — but `jose` is a **peer** of `@better-auth/core`, so a second `jose` forked `@better-auth/core@1.6.23` into two peer-resolved instances too.

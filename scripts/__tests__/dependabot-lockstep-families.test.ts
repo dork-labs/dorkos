@@ -388,6 +388,41 @@ describe('dependabot lockstep families', () => {
     ).toEqual([pin]);
   });
 
+  it('declares every exact-pinned override at the version the override installs', () => {
+    // OVERRIDE MASKING. An exact root override (`"lucide-react": "1.44.0"`)
+    // rewrites every workspace spec for that package, so a manifest that says
+    // anything else is a claim about a version nobody runs. Dependabot cannot
+    // see overrides, so its group bumps move the manifests and leave the
+    // override behind: #1847 shipped `lucide-react 1.44.0` in three manifests
+    // over a lockfile still on 1.39.0, and #1983 repeated it with 1.47.0 in
+    // five manifests over a lockfile on 1.44.0. Only EXACT overrides are held
+    // to this — a range override (`hono: ^4.13.5`) is a security floor, not a
+    // dedupe, and a manifest range below it is the expected shape.
+    const exactOverrides = declarations.filter(
+      (d) => d.label === 'package.json pnpm.overrides' && /^\d+\.\d+\.\d+/.test(d.specifier)
+    );
+    // Anti-vacuity: the dedupe pins named in contributing/dependency-overrides.md.
+    expect(exactOverrides.map((d) => d.name)).toEqual(
+      expect.arrayContaining(['lucide-react', '@vitejs/plugin-react', 'drizzle-orm'])
+    );
+    const lies: string[] = [];
+    for (const override of exactOverrides) {
+      for (const decl of declarations) {
+        if (decl.name !== override.name || decl.label === override.label) continue;
+        const version = comparableVersion(decl.specifier);
+        if (version !== null && version !== override.specifier) {
+          lies.push(`${decl.label}: ${decl.name}@${decl.specifier}`);
+        }
+      }
+    }
+    expect(
+      lies,
+      `these manifests declare a version the root pnpm.overrides entry replaces, so the ` +
+        `lockfile installs something else. Move the override and every spec together, in ` +
+        `one commit, then run pnpm install (maintaining-dependencies skill, "Override masking").`
+    ).toEqual([]);
+  });
+
   it('declares the agent SDK peer in every manifest that depends on the agent SDK', () => {
     // WHY THIS IS SEPARATE FROM THE PARITY TEST ABOVE (DOR-1784). That one
     // compares versions ACROSS the manifests that declare a package, so it is
