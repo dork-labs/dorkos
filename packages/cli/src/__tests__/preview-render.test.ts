@@ -162,8 +162,15 @@ describe('renderPreview', () => {
               skill: 'ctx',
               form: 'block',
               command: 'node -v\ngit status',
+              usesArguments: false,
             },
-            { source: 'commands/ship.md', skill: 'ship', form: 'inline', command: 'git push' },
+            {
+              source: 'commands/ship.md',
+              skill: 'ship',
+              form: 'inline',
+              command: 'git push',
+              usesArguments: false,
+            },
           ],
         })
       )
@@ -174,6 +181,29 @@ describe('renderPreview', () => {
       '  Runs when the skill ctx is used (skills/ctx/SKILL.md)\n    node -v\n    git status'
     );
     expect(out).toContain('  Runs when the command ship is used (commands/ship.md)\n    git push');
+  });
+
+  it('says when a skill command uses the text typed after it (DOR-2327)', () => {
+    const out = stripAnsi(
+      renderPreview(
+        'co',
+        '1.0.0',
+        makePreview({
+          skillCommands: [
+            {
+              source: 'agents/co.md',
+              skill: 'co',
+              form: 'inline',
+              command: 'git checkout $1',
+              usesArguments: true,
+            },
+          ],
+        })
+      )
+    );
+    expect(out).toContain(
+      '  Runs when the agent co is used (agents/co.md), using the text typed after it\n    git checkout $1'
+    );
   });
 
   it('shows a hidden direction-changing character instead of letting it rewrite the line', () => {

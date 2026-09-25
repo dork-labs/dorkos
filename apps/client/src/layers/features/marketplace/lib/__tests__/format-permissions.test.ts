@@ -408,12 +408,14 @@ describe('formatPermissionPreview → commands → programs', () => {
             skill: 'ctx',
             form: 'block',
             command: 'node -v\ngit status',
+            usesArguments: false,
           },
           {
             source: 'commands/ship.md',
             skill: 'ship',
             form: 'inline',
             command: 'echo \u202Egnp.exe',
+            usesArguments: false,
           },
         ],
       })
@@ -434,13 +436,56 @@ describe('formatPermissionPreview → commands → programs', () => {
     ]);
   });
 
+  it('names an agent or output style, and says when a command uses the text typed after it', () => {
+    // Purpose: Claude Code and OpenCode fill that text in before running the
+    // command, so what runs depends on it; the card must say so.
+    const { commands } = formatPermissionPreview(
+      makePreview({
+        skillCommands: [
+          {
+            source: 'agents/rev.md',
+            skill: 'rev',
+            form: 'inline',
+            command: 'git diff',
+            usesArguments: false,
+          },
+          {
+            source: 'output-styles/t.md',
+            skill: 't',
+            form: 'inline',
+            command: 'date',
+            usesArguments: false,
+          },
+          {
+            source: 'commands/co.md',
+            skill: 'co',
+            form: 'inline',
+            command: 'git checkout $1',
+            usesArguments: true,
+          },
+        ],
+      })
+    );
+    expect(commands.map((c) => c.description)).toEqual([
+      'Runs when the agent "rev" is used (agents/rev.md)',
+      'Runs when the output style "t" is used (output-styles/t.md)',
+      'Runs when the command "co" is used (commands/co.md). It uses the text typed after the command',
+    ]);
+  });
+
   it('counts skill-text commands as commands in the summary', () => {
     expect(
       summarizePermissionPreview(
         makePreview({
           hooks: [{ event: 'Stop', command: 'x' }],
           skillCommands: [
-            { source: 'skills/a/SKILL.md', skill: 'a', form: 'inline', command: 'y' },
+            {
+              source: 'skills/a/SKILL.md',
+              skill: 'a',
+              form: 'inline',
+              command: 'y',
+              usesArguments: false,
+            },
           ],
         })
       )
@@ -500,6 +545,7 @@ describe('formatDisclosureChanges — skill-text commands (DOR-2327)', () => {
     skill: 'ctx',
     form: 'inline' as const,
     command,
+    usesArguments: false,
   });
 
   it("lists a new version's skill commands, and marks an edited one new beside the old", () => {

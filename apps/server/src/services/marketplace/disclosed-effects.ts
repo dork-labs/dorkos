@@ -173,15 +173,22 @@ export const DisclosedEffectsSchema = z.object({
   skillTools: z.array(
     z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
   ),
-  skillCommands: z.array(
-    z.object({
-      source: z.string(),
-      skill: z.string(),
-      form: z.enum(['inline', 'block']),
-      command: z.string(),
-    })
-  ),
-}) satisfies z.ZodType<DisclosedEffects>;
+  // Defaulted, not required: a client older than DOR-2327 sends back what it
+  // was shown without this field. Read as "none", it is compared like any
+  // other disclosure (and refused as changed if the package has some), never
+  // rejected as a malformed body.
+  skillCommands: z
+    .array(
+      z.object({
+        source: z.string(),
+        skill: z.string(),
+        form: z.enum(['inline', 'block']),
+        command: z.string(),
+        usesArguments: z.boolean(),
+      })
+    )
+    .default([]),
+}) satisfies z.ZodType<DisclosedEffects, unknown>;
 
 /**
  * The parts of a preview a disclosure is read from. A whole
@@ -284,14 +291,17 @@ export function disclosedEffectsOf(preview: DisclosureSource | undefined): Discl
       .sort((a, b) => a.source.localeCompare(b.source)),
     // By file, and within one file in document order (a stable sort keeps
     // it): they run in that order when the skill loads.
+    // Code-point order (`<`), not `localeCompare`: the binding must not move
+    // with the host's locale.
     skillCommands: preview.skillCommands
       .map((entry) => ({
         source: entry.source,
         skill: entry.skill,
         form: entry.form,
         command: entry.command,
+        usesArguments: entry.usesArguments,
       }))
-      .sort((a, b) => a.source.localeCompare(b.source)),
+      .sort((a, b) => (a.source < b.source ? -1 : a.source > b.source ? 1 : 0)),
   };
 }
 
@@ -431,7 +441,8 @@ export function describeEffectsInFull(effects: DisclosedEffects | null, where: s
     ),
     ...effects.skillCommands.map(
       (entry) =>
-        `  runs ${whole(entry.command)} when ${describeSkillOf(entry)} is used (${whole(entry.source)})`
+        `  runs ${whole(entry.command)} when ${describeSkillOf(entry)} is used (${whole(entry.source)})` +
+        (entry.usesArguments ? ', with the text typed after it filled in' : '')
     ),
     ...effects.schedules.map(
       (job) =>

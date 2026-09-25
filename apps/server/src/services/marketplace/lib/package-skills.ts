@@ -28,7 +28,7 @@ import { lstat, readdir } from 'node:fs/promises';
 import { basename, dirname, join, normalize, posix } from 'node:path';
 import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { PreviewSkillCommand, PreviewSkillTools } from '../types.js';
-import { findSkillShellCommands } from '@dorkos/skills/shell-commands';
+import { findSkillShellCommands, usesTypedArguments } from '@dorkos/skills/shell-commands';
 import { collectHooks, type PackageHooks } from './package-hooks.js';
 import { readPackageText } from './package-declarations.js';
 import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
@@ -151,15 +151,44 @@ function skillNameOf(path: string, data: Record<string, unknown>): string {
   return basename(path) === 'SKILL.md' ? basename(dirname(path)) : basename(path, '.md');
 }
 
-/** The shell commands a skill's or command's text runs, tagged with the file. */
+/** The names in frontmatter `arguments`: a YAML list or a space-separated string. */
+function argumentNamesOf(data: Record<string, unknown>): string[] {
+  const value = data.arguments;
+  if (Array.isArray(value)) return value.filter((v): v is string => typeof v === 'string');
+  if (typeof value === 'string') return value.split(/\s+/).filter(Boolean);
+  return [];
+}
+
+/** The shell commands a file's text runs, tagged with the file. */
 function commandsOf(
   path: string,
   data: Record<string, unknown>,
   text: string
 ): PreviewSkillCommand[] {
   const skill = skillNameOf(path, data);
-  return findSkillShellCommands(text).map((found) => ({ source: path, skill, ...found }));
+  const names = argumentNamesOf(data);
+  return findSkillShellCommands(text).map((found) => ({
+    source: path,
+    skill,
+    ...found,
+    usesArguments: usesTypedArguments(found.command, names),
+  }));
 }
+
+/**
+ * Agent and output-style files, read for their text's shell commands only
+ * (DOR-2327): a plugin's `agents/` and `output-styles/`, and the same folders
+ * under `.claude/`, where an agent package's own sessions load them. Whether
+ * Claude Code runs `!` commands in these is not documented; disclosing them
+ * is the conservative reading. Their frontmatter hooks stay unread: Claude
+ * Code ignores `hooks` in a plugin agent.
+ */
+const TEXT_ONLY_DIRS = [
+  EFFECT_BEARING_PATHS.agents,
+  EFFECT_BEARING_PATHS.outputStyles,
+  '.claude/agents',
+  '.claude/output-styles',
+] as const;
 
 /** `allowed-tools`, as a string list or a comma/space-separated string. */
 function toolsOf(value: unknown): string[] {
@@ -212,6 +241,24 @@ export async function readPackageSkills(
     const tools = toolsOf(data['allowed-tools']);
     if (tools.length > 0)
       out.skillTools.push({ source: path, skill: skillNameOf(path, data), tools });
+  }
+  for (const dir of TEXT_ONLY_DIRS) {
+    for (const path of await filesUnder(packagePath, dir, (name) => name.endsWith('.md'))) {
+      const read = await readPackageText(packagePath, path);
+      if (read.kind === 'absent') continue;
+      if (read.kind === 'unreadable') {
+        // Commands it may run could not be shown, so it is never approvable.
+        out.unreadable.push({ path });
+        continue;
+      }
+      let data: Record<string, unknown> = {};
+      try {
+        data = parseFrontmatter(read.text).data;
+      } catch {
+        // Its name falls back to the file name; the text is read either way.
+      }
+      out.skillCommands.push(...commandsOf(path, data, read.text));
+    }
   }
   return out;
 }

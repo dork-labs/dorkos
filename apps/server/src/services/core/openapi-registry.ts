@@ -393,6 +393,12 @@ const LocalPermissionPreviewSchema = z.object({
         skill: z.string(),
         form: z.enum(['inline', 'block']),
         command: z.string(),
+        usesArguments: z
+          .boolean()
+          .describe(
+            'Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after ' +
+              'the command before it runs.'
+          ),
       })
     )
     .describe(

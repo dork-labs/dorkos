@@ -53,7 +53,8 @@ export function renderDisclosureLines(
     // Written into a skill's or command's text: run as it loads (DOR-2327).
     // `?? []`: a server older than DOR-2327 sends none.
     ...(effects.skillCommands ?? []).flatMap((entry) => [
-      `    runs when the ${skillCommandKind(entry.source)} ${quoted(entry.skill)} is used:`,
+      `    runs when the ${skillCommandKind(entry.source)} ${quoted(entry.skill)} is used` +
+        (entry.usesArguments ? ', using the text typed after it:' : ':'),
       ...revealHiddenCharacters(entry.command)
         .split('\n')
         .map((line) => `      ${line}`),

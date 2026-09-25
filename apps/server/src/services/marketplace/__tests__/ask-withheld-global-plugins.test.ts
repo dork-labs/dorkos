@@ -477,8 +477,20 @@ describe('summariseGlobalActivation', () => {
         executables: [],
         skillTools: [],
         skillCommands: [
-          { source: 'skills/c/SKILL.md', skill: 'c', form: 'inline', command: 'git status' },
-          { source: 'skills/c/SKILL.md', skill: 'c', form: 'block', command: 'id' },
+          {
+            source: 'skills/c/SKILL.md',
+            skill: 'c',
+            form: 'inline',
+            command: 'git status',
+            usesArguments: false,
+          },
+          {
+            source: 'skills/c/SKILL.md',
+            skill: 'c',
+            form: 'block',
+            command: 'id',
+            usesArguments: false,
+          },
         ],
       })
     ).toContain('run 2 programs and commands in every session');

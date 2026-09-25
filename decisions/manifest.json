@@ -6434,6 +6434,22 @@
         "packages/marketplace/src/constants.ts",
         "apps/server/src/services/marketplace/lib/package-skills.ts"
       ]
+    },
+    {
+      "id": "260925-000832",
+      "slug": "disclose-skill-text-shell-commands",
+      "title": "Disclose and bind the shell commands written into a package's skill and command text",
+      "status": "accepted",
+      "created": "2026-09-25",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "affects": [
+        "packages/skills/src/shell-commands.ts",
+        "apps/server/src/services/marketplace/lib/package-skills.ts",
+        "apps/server/src/services/marketplace/disclosed-effects.ts",
+        "apps/server/src/services/marketplace/global-plugin-consent.ts"
+      ]
     }
   ]
 }

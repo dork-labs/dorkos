@@ -399,6 +399,8 @@ export interface PreviewSkillCommand {
   form: 'inline' | 'block';
   /** The command exactly as written. */
   command: string;
+  /** Whether it uses the text typed after the command, filled in before it runs. */
+  usesArguments: boolean;
 }
 
 /**
@@ -610,15 +612,20 @@ export interface DisclosedHook {
 export type DisclosedSkillCommand = PreviewSkillCommand;
 
 /**
- * Whether a skill-text command comes from a skill (`SKILL.md`) or a command
- * file, so every surface can say "when the skill "x" is used" or "when the
- * command "x" is used" the same way.
+ * What kind of file a skill-text command is written in, so every surface can
+ * say "when the skill "x" is used" (or command, agent, output style) the same
+ * way.
  *
  * @param source - Package-relative path of the file the command is written in.
- * @returns `skill` for a `SKILL.md`, `command` for anything else.
+ * @returns `skill` for a `SKILL.md`, `agent` under an `agents` folder,
+ *   `output style` under an `output-styles` folder, `command` otherwise.
  */
-export function skillCommandKind(source: string): 'skill' | 'command' {
-  return source.split(/[\\/]/).pop() === 'SKILL.md' ? 'skill' : 'command';
+export function skillCommandKind(source: string): 'skill' | 'command' | 'agent' | 'output style' {
+  const parts = source.split(/[\\/]/);
+  if (parts[parts.length - 1] === 'SKILL.md') return 'skill';
+  if (parts.includes('agents')) return 'agent';
+  if (parts.includes('output-styles')) return 'output style';
+  return 'command';
 }
 
 /** A skill or command's `allowed-tools`: tools it may use without asking. */

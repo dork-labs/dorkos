@@ -403,7 +403,10 @@ function formatCommands(
     rows.push({
       icon: 'terminal',
       label: revealHiddenCharacters(entry.command),
-      description: `Runs when the ${kind} "${revealHiddenCharacters(entry.skill)}" is used (${revealHiddenCharacters(entry.source)})`,
+      description:
+        `Runs when the ${kind} "${revealHiddenCharacters(entry.skill)}" is used (${revealHiddenCharacters(entry.source)})` +
+        // Filled in before the command runs, so what runs depends on it.
+        (entry.usesArguments ? '. It uses the text typed after the command' : ''),
       mono: true,
     });
   }

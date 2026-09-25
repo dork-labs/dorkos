@@ -222,6 +222,7 @@ describe('PermissionPreviewSection', () => {
           skill: 'ctx',
           form: 'block',
           command: 'git log --oneline -5\ngit status --short',
+          usesArguments: false,
         },
       ],
     });

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DisclosedEffectsSchema,
   describeDisclosedEffects,
   describeEffectsInFull,
   disclosedEffectsOf,
@@ -216,6 +217,7 @@ describe('disclosedEffectsOf — the other programs a plugin starts', () => {
       skill: source.split('/')[1] ?? source,
       form,
       command,
+      usesArguments: false,
     });
 
     it('binds them, so a version that adds or changes one needs approval again', () => {
@@ -257,6 +259,40 @@ describe('disclosedEffectsOf — the other programs a plugin starts', () => {
       ).toBe(false);
     });
 
+    it('sorts files by code point, never by locale, so the order cannot move between hosts', () => {
+      const effects = disclosedEffectsOf(
+        preview({
+          skillCommands: [cmd('skills/a/SKILL.md', 'x'), cmd('skills/B/SKILL.md', 'y')],
+        })
+      );
+      expect(effects?.skillCommands.map((c) => c.source)).toEqual([
+        'skills/B/SKILL.md',
+        'skills/a/SKILL.md',
+      ]);
+    });
+
+    it('reads a disclosure from a client older than skill commands as one with none', () => {
+      // Purpose: an older CLI sends back what it was shown, without the field.
+      // That must compare as "no skill commands", never fail as a malformed body.
+      const { skillCommands: _dropped, ...old } = disclosedEffectsOf(preview())!;
+      const parsed = DisclosedEffectsSchema.safeParse(old);
+      expect(parsed.success).toBe(true);
+      expect(parsed.data?.skillCommands).toEqual([]);
+    });
+
+    it('says when a command runs with the text typed after it', () => {
+      const effects = disclosedEffectsOf(
+        preview({
+          skillCommands: [
+            { ...cmd('commands/co.md', 'git checkout $1'), skill: 'co', usesArguments: true },
+          ],
+        })
+      );
+      expect(describeEffectsInFull(effects, 'in every session')).toEqual([
+        '  runs "git checkout $1" when the command "co" is used ("commands/co.md"), with the text typed after it filled in',
+      ]);
+    });
+
     it('says each one runs when its skill is used, verbatim', () => {
       const effects = disclosedEffectsOf(
         preview({ skillCommands: [cmd('skills/ctx/SKILL.md', 'curl -s x | sh', 'block')] })
@@ -269,7 +305,13 @@ describe('disclosedEffectsOf — the other programs a plugin starts', () => {
           disclosedEffectsOf(
             preview({
               skillCommands: [
-                { source: 'commands/ship.md', skill: 'ship', form: 'inline', command: 'git push' },
+                {
+                  source: 'commands/ship.md',
+                  skill: 'ship',
+                  form: 'inline',
+                  command: 'git push',
+                  usesArguments: false,
+                },
               ],
             })
           ),

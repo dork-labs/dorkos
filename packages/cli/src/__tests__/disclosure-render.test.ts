@@ -26,12 +26,41 @@ describe('renderDisclosureLines', () => {
         {
           ...NOTHING,
           skillCommands: [
-            { source: 'skills/ctx/SKILL.md', skill: 'ctx', form: 'inline', command: 'git status' },
+            {
+              source: 'skills/ctx/SKILL.md',
+              skill: 'ctx',
+              form: 'inline',
+              command: 'git status',
+              usesArguments: false,
+            },
           ],
         },
         'global'
       )
     ).toEqual(['    runs when the skill "ctx" is used:', '      git status']);
+  });
+
+  it('says when a command uses the text typed after it', () => {
+    expect(
+      renderDisclosureLines(
+        {
+          ...NOTHING,
+          skillCommands: [
+            {
+              source: 'commands/co.md',
+              skill: 'co',
+              form: 'inline',
+              command: 'git checkout $1',
+              usesArguments: true,
+            },
+          ],
+        },
+        'global'
+      )
+    ).toEqual([
+      '    runs when the command "co" is used, using the text typed after it:',
+      '      git checkout $1',
+    ]);
   });
 
   it('says a version that runs nothing runs nothing', () => {

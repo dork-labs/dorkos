@@ -86,7 +86,8 @@ export interface PreviewSkillTools {
 }
 
 /**
- * A shell command a skill's or command's TEXT runs when it is used (DOR-2327):
+ * A shell command a skill's, command's, agent's or output style's TEXT runs
+ * when it is used (DOR-2327):
  * `` !`cmd` `` or a fenced block whose info string is `!`. Claude Code runs it
  * while it renders the skill, before the model sees it; OpenCode runs the
  * inline form in the command wrappers Harness Sync writes for it.
@@ -100,6 +101,12 @@ export interface PreviewSkillCommand {
   form: 'inline' | 'block';
   /** The command exactly as written. */
   command: string;
+  /**
+   * Whether it names a placeholder (`$ARGUMENTS`, `$1`, a named `$name`) that
+   * Claude Code and OpenCode fill with the text typed after the command BEFORE
+   * running it, so what it runs depends on that text.
+   */
+  usesArguments: boolean;
 }
 
 /**

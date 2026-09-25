@@ -19436,13 +19436,18 @@
                               },
                               "command": {
                                 "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
                               }
                             },
                             "required": [
                               "source",
                               "skill",
                               "form",
-                              "command"
+                              "command",
+                              "usesArguments"
                             ]
                           },
                           "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
@@ -19870,15 +19875,20 @@
                               },
                               "command": {
                                 "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
                               "source",
                               "skill",
                               "form",
-                              "command"
+                              "command",
+                              "usesArguments"
                             ]
-                          }
+                          },
+                          "default": []
                         }
                       },
                       "required": [
@@ -19888,8 +19898,7 @@
                         "lspServers",
                         "monitors",
                         "executables",
-                        "skillTools",
-                        "skillCommands"
+                        "skillTools"
                       ]
                     },
                     "contentHash": {
@@ -20188,15 +20197,20 @@
                             },
                             "command": {
                               "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "source",
                             "skill",
                             "form",
-                            "command"
+                            "command",
+                            "usesArguments"
                           ]
-                        }
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -20206,8 +20220,7 @@
                       "lspServers",
                       "monitors",
                       "executables",
-                      "skillTools",
-                      "skillCommands"
+                      "skillTools"
                     ],
                     "description": "Install only: the preview's `disclosed`, sent back untouched. The install refuses a package that now runs anything else (409 `disclosure_changed`)."
                   },
@@ -20447,13 +20460,18 @@
                               },
                               "command": {
                                 "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
                               }
                             },
                             "required": [
                               "source",
                               "skill",
                               "form",
-                              "command"
+                              "command",
+                              "usesArguments"
                             ]
                           },
                           "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
@@ -20918,15 +20936,20 @@
                               },
                               "command": {
                                 "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
                               }
                             },
                             "required": [
                               "source",
                               "skill",
                               "form",
-                              "command"
+                              "command",
+                              "usesArguments"
                             ]
-                          }
+                          },
+                          "default": []
                         }
                       },
                       "required": [
@@ -20936,8 +20959,7 @@
                         "lspServers",
                         "monitors",
                         "executables",
-                        "skillTools",
-                        "skillCommands"
+                        "skillTools"
                       ],
                       "description": "What the package runs on its own, in the form an install is held to: send it back as `approvedDisclosure`."
                     },
@@ -21235,15 +21257,20 @@
                             },
                             "command": {
                               "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "source",
                             "skill",
                             "form",
-                            "command"
+                            "command",
+                            "usesArguments"
                           ]
-                        }
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -21253,8 +21280,7 @@
                       "lspServers",
                       "monitors",
                       "executables",
-                      "skillTools",
-                      "skillCommands"
+                      "skillTools"
                     ],
                     "description": "Install only: the preview's `disclosed`, sent back untouched. The install refuses a package that now runs anything else (409 `disclosure_changed`)."
                   },
@@ -21592,13 +21618,18 @@
                               },
                               "command": {
                                 "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
                               }
                             },
                             "required": [
                               "source",
                               "skill",
                               "form",
-                              "command"
+                              "command",
+                              "usesArguments"
                             ]
                           },
                           "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
@@ -22551,15 +22582,20 @@
                                     },
                                     "command": {
                                       "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
                                     "source",
                                     "skill",
                                     "form",
-                                    "command"
+                                    "command",
+                                    "usesArguments"
                                   ]
-                                }
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -22569,8 +22605,7 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools",
-                              "skillCommands"
+                              "skillTools"
                             ],
                             "description": "On every update-available check: what the new version runs on its own. An apply sends it back untouched."
                           },
@@ -22799,15 +22834,20 @@
                                     },
                                     "command": {
                                       "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
                                     "source",
                                     "skill",
                                     "form",
-                                    "command"
+                                    "command",
+                                    "usesArguments"
                                   ]
-                                }
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -22817,8 +22857,7 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools",
-                              "skillCommands"
+                              "skillTools"
                             ],
                             "description": "What the installed version runs now; null when it could not be read."
                           }
@@ -23120,15 +23159,20 @@
                                   },
                                   "command": {
                                     "type": "string"
+                                  },
+                                  "usesArguments": {
+                                    "type": "boolean"
                                   }
                                 },
                                 "required": [
                                   "source",
                                   "skill",
                                   "form",
-                                  "command"
+                                  "command",
+                                  "usesArguments"
                                 ]
-                              }
+                              },
+                              "default": []
                             }
                           },
                           "required": [
@@ -23138,8 +23182,7 @@
                             "lspServers",
                             "monitors",
                             "executables",
-                            "skillTools",
-                            "skillCommands"
+                            "skillTools"
                           ]
                         },
                         "contentHash": {
@@ -23568,15 +23611,20 @@
                                     },
                                     "command": {
                                       "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
                                     "source",
                                     "skill",
                                     "form",
-                                    "command"
+                                    "command",
+                                    "usesArguments"
                                   ]
-                                }
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -23586,8 +23634,7 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools",
-                              "skillCommands"
+                              "skillTools"
                             ],
                             "description": "On every update-available check: what the new version runs on its own. An apply sends it back untouched."
                           },
@@ -23816,15 +23863,20 @@
                                     },
                                     "command": {
                                       "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
                                     "source",
                                     "skill",
                                     "form",
-                                    "command"
+                                    "command",
+                                    "usesArguments"
                                   ]
-                                }
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -23834,8 +23886,7 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools",
-                              "skillCommands"
+                              "skillTools"
                             ],
                             "description": "What the installed version runs now; null when it could not be read."
                           }
@@ -24259,15 +24310,20 @@
                                     },
                                     "command": {
                                       "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
                                     }
                                   },
                                   "required": [
                                     "source",
                                     "skill",
                                     "form",
-                                    "command"
+                                    "command",
+                                    "usesArguments"
                                   ]
-                                }
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -24277,8 +24333,7 @@
                               "lspServers",
                               "monitors",
                               "executables",
-                              "skillTools",
-                              "skillCommands"
+                              "skillTools"
                             ]
                           },
                           "bindsTo": {
@@ -24604,15 +24659,20 @@
                             },
                             "command": {
                               "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
                             }
                           },
                           "required": [
                             "source",
                             "skill",
                             "form",
-                            "command"
+                            "command",
+                            "usesArguments"
                           ]
-                        }
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -24622,8 +24682,7 @@
                       "lspServers",
                       "monitors",
                       "executables",
-                      "skillTools",
-                      "skillCommands"
+                      "skillTools"
                     ]
                   },
                   "bindsTo": {

@@ -206,11 +206,31 @@ export function globalActivationEntry(
 ): string {
   const digest = createHash('sha256')
     .update(
-      stableStringify(['global-activation', name, activationEffectsOf(effects), bindsTo]),
+      stableStringify([
+        'global-activation',
+        name,
+        digestFormOf(activationEffectsOf(effects)),
+        bindsTo,
+      ]),
       'utf8'
     )
     .digest('hex');
   return `${name}${GLOBAL_ACTIVATION_ENTRY_MARKER}${digest}`;
+}
+
+/**
+ * The disclosure as the stored digest covers it: a field added after entries
+ * were first recorded is left out while it is empty, so an upgrade does not
+ * turn every existing approval into a stranger (`skillCommands`, DOR-2327:
+ * v0.83 digests have no such key). A package that has some is a different
+ * decision, and its digest includes them.
+ */
+function digestFormOf(effects: DisclosedEffects): Omit<DisclosedEffects, 'skillCommands'> & {
+  skillCommands?: DisclosedEffects['skillCommands'];
+} {
+  if (effects.skillCommands.length > 0) return effects;
+  const { skillCommands: _empty, ...rest } = effects;
+  return rest;
 }
 
 /** Whether a stored entry is a global-activation decision for this package. */

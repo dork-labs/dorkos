@@ -47,6 +47,7 @@ export interface PreviewSkillCommand {
   skill: string;
   form: 'inline' | 'block';
   command: string;
+  usesArguments: boolean;
 }
 
 /** The tools a skill or command lets the agent use without asking. */
@@ -202,7 +203,8 @@ export function renderPreview(
     // Written into a skill's or command's text: run as it loads (DOR-2327).
     for (const entry of skillCommands) {
       lines.push(
-        `  Runs when the ${skillCommandKind(entry.source)} ${revealHiddenCharacters(entry.skill)} is used (${revealHiddenCharacters(entry.source)})`
+        `  Runs when the ${skillCommandKind(entry.source)} ${revealHiddenCharacters(entry.skill)} is used (${revealHiddenCharacters(entry.source)})` +
+          (entry.usesArguments ? ', using the text typed after it' : '')
       );
       for (const line of revealHiddenCharacters(entry.command).split('\n'))
         lines.push(`    ${line}`);
