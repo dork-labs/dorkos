@@ -54,6 +54,7 @@ export async function startTenancyHarness(
     now?: () => Date;
     hostKeyAttemptsPerMinute?: number;
     reauthAttemptsPerMinute?: number;
+    signupAttemptsPerMinute?: number;
     hooks?: Parameters<typeof createCommunityApp>[0]['hooks'];
     /** Another BlobStore (S3) instead of the fixture's own folder. */
     blobStore?: BlobStore;
@@ -78,7 +79,7 @@ export async function startTenancyHarness(
     COMMUNITY_PUBLIC_URL: 'http://localhost:6481',
     COMMUNITY_STORAGE_PATH: storagePath,
     COMMUNITY_POSTS_PER_TEN_MINUTES: 1000,
-    COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE: 100,
+    COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE: options.signupAttemptsPerMinute ?? 100,
     COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,

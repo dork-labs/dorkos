@@ -131,7 +131,10 @@ describe('every server-side password check', () => {
     expect(readFileSync(join(root, 'password-confirmation.ts'), 'utf8')).toMatch(/verifyPassword/u);
     const offenders = sources
       .filter((file) => file !== 'password-confirmation.ts')
-      .filter((file) => /\bverifyPassword\b/u.test(readFileSync(join(root, file), 'utf8')))
+      // Better Auth's `verifyPassword` endpoint, or the raw hash check its other routes use.
+      .filter((file) =>
+        /\bverifyPassword\b|\bpassword\.verify\(/u.test(readFileSync(join(root, file), 'utf8'))
+      )
       .map((file) => relative(root, join(root, file)));
     expect(offenders).toEqual([]);
   });

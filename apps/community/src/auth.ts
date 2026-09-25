@@ -56,10 +56,14 @@ export function createCommunityAuth(
     baseURL: config.publicUrl,
     trustedOrigins: [config.publicUrl],
     emailAndPassword: { enabled: true, minPasswordLength: COMMUNITY_PASSWORD_MIN_LENGTH },
-    // These three hand a provider's stored access, refresh and ID tokens to any signed-in
+    // The first three hand a provider's stored access, refresh and ID tokens to any signed-in
     // session. An ID token replayed to sign-in would mint a fresh session without the provider,
     // defeating every "signed in within five minutes" rule, and nothing here needs them.
-    disabledPaths: ['/get-access-token', '/refresh-token', '/account-info'],
+    // `/change-password` checks the current password outside the per-account guess budget every
+    // other password check shares (password-confirmation.ts), so a stolen session could keep
+    // guessing there; nothing here offers a password change, so it is off. `/delete-user` stays
+    // off by Better Auth's own default and answers 404 before it looks at any password.
+    disabledPaths: ['/get-access-token', '/refresh-token', '/account-info', '/change-password'],
     socialProviders: {
       // Sign-in only through the provider's own redirect, never a bare ID token (see hooks).
       ...(config.oauth.google

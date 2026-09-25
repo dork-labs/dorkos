@@ -192,7 +192,10 @@ afterEach(() => {
 
 describe('the one per-account password guess limit', () => {
   it('covers every route that asks for a password', () => {
-    // A new password-confirmed route fails here until it gets its own case below.
+    // A convenience, not the guarantee: this text scan sees only `app.<method>('…')` handlers in
+    // routes/*.ts. What guarantees no password check skips the budget is the source scan in
+    // password-confirmation.test.ts, over all of src/, that finds any Better Auth password
+    // check outside createPasswordConfirmation. This one makes a new route get its own case.
     expect(passwordConfirmedRoutes()).toEqual(ROUTES.map((entry) => entry.route).sort());
   });
 
@@ -266,5 +269,47 @@ describe('the one per-account password guess limit', () => {
     // One attempt is still left for a mistyped password; it is checked, not refused.
     await expectCode(await disconnect.call(person.cookie, 'typo'), 403, 'REAUTH_FAILED');
     expect((await disconnect.call(person.cookie, TENANCY_PASSWORD)).status).toBe(429);
+  });
+
+  it("keeps the sign-in library's own password change off, so it cannot guess around the budget", async () => {
+    freshWindow();
+    const change = await h.call('/api/auth/change-password', {
+      cookie: person.cookie,
+      body: { currentPassword: 'guess', newPassword: 'another-long-password' },
+    });
+    expect(change.status).toBe(404);
+    // Nothing was spent: the budget is still whole.
+    const disconnect = ROUTES.find((entry) => entry.route === 'DELETE /me/grants')!;
+    for (let guess = 0; guess < CEILING; guess++)
+      await expectCode(
+        await disconnect.call(person.cookie, `guess-${guess}`),
+        403,
+        'REAUTH_FAILED'
+      );
+  });
+});
+
+describe('the other per-minute limits', () => {
+  let signup: TenancyHarness;
+  beforeAll(async () => {
+    signup = await startTenancyHarness('signup_retry', { signupAttemptsPerMinute: 1 });
+  });
+  afterAll(async () => {
+    await signup?.close();
+  });
+
+  it('say how long to wait too, counted from the oldest attempt in the window', async () => {
+    freshWindow();
+    const attempt = () =>
+      signup.call('/api/auth/sign-up/email', {
+        body: { name: 'Nobody', email: 'nobody@retry.test', password: 'long-enough-password' },
+      });
+    // The first attempt passes the limit (and is refused later for want of an invitation).
+    expect((await attempt()).status).not.toBe(429);
+    advance(15_000);
+    const limited = await attempt();
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toMatchObject({ code: 'RATE_LIMITED' });
+    expect(limited.headers.get('retry-after')).toBe('45');
   });
 });
