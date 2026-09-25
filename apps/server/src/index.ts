@@ -3454,14 +3454,14 @@ async function start() {
     // already runs with. Before the backfill and before any watcher, for the
     // same reason as both: a sync that found a stale-shaped key would park an
     // approved schedule.
-    const upgraded = taskStore.upgradeLegacyApprovalKeys();
+    const upgraded = taskStore.approvals.upgradeLegacyApprovalKeys();
     if (upgraded > 0) {
       logger.info(
         `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone and settings`
       );
     }
 
-    const backfilled = taskStore.backfillApprovalGrants();
+    const backfilled = taskStore.approvals.backfillApprovalGrants();
     if (backfilled > 0) {
       logger.info(`[Tasks] Kept ${backfilled} already-approved schedule(s) approved`);
     }

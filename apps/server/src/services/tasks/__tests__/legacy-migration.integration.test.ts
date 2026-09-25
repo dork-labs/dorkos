@@ -245,7 +245,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       expect(store.getTask(seeded.id)?.status).toBe('active');
 
       const report = await migrate();
@@ -375,7 +375,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       // Somebody edited the file with the server stopped.
       await fs.writeFile(
         legacyPath,
@@ -418,7 +418,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 7 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
 
       const report = await migrate();
 
@@ -734,7 +734,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       await migrate();
       const afterFirst = await fs.readFile(globalDestination('nightly-sweep'), 'utf-8');
 
@@ -791,7 +791,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
 
       const report = await migrate();
 
@@ -837,7 +837,7 @@ describe('the boot migration off the legacy task directories', () => {
         cron: '0 3 * * *',
         filePath: legacyPath,
       });
-      store.recordApproval(seeded.id);
+      store.approvals.recordApproval(seeded.id);
       const before = store.getTask(seeded.id)!;
       const grantBefore = grantFor(seeded.id);
 

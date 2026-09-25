@@ -477,7 +477,7 @@ export function createTasksRouter(
     // So the grant is re-issued only for a caller that cleared the agent bar. An
     // agent's edit still re-parks, and a person still has to look at it.
     if (trusted && changesFile && existing.status === 'active' && updated.status === 'active') {
-      store.recordApproval(updated.id);
+      store.approvals.recordApproval(updated.id);
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -490,7 +490,7 @@ export function createTasksRouter(
     // file-backed edit was re-approved just above. The park is then picked up by
     // the "entered `pending_approval`" edge below like any other.
     if (!trusted || !changesFile) {
-      store.settleApprovedWorkChange(updated.id, before, { trusted });
+      store.approvals.settleApprovedWorkChange(updated.id, before, { trusted });
       updated = store.getTask(updated.id) ?? updated;
     }
 

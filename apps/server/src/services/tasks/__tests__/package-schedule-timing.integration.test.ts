@@ -106,7 +106,7 @@ async function patch(
   if (!outcome.ok) return { ok: false, code: outcome.code };
   store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn });
   if (!outcome.changesFile) {
-    store.settleApprovedWorkChange(
+    store.approvals.settleApprovedWorkChange(
       existing.id,
       { ...taskWorkOf(existing), status: 'active' },
       { trusted }

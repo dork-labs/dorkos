@@ -85,7 +85,7 @@ describe('a person’s own timing on a package’s schedule', () => {
   function personRetimes(id: string, cron: string): void {
     const before = store.getTask(id)!;
     store.updateTask(id, { cron }, { timingLandsOn: 'row' });
-    store.settleApprovedWorkChange(
+    store.approvals.settleApprovedWorkChange(
       id,
       {
         ...SETTINGS,
@@ -223,7 +223,7 @@ describe('a person’s own timing on a package’s schedule', () => {
         .where(eq(pulseSchedules.id, id))
         .run();
 
-      expect(store.backfillApprovalGrants()).toBe(1);
+      expect(store.approvals.backfillApprovalGrants()).toBe(1);
 
       expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
     });
@@ -246,7 +246,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      const outcome = store.rekeyMigratedFile(FILE_PATH, '/moved/SKILL.md', {
+      const outcome = store.approvals.rekeyMigratedFile(FILE_PATH, '/moved/SKILL.md', {
         prompt: PROMPT,
         cron: PACKAGE_CRON,
         timezone: 'UTC',
@@ -323,7 +323,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
@@ -343,7 +343,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       store.markRemovedByFilePath(FILE_PATH);
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      store.settleApprovedWorkChange(
+      store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         {
@@ -359,7 +359,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = store.upsertFromFile(definition(), undefined, DISCOVERY).id;
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
@@ -375,7 +375,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
@@ -397,7 +397,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       store.markRemovedByFilePath(FILE_PATH);
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'paused' },
         { trusted: false }
@@ -413,7 +413,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { timezone: 'Pacific/Kiritimati' }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
@@ -429,7 +429,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { enabled: false });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }

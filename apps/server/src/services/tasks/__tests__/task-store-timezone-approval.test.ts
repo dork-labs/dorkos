@@ -156,7 +156,7 @@ describe('the timezone is part of the approval', () => {
       const id = approvedSchedule();
       withLegacyGrant(id);
 
-      expect(store.upgradeLegacyApprovalKeys()).toBe(1);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
 
       expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
     });
@@ -166,7 +166,7 @@ describe('the timezone is part of the approval', () => {
       // anywhere": moving the zone after it asks again.
       const id = approvedSchedule();
       withLegacyGrant(id);
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
       const synced = store.upsertFromFile(
         definition({ timezone: 'Pacific/Kiritimati' }),
@@ -187,7 +187,7 @@ describe('the timezone is part of the approval', () => {
         .run();
       withLegacyGrant(id);
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
       expect(row(id).approvedContentKey).toBe(
         scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Asia/Tokyo' })
@@ -199,7 +199,7 @@ describe('the timezone is part of the approval', () => {
       const id = approvedSchedule();
       withLegacyGrant(id, 'an older prompt');
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
       expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
         'pending_approval'
@@ -213,7 +213,7 @@ describe('the timezone is part of the approval', () => {
       withLegacyGrant(id);
       store.markRemovedByFilePath(FILE_PATH);
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
       expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
     });
@@ -228,8 +228,8 @@ describe('the timezone is part of the approval', () => {
         DISCOVERY
       );
 
-      expect(store.upgradeLegacyApprovalKeys()).toBe(1);
-      expect(store.upgradeLegacyApprovalKeys()).toBe(0);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(0);
       expect(row(parked.id).approvedContentKey).toBeNull();
     });
   });

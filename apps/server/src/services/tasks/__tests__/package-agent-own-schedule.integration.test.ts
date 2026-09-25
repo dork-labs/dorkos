@@ -462,7 +462,9 @@ describe('a package schedule the record stops listing', () => {
       { cron: '*/5 * * * *' },
       { timingLandsOn: outcome.timingLandsOn }
     );
-    expect(store.settleApprovedWorkChange(approved.id, before, { trusted: false })).toBe('parked');
+    expect(store.approvals.settleApprovedWorkChange(approved.id, before, { trusted: false })).toBe(
+      'parked'
+    );
     const parked = store.getTask(approved.id)!;
 
     await releaseShippedFile();

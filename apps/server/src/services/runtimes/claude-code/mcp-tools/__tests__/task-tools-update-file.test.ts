@@ -153,7 +153,7 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
   async function createApprovedTask(): Promise<string> {
     const id = await createTask();
     // The transition IS the approval, and it stamps the content key the arm gate
-    // reads later (`TaskStore.recordApproval`).
+    // reads later (`TaskApprovals.recordApproval`).
     store.updateTask(id, { status: 'active' });
     return id;
   }
