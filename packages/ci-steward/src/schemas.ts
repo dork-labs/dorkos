@@ -35,15 +35,23 @@ const CollectConfigSchema = z
           pattern: z.string().min(1),
           format: z.enum(['playwright', 'vitest']),
           /**
-           * The gate whose jobs write these reports. `flaky-test-runs` counts a
-           * failed queue job as covered only when its gate is named here; every
-           * other failed job is coverage it cannot see, and says so.
+           * The gate whose jobs write these reports: a failed queue job in it
+           * is one `flaky-test-runs` can see.
            */
           gate: z
             .string()
             .regex(/^wf\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, 'a wf.<workflow>.<job> gate id'),
         })
         .strict()
+    ),
+    /**
+     * Gates that run tests on the queue with no report `flaky-test-runs` can
+     * read, each with why. A failed queue job in one is coverage the SLO does
+     * not have, so it reads `unmeasured` for that window.
+     */
+    blind_test_gates: z.record(
+      z.string().regex(/^wf\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, 'a wf.<workflow>.<job> gate id'),
+      z.string().min(20)
     ),
   })
   .strict();

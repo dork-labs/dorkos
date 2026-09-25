@@ -19,39 +19,43 @@ readings could not see what they claimed to, and one tracked metric had no compu
 - `main-green` (and trigger rule 7): a red spell ends when the push workflow that failed goes green
   on `main`, not at the next commit whose push checks were green. The push workflows are
   path-filtered differently (desktop-smoke only runs when the desktop, server, client or packages
-  change), so that commit often never ran the failing one. Snapshots now keep each commit's per-workflow result. A red
-  workflow that reports nothing for 7 days is dropped, so a sensor retired while red cannot hold
-  `main` red forever.
+  change), so that commit often never ran the failing one. Snapshots now keep each commit's
+  per-workflow result. A red workflow that reports nothing for 7 days is dropped, so a sensor
+  retired while red cannot hold `main` red forever: that spell still counts, ends at its last red
+  report, and is marked unresolved with no restore time (trigger rule 7 shows it red until then).
 - `headroom` (and trigger rule 8): each gate is read against the deadline that fires first.
   `ci/config.yaml` `deadlines:` records the browser shards' Playwright `globalTimeout`, 30 minutes,
   against a 45-minute job timeout that is built never to fire. A test pins the number to
   `playwright.config.ts`'s derivation and the shard matrix.
 - `flaky-test-runs`: reads `unmeasured`, with the note "coverage unknown", when a red queue build in
-  the window failed a job whose report the collector does not read. community-packaged and
-  community-pg run Playwright at `retries: 0` (a flake there can only be a hard failure),
-  credential-free-build and harness-windows upload no test report. The share, `failed_jobs` and
+  the window failed a test job the collector cannot read, listed with its reason in
+  `collect.blind_test_gates`: community-packaged and community-pg run Playwright at `retries: 0` (a
+  flake there can only be a hard failure), credential-free-build and harness-windows upload no
+  test report. Failures in jobs that run no tests (lint, a fan-in's own step, copy-spec-drift) are
+  not counted either way. The share, `failed_jobs` and
   `unreported_failed_jobs` stay in the stats. Verdicts read the share without this ruler, so a
   verdict never turns n=0 because of it.
 - `tracked.repeat-ejections`: computed per day by the collector (`repeatEjections`), from the same
   timeline and queue-build data as `real_catches`. A day collected before it has no count and is
   left out of a verdict, never read as 0.
 - Old days get the new fields from `refreshOlderDays`, on whatever budget is left after collecting:
-  one push-run listing and one merged-PR search per day (19 requests for the 7 days to 2026-09-24,
-  measured against the live API). Collecting always outranks refreshing; a pulse or `--day` run
+  one push-run listing and one merged-PR search per day, plus a timeline page for a PR with more than
+  100 events (19 requests for the 7 days to 2026-09-24, measured against the live API). A day whose
+  listing or search comes back short is left as it was and tried again next run (1-3 requests). Collecting always outranks refreshing; a pulse or `--day` run
   never refreshes.
 
 **Readings that move because the ruler changed, not because CI did.** Computed on 2026-09-25 from
 the data branch (window 2026-09-18..24; main-green 2026-08-28..09-24) and the push runs for those
 days:
 
-| Reading                     | Old ruler             | New ruler                                                       |
-| --------------------------- | --------------------- | --------------------------------------------------------------- |
-| `headroom` p95_over_timeout | 0.648, ok             | 0.972, **breach**, browser shard                                |
-| `flaky-test-runs`           | share 0, met          | share 0, **unmeasured**: 62 of 121 failed queue jobs unreported |
-| `main-green` red_episodes   | 14, breach            | 9, breach                                                       |
-| `main-green` restore_p90    | 65.8 min              | 356 min                                                         |
-| constraint                  | queue-green (quality) | **headroom (tripwire)**                                         |
-| `tracked.repeat-ejections`  | not computed          | 14 per 7 days (of 51 ejections)                                 |
+| Reading                     | Old ruler             | New ruler                                                            |
+| --------------------------- | --------------------- | -------------------------------------------------------------------- |
+| `headroom` p95_over_timeout | 0.648, ok             | 0.972, **breach**, browser shard                                     |
+| `flaky-test-runs`           | share 0, met          | share 0, **unmeasured**: 58 of 117 failed queue test jobs unreported |
+| `main-green` red_episodes   | 14, breach            | 9, breach                                                            |
+| `main-green` restore_p90    | 65.8 min              | 356 min                                                              |
+| constraint                  | queue-green (quality) | **headroom (tripwire)**                                              |
+| `tracked.repeat-ejections`  | not computed          | 14 per 7 days (of 51 ejections)                                      |
 
 Every other SLO reads the same. So:
 
@@ -70,12 +74,18 @@ Every other SLO reads the same. So:
   reaches them** (newest first, a few requests each), so for a day or two its reading mixes rulers.
   A day not yet refreshed reads exactly as before.
 - **`flaky-test-runs` stops being `met`.** It was never measuring those jobs. Its floor is null, so
-  no floor moves. It reads a share again only in a week when every red queue job was one it reads.
+  no floor moves. It reads a share again in a week when none of the four blind test jobs failed a
+  queue build, or once one of them writes a retry-aware report the collector reads (move it from
+  `blind_test_gates` to `artifacts`). In 2026-09-18..24 they failed 58 times, so expect
+  `unmeasured` until that work is done.
 - **260923-095512's baseline (11.5) was measured by hand with a different push signal** (the head's
-  first check suite). The collector reads timeline commits and force-pushes, as `newCommit` does.
-  Expect the two to differ by a little; read that entry's verdict against its before-window.
+  first check suite). The collector reads timeline commits and force-pushes, as `newCommit` does,
+  and counts a PR's repeats on the day it merged, so an after-window can hold repeats from before
+  the change on PRs merged after it. Read that entry's verdict against its before-window.
 - 260923-095643 (browser shard balance) reports `headroom` as its SLO. Both of its windows are read
-  with the same deadline, so its SLO movement stays like for like; the absolute numbers are higher.
+  with the same deadline, so its SLO movement stays like for like, but the basis changed: the
+  ratio is whole-job time over Playwright's deadline, and setup (about 2.5 minutes) sits outside
+  that deadline, so it reads about 0.08 higher than the step-based 0.80 that entry predicted.
 
 **Not changed, on purpose.** The main canary's reds stay out of `main-green`: it is push-only by
 definition, and the canary has its own trigger and `tracked.time-to-detect` (a canary red from the
@@ -87,4 +97,8 @@ and healthy, so no code was needed for it.
 
 **Revert if** the refresh ever spends budget the recent days needed (a late recent day with
 refreshed older ones in the same run), or `main-green` holds a spell open with no red workflow
-that is still running.
+that is still running. **A revert must keep the schema:** snapshots written after this carry
+`main[].workflows` and `counts.repeat_ejections`, and the older strict `SnapshotSchema` rejects
+them, so reverting the whole commit would make the collector, triage and verdicts throw on the
+data branch. Revert the logic; keep both fields optional in `data.ts`. The same applies to any
+checkout older than this commit reading the data branch (a stale local `/ci-status`).

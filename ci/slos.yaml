@@ -77,10 +77,11 @@ slos:
       aggregation: >-
         executions that failed then passed on retry, divided by all executions.
         Since 2026-09-25 the reading is `unmeasured` ("coverage unknown") when
-        any red queue build in the window failed a job outside those gates
-        (credential-free-build, harness-windows, community-packaged,
-        community-pg, a fan-in failing on its own step): the share cannot see a
-        flake there, so it cannot claim the window. The share and the counts
+        any red queue build in the window failed a test job ci/config.yaml
+        `collect.blind_test_gates` names (credential-free-build,
+        harness-windows, community-packaged, community-pg): the share cannot
+        see a flake there, so it cannot claim the window. Failures in jobs that
+        run no tests (lint, a fan-in's own step) are not counted. The share and the counts
         (failed_jobs, unreported_failed_jobs) stay in the stats. A test that
         fails every attempt and passes on the re-queued build is a flake this
         share never sees either; wasted-queue-builds counts those.

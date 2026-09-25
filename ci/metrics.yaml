@@ -131,7 +131,7 @@ tracked:
       included, as merge-tail's rule reads required contexts) that also failed
       an earlier, DIFFERENT queue build of that PR with no push in between.
       Computed by the collector (`repeatEjections` in
-      packages/ci-steward/src/collect.ts) for the PRs merged each day, from the
+      packages/ci-steward/src/ejection-facts.ts) for the PRs merged each day, from the
       same timeline and queue-build data as real_catches, so a push is a
       timeline commit or force-push, exactly as `newCommit` reads it — not the
       head's first check suite, which the hand-measured baseline in

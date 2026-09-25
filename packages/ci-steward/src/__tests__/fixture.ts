@@ -91,6 +91,7 @@ export function baseSpec(): FixtureSpec {
             gate: 'wf.test.test-shard',
           },
         ],
+        blind_test_gates: {},
       },
       quarantine: {
         file: 'quarantine.json',

@@ -7,10 +7,8 @@
  * quiet weekend never reads as a breach or a win.
  */
 import { gateDays, mergePathGates, type LocalDay, type SloReading, type Snapshot } from './data.ts';
-import { fanInAbsorbs } from './ejections.ts';
 import { mainEpisodes } from './main-episodes.ts';
 import type { Config, Slos } from './schemas.ts';
-import type { WorkflowModel } from './workflows.ts';
 import { addDays, quantile, round } from './time.ts';
 
 type Slo = Slos['slos'][number];
@@ -33,20 +31,21 @@ export interface SloInputs {
    */
   deadlines?: Readonly<Record<string, number>>;
   /**
-   * What `flaky-test-runs` can see: the gates whose reports it reads, and which
-   * fan-in absorbs which job. With it, a failed queue job in any other gate is
-   * coverage the SLO does not have, and it reads `unmeasured` instead of a
-   * share over the tests it did see. Omitted (a verdict's own reading), the
-   * share is reported as before.
+   * What `flaky-test-runs` can see: the gates whose reports it reads, and the
+   * gates that run tests it cannot read. With it, a failed queue job in one of
+   * the second is coverage the SLO does not have, and it reads `unmeasured`
+   * instead of a share over the tests it did see. Omitted (a verdict's own
+   * reading), the share is reported as before.
    */
   flakyCoverage?: FlakyCoverage;
 }
 
-/** The gates `flaky-test-runs` reads reports from, and the fan-ins that absorb other jobs. */
+/** What `flaky-test-runs` can and cannot see, by gate. */
 export interface FlakyCoverage {
+  /** Gates whose retry-aware test reports the collector reads (`collect.artifacts`). */
   reported: ReadonlySet<string>;
-  /** Fan-in gate to the gates it absorbs (`fanInAbsorbs`). */
-  absorbs: ReadonlyMap<string, ReadonlySet<string>>;
+  /** Gates that run tests with no report it can read (`collect.blind_test_gates`). */
+  blind: ReadonlySet<string>;
 }
 
 /**
@@ -56,17 +55,13 @@ export interface FlakyCoverage {
  * ruler.
  *
  * @param config - Parsed `ci/config.yaml`.
- * @param workflows - The parsed workflows, for the fan-in map.
  */
-export function sloRuler(
-  config: Config,
-  workflows: readonly WorkflowModel[]
-): Required<Pick<SloInputs, 'deadlines' | 'flakyCoverage'>> {
+export function sloRuler(config: Config): Required<Pick<SloInputs, 'deadlines' | 'flakyCoverage'>> {
   return {
     deadlines: deadlineMinutes(config),
     flakyCoverage: {
       reported: new Set(config.collect.artifacts.map((a) => a.gate)),
-      absorbs: fanInAbsorbs(workflows),
+      blind: new Set(Object.keys(config.collect.blind_test_gates)),
     },
   };
 }
@@ -101,33 +96,17 @@ export function effectiveTimeouts(
 }
 
 /**
- * The failed jobs of a red queue build that failed on their own: a fan-in is
- * dropped when a job it absorbs failed beside it (it is red BECAUSE of that
- * job), and kept when it failed alone (its own step failed, e.g. the shard
- * union check). A red build with no failing job recorded is one `unattributed`.
- *
- * @param failed - The build's failing gates.
- * @param absorbs - Fan-in gate to the gates it absorbs.
- */
-export function leafFailures(
-  failed: readonly string[],
-  absorbs: ReadonlyMap<string, ReadonlySet<string>>
-): string[] {
-  if (failed.length === 0) return ['unattributed'];
-  const set = new Set(failed);
-  return failed.filter((g) => ![...(absorbs.get(g) ?? [])].some((under) => set.has(under)));
-}
-
-/**
  * `flaky-test-runs`: executions that failed and then passed on their retry,
  * over the executions in the sampled reports.
  *
  * The share can only see jobs that write a report the collector reads, with a
- * retry to pass on. A failed queue job anywhere else — a build, a Playwright
- * suite at `retries: 0`, a Windows job with no report — could be a flake or a
- * break and this SLO cannot tell, so when the window has any, the reading is
- * `unmeasured` and says how many, rather than a share of 0 that claims tests
- * it never saw. The share stays in the stats for what it does cover.
+ * retry to pass on. A failed queue job in a gate that runs tests it cannot
+ * read — a Playwright suite at `retries: 0`, a Windows job with no report —
+ * could be a flake or a break and this SLO cannot tell, so when the window has
+ * any, the reading is `unmeasured` and says how many, rather than a share of 0
+ * that claims tests it never saw. The share stays in the stats for what it
+ * does cover. A failure in a gate that runs no tests (lint, a fan-in's own
+ * step, a docs drift check) says nothing about flakes and is not counted.
  *
  * @param inp - The inputs.
  * @param c - Sums a count over the window.
@@ -143,9 +122,12 @@ function flakyTestRuns(inp: SloInputs, c: (k: CountKey) => number): Raw {
   let failed = 0;
   for (const b of inp.snapshots.flatMap((s) => s.queue_builds)) {
     if (b.outcome !== 'red') continue;
-    for (const g of leafFailures(b.failed_gates, cov.absorbs)) {
-      failed += 1;
-      if (!cov.reported.has(g)) unseen.set(g, (unseen.get(g) ?? 0) + 1);
+    for (const g of new Set(b.failed_gates)) {
+      if (cov.reported.has(g)) failed += 1;
+      else if (cov.blind.has(g)) {
+        failed += 1;
+        unseen.set(g, (unseen.get(g) ?? 0) + 1);
+      }
     }
   }
   const blind = sum([...unseen.values()]);
@@ -156,7 +138,7 @@ function flakyTestRuns(inp: SloInputs, c: (k: CountKey) => number): Raw {
       .sort(([a, x], [b, y]) => y - x || a.localeCompare(b))
       .map(([g, k]) => `${g} ${k}`)
       .join(', ');
-    r.unmeasured = `coverage unknown: ${blind} of ${failed} failed queue jobs wrote no retry-aware report (${worst}); share ${r.stats.share ?? 0} is over the reported suites only`;
+    r.unmeasured = `coverage unknown: ${blind} of ${failed} failed queue test jobs wrote no retry-aware report (${worst}); share ${r.stats.share ?? 0} is over the reported suites only`;
   }
   return r;
 }
@@ -206,8 +188,10 @@ function share(num: number, den: number): Raw {
 function mainGreen(inp: SloInputs): Raw {
   const commits = inp.snapshots.flatMap((s) => s.main);
   const episodes = mainEpisodes(commits);
+  // An unresolved spell (its workflow stopped reporting) counts, but has no
+  // restore time to contribute.
   const restores = episodes.flatMap((e) =>
-    e.closed ? [(Date.parse(e.closed) - Date.parse(e.opened)) / 60_000] : []
+    e.closed && !e.unresolved ? [(Date.parse(e.closed) - Date.parse(e.opened)) / 60_000] : []
   );
   const stats: Record<string, number> = { red_episodes: episodes.length };
   // No red episode means nothing waited to be restored: 0, not "no data".

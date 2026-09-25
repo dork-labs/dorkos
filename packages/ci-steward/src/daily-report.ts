@@ -258,26 +258,24 @@ function loader(dataDir: string): (days: readonly string[]) => Snapshot[] {
  * @param files - The hand files.
  * @param dataDir - A working tree of the data branch.
  * @param day - The last day of the series.
- * @param opts - How many days the series covers, and the parsed workflows the
- *   SLO ruler reads its fan-ins from (`sloRuler`).
+ * @param days - How many days the series covers.
  */
 export function dailySeries(
   files: HandFiles,
   dataDir: string,
   day: string,
-  { days, workflows }: { days: number; workflows: readonly WorkflowModel[] }
+  days: number
 ): Map<string, (number | null)[]> {
   const out = new Map<string, (number | null)[]>();
   const slos = files.slos;
   if (!slos) return out;
   const load = loader(dataDir);
   const floors = floorValues(slos, readData(dataDir, 'floors.json', FloorsSchema));
-  const ruler = sloRuler(files.config, workflows);
   for (const slo of slos.slos) out.set(slo.id, []);
   for (const d of daysBetween(addDays(day, -(days - 1)), day)) {
     const from = addDays(d, -6);
     const readings = computeSlos(slos, floors, {
-      ...ruler,
+      ...sloRuler(files.config),
       snapshots: load(daysBetween(addDays(d, -27), d)),
       local: loadLocalDays(dataDir, daysBetween(from, d)),
       toolCeilingSeconds: files.config.local.tool_ceiling_seconds,
@@ -573,10 +571,12 @@ export function renderDailyReport(inp: DailyReportInput): {
   index: ReportIndex['days'][number];
 } {
   const snap = readData(inp.dataDir, snapshotPath(inp.day), SnapshotSchema);
-  const series = dailySeries(inp.files, inp.dataDir, inp.day, {
-    days: inp.files.config.triage.sparkline_days,
-    workflows: inp.workflows,
-  });
+  const series = dailySeries(
+    inp.files,
+    inp.dataDir,
+    inp.day,
+    inp.files.config.triage.sparkline_days
+  );
   const head = headlineOf(inp);
   const open = triggersStale(inp) ? [] : (inp.triggers?.open ?? []);
   const reds = open.filter((t) => t.severity === 'red').length;

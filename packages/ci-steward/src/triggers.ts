@@ -473,7 +473,9 @@ function mainRed(all: readonly Snapshot[], from: string): NewTrigger[] {
       rule: 'main-red',
       severity: 'amber',
       scope: 'main-green',
-      what: `main red ${round(minutes, 0)} min (${e.sha.slice(0, 7)}).`,
+      what: e.unresolved
+        ? `main red (${e.sha.slice(0, 7)}); ${e.workflows.join(', ')} stopped reporting, never green.`
+        : `main red ${round(minutes, 0)} min (${e.sha.slice(0, 7)}).`,
       action: `Why did the queue miss it? If nothing did, this one is history.`,
       ledger_entry: null,
     });

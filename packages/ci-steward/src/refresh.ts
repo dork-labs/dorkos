@@ -43,8 +43,9 @@ function fetchMainPushRuns(gh: Gh, config: Config, day: string): Run[] | null {
  * never re-collected, so without this every day before the change would keep
  * reading under the old ruler for as long as it stays in a 28-day window.
  *
- * About four requests a day (two run listings, one or two PR searches) against
- * the 150 to 400 a full collection costs, and only for days Actions still keeps.
+ * About three requests a day (one push-run listing, one merged-PR search, and
+ * a timeline page for any PR with more than 100 events) against the 150 to 400
+ * a full collection costs, and only for days Actions still keeps.
  * A day whose listing or search comes back short is left exactly as it was.
  *
  * @param opts - The run's inputs.

@@ -11,13 +11,11 @@ import { describe, expect, it } from 'vitest';
 import { emptySnapshot, SnapshotSchema, type Snapshot } from '../data.ts';
 import { floorValues } from '../floors.ts';
 import { loadHandFiles } from '../load.ts';
-import { computeSlos, effectiveTimeouts, leafFailures, sloRuler, type SloInputs } from '../slo.ts';
-import { loadWorkflows } from '../workflows.ts';
+import { computeSlos, effectiveTimeouts, sloRuler, type SloInputs } from '../slo.ts';
 
 const REPO = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 const { files } = loadHandFiles(REPO);
 const slos = files!.slos!;
-const workflows = loadWorkflows(REPO, '.github/workflows', () => undefined);
 
 function reading(id: string, snapshots: Snapshot[], extra: Partial<SloInputs> = {}) {
   return computeSlos({ slos: slos.slos.filter((s) => s.id === id) }, floorValues(slos, null), {
@@ -62,7 +60,7 @@ describe('headroom reads each gate against the deadline that fires first', () =>
 });
 
 describe('flaky-test-runs says coverage unknown when a failed job wrote no report it reads', () => {
-  const ruler = sloRuler(files!.config, workflows);
+  const ruler = sloRuler(files!.config);
   const day = (failed: string[][]): Snapshot => {
     const s = emptySnapshot('2026-09-19', '2026-09-19T23:00:00Z', 700);
     s.counts.flaky_builds_sampled = 10;
@@ -78,16 +76,22 @@ describe('flaky-test-runs says coverage unknown when a failed job wrote no repor
     return s;
   };
 
-  it('folds a fan-in into the job it failed because of, and keeps one that failed alone', () => {
-    const { absorbs } = ruler.flakyCoverage;
-    expect(leafFailures(['wf.test.community-packaged', 'wf.test.test'], absorbs)).toEqual([
-      'wf.test.community-packaged',
-    ]);
-    expect(
-      leafFailures(['wf.browser-test.browser-shard', 'wf.browser-test.browser-test'], absorbs)
-    ).toEqual(['wf.browser-test.browser-shard']);
-    expect(leafFailures(['wf.test.test'], absorbs)).toEqual(['wf.test.test']);
-    expect(leafFailures([], absorbs)).toEqual(['unattributed']);
+  it('counts test jobs only: a fan-in, lint or a drift check says nothing about flakes', () => {
+    const r = reading(
+      'flaky-test-runs',
+      [
+        day([
+          ['wf.browser-test.browser-shard', 'wf.browser-test.browser-test'],
+          ['wf.browser-test.browser-test'],
+          ['wf.browser-test.copy-spec-drift'],
+          ['wf.lint.lint'],
+          [],
+        ]),
+      ],
+      ruler
+    );
+    expect(r.status).toBe('met');
+    expect(r.stats).toEqual({ share: 0, failed_jobs: 1, unreported_failed_jobs: 0 });
   });
 
   it('keeps the share when every failed job is one it reads', () => {
@@ -107,15 +111,15 @@ describe('flaky-test-runs says coverage unknown when a failed job wrote no repor
         day([
           ['wf.test.community-packaged', 'wf.test.test'],
           ['wf.credential-free-build.credential-free-build'],
-          ['wf.test.test-shard', 'wf.test.test'],
+          ['wf.test.test-shard', 'wf.test.test', 'wf.test.community-packaged'],
         ]),
       ],
       ruler
     );
     expect(r.status).toBe('unmeasured');
-    expect(r.stats).toEqual({ share: 0, failed_jobs: 3, unreported_failed_jobs: 2 });
+    expect(r.stats).toEqual({ share: 0, failed_jobs: 4, unreported_failed_jobs: 3 });
     expect(r.note).toBe(
-      'coverage unknown: 2 of 3 failed queue jobs wrote no retry-aware report (wf.credential-free-build.credential-free-build 1, wf.test.community-packaged 1); share 0 is over the reported suites only'
+      'coverage unknown: 3 of 4 failed queue test jobs wrote no retry-aware report (wf.test.community-packaged 2, wf.credential-free-build.credential-free-build 1); share 0 is over the reported suites only'
     );
     expect(r.excess_hours).toBeNull();
   });
@@ -137,7 +141,7 @@ describe('the recorded week 2026-09-12..18 under the new ruler', () => {
   ) as { days: Record<string, unknown> };
   const snapshots = Object.values(recorded.days).map((d) => SnapshotSchema.parse(d));
   const readings = computeSlos(slos, floorValues(slos, null), {
-    ...sloRuler(files!.config, workflows),
+    ...sloRuler(files!.config),
     snapshots,
     local: [],
     toolCeilingSeconds: 600,
@@ -160,7 +164,7 @@ describe('the recorded week 2026-09-12..18 under the new ruler', () => {
     const r = byId.get('flaky-test-runs')!;
     expect(r.status).toBe('unmeasured');
     expect(r.stats.share).toBe(0.005);
-    expect(r.note).toMatch(/^coverage unknown: \d+ of \d+ failed queue jobs/);
+    expect(r.note).toMatch(/^coverage unknown: \d+ of \d+ failed queue test jobs/);
   });
 });
 
@@ -170,6 +174,10 @@ describe('the ruler files agree with what they restate', () => {
   it('names only gates that exist', () => {
     for (const a of files!.config.collect.artifacts) expect(gates).toContain(a.gate);
     for (const d of files!.config.deadlines) expect(gates).toContain(d.gate);
+    for (const g of Object.keys(files!.config.collect.blind_test_gates)) expect(gates).toContain(g);
+    // A gate is either read or blind, never both.
+    for (const a of files!.config.collect.artifacts)
+      expect(files!.config.collect.blind_test_gates).not.toHaveProperty([a.gate]);
   });
 
   it("records the browser shard's deadline exactly as playwright.config.ts derives it", () => {
@@ -182,7 +190,16 @@ describe('the ruler files agree with what they restate', () => {
     const boot = num('LEG_BOOT_MINUTES');
     const healthy = boot + (num('UNSHARDED_SUITE_MINUTES') - boot) / shards;
     const minutes = Math.ceil((healthy * num('GLOBAL_TIMEOUT_HEADROOM')) / 5) * 5;
+    // The derivation itself, so a change to its SHAPE (not only its inputs)
+    // fails here instead of leaving the recomputation above stale.
+    expect(cfg).toContain(
+      'LEG_BOOT_MINUTES + (UNSHARDED_SUITE_MINUTES - LEG_BOOT_MINUTES) / SHARD_TOTAL'
+    );
+    expect(cfg).toContain(
+      'Math.ceil((HEALTHY_SHARD_MINUTES * GLOBAL_TIMEOUT_HEADROOM) / 5) * 5 * 60_000'
+    );
     expect(cfg).toContain('globalTimeout: CI ? SHARD_GLOBAL_TIMEOUT_MS : undefined');
+    expect(wf).toContain('E2E_SHARD_TOTAL: ${{ strategy.job-total }}');
     expect(files!.config.deadlines).toContainEqual(
       expect.objectContaining({ gate: 'wf.browser-test.browser-shard', minutes })
     );

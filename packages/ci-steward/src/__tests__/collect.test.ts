@@ -463,7 +463,21 @@ describe('refreshOlderDays', () => {
     expect(snap.main[0]!.workflows).toBeUndefined();
   });
 
-  it('stops quietly when the budget runs out', () => {
+  it('leaves a day untouched when its merged-PR search comes back short', () => {
+    const dataDir = legacyDay();
+    const rec = dayRecording();
+    rec.rest[PUSH_PATH] = { total_count: push.length, workflow_runs: push };
+    const q = Object.keys(rec.graphql!)[0]!;
+    const res = rec.graphql![q] as { data: { search: { issueCount: number } } };
+    res.data.search.issueCount = 2;
+    const { days, snap } = refresh(rec, dataDir);
+    expect(days).toEqual([]);
+    expect(snap.counts.repeat_ejections).toBeUndefined();
+    // Not even the half it could compute: main keeps its old shape too.
+    expect(snap.main[0]!.workflows).toBeUndefined();
+  });
+
+  it('does not start a day with fewer than ten requests left', () => {
     const dataDir = legacyDay();
     const rec = dayRecording();
     rec.rest[PUSH_PATH] = { total_count: push.length, workflow_runs: push };

@@ -99,7 +99,7 @@ export type CanaryRun = z.infer<typeof CanaryRunSchema>;
  * that FAILED goes green again, rather than at the next commit whose push
  * checks happened to be a different, path-filtered set (`mainEpisodes`).
  * Optional, because commits collected before it existed have only `red`; the
- * collector refreshes those days (`refreshDerived` in collect.ts) while Actions
+ * collector refreshes those days (`refreshOlderDays` in refresh.ts) while Actions
  * still keeps their runs.
  */
 const MainCommitSchema = z
@@ -239,7 +239,7 @@ export const SnapshotSchema = z
         canary_minutes: z.number().default(0),
         /**
          * Failed-checks ejections that repeat an earlier one on the same PR
-         * head (`tracked.repeat-ejections`, `repeatEjections` in prs.ts).
+         * head (`tracked.repeat-ejections`, `repeatEjections` in ejection-facts.ts).
          * Absent, not 0, on a day collected before it was computed: a day that
          * was never measured must not read as a day with no repeats.
          */

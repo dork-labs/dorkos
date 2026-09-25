@@ -22,7 +22,7 @@ const LEGACY = '*';
 
 /**
  * A workflow red on `main` that has not reported at all for this long is
- * dropped from the spell. Without it, a red workflow whose push trigger was
+ * dropped from the spell, which then ends at its last red report. Without it, a red workflow whose push trigger was
  * then removed (docs-openapi-check lost its push leg in #1655) would hold
  * `main` "red" forever; typecheck and lint have lost theirs too. Seven days is
  * far past any real gap between two runs of a live push workflow: the longest
@@ -40,6 +40,12 @@ export interface MainEpisode {
   closed: string | null;
   /** Every workflow that was red at some point in the spell, sorted. */
   workflows: string[];
+  /**
+   * True when the spell ended because its red workflows stopped reporting,
+   * not because they went green. It still counts as a spell; it has no
+   * restore time, because nothing ever showed `main` restored.
+   */
+  unresolved: boolean;
 }
 
 /**
@@ -58,17 +64,34 @@ export function mainEpisodes(commits: readonly MainCommit[]): MainEpisode[] {
   /** Red workflow → when it last reported red. */
   const red = new Map<string, string>();
   let open: { sha: string; opened: string; workflows: Set<string> } | null = null;
+  const close = (at: string, unresolved: boolean) => {
+    if (!open) return;
+    out.push({ ...open, workflows: [...open.workflows].sort(), closed: at, unresolved });
+    open = null;
+  };
   for (const c of sorted) {
     const now = Date.parse(c.at);
-    for (const [w, seen] of red) if (now - Date.parse(seen) > SENSOR_GONE_MS) red.delete(w);
+    // A workflow gone quiet ends the spell at its LAST red report, not at the
+    // commit that notices the silence a week later, and the spell is marked
+    // unresolved: how long `main` stayed broken is unknown, and a week of it
+    // would be invented.
+    let lastSeen: string | null = null;
+    for (const [w, seen] of red)
+      if (now - Date.parse(seen) > SENSOR_GONE_MS) {
+        red.delete(w);
+        if (!lastSeen || seen > lastSeen) lastSeen = seen;
+      }
+    if (lastSeen && red.size === 0) close(lastSeen, true);
     if (c.workflows) {
+      const results = Object.values(c.workflows);
       for (const [w, isRed] of Object.entries(c.workflows)) {
         if (isRed) red.set(w, c.done);
         else red.delete(w);
       }
-      // A spell opened by an old-format commit names no workflow, so nothing
-      // but an all-green commit can close it, exactly as before.
-      if (!c.red) red.delete(LEGACY);
+      // A spell opened by an old-format commit names no workflow, so only a
+      // commit whose push checks all went green can close it, as before. A
+      // commit with no result at all (every run cancelled) is no evidence.
+      if (results.length > 0 && !results.some(Boolean)) red.delete(LEGACY);
     } else if (c.red) {
       red.set(LEGACY, c.done);
     } else {
@@ -77,11 +100,9 @@ export function mainEpisodes(commits: readonly MainCommit[]): MainEpisode[] {
     if (red.size > 0) {
       open ??= { sha: c.sha, opened: c.done, workflows: new Set() };
       for (const w of red.keys()) open.workflows.add(w);
-    } else if (open) {
-      out.push({ ...open, workflows: [...open.workflows].sort(), closed: c.done });
-      open = null;
-    }
+    } else close(c.done, false);
   }
-  if (open) out.push({ ...open, workflows: [...open.workflows].sort(), closed: null });
+  if (open)
+    out.push({ ...open, workflows: [...open.workflows].sort(), closed: null, unresolved: false });
   return out;
 }

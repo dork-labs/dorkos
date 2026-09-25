@@ -54,7 +54,7 @@ function readSlos(ctx: StewardContext, to: string, days = 7): SloReading[] {
   const from = addDays(to, -(days - 1));
   const floors = readData(dataDir, 'floors.json', FloorsSchema);
   return computeSlos(files.slos, floorValues(files.slos, floors), {
-    ...sloRuler(files.config, ctx.workflows),
+    ...sloRuler(files.config),
     snapshots: loadSnapshots(dataDir, daysBetween(addDays(to, -27), to)),
     local: loadLocalDays(dataDir, daysBetween(from, to)),
     toolCeilingSeconds: files.config.local.tool_ceiling_seconds,
