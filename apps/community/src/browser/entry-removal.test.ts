@@ -3,6 +3,7 @@ import { removalAuthority } from '../content-removal.js';
 import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
 import {
   expectedTombstone,
+  isRemovedEntry,
   REMOVAL_COPY,
   removalAction,
   type RemovalViewer,
@@ -34,19 +35,14 @@ const agents: Record<string, string> = {
   [ids.otherAdminAgent]: ids.otherAdmin,
   [ids.memberAgent]: ids.member,
 };
-type RosterRow = RemovalViewer['roster'] extends ReadonlyMap<string, infer Row> ? Row : never;
-const roster: RemovalViewer['roster'] = new Map<string, RosterRow>([
-  ...Object.entries(humans).map(([id, role]): [string, RosterRow] => [
-    id,
-    { kind: 'human', role, ownerMemberId: null },
-  ]),
-  ...Object.entries(agents).map(([id, owner]): [string, RosterRow] => [
-    id,
-    { kind: 'agent', role: null, ownerMemberId: owner },
-  ]),
-]);
+const humanRoles: RemovalViewer['humanRoles'] = new Map(Object.entries(humans));
+const agentOwners: RemovalViewer['agentOwners'] = new Map(Object.entries(agents));
 
-function entry(authorMemberId: string, text = 'Hello'): Entry {
+function entry(
+  authorMemberId: string,
+  text = 'Hello',
+  extra: { mentions?: string[]; files?: number } = {}
+): Entry {
   return {
     id: '30000000-0000-4000-8000-000000000001',
     channelId: '40000000-0000-4000-8000-000000000001',
@@ -55,21 +51,19 @@ function entry(authorMemberId: string, text = 'Hello'): Entry {
     authorDisplayName: 'Someone',
     authorKind: authorMemberId in agents ? 'agent' : 'human',
     text,
-    mentions: [ids.otherMember],
+    mentions: extra.mentions ?? [],
     parentEntryId: null,
     threadRootEntryId: null,
     createdAt: '2026-09-24T12:00:00.000Z',
     cursor: 'cursor',
-    attachments: [
-      {
-        id: '50000000-0000-4000-8000-000000000001',
-        name: 'notes.txt',
-        contentType: 'text/plain',
-        byteSize: 4,
-        checksum: '60000000-0000-4000-8000-000000000001',
-        createdAt: '2026-09-24T12:00:00.000Z',
-      },
-    ],
+    attachments: Array.from({ length: extra.files ?? 1 }, (_, index) => ({
+      id: `50000000-0000-4000-8000-00000000000${index + 1}`,
+      name: 'notes.txt',
+      contentType: 'text/plain',
+      byteSize: 4,
+      checksum: '60000000-0000-4000-8000-000000000001',
+      createdAt: '2026-09-24T12:00:00.000Z',
+    })),
   };
 }
 
@@ -82,7 +76,8 @@ function viewerFor(memberId: string): RemovalViewer {
         .filter(([, owner]) => owner === memberId)
         .map(([id]) => id)
     ),
-    roster,
+    humanRoles,
+    agentOwners,
   };
 }
 
@@ -123,19 +118,42 @@ describe('removalAction', () => {
     expect(removalAction(entry(ids.memberAgent), admin)).toBe('remove');
   });
 
-  // Purpose: someone who left the channel (a former admin, an erased husk) is not in the roster;
-  // the admin is offered Remove and the server has the final word.
-  it('offers an admin Remove when the author is not in the roster', () => {
+  // Purpose: roles come from the whole community, not the open channel. An owner who left the
+  // channel is still protected, and an agent of theirs still in the channel too.
+  it('protects the owner even when they are not in the channel', () => {
+    const channelWithoutOwner = new Map(agentOwners);
+    const admin = { ...viewerFor(ids.admin), agentOwners: channelWithoutOwner };
+    expect(removalAction(entry(ids.owner), admin)).toBeNull();
+    expect(removalAction(entry(ids.ownerAgent), admin)).toBeNull();
+  });
+
+  // Purpose: a human absent from the directory is no longer an active member (a former admin, an
+  // erased husk), whom the server lets an admin remove; an agent that left the channel has no
+  // known owner, so the admin is offered Remove and the server decides.
+  it('offers an admin Remove on people who left and on agents with no known owner', () => {
     const departed = '10000000-0000-4000-8000-000000000099';
     expect(removalAction(entry(departed), viewerFor(ids.admin))).toBe('remove');
     expect(removalAction(entry(departed), viewerFor(ids.member))).toBeNull();
+    const strayAgent = { ...viewerFor(ids.admin), agentOwners: new Map<string, string>() };
+    expect(removalAction(entry(ids.memberAgent), strayAgent)).toBe('remove');
+  });
+
+  // Purpose: until the directory loads an admin cannot tell who is protected, so nothing is
+  // offered on other people's messages (their own still get Delete).
+  it('offers an admin nothing on others while roles are unknown', () => {
+    const loading = { ...viewerFor(ids.admin), humanRoles: null };
+    expect(removalAction(entry(ids.member), loading)).toBeNull();
+    expect(removalAction(entry(ids.owner), loading)).toBeNull();
+    expect(removalAction(entry(ids.admin), loading)).toBe('delete');
   });
 
   // Purpose: a tombstone has nothing left to act on, whoever removed it and whoever is looking.
   it('offers nothing on any tombstone', () => {
     for (const text of [...Object.values(REMOVED_ENTRY_TEXT), ERASED_ENTRY_TEXT]) {
-      expect(removalAction(entry(ids.member, text), viewerFor(ids.member))).toBeNull();
-      expect(removalAction(entry(ids.member, text), viewerFor(ids.owner))).toBeNull();
+      expect(
+        removalAction(entry(ids.member, text, { files: 0 }), viewerFor(ids.member))
+      ).toBeNull();
+      expect(removalAction(entry(ids.member, text, { files: 0 }), viewerFor(ids.owner))).toBeNull();
     }
     // A message that only mentions the sentence is not a tombstone.
     expect(
@@ -144,6 +162,25 @@ describe('removalAction', () => {
         viewerFor(ids.member)
       )
     ).toBe('delete');
+  });
+});
+
+describe('isRemovedEntry', () => {
+  // Purpose: a message is removed only when it has the whole shape of a tombstone. The sentence
+  // alongside a file or a mention is a living message that still offers Delete and Remove, so a
+  // post cannot hide its file behind a fake tombstone.
+  it('needs the sentence, no files and no mentions', () => {
+    const sentence = REMOVED_ENTRY_TEXT.author;
+    expect(isRemovedEntry(entry(ids.member, sentence, { files: 0 }))).toBe(true);
+    expect(isRemovedEntry(entry(ids.member, ERASED_ENTRY_TEXT, { files: 0 }))).toBe(true);
+    expect(isRemovedEntry(entry(ids.member, sentence, { files: 1 }))).toBe(false);
+    expect(
+      isRemovedEntry(entry(ids.member, sentence, { files: 0, mentions: [ids.otherMember] }))
+    ).toBe(false);
+    expect(isRemovedEntry(entry(ids.member, 'Hello', { files: 0 }))).toBe(false);
+    expect(removalAction(entry(ids.member, sentence, { files: 1 }), viewerFor(ids.owner))).toBe(
+      'remove'
+    );
   });
 });
 

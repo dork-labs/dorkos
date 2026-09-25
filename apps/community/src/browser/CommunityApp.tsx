@@ -482,6 +482,7 @@ export function CommunityApp() {
             channel={selected}
             me={me.member}
             onChanged={onChanged}
+            onMemberStale={() => void refreshCurrentMember().catch(() => {})}
             readOnly={readOnly}
             held={held}
           />

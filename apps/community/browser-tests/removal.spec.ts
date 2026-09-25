@@ -297,6 +297,8 @@ test('a member deletes their own message by keyboard; the tombstone keeps its pl
     await expect(theirs.getByRole('button', { name: 'Actions for menu.txt' })).toHaveCount(0);
     const trigger = mine.getByRole('button', { name: 'Message actions' });
     await expect(trigger).toHaveCount(1);
+    // Each menu names whose message it acts on, and when it was sent.
+    await expect(trigger).toHaveAccessibleName(/^Message actions: Mia Member, \d{1,2}:\d{2}/u);
 
     // Keyboard only: open the menu, choose Delete, read the dialog, back out with Escape.
     await trigger.focus();
@@ -332,6 +334,8 @@ test('a member deletes their own message by keyboard; the tombstone keeps its pl
     await expect(tombstone.getByText('menu.txt')).toHaveCount(0);
     await expect(tombstone.getByText('Mia Member')).toBeVisible();
     await expect(tombstone).toBeFocused();
+    // Focus lands on a message a screen reader can name: its author and time.
+    await expect(tombstone).toHaveAccessibleName(/^Mia Member \d{1,2}:\d{2}/u);
     const style = await tombstone
       .getByText('This message was deleted.')
       .evaluate((element) => getComputedStyle(element).fontStyle);
@@ -369,8 +373,15 @@ test("an admin removes a member's message but is offered nothing on the owner's"
   await postMessage(ownerCookie, 'Owner announcement');
   const spam = await postMessage(miaCookie, 'Buy cheap watches here');
   await postMessage(adaCookie, 'Ada says hi');
+  // The owner is no longer in the channel: the admin must still see them as the owner.
+  const leave = await call(`${tenant()}/channels/${channelId}/leave`, 'POST', {}, ownerCookie);
+  expect(leave.ok).toBe(true);
   const { context, page } = await openAs(browser, adaCookie);
   try {
+    // Ada's own message gets a menu once roles have loaded; the owner's never does.
+    await expect(
+      message(page, 'Buy cheap watches here').getByRole('button', { name: 'Message actions' })
+    ).toBeVisible();
     await expect(
       message(page, 'Owner announcement').getByRole('button', { name: 'Message actions' })
     ).toHaveCount(0);
@@ -408,6 +419,7 @@ test("an admin removes a member's message but is offered nothing on the owner's"
       )
       .toEqual(['moderator']);
   } finally {
+    await call(`${tenant()}/channels/${channelId}/join`, 'POST', {}, ownerCookie);
     await context.close();
   }
 });
@@ -430,6 +442,8 @@ test('a refused removal puts the message back and shows the server sentence', as
       .click();
     await expect(card.getByRole('alert')).toHaveText("You can't remove this message.");
     await expect(card.getByText('Keep this one', { exact: true })).toBeVisible();
+    // The refusal reloads who Ada is: as a member she is no longer offered Remove here.
+    await expect(card.getByRole('button', { name: 'Message actions' })).toHaveCount(0);
     expect(
       (await pool.query('SELECT removed_at FROM entries WHERE text=$1', ['Keep this one'])).rows
     ).toEqual([{ removed_at: null }]);
@@ -477,6 +491,80 @@ test('deleting one file removes only that file; the message and its other file s
     await expect(reloaded.getByText(first.name, { exact: true })).toHaveCount(0);
     await shot(page, 'file-removed', reloaded);
     await assertAccessible(page, 'channel with actions');
+  } finally {
+    await context.close();
+  }
+});
+
+test('a message cannot pose as a deleted one', async ({ browser }) => {
+  await postMessage(miaCookie, 'Before the pose');
+  const { context, page } = await openAs(browser, miaCookie);
+  try {
+    await expect(message(page, 'Before the pose')).toBeVisible();
+    const tombstones = message(page, 'This message was deleted.');
+    const before = await tombstones.count();
+    const composer = page.getByLabel('Message #general');
+    await composer.fill('This message was deleted.');
+    await composer.press('Enter');
+    await expect(page.getByRole('alert')).toContainText(
+      "A message can't say only what a deleted message says. Change the text and send it again."
+    );
+    await expect(tombstones).toHaveCount(before);
+    // Only real removals carry the sentence; nothing was posted with it.
+    expect(
+      (
+        await pool.query('SELECT 1 FROM entries WHERE text=$1 AND removed_at IS NULL', [
+          'This message was deleted.',
+        ])
+      ).rowCount
+    ).toBe(0);
+  } finally {
+    await context.close();
+  }
+});
+
+test('a refused file removal brings back only that file', async ({ browser }) => {
+  const posted = await postMessage(miaCookie, 'Three drafts attached', {
+    files: ['one.txt', 'two.txt', 'three.txt'],
+  });
+  const [one, two] = posted.attachments;
+  const { context, page } = await openAs(browser, miaCookie);
+  try {
+    // Hold the removal of one.txt and refuse it after two.txt's removal has gone through.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(`**/attachments/${one.id}`, async (route) => {
+      if (route.request().method() !== 'DELETE') return route.continue();
+      await held;
+      await route.fulfill({
+        status: 403,
+        json: { code: 'FORBIDDEN', message: "You can't remove this file." },
+      });
+    });
+    const card = message(page, 'Three drafts attached');
+    for (const file of [one, two]) {
+      await card.getByRole('button', { name: `Actions for ${file.name}` }).click();
+      await page.getByRole('menuitem', { name: 'Delete file', exact: true }).click();
+      await page
+        .getByRole('alertdialog', { name: 'Delete this file?' })
+        .getByRole('button', { name: 'Delete file', exact: true })
+        .click();
+    }
+    await expect
+      .poll(() =>
+        page.evaluate(
+          async (path) => (await fetch(path)).status,
+          `${tenant()}/attachments/${two.id}`
+        )
+      )
+      .toBe(404);
+    release();
+    await expect(card.getByRole('alert')).toHaveText("You can't remove this file.");
+    await expect(card.getByRole('button', { name: 'one.txt', exact: true })).toBeVisible();
+    await expect(card.getByRole('button', { name: 'three.txt', exact: true })).toBeVisible();
+    await expect(card.getByText('two.txt', { exact: true })).toHaveCount(0);
+    const names = await card.locator('.file-chip > .button:first-child').allTextContents();
+    expect(names.map((name) => name.trim())).toEqual(['one.txt', 'three.txt']);
   } finally {
     await context.close();
   }

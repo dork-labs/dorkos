@@ -1,8 +1,7 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Download, MessageCircle } from 'lucide-react';
-import { isTombstoneText } from '../../content/tombstones.js';
 import { download } from '../api.js';
-import { REMOVAL_COPY, type RemovalAction } from '../entry-removal.js';
+import { isRemovedEntry, REMOVAL_COPY, type RemovalAction } from '../entry-removal.js';
 import type { Entry } from '../types.js';
 import { ReportEntryLink } from './HostLinks.js';
 import {
@@ -38,7 +37,13 @@ export function EntryCard({
   const [confirming, setConfirming] = useState<RemovalRequest | null>(null);
   const card = useRef<HTMLElement>(null);
   const returnFocus = useRef<HTMLButtonElement | null>(null);
-  const tombstone = isTombstoneText(entry.text);
+  const tombstone = isRemovedEntry(entry);
+  const authorId = useId();
+  const timeId = useId();
+  const time = new Date(entry.createdAt).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
   const { action } = controls;
   function confirm(
     target: RemovalTarget,
@@ -49,23 +54,20 @@ export function EntryCard({
     setConfirming({ target, action: chosen });
   }
   return (
-    <article className="entry" ref={card} tabIndex={-1}>
+    <article className="entry" ref={card} tabIndex={-1} aria-labelledby={`${authorId} ${timeId}`}>
       <div className="avatar" aria-hidden="true">
         {entry.authorDisplayName.slice(0, 1).toUpperCase()}
       </div>
       <div className="min-w-0">
         <div className="entry-meta">
-          <strong>{entry.authorDisplayName}</strong>
-          <time className="small muted" dateTime={entry.createdAt}>
-            {new Date(entry.createdAt).toLocaleTimeString([], {
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
+          <strong id={authorId}>{entry.authorDisplayName}</strong>
+          <time id={timeId} className="small muted" dateTime={entry.createdAt}>
+            {time}
           </time>
           {action && (
             <RemovalMenu
               className="entry-actions"
-              label="Message actions"
+              label={`Message actions: ${entry.authorDisplayName}, ${time}`}
               itemLabel={REMOVAL_COPY.message[action].menuItem}
               onChoose={(trigger) => confirm({ kind: 'message' }, action, trigger)}
             />
