@@ -2,6 +2,7 @@
 covers:
   - 'refactor(server): share the outside-change observer between permissions and what comes next (DOR-2337)'
   - "feat(server): an agent's runtime, model or effort changed outside DorkOS re-asks for the schedules that follow it (DOR-2337)"
+  - 'fix(server): every agent has a baseline, and a fire runs on what its check read (DOR-2337)'
 ---
 
 ### Added
