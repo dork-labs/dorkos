@@ -6,6 +6,8 @@ covers:
   - 'fix(security): give a git download one deadline and stop running git on exit (DOR-2321)'
   - 'fix(shared): read file-open flags lazily, so a partial node:fs mock can import bounded-read (DOR-2321)'
   - 'fix(marketplace): measure a package without its .git, which the install drops (DOR-2321)'
+  - 'test(marketplace): run the size tests with the real git hardening arguments (DOR-2321)'
+  - '#2097'
 ---
 
 ### Security
