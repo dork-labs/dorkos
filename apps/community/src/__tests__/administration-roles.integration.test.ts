@@ -31,6 +31,7 @@ import { registerAdministrationRoutes } from '../routes/administration.js';
 import { registerHostRoutes } from '../routes/host.js';
 import { registerMembershipRoutes } from '../routes/memberships.js';
 import { registerHostLimitRoutes } from '../routes/host-limits.js';
+import { registerHostLegalHoldRoutes } from '../routes/host-legal-hold.js';
 import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
 import { registerShortNameRoutes } from '../routes/short-names.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
@@ -628,6 +629,7 @@ const actions: Action<unknown>[] = [
           'deletionState',
           'description',
           'id',
+          'legalHold',
           'lifecycle',
           'lifecycleVersion',
           'name',
@@ -676,6 +678,7 @@ const actions: Action<unknown>[] = [
         'deletionState',
         'description',
         'id',
+        'legalHold',
         'lifecycle',
         'lifecycleVersion',
         'name',
@@ -1062,6 +1065,50 @@ const actions: Action<unknown>[] = [
     }),
     effect: async () => {
       expect((await alpha()).lifecycle).toBe('active');
+    },
+  }),
+  define({
+    rule: 'Place a legal hold: host operator only; owner and admin cannot, and are never told',
+    route: 'PUT /host/communities/:id/legal-hold',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/legal-hold`,
+      body: { reference: null },
+    }),
+    effect: async () => {
+      const held = await pool.query<{ legal_hold_at: Date | null }>(
+        'SELECT legal_hold_at FROM communities WHERE id=$1',
+        [alphaId]
+      );
+      expect(held.rows[0].legal_hold_at).not.toBeNull();
+      await pool.query(
+        `UPDATE communities SET legal_hold_at=NULL,legal_hold_by_host_actor=NULL,
+           legal_hold_reference=NULL WHERE id=$1`,
+        [alphaId]
+      );
+    },
+  }),
+  define({
+    rule: 'Release a legal hold: host operator only; owner and admin cannot',
+    route: 'DELETE /host/communities/:id/legal-hold',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => {
+      await pool.query(
+        `UPDATE communities SET legal_hold_at=now(),legal_hold_by_host_actor='api_key:matrix'
+         WHERE id=$1`,
+        [alphaId]
+      );
+    },
+    call: () => ({ method: 'DELETE', path: `/api/v1/host/communities/${alphaId}/legal-hold` }),
+    effect: async () => {
+      const held = await pool.query<{ legal_hold_at: Date | null }>(
+        'SELECT legal_hold_at FROM communities WHERE id=$1',
+        [alphaId]
+      );
+      expect(held.rows[0].legal_hold_at).toBeNull();
     },
   }),
   define<{ token: string }>({
@@ -1967,6 +2014,7 @@ it('classifies every registered route, and puts every host and settings route in
   registerMembershipRoutes(modules, { pool, auth });
   registerHostLimitRoutes(modules, { pool, config, authority, now });
   registerHostLifecycleRoutes(modules, { pool, config, blobStore, authority, now });
+  registerHostLegalHoldRoutes(modules, { pool, authority, now });
   registerShortNameRoutes(modules, { pool, config, authority, now, limitLookup: () => undefined });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });

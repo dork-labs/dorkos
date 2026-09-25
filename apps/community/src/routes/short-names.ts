@@ -144,7 +144,7 @@ export function registerShortNameRoutes(
         await client.query<HostCommunityRow>(`${hostProjectionSql} WHERE c.id=$1`, [communityId])
       ).rows[0];
     });
-    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community));
+    return json(c, CommunityAdminHostProjectionSchema, projectCommunity(community, actor));
   });
 
   // Releasing a retired name is deliberate, for example after a trademark request: until then

@@ -999,6 +999,22 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await observerPage.reload();
     await expect(observerPage).toHaveURL(`${baseUrl}/c/${ids.communityId}/deletion`);
     await expect(observerPage.getByRole('heading', { name: 'Deletion scheduled' })).toBeVisible();
+    // Once the deletion date has passed the server refuses a cancel, so the button goes and the
+    // page says why, without a word about anything that might be delaying the deletion.
+    await pool.query(
+      `UPDATE communities SET delete_requested_at=now()-interval '8 days',
+         delete_after=now()-interval '1 day' WHERE id=$1`,
+      [ids.communityId]
+    );
+    await observerPage.reload();
+    await expect(observerPage.getByText('The deletion date has passed.')).toBeVisible();
+    await expect(observerPage.getByRole('button', { name: 'Cancel deletion' })).toHaveCount(0);
+    await pool.query(
+      `UPDATE communities SET delete_requested_at=now(),delete_after=now()+interval '7 days'
+       WHERE id=$1`,
+      [ids.communityId]
+    );
+    await observerPage.reload();
     await observerPage.getByRole('button', { name: 'Cancel deletion' }).click();
     const cancelDeletion = observerPage.getByRole('dialog', {
       name: 'Cancel community deletion?',

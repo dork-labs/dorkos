@@ -55,7 +55,11 @@ export function HostHoldControls({
   // Read once per mount: the page reloads the record after every change it makes.
   const [now] = useState(() => Date.now());
   const held = community.lifecycle === 'held';
-  const holdable = community.lifecycle === 'active' || community.lifecycle === 'archived';
+  // A suspended community can be held in one step: it goes straight to the hold, never live.
+  const holdable =
+    community.lifecycle === 'active' ||
+    community.lifecycle === 'archived' ||
+    community.lifecycle === 'suspended';
   const noticePassed =
     held && community.deletionNoticeAt !== null && Date.parse(community.deletionNoticeAt) <= now;
   const lifecycle = async (body: Record<string, unknown>) => {
@@ -135,9 +139,11 @@ export function HostHoldControls({
           onClose={close}
         >
           <p>
-            {dialog === 'hold'
-              ? 'Members can still read and the owner can still export, but no one can post, join, or change settings. Every connected DorkOS installation and agent loses access now.'
-              : `Members see this date on every channel. You can move it later or clear it, but never closer than ${noticeDays} days away.`}
+            {dialog !== 'hold'
+              ? `Members see this date on every channel. You can move it later or clear it, but never closer than ${noticeDays} days away.`
+              : community.lifecycle === 'suspended'
+                ? 'The community goes straight from suspended to on hold. Members can read it again and the owner can export, but no one can post, join, or change settings.'
+                : 'Members can still read and the owner can still export, but no one can post, join, or change settings. Every connected DorkOS installation and agent loses access now.'}
           </p>
           <div className="field">
             <label htmlFor={`notice-${community.id}`}>Delete after (optional)</label>

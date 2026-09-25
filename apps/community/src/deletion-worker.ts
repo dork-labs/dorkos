@@ -64,6 +64,11 @@ export async function prepareCommunityDeletionInventory(
   return (await countMissingDeletionInventory(pool, communityId)) === 0;
 }
 
+/** How long a file deletion waits for the community row lock before it counts as failed. */
+const BLOB_LOCK_TIMEOUT_MS = 5_000;
+/** How long one storage delete may take while the community row is held. */
+const BLOB_DELETE_TIMEOUT_MS = 60_000;
+
 /**
  * Delete one due tenant in bounded, restart-safe object and database phases.
  *
@@ -71,6 +76,9 @@ export async function prepareCommunityDeletionInventory(
  * community that has names is not finished without it: the job stays retrying with
  * `SHORT_NAME_HOLDS_REQUIRED`, so no name is ever freed at once or left behind in clear text.
  * `now` is the clock a hold's cool-off starts from.
+ *
+ * A community under a host legal hold is never purged: it is not claimed, each blob deletion
+ * re-checks the hold under a `FOR SHARE` lock on the community row, and so does the final step.
  */
 export async function sweepCommunityDeletions(
   pool: Pool,
@@ -81,11 +89,14 @@ export async function sweepCommunityDeletions(
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
   const job = await transaction(pool, async (client) => {
+    // A community under a host legal hold is never claimed, so it cannot hold the head of the
+    // queue and stall every other deletion (ADR 260924-215422). A hold placed after this read
+    // is caught by the per-blob and final checks below.
     const selected = await client.query<{ community_id: string }>(
-      `SELECT community_id
-       FROM community_deletion_jobs
-       WHERE delete_after<=now() AND next_attempt_at<=now()
-       ORDER BY next_attempt_at,community_id
+      `SELECT j.community_id
+       FROM community_deletion_jobs j JOIN communities c ON c.id=j.community_id
+       WHERE j.delete_after<=now() AND j.next_attempt_at<=now() AND c.legal_hold_at IS NULL
+       ORDER BY j.next_attempt_at,j.community_id
        LIMIT 1`
     );
     const candidate = selected.rows[0];
@@ -144,7 +155,25 @@ export async function sweepCommunityDeletions(
   let failed = 0;
   for (const candidate of candidates.rows) {
     try {
-      await blobStore.delete(candidate.blob_key);
+      // Each blob is deleted while the community row is held FOR SHARE, after checking for a
+      // legal hold. Placing a legal hold takes that row FOR UPDATE, so once it commits no
+      // further byte is removed; one already being deleted finishes first.
+      // Both halves are bounded so one slow file never holds the row, and with it a legal hold
+      // being placed, for long: the lock read by a statement timeout, the storage call by an
+      // abort signal. Either failing counts as a failed attempt and is retried with backoff.
+      const legallyHeld = await transaction(pool, async (client) => {
+        await client.query(`SET LOCAL statement_timeout = '${BLOB_LOCK_TIMEOUT_MS}'`);
+        const current = await client.query<{ legal_hold_at: Date | null }>(
+          'SELECT legal_hold_at FROM communities WHERE id=$1 FOR SHARE',
+          [job.community_id]
+        );
+        if (!current.rows[0] || current.rows[0].legal_hold_at) return true;
+        await blobStore.delete(candidate.blob_key, {
+          signal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+        });
+        return false;
+      });
+      if (legallyHeld) return { claimed: 1, deletedBlobs, completed: 0, failed };
       // An absent object does not settle a writer that still owns this key. Its
       // delayed put may ignore cancellation and publish after this delete.
       const marked = await pool.query(
@@ -208,13 +237,17 @@ export async function sweepCommunityDeletions(
   if (failed) return { claimed: 1, deletedBlobs, completed: 0, failed };
 
   const completed = await transaction(pool, async (client) => {
-    const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
-      'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE',
-      [job.community_id]
-    );
+    const community = await client.query<{
+      lifecycle: string;
+      lifecycle_version: number;
+      legal_hold_at: Date | null;
+    }>('SELECT lifecycle,lifecycle_version,legal_hold_at FROM communities WHERE id=$1 FOR UPDATE', [
+      job.community_id,
+    ]);
     if (
       community.rows[0]?.lifecycle !== 'deletion_pending' ||
-      community.rows[0].lifecycle_version !== job.lifecycle_version
+      community.rows[0].lifecycle_version !== job.lifecycle_version ||
+      community.rows[0].legal_hold_at
     )
       return false;
     const locked = await client.query<{

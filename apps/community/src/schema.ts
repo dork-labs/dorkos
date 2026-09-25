@@ -46,6 +46,9 @@ export const communities = pgTable(
     heldAt: timestamp('held_at', { withTimezone: true }),
     deletionNoticeAt: timestamp('deletion_notice_at', { withTimezone: true }),
     deleteRequestedByHostActor: text('delete_requested_by_host_actor'),
+    legalHoldAt: timestamp('legal_hold_at', { withTimezone: true }),
+    legalHoldByHostActor: text('legal_hold_by_host_actor'),
+    legalHoldReference: text('legal_hold_reference'),
     redactionEpoch: bigint('redaction_epoch', { mode: 'bigint' })
       .notNull()
       .default(sql`(('x' || substr(md5(gen_random_uuid()::text), 1, 16))::bit(64)::bigint)`),
@@ -93,6 +96,10 @@ export const communities = pgTable(
     check(
       'communities_host_requester',
       sql`${table.deleteRequestedByHostActor} IS NULL OR ${table.deleteRequestedByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$'`
+    ),
+    check(
+      'communities_legal_hold',
+      sql`(${table.legalHoldAt} IS NULL) = (${table.legalHoldByHostActor} IS NULL) AND (${table.legalHoldByHostActor} IS NULL OR ${table.legalHoldByHostActor} ~ '^(person|api_key):[A-Za-z0-9_-]{1,200}$') AND (${table.legalHoldReference} IS NULL OR (${table.legalHoldAt} IS NOT NULL AND char_length(${table.legalHoldReference}) BETWEEN 1 AND 200))`
     ),
   ]
 );
@@ -216,7 +223,7 @@ export const hostApiKeys = pgTable(
     check('host_api_keys_secret_hash', sql`${table.secretHash} ~ '^[a-f0-9]{64}$'`),
     check(
       'host_api_keys_scopes',
-      sql`cardinality(${table.scopes}) BETWEEN 1 AND 4 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import']::text[]`
+      sql`cardinality(${table.scopes}) BETWEEN 1 AND 5 AND ${table.scopes} <@ ARRAY['communities:read','communities:write','communities:lifecycle','communities:import','communities:legal_hold']::text[]`
     ),
     check(
       'host_api_keys_issuer',

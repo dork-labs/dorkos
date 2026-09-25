@@ -123,6 +123,17 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
   deletionRequestedBy: z.enum(['owner', 'host']).nullable(),
   /** The current short name, if the community has one. */
   shortName: CommunityShortNameSchema.nullable(),
+  /**
+   * The host's legal hold, if one stands: no permanent deletion of the community runs until the
+   * host releases it. Host-only; no tenant projection carries it.
+   */
+  legalHold: z
+    .strictObject({
+      since: timestamp,
+      /** The host's own pointer to why (a case or ticket number). Never shown to members. */
+      reference: z.string().min(1).max(200).nullable(),
+    })
+    .nullable(),
   createdAt: timestamp,
 });
 
@@ -259,6 +270,11 @@ export const CommunityAdminHostDeletionRequestSchema = z.strictObject({
   confirmIdSuffix: z.string().length(8),
 });
 
+/** Place a legal hold, or update the reference of the one in place. */
+export const CommunityAdminHostLegalHoldRequestSchema = z.strictObject({
+  reference: z.string().trim().min(1).max(200).nullable(),
+});
+
 /** Owner lifecycle mutation with recent password confirmation. */
 export const CommunityAdminOwnerLifecycleRequestSchema = z.strictObject({
   action: z.enum(['archive', 'restore']),
@@ -294,6 +310,8 @@ export const CommunityAdminHostApiKeyScopeSchema = z.enum([
   'communities:write',
   'communities:lifecycle',
   'communities:import',
+  /** Place and release a legal hold. `communities:lifecycle` does not imply it. */
+  'communities:legal_hold',
 ]);
 
 /** Host API key projection. Never carries the secret or its hash. */
@@ -301,7 +319,7 @@ export const CommunityAdminHostApiKeySchema = z.strictObject({
   id,
   label: z.string().trim().min(1).max(80),
   prefix: z.string().regex(/^dkh_[A-Za-z0-9_-]{6}$/),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(5),
   issuedVia: z.enum(['browser', 'command']),
   /** The issuing host operator's display name; null for a key issued by the offline command. */
   issuedByOperator: z.string().min(1).nullable(),
@@ -317,7 +335,7 @@ export const CommunityAdminHostApiKeyListSchema = z.strictObject({
 /** Issue a host API key. Needs a host operator's session and password; a key cannot issue keys. */
 export const CommunityAdminHostApiKeyIssueRequestSchema = z.strictObject({
   label: z.string().trim().min(1).max(80),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(5),
   expiresInDays: z.int().min(1).max(365).nullable(),
   password: z.string().min(1),
 });

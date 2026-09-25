@@ -6483,6 +6483,21 @@
         "packages/marketplace/src/package-validator.ts",
         "apps/server/src/services/marketplace/lib/stage-package.ts"
       ]
+    },
+    {
+      "id": "260924-215422",
+      "slug": "host-legal-hold-blocks-deletion",
+      "title": "A host legal hold silently blocks every permanent deletion of a community until released",
+      "status": "draft",
+      "created": "2026-09-24",
+      "extractedFrom": "community-host-operator-api",
+      "specSlug": "community-host-operator-api",
+      "supersedes": null,
+      "affects": [
+        "apps/community/src/deletion-worker.ts",
+        "apps/community/src/routes/host-lifecycle.ts",
+        "apps/community/src/routes/host.ts"
+      ]
     }
   ]
 }

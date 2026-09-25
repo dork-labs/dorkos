@@ -32,6 +32,7 @@ import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
 import { registerMembershipRoutes } from './routes/memberships.js';
 import { registerHostLimitRoutes } from './routes/host-limits.js';
+import { registerHostLegalHoldRoutes } from './routes/host-legal-hold.js';
 import { registerHostLifecycleRoutes } from './routes/host-lifecycle.js';
 import { registerShortNameRoutes } from './routes/short-names.js';
 import { callerAddress } from './caller-address.js';
@@ -307,6 +308,7 @@ export function createCommunityApp({
   registerMembershipRoutes(hostApi, { pool, auth });
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
   registerHostLifecycleRoutes(hostApi, { pool, config, blobStore, authority, now });
+  registerHostLegalHoldRoutes(hostApi, { pool, authority, now });
   registerShortNameRoutes(hostApi, {
     pool,
     config,

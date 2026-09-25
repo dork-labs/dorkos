@@ -480,6 +480,69 @@ test('a hold turns an open channel read-only without a retry loop, and a release
   }
 });
 
+test('a host sees a legal hold and holds a suspended community in one step', async ({
+  browser,
+}) => {
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    const version = async () =>
+      (
+        await pool.query<{ lifecycle_version: number }>(
+          'SELECT lifecycle_version FROM communities WHERE id=$1',
+          [communityId]
+        )
+      ).rows[0].lifecycle_version;
+    const suspended = await context.request.patch(
+      `${baseUrl}/api/v1/host/communities/${communityId}/lifecycle`,
+      {
+        headers: { origin: baseUrl },
+        data: { action: 'suspend', lifecycleVersion: await version() },
+      }
+    );
+    expect(suspended.ok()).toBe(true);
+    const held = await context.request.put(
+      `${baseUrl}/api/v1/host/communities/${communityId}/legal-hold`,
+      { headers: { origin: baseUrl }, data: { reference: 'Case 42' } }
+    );
+    expect(held.ok()).toBe(true);
+
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place community' });
+    await expect(record).toContainText('Legal hold since');
+    await expect(record).toContainText('(Case 42)');
+    await expect(record).toContainText('can’t be deleted until the hold is released');
+    await shot(page, 'legal-hold-record');
+
+    // A suspended community offers Hold, and says it goes straight to the hold.
+    await record.getByRole('button', { name: 'Hold', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Hold First Place?' });
+    await expect(dialog).toContainText('goes straight from suspended to on hold');
+    await shot(page, 'hold-from-suspended-dialog');
+    await dialog.getByRole('button', { name: 'Hold community' }).click();
+    await expect(record).toContainText('On hold.');
+    await record.getByRole('button', { name: 'Release hold' }).click();
+    await expect(record.getByRole('button', { name: 'Hold', exact: true })).toBeVisible();
+    const released = await context.request.delete(
+      `${baseUrl}/api/v1/host/communities/${communityId}/legal-hold`,
+      { headers: { origin: baseUrl } }
+    );
+    expect(released.ok()).toBe(true);
+    await page.goto(`${baseUrl}/host`);
+    await expect(record).not.toContainText('Legal hold since');
+  } finally {
+    await context.close();
+  }
+});
+
 test('saving limits leaves a file-space limit set through the API exactly as it was', async ({
   browser,
 }) => {
