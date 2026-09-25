@@ -26,8 +26,12 @@
  * - A document's `id` is the SERVER's. A local open holds a `pending:` id only
  *   until the POST answers, and the answer replaces it.
  * - **`rev` is the tiebreak.** An event whose `rev` is not greater than the row
- *   this slice already holds is dropped, which makes the echo of your own write
- *   harmless and makes a second device's write win in order.
+ *   this slice already holds is dropped, so a second device's write wins in
+ *   order. It does NOT make the echo of your own write harmless: an editor's
+ *   write never raises this window's `rev`, so its echo always arrives newer.
+ *   What does is remembering what this window wrote until its echo comes back
+ *   (DOR-2213) — without that, the edit lock held every autosave's echo as if
+ *   the agent had sent it.
  *
  * What is NOT the server's stays here and is never sent: which document each of
  * the two views is showing, the transient `editing` flag, the held push, and
@@ -54,6 +58,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { canvasSourceKey as sourceKey } from '@dorkos/shared/canvas-source-key';
 import { MAX_CANVAS_DOCUMENTS } from '@/layers/shared/lib/constants';
 import { canvasViewForContent, type CanvasView } from '@dorkos/shared/canvas-view';
+import { stableStringify } from '@dorkos/shared/capabilities';
 import type { AppState } from './app-store-types';
 
 // ---------------------------------------------------------------------------
@@ -544,6 +549,28 @@ const EDIT_HEARTBEAT_MS = 15_000;
  */
 const HELD_WRITE_MAX_WAIT_MS = 30_000;
 
+/**
+ * How many of one document's writes this window remembers while it waits for
+ * their echoes.
+ *
+ * An echo normally lands within one round trip, well inside the editor's 500 ms
+ * debounce, so the list is one entry long. The bound is for the echo that never
+ * comes (a stream that is not attached): the oldest entry goes first, and the
+ * worst a dropped entry can do is let its late echo raise the banner it always
+ * used to.
+ */
+const MAX_WRITES_AWAITING_ECHO = 16;
+
+/**
+ * One canvas content, reduced to a string two equal contents share.
+ *
+ * Key-order-insensitive because the server re-parses what it is sent, so the
+ * same document can come back with its fields in schema order.
+ */
+function contentFingerprint(content: UiCanvasContent): string {
+  return stableStringify(content);
+}
+
 /** The live edit-lock heartbeats, keyed by document id. */
 const editHeartbeats = new Map<string, ReturnType<typeof setInterval>>();
 
@@ -776,6 +803,69 @@ export const createCanvasSlice: StateCreator<
    */
   function cancelHeldWrites(documentId: string): void {
     for (const held of heldWrites.filter((h) => h.documentId === documentId)) releaseHeld(held);
+  }
+
+  /** One content write this window sent and has not heard echoed yet. */
+  interface OwnWrite {
+    /** {@link contentFingerprint} of what was sent. */
+    fingerprint: string;
+  }
+
+  /**
+   * What this window wrote to each document and has not yet seen come back on
+   * the stream, oldest first (DOR-2213).
+   *
+   * The server answers every write with a `canvas` frame, and while a document
+   * is being edited every newer frame is held for the banner. The row cannot
+   * say which frames are this window's: a person's two windows write as the
+   * same author, and one of them overwriting the other IS a conflict. What this
+   * window sent can, so an arriving frame that carries it is recognised here and
+   * spent — once, so one write never vouches for two frames.
+   *
+   * This window's own, like `editing`: never sent, never hydrated.
+   */
+  const writesAwaitingEcho = new Map<string, OwnWrite[]>();
+
+  /** Keep a document's list, or drop its entry once the list is empty. */
+  function storeWrites(documentId: string, writes: OwnWrite[]): void {
+    if (writes.length > 0) writesAwaitingEcho.set(documentId, writes);
+    else writesAwaitingEcho.delete(documentId);
+  }
+
+  /** Remember one content write, until its echo or its refusal. */
+  function rememberOwnWrite(documentId: string, content: UiCanvasContent): OwnWrite {
+    const write: OwnWrite = { fingerprint: contentFingerprint(content) };
+    const writes = [...(writesAwaitingEcho.get(documentId) ?? []), write];
+    storeWrites(documentId, writes.slice(-MAX_WRITES_AWAITING_ECHO));
+    return write;
+  }
+
+  /** Forget one write the server refused: no echo is coming for it. */
+  function forgetOwnWrite(documentId: string, write: OwnWrite): void {
+    const writes = writesAwaitingEcho.get(documentId);
+    if (writes)
+      storeWrites(
+        documentId,
+        writes.filter((other) => other !== write)
+      );
+  }
+
+  /**
+   * Whether an arriving content is the echo of one of this window's writes, and
+   * spend that write if so.
+   *
+   * Every write OLDER than the match is spent with it: the server numbers the
+   * writes in the order it applied them, so an echo still missing behind a newer
+   * one's arrives with a lower `rev` and is dropped by the tiebreak anyway.
+   */
+  function claimOwnEcho(documentId: string, content: UiCanvasContent): boolean {
+    const writes = writesAwaitingEcho.get(documentId);
+    if (!writes) return false;
+    const fingerprint = contentFingerprint(content);
+    const at = writes.findIndex((write) => write.fingerprint === fingerprint);
+    if (at < 0) return false;
+    storeWrites(documentId, writes.slice(at + 1));
+    return true;
   }
 
   /**
@@ -1012,11 +1102,17 @@ export const createCanvasSlice: StateCreator<
         ),
       }));
       if (isPendingId(id)) return;
+      // Remembered BEFORE the request goes out: the stream can deliver the echo
+      // before the response to the request that caused it.
+      const write = rememberOwnWrite(id, content);
       writeThrough(
         before.canvasSessionId,
         id,
         (transport, sessionId) => transport.updateSessionCanvasDocument(sessionId, id, { content }),
-        () => restoreContent(set, id, previous)
+        () => {
+          forgetOwnWrite(id, write);
+          restoreContent(set, id, previous);
+        }
       );
     },
 
@@ -1028,6 +1124,7 @@ export const createCanvasSlice: StateCreator<
       // Before anything else: whatever was waiting to be written for this row is
       // a promise about a tab that is going away (review round 1, finding 1).
       cancelHeldWrites(id);
+      writesAwaitingEcho.delete(id);
       set((s) => {
         const documents = s.openDocuments.filter((d) => d.id !== id);
         // Closing the active document hands that view its most-recently-active
@@ -1144,6 +1241,8 @@ export const createCanvasSlice: StateCreator<
       // slice, and the write it re-aimed a moment ago must not be thrown away by
       // the very rebind the rename causes.
       for (const held of heldWrites.filter((h) => h.sessionId !== sessionId)) releaseHeld(held);
+      // The table is emptied, so no echo still on its way has a row to land on.
+      writesAwaitingEcho.clear();
       set({
         canvasOpen: false,
         openDocuments: [],
@@ -1194,7 +1293,14 @@ export const createCanvasSlice: StateCreator<
       if (get().canvasSessionId === sessionId) flushHeldWrites(sessionId);
     },
 
-    applyCanvasEvent: (sessionId, event) =>
+    applyCanvasEvent: (sessionId, event) => {
+      if (get().canvasSessionId !== sessionId) return;
+      if (event.closed === true || !event.document) writesAwaitingEcho.delete(event.documentId);
+      // Spent OUTSIDE the updater, which must stay free of side effects — and
+      // spent even when the `rev` tiebreak drops the frame, since an echo that
+      // arrived late has still arrived.
+      const ownEcho =
+        event.document !== undefined && claimOwnEcho(event.document.id, event.document.content);
       set((s) => {
         if (s.canvasSessionId !== sessionId) return {};
         if (event.closed === true || !event.document) {
@@ -1216,6 +1322,21 @@ export const createCanvasSlice: StateCreator<
           // The edit lock's job: while somebody is typing in this document, an
           // arrival is HELD for the banner rather than landing underneath them.
           if (held.editing) {
+            // ...unless it is nobody else's change (DOR-2213). The echo of this
+            // window's own autosave, or a frame whose content is already on
+            // screen (another window's pin or activate), has no other version to
+            // offer. It takes the row's bookkeeping and leaves the content alone:
+            // while editing, only this window's own writes ever change it, so
+            // what is here is that write or a newer one.
+            if (ownEcho || contentFingerprint(row.content) === contentFingerprint(held.content)) {
+              return {
+                openDocuments: s.openDocuments.map((d) =>
+                  d.id === row.id
+                    ? { ...fromServer(row, d), content: d.content, sourceLabel: d.sourceLabel }
+                    : d
+                ),
+              };
+            }
             return {
               openDocuments: s.openDocuments.map((d) =>
                 d.id === row.id ? { ...d, rev: row.rev, heldUpdate: row.content } : d
@@ -1238,7 +1359,8 @@ export const createCanvasSlice: StateCreator<
           ...reconcileActiveIds(documents, s),
           browserHistories: pruneBrowserHistories(s.browserHistories, documents),
         };
-      }),
+      });
+    },
   };
 };
 
