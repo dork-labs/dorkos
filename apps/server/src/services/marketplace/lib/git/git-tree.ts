@@ -290,7 +290,7 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
     // download and the tree listing were bounded before the checkout; this is
     // what actually landed, which a blobless fetch could not know in advance.
     try {
-      await measurePackageTree(req.destDir, CLONE_SIZE_LIMITS);
+      await measurePackageTree(req.destDir, CLONE_SIZE_LIMITS, { countGit: true });
     } catch (err) {
       if (!(err instanceof PackageTooLargeError)) throw err;
       throw new GitFetchError(req.cloneUrl, err.message);

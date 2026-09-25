@@ -107,15 +107,22 @@ export class PackageTooLargeError extends Error {
 /**
  * Walk a package tree and refuse it the moment it passes a limit.
  *
+ * Every `.git` (any depth, any letter case) is left out by default: the
+ * install drops them as it copies (DOR-2326), so a local agent that is its
+ * author's own repository is measured as its files alone. A clone's own
+ * measure passes `countGit` and counts them.
+ *
  * @param root - The package root.
  * @param limits - The limits to hold it to.
+ * @param options - `countGit`: count `.git` entries too.
  * @returns The number of files and folders, and the files' total size, when
  *   within the limits.
  * @throws {PackageTooLargeError} At the first limit passed.
  */
 export async function measurePackageTree(
   root: string,
-  limits: PackageSizeLimits = PACKAGE_SIZE_LIMITS
+  limits: PackageSizeLimits = PACKAGE_SIZE_LIMITS,
+  { countGit = false }: { countGit?: boolean } = {}
 ): Promise<{ entries: number; bytes: number }> {
   let entries = 0;
   let bytes = 0;
@@ -140,6 +147,7 @@ export async function measurePackageTree(
       const inside = underNodeModules || (entry.isDirectory() && entry.name === 'node_modules');
       // Links and special files are not copied by staging, so they are not counted.
       if (!entry.isDirectory() && !entry.isFile()) continue;
+      if (!countGit && entry.name.toLowerCase() === '.git') continue;
       entries += 1;
       if (inside) inNodeModules += 1;
       if (entries > limits.maxEntries) {

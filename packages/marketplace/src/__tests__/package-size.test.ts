@@ -31,6 +31,23 @@ describe('measurePackageTree', () => {
     expect(await measurePackageTree(root, small)).toEqual({ entries: 4, bytes: 150 });
   });
 
+  // Purpose: the install drops every .git (DOR-2326), so a local agent that
+  // is its author's own repository is measured as its files alone, while a
+  // clone's own measure still counts them.
+  it('leaves out .git in any case unless asked to count it', async () => {
+    for (const dir of ['.git', path.join('skills', '.GIT')]) {
+      await mkdir(path.join(root, dir, 'objects'), { recursive: true });
+      for (let i = 0; i < 6; i++)
+        await writeFile(path.join(root, dir, 'objects', `o${i}`), 'x'.repeat(300));
+    }
+    await writeFile(path.join(root, '.gitignore'), 'x');
+    // skills, skills/a, .gitignore.
+    expect(await measurePackageTree(root, small)).toEqual({ entries: 3, bytes: 1 });
+    await expect(measurePackageTree(root, small, { countGit: true })).rejects.toBeInstanceOf(
+      PackageTooLargeError
+    );
+  });
+
   // Purpose: each limit refuses on its own, naming what was too large.
   it('refuses one file over the per-file limit, by name', async () => {
     await writeFile(path.join(root, 'skills', 'a', 'big.bin'), 'x'.repeat(401));
