@@ -22,7 +22,9 @@ import {
   personWorkspaceGate,
   RememberedWorkspaceCards,
   type WorkspaceGate,
+  type WorktreeHookMemory,
 } from './workspace-gate.js';
+import { recordApprovedEntry, storedHookDecisions } from '../harness/hook-consent.js';
 import { WorkspaceStore } from './workspace-store.js';
 import { PortAllocator } from './port-allocator.js';
 import { WorktreeProvider } from './providers/worktree.js';
@@ -116,6 +118,16 @@ export function getWorkspaceManager(): GatedWorkspaceManager {
   return active;
 }
 
+/**
+ * A person's remembered decisions about their own worktrees' hooks, in the
+ * operator-only hook decision store (DOR-2335): listed by
+ * `dorkos harness hooks --list`, forgotten by `--revoke <source path>`.
+ */
+const worktreeHookMemory: WorktreeHookMemory = {
+  has: (entry) => storedHookDecisions().approved.includes(entry),
+  record: (entry) => recordApprovedEntry(entry, "approving a worktree's workspace hooks"),
+};
+
 let approvals: () => ConfirmationProvider | undefined = () => undefined;
 const rememberedCards = new RememberedWorkspaceCards();
 
@@ -156,7 +168,7 @@ export interface WorkspaceCaller {
  * @param caller - Who is asking, and what they sent back.
  */
 export function workspaceGateFor(caller: WorkspaceCaller): WorkspaceGate {
-  if (caller.trusted) return personWorkspaceGate(caller.approvedReviewHash);
+  if (caller.trusted) return personWorkspaceGate(caller.approvedReviewHash, worktreeHookMemory);
   const card = {
     provider: approvals(),
     name: caller.name,

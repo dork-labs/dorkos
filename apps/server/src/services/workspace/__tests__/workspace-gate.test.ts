@@ -30,7 +30,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { ApprovalService } from '../../core/approvals/approval-service.js';
-import { TokenConfirmationProvider } from '../../marketplace-mcp/confirmation-provider.js';
+import {
+  describeWorkspaceCreationCapability,
+  TokenConfirmationProvider,
+} from '../../marketplace-mcp/confirmation-provider.js';
 import {
   createWorkspaceSubsystem,
   setWorkspaceApprovals,
@@ -262,7 +265,8 @@ describe('an agent cloning a repository gets a card (the exploit)', () => {
     expect(err).toBeInstanceOf(WorkspaceApprovalPendingError);
     await nothingLanded();
     const [card] = approvals.listPending();
-    expect(card).toMatchObject({ capabilityId: 'workspaces.create' });
+    // Settings run in its sessions: the card that cannot be undone.
+    expect(card).toMatchObject({ capabilityId: 'workspaces.create_with_effects' });
     expect(card?.detail).toContain(`│ ${HOOKED_SETTINGS}`);
     expect(card?.detail).toContain(origin);
 
@@ -288,11 +292,17 @@ describe('an agent cloning a repository gets a card (the exploit)', () => {
     await nothingLanded();
   });
 
-  it('asks even for a plain repository: a fetched repository shapes every session there', async () => {
+  it('asks even for a plain repository, on the card that only changes things', async () => {
     await expect(sub.service.ensure(cloneReq(), gate())).rejects.toBeInstanceOf(
       WorkspaceApprovalPendingError
     );
     await nothingLanded();
+    // A plain clone runs nothing on its own (DOR-2335 review).
+    expect(approvals.listPending()[0]).toMatchObject({ capabilityId: 'workspaces.create' });
+    expect(describeWorkspaceCreationCapability('workspaces.create')?.tier).toBe('act');
+    expect(describeWorkspaceCreationCapability('workspaces.create_with_effects')?.tier).toBe(
+      'destructive'
+    );
   });
 
   it('lands nothing when the card is turned down, or when nobody can be asked', async () => {
@@ -463,5 +473,174 @@ describe('an agent’s managed checkout (resolve-session-cwd)', () => {
     } finally {
       setWorkspaceApprovals(() => undefined);
     }
+  });
+});
+
+describe('a person’s remembered worktree hooks (DOR-2335 review)', () => {
+  const marker = (name: string) => path.join(base, name);
+  const memory = () => {
+    const kept = new Set<string>();
+    return { has: (e: string) => kept.has(e), record: (e: string) => void kept.add(e), kept };
+  };
+
+  it('passes an unchanged hook set silently, and asks again when a command changes', async () => {
+    const m = memory();
+    await hooks({ after_create: [`touch ${marker('ONE')}`] });
+    const review = (await sub.service
+      .ensure(worktreeReq('w1'), personWorkspaceGate(undefined, m))
+      .catch((e) => e)) as WorkspaceNeedsReviewError;
+    await sub.service.ensure(
+      worktreeReq('w1'),
+      personWorkspaceGate(review.inspection.reviewHash, m)
+    );
+    expect([...m.kept]).toEqual([expect.stringMatching(/@workspace-[0-9a-f]{64}$/)]);
+    expect([...m.kept][0]!.startsWith(await realpath(source))).toBe(true);
+
+    // The same hooks, a second worktree: no review.
+    const second = await sub.service.ensure(worktreeReq('w2'), personWorkspaceGate(undefined, m));
+    expect(second.status).toBe('ready');
+
+    await hooks({ after_create: [`touch ${marker('TWO')}`] });
+    await expect(
+      sub.service.ensure(worktreeReq('w3'), personWorkspaceGate(undefined, m))
+    ).rejects.toBeInstanceOf(WorkspaceNeedsReviewError);
+    expect(await exists(marker('TWO'))).toBe(false);
+  });
+
+  it('never covers a clone', async () => {
+    const m = memory();
+    await commit({ '.claude/settings.json': HOOKED_SETTINGS });
+    const review = (await sub.service
+      .ensure(cloneReq('w1'), personWorkspaceGate(undefined, m))
+      .catch((e) => e)) as WorkspaceNeedsReviewError;
+    await sub.service.ensure(cloneReq('w1'), personWorkspaceGate(review.inspection.reviewHash, m));
+
+    expect(m.kept.size).toBe(0);
+    await expect(
+      sub.service.ensure(cloneReq('w2'), personWorkspaceGate(undefined, m))
+    ).rejects.toBeInstanceOf(WorkspaceNeedsReviewError);
+  });
+
+  it('is never implicit for an agent', async () => {
+    await hooks({ after_create: [`touch ${marker('AGENT')}`] });
+    // Whatever a person allowed, an agent's worktree with hooks gets a card.
+    await expect(
+      sub.service.ensure(worktreeReq('w1'), cardWorkspaceGate({ provider, name: 'p/w1' }))
+    ).rejects.toBeInstanceOf(WorkspaceApprovalPendingError);
+    expect(await exists(marker('AGENT'))).toBe(false);
+  });
+});
+
+describe('remembered cards across a restart and across sources (DOR-2335 review)', () => {
+  it('reopens the card still open for the same request instead of raising another', async () => {
+    const before = new RememberedWorkspaceCards();
+    await expect(
+      sub.service.ensure(cloneReq(), before.gateFor({ provider, name: 'p/w1' }))
+    ).rejects.toBeInstanceOf(WorkspaceApprovalPendingError);
+
+    // A restart: the memory is gone.
+    const after = new RememberedWorkspaceCards();
+    await expect(
+      sub.service.ensure(cloneReq(), after.gateFor({ provider, name: 'p/w1' }))
+    ).rejects.toBeInstanceOf(WorkspaceApprovalPendingError);
+    expect(approvals.listPending()).toHaveLength(1);
+
+    approvals.grant(approvals.listPending()[0]!.approvalId);
+    const again = new RememberedWorkspaceCards();
+    const ws = await sub.service.ensure(cloneReq(), again.gateFor({ provider, name: 'p/w1' }));
+    expect(ws.status).toBe('ready');
+  });
+
+  it('keys the memory by the source’s real path, not its folder name', async () => {
+    const other = path.join(base, 'elsewhere', 'origin.git');
+    await mkdir(path.dirname(other), { recursive: true });
+    git(['clone', '--bare', origin, other], base);
+    await commit({ 'extra.md': 'only in the first' });
+    const cards = new RememberedWorkspaceCards();
+    const gate = () => cards.gateFor({ provider, name: 'p/w1' });
+
+    await expect(sub.service.ensure(cloneReq(), gate())).rejects.toBeInstanceOf(
+      WorkspaceApprovalPendingError
+    );
+    await expect(
+      sub.service.ensure({ ...cloneReq(), source: other }, gate())
+    ).rejects.toBeInstanceOf(WorkspaceApprovalPendingError);
+    // Two sources, two cards, each resolved by its own remembered token.
+    expect(approvals.listPending()).toHaveLength(2);
+    await expect(sub.service.ensure(cloneReq(), gate())).rejects.toBeInstanceOf(
+      WorkspaceApprovalPendingError
+    );
+    expect(approvals.listPending()).toHaveLength(2);
+  });
+});
+
+describe('boot', () => {
+  it('clears clones a stopped server left staged', async () => {
+    await mkdir(path.join(root, '.staging', 'leftover', '.claude'), { recursive: true });
+    await writeFile(path.join(root, '.staging', 'leftover', '.claude', 'settings.json'), '{}');
+
+    expect(await sub.service.sweepStaging()).toBe(1);
+    expect(await readdir(path.join(root, '.staging'))).toEqual([]);
+  });
+});
+
+describe('removing a workspace made before its removal commands were recorded (DOR-2335 review)', () => {
+  const marker = (name: string) => path.join(base, name);
+
+  async function legacyWorkspace() {
+    const ws = await sub.service.ensure(worktreeReq(), personWorkspaceGate());
+    const manifest = sub.store.manifestPath('p', 'w1');
+    const { removeHooks: _dropped, ...legacy } = JSON.parse(await readFile(manifest, 'utf8'));
+    await writeFile(manifest, JSON.stringify(legacy));
+    await hooks({ before_remove: [`touch ${marker('CLEANUP')}`] });
+    return ws;
+  }
+
+  it('shows a person the commands, and runs exactly those once they allow it', async () => {
+    const ws = await legacyWorkspace();
+
+    const asked = await sub.service.remove(ws.id, { force: true, unreviewedHooks: 'ask' });
+
+    expect(asked).toMatchObject({
+      removed: false,
+      blocked: 'hooks',
+      hooks: {
+        commands: [`touch ${marker('CLEANUP')}`],
+        reviewHash: expect.stringMatching(/^sha256:/),
+      },
+    });
+    expect(await exists(ws.path)).toBe(true);
+
+    const done = await sub.service.remove(ws.id, {
+      force: true,
+      unreviewedHooks: 'ask',
+      approvedRemoveHooks: asked.hooks!.reviewHash,
+    });
+    expect(done.removed).toBe(true);
+    expect(await exists(marker('CLEANUP'))).toBe(true);
+  });
+
+  it('a hook changed after the person looked is asked about again, never run', async () => {
+    const ws = await legacyWorkspace();
+    const asked = await sub.service.remove(ws.id, { force: true, unreviewedHooks: 'ask' });
+    await hooks({ before_remove: [`touch ${marker('SWAPPED')}`] });
+
+    const again = await sub.service.remove(ws.id, {
+      force: true,
+      unreviewedHooks: 'ask',
+      approvedRemoveHooks: asked.hooks!.reviewHash,
+    });
+
+    expect(again.blocked).toBe('hooks');
+    expect(await exists(marker('SWAPPED'))).toBe(false);
+  });
+
+  it('otherwise removes it without them, and says which were left out', async () => {
+    const ws = await legacyWorkspace();
+
+    const done = await sub.service.remove(ws.id, { force: true });
+
+    expect(done).toEqual({ removed: true, skippedHooks: [`touch ${marker('CLEANUP')}`] });
+    expect(await exists(marker('CLEANUP'))).toBe(false);
   });
 });

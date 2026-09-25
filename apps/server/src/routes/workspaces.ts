@@ -29,7 +29,11 @@ const ListQuerySchema = z.object({ projectKey: z.string().optional() });
 const ResolveQuerySchema = z.object({ path: z.string().min(1) });
 const PortsBodySchema = z.object({ path: z.string().min(1) });
 const PinBodySchema = z.object({ pinned: z.boolean() });
-const RemoveQuerySchema = z.object({ force: z.coerce.boolean().optional() });
+const RemoveQuerySchema = z.object({
+  force: z.coerce.boolean().optional(),
+  approvedRemoveHooks: z.string().min(1).optional(),
+  skipRemoveHooks: z.coerce.boolean().optional(),
+});
 
 /** What a caller sends back after a review or a card (DOR-2335). */
 const WorkspaceDecisionSchema = z.object({
@@ -212,16 +216,42 @@ router.post('/:id/pin', async (req, res) => {
   }
 });
 
-/** Remove a workspace; refuses a dirty one unless `?force=true`. */
+/**
+ * Remove a workspace; refuses a dirty one unless `?force=true`.
+ *
+ * A workspace made before its removal commands were recorded (DOR-2335) runs
+ * only commands a person saw. A person is shown its source's `before_remove`
+ * commands (409 `remove_hooks_need_review`) and allows exactly those with
+ * `?approvedRemoveHooks=<reviewHash>`, or removes it without them with
+ * `?skipRemoveHooks=true`. Any other caller removes it without running them.
+ * Whenever they are left out, the response lists them in `skippedHooks`.
+ */
 router.delete('/:id', async (req, res) => {
   const parsed = RemoveQuerySchema.safeParse(req.query);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Invalid query', details: z.flattenError(parsed.error) });
   }
   try {
+    const person = trustedCaller(readCallerAuthority(req, res)) !== undefined;
     const result = await getWorkspaceManager().remove(req.params.id, {
       force: parsed.data.force ?? false,
+      unreviewedHooks: person && !parsed.data.skipRemoveHooks ? 'ask' : 'skip',
+      ...(person &&
+        parsed.data.approvedRemoveHooks && {
+          approvedRemoveHooks: parsed.data.approvedRemoveHooks,
+        }),
     });
+    if (result.blocked === 'hooks') {
+      return res.status(409).json({
+        code: 'remove_hooks_need_review',
+        error:
+          'This workspace was made before DorkOS recorded its removal commands, and its source ' +
+          'now declares some. Look at them, then remove it again with approvedRemoveHooks set to ' +
+          'the review hash to run exactly these, or with skipRemoveHooks=true to remove it without ' +
+          'running them.',
+        ...result.hooks,
+      });
+    }
     // 404 only when the workspace genuinely doesn't exist. A dirty refusal is a
     // valid outcome carried in the RemoveResult body (`removed:false, blocked:'dirty'`),
     // so the client can escalate to a force-confirm rather than seeing a generic error.

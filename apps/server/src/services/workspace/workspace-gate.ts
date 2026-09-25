@@ -42,7 +42,7 @@
  * @module server/services/workspace/workspace-gate
  */
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readlink } from 'node:fs/promises';
+import { lstat, readdir, readlink, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import type { WorkspaceProviderType } from '@dorkos/shared/workspace';
@@ -55,6 +55,7 @@ import type {
   ConfirmationProvider,
   ConfirmationRequest,
 } from '../marketplace-mcp/confirmation-provider.js';
+import { WORKSPACE_HOOKS_ENTRY_MARKER } from '../harness/hook-consent.js';
 import type { WorkspaceHookConfig } from './hooks.js';
 
 /** The hooks a workspace runs from the server, as they were shown. */
@@ -77,6 +78,12 @@ export interface WorkspaceLink {
 export interface WorkspaceInspection {
   /** The repository or folder it is made from. */
   source: string;
+  /**
+   * The source's real path when it is a folder on this machine (links
+   * resolved), else the source as given: what a person's remembered approval
+   * and an agent's remembered card are keyed by.
+   */
+  sourceRealPath: string;
   /** How it is made. */
   provider: WorkspaceProviderType;
   /** The folder it lands in. */
@@ -139,6 +146,7 @@ export async function inspectWorkspace(opts: {
   hookConfig: WorkspaceHookConfig | null;
 }): Promise<WorkspaceInspection> {
   const hooks = hooksOf(opts.hookConfig);
+  const sourceRealPath = await realpath(opts.source).catch(() => opts.source);
   const [contentHash, tree, links] = opts.staged
     ? await Promise.all([
         hashTree(opts.staged, skipGitDir),
@@ -160,6 +168,7 @@ export async function inspectWorkspace(opts: {
     .digest('hex')}`;
   return {
     source: opts.source,
+    sourceRealPath,
     provider: opts.provider,
     destination: opts.destination,
     contentHash,
@@ -256,16 +265,64 @@ export const WORKSPACE_GATE_ERRORS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Where a person's decisions about their own worktrees' hooks are kept
+ * (`worktree-consent.ts`): the operator-only hook decision store.
+ */
+export interface WorktreeHookMemory {
+  /** Whether this exact decision was made before. */
+  has(entry: string): boolean;
+  /** Record that the person allowed it. */
+  record(entry: string): void;
+}
+
+/**
+ * The decision a person's approval of a worktree's hooks is remembered as:
+ * `<source real path>@workspace-<digest>`, the digest over the real path, the
+ * provider and both hook lists, so any changed command asks again. `undefined`
+ * for anything else a workspace brings: a clone, or a tree's settings or links,
+ * are never remembered.
+ *
+ * @param inspection - The workspace's inspection.
+ */
+export function worktreeHooksEntry(inspection: WorkspaceInspection): string | undefined {
+  if (inspection.provider !== 'worktree' || inspection.tree !== null) return undefined;
+  if (inspection.links.length > 0) return undefined;
+  const digest = createHash('sha256')
+    .update(
+      JSON.stringify([
+        'worktree-hooks',
+        inspection.sourceRealPath,
+        inspection.provider,
+        inspection.hooks.after_create,
+        inspection.hooks.before_remove,
+      ])
+    )
+    .digest('hex');
+  return `${inspection.sourceRealPath}${WORKSPACE_HOOKS_ENTRY_MARKER}${digest}`;
+}
+
+/**
  * The gate for a person: a workspace that brings nothing is made; one that
  * brings anything is made only when the caller sends back the review hash it
- * was shown.
+ * was shown. A worktree of their own repository whose hooks they already
+ * allowed, unchanged, is made without asking again, and allowing one records
+ * that (`memory`). A clone is never remembered.
  *
  * @param approvedReviewHash - The review hash the person was shown, on the retry.
+ * @param memory - Their remembered worktree decisions; none when absent.
  */
-export function personWorkspaceGate(approvedReviewHash?: string): WorkspaceGate {
+export function personWorkspaceGate(
+  approvedReviewHash?: string,
+  memory?: WorktreeHookMemory
+): WorkspaceGate {
   return async (inspection) => {
     if (!workspaceBringsAnything(inspection)) return;
-    if (approvedReviewHash !== undefined && approvedReviewHash === inspection.reviewHash) return;
+    const entry = worktreeHooksEntry(inspection);
+    if (entry !== undefined && memory?.has(entry)) return;
+    if (approvedReviewHash !== undefined && approvedReviewHash === inspection.reviewHash) {
+      if (entry !== undefined) memory?.record(entry);
+      return;
+    }
     throw new WorkspaceNeedsReviewError(inspection);
   };
 }
@@ -280,6 +337,11 @@ export interface CardWorkspaceGateOptions {
   confirmationToken?: string;
   /** Who asked, for the card. */
   requestedBy?: string;
+  /**
+   * With no token, look for an open card of exactly this request before
+   * raising another (a requester that lost its token to a restart).
+   */
+  reopenOpenCard?: boolean;
 }
 
 /**
@@ -328,8 +390,11 @@ export function cardWorkspaceGate(opts: CardWorkspaceGateOptions): WorkspaceGate
       );
     }
     const request = cardRequestOf(opts, inspection);
-    const answer = opts.confirmationToken
-      ? await opts.provider.resolveToken(opts.confirmationToken, request)
+    const token =
+      opts.confirmationToken ??
+      (opts.reopenOpenCard ? await opts.provider.reopen?.(request) : undefined);
+    const answer = token
+      ? await opts.provider.resolveToken(token, request)
       : await opts.provider.requestInstallConfirmation(request);
     if (answer.status === 'approved') return;
     if (answer.status === 'pending') {
@@ -342,9 +407,11 @@ export function cardWorkspaceGate(opts: CardWorkspaceGateOptions): WorkspaceGate
 /**
  * A card gate for callers that cannot carry a token back: a session turn that
  * asks for a workspace, and an agent's managed checkout (`resolve-session-cwd`).
- * It remembers the pending token per workspace, so each turn resolves the one
- * card instead of raising another, and a turn after the person approved makes
- * the workspace. In memory only: after a restart the next turn asks once more.
+ * It remembers the pending token per workspace, keyed by the source's real
+ * path and the folder it lands in (two sources that share a folder name are
+ * two workspaces), so each turn resolves the one card instead of raising
+ * another. After a restart it has no token, and reopens the card still open
+ * for exactly this request rather than leaving it orphaned beside a new one.
  */
 export class RememberedWorkspaceCards {
   private readonly pending = new Map<string, string>();
@@ -356,15 +423,18 @@ export class RememberedWorkspaceCards {
    */
   gateFor(opts: Omit<CardWorkspaceGateOptions, 'confirmationToken'>): WorkspaceGate {
     return async (inspection) => {
-      const token = this.pending.get(opts.name);
+      const key = `${inspection.sourceRealPath}\0${inspection.destination}`;
+      const token = this.pending.get(key);
       try {
-        await cardWorkspaceGate({ ...opts, ...(token && { confirmationToken: token }) })(
-          inspection
-        );
-        this.pending.delete(opts.name);
+        await cardWorkspaceGate({
+          ...opts,
+          reopenOpenCard: true,
+          ...(token && { confirmationToken: token }),
+        })(inspection);
+        this.pending.delete(key);
       } catch (err) {
-        if (err instanceof WorkspaceApprovalPendingError) this.pending.set(opts.name, err.token);
-        else this.pending.delete(opts.name);
+        if (err instanceof WorkspaceApprovalPendingError) this.pending.set(key, err.token);
+        else this.pending.delete(key);
         throw err;
       }
     };

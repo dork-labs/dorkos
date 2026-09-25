@@ -194,8 +194,31 @@ export interface DirtyState {
 /** The outcome of a `remove` call — a refusal carries the blocking dirty state. */
 export interface RemoveResult {
   removed: boolean;
-  blocked?: 'dirty';
+  /**
+   * Why nothing was removed: uncommitted work, or (DOR-2335) a workspace made
+   * before its removal commands were recorded, whose source now declares some a
+   * person has to see before they run.
+   */
+  blocked?: 'dirty' | 'hooks';
   dirty?: DirtyState;
+  /** With `blocked: 'hooks'`: the commands, and the hash that approves running them. */
+  hooks?: { commands: string[]; reviewHash: string };
+  /** Removal commands the source declares that did not run, because nobody reviewed them. */
+  skippedHooks?: string[];
+}
+
+/** How `remove` treats removal commands nobody reviewed when the workspace was made. */
+export interface RemoveOptions {
+  /** Remove even with uncommitted, untracked or unpushed work. */
+  force: boolean;
+  /**
+   * For a workspace made before its removal commands were recorded (DOR-2335):
+   * `ask` stops with `blocked: 'hooks'` so a person can see them; `skip` (the
+   * default) removes it without running them and lists them in `skippedHooks`.
+   */
+  unreviewedHooks?: 'ask' | 'skip';
+  /** The `reviewHash` a person was shown, to run exactly those commands. */
+  approvedRemoveHooks?: string;
 }
 
 /**
@@ -357,7 +380,7 @@ export interface WorkspaceManager {
   resolveByPath(absPath: string): Promise<Workspace | null>;
 
   /** Remove a workspace; refuses a dirty one unless `opts.force`. */
-  remove(id: string, opts: { force: boolean }): Promise<RemoveResult>;
+  remove(id: string, opts: RemoveOptions): Promise<RemoveResult>;
 
   /** Pin or unpin a workspace (pinned workspaces are exempt from `sweep`). */
   setPinned(id: string, pinned: boolean): Promise<Workspace>;
