@@ -167,6 +167,26 @@ export function isGlobalActivationEntry(entry: string): boolean {
 }
 
 /**
+ * What separates the source's path from the digest in a person's remembered
+ * decision about their own worktree's `workspace.json` hooks
+ * (`<source real path>@workspace-<digest>`, `workspace/workspace-gate.ts`,
+ * DOR-2335). The same decision as a package's hooks, about commands DorkOS runs
+ * for them, so it lives in the same operator-only lists and is listed and
+ * revoked the same way (`--revoke <source path>`).
+ */
+export const WORKSPACE_HOOKS_ENTRY_MARKER = '@workspace-';
+
+/**
+ * Whether a stored decision is about a worktree's `workspace.json` hooks.
+ *
+ * @param entry - A stored entry.
+ * @returns True for a `<path>@workspace-<digest>` entry.
+ */
+export function isWorkspaceHooksEntry(entry: string): boolean {
+  return entry.lastIndexOf(WORKSPACE_HOOKS_ENTRY_MARKER) > 0;
+}
+
+/**
  * The package name half of a stored entry.
  *
  * Split on the LAST `@`, because a scoped package name carries one of its own

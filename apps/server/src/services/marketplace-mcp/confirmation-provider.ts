@@ -47,6 +47,7 @@ import {
   disclosedEffectsOf,
   type DisclosedEffects,
 } from '../marketplace/disclosed-effects.js';
+import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import { logger } from '../../lib/logger.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 import { describeUpdatesInFull, UPDATE_DETAIL_MAX_LENGTH } from './update-approval-detail.js';
@@ -278,6 +279,17 @@ export interface ConfirmationProvider {
    *   preview — the whole point is that a stale one cannot pass unnoticed.
    */
   resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
+
+  /**
+   * A fresh token for the open card of exactly this request, when one is open
+   * (DOR-2335): for a requester that lost its token (a server restart) and
+   * would otherwise raise a second card for the same action. Optional: a
+   * provider without it always raises a new card.
+   *
+   * @param req - The request the card was raised for, field for field.
+   * @returns A token to resolve, or `undefined` when no card is open.
+   */
+  reopen?(req: ConfirmationRequest): Promise<string | undefined>;
 }
 
 /** The id a template-creation card is raised under (DOR-2325). */
@@ -297,22 +309,63 @@ export function describeTemplateCreationCapability(
   return { title: 'Create an agent from a template', tier: 'destructive' };
 }
 
-/** The id a workspace card is raised under (DOR-2335). */
+/**
+ * The id a workspace card is raised under when the workspace brings nothing
+ * that runs on its own (DOR-2335): a plain clone, whose card says it changes
+ * things rather than that it cannot be undone.
+ */
 export const WORKSPACE_CREATION_CAPABILITY_ID = 'workspaces.create';
 
 /**
- * Describe {@link WORKSPACE_CREATION_CAPABILITY_ID} for an approval card.
- * `destructive`, because sessions there run what the workspace brings, and its
- * hooks run from DorkOS itself.
+ * The id a workspace card is raised under when the workspace brings settings,
+ * links, skill effects or hooks (DOR-2335): what runs there, and a hook's
+ * shell, cannot be taken back.
+ */
+export const WORKSPACE_CREATION_RUNS_CAPABILITY_ID = 'workspaces.create_with_effects';
+
+/**
+ * Describe the two workspace card ids for an approval card: `act` for a
+ * workspace that brings nothing, `destructive` for one that does.
  *
  * @param capabilityId - The id `ApprovalService` is resolving.
  * @returns The descriptor, or `undefined` for any other id.
  */
 export function describeWorkspaceCreationCapability(
   capabilityId: string
-): { title: string; tier: 'destructive' } | undefined {
-  if (capabilityId !== WORKSPACE_CREATION_CAPABILITY_ID) return undefined;
-  return { title: 'Make a workspace', tier: 'destructive' };
+): { title: string; tier: 'act' | 'destructive' } | undefined {
+  if (capabilityId === WORKSPACE_CREATION_CAPABILITY_ID) {
+    return { title: 'Make a workspace', tier: 'act' };
+  }
+  if (capabilityId === WORKSPACE_CREATION_RUNS_CAPABILITY_ID) {
+    return { title: 'Make a workspace', tier: 'destructive' };
+  }
+  return undefined;
+}
+
+/**
+ * Whether a workspace card is about anything that runs on its own: settings
+ * files, links, skill effects, or hooks.
+ */
+function workspaceRunsAnything(
+  ws: NonNullable<ConfirmationRequest['workspaceDisclosure']>
+): boolean {
+  return (
+    ws.hooks.after_create.length > 0 ||
+    ws.hooks.before_remove.length > 0 ||
+    ws.findings.length > 0 ||
+    ws.links.length > 0 ||
+    disclosesAnything(ws.disclosed)
+  );
+}
+
+/** The capability id a request's card is raised and bound under. */
+function capabilityIdOf(req: ConfirmationRequest): string {
+  if (req.operation === 'create-workspace' && req.workspaceDisclosure) {
+    return workspaceRunsAnything(req.workspaceDisclosure)
+      ? WORKSPACE_CREATION_RUNS_CAPABILITY_ID
+      : WORKSPACE_CREATION_CAPABILITY_ID;
+  }
+  return CAPABILITY_IDS[req.operation];
 }
 
 /** Capability id each marketplace operation is gated as. */
@@ -368,7 +421,7 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
     req.templateDisclosure?.disclosed ??
     (req.workspaceDisclosure ? req.workspaceDisclosure.disclosed : disclosedEffectsOf(req.preview));
   return {
-    capabilityId: CAPABILITY_IDS[req.operation],
+    capabilityId: capabilityIdOf(req),
     inputHash: hashApprovalInput({
       // An update's name is only a label over `updates`, which is bound below as
       // a set; binding the label too would re-ask whenever a scan listed the same
@@ -806,6 +859,25 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return ticket.token;
+  }
+
+  /**
+   * A fresh token for the open card of exactly this request (DOR-2335).
+   *
+   * @param req - The request the card was raised for.
+   * @returns A token to resolve, or `undefined` when no card is open.
+   */
+  async reopen(req: ConfirmationRequest): Promise<string | undefined> {
+    let binding: MarketplaceBinding;
+    try {
+      binding = bindingOf(req);
+    } catch {
+      return undefined;
+    }
+    return this.approvals.reissue({
+      capabilityId: binding.capabilityId,
+      inputHash: binding.inputHash,
+    })?.token;
   }
 
   /**

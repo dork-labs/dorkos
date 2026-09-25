@@ -1474,6 +1474,11 @@ async function start() {
     // A new workspace's card is raised through the marketplace's confirmation
     // provider, composed later in boot (DOR-2335).
     setWorkspaceApprovals(() => templateConfirmationProvider);
+    // A clone staged by a server that stopped before deciding about it is
+    // never adopted: it goes before anything else can stage (DOR-2335).
+    const staleClones = await workspaceService.sweepStaging();
+    if (staleClones > 0)
+      logger.info(`[Workspace] cleared ${staleClones} unfinished staged clone(s)`);
     workspaceReconciler.start();
     logger.info('[Workspace] WorkspaceManager registered');
   }

@@ -12,6 +12,7 @@
  */
 import { promises as fs } from 'node:fs';
 import nodePath from 'node:path';
+import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import {
   derivePorts,
@@ -21,6 +22,7 @@ import {
   type WorkspaceProvider,
   type WorkspaceProviderType,
   type EnsureWorkspaceRequest,
+  type RemoveOptions,
   type RemoveResult,
   type SweepResult,
   type WorkspaceWithSessions,
@@ -56,6 +58,13 @@ export interface WorkspaceServiceDeps {
 }
 
 const nowIso = (): string => new Date().toISOString();
+
+/** What approves running an unreviewed workspace's removal commands: the workspace and exactly those commands. */
+function removeHooksHash(ws: Workspace, commands: readonly string[]): string {
+  return `sha256:${createHash('sha256')
+    .update(JSON.stringify([ws.id, ws.path, commands]))
+    .digest('hex')}`;
+}
 
 /** A hook config holding only `commands`, for the one phase `runHooks` is asked to run. */
 function hooksConfigOf(
@@ -234,7 +243,7 @@ export class WorkspaceService implements WorkspaceManager {
     return this.deps.store.findContaining(absPath);
   }
 
-  async remove(id: string, opts: { force: boolean }): Promise<RemoveResult> {
+  async remove(id: string, opts: RemoveOptions): Promise<RemoveResult> {
     const ws = this.deps.store.getById(id);
     if (!ws) return { removed: false };
 
@@ -245,26 +254,51 @@ export class WorkspaceService implements WorkspaceManager {
     }
 
     // Only the before_remove commands shown when it was made, recorded in its
-    // manifest (DOR-2335), never the source's workspace.json as it is now. A
-    // workspace made before that record existed runs none: nobody saw them.
+    // manifest (DOR-2335), never the source's workspace.json as it is now.
     const manifest = await this.deps.store.readManifest(ws.projectKey, ws.key);
-    const removeHooks = manifest?.removeHooks;
-    if (removeHooks === undefined) {
-      const current = await loadWorkspaceHookConfig(ws.source);
-      if ((current?.hooks.before_remove.length ?? 0) > 0) {
-        logger.warn(
-          `[workspace] not running before_remove hooks for ${ws.projectKey}/${ws.key}: ` +
-            'nobody reviewed them when it was made'
-        );
+    let commands = manifest?.removeHooks ?? [];
+    let skippedHooks: string[] | undefined;
+    if (manifest?.removeHooks === undefined) {
+      // Made before that record existed: its source's commands were never
+      // reviewed. A person may look at them and allow exactly those; otherwise
+      // none runs, and the result says which were left out.
+      const declared = (await loadWorkspaceHookConfig(ws.source))?.hooks.before_remove ?? [];
+      if (declared.length > 0) {
+        const reviewHash = removeHooksHash(ws, declared);
+        if (opts.approvedRemoveHooks === reviewHash) {
+          commands = declared;
+        } else if (opts.unreviewedHooks === 'ask') {
+          return { removed: false, blocked: 'hooks', hooks: { commands: declared, reviewHash } };
+        } else {
+          skippedHooks = declared;
+          logger.warn(
+            `[workspace] not running before_remove hooks for ${ws.projectKey}/${ws.key}: ` +
+              'nobody reviewed them when it was made'
+          );
+        }
       }
     }
-    await runHooks('before_remove', hooksConfigOf('before_remove', removeHooks ?? []), {
-      cwd: ws.path,
-    });
+    await runHooks('before_remove', hooksConfigOf('before_remove', commands), { cwd: ws.path });
     await this.deps.store.write({ ...ws, status: 'removing' });
     await provider.remove(ws, opts);
     await this.deps.store.remove(ws);
-    return { removed: true };
+    return { removed: true, ...(skippedHooks && { skippedHooks }) };
+  }
+
+  /**
+   * Clear clones left in `<root>/.staging/` by a server that stopped between
+   * staging one and deciding about it (DOR-2335). Run at boot, before anything
+   * can be staged.
+   *
+   * @returns How many were cleared.
+   */
+  async sweepStaging(): Promise<number> {
+    const staging = nodePath.join(this.deps.store.root, '.staging');
+    const entries = await fs.readdir(staging).catch(() => [] as string[]);
+    await Promise.all(
+      entries.map((name) => fs.rm(nodePath.join(staging, name), { recursive: true, force: true }))
+    );
+    return entries.length;
   }
 
   async setPinned(id: string, pinned: boolean): Promise<Workspace> {
