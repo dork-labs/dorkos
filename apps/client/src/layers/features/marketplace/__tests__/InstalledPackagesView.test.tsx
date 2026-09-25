@@ -1257,7 +1257,10 @@ describe('InstalledPackagesView', () => {
       expect(within(note).getByRole('list', { name: 'Still runs' })).toHaveTextContent(
         'commands/old.mdskills/old/SKILL.md'
       );
-      expect(within(note).getByRole('list', { name: 'Kept' })).toHaveTextContent('notes.txt');
+      const kept = within(note).getByRole('list', { name: 'Kept' });
+      expect(kept).toHaveTextContent('notes.txt');
+      // Each file is listed once, under the heading that fits it.
+      expect(kept).not.toHaveTextContent('commands/old.md');
     });
 
     // Purpose (review 3): kept files that run nothing keep the quiet weight.
