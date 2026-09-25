@@ -3,7 +3,7 @@
  "id": "260919-175501",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-09-30T10:45:58Z; the verdict is computed on 2026-10-01.",
- "computed_at": "2026-09-24T09:51:07.810Z",
+ "computed_at": "2026-09-25T10:06:45.932Z",
  "hypothesis_hash": "8f5e34ebba61a075",
  "metric": "gate.wf.credential-free-build.credential-free-build.failure_rate@merge_group",
  "anchor": "2026-09-23T10:45:58Z",
@@ -25,15 +25,15 @@
  "after": {
   "from": "2026-09-23T10:45:58Z",
   "to": "2026-09-30T10:45:58Z",
-  "n": 0,
-  "value": null
+  "n": 68,
+  "value": 0.0294
  },
  "confounders": [],
  "slo": {
   "id": "wasted-queue-builds",
   "stat": "share",
   "before": 0.1782,
-  "after": null,
-  "movement": "unknown"
+  "after": 0.0735,
+  "movement": "better"
  }
 }

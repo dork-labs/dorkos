@@ -2,8 +2,8 @@
  "schema": 1,
  "id": "260830-213616",
  "verdict": "pending",
- "reason": "Waiting: 6 of 15 after-window days not collected (2026-09-06 to 09-11); backfill reaches them first.",
- "computed_at": "2026-09-24T09:51:07.810Z",
+ "reason": "Waiting: 4 of 15 after-window days not collected (2026-09-08 to 09-11); backfill reaches them first.",
+ "computed_at": "2026-09-25T10:06:45.932Z",
  "hypothesis_hash": "0e69182f26258fb5",
  "metric": "gate.wf.test.test-shard.duration_p50@merge_group",
  "anchor": "2026-08-30T21:36:16Z",
@@ -25,15 +25,15 @@
  "after": {
   "from": "2026-08-30T21:36:16Z",
   "to": "2026-09-13T21:36:16Z",
-  "n": 2244,
-  "value": 12
+  "n": 2780,
+  "value": 12.1
  },
  "confounders": [],
  "slo": {
   "id": "queue-build",
   "stat": "p50",
   "before": 34.8,
-  "after": 24.2,
+  "after": 23.4,
   "movement": "better"
  }
 }

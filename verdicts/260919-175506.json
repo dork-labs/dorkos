@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "260919-175506",
+ "verdict": "pending",
+ "reason": "The after-window runs to 2026-10-08T11:42:29Z; the verdict is computed on 2026-10-09.",
+ "computed_at": "2026-09-25T10:06:45.932Z",
+ "hypothesis_hash": "8b1f91cfb74de69b",
+ "metric": "hook.pre-commit.duration_p90",
+ "anchor": "2026-09-24T11:42:29Z",
+ "prs": [
+  2077
+ ],
+ "baseline": {
+  "value": 239,
+  "source": "before-window"
+ },
+ "target": 150,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-17T11:42:29Z",
+  "to": "2026-09-24T11:42:29Z",
+  "n": 1030,
+  "value": 239
+ },
+ "after": {
+  "from": "2026-09-24T11:42:29Z",
+  "to": "2026-10-08T11:42:29Z",
+  "n": 0,
+  "value": null
+ },
+ "confounders": [],
+ "slo": {
+  "id": "local-commit",
+  "stat": "p90",
+  "before": 239,
+  "after": null,
+  "movement": "unknown"
+ }
+}

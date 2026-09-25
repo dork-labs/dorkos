@@ -3,8 +3,8 @@
  "id": "260919-175505",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-10-05T04:14:37Z; the verdict is computed on 2026-10-06.",
- "computed_at": "2026-09-24T09:51:07.810Z",
- "hypothesis_hash": "9fdd06060fb41842",
+ "computed_at": "2026-09-25T10:06:45.932Z",
+ "hypothesis_hash": "70013970fb34a7c1",
  "metric": "local-push",
  "anchor": "2026-09-21T04:14:37Z",
  "prs": [
@@ -29,6 +29,7 @@
   "value": 3
  },
  "confounders": [
+  "260919-175506",
   "260921-022119"
  ],
  "slo": {

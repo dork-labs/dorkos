@@ -3,7 +3,7 @@
  "id": "260923-220553",
  "verdict": "pending",
  "reason": "The after-window runs to 2026-10-08T09:21:26Z; the verdict is computed on 2026-10-09.",
- "computed_at": "2026-09-24T09:51:07.810Z",
+ "computed_at": "2026-09-25T10:06:45.932Z",
  "hypothesis_hash": "f90bf74cafdba1c8",
  "metric": "gate.wf.test.community-pg.failure_rate@pull_request",
  "anchor": "2026-09-24T09:21:26Z",
@@ -11,8 +11,8 @@
   2046
  ],
  "baseline": {
-  "value": 0,
-  "source": "ledger"
+  "value": 0.045,
+  "source": "before-window"
  },
  "target": 0,
  "min_n": 10,

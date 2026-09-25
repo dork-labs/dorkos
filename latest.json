@@ -1,13 +1,13 @@
 {
  "schema": 1,
- "date": "2026-09-23",
- "collected_at": "2026-09-24T09:51:07.810Z",
- "snapshot": "snapshots/2026-09-23.json",
+ "date": "2026-09-24",
+ "collected_at": "2026-09-25T10:06:45.932Z",
+ "snapshot": "snapshots/2026-09-24.json",
  "report_ref": "reports/2026-W38.md",
  "healthy": true,
  "failures": [],
  "warnings": [
-  "6 of 28 days missing to 2026-09-23 (2026-09-06 to 09-11).",
+  "3 of 28 days missing to 2026-09-24 (2026-09-09 to 09-11).",
   "Thin sample: review-recovery (n=3 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
  "api_calls": 700,
@@ -15,12 +15,12 @@
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 14430,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 19313,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 0.649
+    "p95_over_timeout": 0.648
    },
    "status": "ok",
    "excess_hours": null,
@@ -29,12 +29,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 260,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 323,
    "min_n": 30,
    "stats": {
-    "share": 0.6346
+    "share": 0.6842
    },
    "status": "breach",
    "excess_hours": null
@@ -42,40 +42,40 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 260,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 323,
    "min_n": 30,
    "stats": {
-    "share": 0.1269
+    "share": 0.1146
    },
    "status": "ok",
-   "excess_hours": 62.76
+   "excess_hours": 62.96
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 1609742,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 2096686,
    "min_n": 1000,
    "stats": {
     "share": 0
    },
    "status": "met",
    "excess_hours": null,
-   "note": "52 queue builds sampled"
+   "note": "57 queue builds sampled"
   },
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-08-27",
-   "to": "2026-09-23",
-   "n": 435,
+   "from": "2026-08-28",
+   "to": "2026-09-24",
+   "n": 602,
    "min_n": 1,
    "stats": {
-    "red_episodes": 9,
-    "restore_p90": 66.6
+    "red_episodes": 14,
+    "restore_p90": 65.8
    },
    "status": "breach",
    "excess_hours": null
@@ -83,12 +83,12 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 159,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 207,
    "min_n": 30,
    "stats": {
-    "share": 0.956
+    "share": 0.9662
    },
    "status": "ok",
    "excess_hours": null
@@ -96,8 +96,8 @@
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
+   "from": "2026-09-18",
+   "to": "2026-09-24",
    "n": 3,
    "min_n": 5,
    "stats": {
@@ -109,50 +109,50 @@
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 197,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 275,
    "min_n": 30,
    "stats": {
-    "p50": 9.6,
-    "p90": 42.4
+    "p50": 14.4,
+    "p90": 34.1
    },
-   "status": "breach",
-   "excess_hours": 24.62
+   "status": "ok",
+   "excess_hours": 28.68
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 89,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 128,
    "min_n": 20,
    "stats": {
-    "p50": 33.2,
-    "p90": 63.5
+    "p50": 30.2,
+    "p90": 58.7
    },
    "status": "breach",
-   "excess_hours": 35.27
+   "excess_hours": 44.86
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
-   "n": 128,
+   "from": "2026-09-18",
+   "to": "2026-09-24",
+   "n": 178,
    "min_n": 30,
    "stats": {
-    "p50": 102.4,
-    "p90": 444.4
+    "p50": 97.3,
+    "p90": 663.5
    },
    "status": "breach",
-   "excess_hours": 409.13
+   "excess_hours": 593.84
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
+   "from": "2026-09-18",
+   "to": "2026-09-24",
    "n": 1036,
    "min_n": 20,
    "stats": {
@@ -165,8 +165,8 @@
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-09-17",
-   "to": "2026-09-23",
+   "from": "2026-09-18",
+   "to": "2026-09-24",
    "n": 653,
    "min_n": 20,
    "stats": {
@@ -180,7 +180,7 @@
  "constraint": {
   "tier": "quality",
   "id": "queue-green",
-  "reason": "Merge-queue builds come back green: share 0.6346 breaches its floor."
+  "reason": "Merge-queue builds come back green: share 0.6842 breaches its floor."
  },
  "local_breaches": [
   "local-commit"
@@ -194,8 +194,8 @@
  },
  "safeguards_ok": true,
  "triggers": {
-  "red": 3,
-  "amber": 14,
-  "top": "2 machines running the hooks is saturated — CPU: load 16.96/core p90; RAM: 699 MB free p10; swap: 7122 MB in use p50."
+  "red": 4,
+  "amber": 13,
+  "top": "main canary red on b83a80c since 2026-09-25 00:17Z: test.yml ×1."
  }
 }
