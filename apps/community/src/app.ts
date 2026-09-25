@@ -15,7 +15,7 @@ import {
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
-import { ApiError, handleError, json, readJson } from './http.js';
+import { ApiError, JSON_BODY_MS, UPLOAD_IDLE_MS, handleError, json, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
@@ -37,6 +37,8 @@ import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
 import { registerHostLinkRoutes } from './routes/host-links.js';
+import { IMPORT_ARCHIVE_UPLOAD_PATH, registerImportRoutes } from './routes/imports.js';
+import { UploadSlots } from './imports/upload.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
@@ -64,6 +66,12 @@ export function createCommunityApp({
     /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
     now?: () => Date;
     afterExportSnapshot?: () => Promise<void>;
+    /** How long a JSON request body may take to arrive; tests shorten it. */
+    jsonBodyMs?: number;
+    /** How long a file or export upload may go without a byte; tests shorten it. */
+    uploadIdleMs?: number;
+    /** Free bytes in the temporary folder, as an upload's space check sees them. */
+    freeTempBytes?: () => Promise<number>;
   };
   blobStore?: BlobStore;
 }) {
@@ -102,6 +110,7 @@ export function createCommunityApp({
     refund: refundAttempt,
     hasPassword: (userId) => accountHasPassword(pool, userId),
   });
+  const jsonBodyMs = hooks?.jsonBodyMs ?? JSON_BODY_MS;
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
       const origin = c.req.header('origin');
@@ -113,8 +122,9 @@ export function createCommunityApp({
       }
       // Bound JSON and auth requests before parsing, even for chunked or false-length bodies.
       if (
-        c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
-        c.req.method === 'POST'
+        (c.req.path.match(/^\/api\/v1\/(?:communities\/[^/]+\/)?channels\/[^/]+\/attachments$/) &&
+          c.req.method === 'POST') ||
+        (IMPORT_ARCHIVE_UPLOAD_PATH.test(c.req.path) && c.req.method === 'PUT')
       ) {
         await next();
         return;
@@ -127,8 +137,26 @@ export function createCommunityApp({
         const reader = c.req.raw.body.getReader();
         const chunks: Uint8Array[] = [];
         let size = 0;
+        // The server lets a request take hours to arrive, for export uploads. A small JSON
+        // body gets its own short deadline, so a slow drip cannot hold a connection open.
+        const deadline = Date.now() + jsonBodyMs;
         while (true) {
-          const { done, value } = await reader.read();
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          const { done, value } = await Promise.race([
+            reader.read(),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(
+                () =>
+                  reject(new ApiError(408, 'UNAVAILABLE', 'The request took too long to arrive.')),
+                Math.max(0, deadline - Date.now())
+              );
+            }),
+          ])
+            .catch(async (error: unknown) => {
+              await reader.cancel().catch(() => undefined);
+              throw error;
+            })
+            .finally(() => clearTimeout(timer));
           if (done) break;
           size += value.byteLength;
           if (size > maxBodyBytes) {
@@ -315,6 +343,18 @@ export function createCommunityApp({
     limitLookup: (c) => limitAttempts(`name-lookup:${peer(c)}`, config.limits.nameLookupsPerMinute),
   });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
+  registerImportRoutes(hostApi, {
+    pool,
+    config,
+    blobStore,
+    authority,
+    now,
+    limitTokenMiss: (c) =>
+      limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
+    uploadSlots: new UploadSlots(config.limits.importUploads),
+    uploadIdleMs: hooks?.uploadIdleMs ?? UPLOAD_IDLE_MS,
+    freeTempBytes: hooks?.freeTempBytes,
+  });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
   registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);
@@ -391,7 +431,13 @@ export function createCommunityApp({
     limitStart: (c) => limitAttempts(`pairing:${peer(c)}`, config.limits.pairingAttemptsPerMinute),
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
-  registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
+  registerAttachmentRoutes(communityApi, {
+    pool,
+    auth,
+    config,
+    blobStore,
+    uploadIdleMs: hooks?.uploadIdleMs,
+  });
   registerRemovalRoutes(communityApi, { pool, auth, config });
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });

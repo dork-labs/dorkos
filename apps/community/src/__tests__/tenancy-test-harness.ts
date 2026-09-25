@@ -6,6 +6,7 @@ import { serve } from '@hono/node-server';
 import { Pool } from 'pg';
 import { createCommunityApp } from '../app.js';
 import { parseConfig, type CommunityConfig } from '../config.js';
+import { configureServerTimeouts } from '../http.js';
 import { migrate } from '../migrate.js';
 import { FileSystemBlobStore, type BlobStore } from '../storage/index.js';
 import { bootstrapFirstHost, responseCookies } from './bootstrap-test-helper.js';
@@ -55,6 +56,8 @@ export async function startTenancyHarness(
     hostKeyAttemptsPerMinute?: number;
     reauthAttemptsPerMinute?: number;
     hooks?: Parameters<typeof createCommunityApp>[0]['hooks'];
+    /** Settings to override, as environment values. */
+    env?: Record<string, unknown>;
     /** Another BlobStore (S3) instead of the fixture's own folder. */
     blobStore?: BlobStore;
   } = {}
@@ -84,6 +87,7 @@ export async function startTenancyHarness(
     COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE: 100,
     COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE: options.hostKeyAttemptsPerMinute ?? 100,
     COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: options.reauthAttemptsPerMinute ?? 20,
+    ...options.env,
   });
   const blobStore = options.blobStore ?? new FileSystemBlobStore(storagePath);
   const app = createCommunityApp({
@@ -93,6 +97,7 @@ export async function startTenancyHarness(
     hooks: { ...options.hooks, now: options.now },
   });
   const server = serve({ fetch: app.fetch, port: 0, hostname: '127.0.0.1' });
+  configureServerTimeouts(server);
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Missing HTTP address');

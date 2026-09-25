@@ -20,6 +20,7 @@ export const COMMUNITY_MIGRATIONS = [
   [14, '0014_host_hold.sql'],
   [15, '0015_short_names.sql'],
   [16, '0016_entry_removal.sql'],
+  [17, '0017_imports.sql'],
 ] as const;
 
 /**

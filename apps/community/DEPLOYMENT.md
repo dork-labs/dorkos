@@ -44,8 +44,11 @@ Most people can keep the default limits. Restart the service after changing one.
 | `COMMUNITY_HOST_DELETION_NOTICE_DAYS`          |             14 days of notice |     365 days (at least 7) |
 | `COMMUNITY_SHORT_NAME_COOLOFF_DAYS`            |                       90 days | 365 days (0 turns it off) |
 | `COMMUNITY_NAME_LOOKUPS_PER_MINUTE`            |                     60 per IP |                600 per IP |
+| `COMMUNITY_IMPORT_UPLOADS`                     |      2 export uploads at once |                16 at once |
 
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
+
+Each export upload being received can use up to twice its size (at most 2 GiB) of temporary disk while it is checked and stored, so `COMMUNITY_IMPORT_UPLOADS` sets the most an import can take from the server's temporary folder at once. An upload is refused when that folder has too little free space for it.
 
 ## Optional Google and GitHub sign-in
 

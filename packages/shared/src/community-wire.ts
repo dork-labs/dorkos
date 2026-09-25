@@ -778,6 +778,125 @@ export const CommunityWireExportResponseSchema = z.strictObject({
   createdAt: timestamp,
 });
 
+/** A lowercase UUID, as Postgres writes one. Import derives new IDs from these strings. */
+const exportId = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+/** Rows each collection of a version 1 export may hold. */
+export const COMMUNITY_EXPORT_V1_MAX_ROWS = 10_000;
+
+/**
+ * `manifest.json` of an export archive, version 1: the first entry, followed by one
+ * `attachments/<id>` entry per attachment. Database rows keep their snake_case column names;
+ * attachments are camelCase. `seq` is a bigint and arrives as a decimal string.
+ *
+ * This is the contract an importer reads, so it is pinned by a round trip against a real
+ * export: a change to what the exporter writes that an importer must know about is a new
+ * version with its own schema, never a silent change to this one.
+ */
+export const CommunityExportManifestV1Schema = z.strictObject({
+  version: z.literal(1),
+  scope: z.enum(['personal', 'owner']),
+  requesterMemberId: exportId,
+  community: z.strictObject({
+    id: exportId,
+    lifecycle: z.enum(['active', 'archived']),
+    lifecycleVersion: z.int().positive(),
+    settingsVersion: z.int().positive(),
+  }),
+  auditEvents: z
+    .array(
+      z.strictObject({
+        id: exportId,
+        community_id: exportId,
+        actor_member_id: exportId.nullable(),
+        actor_kind: z.enum(['member', 'system']),
+        action: z.string().regex(/^[a-z][a-z0-9_.]{0,79}$/),
+        subject_id: z.string().min(1).max(200).nullable(),
+        prior_state: z.string().max(64).nullable(),
+        next_state: z.string().max(64).nullable(),
+        changed_fields: z.array(z.string().max(64)).max(16),
+        created_at: timestamp,
+      })
+    )
+    .max(COMMUNITY_EXPORT_V1_MAX_ROWS)
+    .optional(),
+  channels: z
+    .array(
+      z.strictObject({
+        id: exportId,
+        name: z.string().min(1),
+        description: z.string().nullable(),
+        visibility: z.enum(['public', 'private']),
+        archived: z.boolean(),
+        created_at: timestamp,
+      })
+    )
+    .max(COMMUNITY_EXPORT_V1_MAX_ROWS),
+  members: z
+    .array(
+      z.strictObject({
+        id: exportId,
+        display_name: z.string().min(1),
+        handle: z.string().regex(HANDLE_PATTERN),
+        role: z.enum(['owner', 'admin', 'member']),
+        active: z.boolean(),
+        created_at: timestamp,
+        removed_at: timestamp.nullable(),
+        /** Null for a member with no account, such as an erased or imported one. */
+        email: z.string().nullable(),
+      })
+    )
+    .max(COMMUNITY_EXPORT_V1_MAX_ROWS),
+  agents: z
+    .array(
+      z.strictObject({
+        id: exportId,
+        owner_member_id: exportId,
+        display_name: z.string().min(1),
+        handle: z.string().regex(HANDLE_PATTERN),
+        active: z.boolean(),
+        created_at: timestamp,
+        revoked_at: timestamp.nullable(),
+      })
+    )
+    .max(COMMUNITY_EXPORT_V1_MAX_ROWS),
+  entries: z
+    .array(
+      z.strictObject({
+        id: exportId,
+        channel_id: exportId,
+        seq: z.string().regex(/^[1-9][0-9]{0,15}$/),
+        author_member_id: exportId.nullable(),
+        author_agent_id: exportId.nullable(),
+        author_display_name: z.string(),
+        text: z.string(),
+        mentions: z.array(exportId).max(1_000),
+        parent_entry_id: exportId.nullable(),
+        thread_root_entry_id: exportId.nullable(),
+        created_at: timestamp,
+      })
+    )
+    .max(COMMUNITY_EXPORT_V1_MAX_ROWS),
+  attachments: z
+    .array(
+      z.strictObject({
+        id: exportId,
+        channelId: exportId,
+        entryId: exportId,
+        uploaderMemberId: exportId.nullable(),
+        uploaderAgentId: exportId.nullable(),
+        name: z.string().min(1),
+        contentType: z.string().min(1),
+        byteSize: z.int().positive(),
+        checksum: z.string().regex(/^[a-f0-9]{64}$/),
+        uploadedAt: timestamp,
+        archivePath: z.string().regex(/^attachments\/[0-9a-f-]{36}$/),
+      })
+    )
+    .max(COMMUNITY_EXPORT_V1_MAX_ROWS),
+});
+/** Version 1 export manifest. */
+export type CommunityExportManifestV1 = z.infer<typeof CommunityExportManifestV1Schema>;
+
 /**
  * One request to erase a person from one community (`membership`) or from the
  * whole host (`account`). It waits 72 hours in `scheduled`, when the person can
@@ -875,6 +994,8 @@ export const CommunityWireErrorCodeSchema = z.enum([
   'SHORT_NAME_TAKEN',
   'SHORT_NAME_RESERVED',
   'PASSWORD_REQUIRED',
+  'IMPORT_ARCHIVE_INVALID',
+  'IMPORT_TOO_LARGE',
 ]);
 /** A Community's machine-readable error code; the closed set a client may branch on. */
 export type CommunityWireErrorCode = z.infer<typeof CommunityWireErrorCodeSchema>;

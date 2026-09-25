@@ -106,6 +106,19 @@ export const CommunityAdminShortNameAvailabilitySchema = z.strictObject({
   availability: z.enum(['available', 'taken', 'cooling_off', 'reserved', 'invalid']),
   availableAt: timestamp.nullable(),
 });
+/**
+ * Where an import of an owner export stands. It pauses at `validated` for the host to commit,
+ * and ends `ready`, `failed`, or `cancelled`.
+ */
+export const CommunityAdminImportStateSchema = z.enum([
+  'awaiting_upload',
+  'validating',
+  'validated',
+  'restoring',
+  'ready',
+  'failed',
+  'cancelled',
+]);
 
 /** Host-visible metadata without membership or content details. */
 export const CommunityAdminHostProjectionSchema = z.strictObject({
@@ -123,6 +136,9 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
   deletionRequestedBy: z.enum(['owner', 'host']).nullable(),
   /** The current short name, if the community has one. */
   shortName: CommunityShortNameSchema.nullable(),
+  /** The import that made this community, and its state; both null when it was not imported. */
+  importId: id.nullable(),
+  importState: CommunityAdminImportStateSchema.nullable(),
   createdAt: timestamp,
 });
 
@@ -334,3 +350,81 @@ export const CommunityAdminHostApiKeySecretResponseSchema = z.strictObject({
 });
 /** Revocation takes no input; it cannot be undone. */
 export const CommunityAdminHostApiKeyRevokeRequestSchema = z.strictObject({});
+
+/** Start importing an owner export into a new, unclaimed community. The export arrives separately. */
+export const CommunityAdminImportCreateRequestSchema = z.strictObject({
+  idempotencyKey: z.string().min(1).max(200),
+  name: z.string().trim().min(1).max(80),
+  description: z.string().max(1_000).nullable().optional(),
+  admissionPolicy: CommunityAdminAdmissionPolicySchema.optional(),
+  /** The new community's web address, set in the same transaction. Part of the key's payload. */
+  shortName: CommunityShortNameSchema.optional(),
+  /** Set in the same transaction and part of the idempotency key's payload. */
+  limits: CommunityAdminLimitsUpdateRequestSchema.omit({ limitsVersion: true }).optional(),
+  /** Restore as soon as the export checks out, instead of pausing at `validated`. */
+  autoCommit: z.boolean().optional(),
+});
+/** What an owner export holds, measured before anything is restored. Counts and sizes only. */
+export const CommunityAdminImportReportSchema = z.strictObject({
+  manifestVersion: z.literal(1),
+  sourceLifecycle: z.enum(['active', 'archived']),
+  channels: z.int().nonnegative(),
+  entries: z.int().nonnegative(),
+  attachments: z.int().nonnegative(),
+  historicalMembers: z.int().nonnegative(),
+  historicalAgents: z.int().nonnegative(),
+  auditEvents: z.int().nonnegative(),
+  attachmentBytes: bytes,
+  /** The bytes that will count against the community's storage limit. */
+  countedBytes: bytes,
+  fitsStorageLimit: z.boolean(),
+});
+/**
+ * Why an import failed, redacted: a code, never a value from the export.
+ *
+ * - `IMPORT_ARCHIVE_INVALID`: the file is damaged or is not an owner export.
+ * - `IMPORT_NOT_OWNER_EXPORT`: the file is a personal export.
+ * - `IMPORT_VERSION_UNSUPPORTED`: the export's format version is one this host cannot read.
+ * - `IMPORT_TOO_LARGE`: the export holds more than an import may.
+ * - `STORAGE_LIMIT_REACHED`: its files do not fit the community's storage limit.
+ * - `IMPORT_CHECKSUM_MISMATCH`: a file does not match the export's own record of it.
+ * - `IMPORT_STORAGE_UNAVAILABLE`: the host could not store the files, after retrying.
+ *
+ * An upload window that closes before a matching file arrives, and a checked import left
+ * uncommitted for seven days, end `cancelled` rather than `failed`.
+ */
+export const CommunityAdminImportFailureCodeSchema = z.enum([
+  'IMPORT_ARCHIVE_INVALID',
+  'IMPORT_NOT_OWNER_EXPORT',
+  'IMPORT_VERSION_UNSUPPORTED',
+  'IMPORT_TOO_LARGE',
+  'STORAGE_LIMIT_REACHED',
+  'IMPORT_CHECKSUM_MISMATCH',
+  'IMPORT_STORAGE_UNAVAILABLE',
+]);
+/** One import, as the host reads it. Never names, text, or the upload token. */
+export const CommunityAdminImportSchema = z.strictObject({
+  importId: id,
+  /** The new community; null once a cancelled or failed import's community has been removed. */
+  communityId: id.nullable(),
+  state: CommunityAdminImportStateSchema,
+  /** Set from `validated` on. */
+  report: CommunityAdminImportReportSchema.nullable(),
+  /** Set exactly when `state` is `failed`. */
+  failureCode: CommunityAdminImportFailureCodeSchema.nullable(),
+  autoCommit: z.boolean(),
+  archiveBytes: bytes.nullable(),
+  uploadExpiresAt: timestamp,
+  /** The largest export this host accepts in one upload. */
+  maxArchiveBytes: bytes,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+/** The started import. The upload token is returned once, only on the first answer. */
+export const CommunityAdminImportCreateResponseSchema = z.strictObject({
+  import: CommunityAdminImportSchema,
+  uploadToken: z.string().min(1).nullable(),
+  replayed: z.boolean(),
+});
+/** Commit and cancel take no input. */
+export const CommunityAdminImportMutationRequestSchema = z.strictObject({});
