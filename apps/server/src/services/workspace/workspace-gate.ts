@@ -46,11 +46,7 @@ import { lstat, readdir, readlink, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { disclosesAnything } from '@dorkos/shared/marketplace-schemas';
 import type { WorkspaceProviderType } from '@dorkos/shared/workspace';
-import {
-  readTreeDisclosures,
-  type TreeDisclosures,
-} from '../core/agent-templates/template-gate.js';
-import { hashTree } from '../marketplace/lib/content-hash.js';
+import type { TreeDisclosures } from '../core/agent-templates/template-gate.js';
 import type {
   ConfirmationProvider,
   ConfirmationRequest,
@@ -120,6 +116,26 @@ async function listLinks(root: string): Promise<WorkspaceLink[]> {
   return links;
 }
 
+/**
+ * Read a staged clone: its hash (`.git` left out), what it brings, and its links.
+ *
+ * The readers are loaded only when a clone is read. They pull the marketplace
+ * package's built code, and everything that imports the workspace module
+ * (session routing, the rooms and communities services) would otherwise need
+ * that package built just to load (DOR-2335).
+ */
+async function readClone(staged: string): Promise<[string, TreeDisclosures, WorkspaceLink[]]> {
+  const [{ hashTree }, { readTreeDisclosures }] = await Promise.all([
+    import('../marketplace/lib/content-hash.js'),
+    import('../core/agent-templates/template-gate.js'),
+  ]);
+  return Promise.all([
+    hashTree(staged, skipGitDir),
+    readTreeDisclosures(staged),
+    listLinks(staged),
+  ]);
+}
+
 /** The hooks a `workspace.json` runs from the server; none when there is none. */
 function hooksOf(config: WorkspaceHookConfig | null): WorkspaceHooksShown {
   return {
@@ -148,12 +164,8 @@ export async function inspectWorkspace(opts: {
   const hooks = hooksOf(opts.hookConfig);
   const sourceRealPath = await realpath(opts.source).catch(() => opts.source);
   const [contentHash, tree, links] = opts.staged
-    ? await Promise.all([
-        hashTree(opts.staged, skipGitDir),
-        readTreeDisclosures(opts.staged),
-        listLinks(opts.staged),
-      ])
-    : [null, null, []];
+    ? await readClone(opts.staged)
+    : [null, null, [] as WorkspaceLink[]];
   const reviewHash = `sha256:${createHash('sha256')
     .update(
       JSON.stringify({
