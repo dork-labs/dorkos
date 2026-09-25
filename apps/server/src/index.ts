@@ -308,6 +308,7 @@ import {
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   TokenConfirmationProvider,
+  describeTemplateCreationCapability,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
@@ -533,6 +534,16 @@ let claudeRuntime: ClaudeCodeRuntime | null = null;
 let relayAgentRuntime: (AgentRuntimeLike & { readonly type: string }) | null = null;
 let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
+/**
+ * The marketplace's confirmation provider, once composed: the agents router
+ * reads it for an agent's template creation card (DOR-2325).
+ */
+let templateConfirmationProvider: ConfirmationProvider | undefined;
+/**
+ * The marketplace installer and data directory, once composed: the agents
+ * router creates an agent from a marketplace package through it (DOR-2325).
+ */
+let agentPackageInstaller: { installer: MarketplaceInstaller; dorkHome: string } | undefined;
 let adapterRegistry: AdapterRegistry | undefined;
 let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
@@ -2606,7 +2617,8 @@ async function start() {
       // would show the raw id.
       return (
         describeHookProjectionCapability(capabilityId) ??
-        describeGlobalActivationCapability(capabilityId)
+        describeGlobalActivationCapability(capabilityId) ??
+        describeTemplateCreationCapability(capabilityId)
       );
     },
   });
@@ -3958,7 +3970,16 @@ async function start() {
 
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
-  app.use('/api/agents', createAgentsRouter(meshCore));
+  // The confirmation provider is composed further down this boot, inside the
+  // marketplace block; read lazily so an agent's template creation raises a card
+  // once it exists and fails closed until then (DOR-2325).
+  app.use(
+    '/api/agents',
+    createAgentsRouter(meshCore, {
+      confirmationProvider: () => templateConfirmationProvider,
+      marketplace: () => agentPackageInstaller,
+    })
+  );
 
   // The team roster — one READ of every identity on this install (ADR
   // 260806-222535). Always mounted, and mounted even when the mesh did not
@@ -4436,6 +4457,8 @@ async function start() {
     const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
       approvalService
     );
+    templateConfirmationProvider = confirmationProvider;
+    agentPackageInstaller = { installer: marketplaceInstaller, dorkHome };
 
     app.use(
       '/api/marketplace',

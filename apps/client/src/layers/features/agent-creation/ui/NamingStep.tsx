@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ChevronDown } from 'lucide-react';
 import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 import { cn } from '@/layers/shared/lib';
@@ -59,6 +59,14 @@ export interface NamingStepProps {
   isCheckingOffer?: boolean;
   /** The server's refusal of the offered package; blocks Create (DOR-2314). */
   offerRefusal?: unknown;
+  /**
+   * Where a marketplace agent lives (its package's folder), when this offer is
+   * one (DOR-2325). It replaces the directory choice: the agent is installed
+   * where updates find it.
+   */
+  packageDirectory?: string;
+  /** What a custom template brings, shown before Create when the server asked. */
+  templateReview?: ReactNode;
 }
 
 /**
@@ -85,6 +93,8 @@ export function NamingStep({
   offerCheckFailed = false,
   isCheckingOffer = false,
   offerRefusal,
+  packageDirectory,
+  templateReview,
 }: NamingStepProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [rerollOffset, setRerollOffset] = useState(0);
@@ -222,40 +232,51 @@ export function NamingStep({
                 <RuntimePicker value={form.runtime} onChange={form.setRuntime} />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="agent-directory" className="text-muted-foreground text-xs">
-                  Directory
-                </Label>
-                <PathInput
-                  id="agent-directory"
-                  placeholder={
-                    form.resolvedDirectory ||
-                    (form.defaultDirectory ? `${form.defaultDirectory}/…` : '')
-                  }
-                  value={form.directoryOverride}
-                  onChange={form.setDirectoryOverride}
-                  onBrowse={() => form.setDirectoryPickerOpen(true)}
-                  browseTestId="browse-directory-button"
-                  data-testid="directory-preview"
-                />
-                {form.conflictStatus === 'no-path' && (
-                  <p className="text-muted-foreground text-xs" data-testid="conflict-status">
-                    Will create new directory
+              {packageDirectory ? (
+                <div className="space-y-1.5" data-testid="package-directory">
+                  <Label className="text-muted-foreground text-xs">Directory</Label>
+                  <p className="font-mono text-xs [overflow-wrap:anywhere]">{packageDirectory}</p>
+                  <p className="text-muted-foreground text-xs">
+                    Agents from the marketplace live in their package’s folder, so updates find
+                    them.
                   </p>
-                )}
-                {form.conflictStatus === 'exists-no-dork' && (
-                  <p className="text-muted-foreground text-xs" data-testid="conflict-status">
-                    That folder is already there. The project goes inside it.
-                  </p>
-                )}
-                {form.conflictStatus === 'error' && (
-                  <p className="text-destructive text-xs" data-testid="conflict-status">
-                    Cannot access this path
-                  </p>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label htmlFor="agent-directory" className="text-muted-foreground text-xs">
+                    Directory
+                  </Label>
+                  <PathInput
+                    id="agent-directory"
+                    placeholder={
+                      form.resolvedDirectory ||
+                      (form.defaultDirectory ? `${form.defaultDirectory}/…` : '')
+                    }
+                    value={form.directoryOverride}
+                    onChange={form.setDirectoryOverride}
+                    onBrowse={() => form.setDirectoryPickerOpen(true)}
+                    browseTestId="browse-directory-button"
+                    data-testid="directory-preview"
+                  />
+                  {form.conflictStatus === 'no-path' && (
+                    <p className="text-muted-foreground text-xs" data-testid="conflict-status">
+                      Will create new directory
+                    </p>
+                  )}
+                  {form.conflictStatus === 'exists-no-dork' && (
+                    <p className="text-muted-foreground text-xs" data-testid="conflict-status">
+                      That folder is already there. The project goes inside it.
+                    </p>
+                  )}
+                  {form.conflictStatus === 'error' && (
+                    <p className="text-destructive text-xs" data-testid="conflict-status">
+                      Cannot access this path
+                    </p>
+                  )}
+                </div>
+              )}
 
-              {form.slug && !form.showSlugError && (
+              {!packageDirectory && form.slug && !form.showSlugError && (
                 <p className="text-muted-foreground text-xs">
                   Folder name:{' '}
                   <code className="bg-muted rounded px-1 py-0.5 font-mono text-xs">
@@ -289,6 +310,7 @@ export function NamingStep({
           </dl>
         )}
         {offerRefusal !== undefined && <PreviewRefusedNotice error={offerRefusal} />}
+        {templateReview}
         {isCheckingOffer && (
           <p
             className="text-muted-foreground text-center text-xs"

@@ -6450,6 +6450,22 @@
         "apps/server/src/services/marketplace/disclosed-effects.ts",
         "apps/server/src/services/marketplace/global-plugin-consent.ts"
       ]
+    },
+    {
+      "id": "260925-004559",
+      "slug": "templates-and-marketplace-agents-are-checked-before-they-land",
+      "title": "Templates and marketplace agents are checked before they land in an agent's folder",
+      "status": "draft",
+      "created": "2026-09-25",
+      "extractedFrom": "agent-template-creation",
+      "specSlug": "agent-template-creation",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/agent-templates/template-gate.ts",
+        "apps/server/src/services/core/agent-creator.ts",
+        "apps/server/src/routes/agents.ts",
+        "apps/client/src/layers/features/agent-creation/ui/CreateAgentDialog.tsx"
+      ]
     }
   ]
 }

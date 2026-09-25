@@ -17,7 +17,7 @@ vi.mock('giget', () => ({
   downloadTemplate: vi.fn(),
 }));
 
-vi.mock('../../../lib/logger.js', () => ({
+vi.mock('../../../../lib/logger.js', () => ({
   logger: {
     debug: vi.fn(),
     warn: vi.fn(),
@@ -26,14 +26,14 @@ vi.mock('../../../lib/logger.js', () => ({
   },
 }));
 
-vi.mock('../../../env.js', () => ({
+vi.mock('../../../../env.js', () => ({
   env: {} as Record<string, string | undefined>,
 }));
 
 import { spawn, execSync } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { downloadTemplate as gigetDownload } from 'giget';
-import { env as mockEnv } from '../../../env.js';
+import { env as mockEnv } from '../../../../env.js';
 import { isSafeGitUrl } from '@dorkos/marketplace';
 import {
   resolveGitUrl,

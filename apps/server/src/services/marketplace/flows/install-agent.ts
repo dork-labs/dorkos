@@ -30,7 +30,7 @@ import { stagePackageContents } from '../lib/stage-package.js';
 import { flowOwnership } from '../lib/flow-ownership.js';
 import { readInstalledFiles, sameSource } from '../lib/installed-files.js';
 import { runTransaction } from '../transaction.js';
-import type { InstallRequest, InstallResult } from '../types.js';
+import type { AgentInstallIdentity, InstallRequest, InstallResult } from '../types.js';
 import type { UninstallAgentRegistry } from './uninstall.js';
 
 /**
@@ -118,7 +118,14 @@ export class AgentInstallFlow {
       stage: (staging) =>
         stageAgentPackage(packagePath, staging.path, targetDir, warnings, this.deps.logger),
       activate: (staging) =>
-        this.activate(staging.path, targetDir, manifest, differentPackage, warnings),
+        this.activate(
+          staging.path,
+          targetDir,
+          manifest,
+          differentPackage,
+          warnings,
+          opts.agentIdentity
+        ),
       ownership,
     });
 
@@ -149,7 +156,8 @@ export class AgentInstallFlow {
     targetDir: string,
     manifest: AgentPackageManifest,
     differentPackage: boolean,
-    warnings: string[]
+    warnings: string[],
+    identity: AgentInstallIdentity | undefined
   ): Promise<{ installPath: string }> {
     await activateAgentPackage(stagingDir, targetDir);
 
@@ -184,6 +192,10 @@ export class AgentInstallFlow {
         // face, and leaving the key off lets the creator seed one instead
         // (DOR-949).
         ...(manifest.icon && isSingleEmoji(manifest.icon) ? { icon: manifest.icon } : {}),
+        // What a person chose in the app's creation flow (DOR-2325) wins over
+        // the package's defaults: their name for it, its face and voice, the
+        // runtime it runs on.
+        ...identity,
         skipTemplateDownload: true,
       },
       this.deps.getMeshCore?.(),

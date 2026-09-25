@@ -5,6 +5,7 @@
  *
  * @module services/marketplace/types
  */
+import type { CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
 import type {
   MarketplacePackageManifest,
   PackageType,
@@ -216,7 +217,28 @@ export interface InstallRequest {
    * existed. Server-internal: set by `MarketplaceInstaller.install()` only.
    */
   ownership?: InstallOwnershipContext;
+  /**
+   * The content hash a person was shown for the staged package
+   * (`lib/content-hash.ts`, DOR-2306). For an agent package, `install()`
+   * refuses a staged copy that hashes differently before writing anything
+   * (DOR-2325): the app creates a marketplace agent through this installer, and
+   * a source that moved after the preview is not the agent the person chose.
+   * Server-internal: the agents route sets it from what the app sent back.
+   */
+  approvedContentHash?: string;
+  /**
+   * Agent packages only (DOR-2325): the identity a person chose for the agent
+   * in the app's creation flow, applied as the agent is created in the
+   * package's install folder. Server-internal, set by the agents route.
+   */
+  agentIdentity?: AgentInstallIdentity;
 }
+
+/** See {@link InstallRequest.agentIdentity}. */
+export type AgentInstallIdentity = Pick<
+  CreateAgentOptions,
+  'displayName' | 'icon' | 'color' | 'persona' | 'runtime' | 'capabilities' | 'model' | 'effort'
+>;
 
 /** See {@link InstallRequest.ownership}. */
 export interface InstallOwnershipContext {

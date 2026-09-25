@@ -63,7 +63,7 @@ import type {
   AgentManifest,
   AgentManifestUpdate,
   AgentPathEntry,
-  CreateAgentOptions,
+  CreateAgentRequestBody,
   DiscoveryCandidate,
   DenialRecord,
   AgentHealth,
@@ -2010,7 +2010,7 @@ export interface Transport
   /** Update an agent's fields by path. Returns the updated manifest. */
   updateAgentByPath(path: string, updates: AgentManifestUpdate): Promise<AgentManifest>;
   /** Create a new agent: mkdir + scaffold files + register. Returns the created manifest and resolved path. */
-  createAgent(opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }>;
+  createAgent(opts: CreateAgentRequestBody): Promise<AgentManifest & { _path: string }>;
 
   // --- Discovery ---
 

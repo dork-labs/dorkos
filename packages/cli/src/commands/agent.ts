@@ -36,7 +36,10 @@ import {
   DEFAULT_AGENT_TIER_CEILING,
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
-import { apiCall } from '../lib/api-client.js';
+import { ApiError, apiCall } from '../lib/api-client.js';
+import { confirm } from '../lib/confirm-prompt.js';
+import { renderDisclosureLines } from '../lib/disclosure-render.js';
+import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
 import { printError, printJson, renderTable } from '../lib/operator-output.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
 
@@ -57,7 +60,10 @@ Options (all subcommands):
 create options:
       --name <slug>          Kebab-case agent name (required)
       --path <dir>           Project directory for the agent (required)
-      --template <ref>       Template to scaffold from
+      --template <ref>       Template to scaffold from. DorkOS shows what it brings
+                             (settings, programs, skills) and asks before using it
+      --yes                  Don't ask before using a template (it still prints what it brings)
+      --approval <token>     Retry a template creation a person approved in DorkOS
       --display-name <name>  Human-friendly name
       --description <text>   One-line description
 
@@ -98,6 +104,10 @@ export interface AgentCreateArgs {
   displayName?: string;
   description?: string;
   json: boolean;
+  /** Use a template without asking (what it brings is still printed). */
+  yes?: boolean;
+  /** Token from an earlier run that was waiting on a person (DOR-2325). */
+  approvalToken?: string;
 }
 
 /** Parsed arguments for `agent update`. */
@@ -136,7 +146,8 @@ function jsonOf(values: Record<string, unknown>): boolean {
  * @returns Typed {@link AgentCreateArgs}.
  */
 export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
-  const usage = 'Usage: dorkos agent create --name <slug> --path <dir> [--template <ref>]';
+  const usage =
+    'Usage: dorkos agent create --name <slug> --path <dir> [--template <ref> [--yes] [--approval <token>]]';
   let parsed: ReturnType<typeof parseArgs>;
   try {
     parsed = parseArgs({
@@ -145,6 +156,8 @@ export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
         name: { type: 'string' },
         path: { type: 'string' },
         template: { type: 'string' },
+        yes: { type: 'boolean', short: 'y', default: false },
+        approval: { type: 'string' },
         'display-name': { type: 'string' },
         description: { type: 'string' },
         json: { type: 'boolean', default: false },
@@ -167,7 +180,28 @@ export function parseAgentCreateArgs(rawArgs: string[]): AgentCreateArgs {
     displayName: typeof values['display-name'] === 'string' ? values['display-name'] : undefined,
     description: typeof values.description === 'string' ? values.description : undefined,
     json: jsonOf(values),
+    yes: values.yes === true,
+    ...(typeof values.approval === 'string' && { approvalToken: values.approval }),
   };
+}
+
+/** What a template brings, as the server describes it (DOR-2325). */
+interface TemplateBrings {
+  source: string;
+  contentHash: string;
+  findings: { path: string; message: string }[];
+  disclosed: DisclosedEffects;
+}
+
+/** The lines that say what a template brings into the new agent's folder. */
+function describeTemplate(template: TemplateBrings): string[] {
+  return [
+    `The template ${template.source} brings:`,
+    ...(template.findings.length > 0
+      ? template.findings.map((f) => `    ${f.path}: settings the new agent's sessions load`)
+      : ["    no settings files for the new agent's sessions"]),
+    ...renderDisclosureLines(template.disclosed, 'global'),
+  ];
 }
 
 /**
@@ -317,27 +351,74 @@ export async function runAgentShow(ref: string, json: boolean): Promise<number> 
  * @returns The intended process exit code.
  */
 export async function runAgentCreate(args: AgentCreateArgs): Promise<number> {
+  const body: Record<string, unknown> = { name: args.name, directory: args.path };
+  if (args.template) body.template = args.template;
+  if (args.displayName) body.displayName = args.displayName;
+  if (args.description) body.description = args.description;
+  if (args.approvalToken) body.confirmationToken = args.approvalToken;
   try {
-    const body: Record<string, unknown> = { name: args.name, directory: args.path };
-    if (args.template) body.template = args.template;
-    if (args.displayName) body.displayName = args.displayName;
-    if (args.description) body.description = args.description;
-    const created = await apiCall<{ id: string; name: string; _path?: string }>(
-      'POST',
-      '/api/agents/create',
-      body
-    );
+    let created: CreatedAgentBody | TemplateApprovalBody;
+    try {
+      created = await apiCall<CreatedAgentBody | TemplateApprovalBody>(
+        'POST',
+        '/api/agents/create',
+        body
+      );
+    } catch (err) {
+      // A person's own template that brings settings or programs is shown to
+      // them first, and used once they say so (DOR-2325).
+      const template =
+        (err as ApiError).body?.code === 'template_needs_review'
+          ? ((err as ApiError).body as unknown as { template: TemplateBrings }).template
+          : undefined;
+      if (!(err instanceof ApiError) || !template) throw err;
+      for (const line of describeTemplate(template)) console.log(line);
+      if (!args.yes && !(await confirm('Create the agent with these?'))) {
+        console.log('Nothing was created.');
+        return 1;
+      }
+      created = await apiCall<CreatedAgentBody>('POST', '/api/agents/create', {
+        ...body,
+        approvedTemplateHash: template.contentHash,
+      });
+    }
+    // From an agent's session a template always waits for a person's card.
+    if ('status' in created && created.status === 'requires_confirmation') {
+      for (const line of describeTemplate(created.template)) console.error(line);
+      console.error(created.message);
+      console.error(
+        `Retry with: dorkos agent create --name ${args.name} --path ${args.path} ` +
+          `--template ${args.template} --approval ${created.confirmationToken}`
+      );
+      return 1;
+    }
+    const agent = created as CreatedAgentBody;
     if (args.json) {
-      printJson(created);
+      printJson(agent);
       return 0;
     }
-    console.log(`Created agent ${created.name} (${created.id})`);
-    if (created._path) console.log(`  ${created._path}`);
+    console.log(`Created agent ${agent.name} (${agent.id})`);
+    if (agent._path) console.log(`  ${agent._path}`);
     return 0;
   } catch (err) {
     printError(err);
     return 1;
   }
+}
+
+/** What `POST /api/agents/create` answers with when it created the agent. */
+interface CreatedAgentBody {
+  id: string;
+  name: string;
+  _path?: string;
+}
+
+/** What it answers with when a template waits on a person's card (DOR-2325). */
+interface TemplateApprovalBody {
+  status: 'requires_confirmation';
+  confirmationToken: string;
+  message: string;
+  template: TemplateBrings;
 }
 
 /**

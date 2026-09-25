@@ -355,6 +355,15 @@ export class MarketplaceInstaller implements InstallerLike {
       // approval of a global package binds, the same hash the preview showed
       // (DOR-2306).
       const shippedHash = await recordableContentHash(staged.packagePath);
+      // An agent created from the app is held to the files its preview showed
+      // (DOR-2325); nothing is written when the source moved since.
+      if (
+        staged.manifest.type === 'agent' &&
+        req.approvedContentHash !== undefined &&
+        shippedHash.contentHash !== req.approvedContentHash
+      ) {
+        throw new DisclosureChangedError('the files you were shown', 'different files');
+      }
       // A `skillRef` schedule is written into the package's own SKILL.md in the
       // staged tree, before the installed-files record is computed, so the
       // record holds the file as installed: an untouched update then reports

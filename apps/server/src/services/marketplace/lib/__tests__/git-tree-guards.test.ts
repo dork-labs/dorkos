@@ -58,10 +58,10 @@ vi.mock('node:child_process', async () => {
 });
 
 const resolveGitAuth = vi.fn(() => 'ghp_secret');
-vi.mock('../../../core/template-downloader.js', async () => {
-  const actual = await vi.importActual<typeof import('../../../core/template-downloader.js')>(
-    '../../../core/template-downloader.js'
-  );
+vi.mock('../../../core/agent-templates/template-downloader.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../core/agent-templates/template-downloader.js')
+  >('../../../core/agent-templates/template-downloader.js');
   return { ...actual, resolveGitAuth: () => resolveGitAuth() };
 });
 

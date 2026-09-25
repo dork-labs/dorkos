@@ -60,6 +60,10 @@
     "./scaffolder": {
       "types": "./src/scaffolder.ts",
       "default": "./dist/scaffolder.js"
+    },
+    "./agent-workspace-config": {
+      "types": "./src/agent-workspace-config.ts",
+      "default": "./dist/agent-workspace-config.js"
     }
   },
   "dependencies": {

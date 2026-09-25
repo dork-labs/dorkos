@@ -67,6 +67,11 @@ export interface CreationSeed {
    * template is inline and has nothing to fetch.
    */
   packageName?: string;
+  /**
+   * The marketplace the package came from, alongside {@link packageName}: the
+   * app creates such an agent through the marketplace installer (DOR-2325).
+   */
+  marketplace?: string;
 }
 
 /** Optional per-open behavior. */
