@@ -91,7 +91,7 @@
       "@types/node": "^24",
       "@anthropic-ai/sdk": "0.123.0",
       "@modelcontextprotocol/sdk": "1.30.0",
-      "lucide-react": "1.44.0",
+      "lucide-react": "1.47.0",
       "@vitejs/plugin-react": "5.2.0",
       "drizzle-orm": "0.45.2",
       "eslint-plugin-react-hooks": "7.1.1",
