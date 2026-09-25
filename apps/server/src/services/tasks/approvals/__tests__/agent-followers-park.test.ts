@@ -148,36 +148,44 @@ describe('parking the schedules that follow an agent', () => {
 
   it('keeps its sentence and its changes through the next file sync', () => {
     // Purpose: the watcher and the five-minute reconciler re-sync every
-    // schedule's file. A sync that rewrote a park it did not make would say
-    // "DorkOS found this schedule in a file" over the real reason (DOR-2313).
-    const task = schedule('digest');
+    // schedule's file. For a schedule DorkOS found in a file, a sync that
+    // rewrote a park it did not make would say "DorkOS found this schedule in
+    // a file" over the real reason (DOR-2313).
+    const def = {
+      name: 'digest',
+      meta: {
+        name: 'digest',
+        description: 'digest',
+        schedule: { cron: '0 7 * * *', timezone: 'UTC', enabled: true, permissions: 'acceptEdits' },
+      },
+      body: 'Do digest.',
+      filePath: '/skills/digest/SKILL.md',
+      dirPath: '/skills/digest',
+      scope: 'global',
+    } as Parameters<typeof store.fileSync.upsertFromFile>[0];
+    const found = store.fileSync.upsertFromFile(def, AGENT, { source: 'discovery' });
+    store.updateTask(found.id, { status: 'active' });
+    expect(row(found.id).origin).toBe('file');
     store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
 
-    store.fileSync.upsertFromFile(
-      {
-        name: 'digest',
-        meta: {
-          name: 'digest',
-          description: 'digest',
-          schedule: {
-            cron: '0 7 * * *',
-            timezone: 'UTC',
-            enabled: true,
-            permissions: 'acceptEdits',
-          },
-        },
-        body: 'Do digest.',
-        filePath: task.filePath,
-        dirPath: '/skills/digest',
-        scope: 'global',
-      } as Parameters<typeof store.fileSync.upsertFromFile>[0],
-      AGENT,
-      { source: 'discovery' }
-    );
+    store.fileSync.upsertFromFile(def, AGENT, { source: 'discovery' });
 
-    const after = row(task.id);
+    const after = row(found.id);
     expect(after.status).toBe('pending_approval');
     expect(after.reason).toBe(AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON);
+    expect(store.getTask(found.id)!.approvalChanges).toEqual([
+      { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'agent' },
+    ]);
+  });
+
+  it('shows the agent’s change even when the withdrawn approval is in a format this build cannot read', () => {
+    const task = schedule('digest');
+    store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
+    db.update(pulseSchedules)
+      .set({ previousApprovalKey: '["an older key"]' })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+
     expect(store.getTask(task.id)!.approvalChanges).toEqual([
       { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'agent' },
     ]);
