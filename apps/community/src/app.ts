@@ -15,7 +15,7 @@ import {
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
-import { ApiError, handleError, json, readJson } from './http.js';
+import { ApiError, handleError, json, RateLimited, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
@@ -84,7 +84,11 @@ export function createCommunityApp({
     }
     const current = (attemptTimes.get(key) ?? []).filter((time) => now - time < 60_000);
     if (current.length >= ceiling)
-      throw new ApiError(429, 'RATE_LIMITED', 'Too many attempts. Try again soon.');
+      // The oldest attempt still in the window is the next one to free a slot.
+      throw new RateLimited(
+        'Too many attempts. Try again soon.',
+        Math.max(1, Math.ceil((current[0] + 60_000 - now) / 1000))
+      );
     current.push(now);
     attemptTimes.set(key, current);
   };

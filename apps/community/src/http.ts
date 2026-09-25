@@ -17,6 +17,20 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A rolling-window limit was reached: `429 RATE_LIMITED` with a `Retry-After` header, so a client
+ * knows how long to wait instead of guessing.
+ */
+export class RateLimited extends ApiError {
+  constructor(
+    message: string,
+    /** Whole seconds until the window frees an attempt, at least 1. */
+    public readonly retryAfterSeconds: number
+  ) {
+    super(429, 'RATE_LIMITED', message);
+  }
+}
+
 /** An authorized administrative edit conflicted with the current safe settings. */
 export class AdminSettingsConflict extends ApiError {
   constructor(
@@ -61,6 +75,7 @@ export function handleError(error: unknown, c: Context): Response {
     );
   }
   if (error instanceof ApiError) {
+    if (error instanceof RateLimited) c.header('Retry-After', String(error.retryAfterSeconds));
     return c.json(
       CommunityWireErrorSchema.parse({ code: error.code, message: error.message }),
       error.status as 400
