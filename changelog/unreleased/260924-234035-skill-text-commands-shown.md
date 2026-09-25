@@ -1,6 +1,9 @@
 ---
 covers:
   - "fix(marketplace): show and bind the shell commands a skill's text runs (DOR-2327)"
+  - 'fix(marketplace): a skill-command reader no program can outrun, stable digests, and typed arguments shown (DOR-2327)'
+  - "test(marketplace): an agent package's own commands disclose their shell commands (DOR-2327)"
+  - 'docs(changelog): fold the DOR-2327 stub into its fragment'
 ---
 
 ### Fixed
