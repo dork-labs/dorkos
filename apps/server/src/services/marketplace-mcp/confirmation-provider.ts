@@ -53,7 +53,12 @@ import { describeUpdatesInFull, UPDATE_DETAIL_MAX_LENGTH } from './update-approv
 
 /** The kind of mutation a confirmation request is gating. */
 export type ConfirmationOperation =
-  'install' | 'uninstall' | 'update' | 'create-package' | 'create-agent-from-template';
+  | 'install'
+  | 'uninstall'
+  | 'update'
+  | 'create-package'
+  | 'create-agent-from-template'
+  | 'create-workspace';
 
 /**
  * Result of a confirmation request, discriminated by `status`.
@@ -182,6 +187,22 @@ export interface ConfirmationRequest {
     settings?: readonly TemplateSettingsFileShown[];
   };
   /**
+   * Create-workspace only (DOR-2335): what a new workspace brings. `source`,
+   * `provider`, `links` and `hooks` (the `workspace.json` commands that run
+   * from DorkOS itself) are bound; `disclosed` is bound like an install's; a
+   * clone's `findings` and `settings` are shown in full and bound through
+   * {@link contentHash}. `projectPath` carries the folder it lands in.
+   */
+  workspaceDisclosure?: {
+    source: string;
+    provider: string;
+    disclosed: DisclosedEffects | null;
+    findings: readonly string[];
+    settings: readonly TemplateSettingsFileShown[];
+    links: readonly { path: string; target: string }[];
+    hooks: { after_create: readonly string[]; before_remove: readonly string[] };
+  };
+  /**
    * Opaque label for the agent that asked, shown on the approval card so an
    * operator can see WHO wants this. Not part of the effect, so deliberately not
    * bound into the approval hash — a different agent asking for the same install
@@ -276,6 +297,24 @@ export function describeTemplateCreationCapability(
   return { title: 'Create an agent from a template', tier: 'destructive' };
 }
 
+/** The id a workspace card is raised under (DOR-2335). */
+export const WORKSPACE_CREATION_CAPABILITY_ID = 'workspaces.create';
+
+/**
+ * Describe {@link WORKSPACE_CREATION_CAPABILITY_ID} for an approval card.
+ * `destructive`, because sessions there run what the workspace brings, and its
+ * hooks run from DorkOS itself.
+ *
+ * @param capabilityId - The id `ApprovalService` is resolving.
+ * @returns The descriptor, or `undefined` for any other id.
+ */
+export function describeWorkspaceCreationCapability(
+  capabilityId: string
+): { title: string; tier: 'destructive' } | undefined {
+  if (capabilityId !== WORKSPACE_CREATION_CAPABILITY_ID) return undefined;
+  return { title: 'Make a workspace', tier: 'destructive' };
+}
+
 /** Capability id each marketplace operation is gated as. */
 const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
   install: 'marketplace.install',
@@ -285,6 +324,8 @@ const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
   // Not a capability anyone invokes: it names the card (DOR-2325), and
   // `describeTemplateCreationCapability` gives it a title and tier.
   'create-agent-from-template': TEMPLATE_CREATION_CAPABILITY_ID,
+  // Likewise a card's name (DOR-2335): `describeWorkspaceCreationCapability`.
+  'create-workspace': WORKSPACE_CREATION_CAPABILITY_ID,
 };
 
 /**
@@ -323,7 +364,9 @@ interface MarketplaceBinding {
  *   disclosed, so a caller can name what a stale approval no longer covers.
  */
 function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
-  const disclosed = req.templateDisclosure?.disclosed ?? disclosedEffectsOf(req.preview);
+  const disclosed =
+    req.templateDisclosure?.disclosed ??
+    (req.workspaceDisclosure ? req.workspaceDisclosure.disclosed : disclosedEffectsOf(req.preview));
   return {
     capabilityId: CAPABILITY_IDS[req.operation],
     inputHash: hashApprovalInput({
@@ -345,6 +388,17 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
       // The staged files the card describes (DOR-2306): a source that moves
       // after the card is a different install.
       contentHash: req.contentHash ?? null,
+      // Only when there is one, so every other operation hashes as before: a
+      // workspace's source, how it is made, its links and the commands its
+      // hooks run (DOR-2335).
+      ...(req.workspaceDisclosure && {
+        workspace: {
+          source: req.workspaceDisclosure.source,
+          provider: req.workspaceDisclosure.provider,
+          links: req.workspaceDisclosure.links,
+          hooks: req.workspaceDisclosure.hooks,
+        },
+      }),
     }),
     disclosed,
   };
@@ -394,6 +448,9 @@ function tooLongToShow(req: ConfirmationRequest): boolean {
   if (req.operation === 'create-agent-from-template') {
     return describeTemplateInFull(req).length > UPDATE_DETAIL_MAX_LENGTH;
   }
+  if (req.operation === 'create-workspace') {
+    return describeWorkspaceInFull(req).length > UPDATE_DETAIL_MAX_LENGTH;
+  }
   return (
     req.operation === 'install' &&
     req.preview !== undefined &&
@@ -410,6 +467,14 @@ function tooMuchToShowRefusal(req: ConfirmationRequest): ConfirmationResult {
         'This template brings too much to show in full on one approval card, so DorkOS did ' +
         'not ask. Nothing was created. A person can review it and create the agent themselves ' +
         'with `dorkos agent create --template`.',
+    };
+  }
+  if (req.operation === 'create-workspace') {
+    return {
+      status: 'declined',
+      reason:
+        'This workspace brings too much to show in full on one approval card, so DorkOS did ' +
+        'not ask. Nothing was made. A person can review it and make the workspace themselves.',
     };
   }
   return {
@@ -503,6 +568,56 @@ function describeTemplateInFull(req: ConfirmationRequest): string {
 }
 
 /**
+ * Every line of a workspace card's detail (DOR-2335): who asked, what it is
+ * made from and where it lands, the commands its hooks run from DorkOS itself,
+ * and for a clone its settings files, links and what its skills run, each
+ * written out whole.
+ */
+function describeWorkspaceInFull(req: ConfirmationRequest): string {
+  const ws = req.workspaceDisclosure;
+  const clone = ws?.provider === 'clone';
+  const hookLines = (label: string, commands: readonly string[]) =>
+    commands.length > 0
+      ? [label, ...commands.flatMap((c) => c.split('\n').map((line) => `│ ${line}`)), '']
+      : [];
+  return [
+    `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
+    `${clone ? 'A clone of' : 'A worktree of'} ${JSON.stringify(ws?.source ?? 'an unnamed source')}, in ${JSON.stringify(req.projectPath ?? 'the workspace folder')}.`,
+    '',
+    ...hookLines(
+      'Commands DorkOS runs as soon as it is made (after_create), without a session:',
+      ws?.hooks.after_create ?? []
+    ),
+    ...hookLines(
+      'Commands DorkOS runs when it is removed (before_remove):',
+      ws?.hooks.before_remove ?? []
+    ),
+    ...(clone
+      ? [
+          ...((ws?.findings.length ?? 0) > 0
+            ? [
+                'Settings it carries, which every session there loads (hooks, permission rules, servers):',
+                ...(ws?.findings ?? []).map((f) => `- ${JSON.stringify(f)}`),
+                '',
+                ...(ws?.settings ?? []).flatMap(describeSettingsFile),
+              ]
+            : ['It carries no settings files for its sessions.', '']),
+          ...((ws?.links.length ?? 0) > 0
+            ? [
+                'Links, which sessions there follow:',
+                ...(ws?.links ?? []).map(
+                  (l) => `- ${JSON.stringify(l.path)} → ${JSON.stringify(l.target)}`
+                ),
+                '',
+              ]
+            : []),
+          ...describeEffectsInFull(ws?.disclosed ?? null, 'in its sessions'),
+        ]
+      : []),
+  ].join('\n');
+}
+
+/**
  * One settings file, written out whole under its name. Every line carries a
  * `│ ` gutter, so nothing in the file can pass itself off as the card's own
  * text; hidden and control characters were already made visible.
@@ -568,6 +683,10 @@ function summaryOf(req: ConfirmationRequest): string {
       return `Create the ${req.packageType ? quoteSummaryValue(req.packageType) : 'new'} package ${name} in ${marketplace ?? 'your personal marketplace'}`;
     case 'create-agent-from-template':
       return `Create the agent ${name} from the template ${quoteSummaryValue(req.origin?.source ?? 'unnamed')}. Its sessions will run what the template brings, listed below.`;
+    case 'create-workspace':
+      return req.workspaceDisclosure?.provider === 'clone'
+        ? `Make the workspace ${name} by cloning ${quoteSummaryValue(req.workspaceDisclosure.source)}. Sessions there will run what the repository brings, listed below.`
+        : `Make the workspace ${name} from ${quoteSummaryValue(req.workspaceDisclosure?.source ?? 'unnamed')}. DorkOS will run its workspace commands, listed below.`;
   }
 }
 
@@ -578,6 +697,7 @@ const OPERATION_NOUNS: Record<ConfirmationOperation, string> = {
   update: 'update',
   'create-package': 'package creation',
   'create-agent-from-template': 'agent creation',
+  'create-workspace': 'workspace',
 };
 
 /**
@@ -678,9 +798,11 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
         ? { detail: describeUpdatesInFull(req.updates) }
         : req.operation === 'create-agent-from-template'
           ? { detail: describeTemplateInFull(req) }
-          : req.operation === 'install' && req.preview
-            ? { detail: describeInstallInFull(req) }
-            : {}),
+          : req.operation === 'create-workspace'
+            ? { detail: describeWorkspaceInFull(req) }
+            : req.operation === 'install' && req.preview
+              ? { detail: describeInstallInFull(req) }
+              : {}),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return ticket.token;

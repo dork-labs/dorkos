@@ -10,7 +10,19 @@
 import path from 'node:path';
 import type { Db } from '@dorkos/db';
 import type { UserConfig } from '@dorkos/shared/config-schema';
-import type { AttachedSession, WorkspaceManager } from '@dorkos/shared/workspace';
+import type {
+  AttachedSession,
+  EnsureWorkspaceRequest,
+  Workspace,
+  WorkspaceManager,
+} from '@dorkos/shared/workspace';
+import type { ConfirmationProvider } from '../marketplace-mcp/confirmation-provider.js';
+import {
+  cardWorkspaceGate,
+  personWorkspaceGate,
+  RememberedWorkspaceCards,
+  type WorkspaceGate,
+} from './workspace-gate.js';
 import { WorkspaceStore } from './workspace-store.js';
 import { PortAllocator } from './port-allocator.js';
 import { WorktreeProvider } from './providers/worktree.js';
@@ -82,17 +94,80 @@ export function createWorkspaceSubsystem(opts: {
   return { service, reconciler, store, root };
 }
 
-let active: WorkspaceManager | null = null;
+/**
+ * The WorkspaceManager as the server calls it: `ensure` takes the gate that
+ * decides who sees what a new workspace brings (DOR-2335).
+ */
+export interface GatedWorkspaceManager extends Omit<WorkspaceManager, 'ensure'> {
+  /** Reuse or make a workspace; making one goes through `gate`. */
+  ensure(req: EnsureWorkspaceRequest, gate?: WorkspaceGate): Promise<Workspace>;
+}
+
+let active: GatedWorkspaceManager | null = null;
 
 /** Register the active WorkspaceManager at bootstrap. */
-export function setWorkspaceManager(manager: WorkspaceManager): void {
+export function setWorkspaceManager(manager: GatedWorkspaceManager): void {
   active = manager;
 }
 
 /** Read the active WorkspaceManager (throws if bootstrap has not run). */
-export function getWorkspaceManager(): WorkspaceManager {
+export function getWorkspaceManager(): GatedWorkspaceManager {
   if (!active) throw new Error('WorkspaceManager not initialized');
   return active;
+}
+
+let approvals: () => ConfirmationProvider | undefined = () => undefined;
+const rememberedCards = new RememberedWorkspaceCards();
+
+/**
+ * Register where workspace approval cards are raised (DOR-2335): the
+ * marketplace's confirmation provider, composed later in boot.
+ *
+ * @param getter - Reads the provider; `undefined` while there is none.
+ */
+export function setWorkspaceApprovals(getter: () => ConfirmationProvider | undefined): void {
+  approvals = getter;
+}
+
+/** Who is asking for a new workspace, and what they sent back. */
+export interface WorkspaceCaller {
+  /** A person at this machine (`trustedCaller`), rather than an agent. */
+  trusted: boolean;
+  /** The workspace's `projectKey/key`, the card's name for it. */
+  name: string;
+  /** Who asked, for the card. */
+  requestedBy?: string;
+  /** The review hash a person was shown, on their retry. */
+  approvedReviewHash?: string;
+  /**
+   * The token from an earlier card, on an agent's retry. A caller that cannot
+   * carry one back (a session turn, a managed checkout) leaves it out, and the
+   * pending card is remembered for it instead.
+   */
+  confirmationToken?: string;
+  /** Whether this caller can carry a token back; `false` remembers it here. */
+  carriesToken: boolean;
+}
+
+/**
+ * The gate for a caller (DOR-2335): a person is shown what a workspace brings;
+ * anyone else gets a card.
+ *
+ * @param caller - Who is asking, and what they sent back.
+ */
+export function workspaceGateFor(caller: WorkspaceCaller): WorkspaceGate {
+  if (caller.trusted) return personWorkspaceGate(caller.approvedReviewHash);
+  const card = {
+    provider: approvals(),
+    name: caller.name,
+    ...(caller.requestedBy && { requestedBy: caller.requestedBy }),
+  };
+  return caller.carriesToken
+    ? cardWorkspaceGate({
+        ...card,
+        ...(caller.confirmationToken && { confirmationToken: caller.confirmationToken }),
+      })
+    : rememberedCards.gateFor(card);
 }
 
 let scanRoot: string | null = null;
@@ -119,3 +194,10 @@ export { UnsafeWorkspaceSourceError } from './providers/git.js';
 export { WorkspaceStore } from './workspace-store.js';
 export { WorkspaceReconciler } from './workspace-reconciler.js';
 export { scanWorktrees } from './worktree-scan.js';
+export {
+  WorkspaceApprovalPendingError,
+  WorkspaceDeclinedError,
+  WorkspaceNeedsReviewError,
+  type WorkspaceGate,
+  type WorkspaceInspection,
+} from './workspace-gate.js';

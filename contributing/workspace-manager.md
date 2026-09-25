@@ -18,6 +18,7 @@ apps/server/src/services/workspace/
   providers/worktree.ts | clone.ts | git.ts# WorkspaceProvider impls + shared git + dirty-state
   hooks.ts                                 # Symphony's 4 hooks (.dork/workspace.json)
   port-env.ts                              # writes the allocated block into the workspace .env
+  workspace-gate.ts                        # what a new workspace brings, and who sees it (DOR-2335)
   workspace-service.ts                     # the WorkspaceManager (ensure/list/resolve/remove/…)
   workspace-reconciler.ts                  # 5-min cache↔manifest sync
   worktree-scan.ts                         # read-only adoption scan of the root (DOR-1056)
@@ -49,6 +50,29 @@ checkout another agent is working in (DOR-1056).
   passed; `pinned` workspaces are exempt from `sweep`. The DELETE route returns a
   `200` with `{ removed:false, blocked:'dirty' }` (not a 409) so the client can
   escalate to a force-confirm.
+- **A new workspace is shown before anything runs there (DOR-2335).** `ensure`
+  takes a `WorkspaceGate` and refuses to make a workspace without one. A clone
+  is staged in `<root>/.staging/` (no scan lists dot folders) and read there by
+  `inspectWorkspace`. It records the harness configuration, each settings file
+  written out, what the clone's skills run, every link, and the source
+  `workspace.json` `after_create` and `before_remove` commands, which run from
+  the server with no permission prompt. Then the gate decides:
+  - **A person** is shown a workspace that brings anything (409
+    `workspace_needs_review` on `POST /api/workspaces`) and sends back
+    `approvedReviewHash`.
+  - **An agent** gets a `workspaces.create` approval card for every clone and
+    for a worktree whose source runs hooks. It retries with
+    `confirmationToken`.
+  - **A caller that cannot carry a token** remembers its pending card per
+    workspace, so each turn does not raise another. These are the session
+    `workspaceKey` turn and an agent's managed checkout.
+
+  Only after the gate passes does the staged clone move into place, the
+  `after_create` commands that were shown run, and the `before_remove` commands
+  that were shown land on the manifest as `removeHooks`. Those are the only
+  hooks `remove` runs. A workspace made before that record existed runs none.
+  `before_run` and `after_run` are parsed but never run.
+
 - **Ports.** The server is the authority for managed workspaces (allocate block →
   write `.env`). `worktree-setup.sh`'s hash derivation is the offline fallback for
   plain `gtr` worktrees.

@@ -137,6 +137,9 @@ vi.mock('@dorkos/shared/manifest', () => ({
 
 vi.mock('../../services/workspace/index.js', () => ({
   getWorkspaceManager: vi.fn(() => ({ ensure: ensureSpy })),
+  // The gate is the workspace gate's own concern (workspace-gate.test.ts); this
+  // suite is about where a turn runs once a workspace exists.
+  workspaceGateFor: vi.fn(() => async () => {}),
 }));
 
 import { createServer } from 'node:http';
@@ -149,6 +152,7 @@ import type { AuthorRecord } from '../../services/rooms/author-registry.js';
 import type { RoomWorktreeManager } from '../../services/rooms/repo/room-worktree-manager.js';
 import { RoomError } from '../../services/rooms/room-errors.js';
 import { roomSessionPlace } from '../../services/rooms/repo/room-worktree-cwd.js';
+import { workspaceGateFor } from '../../services/workspace/index.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -322,6 +326,12 @@ describe('POST /:id/messages — where the turn runs', () => {
     });
 
     expect(opts?.cwd).toBe('/mock/home/workspaces/dorkos/DOR-1');
+    // A new workspace goes through the gate for this caller (DOR-2335): a turn
+    // cannot carry a card's token back, so its card is remembered.
+    expect(vi.mocked(workspaceGateFor)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'dorkos/DOR-1', carriesToken: false })
+    );
+    expect(ensureSpy.mock.calls.at(-1)?.[1]).toEqual(expect.any(Function));
   });
 
   it('a turn whose binding cannot be honored still runs, in the agent folder', async () => {
