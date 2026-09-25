@@ -11,8 +11,9 @@ import {
   CommunityWireEntrySchema,
   type CommunityWireEntry,
 } from '@dorkos/shared/community-wire';
-import { REMOVED_ENTRY_TEXT, removeEntry } from '../content-removal.js';
-import { ERASED_ENTRY_TEXT, eraseMembership } from '../erasure/erasure.js';
+import { removeEntry } from '../content-removal.js';
+import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
+import { eraseMembership } from '../erasure/erasure.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import {
   admit,
@@ -441,6 +442,35 @@ describe('removing a message', { timeout: 120_000 }, () => {
     expect(await count('SELECT 1 FROM entries WHERE community_id=$1', [s.communityId])).toBe(
       entries
     );
+  });
+});
+
+describe('posing as a removed message', { timeout: 120_000 }, () => {
+  // Purpose: the browser shows a tombstone sentence as a removed message, so a new post whose
+  // text is one (after trimming) is refused and nothing is written; a sentence inside a longer
+  // message is ordinary text.
+  it('refuses a new post whose whole text is a tombstone sentence', async () => {
+    const s = await scene('pose');
+    const before = await count('SELECT 1 FROM entries WHERE community_id=$1', [s.communityId]);
+    const posing = [
+      ...Object.values(REMOVED_ENTRY_TEXT),
+      ERASED_ENTRY_TEXT,
+      `  ${REMOVED_ENTRY_TEXT.author}\n`,
+    ];
+    for (const [index, text] of posing.entries()) {
+      const refused = await h.call(`${s.base}/channels/${s.channelId}/entries`, {
+        cookie: s.p.cookie,
+        body: { text, idempotencyKey: `pose-${index}` },
+      });
+      expect(refused.status, text).toBe(409);
+      expect(((await refused.json()) as { message: string }).message).toBe(
+        "A message can't say only what a deleted message says. Change the text and send it again."
+      );
+    }
+    expect(await count('SELECT 1 FROM entries WHERE community_id=$1', [s.communityId])).toBe(
+      before
+    );
+    await say(s, { cookie: s.p.cookie }, `${REMOVED_ENTRY_TEXT.author} Just kidding.`);
   });
 });
 

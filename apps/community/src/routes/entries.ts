@@ -12,6 +12,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
+import { isTombstoneText } from '../content/tombstones.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
   lockChannel,
@@ -178,6 +179,14 @@ export function registerEntryRoutes(
           repeated: true,
         };
       }
+      // A new post may not pose as a removed one: the browser styles a message whose text is a
+      // tombstone sentence as removed. (A retry of a removed post, above, still answers.)
+      if (isTombstoneText(body.text.trim()))
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          "A message can't say only what a deleted message says. Change the text and send it again."
+        );
       let rootId: string | null = null;
       if (body.parentEntryId) {
         const parent = await loadEntry(client, body.parentEntryId);

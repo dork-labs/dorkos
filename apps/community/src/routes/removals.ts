@@ -7,12 +7,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
-import {
-  removalAuthority,
-  removeAttachment,
-  removeEntry,
-  type RemovedBy,
-} from '../content-removal.js';
+import { removalAuthority, removeAttachment, removeEntry } from '../content-removal.js';
 import {
   bearer,
   lifecycleError,
@@ -21,6 +16,7 @@ import {
   type Member,
   type Principal,
 } from '../data.js';
+import type { RemovedBy } from '../content/tombstones.js';
 import { ApiError, json } from '../http.js';
 import { hashSecret } from '../security.js';
 import { resolveCommunityContext } from '../tenant-context.js';

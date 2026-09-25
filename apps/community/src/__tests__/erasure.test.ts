@@ -2,12 +2,8 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { CommunityWireHandleSchema } from '@dorkos/shared/community-wire';
 import { tombstonePayloadHash } from '../content-removal.js';
-import {
-  ERASED_ENTRY_TEXT,
-  ERASED_MENTION,
-  randomHuskHandle,
-  rewriteHandleTokens,
-} from '../erasure/erasure.js';
+import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
+import { ERASED_MENTION, randomHuskHandle, rewriteHandleTokens } from '../erasure/erasure.js';
 import { parseErasureJournal } from '../erasure/reapply.js';
 import { resolveCommunityMentions } from '../mentions.js';
 import { reauthenticationDecision, REAUTH_WINDOW_MS } from '../routes/erasures.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
 import {
-  REMOVED_ENTRY_TEXT,
   removalAuthority,
   tombstonePayloadHash,
   type RemovalActor,

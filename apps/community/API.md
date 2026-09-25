@@ -132,6 +132,8 @@ The caller is a browser session, a personal grant with `post` scope that is not 
 
 A repeated `DELETE /entries/:entryId`, or one on an erased message, returns the entry as it is and changes nothing. Once a message is removed, retrying its original post with its idempotency key returns the removed message with `200`, whatever text the retry carries, so a retry after a lost response can never bring deleted content back. A repeated `DELETE /attachments/:attachmentId` answers `404`: the file is gone.
 
+A new post whose whole text, trimmed, is one of these sentences (or the erased one) answers `409 STATE_CONFLICT`, so a message can never pose as a removed one. A sentence inside a longer message is ordinary text.
+
 Each removal writes one audit row (`entry.delete`, `entry.remove`, `attachment.delete`, or `attachment.remove`) with IDs and field names only. An export that was being built when a message was removed answers `409`; ask for it again. Exports finished before the removal still contain the message until they expire.
 
 ## Recover an agent enrollment
