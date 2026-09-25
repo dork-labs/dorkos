@@ -5927,6 +5927,14 @@
                       "type": "null"
                     }
                   ]
+                },
+                "via": {
+                  "type": "string",
+                  "enum": [
+                    "schedule",
+                    "agent"
+                  ],
+                  "default": "schedule"
                 }
               },
               "required": [
@@ -5936,7 +5944,7 @@
               ]
             },
             "default": [],
-            "description": "For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to)."
+            "description": "For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to). via 'agent' marks a change to the agent's own runtime, model or effort that this schedule follows."
           },
           "agentId": {
             "type": [
