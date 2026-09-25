@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HttpTransport } from '../transport';
-import { DirectTransport } from '../direct-transport';
 
 describe('HttpTransport.listRelayDeadLetters', () => {
   const BASE_URL = 'http://localhost:4242/api';
@@ -63,22 +62,6 @@ describe('HttpTransport.listRelayDeadLetters', () => {
 
     const transport = new HttpTransport(BASE_URL);
     const result = await transport.listRelayDeadLetters();
-
-    expect(result).toEqual([]);
-  });
-});
-
-describe('DirectTransport.listRelayDeadLetters', () => {
-  it('returns an empty array (Relay not supported in embedded mode)', async () => {
-    const transport = new DirectTransport({} as never);
-    const result = await transport.listRelayDeadLetters();
-
-    expect(result).toEqual([]);
-  });
-
-  it('ignores any filters and returns empty array', async () => {
-    const transport = new DirectTransport({} as never);
-    const result = await transport.listRelayDeadLetters({ endpointHash: 'any-hash' });
 
     expect(result).toEqual([]);
   });

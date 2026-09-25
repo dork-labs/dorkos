@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (HttpTransport for standalone web, DirectTransport for Obsidian plugin). The server exposes Express routes that delegate to services.
+This guide covers data fetching patterns in DorkOS. The client uses TanStack Query for server-state management, communicating through the Transport abstraction layer (`HttpTransport` for the browser, phone web app, and desktop renderer). The server exposes Express routes that delegate to services.
 
 ## Key Files
 
@@ -10,7 +10,6 @@ This guide covers data fetching patterns in DorkOS. The client uses TanStack Que
 | ------------------------ | ---------------------------------------------------------------- |
 | Transport interface      | `packages/shared/src/transport.ts`                               |
 | HttpTransport            | `apps/client/src/layers/shared/lib/transport/http-transport.ts`  |
-| DirectTransport          | `apps/client/src/layers/shared/lib/direct-transport.ts`          |
 | TransportContext         | `apps/client/src/layers/shared/model/TransportContext.tsx`       |
 | EventStreamProvider      | `apps/client/src/layers/shared/model/event-stream-context.tsx`   |
 | Session entity hooks     | `apps/client/src/layers/entities/session/`                       |
@@ -154,7 +153,7 @@ const transport = useTransport();
 const sessions = await transport.listSessions();
 ```
 
-This ensures the same React code works in both standalone web (HTTP) and Obsidian plugin (in-process) modes.
+This keeps React code independent of network details and lets tests supply a mock transport.
 
 ### SSE Streaming Protocol
 
@@ -375,7 +374,7 @@ const { data: sessions } = useSessions({ staleTime: 30_000 });
 ```typescript
 // ❌ NEVER bypass Transport to call fetch() directly
 async function getSessions() {
-  const res = await fetch('/api/sessions'); // Breaks in Obsidian plugin
+  const res = await fetch('/api/sessions'); // Bypasses the Transport seam and its request policies
   return res.json();
 }
 
@@ -384,7 +383,7 @@ function useSessions() {
   const transport = useTransport();
   return useQuery({
     queryKey: ['sessions'],
-    queryFn: () => transport.listSessions(), // Works in both modes
+    queryFn: () => transport.listSessions(), // Uses the shared request policy and supports mock transports
   });
 }
 ```

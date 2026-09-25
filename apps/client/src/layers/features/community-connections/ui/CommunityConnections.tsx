@@ -6,17 +6,16 @@ import {
   useConfirmedCommunityAuthority,
 } from '@/layers/entities/community';
 import { useTransport } from '@/layers/shared/model';
-import { getPlatform, isCommunityAuthorityCurrent } from '@/layers/shared/lib';
+import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import { Button, Input, Label, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { CommunityConnectionRow } from './CommunityConnectionRow';
 
 /** Pair this installation with independently hosted communities through their browser approval. */
 export function CommunityConnections() {
-  const embedded = getPlatform().isEmbedded;
   const transport = useTransport();
   const client = useQueryClient();
-  const authority = useConfirmedCommunityAuthority(!embedded);
-  const list = useCommunityConnections(!embedded);
+  const authority = useConfirmedCommunityAuthority(true);
+  const list = useCommunityConnections(true);
   const authorityAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
   const id = useId();
   const [url, setUrl] = useState('');
@@ -68,7 +67,6 @@ export function CommunityConnections() {
     setNoticeState({ address: authorityAddress, message: '' });
     start.mutate();
   }
-  if (embedded) return null;
 
   return (
     <section aria-labelledby={`${id}-title`} className="space-y-4">

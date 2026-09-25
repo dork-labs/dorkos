@@ -167,7 +167,6 @@ export type {
   UiStateReport,
   UiStateReportDocument,
   UiPanelId,
-  UiSidebarTab,
   UiToastLevel,
   UiCommandEvent,
   CelebrationKind,

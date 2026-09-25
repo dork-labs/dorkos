@@ -24,13 +24,6 @@ type LayerState = 'loading' | 'loaded' | 'missing';
  * The image diff review surface (DOR-212 Chunk B): GitHub-style 2-up, swipe,
  * and onion-skin comparison of an image's pre-edit baseline against its current
  * bytes, over two plain `<img>` layers — no new heavy dependency.
- *
- * Whole-file review: "Restore previous" writes the baseline bytes back to disk
- * through the server-held binary revert (confirm-gated — it discards the
- * agent's new image); "Mark reviewed" advances the baseline. A baseline that
- * doesn't exist (the agent created this image this session) degrades honestly:
- * the header says so and restore is not offered. Web-only — under a transport
- * that can't serve bytes by URL (Obsidian) a calm notice renders instead.
  */
 export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps) {
   const transport = useTransport();
@@ -55,8 +48,6 @@ export function CanvasImageDiffContent({ content }: CanvasImageDiffContentProps)
   const baselineBase = transport.diffBaselineMediaUrl(cwd, content.sourcePath, sessionId);
   const currentBase = transport.mediaUrl(cwd, content.sourcePath);
   if (baselineBase === null || currentBase === null) {
-    // The in-process transport has no URL surface for local bytes — image diff
-    // is web-only, consistent with the shipped image viewer.
     return (
       <DiffMessage>
         Comparing image versions isn’t available here. Open this session in the DorkOS web app to

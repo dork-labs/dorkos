@@ -333,7 +333,7 @@ Tailwind's first-party `scrollbar-*` utilities (v4.3+) are the sanctioned surfac
 
 ### Sidebar
 
-Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`). The Obsidian embed's chrome is `EmbedSidebar` (`features/session-list/`), a single-view roster with no tab strip — the four-tab `SessionSidebar` it replaced was retired (DOR-401); see [Sidebar Tabs](#sidebar-tabs) below.
+Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`).
 
 - **Width**: the visible panel is **272px** — the number to build to, and the number a browser test measures on `sidebar-inner`. **Do not set `--sidebar-width` to 272px.** That variable on `SidebarProvider` (`AppShell.tsx`) sizes the _slot_, and the `inset` variant adds `p-2` — 8px of padding a side — before the tinted surface starts. So the slot is `calc(272px + 1rem)`, which is what `AppShell` writes, and the panel inside it is 272. Writing `17rem` there would give a 256px panel, not a 272px one. Never set a one-off width on a component to work around any of this.
 - **CSS variables**: `--sidebar-*` in `index.css`. The panel sits distinctly off the main background — `--sidebar` is 91% against a 98% background in light mode, and 10% against 4% in dark.
@@ -451,7 +451,7 @@ This is the whole contract a zoned nav panel must meet, and it is what shipped: 
 
 ### Sidebar Tabs
 
-Retired. The four-tab `SessionSidebar` strip this section used to document (Overview / Sessions / Schedules / Connections, switched via a CSS `hidden`-toggle so all three stayed mounted) no longer exists. DOR-401 retired it: the Obsidian embed's chrome is now the single-view `EmbedSidebar` roster (see [Sidebar](#sidebar) above), and the Overview/Schedules/Connections context it carried moved to the right-panel Inspector (Pulse, Profile) or was dropped. ADR-0107, which decided the CSS `hidden`-toggle mechanism, is deprecated as of the 2026-08-06 audit — kept as the archival record of a component that no longer ships.
+Retired. The four-tab `SessionSidebar` strip this section used to document (Overview / Sessions / Schedules / Connections, switched via a CSS `hidden`-toggle so all three stayed mounted) no longer exists. DOR-401 retired it. Per-session context lives in the right-panel Inspector; the later Obsidian embed has also been retired. ADR-0107, which decided the CSS `hidden`-toggle mechanism, is deprecated as of the 2026-08-06 audit — kept as the archival record of a component that no longer ships.
 
 ### Tooltip
 
@@ -460,11 +460,11 @@ Standard shadcn Radix tooltip from `shared/ui/tooltip.tsx`. Used for:
 - Disabled state indicators (e.g., "Pulse is disabled" on HeartPulse icon)
 - Contextual information on icon-only buttons
 
-`TooltipProvider` is mounted in `App.tsx`. Use `<Tooltip>` + `<TooltipTrigger>` + `<TooltipContent>` pattern.
+`TooltipProvider` is mounted in `AppShell.tsx`. Use `<Tooltip>` + `<TooltipTrigger>` + `<TooltipContent>` pattern.
 
 ### Toast Notifications (Sonner)
 
-Theme-aware toast via `sonner` from `shared/ui/sonner.tsx`. `<Toaster />` mounted in `App.tsx`.
+Theme-aware toast via `sonner` from `shared/ui/sonner.tsx`. `<Toaster />` mounted in `AppShell.tsx`.
 
 **When to toast:**
 
@@ -505,7 +505,7 @@ Full-width app banner from `shared/ui/banner.tsx` (`Banner`), for a **standing c
 | `info`     | A neutral heads-up                                   | `role="status"` |
 | `neutral`  | Announcements (the default)                          | `role="status"` |
 
-There is **no `success` banner** — a success is a toast. Colors come from the `--status-*` tokens, so light/dark and the Obsidian bridge stay correct. Pass `onDismiss` only for a dismissible banner; pass `details` + `detailsOpen` for a collapsible progressive-disclosure region. The telemetry banner was its only production user before it became a moment, so the working example is now the Dev Playground showcase (`dev/showcases/BannerShowcases.tsx`) rather than a shipped surface.
+There is **no `success` banner** — a success is a toast. Colors come from the `--status-*` tokens, so light and dark themes stay correct. Pass `onDismiss` only for a dismissible banner; pass `details` + `detailsOpen` for a collapsible progressive-disclosure region. The telemetry banner was its only production user before it became a moment, so the working example is now the Dev Playground showcase (`dev/showcases/BannerShowcases.tsx`) rather than a shipped surface.
 
 ### Moments (one-time modals)
 
@@ -626,7 +626,7 @@ The bound behind all four: an identity's colour answers only where that identity
 
 **Focus-visible parity is a rule, not a nicety.** If an area has a hover state, it has a focus-visible twin conveying the same information — a keyboard user must never learn less than a mouse user. The ring itself comes from the `focus-ring` utility; the _informational_ half (a colour step, an underline, a lift) gets an explicit `focus-visible:` twin beside every `hover:`. That includes a Surface: when the card's primary control takes focus, the **card** answers, not just the word inside it — `has-[[data-slot=team-member-open]:focus-visible]:` is how the roster card does it. The inverse is equally binding: **never put a `focus-visible:` ring on something no keyboard can reach.** A dormant ring on a `<span>` is an affordance wired to nothing.
 
-**Reduced motion needs no work for CSS, and for most Motion props.** `index.css` collapses every transition and animation duration to `0.01ms` under `prefers-reduced-motion: reduce`, globally, and `MotionConfig reducedMotion="user"` (`App.tsx`) does the equivalent for `motion/react`'s **transform and layout** animations. Every prescription above is therefore correct there for free — which is why none of them carries a `motion-reduce:` variant, and why every one of them is a _static_ end state that reads on its own (a ring is present, a border is coloured, a card is lifted). A design that only reads _because_ of the movement is broken there. What neither reset reaches is **opacity, colour, or anything with `repeat: Infinity`** — those are inline styles `MotionConfig` does not suppress, so an infinite opacity or colour loop keeps running under reduced motion regardless of the global config. A `motion.*` component using any of the three must call `useReducedMotion()` itself and branch **off**, not shorter — put the branch in a pure function that also reports itself as a `data-` attribute so the two can never drift — `shouldAnimateRoster()`, below, is the shape to copy.
+**Reduced motion needs no work for CSS, and for most Motion props.** `index.css` collapses every transition and animation duration to `0.01ms` under `prefers-reduced-motion: reduce`, globally, and `MotionConfig reducedMotion="user"` (`AppShell.tsx`) does the equivalent for `motion/react`'s **transform and layout** animations. Every prescription above is therefore correct there for free — which is why none of them carries a `motion-reduce:` variant, and why every one of them is a _static_ end state that reads on its own (a ring is present, a border is coloured, a card is lifted). A design that only reads _because_ of the movement is broken there. What neither reset reaches is **opacity, colour, or anything with `repeat: Infinity`** — those are inline styles `MotionConfig` does not suppress, so an infinite opacity or colour loop keeps running under reduced motion regardless of the global config. A `motion.*` component using any of the three must call `useReducedMotion()` itself and branch **off**, not shorter — put the branch in a pure function that also reports itself as a `data-` attribute so the two can never drift — `shouldAnimateRoster()`, below, is the shape to copy.
 
 **Touch invariant:** nothing that exists only on hover may carry information unavailable another way. A card's lift has no touch equivalent and costs nothing, because the tap opens the drawer; an avatar's hover card is reached by long-press (`identity-hover-card.tsx`), which is the one pattern for that — never invent a second.
 

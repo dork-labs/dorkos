@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CommunityCursorSchema } from '@dorkos/shared/community-adapter';
 import { createRemoteCommunityMethods } from '../remote-community-methods';
-import { communityStubs } from '../../direct/community-stubs';
 
 const access = {
   state: 'verified',
@@ -113,9 +112,6 @@ describe('qualified remote community transport', () => {
     await expect(
       methods().retryRemoteCommunityDelivery('ref-a', 'room/b', 'key/c')
     ).rejects.toThrow('different room');
-    await expect(
-      communityStubs.retryRemoteCommunityDelivery('ref-a', 'room/b', 'key/c')
-    ).rejects.toThrow('web or desktop');
   });
 
   it('changes agent membership through the qualified membership route', async () => {
@@ -148,9 +144,6 @@ describe('qualified remote community transport', () => {
     expect(fetch.mock.calls.every(([, options]) => options.method === 'POST')).toBe(true);
     answer({ stopped: -1 });
     await expect(methods().haltRemoteCommunityRoom('a', 'b')).rejects.toThrow();
-    await expect(communityStubs.haltRemoteCommunityRoom('a', 'b')).rejects.toThrow(
-      'web or desktop'
-    );
   });
   it('validates private delivery events against the selected community and requires a room snapshot first', async () => {
     const pending = {
@@ -236,9 +229,6 @@ describe('qualified remote community transport', () => {
     await expect(
       methods().leaveRemoteCommunityRoom('community-a', 'same-id')
     ).resolves.toBeUndefined();
-    await expect(communityStubs.getRemoteCommunityRoom('community-a', 'same-id')).rejects.toThrow(
-      'web or desktop'
-    );
   });
 
   it('uploads raw file bytes with encoded metadata and refuses oversized bytes', async () => {

@@ -166,11 +166,6 @@ interface PillState {
  * while the app already knows the link is down, because the status line's
  * connection item is the signal for an outage and a second amber marker would
  * only dilute what this one means.
- *
- * Only the standalone shell (`AppShell`) mounts this. The Obsidian embed renders
- * `App` instead and never mounts it, which is the actual reason the embed's
- * stubbed-out approvals and empty Inbox cannot produce a permanently empty pill
- * there.
  */
 export function InboxBell() {
   // The popover's one derivation of "what's waiting" (spec

@@ -86,12 +86,6 @@ export interface RemoteAccess extends RemoteAccessSnapshot {
  * Subscribe to the shared picture of remote access, without asking the server
  * for it.
  *
- * The store is kept current by {@link useTunnelSync}, which the app shell mounts
- * once, and by every surface that calls {@link useRemoteAccess}. A shell that
- * mounts neither — the Obsidian embed — leaves this at its initial state, which
- * reads as "not set up, nothing running": the honest answer there, since the
- * embed has no tunnel.
- *
  * @returns What the store holds right now.
  */
 export function useRemoteAccessSnapshot(): RemoteAccessSnapshot {

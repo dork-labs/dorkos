@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import {
   AgentConnectionAccessList,
   SessionConnectionAccessList,
@@ -13,33 +13,9 @@ import {
 
 afterEach(() => {
   cleanup();
-  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 
 describe('AgentConnectionAccessList', () => {
-  it('explains embedded unavailability without claiming the agent has no access', async () => {
-    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-    const transport = createMockTransport({
-      getAgentConnectorConnections: vi
-        .fn()
-        .mockRejectedValue(new Error('Connections can only be managed in DorkOS itself.')),
-    });
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    render(
-      <QueryClientProvider client={client}>
-        <TransportProvider transport={transport}>
-          <AgentConnectionAccessList agentId="agent-1" />
-        </TransportProvider>
-      </QueryClientProvider>
-    );
-
-    expect(await screen.findByText('Account access is unavailable here')).toBeInTheDocument();
-    expect(screen.getByText(/Open DorkOS in your browser to connect services/)).toBeInTheDocument();
-    expect(screen.queryByText('No account access')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-  });
-
   it('reads canonical grants and keeps pending authority unavailable', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getAgentConnectorConnections).mockResolvedValue({

@@ -25,7 +25,6 @@
     "cron",
     "scheduler",
     "telegram",
-    "obsidian",
     "relay",
     "mesh",
     "rest-api",

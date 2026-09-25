@@ -96,12 +96,6 @@ function toPersisted(state: PanelState): { ids: string[]; activeIndex: number } 
  * visible; the rest stay mounted (hidden), so switching tabs is instant and
  * never tears a PTY down.
  *
- * Tabs and their active index persist per (session, cwd) in `sessionStorage`, so
- * a page refresh re-attaches to every live shell with the same tab active;
- * shells that lapsed past the server's idle grace window are silently pruned.
- * Web-only — the whole feature is gated on `transport.supportsTerminal`, so this
- * never mounts under the in-process transport.
- *
  * The whole feature module is lazy-loaded by the right-panel contribution
  * (`React.lazy`), so `@xterm/*` lands in its own async chunk.
  *

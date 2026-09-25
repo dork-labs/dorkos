@@ -228,14 +228,6 @@ function useRouteHeader() {
  */
 export function AppShell() {
   const { sidebarOpen, setSidebarOpen } = useAppStore();
-  // **The one call site that decides which cockpit this is** (spec §9, P4).
-  // Below 768px the sidebar is not a narrower sidebar — it is four destinations
-  // along the bottom of the screen and no drawer at all. Reverting this one
-  // choice restores the off-canvas sheet, which stays in `shared/ui/sidebar.tsx`
-  // as the shared primitive it always was (the Dev Playground and the component
-  // tests mount it). It is NOT kept there for the Obsidian embed, whatever the
-  // comment here used to say: the embed renders `EmbedSidebar`, which never
-  // touches `<Sidebar>`.
   const isMobile = useIsMobile();
   // Whether a phone's tab panel is covering the routed page. The panels are an
   // opaque layer, so the page underneath has to be unreachable while they are
@@ -243,10 +235,6 @@ export function AppShell() {
   // and only the layout knows, so the bit travels through the widget's store.
   const mobilePanelUp = useMobilePanelStore((s) => s.panelUp);
   const [activeSessionId] = useSessionId();
-  // Live route pathname threaded into the right panel so its tab `visibleWhen`
-  // predicates re-evaluate on navigation. The container itself is router-free
-  // (it takes pathname as a prop) so the same component mounts in the
-  // router-less Obsidian embed, which passes a constant.
   const rightPanelPathname = useRouterState({ select: (s) => s.location.pathname });
   const searchStr = useRouterState({ select: (st) => st.location.searchStr });
   const rightPanelSearch = new URLSearchParams(searchStr);
@@ -308,8 +296,6 @@ export function AppShell() {
   // strip does not exist (DOR-568).
   useAppTabsSync();
   useAppTabShortcuts();
-  // Desktop shell → client navigation bridge (ADR 260709-210223). A no-op in
-  // the browser and Obsidian, where `window.electronAPI` is absent.
   useElectronNavigate();
   // Desktop Cmd+W → close a tab, not the window. No-op without the bridge, and
   // deliberately silent on the last tab so the window still closes.

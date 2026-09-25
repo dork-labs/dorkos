@@ -145,10 +145,10 @@ describe('the settled lines', () => {
 
 describe('the demo-claim gate', () => {
   // AGENTS.md: a surface that is not verified is never described as working.
-  // The Windows build is an early alpha, the Obsidian plugin is built but
-  // under-tested, and the marketplace's Claude-Code-superset compatibility is
-  // the unverified part of that pillar. None of the three may appear here,
-  // because this page has no room to caveat them.
+  // The Windows build is an early alpha and the Obsidian plugin is retired.
+  // The marketplace's Claude-Code-superset compatibility remains unverified.
+  // None may appear here: this page has no room for those caveats, and a
+  // retired surface is no longer a product claim.
   const UNVERIFIED = /\b(windows|obsidian|linux|superset|drop-?in replacement)\b/i;
 
   it('names no unverified surface', () => {

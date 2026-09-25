@@ -1,56 +1,23 @@
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { useAppStore } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 
-/**
- * Starting a brand-new conversation, from anywhere.
- *
- * Lives beside {@link useSessionId} because it is the same question one step on
- * — that hook says which conversation is open, this one opens a fresh one — and
- * because both need the identical dual-mode branch. The one thing it is NOT is
- * `setDir`: that resolves a directory's most recent conversation and resumes it,
- * which is what "open this agent" means. A fresh id is the whole difference, and
- * confusing the two is how the command palette ended up with two rows that did
- * the same thing (DOR-928).
- *
- * It is shared because three surfaces offer this — the sidebar's "New session",
- * the chat header's agent chip, and the palette's agent sub-menu — and each had
- * its own copy that navigated directly. In the Obsidian embed there is no router,
- * so those copies threw when pressed, and threw BEFORE the work that follows
- * (closing the palette, recording frecency), leaving the surface stuck open.
- * Carrying the branch in one place is the only way that stays fixed.
- *
- * @returns A callback taking the agent's working directory — the active one when
- *   omitted — that opens a fresh conversation there. Safe in the router-less
- *   embed, where it moves the stores instead of the URL.
- */
+/** Open a fresh conversation in the chosen directory, preserving an optional seed. */
 export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
-  const platform = getPlatform();
   const navigate = useNavigate();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
-  const setSelectedCwd = useAppStore((s) => s.setSelectedCwd);
-  const setStoreSessionId = useAppStore((s) => s.setSessionId);
 
   return useCallback(
     (dir?: string, options?: StartNewSessionOptions) => {
       const target = dir ?? selectedCwd ?? undefined;
-      if (platform.isEmbedded) {
-        // No URL to write. The stores ARE the address here, and the id still has
-        // to be minted so the composer has a session to attach to. A `seed` is a
-        // URL contract, so the embed opens the conversation UNSEEDED rather than
-        // inventing a second delivery path for it (spec R5: never fake a seed).
-        if (target) setSelectedCwd(target);
-        setStoreSessionId(crypto.randomUUID());
-        return;
-      }
       void navigate({
         to: '/session',
         search: { dir: target, session: crypto.randomUUID(), seed: options?.seed },
       });
     },
-    [platform.isEmbedded, navigate, selectedCwd, setSelectedCwd, setStoreSessionId]
+    [navigate, selectedCwd]
   );
 }
 
@@ -81,27 +48,11 @@ export interface SetSessionIdOptions {
   continuedFrom?: string;
 }
 
-/**
- * Dual-mode session ID hook.
- *
- * - **Standalone (web):** reads `?session=` from TanStack Router search params.
- *   Setter navigates to `/session?session=<id>` (history push by default; pass
- *   `{ replace: true }` for an in-place URL rewrite).
- * - **Embedded (Obsidian):** reads/writes Zustand store directly (`replace` is a
- *   no-op — there is no browser history to manage).
- *
- * Both stores are subscribed unconditionally to satisfy React's rules of hooks.
- */
+/** Read the session from the URL and navigate when its id changes. */
 export function useSessionId(): [
   string | null,
   (id: string | null, options?: SetSessionIdOptions) => void,
 ] {
-  const platform = getPlatform();
-
-  // Embedded: Zustand store (always subscribed for rules of hooks)
-  const storeId = useAppStore((s) => s.sessionId);
-  const setStoreId = useAppStore((s) => s.setSessionId);
-
   // Standalone: TanStack Router search params
   const search = useSessionSearch();
   const navigate = useNavigate();
@@ -137,16 +88,6 @@ export function useSessionId(): [
     },
     [navigate]
   );
-
-  // Embedded setter ignores options (no history to push/replace).
-  const setEmbeddedId = useCallback(
-    (id: string | null, _options?: SetSessionIdOptions) => setStoreId(id),
-    [setStoreId]
-  );
-
-  if (platform.isEmbedded) {
-    return [storeId, setEmbeddedId];
-  }
 
   return [search.session ?? null, setSessionId];
 }

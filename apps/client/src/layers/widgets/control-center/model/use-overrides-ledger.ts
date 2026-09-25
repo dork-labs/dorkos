@@ -55,7 +55,7 @@ export interface OverrideRow {
   name: string;
   /** The power it runs at, in the runtime's own word for the mode. */
   detail: string;
-  /** Open the owning surface, or `null` where there is nowhere to navigate (the embed). */
+
   onOpen: (() => void) | null;
 }
 

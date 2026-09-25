@@ -132,8 +132,6 @@ function successToastOptions(
  */
 export function useInstallWithToast() {
   const install = useInstallPackage();
-  // Typed `(region) => void` that centralizes the /connections deep-link and
-  // no-ops in the router-less Obsidian embed. A region typo fails to compile.
   const goToRegion = useOpenConnections();
   const { mutate: baseMutate, mutateAsync: baseMutateAsync } = install;
 

@@ -113,7 +113,7 @@ Seven modules, three tiers:
 - **Claude Code Agent Teams** — Experimental, terminal-only, single machine
 - **DIY** — Tailscale + tmux + custom Telegram bots + caffeinate hacks
 
-DorkOS is the only product that combines scheduling + messaging + agent discovery + browser UI + Obsidian integration in a single open-source, self-hosted package.
+DorkOS brings scheduling, messaging, agent discovery, and a shared browser and desktop app into one open-source, self-hosted package. The Obsidian plugin is retired; vault folders can still be used in the normal app without in-vault features.
 
 ## Real Developer Frustrations (Verbatim Quotes)
 

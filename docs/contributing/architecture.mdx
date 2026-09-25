@@ -11,13 +11,13 @@ This is the engineering reference. For a plain-language introduction, start with
 
 DorkOS has several deployment boundaries. The local React client reaches an Express server through the `Transport` interface. The independent Community server owns shared channels. Cloud is optional and communicates through a public contract. The marketplace website helps people discover packages that the local server installs.
 
-The diagrams reflect public source `ea6e06765385258d2cf07a5f078de1fec0041df5`, reviewed September 23, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness.
+The diagrams reflect public source `ea6e06765385258d2cf07a5f078de1fec0041df5`, reviewed September 23, 2026. In flowcharts, solid arrows show implemented paths; dashed arrows label unfinished wiring or contract relationships. In the sequence diagram, dashed arrows represent responses and events. Optional app-side calls do not certify hosted-service readiness. Obsidian retirement updates on 2026-09-25 remove the in-process plugin path from this map.
 
 ## System map
 
 [![DorkOS deployment boundaries and communication paths](/diagrams/architecture/system-context.svg)](/diagrams/architecture/system-context.svg)
 
-Browser, phone web app, and desktop renderer share the local server path. The desktop shell manages a local server. Obsidian uses `DirectTransport` for an in-process subset and remains a preview.
+Browser, phone web app, and desktop renderer share the local server path. The desktop shell manages a local server.
 
 Community has its own browser, sign-in, PostgreSQL, and file storage. Its browser chat, invitations, files, and exports are implemented. After a person approves a local installation, the local app opens authorized Community channels through qualified local-server routes and a remote-room SSE stream.
 
@@ -109,9 +109,6 @@ DorkOS is a Turborepo monorepo. The apps and the packages that matter most for t
       <Folder name="site">
         <File name="Next.js 16 + Fumadocs" />
       </Folder>
-      <Folder name="obsidian-plugin">
-        <File name="Vite lib build (CJS)" />
-      </Folder>
       <Folder name="e2e">
         <File name="Playwright browser tests" />
       </Folder>
@@ -177,10 +174,8 @@ interface Transport {
 
 The interface extends further to cover Tasks schedules, Relay messaging, Mesh agents, bindings, and admin operations. See [`packages/shared/src/transport.ts`](https://github.com/dork-labs/dorkos/blob/main/packages/shared/src/transport.ts) for the complete definition.
 
-### Two Transport Implementations
+### HTTP Transport
 
-<Tabs items={["HttpTransport (Standalone Web)", "DirectTransport (Obsidian Plugin)"]}>
-<Tab value="HttpTransport (Standalone Web)">
 `HttpTransport` communicates with the Express server over HTTP:
 
 - Uses `fetch()` for CRUD operations
@@ -189,57 +184,27 @@ The interface extends further to cover Tasks schedules, Relay messaging, Mesh ag
 
 **Location:** `apps/client/src/layers/shared/lib/transport/http-transport.ts`
 
-</Tab>
-<Tab value="DirectTransport (Obsidian Plugin)">
-`DirectTransport` calls service instances directly in the same process:
-
-- No HTTP, no port binding, no network serialization
-- `StreamManager` iterates the runtime's snapshot + event streams in-process (`getSessionSnapshot`, `subscribeSession`, `subscribeSessionList`)
-- Implements an embedded service subset; the Obsidian surface remains a preview
-
-**Location:** `apps/client/src/layers/shared/lib/direct-transport.ts`
-
-</Tab>
-</Tabs>
-
-Both implementations expose the same interface, so the React client doesn't know which one it's using.
+The interface keeps React components independent of network details and supports isolated tests with mock transports.
 
 ## Dependency Injection via React Context
 
 The Transport is injected into the React app via a context provider:
 
-<Tabs items={["Standalone Web", "Obsidian Plugin"]}>
-<Tab value="Standalone Web">
 ```typescript
-// main.tsx
-const transport = new HttpTransport({ baseUrl: '/api' })
+// Simplified composition from main.tsx
+import { RouterProvider } from '@tanstack/react-router';
+import { createAppRouter } from './router';
+import { HttpTransport } from '@/layers/shared/lib/transport';
+import { queryClient } from '@/layers/shared/lib';
+import { TransportProvider } from '@/layers/shared/model';
+
+const transport = new HttpTransport('/api');
+const router = createAppRouter(queryClient, transport);
 
 <TransportProvider transport={transport}>
-  <App />
-</TransportProvider>
+  <RouterProvider router={router} />
+</TransportProvider>;
 ```
-</Tab>
-<Tab value="Obsidian Plugin">
-```typescript
-// CopilotView.tsx
-const runtime = new ClaudeCodeRuntime(dorkHome, repoRoot)
-const commandRegistry = new CommandRegistryService(repoRoot)
-
-const transport = new DirectTransport({
-runtime,
-transcriptReader: runtime.getTranscriptReader(),
-commandRegistry,
-vaultRoot: repoRoot
-})
-
-<TransportProvider transport={transport}>
-  <ObsidianApp>
-    <App />
-  </ObsidianApp>
-</TransportProvider>
-```
-</Tab>
-</Tabs>
 
 Components and hooks access the transport via `useTransport()`:
 
@@ -462,10 +427,6 @@ The React client (`apps/client/`) uses Feature-Sliced Design (FSD):
 
 ## Data Flow: Message from UI to Claude and Back
 
-<Tabs items={['Standalone Web (HttpTransport)', 'Obsidian Plugin (DirectTransport)']}>
-
-<Tab value="Standalone Web (HttpTransport)">
-
 ```
 User types message
   ↓
@@ -485,30 +446,6 @@ StreamManager validates SessionEvent frames → session stream store applies the
   ↓
 React state updates → UI re-renders with new message chunks
 ```
-
-</Tab>
-
-<Tab value="Obsidian Plugin (DirectTransport)">
-
-```
-User types message
-  ↓
-SessionComposer → ConversationTarget.send() → useChatSession.submitContent()
-  ↓
-transport.postMessage(sessionId, content, cwd)
-  ↓
-DirectTransport → runtime.sendMessage() → SDK query() (turn runs detached)
-  ↓
-StreamManager's in-process pump iterates runtime.subscribeSession()
-  ↓
-SessionEvents → session stream store applies them
-  ↓
-React state updates → UI re-renders with new message chunks
-```
-
-</Tab>
-
-</Tabs>
 
 ### SessionEvent Types
 
@@ -591,8 +528,7 @@ This pattern provides type safety and explicit test setup without global mocks.
 
 ## Key Design Properties
 
-- **Shared local client**: the web and desktop surfaces reuse the React app; Obsidian uses an embedded subset
-- **No HTTP boundary for Obsidian**: DirectTransport calls services in-process; model calls can still use the network
+- **Shared local client**: the browser, phone web app, and desktop renderer reuse the React app and local server.
 - **Type-safe end-to-end**: Zod schemas generate both TypeScript types and OpenAPI specs
 - **Testable**: Mock Transport objects make testing React hooks and components straightforward
 - **Real-time sync**: the local app uses resumable WebSockets; HTTP consumers can use SSE

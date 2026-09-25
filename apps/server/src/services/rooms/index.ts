@@ -88,16 +88,7 @@ export interface RoomSubsystem {
    * than a tab that happens to be open, says somebody is at the keyboard.
    */
   welcomeBack: WelcomeBackGreeter;
-  /**
-   * The one canvas writer built over this database, handed back rather than only
-   * registered.
-   *
-   * A READ-ONLY subsystem does not register it (see the construction below), so
-   * a host that wants the read half — the Obsidian embed showing this machine's
-   * session canvas — has to be given it explicitly. That is the point: the thing
-   * you can be handed is the thing you can read through, and the thing nobody
-   * registered is the thing no agent path can write through.
-   */
+  /** The canvas service built and registered over this database. */
   canvas: CanvasService;
 }
 
@@ -441,15 +432,6 @@ export function createRoomSubsystem(opts: {
     authors: AuthorRegistry;
     attachments: AttachmentRowStore;
   }) => RoomMirrorRuntime;
-  /**
-   * Whether this subsystem sits on a database it may not write (DOR-1563).
-   *
-   * Skips the handle reservations below — the one thing construction WRITES.
-   * A reader cannot take them and does not need to: they are already in any
-   * database a DorkOS has booted, which is the only kind a reader is pointed at.
-   * Without this, every Obsidian panel open logs a failed write.
-   */
-  readOnly?: boolean;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const limitsFor = createRoomLimitsResolver(store);
@@ -488,14 +470,7 @@ export function createRoomSubsystem(opts: {
     viewerOverrides: () => readViewerOverrides(),
     ...(opts.canvasNow ? { now: opts.canvasNow } : {}),
   });
-  // **A read-only subsystem registers NO writer.** `readOnly` means this process
-  // is pointed at somebody else's live database (the Obsidian embed, ADR
-  // `260825-194924`), and a registered service is one `control_ui` will call —
-  // which threw `SqliteError: attempt to write a readonly database` instead of
-  // refusing. With none registered, every reader degrades: `control_ui` falls
-  // through to the event it always pushed, the routes answer 503, and the embed
-  // reads through the seam it is handed instead.
-  if (opts.readOnly !== true) setCanvasService(canvas);
+  setCanvasService(canvas);
   const bridges = new BridgeStore(opts.db);
   const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
@@ -628,7 +603,7 @@ export function createRoomSubsystem(opts: {
   // invariant: it cannot mint a handle either, so there is no race for it to
   // lose, and the reservations it would take are already in the database that
   // whichever DorkOS wrote it took them in.
-  if (!opts.readOnly) ensureHandles(opts.db, authors);
+  ensureHandles(opts.db, authors);
   const welcomeBack = new WelcomeBackGreeter({
     settings: readWelcomeBack,
     // Resolved per return rather than captured: #team is seeded during boot and
@@ -909,6 +884,6 @@ export function getRoomAuthors(): AuthorRegistry {
 export { RoomService, type PostedEntry } from './room-service.js';
 export { RoomError, type RoomErrorCode, type RoomAgentLookup } from './room-errors.js';
 export { toAuthorRef, type AuthorRecord } from './author-registry.js';
-export { resolveOperatorAuthor, peekOperatorAuthor } from './operator-author.js';
+export { resolveOperatorAuthor } from './operator-author.js';
 export type { RoomTurnRunner } from './room-trigger.js';
 export { RoomTurnBudget } from './limits/turn-budget.js';

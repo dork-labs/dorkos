@@ -45,10 +45,6 @@ const COALESCE_MS = 500;
  * alone, so "the mutation will re-read anyway" is false for a REFUSED write, and
  * a dropped broadcast would leave this window showing a value nothing corrects.
  *
- * Mount once near the app root, beside the other `*Sync` hooks. In embedded
- * mode (Obsidian) the in-process transport yields no generic events, so the
- * subscription is an inert no-op there.
- *
  * @param coalesceMs - Debounce window in milliseconds (default
  *   {@link COALESCE_MS}); parameterised for deterministic testing.
  */

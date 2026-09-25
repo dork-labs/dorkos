@@ -1,18 +1,10 @@
-/**
- * @vitest-environment jsdom
- */
+/** Build a visibility context with or without server capabilities. */
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { Transport } from '@dorkos/shared/transport';
 import { useExtensionRegistry } from '@/layers/shared/model';
 import { registerRightPanelTabs } from '../init-extensions';
 
-/**
- * A `visibleWhen` context stub — the embed's `/session` surface.
- *
- * One argument for both web-only capabilities, because the two shells answer
- * them together: HttpTransport can do both, the in-process Obsidian transport
- * neither.
- */
+/** A visibility context with independently optional server features. */
 function ctx(webCapable: boolean) {
   return {
     pathname: '/session',
@@ -73,7 +65,7 @@ describe('registerRightPanelTabs', () => {
     expect(pulses).toHaveLength(1);
   });
 
-  it('gates the terminal tab on transport.supportsTerminal (hidden under the embed transport)', () => {
+  it('gates the terminal tab on transport.supportsTerminal (unavailable when the transport lacks the capability)', () => {
     const { register } = useExtensionRegistry.getState();
     registerRightPanelTabs(register);
 
@@ -81,11 +73,11 @@ describe('registerRightPanelTabs', () => {
       .getState()
       .getContributions('right-panel')
       .find((c) => c.id === 'terminal');
-    expect(terminal?.visibleWhen?.(ctx(false))).toBe(false); // in-process (Obsidian) transport
+    expect(terminal?.visibleWhen?.(ctx(false))).toBe(false); // transport without the capability
     expect(terminal?.visibleWhen?.(ctx(true))).toBe(true); // web transport with a PTY
   });
 
-  it('gates the browser tab on transport.supportsWorkbenchServe (hidden under the embed transport)', () => {
+  it('gates the browser tab on transport.supportsWorkbenchServe (unavailable when the transport lacks the capability)', () => {
     const { register } = useExtensionRegistry.getState();
     registerRightPanelTabs(register);
 
@@ -93,7 +85,7 @@ describe('registerRightPanelTabs', () => {
       .getState()
       .getContributions('right-panel')
       .find((c) => c.id === 'browser');
-    expect(browser?.visibleWhen?.(ctx(false))).toBe(false); // in-process (Obsidian) transport
+    expect(browser?.visibleWhen?.(ctx(false))).toBe(false); // transport without the capability
     expect(browser?.visibleWhen?.(ctx(true))).toBe(true); // web transport with the serve route
   });
 

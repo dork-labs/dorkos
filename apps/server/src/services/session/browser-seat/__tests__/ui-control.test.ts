@@ -161,24 +161,11 @@ describe('control_ui', () => {
     expect(uiState()).not.toHaveProperty('canvas');
   });
 
-  it('projects switch_sidebar_tab (opens sidebar + sets tab) over prior client state', async () => {
-    uiTurnFacts.bindTurn(SESSION, {
-      uiState: {
-        panels: { settings: false, tasks: false, relay: false, picker: false },
-        sidebar: { open: false, activeTab: 'overview' },
-        agent: { id: null, cwd: null },
-      },
-    });
-    await control({ action: 'switch_sidebar_tab', tab: 'connections' });
-
-    expect(uiState()?.sidebar).toEqual({ open: true, activeTab: 'connections' });
-  });
-
   it('toggle_panel flips the current value', async () => {
     uiTurnFacts.bindTurn(SESSION, {
       uiState: {
         panels: { settings: false, tasks: true, relay: false, picker: false },
-        sidebar: { open: true, activeTab: 'overview' },
+        sidebar: { open: true },
         agent: { id: null, cwd: null },
       },
     });
@@ -210,13 +197,13 @@ describe('control_ui', () => {
     uiTurnFacts.bindTurn(SESSION, {
       uiState: {
         panels: { settings: false, tasks: false, relay: false, picker: false },
-        sidebar: { open: true, activeTab: 'overview' },
+        sidebar: { open: true },
         agent: { id: null, cwd: null },
       },
     });
     await control({ action: 'open_terminal' });
 
-    expect(uiState()?.sidebar).toEqual({ open: true, activeTab: 'overview' });
+    expect(uiState()?.sidebar).toEqual({ open: true });
   });
 });
 
@@ -227,8 +214,7 @@ describe('get_ui_state', () => {
       // so there is nothing on it and nobody watching.
       canvas: { open: false, viewers: 0, documents: [], count: 0 },
       panels: { settings: false, tasks: false, relay: false, picker: false },
-      // Default sidebar tab is null — the tab strip is an embedded-only surface.
-      sidebar: { open: true, activeTab: null },
+      sidebar: { open: true },
       agent: { id: null, cwd: null },
     });
   });
@@ -236,7 +222,7 @@ describe('get_ui_state', () => {
   it('returns the client’s reported state when there is one', async () => {
     const sessionState: UiState = {
       panels: { settings: false, tasks: true, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'connections' },
+      sidebar: { open: true },
       agent: { id: 'agent-1', cwd: '/projects/my-app' },
     };
     uiTurnFacts.bindTurn(SESSION, { uiState: sessionState });
@@ -338,16 +324,13 @@ describe('get_ui_state when the room service is not there', () => {
  * What `control_ui` does about a canvas writer it cannot reach (DOR-2006 review,
  * blocker 3 and finding 4).
  *
- * Two hosts have no writer to reach. The Obsidian embed opens somebody else's
- * database READ-ONLY and registers none on purpose; a server mid-boot has not
- * built one yet. Both must degrade to the event this tool has always pushed —
- * and a writer that faults mid-call (a locked database, or the read-only one the
- * embed used to register) must reach the model as a sentence rather than as a
- * stack trace that ends its turn.
+ * A server mid-boot has not built the canvas writer yet and must degrade to the
+ * event this tool has always pushed. A writer that faults mid-call must reach
+ * the model as a sentence rather than a stack trace.
  */
 describe('control_ui when there is no canvas writer to reach', () => {
   it('falls through to the event, rather than failing the call', async () => {
-    // No `setCanvasService` anywhere above: this is the embed's situation, and
+    // No `setCanvasService` anywhere above: this models server startup, and
     // the caller has a real session id, so nothing but the missing writer is in
     // play.
     const { payload } = await control({ action: 'open_file', sourcePath: '/notes/a.md' });

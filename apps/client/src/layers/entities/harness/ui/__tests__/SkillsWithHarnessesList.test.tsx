@@ -15,13 +15,17 @@ import {
   HARNESS_STATUS_NOT_SET_UP,
   HARNESS_STATUS_NO_SKILLS,
   HARNESS_STATUS_READY,
-  HARNESS_STATUS_UNAVAILABLE,
   HARNESS_STATUS_UNREADABLE,
   HARNESS_STATUS_WITH_GLOBAL,
 } from '../../__fixtures__/harness-status';
 import { harnessRowKey } from '../../lib/harness-status';
 import { SkillHarnessRow } from '../SkillHarnessRow';
 import { SkillsWithHarnessesList } from '../SkillsWithHarnessesList';
+
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSafeNavigate: () => vi.fn(),
+}));
 
 /** The row every enabled tool shares — the one that collapses. */
 const SHARED_SKILL_ROW = HARNESS_STATUS_ALL_SHARED.rows[0];
@@ -475,17 +479,6 @@ describe('SkillsWithHarnessesList — the six page states', () => {
     expect(
       screen.getByText('.agents/harness.manifest.json is not valid JSON.')
     ).toBeInTheDocument();
-  });
-
-  it('says where agent file sharing runs, rather than showing an empty list', async () => {
-    // Purpose: Decision 26 from the reader's side. `unavailable` must never
-    // render as "you have no skills".
-    await renderWithStatus(HARNESS_STATUS_UNAVAILABLE);
-
-    expect(
-      await screen.findByText('Agent file sharing runs in the DorkOS app.')
-    ).toBeInTheDocument();
-    expect(screen.queryByText('No skills here yet.')).not.toBeInTheDocument();
   });
 
   it('says there are none yet, with the marketplace link, when the tree really is empty', async () => {

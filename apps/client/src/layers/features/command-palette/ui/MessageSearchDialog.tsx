@@ -42,7 +42,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { AlertCircle, Info } from 'lucide-react';
 import type { SearchHit } from '@dorkos/shared/search-schemas';
-import { cn, platformCanSearchMessages } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { useAppStore, useIsMobile, useTransport } from '@/layers/shared/model';
 import {
   Command,
@@ -70,46 +70,8 @@ import { useMessageSearchShortcut } from '../model/use-message-search-shortcut';
 /** `<kbd>` styling, matching the palette's own footer. */
 const KBD_CLASS = 'bg-muted rounded px-1 py-0.5 font-mono text-3xs' as const;
 
-/**
- * The search box, where there is something behind it to search.
- *
- * **Only where there is an index behind it, and this is the gate rather than a
- * detail.** `App.tsx` is the Obsidian embed's shell as well as the browser's, so
- * mounting this unconditionally once put the box inside a window with no index:
- * `DirectTransport.search` rejects, and every line of the coverage statement is
- * false. What a person got there was a box that listed four kinds of thing it
- * searches, took two characters and a debounce to admit it searches none of
- * them, and advertised itself from ⌘K's last row on the way in. A surface that
- * cannot do the thing should not be offered, which is the same rule the
- * hand-off row was built on and the same one the demo-claim gate states.
- *
- * **What changed is who can answer yes** (DOR-1563). The question used to be
- * "are we in the embed"; it is now "does this window have an index", which the
- * Obsidian plugin answers for itself by opening one — or not, on a machine where
- * DorkOS has never run, or an Obsidian it carries no SQLite build for.
- *
- * The gate is a wrapper rather than an early return inside the component so no
- * hook is conditional — in particular ⌘⇧F is never BOUND where the box cannot
- * open, rather than bound and made to open something inert.
- *
- * Everything else lives in {@link MessageSearchBox}.
- */
+/** Search indexed messages and open a selected result. */
 export function MessageSearchDialog() {
-  // Fixed at bootstrap (`setPlatformAdapter` in the Obsidian view, which opens
-  // the index first) and never changes for the life of the app, so this branch
-  // is stable and the hooks below it are not conditional in practice.
-  if (!platformCanSearchMessages()) return null;
-  return <MessageSearchBox />;
-}
-
-/**
- * The box itself.
- *
- * Mounted once beside {@link CommandPaletteDialog}. It holds no query while it
- * is closed — `useMessageSearch` is handed `enabled` — so a cockpit sitting
- * idle is not keeping a search subscription warm.
- */
-function MessageSearchBox() {
   // ⌘⇧F lives with the surface it opens, the same way ⌘K lives with the
   // palette: one component owns the key and the box it raises, so neither can
   // ship without the other.

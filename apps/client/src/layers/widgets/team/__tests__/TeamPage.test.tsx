@@ -412,16 +412,13 @@ describe('TeamPage — the empty and degraded states', () => {
   });
 
   it('does not offer to import projects when the roster could not be read at all', async () => {
-    // What embedded mode returns: no rows, and a warning saying why. Offering
-    // "Bring in existing projects" here would answer a question nobody asked
-    // with a button that cannot help.
     renderPage({
       members: [],
-      warnings: [{ source: 'team', message: 'No DorkOS server in embedded mode.' }],
+      warnings: [{ source: 'authors', message: 'database is locked' }],
     });
 
     expect(
-      await screen.findByText('Your team lives on the DorkOS server, and there is no server here.')
+      await screen.findByText('Couldn’t read the people on this install. Showing who we could.')
     ).toBeInTheDocument();
     expect(screen.queryByText('Bring in existing projects')).toBeNull();
     // "Nothing matched your filter" would be a lie: no filter is on.

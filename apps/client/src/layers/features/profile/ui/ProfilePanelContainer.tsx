@@ -22,13 +22,6 @@ function Notice({ children }: { children: React.ReactNode }) {
  * and waits. A read that FAILED says the read failed and invites a retry — the
  * fields would otherwise render empty and a save would overwrite your name with
  * a blank draft of it.
- *
- * And a read that SUCCEEDED with nobody on it is not a failure at all: it is
- * the Obsidian embed, whose roster stub answers `{ members: [] }` by
- * construction because there is no server behind it. Telling that person to
- * "try reopening this tab" sends them round a loop that cannot terminate, so
- * they get the same sentence the transport's own write stubs throw — one fact,
- * stated once, in the place they are looking.
  */
 export function ProfilePanelContainer() {
   const roster = useTeamRoster();
@@ -40,7 +33,8 @@ export function ProfilePanelContainer() {
     return <Notice>DorkOS could not read your profile just now. Try reopening this tab.</Notice>;
   }
 
-  if (!self) return <Notice>Editing your profile needs a DorkOS server.</Notice>;
+  if (!self)
+    return <Notice>DorkOS could not find your profile just now. Try reopening this tab.</Notice>;
 
   return <ProfilePanel member={self} />;
 }

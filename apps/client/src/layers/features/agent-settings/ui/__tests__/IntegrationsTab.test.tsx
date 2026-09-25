@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createContext, useContext, type ReactNode } from 'react';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
@@ -14,7 +14,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { mergeDialogSearch, useAppStore } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { AdapterBinding, CatalogEntry, ObservedChat } from '@dorkos/shared/relay-schemas';
 
@@ -226,34 +226,6 @@ function makeCatalogEntry(overrides: {
   };
 }
 
-function makeCatalogEntryInternal(): CatalogEntry {
-  return {
-    manifest: {
-      type: 'claude-code',
-      displayName: 'Claude Code',
-      description: 'Runtime bridge adapter',
-      category: 'internal',
-      builtin: true,
-      configFields: [],
-      multiInstance: false,
-    },
-    instances: [
-      {
-        id: 'claude-code-1',
-        enabled: true,
-        status: {
-          id: 'claude-code-1',
-          type: 'claude-code',
-          displayName: 'Claude Code',
-          state: 'connected',
-          messageCount: { inbound: 0, outbound: 0 },
-          errorCount: 0,
-        },
-      },
-    ],
-  };
-}
-
 // ── Router harness ───────────────────────────────────────────
 //
 // The tab's two empty-state CTAs deep-link Settings through the URL, so it has
@@ -320,13 +292,6 @@ function readConnectionsRegion(): string | undefined {
   return (router.state.location.search as { region?: string }).region;
 }
 
-/**
- * Render the tab the way the Obsidian embed does: no `RouterProvider` at all.
- *
- * This is a real surface, not a hypothetical. `app/init-extensions.ts` registers
- * the profile's Connections page from both the web entry and the embed, and
- * `features/profile/ui/pages/ConnectionsPage.tsx` renders this component inside it.
- */
 function renderTabWithoutRouter(agent: AgentManifest = baseAgent) {
   const { container } = render(<IntegrationsTab agent={agent} />);
   return within(container);
@@ -389,18 +354,9 @@ describe('IntegrationsTab', () => {
       expect(readConnectionsRegion()).toBe('messaging');
     });
 
-    // The Obsidian embed mounts no router, so these CTAs have nowhere to
-    // navigate. Following DOR-857's decision for the retired messaging deep
-    // links, the Connections navigation is a no-op in the embed rather than a
-    // lie — the click must not throw and must not fabricate a Settings dialog
-    // that no longer owns this surface.
-    describe('in the router-less embed', () => {
+    describe('in an isolated preview without a router', () => {
       beforeEach(() => {
-        setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
         useAppStore.setState({ settingsOpen: false });
-      });
-      afterEach(() => {
-        setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
       });
 
       it('State A: the CTA is inert instead of throwing', () => {

@@ -363,11 +363,6 @@ export function ScheduleApprovalCard({
 
   /**
    * Where "view what it did" goes, or nothing at all.
-   *
-   * The run's own session when it left one; the Tasks page, which holds the run
-   * history, when it did not. `undefined` in the router-less embed, where the
-   * strip says what happened and offers nothing to click — a link that cannot
-   * travel is worse than no link.
    */
   const openTestRun = (): (() => void) | undefined => {
     if (navigate === null) return undefined;

@@ -99,8 +99,7 @@ describe('tightensDeclaredMode', () => {
 
   it('fails CLOSED on a mode the runtime does not declare', () => {
     // The reachable half is `from`: a session persisted in a mode its runtime
-    // has since stopped declaring still loads and runs, and `DirectTransport`
-    // reaches this with no route-level gate at all. "Cannot tell" has to read as
+    // has since stopped declaring still loads and runs. "Cannot tell" has to read as
     // "say so", or a mode nobody described gets the confident answer.
     expect(tightensDeclaredMode(declared, 'a-mode-nobody-declares', 'default')).toBe(true);
     expect(tightensDeclaredMode(declared, 'default', 'a-mode-nobody-declares')).toBe(true);

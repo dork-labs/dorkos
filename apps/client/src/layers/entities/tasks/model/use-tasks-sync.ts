@@ -19,10 +19,6 @@ import { TASKS_KEY } from './use-tasks';
  * keys by prefix unless told otherwise, so without `exact` this would also
  * invalidate — and reset — a session's streamed todo list mid-turn every time
  * any schedule anywhere changed.
- *
- * Mount once near the app root, beside the other `*Sync` hooks. In embedded
- * mode (Obsidian) the in-process transport yields no generic events, so the
- * subscription is an inert no-op there.
  */
 export function useTasksSync(): void {
   const queryClient = useQueryClient();

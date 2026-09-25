@@ -155,11 +155,6 @@ export function InstallConfirmationDialog() {
 
   const preview = needsAgent ? null : (detail?.preview ?? null);
 
-  // The folder this install is supposed to stay inside, so the preview can say
-  // so out loud. A global install lands under the DorkOS data directory; an
-  // agent-local one lands under that agent's own `.dork` folder. Unknown config
-  // (still loading, or an embedded host that reports none) leaves it undefined
-  // and the preview simply makes no containment claim.
   const { data: config } = useConfig();
   const installBase = selectedProjectPath ? `${selectedProjectPath}/.dork` : config?.dorkHome;
 

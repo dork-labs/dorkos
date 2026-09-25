@@ -90,10 +90,6 @@ export interface UseOpenRouterOAuth {
  * authorize URL in a new tab, and polls the flow status until it flips to
  * `connected` (invalidating `['requirements']`) or `error`. The
  * `code_verifier` never leaves the server.
- *
- * Browser-only: callers gate this behind `!getPlatform().isEmbedded` and offer
- * the paste-key path instead in the Obsidian embedding (DirectTransport stubs
- * the flow honestly).
  */
 export function useOpenRouterOAuth(): UseOpenRouterOAuth {
   const transport = useTransport();

@@ -39,9 +39,6 @@ import { isAutonomyStop, isDivergent } from '@dorkos/shared/permission-semantics
 export type TrustTone = 'power' | 'divergent' | 'neutral';
 
 /**
- * The text colour each tone paints, on the semantic tokens so both themes and
- * the Obsidian bridge stay calibrated.
- *
  * `'neutral'` is the muted foreground, which is right for a caption that owns
  * its whole colour. A surface that inherits its colour from a line around it —
  * the status strip — should paint only `'power'` and leave the rest alone; see

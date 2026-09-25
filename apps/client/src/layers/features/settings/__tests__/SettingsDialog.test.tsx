@@ -15,7 +15,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import { SettingsDialog } from '../ui/SettingsDialog';
 
 // Mock useIsMobile to always return false (desktop dialog)
@@ -217,22 +217,6 @@ describe('SettingsDialog', () => {
     // 8130s = 2h 15m 30s
     const uptime = await screen.findByText('2h 15m 30s');
     expect(uptime).toBeDefined();
-  });
-
-  it('shows Permissions in the app, and leaves it out of the Obsidian embed with Remote access', () => {
-    render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-    expect(screen.getByRole('tab', { name: /^permissions$/i })).toBeDefined();
-    cleanup();
-
-    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-    try {
-      render(<SettingsDialog open={true} onOpenChange={vi.fn()} />, { wrapper: createWrapper() });
-      expect(screen.queryByRole('tab', { name: /^permissions$/i })).toBeNull();
-      expect(screen.queryByRole('tab', { name: /remote access/i })).toBeNull();
-      expect(screen.getByRole('tab', { name: /appearance/i })).toBeDefined();
-    } finally {
-      setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
-    }
   });
 
   // Verifies sidebar navigation items render correctly (built-in tabs only —

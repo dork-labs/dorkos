@@ -87,7 +87,7 @@ function mountOverStore(transport: Transport, onStreamingDone: () => void) {
       useTurnEndReconcile({
         sessionId: SESSION_ID,
         transport,
-        sessionCwd: { cwd: null, resolved: true },
+        sessionCwd: { cwd: null },
         streamState: useSessionStreamStore((s) => s.sessions[SESSION_ID])!,
         queryClient: new QueryClient(),
         onStreamingDone,

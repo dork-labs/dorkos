@@ -208,17 +208,6 @@ export {
 } from './resolve-read-cwd.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
-export {
-  createEmbeddedTurnTrigger,
-  createEmbeddedCommandIntentTrigger,
-} from './embedded-turn-trigger.js';
-export type {
-  EmbeddedTurnTrigger,
-  EmbeddedTriggerOpts,
-  EmbeddedCommandIntentTrigger,
-  EmbeddedCommandIntentOpts,
-} from './embedded-turn-trigger.js';
-
 // --- Multi-runtime session-list aggregation (ADR-0310) ---
 export { aggregateSessionList, LIST_SESSIONS_TIMEOUT_MS } from './aggregate-session-list.js';
 export {

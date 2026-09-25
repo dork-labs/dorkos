@@ -1,5 +1,7 @@
 # The GTM Plan: Alpha to Launched, Beginning to End
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). The operational go-to-market plan that turns `02-positioning.md` and `05-marketing-strategy.md` into a dated, ordered checklist. Inputs: the full Linear board audit (66 open issues, 2026-07-06), the codebase's actual instrumentation state (verified by grep, not memory), and the market/site research in docs 01-07.
 >
 > Honest starting state: **DorkOS is an alpha.** 44 releases and 1,244 commits, but ~zero outside users, which means the release count proves velocity, not stability. Three of the six launch-demo pillars have never been exercised by a stranger. This plan treats that as the first problem to solve, because a launch pointed at an untested product converts attention into refunds.

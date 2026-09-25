@@ -72,7 +72,6 @@ Open the Terminal tab and you get an actual shell, running in your session's wor
 
 - **Multiple tabs**: click the `+` to open another terminal; each gets its own numbered tab.
 - **Survives a refresh**: close the browser tab or hit reload, and your terminals are still running when you come back. DorkOS reattaches to the same live shell instead of starting a fresh one.
-- **Web app only, for now**: the terminal needs a server-side process to run your shell in, so it's not available in the Obsidian plugin today.
 
 <Callout type="warn">
   A terminal runs real commands with your permissions, the same way an agent's shell tool already
@@ -90,8 +89,6 @@ The **Browser** tab is a browser inside DorkOS, with the controls you expect: ba
 - Each page keeps its own back/forward history, so switching between two open pages never mixes up where you were.
 
 A page here isn't only something to look at. Ask your agent to try the signup form and it will: it can click buttons, fill in fields, scroll, and read the page back to see what happened — in the tab you're watching, on the page you're looking at. See ["Agents can check their own work, and act on it"](#agents-can-check-their-own-work-and-act-on-it).
-
-Showing a page needs a server to serve your files and reach your dev server, so this tab is part of the web app and is not in the Obsidian plugin.
 
 ## Multi-Document Tabs
 
@@ -119,8 +116,6 @@ If the file changes underneath you — say the agent edits it again while you're
 Sometimes DorkOS has no snapshot from when the agent started — for example, if the server restarted mid-session. When that happens the header says so plainly and compares against your last commit instead. In that state, **Reject all** asks you to confirm first, because it would also undo edits you made yourself before the session.
 
 Changed images get their own comparison, in the style you may know from GitHub: **2-up** shows before and after side by side, **Swipe** puts them in the same frame with a divider you drag, and **Onion skin** blends between them with a slider. Because an image changes as a whole, the review is whole-file: **Restore previous** puts the old image back on disk (it asks you to confirm first), and **Mark reviewed** keeps the new one. An image the agent just created has no previous version — the panel says so instead of pretending there's something to compare.
-
-Text diff review is built for the Obsidian plugin too, but that plugin is an early, still-hardening surface — expect rough edges there. The image comparison is web-only.
 
 You can turn the automatic open off with `workbench.autoOpenDiff` in your [config file](/docs/getting-started/configuration) — the agent can still bring up a diff on purpose.
 
@@ -164,8 +159,6 @@ In the permission mode DorkOS ships with, your agent does this without stopping 
 Everything it does happens inside the preview frame, on the page you are looking at, and it cannot reach DorkOS itself. What that frame is depends on what you opened: a local file DorkOS serves has no sign-in and no address of its own, so there is nothing there to act as. **A dev server preview is your dev server** — so your agent acts on it exactly as you would by clicking in it, including anything that page is already signed in to. Point it at a page you would be happy to click around in yourself.
 
 Your agents can do all of this out of the box, whichever runtime they run on — with one difference: an agent reaching in from outside the DorkOS app cannot ask you about anything first, so applying a Shape is refused there and it tells you to do that one in the app yourself.
-
-The Obsidian plugin has no Browser tab, so none of this is there.
 
 ## For the Curious
 

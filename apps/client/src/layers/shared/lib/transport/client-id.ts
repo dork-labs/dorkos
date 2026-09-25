@@ -20,7 +20,7 @@
  * @module shared/lib/transport/client-id
  */
 
-/** sessionStorage key under which the web cockpit's stable client id is kept. */
+/** sessionStorage key under which the app's stable client id is kept. */
 const CLIENT_ID_STORAGE_KEY = 'dorkos.web-client-id';
 
 /** Prefix marking a client id as minted by the web cockpit surface. */
@@ -32,12 +32,11 @@ function mintClientId(): string {
 }
 
 /**
- * Resolve the web cockpit's client id, stable across a refresh of the same tab.
+ * Resolve the app's client id, stable across a refresh of the same tab.
  *
  * Reuses the id persisted in `sessionStorage` when present, otherwise mints one
  * and persists it. Falls back to a freshly minted (unpersisted) id whenever
- * `sessionStorage` is unavailable or throws — private-mode quotas, SSR, or an
- * embedded surface without a DOM. The returned value always carries the
+ * `sessionStorage` is unavailable or throws — private-mode quotas or SSR without a DOM. The returned value always carries the
  * `web-` prefix.
  */
 export function resolveStableClientId(): string {

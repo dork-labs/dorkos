@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { UI_COMMAND_REACH } from '@dorkos/shared/schemas';
 import type { UiCommand } from '@dorkos/shared/types';
 import {
@@ -6,7 +6,7 @@ import {
   type DispatcherContext,
   type DispatcherStore,
 } from '../ui-action-dispatcher';
-import { setPlatformAdapter } from '../platform';
+
 import { queryClient } from '../query-client';
 import { configKeys } from '@/layers/shared/model';
 import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
@@ -15,17 +15,11 @@ vi.mock('../celebrations/celebration-effects', () => ({
   fireCelebration: vi.fn().mockResolvedValue(vi.fn()),
 }));
 
-/** Point `getPlatform()` at an embedded (Obsidian) or standalone-web host. */
-function setEmbedded(isEmbedded: boolean) {
-  setPlatformAdapter({ isEmbedded, openFile: async () => {} });
-}
-
 // --- Mock store factory ---
 
 function makeMockStore(overrides: Partial<DispatcherStore> = {}): DispatcherStore {
   return {
     setSidebarOpen: vi.fn(),
-    setSidebarActiveTab: vi.fn(),
     settingsOpen: false,
     setSettingsOpen: vi.fn(),
     tasksOpen: false,
@@ -246,11 +240,6 @@ describe('executeUiCommand — panels with a URL half', () => {
 // --- Sidebar commands ---
 
 describe('executeUiCommand — sidebar commands', () => {
-  afterEach(() => {
-    // Restore the default standalone-web adapter (isEmbedded: false).
-    setEmbedded(false);
-  });
-
   it('open_sidebar calls setSidebarOpen(true)', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'open_sidebar' }, 'agent');
@@ -261,30 +250,6 @@ describe('executeUiCommand — sidebar commands', () => {
     const ctx = makeMockCtx();
     executeUiCommand(ctx, { action: 'close_sidebar' }, 'agent');
     expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(false);
-  });
-
-  it('switch_sidebar_tab sets the tab and opens the sidebar on the embedded host', () => {
-    setEmbedded(true);
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'sessions' }, 'agent');
-    expect(ctx.getStore().setSidebarActiveTab).toHaveBeenCalledWith('sessions');
-    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('switch_sidebar_tab works with the connections tab on the embedded host', () => {
-    setEmbedded(true);
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' }, 'agent');
-    expect(ctx.getStore().setSidebarActiveTab).toHaveBeenCalledWith('connections');
-    expect(ctx.getStore().setSidebarOpen).toHaveBeenCalledWith(true);
-  });
-
-  it('switch_sidebar_tab is a no-op on the web cockpit (no sidebar tab strip)', () => {
-    setEmbedded(false);
-    const ctx = makeMockCtx();
-    executeUiCommand(ctx, { action: 'switch_sidebar_tab', tab: 'connections' }, 'agent');
-    expect(ctx.getStore().setSidebarActiveTab).not.toHaveBeenCalled();
-    expect(ctx.getStore().setSidebarOpen).not.toHaveBeenCalled();
   });
 });
 
@@ -567,8 +532,6 @@ describe('executeUiCommand — open_terminal', () => {
   });
 
   it('degrades to a toast (no phantom tab) when the transport has no terminal', async () => {
-    // DirectTransport/Obsidian: the Terminal tab does not exist, so gate on
-    // supportsTerminal:false and surface a graceful toast instead of focusing it.
     const { toast } = await import('sonner');
     vi.spyOn(toast, 'info');
     const ctx = makeMockCtx();
@@ -876,7 +839,6 @@ describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
     toggle_panel: { action: 'toggle_panel', panel: 'tasks' },
     open_sidebar: { action: 'open_sidebar' },
     close_sidebar: { action: 'close_sidebar' },
-    switch_sidebar_tab: { action: 'switch_sidebar_tab', tab: 'overview' },
     open_canvas: { action: 'open_canvas', content: { type: 'markdown', content: '# hi' } },
     update_canvas: { action: 'update_canvas', content: { type: 'markdown', content: '# hi' } },
     close_canvas: { action: 'close_canvas' },
@@ -894,8 +856,6 @@ describe('UI_COMMAND_REACH is true of the real dispatcher (DOR-625)', () => {
     open_command_palette: { action: 'open_command_palette' },
     celebrate: { action: 'celebrate' },
   };
-
-  afterEach(() => setEmbedded(false));
 
   it('covers every action the union declares', () => {
     // Without this the map could silently shrink and every case below would keep

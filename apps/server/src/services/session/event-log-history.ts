@@ -420,7 +420,7 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         // restart, while a boundary arriving OUTSIDE any turn is given a seq
         // and never written. So the unguarded arm serves exactly one topology:
         // the no-store fallback in `readLogBackedHistory` — the live
-        // projector's in-memory log, i.e. unit tests and embedded hosts with no
+        // projector's in-memory log, i.e. unit tests with no
         // Db. It stays unguarded because dropping it there too would trade a
         // reader's only explanation for the history above it against nothing,
         // not because a durable out-of-turn boundary is a case we serve.

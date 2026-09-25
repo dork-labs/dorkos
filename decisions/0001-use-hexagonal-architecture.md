@@ -13,6 +13,8 @@ superseded-by: null
 
 Accepted
 
+(2026-09-25) [ADR 260925-191411](260925-191411-retire-the-obsidian-plugin.md) retires the clause “Two adapters implement it” as a shipping requirement and its Obsidian in-process implementation. The same-codebase embedded benefit, dual-implementation upkeep, and Obsidian build-plugin consequences no longer apply. Transport, React Context injection, mock transports, and separation of UI from infrastructure still govern.
+
 (2026-08-06 audit) Still governing; the Transport interface has grown far past the 9 methods described here — see ADR-0258's capability-gated sub-interfaces.
 
 ## Context

@@ -38,11 +38,6 @@ import { useAppStore, useInPlaceNavigate } from '@/layers/shared/model';
 import { useSessions } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 
-/**
- * Read the `?runtime=` search param straight from the URL. Deliberately not
- * `useSearch` — that hook requires a mounted TanStack router and would crash
- * embedded mode (Obsidian renders ChatPanel with no RouterProvider).
- */
 function readRuntimeParam(): string | null {
   try {
     return new URLSearchParams(window.location.search).get('runtime');
@@ -114,13 +109,6 @@ export function useResolvedSessionRuntime(sessionId: string): ResolvedSessionRun
   const { data: runtimeCaps } = useRuntimeCapabilities();
   const pendingRuntime = useAppStore((s) => s.pendingRuntime);
 
-  // The in-session chip override (shared, reactive) wins; otherwise the
-  // ?runtime= launch param read straight off the URL — identical for every
-  // consumer and router-free, so it never crashes embedded mode.
-  //
-  // The override counts only for the session it was MADE in. The store is a
-  // module global that outlives any mount, so an unkeyed read would let a draft
-  // session's pick decide what the next conversation runs on.
   const ownPick = pendingRuntime?.sessionId === sessionId ? pendingRuntime.type : null;
   const pendingSelection = ownPick ?? readRuntimeParam();
   const resolved = sessionRow?.runtime ?? pendingSelection ?? runtimeCaps?.defaultRuntime ?? null;
@@ -186,12 +174,6 @@ export function useRuntimeChip(sessionId: string): RuntimeChipState {
   const inPlaceNavigate = useInPlaceNavigate();
   const onChangeRuntime = useCallback(
     (type: string) => {
-      // Write the shared store first so every consumer re-renders on the same
-      // value this tick; the URL write below is the durable/hint channel the
-      // first send reads. The chip rewrites `?runtime=` on the session already on
-      // screen, so it goes in place — a lookup in flight must not read it as a
-      // departure (DOR-931). `null` in embedded mode, which has no router — the
-      // store alone drives the chip there.
       setPendingRuntime({ type, sessionId });
       inPlaceNavigate?.({
         search: (prev: Record<string, unknown>) => ({ ...prev, runtime: type }),

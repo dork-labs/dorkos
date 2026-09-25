@@ -1,0 +1,122 @@
+{
+  "spec": "specs/obsidian-retirement/02-specification.md",
+  "slug": "obsidian-retirement",
+  "generatedAt": "2026-09-25T19:16:56.865927+00:00",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Retirement implementation",
+      "subject": "[obsidian-retirement] [P1] Remove client embedding and plugin-only execution",
+      "description": "Remove client DirectTransport, embedded shell, context callbacks and exclusive state after tracing callers. Preserve HTTP, desktop, Dev Playground router fallbacks and upload transforms. Verify affected tests, typecheck and build.",
+      "activeForm": "Remove client embedding and plugin-only execution",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.2",
+        "1.3"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "worker": "/root/caller_census",
+      "status": "completed"
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Retirement implementation",
+      "subject": "[obsidian-retirement] [P1] Publish retirement and migration guidance",
+      "description": "Retain old public guide URL with safe disable/removal, lost note features, vault-folder permissions and old working-folder guidance. Update active docs and diagrams, add ADR and removal fragment, record exact historical commit/tree and recovery. Preserve historical records and concurrent shared UI guide changes.",
+      "activeForm": "Publish retirement and migration guidance",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.3"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "worker": "/root/docs_census",
+      "status": "completed"
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "Retirement implementation",
+      "subject": "[obsidian-retirement] [P1] Remove plugin app and exclusive server and build paths",
+      "description": "Delete plugin app, exclusive server/db helpers and command contracts after caller census. Preserve supported runtime/native/cancellation/auth logic and legacy manifest parsing. Reconcile dependencies, lockfile, test/build registration and CI with hygiene ledger. Verify shared/server/db and registration guards.",
+      "activeForm": "Remove plugin app and exclusive server and build paths",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "1.1",
+        "1.2"
+      ],
+      "issue": null,
+      "parentIssue": null,
+      "worker": "/root; /root/decompose",
+      "status": "completed"
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Integration and verification",
+      "subject": "[obsidian-retirement] [P2] Integrate retirement and verify supported surfaces",
+      "description": "Integrate isolated commits, reconcile shared UI overlap, sweep dangling identifiers, run affected tests/typechecks/builds and browser smoke with screenshot inspection. Confirm no private credentials/source required and no user data touched. Fix regressions.",
+      "activeForm": "Integrate retirement and verify supported surfaces",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1",
+        "1.2",
+        "1.3"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "worker": "/root",
+      "status": "completed"
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Review and delivery",
+      "subject": "[obsidian-retirement] [P3] Complete independent review and merge queue delivery",
+      "description": "Push stable branch; independent spec compliance then REVIEW.md quality review in separate stable checkout. Fix and repeat until converged. Open reviewed integrated PR, attach it, monitor CI and queue through merge without bypass.",
+      "activeForm": "Complete independent review and merge queue delivery",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "worker": "/root",
+      "status": "in_progress"
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Completion and cleanup",
+      "subject": "[obsidian-retirement] [P4] Confirm delivery and clean task-owned worktrees",
+      "description": "Confirm merged state, close tracker scope through adapter, preserve recovery instructions, remove only clean task-owned worktrees whose changes are delivered and pushed. Preserve other worktrees.",
+      "activeForm": "Confirm delivery and clean task-owned worktrees",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "3.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null,
+      "worker": "/root",
+      "status": "pending"
+    }
+  ]
+}

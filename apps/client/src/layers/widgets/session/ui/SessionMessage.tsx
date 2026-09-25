@@ -26,7 +26,7 @@
  * @module widgets/session/ui/SessionMessage
  */
 import { useCallback, useId, useRef } from 'react';
-import { getPlatform } from '@/layers/shared/lib';
+
 import type { TextEffectConfig } from '@/layers/shared/lib';
 import { feedArticleProps } from '@/layers/shared/model';
 import type { FeedPosition, MessageAuthor } from '@/layers/shared/model';
@@ -140,13 +140,8 @@ export function SessionMessage({
   // result (often a wide ANSI table), so it takes the assistant's lighter
   // typography rather than reading as something the human typed (DOR-126).
   const isUserPrompt = isUser && message.messageType !== 'local_command_output';
-  // "Run this with…" hangs off an actual prompt — not slash commands or
-  // compaction markers, which are not re-runnable prompts. Web only: it
-  // launches a fresh routed session, which the embedded (Obsidian) shell — a
-  // single store-bound session with no route navigation — cannot host.
   const showRunWith =
     isUserPrompt &&
-    !getPlatform().isEmbedded &&
     message.messageType !== 'command' &&
     message.messageType !== 'compaction' &&
     message.content.trim().length > 0;

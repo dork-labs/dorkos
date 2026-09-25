@@ -133,40 +133,12 @@ describe('session-scoped queries and the working directory', () => {
         setMessages: () => {},
       });
     }
-    renderHook(() => Probe({ sessionCwd: { cwd: null, resolved: true } }), { wrapper });
+    renderHook(() => Probe({ sessionCwd: { cwd: null } }), { wrapper });
 
     // Red when: a null directory is treated as "still loading" — the history
     // never arrives for a session URL that omitted `&dir=`, which is the blank
     // "Start a conversation" the second window showed (DOR-1444).
     await waitFor(() => expect(transport.getMessages).toHaveBeenCalledTimes(1));
     expect(transport.getMessages).toHaveBeenCalledWith(SESSION_ID, undefined);
-  });
-
-  it('the message history still waits while the directory is UNSETTLED', async () => {
-    // The embedded host, where the directory does arrive asynchronously and
-    // DOR-495's double-fetch is still real.
-    const { transport, wrapper } = createHarness();
-    function Probe({ sessionCwd }: { sessionCwd: SessionScopedCwd }) {
-      return useSessionHistory({
-        sessionId: SESSION_ID,
-        sid: SESSION_ID,
-        transport: useTransport(),
-        sessionCwd,
-        enableMessagePolling: false,
-        isStreaming: false,
-        setMessages: () => {},
-      });
-    }
-    const { rerender } = renderHook(
-      ({ scoped }: { scoped: SessionScopedCwd }) => Probe({ sessionCwd: scoped }),
-      { wrapper, initialProps: { scoped: { cwd: null, resolved: false } as SessionScopedCwd } }
-    );
-
-    expect(transport.getMessages).not.toHaveBeenCalled();
-
-    rerender({ scoped: { cwd: CWD, resolved: true } });
-
-    await waitFor(() => expect(transport.getMessages).toHaveBeenCalledTimes(1));
-    expect(transport.getMessages).toHaveBeenCalledWith(SESSION_ID, CWD);
   });
 });

@@ -218,7 +218,7 @@ Agent prompt — instruct it to:
 1. Read every fragment in `changelog/unreleased/` (each file holds one or more `### Category` sections with bullets, optionally preceded by `covers:` frontmatter that is PR-check metadata, never changelog content), noting which categories have content across all fragments.
 2. Run `git log [last_tag]..HEAD --oneline`; count commits by conventional type; look for `BREAKING CHANGE` / `!` markers.
 3. Apply detection rules — **MAJOR**: changelog contains "Breaking" or `### Removed` has content, or commits have breaking markers. **MINOR**: `### Added` has content or `feat:` commits exist. **PATCH**: only fixes/chores/docs.
-4. Rewrite each changelog entry to be user-friendly (what users can DO, imperative verbs, benefits — e.g. "Open files in Obsidian without manual vault setup", not "Add obsidian_manager.py for auto vault registration").
+4. Rewrite each changelog entry to be user-friendly (what users can DO, imperative verbs, benefits — e.g. "Open project folders without manual setup", not "Add workspace_manager.py for auto workspace setup").
 5. Return in this exact structured format so the orchestrator can parse it:
 
 ```

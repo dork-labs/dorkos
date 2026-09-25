@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import {
   useExtensionRegistry,
   createInitialSlots,
   isExtensionContributionId,
 } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import { initializeExtensions } from '../init-extensions';
 
 describe('initializeExtensions — right-panel contributions', () => {
@@ -108,8 +108,6 @@ describe('initializeExtensions — right-panel contributions', () => {
 
   it('shows the Files tab under both transports (not gated on a web-only capability)', () => {
     const files = getRightPanelContribution('files');
-    // The file service works under DirectTransport too, so the tab must not be
-    // hidden the way the web-only terminal is.
     const directTransport = createMockTransport({ supportsTerminal: false });
     expect(files?.visibleWhen?.({ pathname: '/session', transport: directTransport })).toBe(true);
   });
@@ -135,16 +133,6 @@ describe('initializeExtensions — right-panel contributions', () => {
     expect(browser?.visibleWhen?.({ pathname: '/session', transport: httpTransport })).toBe(true);
   });
 
-  it('hides the Browser tab under the in-process (Direct/Obsidian) transport', () => {
-    // That shell has neither the serve route nor the preview listener, so the
-    // tab could only ever show an error — the same posture as Terminal.
-    const browser = getRightPanelContribution('browser');
-    const directTransport = createMockTransport({ supportsWorkbenchServe: false });
-    expect(browser?.visibleWhen?.({ pathname: '/session', transport: directTransport })).toBe(
-      false
-    );
-  });
-
   it('shows the Browser tab on a room route too, and nowhere else', () => {
     // A room's Browser tab shows the pages on that room's table, and its
     // address bar puts one there as the person who typed it (§9.5). Everywhere
@@ -160,9 +148,6 @@ describe('initializeExtensions — right-panel contributions', () => {
   });
 
   it('still hides the Browser tab on a room route under a transport that cannot serve a page', () => {
-    // The capability gate outranks the route: the Obsidian shell has neither
-    // the serve route nor the preview listener, so the tab is absent there on
-    // every route rather than present and broken on one.
     const browser = getRightPanelContribution('browser');
     const directTransport = createMockTransport({ supportsWorkbenchServe: false });
     expect(browser?.visibleWhen?.({ pathname: '/channels', transport: directTransport })).toBe(
@@ -188,15 +173,6 @@ describe('initializeExtensions — right-panel contributions', () => {
     expect(terminal?.visibleWhen?.({ pathname: '/session', transport: httpTransport })).toBe(true);
   });
 
-  it('hides the Terminal tab under the in-process (Direct/Obsidian) transport', () => {
-    const terminal = getRightPanelContribution('terminal');
-    // DirectTransport reports supportsTerminal: false — the tab must be hidden.
-    const directTransport = createMockTransport({ supportsTerminal: false });
-    expect(terminal?.visibleWhen?.({ pathname: '/session', transport: directTransport })).toBe(
-      false
-    );
-  });
-
   it('hides the Terminal tab off the session route even when supported', () => {
     const terminal = getRightPanelContribution('terminal');
     const httpTransport = createMockTransport({ supportsTerminal: true });
@@ -206,10 +182,7 @@ describe('initializeExtensions — right-panel contributions', () => {
   });
 });
 
-describe('initializeExtensions — command palette gating (Obsidian embed)', () => {
-  // Built-ins that need AppShell chrome the embed never renders: a mounted
-  // dialog (Create agent / Import), the right panel (Profile, Canvas), or
-  // the router (Dashboard, Agents — navigate() throws with no RouterProvider).
+describe('initializeExtensions — command palette registration', () => {
   const EMBED_DEAD_ENDS = [
     'createAgent',
     'discoverAgents',
@@ -226,45 +199,24 @@ describe('initializeExtensions — command palette gating (Obsidian embed)', () 
       .map((c) => (c as { action?: string }).action ?? '');
   }
 
-  function initWith(isEmbedded: boolean): void {
-    setPlatformAdapter({ isEmbedded, openFile: async () => {} });
+  function initWith(): void {
     useExtensionRegistry.setState({ slots: createInitialSlots() });
     initializeExtensions();
   }
 
-  afterEach(() => {
-    // Restore the standalone-web adapter so other suites see the default.
-    setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
-  });
-
   it('registers the full router/panel-dependent set on the web shell', () => {
-    initWith(false);
+    initWith();
 
     const actions = paletteActions();
     for (const action of EMBED_DEAD_ENDS) {
       expect(actions).toContain(action);
     }
   });
-
-  it('omits every dead-end from the Obsidian embed, keeping the rest', () => {
-    // Defensive gate: the embed does not currently call initializeExtensions, but
-    // if it ever does, none of these dialog/panel/router actions may register —
-    // acting on them there renders nothing or throws.
-    initWith(true);
-
-    const actions = paletteActions();
-    for (const action of EMBED_DEAD_ENDS) {
-      expect(actions).not.toContain(action);
-    }
-    // The gate is selective — a self-contained action (theme toggle) still registers.
-    expect(actions).toContain('toggleTheme');
-  });
 });
 
 describe('initializeExtensions — built-in ids never look like extension ids', () => {
   beforeEach(() => {
     useExtensionRegistry.setState({ slots: createInitialSlots() });
-    setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
     initializeExtensions();
   });
 

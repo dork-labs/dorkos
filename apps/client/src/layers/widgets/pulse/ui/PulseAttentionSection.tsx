@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { useIsMobile, useSafePathname } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useAttentionRows, AttentionSignalRow } from '@/layers/features/dashboard-attention';
@@ -50,12 +50,7 @@ const staggerContainer = {
  */
 export function PulseAttentionSection() {
   const navigate = useNavigate();
-  // "View all" navigates to the home surface. Omitted in the router-less Obsidian
-  // embed, where there is no home route to reach — an honest omission, not a
-  // dead-end button. On '/' the whole section is gone, so the link has no second
-  // way to be a no-op.
   const pathname = useSafePathname();
-  const showViewAll = !getPlatform().isEmbedded;
   // The de-dup below only holds when the panel is actually DOCKED beside the
   // page it is de-duping — on a narrow viewport it is a slide-over Sheet that
   // covers Home instead (`RightPanelContainer`), so the duplicate condition
@@ -97,16 +92,14 @@ export function PulseAttentionSection() {
       empty={!isLoading && total === 0 && shownSchedules.length === 0}
       allClear="All quiet. Nothing needs you."
       action={
-        showViewAll ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs"
-            onClick={() => navigate({ to: '/' })}
-          >
-            View all →
-          </Button>
-        ) : undefined
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 text-xs"
+          onClick={() => navigate({ to: '/' })}
+        >
+          View all →
+        </Button>
       }
     >
       {/* The schedules are CARDS, and sit above the rows in their own presence

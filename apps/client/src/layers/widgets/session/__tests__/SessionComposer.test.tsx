@@ -485,15 +485,6 @@ describe('SessionComposer — a failed attachment blocks the send (DOR-480)', ()
   });
 
   it('closes the box and names the way out when no conversation is selected', () => {
-    // The Obsidian embed's first load, exactly: `app-store` seeds
-    // `sessionId: null`, nothing auto-mints one, and the composer is on screen
-    // the whole time. Enter used to reach `postMessage(null, …)`, which the
-    // route answers `400 INVALID_SESSION_ID` — after the composer had already
-    // been emptied, so the words were gone and all that came back was "Could
-    // not send message".
-    //
-    // **Seeded defect:** put `canSend: true` back in `useSessionTarget` and
-    // this goes red on both assertions.
     render(<SessionComposerBench {...baseProps} sessionId="" input="hello?" />);
 
     const props = lastChatInputProps();

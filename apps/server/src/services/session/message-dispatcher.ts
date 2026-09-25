@@ -538,7 +538,7 @@ type RawContextStaged = Omit<Extract<SessionEvent, { type: 'context_staged' }>, 
  * queue routes call it for theirs. A mutation that forgets leaves every other
  * window showing a queue that is no longer true until something else changes.
  *
- * A no-op when no queue store is wired (embedded hosts, most unit tests) or when
+ * A no-op when no queue store is wired (most unit tests) or when
  * no projector is registered for the session: with nobody listening there is
  * nothing to correct, and the next cold connect reads the queue from the store
  * anyway.
@@ -1484,8 +1484,8 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const messageId = record?.id ?? crypto.randomUUID();
   // A row gives a real position. Without one the answer depends on WHY there is
   // no row: a refusing caller is deliberately rowless and reports `0` (it is on
-  // no queue at all, transient or not), while a host with no store wired — every
-  // embedded host and most unit tests — still has a notional queue of one and
+  // no queue at all, transient or not), while a host with no store wired — as
+  // in most unit tests — still has a notional queue of one and
   // reports `1`.
   const queuePosition = record
     ? (getMessageQueueStore()
@@ -2230,7 +2230,7 @@ export function noteRuntimeTurnClosed(sessionId: string): void {
  *
  * The stored `position` is the authority, because that is what a reorder edits
  * and what every window reads. A dispatch with no row behind it — no store is
- * wired, which is every embedded host and most unit tests — keeps its arrival
+ * wired, as in most unit tests — keeps its arrival
  * order, which is the same answer for a queue nobody can reorder. `sort` is
  * stable, so the two groups interleave predictably rather than by accident.
  */
@@ -2374,7 +2374,7 @@ export function resetMessageDispatcher(): void {
 
 // Wired on import rather than from the composition root, deliberately. The
 // dispatcher is only correct while it is listening: a host that forgot the
-// wiring — the Obsidian plugin, a test harness, a future embedder — would get a
+// wiring — including a test harness — would get a
 // queue that accepts messages and never runs them, which is the worst possible
 // way to fail. There is nothing to configure and nothing to tear down, so
 // there is nothing for a root to decide.

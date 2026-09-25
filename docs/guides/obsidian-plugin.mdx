@@ -1,243 +1,65 @@
 ---
-title: Obsidian Plugin
-description: Run DorkOS inside Obsidian as a sidebar plugin, so you can talk to your coding agent without leaving your notes
+title: Obsidian Plugin Retirement
+description: Move from the retired Obsidian plugin to the DorkOS app, keep your notes, and recover the historical source
 ---
 
-# Obsidian Plugin
+# Obsidian Plugin Retirement
 
-DorkOS can run inside Obsidian as a sidebar panel, so your coding agent sits next to your notes instead of in a separate terminal window. No alt-tabbing required.
+The DorkOS plugin for Obsidian is retired. New versions no longer include or maintain it. We are focusing on the web, desktop, phone, Cloud and Community experiences.
 
-<Callout type="warn">
-  This is an early, staged surface. It isn't in Obsidian's Community Plugin directory yet, so
-  installing it means cloning the DorkOS repository and building it yourself. If that sounds like
-  more setup than you want today, use the [standalone web app](/docs/getting-started/quickstart)
-  instead. Everything here is built, but it hasn't been tested as widely as the web app — treat it
-  as early and verify it yourself before relying on it.
-</Callout>
+Your vault is still a folder of Markdown files. You can work with that folder in the normal DorkOS app. This does not restore the plugin's in-vault features.
 
-## What You Get
+## What changes
 
-- **Active file tracking**: the note you have open is automatically included as context.
-- **Drag-and-drop**: drag files from Obsidian's file explorer into the chat.
-- **File navigation**: click a file reference in the chat to open it in Obsidian.
-- **Vault-aware sessions**: the working directory is set automatically to your vault's parent folder (your repository root).
-- **Theme integration**: the panel adapts to your Obsidian light or dark theme.
+The retirement removes the DorkOS sidebar inside Obsidian. It also removes automatic active-note context, dragged-in note context, and opening notes in Obsidian from chat.
 
-## Requirements
+The normal app does not know which note you are reading. Tell your agent which files to use. You can keep Obsidian open alongside DorkOS to read or edit your notes.
 
-- **Obsidian Desktop**: the plugin needs Obsidian's desktop app. It does not run on Obsidian Mobile.
-- **Claude Code**: DorkOS bundles Claude Code, so you normally don't need to install anything separately.
+The retirement does not delete your notes or conversation history. DorkOS does not uninstall an old plugin from your vault automatically.
 
-<Callout type="info">
-  Claude Code ships with DorkOS as a per-platform binary. If the bundled binary isn't available on
-  your machine, install it manually as a fallback:
+## Work with a vault in the normal app
 
-```bash
-# macOS / Linux
-curl -fsSL https://claude.ai/install.sh | bash
+1. [Install DorkOS](/docs/getting-started/installation) and open the app.
+2. Choose your vault folder as the agent's working folder.
+3. Tell the agent which notes to read and what you want it to do.
 
-# Windows (PowerShell)
-irm https://claude.ai/install.ps1 | iex
+DorkOS and the agent need permission to access that folder. Your configured folder boundary and normal approval settings still apply. A vault on another device must be available to the computer running the DorkOS server; opening the phone app alone does not transfer it.
+
+The old plugin used the vault's **parent folder** as its working folder. To find its earlier Claude Code conversations, check that parent folder in DorkOS under the same local account. This is a place to look, not a promise that every old conversation will appear. Keep your existing agent history while checking.
+
+## Remove an old plugin install
+
+1. In Obsidian, open **Settings > Community plugins** and disable **DorkOS Copilot**.
+2. Use **Uninstall** if available. For a manual install, remove only `<vault>/.obsidian/plugins/dorkos-copilot/`.
+3. If that path is a symbolic link, remove the link itself, not the source folder it points to.
+
+Keep your vault, your DorkOS data folder, and your agent's conversation history. The plugin used `DORK_HOME` when set, otherwise `~/.dork`, and Claude Code's own transcript storage. Its data was not confined to the plugin folder. There is no need to erase any of these folders to retire the plugin.
+
+## Historical source and recovery
+
+This section is for developers who need to inspect or recover the old source. It does not describe a supported installation.
+
+The preserved pre-removal source snapshot is:
+
+- Commit: [`dbff5a6f6b3005d4e9815d1b3d485446528f2900`](https://github.com/dork-labs/dorkos/tree/dbff5a6f6b3005d4e9815d1b3d485446528f2900)
+- Repository tree: `63cb22d2e6011aa358b406be3bc83491323662c6`
+- Plugin source: `apps/obsidian-plugin/` at that commit
+
+Recover it in a separate checkout so the current app stays untouched:
+
+```sh
+git clone https://github.com/dork-labs/dorkos.git dorkos-obsidian-history
+cd dorkos-obsidian-history
+git switch --detach dbff5a6f6b3005d4e9815d1b3d485446528f2900
+git rev-parse HEAD^{tree}
 ```
 
-</Callout>
+The last command should print the tree above. The historical checkout includes the old build instructions and lockfile. Historical builds may need dependencies or native binaries that are no longer available. The plugin was under-tested before retirement; preserving its source does not verify it on current Obsidian versions. No new plugin binary is published for this retirement.
 
-## Installation
+## Why retire it?
 
-The plugin isn't published yet, so you install it by building it from source.
+The plugin needed a separate execution path, build fixes, native database packaging, and Obsidian theme handling. Those costs continued without proving the complete experience inside Obsidian.
 
-**1. Build the plugin** from the DorkOS monorepo root:
+Public source-build instructions existed, so people may have installed it themselves. We do not know how many did. Keeping this page at its old address gives those users migration and recovery guidance.
 
-```bash
-turbo run build --filter=@dorkos/obsidian-plugin
-```
-
-This outputs to `apps/obsidian-plugin/dist/`:
-
-- `main.js`: the plugin code
-- `styles.css`: plugin styles
-- `manifest.json`: plugin metadata
-- `better_sqlite3-<platform>-<arch>-abi*.node`: SQLite, one build per Obsidian version the plugin
-  supports, for the machine you built on. The build downloads these the first time and reuses them
-  after. Build on the machine you run Obsidian on — a `dist/` copied from another kind of machine
-  has the wrong binaries in it, and the plugin will tell you so rather than crashing.
-
-**2. Symlink the dist directory** into your vault's plugins folder:
-
-```bash
-# From your vault directory
-cd .obsidian/plugins
-ln -s /path/to/dorkos/apps/obsidian-plugin/dist dorkos-copilot
-```
-
-On Windows:
-
-```powershell
-mklink /D dorkos-copilot C:\path\to\dorkos\apps\obsidian-plugin\dist
-```
-
-**3. Restart Obsidian** (or reload with `Ctrl/Cmd + R`).
-
-**4. Enable the plugin**: go to Settings → Community Plugins, find "DorkOS Copilot," and turn it on.
-
-Once the plugin reaches the Community Plugin directory, this whole section collapses to a single click. Until then, this is the path.
-
-## Configuration
-
-### API Key
-
-The plugin uses the same Claude Code setup as the rest of DorkOS. The simplest path is the one the [Quickstart](/docs/getting-started/quickstart) walks you through: set `ANTHROPIC_API_KEY` in your environment. See [Configuration](/docs/getting-started/configuration) for the full picture, including how DorkOS stores credentials by reference rather than as plain text.
-
-One Obsidian-specific catch: Obsidian needs to see that environment variable when it launches. If you open Obsidian from macOS Spotlight or the Windows Start Menu, it may not inherit your shell's environment. Launching Obsidian from a terminal (where you've already set the key) sidesteps this.
-
-### Working Directory
-
-The plugin sets the working directory to your vault's parent directory (your repository root). This assumes your vault lives inside a Git repository:
-
-```
-my-project/           ← Working directory (repo root)
-├── .claude/
-│   └── commands/     ← Slash commands
-├── workspace/        ← Your Obsidian vault
-│   ├── .obsidian/
-│   └── notes/
-└── .git/
-```
-
-That gives DorkOS access to your slash commands, your full repository, and Git.
-
-## Usage
-
-### Opening the Sidebar
-
-Three ways to open the copilot:
-
-1. **Ribbon icon**: click the robot icon in the left sidebar.
-2. **Command palette**: `Ctrl/Cmd + P`, then search for "Open Copilot."
-3. **Custom hotkey**: assign one under Settings → Hotkeys.
-
-The copilot opens as a panel in the right sidebar.
-
-### Adding Context
-
-The file you have open is tracked automatically and shown as a chip above the chat input. It updates as you switch files.
-
-You can also drag files from Obsidian's file explorer into the chat area; the drop zone highlights while you drag. Files you add this way stay in the chat until you remove them with the "x" button. Both the active file and anything you dragged in are sent along with your next message.
-
-### Opening Files from Chat
-
-Click a file path in the agent's response to open it in the Obsidian editor.
-
-### Session Management
-
-The session list shows every chat session for this working directory, including ones you started from the CLI or the standalone web app. Sessions live in `~/.claude/projects/{slug}/` and can't be deleted from the plugin's UI.
-
-## How It Differs from Standalone Mode
-
-The plugin isn't just the web app in a sidebar. Because it runs inside Obsidian's own process, a few things work differently:
-
-| Feature              | Standalone Web               | Obsidian Plugin               |
-| -------------------- | ---------------------------- | ----------------------------- |
-| Connection to DorkOS | HTTP/SSE to a running server | In-process, no network calls  |
-| Session ID storage   | URL query parameter          | Internal state                |
-| Active file context  | Not available                | Auto-tracked                  |
-| File drag-and-drop   | Not available                | From Obsidian's file explorer |
-| Open file action     | Not available                | Opens in the Obsidian editor  |
-| Theme                | DorkOS's own theme           | Obsidian's theme              |
-| Working directory    | Set with a directory picker  | Vault parent, automatic       |
-
-## Troubleshooting
-
-### Plugin Won't Load
-
-Open the developer console (`Cmd+Option+I` on macOS, `Ctrl+Shift+I` on Windows/Linux) and check the Console tab.
-
-Common errors:
-
-- **"Cannot find module 'X'"**: a dependency is missing. Rebuild the plugin.
-- **"Claude Code executable not found"**: the bundled Claude Code binary couldn't be resolved and no `claude` is on your PATH. Install it manually as a fallback: `curl -fsSL https://claude.ai/install.sh | bash` (macOS/Linux) or `irm https://claude.ai/install.ps1 | iex` (Windows).
-- **"ANTHROPIC_API_KEY not set"**: the API key isn't in your environment. See [API Key](#api-key) above.
-
-### API Key Not Available
-
-- Verify with `echo $ANTHROPIC_API_KEY`.
-- Launch Obsidian from a terminal that sources your shell profile.
-- On macOS, run `launchctl setenv ANTHROPIC_API_KEY your-key` to set it system-wide.
-
-### Text Not Selectable
-
-A known Obsidian quirk, not a DorkOS bug: some Obsidian themes make plugin panel text unselectable by default. The plugin ships a `user-select: text` fix in `styles.css`. If text still won't select, confirm `styles.css` exists in the plugin directory.
-
-### Active File Not Updating
-
-- Switch files by clicking in the main editor, not just hovering.
-- Check the developer console for event listener errors.
-- Close and reopen the copilot sidebar.
-
-### Session List Empty
-
-Sessions are read from `~/.claude/projects/{slug}/`. If no sessions exist for your working directory, the list is empty. Sessions created from the CLI or the standalone web app with the same working directory will show up here.
-
-### Performance Issues
-
-The plugin bundles the React client and the Claude Agent SDK into a single file (around 23MB, about 6MB gzipped). On older machines this can slow the initial load or cause occasional UI lag. If that's a problem, use the standalone web interface instead.
-
-## Support
-
-If you run into something not covered here:
-
-1. Check the [developer console](#plugin-wont-load) for error details.
-2. Search existing issues in the [GitHub repository](https://github.com/dork-labs/dorkos).
-3. Open a new issue with the console error, reproduction steps, your Obsidian version, and your DorkOS version (from `manifest.json`).
-
-## Reference (for contributors)
-
-The rest of this page is for people building or modifying the plugin itself, not for people using it.
-
-### Build Architecture
-
-The plugin builds with Vite in library mode, targeting CommonJS so the output works inside Electron (Obsidian's desktop runtime). Four post-processing plugins run on the output:
-
-- `copyManifest`: copies `manifest.json` into the dist directory.
-- `safeRequires`: rewrites `require()` calls for Electron's module resolution.
-- `fixDirnamePolyfill`: patches `__dirname` references that break in Electron's bundled context.
-- `sqliteAddon`: downloads SQLite builds for the Electron versions Obsidian ships, puts them beside
-  the bundle, and points the bundle at them. Every download is checked against a SHA-256 pinned in
-  `native-addons.lock.json`; a mismatch fails the build. Regenerate that lockfile with
-  `pnpm --filter @dorkos/obsidian-plugin addons:lock` when the ABI list or `better-sqlite3` changes.
-  Cached in `apps/obsidian-plugin/.native/`, so only the first build reaches the network, and skipped
-  entirely under `CI`. If a download fails the build still succeeds — you get a plugin that cannot
-  read your message history, and it says so in the console.
-- `patchElectronCompat`: applies additional compatibility fixes for Electron's sandboxed environment.
-
-The plugin uses `DirectTransport`: the same services that back the web app's HTTP API run in-process inside Obsidian's Electron environment instead, with no HTTP or SSE layer in between. That's what makes the plugin fast, and it's also why standard Node.js module patterns need the adaptations above to run inside Electron.
-
-### Hot Reload
-
-Install the [Hot Reload](https://github.com/pjeby/hot-reload) community plugin, then:
-
-```bash
-touch apps/obsidian-plugin/dist/.hotreload
-```
-
-Subsequent builds auto-reload in Obsidian without a restart.
-
-### Multiple Vaults
-
-Sessions are stored in `~/.claude/projects/`, keyed by repository path. Two vaults inside the same repository share sessions; vaults in different repositories keep independent session lists.
-
-## Next Steps
-
-import { Cards, Card } from 'fumadocs-ui/components/card';
-
-<Cards>
-  <Card title="Tool Approval" href="/docs/guides/tool-approval">
-    Review and manage tool approval flows.
-  </Card>
-  <Card title="Keyboard Shortcuts" href="/docs/guides/keyboard-shortcuts">
-    Navigate DorkOS efficiently with hotkeys.
-  </Card>
-  <Card title="Building Integrations" href="/docs/integrations/building-integrations">
-    The full Transport reference: how DirectTransport and HttpTransport work under the hood.
-  </Card>
-</Cards>
+A future Obsidian client could connect to the normal DorkOS server if real demand appears. That is a possible direction, not a planned release or a replacement included here.

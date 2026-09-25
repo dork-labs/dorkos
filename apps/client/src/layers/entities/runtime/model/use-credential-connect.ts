@@ -269,14 +269,6 @@ export interface UseDelegateRuntimeLogin {
  * failure alongside a thrown error — one honest, retryable error path. Only a
  * completed login invalidates `['requirements']`.
  *
- * A loopback-only refusal (the login route is local-only) and the Obsidian
- * embed's honest decline both arrive on that same error path, so a caller that
- * cannot reach the endpoint shows a real message and a retry rather than a
- * button that does nothing. That refusal is now the FLOOR rather than the
- * experience: a surface that knows it is remote should not offer the sign-in at
- * all — read `useLocalCaller` in `entities/config` and say so instead
- * (DOR-1655). This hook stays honest either way.
- *
  * ## The state is shared, not component-local
  *
  * A sign-in outlives the component that started it. The chat error card lives

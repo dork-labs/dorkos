@@ -147,9 +147,6 @@ function resolveSettingsDeepLink(raw: string | undefined): SettingsDeepLinkTarge
 }
 
 /**
- * What these hooks do when there is no router to navigate — the Obsidian embed
- * renders `App` directly, with no `RouterProvider` (see `use-safe-router.ts`).
- *
  * There is no URL to write, so open/close fall back to the app store's plain
  * open flag. `DialogHost` already opens a dialog on `storeOpen || urlIsOpen`, so
  * the two signals are interchangeable for open/close; only the *tab* is lost,
@@ -389,11 +386,6 @@ export interface ProfileDeepLink {
  * which is what makes back mean "close this" instead of "leave the page".
  * `?profilePage=` rides alongside it as the page pushed on top, so a page of a
  * profile is an address too.
- *
- * With no router (the Obsidian embed) the store carries the open flag, the
- * subject and the page, so the profile still opens on the right identity — the
- * one thing a store fallback for Settings cannot do, since a tab has no
- * equivalent.
  */
 export function useProfileDeepLink(): ProfileDeepLink {
   const search = useSafeSearch() as { profile?: string; profilePage?: string };
@@ -480,10 +472,6 @@ export function isDualSignalDialog(panel: UiPanelId): panel is UiPanelId & DualS
  * Replaces the `?relay=open` dialog hook. The messaging surface is a page now,
  * so "open it" is a navigation, not an open flag — and the region is a scroll
  * target rather than a tab, because both halves are always rendered.
- *
- * With no router (the Obsidian embed) this is a no-op rather than a lie: there
- * is nowhere to navigate to, and the old fallback opened a dialog that no
- * longer exists.
  */
 export function useOpenConnections(): (region?: 'messaging' | 'accounts') => void {
   const navigate = useSafeNavigate();

@@ -61,9 +61,9 @@ export default function PricingPage() {
             DorkOS is open source under the MIT license, and that does not change. The app itself,
             support for Claude Code, Codex, and OpenCode, Tasks, agents messaging each other, the
             Marketplace, your own tunnel for remote access, and every way you open it (browser,
-            desktop, and the Obsidian plugin) are yours to fork and keep (desktop and the Obsidian
-            plugin are still in beta). One operator, full power, works offline, no account required
-            unless you choose to open it up to another device.
+            phone, and desktop) are yours to fork and keep. The Windows desktop build is an early
+            alpha. One operator, full power, works offline, no account required unless you choose to
+            open it up to another device.
           </p>
           <p className="text-warm-gray leading-relaxed">
             That is not a starter tier. It is the whole product. Its job is to be the best free

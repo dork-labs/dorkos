@@ -1,7 +1,7 @@
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
-import { EmbeddedConnectionsNotice, useConnectorConnections } from '@/layers/entities/connectors';
-import { getPlatform } from '@/layers/shared/lib';
+import { useConnectorConnections } from '@/layers/entities/connectors';
+
 import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { connectionStatusLabel, FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
 
@@ -22,9 +22,6 @@ export function AccountsList({
     );
   }
   if (query.isError) {
-    if (getPlatform().isEmbedded) {
-      return <EmbeddedConnectionsNotice title="Connected accounts are unavailable here" />;
-    }
     return (
       <QueryErrorState
         title="Couldn’t load connected accounts"

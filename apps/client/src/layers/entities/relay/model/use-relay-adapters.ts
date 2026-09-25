@@ -80,9 +80,6 @@ export function useToggleAdapter() {
  * prefix match on `['relay','adapters']` covers both) so those flips appear
  * immediately. Config-only edits, changes to disabled adapters, and silent
  * in-adapter drops do not broadcast — the 10s poll backstops them.
- *
- * Mount once near the app root. In embedded mode (Obsidian) the in-process
- * transport yields no generic events, so the subscription is an inert no-op.
  */
 export function useRelayAdaptersSync(): void {
   const queryClient = useQueryClient();

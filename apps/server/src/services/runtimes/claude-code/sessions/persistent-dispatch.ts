@@ -128,8 +128,8 @@
  * projected in its turn instead of never.
  *
  * The drain survives as the NO-SUBSCRIBER fallback only. Nothing forces a host
- * to call `subscribeRuntimeTurns` — the embedded composition does not, nor does
- * a test that builds a runtime by hand — and an unread channel is a buffer
+ * to call `subscribeRuntimeTurns` — a test that builds a runtime by hand may
+ * not — and an unread channel is a buffer
  * nobody empties. The production path never takes it.
  *
  * What gets drained is CENSUSED, and the two outcomes are reported differently
@@ -1159,9 +1159,8 @@ export class PersistentDispatch {
         session.lastActivity = Date.now();
         const listener = this.runtimeTurnListener;
         if (listener === undefined) {
-          // Nothing is projecting these — an embedded host, or a test that
-          // never subscribed. The channel still has to be emptied, or it
-          // buffers a whole turn nobody reads.
+          // Nothing is projecting these, as in a test that never subscribed.
+          // Empty the channel so it does not buffer a turn nobody reads.
           void drainUnprojected(key, window);
           return;
         }

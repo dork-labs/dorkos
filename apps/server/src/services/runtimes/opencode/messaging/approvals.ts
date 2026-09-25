@@ -338,12 +338,8 @@ export async function* enforceApprovals(
     // adapter. `resolveApprovalDecision`'s own literal-name fallback (any
     // unmatched mode asks) is what keeps an id that gate never checked from
     // silently escalating here, so this stays safe even if the invariant
-    // above is ever violated. It CAN be: the `DirectTransport` seam
-    // (`apps/client/src/layers/shared/lib/direct/session-methods.ts`, used
-    // by embedded hosts) calls `runtime.updateSession` straight through with
-    // no equivalent server-side check — it trusts the CLIENT's own picker to
-    // offer only declared ids, a materially weaker guarantee than the HTTP
-    // route's.
+    // above is ever violated by a direct runtime caller that bypasses the
+    // HTTP route's check.
 
     // The session that raised THIS ask. A subagent's prompt belongs to its
     // child session, and `POST /session/{id}/permissions/{permissionID}` is

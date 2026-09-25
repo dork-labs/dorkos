@@ -7,10 +7,6 @@
  * panel rather than grow a second copy of it — two panels would be two places
  * for "what does this session actually have permission to do" to drift.
  *
- * **The id matters most in the Obsidian embed.** That surface has no router and
- * no address bar, so this is the only place a session's id can be read or
- * copied at all.
- *
  * @module entities/session/ui/SessionDetailsPanel
  */
 import { motion, AnimatePresence } from 'motion/react';
@@ -72,7 +68,7 @@ function formatTimestamp(iso: string): string {
  * The expandable detail block under a session row.
  *
  * **It reads the permission summary itself, and its caller reads it too.** That
- * duplication is deliberate: `SessionRowFull` and `SessionRowSidebar` both need
+ * duplication is deliberate: `SessionRowFull` needs
  * `isFullPower` for the full-power mark on the row face, and this needs the mode in
  * words.
  * Both calls land on the same two cached reads — a `enabled: false` session

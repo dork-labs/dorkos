@@ -3342,21 +3342,15 @@ registry.registerPath({
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
-  // A sidebar tab id, bounded. The sidebar tab strip exists only in the embedded
-  // (Obsidian) shell; the web cockpit has no strip, so a pinned tab is a no-op
-  // there. The `:` is still accepted so old manifests that pinned a namespaced
-  // tab keep validating. Mirrors the bounded `sidebarTab` in manifest-schema.ts
-  // and `UiSidebarTabSchema` in @dorkos/shared.
+  // Legacy sidebar tab metadata remains accepted so installed manifests with a
+  // pinned tab still validate. Applying a Shape ignores it. Mirrors the bounds
+  // in manifest-schema.ts and ShapeLiveLayoutCaptureSchema in @dorkos/shared.
   sidebarTab: z
     .string()
     .min(1)
     .max(200)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/)
-    .describe(
-      "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
-        "'connections'). The sidebar tab strip exists only in the embedded " +
-        '(Obsidian) app; in the web app switching a sidebar tab is a no-op.'
-    )
+    .describe('Legacy sidebar tab id retained for stored Shape manifests.')
     .optional(),
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),
   focusDashboardSections: z.array(z.string()),
@@ -6564,13 +6558,12 @@ registry.registerPath({
     '**It writes nothing**: no manifest is scaffolded, nothing is turned on, and no settings ' +
     'store is opened. That is DOR-678’s rule, learned when `dorkos harness sync --check` ' +
     'scaffolded a manifest into whatever folder a person happened to be standing in. ' +
-    '**`state` answers for the project as a whole**, and has four values. `ready` — the manifest ' +
+    '**`state` answers for the project as a whole**, and has three values. `ready` — the manifest ' +
     'parsed and everything below is populated. `not-set-up` — there is no ' +
     '`.agents/harness.manifest.json`, answered `200` rather than `404`, because a project with ' +
     'no manifest is a state the app is built to draw and a `404` would say the route is not ' +
     'there. `unreadable` — there is one and it will not parse, with `detail` saying why in words ' +
-    'a person can act on. `unavailable` — a build with no harness service at all; it belongs to ' +
-    'the in-process (Obsidian) transport and is never produced here. On anything but `ready` ' +
+    'a person can act on. On anything but `ready` ' +
     'every list is empty and every count is zero. ' +
     '**No file bytes**: the response carries artifact names, repo-relative paths and reasons, ' +
     'and a withheld package’s hook commands are deliberately left out of it. ' +

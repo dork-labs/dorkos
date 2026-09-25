@@ -27,10 +27,8 @@
  * access rule: both are handed a scope somebody else resolved. Session rows are
  * owner-only and reachable by no agent (spec §7).
  *
- * {@link answerSearch} is everything the route decides ONCE THE CALLER IS KNOWN,
- * so the two surfaces that answer a search share one decision: `GET /api/search`
- * over HTTP, and {@link createEmbeddedSearch} in-process for the Obsidian embed,
- * which has no server to ask (DOR-691).
+ * {@link answerSearch} applies the shared search decision after the route has
+ * resolved the caller. `GET /api/search` exposes the result over HTTP.
  *
  * @module server/services/search
  */
@@ -43,7 +41,6 @@ export {
 export { searchMessages } from './query.js';
 export { answerSearch } from './answer-search.js';
 export { searchForCaller, type SearchScope } from './search-service.js';
-export { createEmbeddedSearch, type EmbeddedSearch } from './embedded-search.js';
 export {
   SEARCH_SOURCES,
   claudeCodeSource,

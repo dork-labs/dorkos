@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import {
   Palette,
   Settings2,
@@ -17,7 +16,7 @@ import {
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
@@ -32,9 +31,6 @@ import { RemoteAccessTab } from './RemoteAccessTab';
 import { PrivacyTab } from './PrivacyTab';
 import { DangerZoneTab } from './DangerZoneTab';
 import { ExperimentsTab } from './ExperimentsTab';
-
-/** Tabs the Obsidian embed leaves out; see the comment in {@link SettingsDialog}. */
-const EMBED_HIDDEN_TABS: ReadonlySet<SettingsTab> = new Set(['remote-access', 'permissions']);
 
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
   // "You" names what used to be an unlabelled run of four tabs above the first
@@ -177,19 +173,6 @@ interface SettingsDialogProps {
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const { activeTab: urlTab } = useSettingsDeepLink();
 
-  // Remote access is a tunnel into this machine from somewhere else, which the
-  // Obsidian embed cannot open — the panel there would render nothing at all.
-  // Permissions are managed in the DorkOS app, and the embed's transport
-  // refuses them, so that panel could only ever show an error. A tab that shows
-  // an empty or broken panel is worse than no tab.
-  const tabs = useMemo(
-    () =>
-      getPlatform().isEmbedded
-        ? SETTINGS_TABS.filter((tab) => !EMBED_HIDDEN_TABS.has(tab.id))
-        : SETTINGS_TABS,
-    []
-  );
-
   return (
     <TabbedDialog
       open={open}
@@ -198,7 +181,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       description="Application settings"
       defaultTab="appearance"
       initialTab={urlTab}
-      tabs={tabs}
+      tabs={SETTINGS_TABS}
       extensionSlot="settings.tabs"
       maximized
       testId="settings-dialog"

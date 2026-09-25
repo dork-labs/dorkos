@@ -643,7 +643,7 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       ).options;
       const actions = options.map((option) => option.shape.action.value).sort();
 
-      expect(actions.length, 'the union stopped introspecting; this check went vacuous').toBe(22);
+      expect(actions.length, 'the union stopped introspecting; this check went vacuous').toBe(21);
       expect(
         Object.keys(UI_COMMAND_REACH).sort(),
         'a control_ui action carries no reach verdict, so the no-prompt gate has no rule for it'

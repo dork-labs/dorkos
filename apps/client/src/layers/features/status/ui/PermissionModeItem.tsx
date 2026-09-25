@@ -40,12 +40,6 @@ interface PermissionModeItemProps {
    * Nothing is known yet about this session's power — draw a placeholder, not a
    * mode.
    *
-   * **`disabled` outranks this.** A control that cannot be used is not one that
-   * is about to become useful, and with no session selected the honest chip is
-   * "Send a message first" rather than a spinner for a read nobody issued. The
-   * embed's session store starts null and resets on every directory switch, so
-   * that state is ordinary rather than exotic (DOR-2103 re-review).
-   *
    * `mode` is a non-optional string, so the frames before any answer arrives
    * still carry SOMETHING, and what they carry is shaped exactly like a real
    * answer (`resolvePermissionMode`'s `'default'`). Painting it is the DOR-2103

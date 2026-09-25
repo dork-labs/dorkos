@@ -134,7 +134,7 @@ export function isTightening(
  * described take the confident answer, and the `from` side is genuinely
  * reachable: a session persisted in a mode the runtime has since stopped
  * declaring still loads and runs (`PATCH /api/sessions/:id` gates the `to` side
- * only), and `DirectTransport` bypasses that gate entirely.
+ * only). The decision also needs to stay safe for direct runtime callers.
  *
  * @param declared - Every mode the runtime declares, in any order.
  * @param from - The mode the running turn started under.

@@ -17,15 +17,13 @@ _openapi:
           nothing is turned on, and no settings store is opened. That is
           DOR-678’s rule, learned when `dorkos harness sync --check` scaffolded
           a manifest into whatever folder a person happened to be standing in.
-          **`state` answers for the project as a whole**, and has four values.
+          **`state` answers for the project as a whole**, and has three values.
           `ready` — the manifest parsed and everything below is populated.
           `not-set-up` — there is no `.agents/harness.manifest.json`, answered
           `200` rather than `404`, because a project with no manifest is a state
           the app is built to draw and a `404` would say the route is not there.
           `unreadable` — there is one and it will not parse, with `detail`
-          saying why in words a person can act on. `unavailable` — a build with
-          no harness service at all; it belongs to the in-process (Obsidian)
-          transport and is never produced here. On anything but `ready` every
+          saying why in words a person can act on. On anything but `ready` every
           list is empty and every count is zero. **No file bytes**: the response
           carries artifact names, repo-relative paths and reasons, and a
           withheld package’s hook commands are deliberately left out of it.

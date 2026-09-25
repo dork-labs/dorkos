@@ -6,11 +6,6 @@
  * `shared/ui/sidebar.tsx` as the shared primitive it always was — the Dev
  * Playground and a dozen component tests mount it (spec §9, P4).
  *
- * **Not "for the Obsidian embed".** The task brief said so and three comments
- * here repeated it; the embed renders `EmbedSidebar`, which never touches
- * `<Sidebar>` or `SidebarProvider` at all. A justification nobody checks is
- * worse than none, because the next person plans around it.
- *
  * The destination list, the zone split and the bar's height are internal: they
  * are what this widget is made of, not what it offers, and the widget's own
  * tests import them by relative path like every other internal.

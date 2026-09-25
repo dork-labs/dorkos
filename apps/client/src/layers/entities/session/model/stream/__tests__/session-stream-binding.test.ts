@@ -48,7 +48,6 @@ const UI_SNAPSHOT = buildUiStateSnapshot(
     relayOpen: false,
     pickerOpen: false,
     sidebarOpen: true,
-    sidebarActiveTab: 'overview',
   },
   '/projects/app'
 );

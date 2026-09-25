@@ -22,7 +22,7 @@ import type { HistoryMessage, MessagePart } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import { useSessionStreamStore, useSessionStreamState } from '@/layers/entities/session';
 import { useAppStore, type MessageAuthor } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import { buildListRows, selectRenderedMessages } from '@/layers/features/chat';
 // The tray's own view store, reached by its module path: resetting it between
 // cases is a test's business and the chat barrel deliberately does not publish
@@ -126,7 +126,6 @@ beforeEach(() => {
   useSessionStreamStore.getState().removeSession(SESSION_ID);
   useTrayExpansionStore.setState({ views: {} });
   useAppStore.setState({ sessionId: SESSION_ID, openDocuments: [], canvasOpen: false });
-  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 
 afterEach(() => {

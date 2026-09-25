@@ -28,7 +28,6 @@
  */
 import { useCallback } from 'react';
 import { useNavigate, useRouter } from '@tanstack/react-router';
-import { getPlatform } from '@/layers/shared/lib/platform';
 
 /**
  * The place an in-place rewrite hangs off — the location as it was before the
@@ -78,14 +77,6 @@ export type InPlaceNavigate = (options: InPlaceNavigateOptions) => void;
 /**
  * Navigate in place, declaring the rewrite to the session-navigation guard.
  *
- * Returns `null` when there is no router to rewrite — the Obsidian embed, which
- * mounts no `RouterProvider`, and any surface rendered outside one — exactly as
- * {@link useSafeNavigate} does. Callers fall back to their store path (or simply
- * do nothing) in that case. In the routed cockpit it returns a function that
- * performs the rewrite AND stamps the navigation's history state with the
- * destination it hangs off, so a lookup in flight is not mistaken for a
- * departure.
- *
  * The base is seeded from the current location on the first hop of a chain and
  * carried forward on later hops (`prev.inPlaceBase ?? current`), so a run of
  * in-place rewrites — open Settings, switch its tab, set a section — all report
@@ -96,12 +87,8 @@ export type InPlaceNavigate = (options: InPlaceNavigateOptions) => void;
  * @returns The in-place navigator, or `null` when there is no router.
  */
 export function useInPlaceNavigate(): InPlaceNavigate | null {
-  if (getPlatform().isEmbedded) return null;
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- conditional hook is safe: `isEmbedded` is fixed at bootstrap, so the hook order is stable for the app's lifetime (the dual-mode shape as useSafeNavigate).
   const navigate = useNavigate();
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- same fixed-at-bootstrap invariant as above.
   const router = useRouter();
-  // eslint-disable-next-line react-hooks/rules-of-hooks -- same fixed-at-bootstrap invariant as above.
   const inPlaceNavigate = useCallback(
     ({ to, search, replace }: InPlaceNavigateOptions) => {
       // Unreachable while this function is the one the hook returned (that only

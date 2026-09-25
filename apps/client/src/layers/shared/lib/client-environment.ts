@@ -15,10 +15,6 @@
  * sent — unless the reporter has the Diagnostics toggle on and has seen it in
  * the preview.
  *
- * Every read is individually guarded rather than assuming a browser: this module
- * is imported by the Obsidian embed's bundle too, and a missing `navigator` must
- * degrade to an absent field rather than throwing inside the submit path.
- *
  * @module shared/lib/client-environment
  */
 import {

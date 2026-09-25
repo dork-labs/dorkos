@@ -431,14 +431,6 @@ describe('useRoomListStream', () => {
   });
 
   describe('the well-known lookup (the home tab is reading it)', () => {
-    /**
-     * What `useTeamRoom` caches when #team has been archived: ONE room, or
-     * `null` — not a list. The bug this covers is that the key used to sit under
-     * the list prefix, where `applyReadCursor`'s prefix-matched patch mapped
-     * over whatever it found: `rooms.map is not a function`, thrown out of an
-     * event handler, which on the in-process transport takes down the whole
-     * global stream rather than one badge.
-     */
     function seedWellKnown(queryClient: QueryClient, room: unknown) {
       // Through the factory, never a hand-written path: the whole defect was
       // WHERE this key sits, so a test that spells its own path would keep

@@ -1,5 +1,7 @@
 # Demo Video Scripts: Three Brain-Melters
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). Three distinct demo concepts for the flagship video. Each is written as a beat sheet with timings, what's on screen, and the caption/voiceover. Some beats are aspirational; every script ends with an honest "what's real today vs not yet" ledger so we never ship a dishonest cut (brand rule: honest by design; a demo that lies is a refund waiting to happen).
 >
 > Production grammar for all three: real screen capture, no mockups, no stock footage, no music-video editing. Cream UI, monospace captions, silence or one quiet synth pad. Captions carry the story so the silent/X version works; VO is a light overlay for YouTube. The product is the star; the human is the point.

@@ -24,8 +24,7 @@
  *
  * @module entities/session/model/navigation/use-session-scoped-cwd
  */
-import { getPlatform } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
+
 import { useSessionSearch } from './use-session-search';
 
 /** What a session-scoped request knows about where to look. */
@@ -36,50 +35,18 @@ export interface SessionScopedCwd {
    * session's own directory when a request omits `?cwd=`.
    */
   cwd: string | null;
-  /**
-   * Whether {@link cwd} is settled. `false` only in the embedded host, where
-   * the directory arrives asynchronously into the store; a request fired
-   * against an unsettled directory is the double-fetch DOR-495 removed.
-   */
-  resolved: boolean;
 }
 
 /**
  * The directory the ACTIVE session's own reads should use.
  *
  * Standalone (web): the URL is the whole answer and it is available on the
- * first render, so this is always `resolved`. `?dir=` names the directory;
+ * first render. `?dir=` names the directory;
  * nothing named one means `null`.
  *
- * Embedded (Obsidian): there is no URL, so the store is the only channel and
- * `resolved` follows it — unchanged from the behaviour every session-scoped
- * query had before.
- *
- * @returns The scoped directory and whether it is settled.
+ * @returns The scoped directory.
  */
 export function useSessionScopedCwd(): SessionScopedCwd {
-  // Both sources are subscribed unconditionally to satisfy the rules of hooks,
-  // the same shape `useDirectoryState` uses.
-  const storeDir = useAppStore((s) => s.selectedCwd);
   const search = useSessionSearch();
-
-  if (getPlatform().isEmbedded) return { cwd: storeDir, resolved: storeDir !== null };
-  return { cwd: search.dir ?? null, resolved: true };
-}
-
-/**
- * Whether a session-scoped request knows everything it needs to go out.
- *
- * Replaces the older `isSessionRequestReady(sessionId, cwd)`, which treated a
- * null directory as "still loading" and held the request back. That was right
- * while every per-session endpoint required the directory; now that they
- * resolve it themselves, a null directory is a complete question and only an
- * UNSETTLED one is worth waiting for (DOR-495's double-fetch is still real in
- * the embedded host).
- *
- * @param sessionId - The active session id, or null when none is selected.
- * @param scoped - The answer from {@link useSessionScopedCwd}.
- */
-export function isSessionScopeReady(sessionId: string | null, scoped: SessionScopedCwd): boolean {
-  return sessionId !== null && scoped.resolved;
+  return { cwd: search.dir ?? null };
 }

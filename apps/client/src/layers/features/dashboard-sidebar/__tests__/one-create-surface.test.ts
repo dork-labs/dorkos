@@ -48,7 +48,6 @@ const FEATURE_DIR = join(__dirname, '..');
  */
 const SIDEBAR_DIRS: [label: string, dir: string][] = [
   ['dashboard-sidebar', FEATURE_DIR],
-  ['session-list', join(__dirname, '..', '..', 'session-list')],
   // The third one, since P4: on a phone the panel is four destinations along
   // the bottom, and it draws the same zones. The banner above says "every
   // sidebar implementation", so a new one that grew its own create surface or
@@ -378,15 +377,10 @@ describe('BC-44 — the version number leaves the chrome', () => {
   ];
 
   it('scans every sidebar implementation, not just the one this task owns', () => {
-    // Without this, the exact list below could pass on a scan that reached only
-    // the directory the allowlist happens to name. The Obsidian embed keeps its
-    // own sidebar in `session-list`, so the scan still spans two features even
-    // though P2.5 moved the footer into this one.
     const scanned = [...SIDEBAR_SOURCE.keys()];
     expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
     expect(scanned).toContain('dashboard-sidebar/ui/SidebarFooterStrip.tsx');
     expect(scanned).toContain('dashboard-sidebar/ui/bottom-slot/UpdatePill.tsx');
-    expect(scanned).toContain('session-list/ui/EmbedSidebar.tsx');
     // Pins the third SIDEBAR_DIRS entry: deleting it must red this line, not
     // silently shrink the scan (the review proved the entry was unobservable).
     expect(scanned).toContain('mobile-tabs/ui/MobileTabBar.tsx');

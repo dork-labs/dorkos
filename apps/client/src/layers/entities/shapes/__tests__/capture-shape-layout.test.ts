@@ -75,7 +75,7 @@ describe('captureShapeLayout', () => {
     const forked = mergeOverSource(source, captureShapeLayout(live));
 
     // The web cockpit has no tab strip, so this is the honest replay path.
-    expect(buildShapeLayoutCommands(forked, false)).toEqual([
+    expect(buildShapeLayoutCommands(forked)).toEqual([
       { action: 'open_sidebar' },
       { action: 'open_panel', panel: 'settings' },
       { action: 'open_panel', panel: 'relay' },
@@ -97,7 +97,7 @@ describe('captureShapeLayout', () => {
     const forked = mergeOverSource(source, captureShapeLayout(chrome({ sidebarOpen: true })));
 
     expect(forked.openPanels).toEqual(['tasks']);
-    expect(buildShapeLayoutCommands(forked, false)).toEqual([
+    expect(buildShapeLayoutCommands(forked)).toEqual([
       { action: 'open_sidebar' },
       { action: 'open_panel', panel: 'tasks' },
     ]);

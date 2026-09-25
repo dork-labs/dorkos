@@ -4,7 +4,7 @@
  * @module shared/model
  */
 export { TransportProvider, useTransport } from './TransportContext';
-export { useAppStore, type ContextFile, type RecentCwd } from './app-store';
+export { useAppStore, type RecentCwd } from './app-store';
 export { useAppTabsStore, useAppTabs, type AppTab } from './app-tabs/app-tabs-store';
 export type { SettingsTab } from './app-store/app-store-panels';
 export type { CanvasDocument, BrowserHistoryState } from './app-store/app-store-canvas';
@@ -162,7 +162,7 @@ export {
   type ScrollAxis,
 } from './scroll/use-scroll-overflow';
 export { revealInScroller } from './scroll/reveal-in-scroller';
-export { useSafeSearch, useSafeNavigate, useSafePathname, EMBED_PATHNAME } from './use-safe-router';
+export { useSafeSearch, useSafeNavigate, useSafePathname } from './use-safe-router';
 export {
   useInPlaceNavigate,
   type InPlaceNavigate,
