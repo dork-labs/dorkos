@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'motion/react';
 
-import { useIsMobile, useSafePathname } from '@/layers/shared/model';
+import { useIsMobile, usePendingRead, useSafePathname } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
 import { useAttentionRows, AttentionSignalRow } from '@/layers/features/dashboard-attention';
 import {
@@ -56,7 +56,10 @@ export function PulseAttentionSection() {
   // covers Home instead (`RightPanelContainer`), so the duplicate condition
   // never applies there.
   const isMobile = useIsMobile();
-  const { schedules, errors, activity, isLoading, total } = useAttentionRows();
+  const { schedules, errors, activity, isLoading: isFetchingRows, total } = useAttentionRows();
+  // A paused read during the boot-cache restore is not an empty list (DOR-1914).
+  // Why `isLoading` cannot answer that on its own is in `usePendingRead`.
+  const isLoading = usePendingRead(isFetchingRows);
   const openActivity = useOpenNotification();
 
   // A just-approved proposal leaves the server's parked list within a frame,

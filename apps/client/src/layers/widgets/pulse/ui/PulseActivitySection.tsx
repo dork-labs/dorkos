@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 
-import { useIsMobile, useSafePathname } from '@/layers/shared/model';
+import { useIsMobile, usePendingRead, useSafePathname } from '@/layers/shared/model';
 import { Button, Table, TableBody } from '@/layers/shared/ui';
 import { useDashboardActivity } from '@/layers/features/dashboard-activity';
 import { ActivityRow } from '@/layers/features/activity-feed-page';
@@ -33,7 +33,10 @@ export function PulseActivitySection() {
   // feed it is de-duping — on a narrow viewport it is a slide-over Sheet that
   // covers /activity instead (`RightPanelContainer`).
   const isMobile = useIsMobile();
-  const { groups, isLoading } = useDashboardActivity();
+  const { groups, isLoading: isFetchingActivity } = useDashboardActivity();
+  // A paused read during the boot-cache restore is not an empty feed (DOR-1914).
+  // Why `isLoading` cannot answer that on its own is in `usePendingRead`.
+  const isLoading = usePendingRead(isFetchingActivity);
 
   // Beside the feed itself, this section is the feed again. Say nothing — but
   // only where the panel is genuinely beside it (see the mobile note above).

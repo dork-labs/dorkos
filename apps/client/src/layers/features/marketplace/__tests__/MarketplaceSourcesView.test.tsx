@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { IsRestoringProvider } from '@tanstack/react-query';
 import type { MarketplaceSource } from '@dorkos/shared/marketplace-schemas';
 import {
   useMarketplaceSources,
@@ -135,6 +136,21 @@ describe('MarketplaceSourcesView', () => {
 
       expect(screen.getByText(/no marketplaces added yet/i)).toBeInTheDocument();
       expect(screen.getByText(/add a git registry/i)).toBeInTheDocument();
+    });
+
+    it('holds the skeleton, not the empty state, while the boot cache is restoring', () => {
+      // A paused query during the restore reports `isLoading: false` with no
+      // data (DOR-1914) — the empty state would invite adding a first source
+      // over a list that has several.
+      setSourcesState({ data: undefined, isLoading: false });
+
+      render(
+        <IsRestoringProvider value={true}>
+          <MarketplaceSourcesView />
+        </IsRestoringProvider>
+      );
+
+      expect(screen.queryByText(/no marketplaces added yet/i)).toBeNull();
     });
 
     it('renders one card per source with name, URL, and date', () => {
