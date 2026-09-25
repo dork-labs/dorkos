@@ -243,7 +243,16 @@ export async function readPackageSkills(
       out.skillTools.push({ source: path, skill: skillNameOf(path, data), tools });
   }
   for (const dir of TEXT_ONLY_DIRS) {
-    for (const path of await filesUnder(packagePath, dir, (name) => name.endsWith('.md'))) {
+    // Links under `.claude/` are skipped as the agent-workspace folders skip
+    // them (staging strips a package's links; in an installed agent they are
+    // DorkOS's own projections).
+    const skipLinks = dir.startsWith('.claude/');
+    for (const path of await filesUnder(
+      packagePath,
+      dir,
+      (name) => name.endsWith('.md'),
+      skipLinks
+    )) {
       const read = await readPackageText(packagePath, path);
       if (read.kind === 'absent') continue;
       if (read.kind === 'unreadable') {

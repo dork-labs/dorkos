@@ -866,6 +866,24 @@ describe('PermissionPreviewBuilder', () => {
       ]);
     });
 
+    it("discloses a command in an agent package's own .claude/commands and .claude/skills (DOR-2327, DOR-2314)", async () => {
+      // Purpose: an agent package's folder is its sessions' working directory,
+      // so Claude Code loads these as project commands and skills.
+      const manifest = agentManifest('agent-commands');
+      const pkgPath = await createFixturePackage(pkgRoot, manifest);
+      await put(pkgPath, '.claude/commands/ship.md', 'Status: !`git status --short`');
+      await put(pkgPath, '.claude/skills/ctx/SKILL.md', '```!\nnode -v\n```');
+
+      const preview = await builder.build(pkgPath, manifest);
+
+      expect(preview.skillCommands.map((c) => [c.source, c.command])).toEqual(
+        expect.arrayContaining([
+          ['.claude/commands/ship.md', 'git status --short'],
+          ['.claude/skills/ctx/SKILL.md', 'node -v'],
+        ])
+      );
+    });
+
     it('marks a command that uses the text typed after it (DOR-2327)', async () => {
       // Purpose: Claude Code and OpenCode fill $ARGUMENTS, $N and a named
       // `$name` before running the command, so what runs depends on the typing.
