@@ -1,4 +1,4 @@
-import type { Browser, Page } from '@playwright/test';
+import { expect, type Browser, type Page } from '@playwright/test';
 import { DESKTOP_VIEWPORT, DEVICE_SCALE_FACTOR, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
 import {
@@ -320,22 +320,19 @@ const AUTOSAVE_SETTLE_MS = 1500;
  *
  * The autosave round-trips through the server and echoes back as a `canvas`
  * event while edit mode is still on. That echo is this window's own write, so
- * it raises no held-update notice (DOR-2213) — and if one shows anyway, that is
- * a regression the shot must not paper over, so the drive fails loudly instead
- * of shipping it or clicking it away.
+ * it raises no held-update notice (DOR-2213). If one shows anyway, that is a
+ * regression the shot must not paper over: the assertion below throws, so the
+ * shot is skipped and reported (`attemptShot`) rather than shipped with the
+ * notice in it or clicked away. It is an assertion rather than a visibility
+ * probe with its errors caught, so a check that cannot run fails the shot too,
+ * rather than reading as "not shown".
  */
 async function settleCanvasEditing(page: Page): Promise<void> {
   await sleep(AUTOSAVE_SETTLE_MS);
-  if (
-    await page
-      .getByText('changed this while you were editing', { exact: false })
-      .isVisible()
-      .catch(() => false)
-  ) {
-    throw new Error(
-      'canvas-editing: the held-update notice showed for the editor’s own autosave (DOR-2213 regressed)'
-    );
-  }
+  await expect(
+    page.getByText('changed this while you were editing', { exact: false }),
+    'canvas-editing: the held-update notice showed for the editor’s own autosave (DOR-2213 regressed)'
+  ).toBeHidden({ timeout: 2000 });
   // The capture stack's Vite ws-proxy occasionally drops with ECONNRESET
   // (seen across every run of this pipeline, not something this drive causes)
   // — the client's own `ServerUnreachableScreen` blanks the whole window for

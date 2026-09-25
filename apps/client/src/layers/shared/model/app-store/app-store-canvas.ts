@@ -1301,6 +1301,9 @@ export const createCanvasSlice: StateCreator<
       // arrived late has still arrived.
       const ownEcho =
         event.document !== undefined && claimOwnEcho(event.document.id, event.document.content);
+      // Whether that echo is of the LAST write this window has outstanding. Only
+      // then is the frame the whole truth: nothing newer of ours is on its way.
+      const newestOwnEcho = ownEcho && !writesAwaitingEcho.has(event.documentId);
       set((s) => {
         if (s.canvasSessionId !== sessionId) return {};
         if (event.closed === true || !event.document) {
@@ -1323,17 +1326,43 @@ export const createCanvasSlice: StateCreator<
           // arrival is HELD for the banner rather than landing underneath them.
           if (held.editing) {
             // ...unless it is nobody else's change (DOR-2213). The echo of this
-            // window's own autosave, or a frame whose content is already on
-            // screen (another window's pin or activate), has no other version to
-            // offer. It takes the row's bookkeeping and leaves the content alone:
-            // while editing, only this window's own writes ever change it, so
-            // what is here is that write or a newer one.
-            if (ownEcho || contentFingerprint(row.content) === contentFingerprint(held.content)) {
+            // window's own autosave raises no banner — how much of it lands
+            // depends on whether a newer write of ours is still on its way.
+            //
+            // - **The newest outstanding write's echo lands whole.** Nothing of
+            //   ours is newer, so the frame is exactly what the server holds.
+            //   What is on screen is NOT guaranteed to match it: a refused
+            //   earlier write puts its `previous` back, and a snapshot taken
+            //   before the write resets the row — either can move the content
+            //   backwards mid-edit, and keeping it would leave this window
+            //   showing (and re-opening the editor on) a version the server has
+            //   already replaced.
+            // - **An older write's echo keeps the content.** A newer write is
+            //   still in flight and its echo will settle the row; landing the
+            //   older one would briefly put superseded words back.
+            //
+            // Either way the held push, if any, stays on offer: it was never
+            // answered, and our own write says nothing about it.
+            if (ownEcho) {
+              return {
+                openDocuments: s.openDocuments.map((d) => {
+                  if (d.id !== row.id) return d;
+                  const landed = fromServer(row, d);
+                  return newestOwnEcho
+                    ? landed
+                    : { ...landed, content: d.content, sourceLabel: d.sourceLabel };
+                }),
+              };
+            }
+            // A frame that says what is already on screen (another window's pin
+            // or activate, or a change put back) has no other version to offer.
+            // It also RETRACTS whatever was held: the server is back to what
+            // this window shows, so an earlier version on offer would let Reload
+            // put back something nobody holds any more.
+            if (contentFingerprint(row.content) === contentFingerprint(held.content)) {
               return {
                 openDocuments: s.openDocuments.map((d) =>
-                  d.id === row.id
-                    ? { ...fromServer(row, d), content: d.content, sourceLabel: d.sourceLabel }
-                    : d
+                  d.id === row.id ? { ...fromServer(row, d), heldUpdate: null } : d
                 ),
               };
             }
