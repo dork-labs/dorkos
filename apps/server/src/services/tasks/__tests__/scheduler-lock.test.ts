@@ -19,7 +19,8 @@ import { join } from 'node:path';
  */
 const { taggedLogger, injected } = vi.hoisted(() => ({
   taggedLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-  injected: { writeSyncError: null as NodeJS.ErrnoException | null },
+  /** Runs in place of the next `writeSync`, once; it throws to fail the write. */
+  injected: { writeSync: null as (() => never) | null },
 }));
 
 vi.mock('../../../lib/logger.js', () => ({ createTaggedLogger: () => taggedLogger }));
@@ -29,10 +30,10 @@ vi.mock('node:fs', async (importOriginal) => {
   return {
     ...actual,
     writeSync: ((...args: Parameters<typeof actual.writeSync>) => {
-      const err = injected.writeSyncError;
-      if (err !== null) {
-        injected.writeSyncError = null;
-        throw err;
+      const fail = injected.writeSync;
+      if (fail !== null) {
+        injected.writeSync = null;
+        fail();
       }
       return actual.writeSync(...args);
     }) as typeof actual.writeSync,
@@ -47,7 +48,7 @@ const errnoError = (code: string): NodeJS.ErrnoException =>
 
 beforeEach(() => {
   taggedLogger.warn.mockClear();
-  injected.writeSyncError = null;
+  injected.writeSync = null;
 });
 
 /**
@@ -303,7 +304,9 @@ describe('SchedulerLock — an unreadable lock file is replaced, not obeyed (DOR
 
   it('removes its own half-written lock file when the write fails after the create', () => {
     const lock = makeLock(1);
-    injected.writeSyncError = errnoError('ENOSPC');
+    injected.writeSync = () => {
+      throw errnoError('ENOSPC');
+    };
 
     expect(lock.tryAcquire()).toBe(false);
     // The file it had just created is gone, so nothing unreadable is left for
@@ -315,6 +318,24 @@ describe('SchedulerLock — an unreadable lock file is replaced, not obeyed (DOR
     // And the next attempt, with the disk back, simply wins.
     expect(lock.tryAcquire()).toBe(true);
     expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(1);
+  });
+
+  it('leaves alone a lock another process renamed over its half-written file', () => {
+    const failing = makeLock(1);
+    const other = makeLock(2);
+    // While `failing` holds its empty, just-created file, `other` reads it as
+    // debris and claims the path with a whole record of its own.
+    injected.writeSync = () => {
+      expect(other.tryAcquire()).toBe(true);
+      throw errnoError('ENOSPC');
+    };
+
+    expect(failing.tryAcquire()).toBe(false);
+    // The cleanup must not delete the lock `other` now holds.
+    expect(JSON.parse(readFileSync(lockPath, 'utf8')).pid).toBe(2);
+    other.heartbeat();
+    expect(other.isLeaderNow).toBe(true);
+    expect(failing.tryAcquire()).toBe(false);
   });
 });
 

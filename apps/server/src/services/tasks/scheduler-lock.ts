@@ -14,10 +14,12 @@
 
 import {
   closeSync,
+  fstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
   writeSync,
@@ -251,8 +253,11 @@ export class SchedulerLock implements LeaderLock {
    * The open and the write are separate steps so a failure between them is
    * ours to clean up: the file we just created is removed rather than left
    * empty at the lock path, where it would be the unreadable debris
-   * `tryAcquire` otherwise has to steal (DOR-2131). A failed open created
-   * nothing, so it never unlinks a file someone else owns.
+   * `tryAcquire` otherwise has to steal (DOR-2131). It never unlinks a file
+   * someone else owns: a failed open created nothing, and after a failed write
+   * the path is removed only while it still names the file we opened, since
+   * another process may have claimed our empty file in the meantime and
+   * renamed its own whole record over it.
    */
   private createExclusive(): CreateOutcome {
     let fd: number;
@@ -264,7 +269,10 @@ export class SchedulerLock implements LeaderLock {
       return 'failed';
     }
     let written = false;
+    // Which file we created, so cleanup can tell it from a replacement.
+    let created: { dev: number; ino: number } | null = null;
     try {
+      created = fstatSync(fd);
       const data = Buffer.from(JSON.stringify(this.record()));
       // `writeSync` may write fewer bytes than asked; loop until the record is whole.
       for (let offset = 0; offset < data.length;) {
@@ -287,9 +295,12 @@ export class SchedulerLock implements LeaderLock {
       return 'created';
     }
     try {
-      unlinkSync(this.lockPath);
+      const current = statSync(this.lockPath);
+      if (created !== null && current.dev === created.dev && current.ino === created.ino) {
+        unlinkSync(this.lockPath);
+      }
     } catch {
-      // Not removable either; `tryAcquire` claims unreadable debris anyway.
+      // Already gone, or not removable; `tryAcquire` claims unreadable debris anyway.
     }
     return 'failed';
   }
