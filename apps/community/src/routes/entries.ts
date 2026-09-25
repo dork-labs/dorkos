@@ -31,7 +31,11 @@ import type { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isUuid = (value: string) => UUID.test(value);
 
-interface EntryRow {
+/** The columns every entry projection reads, from `entries e LEFT JOIN agents a`. */
+const ENTRY_COLUMNS = `e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id`;
+
+/** One entry as the projection reads it. */
+export interface EntryRow {
   id: string;
   channel_id: string;
   seq: string;
@@ -99,11 +103,29 @@ export function entryProjection(
 /** Load one entry without revealing its storage columns. */
 export async function loadEntry(client: PoolClient | Pool, id: string): Promise<EntryRow> {
   const result = await client.query<EntryRow>(
-    `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1`,
+    `SELECT ${ENTRY_COLUMNS} FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1`,
     [id]
   );
   if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
   return result.rows[0];
+}
+
+/**
+ * Load the current rows of several entries of one channel, in sequence order. Ids that name no
+ * entry of that channel are left out.
+ */
+export async function loadChannelEntries(
+  client: PoolClient,
+  channelId: string,
+  ids: readonly string[]
+): Promise<EntryRow[]> {
+  if (!ids.length) return [];
+  const result = await client.query<EntryRow>(
+    `SELECT ${ENTRY_COLUMNS} FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
+     WHERE e.channel_id=$1 AND e.id=ANY($2::uuid[]) ORDER BY e.seq`,
+    [channelId, ids]
+  );
+  return result.rows;
 }
 
 /** Register ordered posts and bounded, scoped history. */
@@ -339,7 +361,7 @@ export function registerEntryRoutes(
       }
       const limit = parsed.limit ?? 50;
       const result = await client.query<EntryRow>(
-        `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+        `SELECT ${ENTRY_COLUMNS}
          FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND
            (($3::uuid IS NULL AND e.thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (e.id=$3 OR e.thread_root_entry_id=$3)))
          ORDER BY e.seq LIMIT $4`,

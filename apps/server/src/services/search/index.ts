@@ -70,7 +70,12 @@ export {
   OPENCODE_VOLATILE_WINDOW_MS,
   type OpenCodeSnapshot,
 } from './opencode-store.js';
-export { indexRoomEntry } from './write-through.js';
+export {
+  indexRoomEntry,
+  optimizeSearchIndex,
+  dropRoomFromIndex,
+  reindexRoomEntries,
+} from './write-through.js';
 export { sweepFileSource, DUPLICATE_CONTAINERS_KEY } from './jsonl-frontier.js';
 export { discoverClaudeCodeTranscripts } from './claude-code-discovery.js';
 export { discoverCodexRollouts } from './codex-discovery.js';

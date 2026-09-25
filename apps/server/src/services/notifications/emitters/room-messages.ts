@@ -58,7 +58,7 @@ export interface RoomMessageNotifyInput {
  * @param input - What the entry is and what the rooms domain decided about it.
  */
 export function notifyRoomMessage(input: RoomMessageNotifyInput): void {
-  const preview = previewOf(input.text);
+  const preview = roomMessagePreview(input.text);
 
   if (input.isDirectMessage && !input.roomMuted) {
     void notify('dm.received', {
@@ -91,7 +91,7 @@ export function notifyRoomMessage(input: RoomMessageNotifyInput): void {
  *
  * @param text - The entry's raw body text.
  */
-function previewOf(text: string): string {
+export function roomMessagePreview(text: string): string {
   const firstLine =
     text
       .split('\n')

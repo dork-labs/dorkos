@@ -62,6 +62,7 @@ export const COMMUNITY_API_V1_ROUTES = {
   channelAgents: '/api/v1/channels/:id/agents',
   entries: '/api/v1/channels/:id/entries',
   threads: '/api/v1/channels/:id/threads',
+  redactions: '/api/v1/channels/:id/redactions',
   entry: '/api/v1/entries/:id',
   channelAttachments: '/api/v1/channels/:id/attachments',
   channelReadCursor: '/api/v1/channels/:id/read-cursor',
@@ -476,6 +477,46 @@ export type CommunityWireThreadSummary = z.infer<typeof CommunityWireThreadSumma
 export const CommunityWireThreadSummaryListSchema = z.strictObject({
   threads: z.array(CommunityWireThreadSummarySchema).max(100),
 });
+
+/**
+ * Read the redaction feed of one channel: every entry whose text, mentions, files, or author name
+ * changed after it was posted (a deleted or removed message, a file taken out, an erased member's
+ * messages, a mention of an erased member), oldest change first.
+ *
+ * Without `cursor` the feed starts at its beginning; `from: 'end'` returns no items and a cursor
+ * at the current end, for a reader that has just loaded history and only needs later changes.
+ * A cursor answers `410` once the community's redaction history was replaced (a backup restore),
+ * and the reader starts again from the beginning.
+ *
+ * A route of its own rather than an event on the live stream: every wire object is strict, so a
+ * new event type would make an older installation refuse the stream. A reader that gets a `404`
+ * without an error code is talking to a server from before this route.
+ */
+export const CommunityWireRedactionPageQuerySchema = z
+  .strictObject({
+    cursor: cursor.optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    from: z.literal('end').optional(),
+  })
+  .refine((query) => !(query.cursor && query.from), {
+    message: 'Pass a cursor or ask for the end, not both',
+  });
+/** One changed entry, as it stands now: a tombstone, the message without a file, or a rewrite. */
+export const CommunityWireRedactionSchema = z.strictObject({ entry: CommunityWireEntrySchema });
+/** One redaction. See {@link CommunityWireRedactionSchema}. */
+export type CommunityWireRedaction = z.infer<typeof CommunityWireRedactionSchema>;
+/**
+ * Oldest-first changes. An entry changed twice within one page appears once. `nextCursor` always
+ * resumes after this page, even an empty one, so a reader stores it and asks again later;
+ * `hasMore` says whether to ask again now.
+ */
+export const CommunityWireRedactionPageSchema = z.strictObject({
+  redactions: z.array(CommunityWireRedactionSchema).max(100),
+  nextCursor: cursor,
+  hasMore: z.boolean(),
+});
+/** One page of the redaction feed. See {@link CommunityWireRedactionPageSchema}. */
+export type CommunityWireRedactionPage = z.infer<typeof CommunityWireRedactionPageSchema>;
 
 /** A read cursor may only advance, and only to an authorized entry. */
 export const CommunityWireReadCursorRequestSchema = z.strictObject({ cursor });

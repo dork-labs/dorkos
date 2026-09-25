@@ -3,6 +3,7 @@ import { cp, mkdtemp, readdir, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CommunityWireRedactionPageSchema } from '@dorkos/shared/community-wire';
 import { eraseMembership } from '../erasure/erasure.js';
 import { parseErasureJournal, reapplyErasures } from '../erasure/reapply.js';
 import { sweepExpiredPairings } from '../routes/pairings.js';
@@ -611,6 +612,20 @@ describe('backup re-application (AC-12)', () => {
     ).toEqual(['community.member_erased', 'community.account_erased']);
     expect(needles.some((needle) => journalText.includes(needle))).toBe(false);
 
+    // A DorkOS installation of Q's read the redaction feed to its end before the restore (2.1).
+    const feed = (cursor?: string) =>
+      h.call(
+        `${s.base}/channels/${s.channelId}/redactions${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`,
+        { cookie: s.q.cookie }
+      );
+    const readFeed = async () => {
+      const read = CommunityWireRedactionPageSchema.parse(await body(await feed(), 200, 'feed'));
+      expect(read.hasMore).toBe(false);
+      return read;
+    };
+    const saved = await readFeed();
+    expect(saved.redactions).toHaveLength(4);
+
     const epochs = new Set<string>([original]);
     for (let round = 0; round < 2; round++) {
       await restore(backup);
@@ -632,6 +647,13 @@ describe('backup re-application (AC-12)', () => {
       const next = await epoch();
       expect(epochs.has(next)).toBe(false);
       epochs.add(next);
+      // The restore rewound the redaction ids, so the saved cursor would skip the re-applied
+      // rows: it answers 410, and a fresh read from the start returns every redaction again.
+      expect((await feed(saved.nextCursor)).status).toBe(410);
+      const fresh = await readFeed();
+      expect(fresh.redactions.map((item) => item.entry.id).sort()).toEqual(
+        saved.redactions.map((item) => item.entry.id).sort()
+      );
     }
     await h.pool.query('DROP SCHEMA IF EXISTS erasure_backup CASCADE');
     await rm(backup.blobs, { recursive: true, force: true });

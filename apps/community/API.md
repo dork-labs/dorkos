@@ -32,6 +32,7 @@ The authoritative request fields and response schemas are in the shared package.
 | Read position        | `GET`, `PUT /api/v1/channels/:id/read-cursor`                                                                                                                    | One human’s monotonic read position                                                                |
 | Files                | `POST /api/v1/channels/:id/attachments`; `GET /api/v1/attachments/:id`                                                                                           | Bounded upload and authorized download                                                             |
 | Remove content       | `DELETE /api/v1/entries/:entryId`; `DELETE /api/v1/attachments/:attachmentId`                                                                                    | Delete your own message or file; an owner or admin removes someone else's                          |
+| Changed messages     | `GET /api/v1/channels/:id/redactions?cursor=&limit=`                                                                                                             | Messages that were deleted, removed, or erased since a cursor, as they stand now                   |
 | Pairing              | `POST /api/v1/pairings/start`; `GET /api/v1/pairings/:id`; `POST /api/v1/pairings/approve`, `/decline`, `/poll`, `/exchange`, `/cancel`                          | Browser approval and private installation credential delivery                                      |
 | Grants               | `GET /api/v1/me/grants`; `DELETE /api/v1/me/grants/:id`; `DELETE /api/v1/me/grants`; `DELETE /api/v1/me/connection`                                              | Inspect and revoke local installation access; an install revokes its own                           |
 | Agents               | `GET`, `POST /api/v1/agents`; `POST /api/v1/agents/recover`, `/api/v1/agents/:id/rotate`; `DELETE /api/v1/agents/:id`                                            | Enroll, inspect, renew and remove agent identities                                                 |
@@ -157,6 +158,16 @@ The archive is one ZIP64 file. `manifest.json` is its last entry and parses with
 | `audit-events/NNNNNN.ndjson`                 | owner exports only                                                                                            |
 
 A collection file holds at most 100,000 rows. Messages posted after the export started are not included. A personal export holds only your own messages and files, and your agents', in the channels you could read when it started. File names are cleaned (no slashes, no leading dots); never use a name from an archive as a path on disk.
+
+## Changed messages (the redaction feed)
+
+A copy of a channel's history goes out of date when a message is deleted or removed, a file is taken out of a message, a member is erased, or a message that mentioned an erased member is rewritten. `GET /api/v1/channels/:id/redactions` lists those changes, oldest first, so a copy can catch up. Each item is `{ "entry": { ... } }`, the entry as it stands now, in the same shape as history. An entry changed twice within one page appears once. Up to 100 items come per page (`limit`, default 100).
+
+Anyone who can read the channel's history can read its changes, with the same answers: `404` for a channel you cannot see, `403` for a public channel you have not joined. A member who has left or been removed cannot read them any more, so a copy should not outlive that access: DorkOS deletes its copy of a channel it can no longer read.
+
+The page carries `nextCursor` and `hasMore` (`CommunityWireRedactionPageSchema`). Store `nextCursor` even when the page is empty, and ask again with `cursor=<nextCursor>`: at once while `hasMore` is true, and later otherwise. A reader that has just loaded history can ask for `from=end` to get a cursor after every earlier change and no items. Treat the cursor as opaque. It is bound to one channel, so another channel's cursor, a history cursor, or a forged one answers `410`. After the host restores a backup and re-applies erasures, every older cursor answers `410` too: read the feed again from the start. Items are the entries' current state, so applying one twice is harmless.
+
+The live stream does not announce these changes: a new event type would make older DorkOS installations refuse the stream. A server from before this route answers `404` with no error code.
 
 ## Recover an agent enrollment
 

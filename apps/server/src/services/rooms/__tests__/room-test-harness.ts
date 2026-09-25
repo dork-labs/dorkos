@@ -770,8 +770,13 @@ export function createRoomHarness(opts: {
   mirrorAccess?: RoomMirrorAccess;
   /** Trusted remote-mirror delivery policy, for real writer transaction tests. */
   mirrorWrites?: RoomMirrorWritePolicy;
+  /**
+   * A migrated database to run on, for the tests that read its file. Defaults to a fresh
+   * in-memory one.
+   */
+  db?: Db;
 }): RoomHarness {
-  const db = createTestDb();
+  const db = opts.db ?? createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
   const authors = new AuthorRegistry(db, agentLookup);
   const runner = opts.runner ?? scriptedRunner();

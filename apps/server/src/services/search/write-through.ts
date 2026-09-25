@@ -43,9 +43,11 @@
  *
  * @module server/services/search/write-through
  */
-import type { Db } from '@dorkos/db';
+import { messages, searchSources, and, eq, inArray, sql, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
-import { roomsSource } from './registry.js';
+import { deleteContainerMessages, insertMessages } from './frontier-store.js';
+import { projectRoomEntries } from './projections/rooms.js';
+import { readRoomEntriesAt, roomsSource } from './registry.js';
 import { containerBacklog, indexRowContainer } from './row-frontier.js';
 
 /**
@@ -116,4 +118,70 @@ export function indexRoomEntry(db: Db, roomId: string, seq: number): void {
       error: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/**
+ * Drop a deleted room from the search index now — a remote Community mirror deleted when its
+ * access was revoked (member erasure task 2.1).
+ *
+ * The next sweep would drop it too (a container that no longer exists is pruned), so this only
+ * makes it immediate; if it fails, that sweep is the retry.
+ *
+ * @param db - The database holding the index.
+ * @param roomId - The deleted room.
+ */
+export function dropRoomFromIndex(db: Db, roomId: string): void {
+  db.transaction((tx) => {
+    deleteContainerMessages(tx, roomsSource.id, roomId);
+    tx.delete(searchSources)
+      .where(and(eq(searchSources.sourceId, roomsSource.id), eq(searchSources.originKey, roomId)))
+      .run();
+  });
+}
+
+/**
+ * Re-index the room entries that changed in place, and only those.
+ *
+ * The room projection indexes above a watermark and never sees an in-place update, so a
+ * changed entry would stay findable by what it used to say. This drops those rows from the index
+ * and writes what the entries say now, in the caller's transaction when there is one. An entry
+ * the index has not reached yet is written early, as the sweep would write it; one that now
+ * projects to nothing (an empty text) simply leaves the index.
+ *
+ * Run {@link optimizeSearchIndex} afterwards so the removed terms also leave the index's
+ * storage, not only its answers.
+ *
+ * @param db - The database holding both the room log and the index.
+ * @param roomId - The local room.
+ * @param seqs - The `seq` of every entry that changed.
+ */
+export function reindexRoomEntries(db: Db, roomId: string, seqs: readonly number[]): void {
+  if (!seqs.length) return;
+  const projected = projectRoomEntries(readRoomEntriesAt(db, roomId, seqs)).messages;
+  db.transaction((tx) => {
+    tx.delete(messages)
+      .where(
+        and(
+          eq(messages.sourceId, roomsSource.id),
+          eq(messages.originKey, roomId),
+          inArray(messages.ordinal, [...seqs])
+        )
+      )
+      .run();
+    insertMessages(tx, roomsSource.id, projected);
+  });
+}
+
+/**
+ * Merge every segment of the full-text index into one, dropping the entries of deleted rows.
+ *
+ * FTS5 retracts a deleted row by writing a delete marker; the terms it retracted stay in the
+ * older segment until a merge rewrites it. `optimize` is that merge, over the whole index, so it
+ * costs time in proportion to the index and is run only after content was replaced — never on
+ * the posting path. With `PRAGMA secure_delete` on, the pages the merge frees are zeroed too.
+ *
+ * @param db - The database holding the index.
+ */
+export function optimizeSearchIndex(db: Db): void {
+  db.run(sql`INSERT INTO messages_fts(messages_fts) VALUES('optimize')`);
 }

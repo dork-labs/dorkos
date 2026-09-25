@@ -603,6 +603,45 @@ export class AuthorRegistry {
   }
 
   /**
+   * Give somebody outside this machine who was erased where they came from the
+   * name that platform now shows for them, and a handle derived from it.
+   *
+   * Unlike an ordinary rename ({@link AuthorRegistry.resolveExternal}, which
+   * keeps the handle), the handle is re-derived: it was derived from the name the
+   * person asked to have erased, so keeping it would keep that name. The old
+   * handle is released without a tombstone, and any tombstones this author left
+   * are dropped, for the same reason — nobody is left to reclaim them. The
+   * author's id is unchanged, so every entry keeps pointing at the same row.
+   *
+   * @param identity - Who this is, with the display name the platform now shows,
+   *   RAW (for a Community, `Erased member` or `Erased agent`).
+   * @returns The author as stored now.
+   */
+  renameErasedExternal(identity: ExternalAuthorIdentity): AuthorRecord {
+    const naturalKey = externalNaturalKey(identity);
+    const existing = this.activeRow('human', naturalKey);
+    if (!existing) return this.resolveExternal(identity);
+    const displayName = externalDisplayName(identity);
+    const claimant = { id: existing.id, kind: 'human' as const, naturalKey };
+    // Its own handle and tombstones are its lineage's, so they never count against it.
+    const taken = this.handles.spokenFor(claimant);
+    const { platform, platformUserId } = externalAuthorParts(naturalKey);
+    const handle =
+      deriveQualifiedHandle(displayName, platform, taken) ??
+      deriveQualifiedHandle(platformUserId, platform, taken) ??
+      null;
+    this.db.transaction((tx) => {
+      tx.delete(handleTombstones).where(eq(handleTombstones.authorId, existing.id)).run();
+      tx.update(authors).set({ displayName, handle }).where(eq(authors.id, existing.id)).run();
+    });
+    return {
+      ...toRecord(existing),
+      displayName,
+      handle,
+    };
+  }
+
+  /**
    * Resolve `(kind, naturalKey)` to an author, inserting the row the first time
    * it is seen and refreshing the cached `displayName` after that — the shared
    * body of {@link AuthorRegistry.resolve} and
