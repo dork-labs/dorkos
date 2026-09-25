@@ -52,6 +52,7 @@ import {
 } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
 import { getLocalCockpitPort } from './lib/trusted-origins.js';
+import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
@@ -1094,6 +1095,9 @@ async function start() {
   watchRuntimeSigninFailures();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
+  // Git older than 2.38 cannot refuse a folder set up to look like a git
+  // repository; say so once, in plain words (DOR-2326).
+  void warnAboutGitProtection();
   // "While you were away" — composed once the day's first activity arrives.
   watchShiftReport(notificationStore);
 
@@ -3795,6 +3799,8 @@ async function start() {
         return verified.map(({ name, integrity }) => ({ name, integrity }));
       },
     },
+    // The same once-per-process read the startup warning logged (DOR-2326).
+    gitProtection: installedGitProtection,
   } satisfies DeepHealthDeps;
 
   // The same live reads, for `GET /api/debug/*`. A separate bag from the one

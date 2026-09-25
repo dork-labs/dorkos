@@ -41,7 +41,7 @@
  *   is what actually stops it, because it points hook lookup at a path that
  *   holds none. `--no-verify` stays as the second line: it costs nothing and
  *   covers the hooks it does cover if the config override is ever lost.
- * - **`-c core.fsmonitor=false`.** A repo-local `core.fsmonitor` is a command
+ * - **`-c core.fsmonitor=` (empty).** A repo-local `core.fsmonitor` is a command
  *   git executes on an ordinary `git status`; measured, it ran twice on one
  *   status. Since a room repo's config is reachable by anything that can write
  *   into the checkout, this is the config value that turns a read into an

@@ -84,6 +84,11 @@ export interface DeepHealthDeps {
   relayFailedToStart?: boolean | undefined;
   adaptersFailedToStart?: boolean | undefined;
   meshFailedToStart?: boolean | undefined;
+  /**
+   * How much protection the installed git gives agents' git (DOR-2326), read
+   * once per process by `lib/git-safety.ts`.
+   */
+  gitProtection?: (() => Promise<CheckResult>) | undefined;
 }
 
 /**
@@ -105,6 +110,11 @@ export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckRe
     await contain('Installed packages match what was installed', () =>
       installedPackagesCheck(deps)
     ),
+    await contain("Git protects your agents' git", () =>
+      deps.gitProtection
+        ? deps.gitProtection()
+        : skipped("Git protects your agents' git", 'the git check is not available')
+    ),
   ];
 }
 
@@ -113,7 +123,7 @@ export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckRe
  *
  * A subsystem caught mid-crash throws rather than answering — `RelayCore`
  * refuses every read once it is closed, for instance. Letting that escape would
- * lose the other four checks and hand the operator a blank 500 at the exact
+ * lose the other checks and hand the operator a blank 500 at the exact
  * moment they are trying to find out what broke.
  *
  * The degraded line names the check and nothing else: the thrown error may

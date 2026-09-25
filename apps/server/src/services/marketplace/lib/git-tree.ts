@@ -51,7 +51,12 @@ import { execFile } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { hardenedGitEnv } from '../../../lib/git-safety.js';
+import {
+  parseGitVersion,
+  withGitConfigEnv,
+  type GitConfigEntry,
+} from '@dorkos/shared/git-hardening';
+import { hardenedGitEnv, internalGitArgs } from '../../../lib/git-safety.js';
 import {
   gitHubAuthConfig,
   isGitHubCredentialHost,
@@ -433,18 +438,6 @@ let cachedAuth: { token: string | undefined; at: number } | undefined;
 /** The installed git's `[major, minor]`, read once per process. */
 let installedGit: Promise<[number, number] | undefined> | undefined;
 
-/**
- * Parse `git --version` output into `[major, minor]`, tolerating the suffixes
- * vendors add: `git version 2.39.5 (Apple Git-154)`,
- * `git version 2.43.0.windows.1`. `undefined` when there is no version in it.
- *
- * @param stdout - What `git --version` printed.
- */
-export function parseGitVersion(stdout: string): [number, number] | undefined {
-  const match = /git version (\d+)\.(\d+)/.exec(stdout);
-  return match ? [Number(match[1]), Number(match[2])] : undefined;
-}
-
 /** The installed git's version, from one `git --version` per process. */
 function gitVersion(): Promise<[number, number] | undefined> {
   installedGit ??= runGit(['--version'], undefined, LS_REMOTE_TIMEOUT_MS).then(
@@ -488,26 +481,6 @@ async function gitAuth(cloneUrl: string): Promise<GitAuth> {
     return { url: cloneUrl, config: header ? [header] : [] };
   }
   return { url: withGitHubToken(cloneUrl, token), config: [] };
-}
-
-/** One `git -c`-style setting, passed through the environment instead of argv. */
-type GitConfigEntry = { key: string; value: string };
-
-/**
- * `env` with `entries` appended to git's environment config
- * (`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`, read by
- * git ≥ 2.31), after any entries the environment already carries.
- */
-function withGitConfig(env: NodeJS.ProcessEnv, entries: GitConfigEntry[]): NodeJS.ProcessEnv {
-  if (entries.length === 0) return env;
-  const existing = Number.parseInt(env.GIT_CONFIG_COUNT ?? '0', 10);
-  const start = Number.isNaN(existing) || existing < 0 ? 0 : existing;
-  const next: NodeJS.ProcessEnv = { ...env, GIT_CONFIG_COUNT: String(start + entries.length) };
-  entries.forEach(({ key, value }, i) => {
-    next[`GIT_CONFIG_KEY_${start + i}`] = key;
-    next[`GIT_CONFIG_VALUE_${start + i}`] = value;
-  });
-  return next;
 }
 
 /**
@@ -564,13 +537,15 @@ async function runGit(
   timeout: number,
   config: GitConfigEntry[] = []
 ): Promise<{ stdout: string; stderr: string }> {
-  return execFileAsync('git', args, {
+  // The hardening as `-c` too: the environment copy is read only by git 2.31
+  // and later, and this repo supports 2.25.
+  return execFileAsync('git', [...internalGitArgs(), ...args], {
     cwd,
     timeout,
     maxBuffer: 16 * 1024 * 1024,
     // Confine git to safe transports so an author-controlled URL cannot reach
     // the `ext::`/`file::` helpers, and never prompt for a credential.
-    env: withGitConfig(hardenedGitEnv(), config),
+    env: withGitConfigEnv(hardenedGitEnv(), config),
     encoding: 'utf-8',
   });
 }

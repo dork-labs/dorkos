@@ -23,7 +23,19 @@
  *
  * @module lib/git-safety
  */
-import { gitConfigArgs, internalGitConfig, withGitConfigEnv } from '@dorkos/shared/git-hardening';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import {
+  gitConfigArgs,
+  gitProtectionCheck,
+  internalGitConfig,
+  withGitConfigEnv,
+} from '@dorkos/shared/git-hardening';
+import type { CheckResult } from '@dorkos/shared/health-schemas';
+import { logger } from './logger.js';
+
+/** How long `git --version` may take before git counts as unreadable. */
+const GIT_VERSION_TIMEOUT_MS = 10_000;
 
 /** Transports a marketplace fetch or ls-remote is allowed to use. Blocks `ext::`, `file::`, etc. */
 const ALLOWED_GIT_PROTOCOLS = 'https:ssh:git';
@@ -58,4 +70,39 @@ export function hardenedGitEnv(): NodeJS.ProcessEnv {
  */
 export function internalGitArgs(): string[] {
   return gitConfigArgs(internalGitConfig());
+}
+
+/** The installed git's protection line, read once per process. */
+let installedGitCheck: Promise<CheckResult> | undefined;
+
+/**
+ * How much of the DOR-2326 protection the installed git gives, from one
+ * `git --version` per process: the startup warning and the deep health line
+ * both read it. Git 2.38 or later gives all of it
+ * (`gitProtectionCheck` in `@dorkos/shared/git-hardening` says why).
+ *
+ * @returns The check line; never rejects.
+ */
+export function installedGitProtection(): Promise<CheckResult> {
+  // Bound here, not at load: many modules import this one only for its env,
+  // under tests that mock `node:child_process` without `execFile`.
+  installedGitCheck ??= promisify(execFile)('git', ['--version'], {
+    timeout: GIT_VERSION_TIMEOUT_MS,
+    env: hardenedGitEnv(),
+  }).then(
+    ({ stdout }) => gitProtectionCheck(stdout),
+    (err: NodeJS.ErrnoException & { stdout?: string }) =>
+      gitProtectionCheck(err.code === 'ENOENT' ? undefined : String(err.stdout ?? ''))
+  );
+  return installedGitCheck;
+}
+
+/**
+ * Log a plain warning at startup when the installed git gives agents less than
+ * full protection. Never throws.
+ */
+export async function warnAboutGitProtection(): Promise<void> {
+  const check = await installedGitProtection();
+  if (check.status !== 'warn') return;
+  logger.warn(`[Git] ${check.label}. ${check.detail ?? ''} ${check.fix ?? ''}`.trim());
 }

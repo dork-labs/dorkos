@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   SESSION_GIT_CONFIG,
+  gitProtectionCheck,
+  gitProtectionLevel,
+  parseGitVersion,
   gitConfigArgs,
   internalGitConfig,
   withGitConfigEnv,
@@ -12,7 +15,7 @@ describe('git hardening (DOR-2326)', () => {
   it('gives sessions the two settings that stop a folder running a program', () => {
     expect(SESSION_GIT_CONFIG).toEqual([
       { key: 'safe.bareRepository', value: 'explicit' },
-      { key: 'core.fsmonitor', value: 'false' },
+      { key: 'core.fsmonitor', value: '' },
     ]);
   });
 
@@ -34,7 +37,7 @@ describe('git hardening (DOR-2326)', () => {
       '-c',
       'safe.bareRepository=explicit',
       '-c',
-      'core.fsmonitor=false',
+      'core.fsmonitor=',
     ]);
   });
 
@@ -49,8 +52,43 @@ describe('git hardening (DOR-2326)', () => {
       GIT_CONFIG_KEY_1: 'safe.bareRepository',
       GIT_CONFIG_VALUE_1: 'explicit',
       GIT_CONFIG_KEY_2: 'core.fsmonitor',
-      GIT_CONFIG_VALUE_2: 'false',
+      GIT_CONFIG_VALUE_2: '',
     });
     expect(env.GIT_CONFIG_COUNT).toBe('1');
+  });
+});
+
+describe('the installed git (DOR-2326)', () => {
+  it.each([
+    ['git version 2.39.5 (Apple Git-154)', [2, 39]],
+    ['git version 2.43.0.windows.1', [2, 43]],
+    ['not git', undefined],
+  ] as const)('parses %j', (out, expected) => {
+    expect(parseGitVersion(out)).toEqual(expected);
+  });
+
+  // Purpose: sessions' settings travel in the environment (git 2.31+), and
+  // safe.bareRepository needs 2.38; the boundaries are exact.
+  it.each([
+    [[2, 25], 'none'],
+    [[2, 30], 'none'],
+    [[2, 31], 'partial'],
+    [[2, 37], 'partial'],
+    [[2, 38], 'full'],
+    [[3, 0], 'full'],
+  ] as const)('rates git %j as %s', (version, level) => {
+    expect(gitProtectionLevel(version)).toBe(level);
+  });
+
+  it.each([
+    ['git version 2.30.0\n', 'warn'],
+    ['git version 2.37.1\n', 'warn'],
+    ['git version 2.38.0\n', 'pass'],
+    ['garbled', 'info'],
+    [undefined, 'info'],
+  ] as const)('reports %j as %s', (out, status) => {
+    const check = gitProtectionCheck(out);
+    expect(check.status).toBe(status);
+    if (status === 'warn') expect(check.fix).toContain('2.38');
   });
 });

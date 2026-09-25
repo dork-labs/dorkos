@@ -118,7 +118,7 @@ describe('queryCodexModels', () => {
         GIT_CONFIG_KEY_0: 'safe.bareRepository',
         GIT_CONFIG_VALUE_0: 'explicit',
         GIT_CONFIG_KEY_1: 'core.fsmonitor',
-        GIT_CONFIG_VALUE_1: 'false',
+        GIT_CONFIG_VALUE_1: '',
       });
       expect(spawn.mock.calls[0]?.[2]).not.toHaveProperty('NANGO_ENCRYPTION_KEY');
       expect(spawn.mock.calls[0]?.[2]).not.toHaveProperty('MCP_API_KEY');

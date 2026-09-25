@@ -14,7 +14,9 @@ DorkOS gives you a browser tab where you run, schedule, and check on your coding
   [Anthropic](https://console.anthropic.com/) that lets DorkOS talk to Claude on your behalf). If
   you don't have one yet, create it there first. Everything except Docker and the desktop app also
   needs [Node.js](https://nodejs.org/) 22 or later, the JavaScript runtime DorkOS runs on. (The
-  desktop app and Docker bring their own, so you don't have to install anything else.)
+  desktop app and Docker bring their own, so you don't have to install anything else.) If your
+  agents use git, use git 2.38 or later: older git can be tricked into running a program when an
+  agent looks inside a folder, and `dorkos doctor` tells you which you have.
 </Callout>
 
 ## Try it without installing

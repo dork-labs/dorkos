@@ -10,12 +10,39 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DirtyState } from '@dorkos/shared/workspace';
-import { internalGitArgs } from '../../../lib/git-safety.js';
+import {
+  gitConfigArgs,
+  internalGitConfig,
+  SESSION_GIT_CONFIG,
+  type GitConfigEntry,
+} from '@dorkos/shared/git-hardening';
 
 const execFileAsync = promisify(execFile);
 
 /** Default git command timeout (ms). */
 const GIT_TIMEOUT_MS = 30_000;
+
+/** How one {@link runGit} call runs. */
+export interface RunGitOptions {
+  /**
+   * Kill the child after this long. Provisioning can afford the 30s default; a
+   * scan that blocks an HTTP response cannot, so it passes its own.
+   */
+  timeoutMs?: number;
+  /**
+   * The hardening settings (DOR-2326). Reads take the default,
+   * {@link internalGitConfig}, which runs no hook. Creating a workspace in a
+   * person's own repository passes {@link PERSON_REPO_GIT_CONFIG} instead, so
+   * their `post-checkout` hook still runs, as it would for their own `git`.
+   */
+  config?: readonly GitConfigEntry[];
+}
+
+/**
+ * The settings for git that changes a person's own repository on their
+ * behalf: the agent-session set, which keeps their hooks.
+ */
+export const PERSON_REPO_GIT_CONFIG: readonly GitConfigEntry[] = SESSION_GIT_CONFIG;
 
 /**
  * Run a git command in `cwd`, returning raw stdout untrimmed. Throws on
@@ -23,19 +50,35 @@ const GIT_TIMEOUT_MS = 30_000;
  *
  * @param args - Arguments passed to `git` (never shell-interpolated).
  * @param cwd - Directory to run in.
- * @param timeoutMs - Kill the child after this long. Provisioning can afford the
- *   30s default; a scan that blocks an HTTP response cannot, so it passes its own.
+ * @param options - Timeout and hardening settings.
  */
 export async function runGit(
   args: string[],
   cwd: string,
-  timeoutMs: number = GIT_TIMEOUT_MS
+  { timeoutMs = GIT_TIMEOUT_MS, config = internalGitConfig() }: RunGitOptions = {}
 ): Promise<string> {
-  const { stdout } = await execFileAsync('git', [...internalGitArgs(), ...args], {
+  const { stdout } = await execFileAsync('git', [...gitConfigArgs(config), ...args], {
     cwd,
     timeout: timeoutMs,
   });
   return stdout;
+}
+
+/**
+ * Whether `dir` is itself a bare repository. Asked with `--git-dir`, so git
+ * answers about exactly that folder rather than one it finds above it; a
+ * working checkout is not a git directory and answers no.
+ *
+ * @param dir - The folder to ask about.
+ * @returns `true` only for a bare repository.
+ */
+export async function isBareRepository(dir: string): Promise<boolean> {
+  try {
+    const out = await runGit(['--git-dir', dir, 'rev-parse', '--is-bare-repository'], dir);
+    return out.trim() === 'true';
+  } catch {
+    return false;
+  }
 }
 
 /**

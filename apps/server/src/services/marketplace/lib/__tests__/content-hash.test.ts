@@ -109,6 +109,25 @@ describe('packageContentHash', () => {
     expect(await packageContentHash(root)).toBe(staged);
   });
 
+  it('leaves out every .git, which the install strips (DOR-2326)', async () => {
+    // Purpose: the hash is of what lands, and an installed folder a person
+    // made their own repository must still match its record.
+    const staged = await packageContentHash(root);
+    await mkdir(path.join(root, '.git', 'hooks'), { recursive: true });
+    await writeFile(path.join(root, '.git', 'config'), '[core]\n\tfsmonitor = x\n');
+    await mkdir(path.join(root, 'hooks', 'vendored'), { recursive: true });
+    await writeFile(path.join(root, 'hooks', 'vendored', '.git'), 'gitdir: ../../x\n');
+    const withGit = await packageContentHash(root);
+    await rm(path.join(root, 'hooks', 'vendored'), { recursive: true });
+    expect(withGit).toBe(staged);
+  });
+
+  it('covers a file whose name only contains .git', async () => {
+    const staged = await packageContentHash(root);
+    await writeFile(path.join(root, '.gitignore'), 'x');
+    expect(await packageContentHash(root)).not.toBe(staged);
+  });
+
   it('covers a shipped node_modules: two trees differing only there hash differently (the PoC)', async () => {
     // Purpose: npm leaves a shipped node_modules in place, and a server the
     // package starts runs that code, so it must be part of what is approved.

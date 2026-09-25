@@ -147,19 +147,17 @@ async function inspectCheckout(checkoutPath: string, project: string): Promise<W
     // another agent's live worktree: without it, `status` refreshes and rewrites
     // the index while that agent may be mid-command.
     const [status, lastCommit, commonDir] = await Promise.all([
-      runGit(
-        ['--no-optional-locks', 'status', '--porcelain=v1', '--branch'],
-        checkoutPath,
-        SCAN_GIT_TIMEOUT_MS
-      ),
+      runGit(['--no-optional-locks', 'status', '--porcelain=v1', '--branch'], checkoutPath, {
+        timeoutMs: SCAN_GIT_TIMEOUT_MS,
+      }),
       // An unborn branch (a checkout with no commits) makes `log` exit non-zero;
       // that is a missing date, not an unreadable checkout.
-      runGit(['log', '-1', '--format=%cI'], checkoutPath, SCAN_GIT_TIMEOUT_MS).catch(() => ''),
-      runGit(
-        ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-        checkoutPath,
-        SCAN_GIT_TIMEOUT_MS
-      ).catch(() => ''),
+      runGit(['log', '-1', '--format=%cI'], checkoutPath, { timeoutMs: SCAN_GIT_TIMEOUT_MS }).catch(
+        () => ''
+      ),
+      runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], checkoutPath, {
+        timeoutMs: SCAN_GIT_TIMEOUT_MS,
+      }).catch(() => ''),
     ]);
 
     const summary = parseStatusSummary(status);

@@ -29,8 +29,8 @@
  *   ({@link assertShipsNoRuntimeState}), so nothing unhashed can arrive in them,
  *   and a shipped install record can never stand in for the one the installer
  *   writes.
- * - The root `.npmrc` and symbolic links, which the install strips before
- *   anything lands.
+ * - The root `.npmrc`, every `.git` and symbolic links, which the install
+ *   strips before anything lands.
  *
  * A shipped `node_modules` and lockfile ARE covered: npm obeys both. What npm
  * then fetches for the hashed `package.json` and lockfile (with
@@ -141,7 +141,13 @@ const STRIPPED_AT_ROOT = '.npmrc';
 
 /** What {@link packageContentHash} leaves out. */
 function skipsForPackage(posixPath: string): boolean {
-  return isRuntimeStatePath(posixPath) || posixPath === STRIPPED_AT_ROOT;
+  return (
+    isRuntimeStatePath(posixPath) ||
+    posixPath === STRIPPED_AT_ROOT ||
+    // Every `.git`, at any depth: the install strips them (DOR-2326), and an
+    // installed folder a person made their own repository hashes as its files.
+    posixPath.split('/').includes('.git')
+  );
 }
 
 /**

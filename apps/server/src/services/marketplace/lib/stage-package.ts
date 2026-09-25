@@ -31,6 +31,12 @@
  * reaches disk. The USER's own `~/.npmrc` is untouched; that is where
  * private-registry auth lives.
  *
+ * Every `.git`, at any depth, is dropped too (DOR-2326). A package is content,
+ * never a repository: a `.git` folder carries a `config` and `hooks/` that git
+ * obeys when anyone, an agent included, runs git inside the installed folder,
+ * and a `.git` file points git at another folder's. A local agent that is its
+ * author's own repository installs as its files alone.
+ *
  * And one family of paths (DOR-2245): the ones DorkOS keeps for the person or
  * the installer (`isReservedPackagePath`): the package's data directory, its
  * secrets file, the installer's records, and `.dork-old` / `.dork-new` copies.
@@ -46,6 +52,9 @@ import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
 import { isReservedPackagePath } from '@dorkos/marketplace';
 import { PACKAGE_NPMRC } from './npm-dependencies.js';
+
+/** The name git gives a repository's own folder, or a file pointing at one. */
+const GIT_DIR_NAME = '.git';
 
 /**
  * Recursively copy a package's contents from `source` into `dest`, stripping
@@ -83,6 +92,12 @@ export async function stagePackageContents(
         return false;
       }
       const rel = path.relative(source, src).split(path.sep).join('/');
+      if (path.basename(src) === GIT_DIR_NAME && rel !== '') {
+        logger.warn(
+          `[marketplace/stage] Stripped ${rel} from the package: git would obey the settings and hooks in it, and a package is its files, not a repository.`
+        );
+        return false;
+      }
       if (rel !== '' && isReservedPackagePath(rel)) {
         logger.warn(
           `[marketplace/stage] Stripped reserved path from package: ${rel} (DorkOS keeps it for the person or the installer)`

@@ -1469,15 +1469,35 @@ describe('a package folder shaped like a git repository (DOR-2326)', () => {
   });
 
   // Purpose: an agent's folder is where its sessions run git, so an agent may
-  // not carry any piece of a repository at its root.
+  // not carry the other pieces of a repository at its root.
   it.each([
     ['a root config file', async (r: string) => writeText(path.join(r, 'config'), '[core]\n')],
-    ['a .git folder', async (r: string) => fs.mkdir(path.join(r, '.git'))],
     ['a worktrees folder', async (r: string) => fs.mkdir(path.join(r, 'worktrees'))],
     ['a lone packed-refs', async (r: string) => writeText(path.join(r, 'packed-refs'), 'x')],
   ])('refuses an agent root with %s', async (_label, plant) => {
     const result = await validatePackage(await packageWith('agent', plant));
     expect(result.ok).toBe(false);
+    expect(result.issues.map((i) => i.code)).toContain('GIT_REPOSITORY_SHAPED');
+  });
+
+  // Purpose: a local agent that is its author's own repository installs; the
+  // install drops the .git as it copies (stage-package.ts).
+  it('accepts an agent package with its own .git folder', async () => {
+    const root = await packageWith('agent', async (r) => {
+      await fs.mkdir(path.join(r, '.git', 'hooks'), { recursive: true });
+      await writeText(path.join(r, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+      await writeText(path.join(r, '.git', 'config'), '[core]\n\tbare = false\n');
+    });
+    const result = await validatePackage(root);
+    expect(result.issues.map((i) => i.code)).not.toContain('GIT_REPOSITORY_SHAPED');
+  });
+
+  // Purpose: a .git FILE naming another folder is refused for an agent too.
+  it('refuses an agent package whose .git file points elsewhere', async () => {
+    const root = await packageWith('agent', async (r) =>
+      writeText(path.join(r, '.git'), 'gitdir: /tmp/elsewhere\n')
+    );
+    const result = await validatePackage(root);
     expect(result.issues.map((i) => i.code)).toContain('GIT_REPOSITORY_SHAPED');
   });
 

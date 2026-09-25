@@ -787,12 +787,14 @@ async function searchForSkill(root: string, skillName: string, depth: number): P
  * any package type.
  *
  * An agent's folder is also where its sessions run git, so an agent may not
- * carry any piece of a repository at its root: no `config` file, `.git`,
- * `worktrees/` or `packed-refs` either. (A plugin's `config` file or folder is
- * an ordinary name, and nothing runs git inside a plugin's folder.) DorkOS's
- * own git calls and every agent session's git are hardened as well
- * (`@dorkos/shared/git-hardening`); this refusal keeps such a package from
- * being installed at all.
+ * carry the other pieces of a repository at its root either: no `config`
+ * file, `worktrees/` or `packed-refs`. (A plugin's `config` file or folder is
+ * an ordinary name, and nothing runs git inside a plugin's folder.) A `.git`
+ * FOLDER is not refused: a local agent that is someone's own repository is
+ * ordinary, and the install drops every `.git` as it copies the package
+ * (`stage-package.ts`). DorkOS's own git calls and every agent session's git
+ * are hardened as well (`@dorkos/shared/git-hardening`); this refusal keeps
+ * such a package from being installed at all.
  *
  * @param packagePath - Absolute path to the package root directory.
  * @param type - The package's type.
@@ -831,7 +833,6 @@ async function checkGitShapedRoot(
   }
   if (type === 'agent') {
     if (config === 'file') found.push('a config file');
-    if (dotGit !== null) found.push('.git');
     if (worktrees === 'dir') found.push('a worktrees folder');
     if (packedRefs === 'file') found.push('packed-refs');
   }
