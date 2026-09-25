@@ -340,9 +340,10 @@ describe('an agent package installed before records existed', () => {
       expect(outcome.ok).toBe(false);
       expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
       // Not "came with a package": the refusal is about DorkOS not knowing yet,
-      // it says when that ends, and it offers no copy (DOR-2272 review).
+      // it says how to end that now (Check files, DOR-2320) and offers no copy.
       expect(!outcome.ok && outcome.ownedBy).toBe('legacy');
-      expect(!outcome.ok && outcome.error).toContain("after the package's next update");
+      expect(!outcome.ok && outcome.error).toContain('Check files');
+      expect(!outcome.ok && outcome.error).toContain('dorkos marketplace check-files');
       expect(!outcome.ok && outcome.error).not.toContain('make your own copy');
     }
   );
@@ -357,7 +358,7 @@ describe('an agent package installed before records existed', () => {
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.code).toBe('schedule_package_owned');
-    expect(!outcome.ok && outcome.error).toContain('This will work after that update.');
+    expect(!outcome.ok && outcome.error).toContain('Check files');
     expect(!outcome.ok && outcome.ownedBy).toBe('legacy');
     await expect(fs.access(scheduleFile(agentDir, 'my-own-sweep'))).rejects.toThrow();
   });

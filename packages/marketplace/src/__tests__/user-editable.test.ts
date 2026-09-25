@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
+  declaredEffectPaths,
   isReservedPackagePath,
   matchesUserEditable,
   UserEditablePathSchema,
+  validUserEditable,
 } from '../user-editable.js';
 import { MarketplacePackageManifestSchema } from '../manifest-schema.js';
 
@@ -187,5 +189,42 @@ describe('manifest userEditable', () => {
       userEditable: ['.dork/manifest.json'],
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('validUserEditable (DOR-2197 review 2)', () => {
+  // Purpose: an old manifest (installed before the rules existed) can carry
+  // entries the schema now refuses; a record rebuild must never trust them.
+  it('keeps only entries the schema accepts', () => {
+    expect(
+      validUserEditable([
+        'config/defaults.json',
+        'skills/**',
+        '**',
+        '.dork/secrets.json',
+        7,
+        'prompts/**',
+      ])
+    ).toEqual(['config/defaults.json', 'prompts/**']);
+  });
+});
+
+describe('declaredEffectPaths (DOR-2197 review 9)', () => {
+  // Purpose: plugin.json can move hooks, servers, skills, commands, agents and
+  // output styles anywhere; every such location is named, normalized, and one
+  // that leaves the package is dropped.
+  it('names every location plugin.json declares, inside the package only', () => {
+    expect(
+      declaredEffectPaths({
+        hooks: './custom/hooks.json',
+        mcpServers: { inline: true },
+        commands: ['./cmds/', 'extra\\more'],
+        skills: '../outside',
+        agents: '/abs',
+        experimental: { monitors: './watch/m.json' },
+        outputStyles: 'styles/./x',
+      }).sort()
+    ).toEqual(['cmds', 'custom/hooks.json', 'extra/more', 'styles/x', 'watch/m.json']);
+    expect(declaredEffectPaths(null)).toEqual([]);
   });
 });

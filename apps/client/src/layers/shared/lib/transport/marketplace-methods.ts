@@ -14,6 +14,9 @@ import type {
   InstallOptions,
   InstallResult,
   UninstallOptions,
+  ListInstalledOptions,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -138,12 +141,23 @@ export function createMarketplaceMethods(baseUrl: string) {
 
     // --- Installed packages ---
 
-    listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]> {
-      const params = projectPath ? `?projectPath=${encodeURIComponent(projectPath)}` : '';
+    listInstalledPackages(
+      projectPath?: string,
+      opts?: ListInstalledOptions
+    ): Promise<InstalledPackage[]> {
+      const qs = buildQueryString({ projectPath, verify: opts?.verify ? 'true' : undefined });
       return fetchJSON<{ packages: InstalledPackage[] }>(
         baseUrl,
-        `/marketplace/installed${params}`
+        `/marketplace/installed${qs}`
       ).then((r) => r.packages);
+    },
+
+    checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult> {
+      return fetchJSON<CheckFilesResult>(
+        baseUrl,
+        `/marketplace/packages/${encodeURIComponent(name)}/check-files`,
+        { method: 'POST', body: JSON.stringify(opts ?? {}) }
+      );
     },
 
     listPackageInstallations(name: string): Promise<InstalledPackage[]> {

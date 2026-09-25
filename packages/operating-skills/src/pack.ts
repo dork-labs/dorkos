@@ -285,8 +285,13 @@ export interface OperatingSkill {
  *   seeded at 27 would retime a package schedule believing it stays live, tell
  *   a person a package agent can't have schedules, or try to approve a
  *   held-back package it installed.
+ * - 29: older installs point at Check files (DOR-2197). `scheduling-tasks`
+ *   said a schedule under a package an older DorkOS installed works after the
+ *   package's next update, and that Make my own copy isn't offered for one yet;
+ *   `using-the-marketplace` gains `verify` and Check files. An agent
+ *   seeded at 28 would tell a person to wait for an update that may never ship.
  */
-export const OPERATING_SKILLS_VERSION = 28;
+export const OPERATING_SKILLS_VERSION = 29;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

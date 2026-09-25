@@ -22,6 +22,7 @@ import type { InstallationUpdateCheck } from '@dorkos/shared/marketplace-schemas
 
 import {
   MOCK_INSTALLED_FOR_UPDATES,
+  MOCK_INSTALLED_VERIFIED,
   MOCK_UPDATE_CHECKS,
   MOCK_UPDATE_CHECKS_ALL_CURRENT,
 } from './marketplace-mocks';
@@ -37,6 +38,12 @@ function seedChecks(checks: InstallationUpdateCheck[]) {
     seedInstalled(qc);
     qc.setQueryData(marketplaceKeys.updates(), { checks });
   };
+}
+
+/** A settled check plus verification: changed files on one row, an older install on another. */
+function seedVerified(qc: QueryClient) {
+  seedChecks(MOCK_UPDATE_CHECKS)(qc);
+  qc.setQueryData(marketplaceKeys.integrity(), MOCK_INSTALLED_VERIFIED);
 }
 
 /** A check that never settles: the pending state, as when it waits behind another scan. */
@@ -76,6 +83,16 @@ export function InstalledPackagesViewShowcase() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <IsolatedQueryProvider seed={seedChecks(MOCK_UPDATE_CHECKS)}>
+          <InstalledPackagesView />
+        </IsolatedQueryProvider>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Files changed since install (open it for the paths, and what an update does to them), an
+        install an older DorkOS made with Check files, and one whose files were found to differ
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <IsolatedQueryProvider seed={seedVerified}>
           <InstalledPackagesView />
         </IsolatedQueryProvider>
       </ShowcaseDemo>
@@ -136,6 +153,13 @@ export function ConfirmUpdatesDialogShowcase() {
         </div>
         <ConfirmUpdatesDialog
           stale={open === 'all' ? stale : open === 'one' ? stale.slice(-1) : null}
+          integrityByPath={
+            new Map(
+              MOCK_INSTALLED_VERIFIED.flatMap((pkg) =>
+                pkg.integrity ? [[pkg.installPath, pkg.integrity] as const] : []
+              )
+            )
+          }
           onCancel={() => setOpen(null)}
           onConfirm={() => setOpen(null)}
         />

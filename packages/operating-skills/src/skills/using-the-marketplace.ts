@@ -34,6 +34,8 @@ with \`dorkos call marketplace.<verb> --input '<json>'\` from any runtime;
 - \`marketplace_list_installed\` (filter by \`type\`): one entry per install, tagged
   \`global\` / \`agent-local\` / \`override\`. \`checkUpdates: true\` adds an \`update\`
   block (\`status\`, \`latestVersion\`, \`note\`); it is slower, so ask only when needed.
+- \`verify: true\` adds \`integrity\`: \`clean\`, \`modified\` (with the files) or \`unknown\`.
+  \`unknown\` needs **Check files** (the app) or \`dorkos marketplace check-files <name>\`.
 - \`dorkos marketplace installed [--project <path>] [--json]\` lists the same.
 - \`dorkos marketplace outdated [--project <path>] [--json]\` lists only what has an
   update, and answers in its exit code: \`0\` all current, \`1\` something has an
@@ -67,11 +69,10 @@ handshake above; the \`updates\` it returns list what each new version runs (its
 commands, servers and programs), so tell the user that, wait, then call again with
 the SAME arguments plus the token. DorkOS installs exactly what the person saw;
 a new version that changed what it runs in the meantime is refused, not installed,
-and the result says so. A linked
-install (a working copy) is never reinstalled. From a shell: \`dorkos marketplace
-update\` checks; \`dorkos marketplace update --apply --yes\` prints what each new
-version runs and puts a card in front of the person, then you run the
-\`Retry with:\` line it printed.
+and the result says so. A linked install (a working copy) is never reinstalled.
+From a shell: \`dorkos marketplace update\` checks; \`dorkos marketplace update
+--apply --yes\` prints what each new version runs and puts a card in front of the
+person, then you run the \`Retry with:\` line it printed.
 
 ## What an update or reinstall keeps
 
@@ -121,8 +122,7 @@ means present the same token later, and \`status: "denied"\` means stop.
 Uninstall keeps what the person and their agents added (see above) and a later
 reinstall picks it up; \`purge: true\` removes it too, so say that out loud.
 Uninstalling an agent package also removes that agent from the team: its rooms,
-schedules, sign-ins and access go, and reinstalling does not bring them back.
-Say so before asking.
+schedules, sign-ins and access go for good, even after a reinstall; say so first.
 
 \`dorkos uninstall <name>\` is the person's verb, and it is gated for you
 exactly like the paths above, so it is not a way around an approval.

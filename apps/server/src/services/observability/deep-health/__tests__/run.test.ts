@@ -106,6 +106,11 @@ describe('runDeepHealthChecks', () => {
         getBindingStore: () => ({ getAll: () => [{ adapterId: 'slack', agentId: 'agent-a' }] }),
       },
       mesh: { listWithPaths: () => [{ id: 'agent-a', projectPath: agentDir }] },
+      installedPackages: {
+        listIntegrity: async () => [
+          { name: 'flow', integrity: { status: 'clean', customized: [] } },
+        ],
+      },
     };
   }
 
@@ -114,7 +119,7 @@ describe('runDeepHealthChecks', () => {
 
     const results = await runDeepHealthChecks(healthyDeps(agentDir));
 
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(6);
     expect(results.every((r) => r.status === 'pass')).toBe(true);
   });
 
@@ -134,12 +139,17 @@ describe('runDeepHealthChecks', () => {
         listAdapters: () => [],
         getBindingStore: () => ({ getAll: () => [{ adapterId: 'slack', agentId: 'ghost' }] }),
       },
+      installedPackages: {
+        listIntegrity: async () => [
+          { name: 'old', integrity: { status: 'unknown', reason: 'no-record' } },
+        ],
+      },
     };
 
     const results = await runDeepHealthChecks(deps);
     const statuses = results.map((r) => r.status);
 
-    expect(statuses).toEqual(['warn', 'fail', 'warn', 'warn', 'warn']);
+    expect(statuses).toEqual(['warn', 'fail', 'warn', 'warn', 'warn', 'warn']);
   });
 
   it('leaves out a binding whose author is not an agent this install knows', async () => {
@@ -161,7 +171,7 @@ describe('runDeepHealthChecks', () => {
   it('reports info, not failure, for subsystems that were never turned on', async () => {
     const results = await runDeepHealthChecks({ dorkHome: tmpHome });
 
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(6);
     expect(results.every((r) => r.status === 'info')).toBe(true);
     expect(results.every((r) => r.detail?.startsWith('Skipped'))).toBe(true);
   });
@@ -174,9 +184,11 @@ describe('runDeepHealthChecks', () => {
       meshFailedToStart: true,
     });
 
-    // Room transcripts still just "not available" — no flag says otherwise.
+    // Room transcripts and installed packages are still just "not available":
+    // no flag says otherwise.
     expect(results[0]?.status).toBe('info');
-    for (const result of results.slice(1)) {
+    expect(results[5]?.status).toBe('info');
+    for (const result of results.slice(1, 5)) {
       expect(result.status).toBe('warn');
       expect(result.detail).toContain('failed to start');
     }
@@ -198,7 +210,7 @@ describe('runDeepHealthChecks', () => {
       },
     });
 
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(6);
     expect(results[1]?.status).toBe('warn');
     expect(results[1]?.label).toContain('Could not run the check');
     // Content-free: the thrown error's path must not ride along.

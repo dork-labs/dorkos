@@ -186,6 +186,9 @@ import type {
   InstallOptions,
   InstallResult,
   UninstallOptions,
+  ListInstalledOptions,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -957,8 +960,15 @@ export const marketplaceStubs = {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 
-  async listInstalledPackages(_projectPath?: string): Promise<InstalledPackage[]> {
+  async listInstalledPackages(
+    _projectPath?: string,
+    _opts?: ListInstalledOptions
+  ): Promise<InstalledPackage[]> {
     return [];
+  },
+
+  async checkPackageFiles(_name: string, _opts?: CheckFilesOptions): Promise<CheckFilesResult> {
+    throw new Error('Marketplace is not supported in embedded mode');
   },
 
   async listPackageInstallations(_name: string): Promise<InstalledPackage[]> {

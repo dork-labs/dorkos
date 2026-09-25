@@ -142,4 +142,6 @@ export {
   matchesUserEditable,
   userEditableReaches,
   UserEditablePathSchema,
+  validUserEditable,
+  declaredEffectPaths,
 } from './user-editable.js';

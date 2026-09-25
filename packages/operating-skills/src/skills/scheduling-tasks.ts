@@ -85,7 +85,7 @@ filed in the wrong place runs against the wrong files, so DorkOS will not guess.
 An agent it has never heard of is refused and nothing is created. Under an agent
 installed from the marketplace, your task stays through the package's updates; it
 is refused (\`schedule_package_owned\`) if the package uses that name itself, or if
-the package came from an older DorkOS (it works after the package's next update).
+an older DorkOS installed it, until the person chooses **Check files** on it.
 
 Where a task lives is decided once. \`tasks_update\` refuses \`target\` or
 \`agentId\` (the whole call); to move a task, delete it and create it again.
@@ -126,7 +126,7 @@ package's files alone, and keeps it through the package's updates. Send
 to when an approved schedule runs stops it at once until the user approves it again.
 To change what it does, the user can press **Make my own copy** on it in DorkOS: a
 new schedule for the same agent, filled in, and by default the package's one off.
-Packages installed by an older DorkOS don't offer it yet.
+For a package an older DorkOS installed, it needs **Check files** first.
 
 - \`tasks_delete\` removes a task permanently, and it is \`destructive\` tier. It does
   NOT run until a person approves it: the first call comes back with the

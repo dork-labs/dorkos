@@ -110,6 +110,7 @@ import {
   MarketplacePathError,
   PathEscapeError,
 } from '../services/marketplace/lib/package-paths.js';
+import { locateInstallRoot } from '../services/marketplace/lib/locate-install.js';
 import {
   installCountsProvider,
   enrichWithInstallCounts,
@@ -139,6 +140,11 @@ import {
   marketplaceSourceRefusalError,
   type MarketplaceSourceAction,
 } from '../services/marketplace/source-write-policy.js';
+import { withIntegrity } from '../services/marketplace/lib/integrity/verify-install.js';
+import {
+  describeStrictRebuild,
+  rebuildRecordStrict,
+} from '../services/marketplace/lib/integrity/strict-record.js';
 
 /**
  * Re-export the canonical {@link InstalledPackage} type from this route module
@@ -253,6 +259,16 @@ const UninstallRequestBodySchema = z.object({
 });
 
 /**
+ * Body schema for `POST /api/marketplace/packages/:name/check-files` (DOR-2320).
+ * `installRoot` narrows the lookup to one installation the caller already
+ * sees; it can never widen it past what the name and scope would find.
+ */
+const CheckFilesRequestBodySchema = z.object({
+  projectPath: z.string().optional(),
+  installRoot: z.string().optional(),
+});
+
+/**
  * Body schema for `POST /api/marketplace/packages/:name/update`: an advisory
  * check, nothing else. Strict, so the retired `apply` is refused with a 400
  * rather than silently read as a check: an update is applied only through
@@ -326,6 +342,16 @@ const PruneCacheBodySchema = z.object({}).strict();
 const GetPackageQuerySchema = z.object({
   marketplace: z.string().optional(),
 });
+
+/**
+ * Whether a list request asked for each install's integrity (`?verify=true`,
+ * DOR-2197). Opt-in, because verifying hashes every shipped file.
+ *
+ * @param req - The request.
+ */
+function wantsVerify(req: Request): boolean {
+  return req.query.verify === 'true';
+}
 
 /**
  * Centralized error → HTTP status mapping. Shared by every install-related
@@ -900,13 +926,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           },
         ])
       );
-      return res.json({
-        packages: records.map((r) => {
-          const held =
-            r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
-          return held ? { ...r.package, heldBack: held } : r.package;
-        }),
+      const packages = records.map((r) => {
+        const held = r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
+        return held ? { ...r.package, heldBack: held } : r.package;
       });
+      // Verification hashes every shipped file, so it is asked for (DOR-2197).
+      return res.json({ packages: wantsVerify(req) ? await withIntegrity(packages) : packages });
     } catch (err) {
       logger.error('[Marketplace] Failed to list installed packages', err);
       return res.status(500).json({ error: 'Failed to list installed packages' });
@@ -931,7 +956,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           provides: await computeProvides(match.installPath),
         }))
       );
-      return res.json({ installations });
+      return res.json({
+        installations: wantsVerify(req) ? await withIntegrity(installations) : installations,
+      });
     } catch (err) {
       logger.error(`[Marketplace] Failed to get installed package ${req.params.name}`, err);
       return res.status(500).json({ error: 'Failed to get installed package' });
@@ -1176,6 +1203,49 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   });
 
   // POST /packages/:name/uninstall -- remove an installed package
+  // POST /packages/:name/check-files -- give an install an older DorkOS made its
+  // installed-files record, from the exact commit it was installed at, or say
+  // why not (DOR-2320). Not tier-gated, on purpose: it writes only a record
+  // that must match the live files byte for byte, so it cannot change what
+  // runs or claim any file that is not the package's; like refreshing a
+  // source, it only brings DorkOS's own bookkeeping up to date.
+  router.post('/packages/:name/check-files', async (req, res) => {
+    const parsed = CheckFilesRequestBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+    try {
+      assertPackageName(req.params.name);
+    } catch (err) {
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+    try {
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
+      const root = await locateInstallRoot({
+        dorkHome,
+        name: req.params.name,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+        ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
+      });
+      if (root === null) throw new PackageNotInstalledError(req.params.name);
+      const result = await rebuildRecordStrict(root, { fetcher, logger });
+      return res.json({
+        outcome: result.outcome,
+        message: describeStrictRebuild(req.params.name, result),
+      });
+    } catch (err) {
+      const mapped = mapErrorToStatus(err);
+      if (mapped.status >= 500) {
+        logger.error(`[Marketplace] Failed to check the files of ${req.params.name}`, err);
+      }
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
   router.post('/packages/:name/uninstall', async (req, res) => {
     const parsed = UninstallRequestBodySchema.safeParse(req.body);
     if (!parsed.success) {

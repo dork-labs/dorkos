@@ -802,6 +802,29 @@ export interface UninstallOptions {
   projectPath?: string;
 }
 
+/** Options for {@link Transport.checkPackageFiles} (DOR-2320). */
+export interface CheckFilesOptions {
+  /** Project path, for an installation scoped to a project or an agent. */
+  projectPath?: string;
+  /** The one installation to check, as the installed list names it (`installPath`). */
+  installRoot?: string;
+}
+
+/**
+ * What checking the files of a package an older DorkOS installed did (DOR-2320): only
+ * `rebuilt` wrote anything, and `message` says the outcome in one sentence.
+ */
+export interface CheckFilesResult {
+  outcome: 'rebuilt' | 'not-needed' | 'no-source' | 'fetch-failed' | 'mismatch';
+  message: string;
+}
+
+/** Options for listing installed packages. */
+export interface ListInstalledOptions {
+  /** Add each installation's {@link InstallIntegrity}; reads every shipped file (DOR-2197). */
+  verify?: boolean;
+}
+
 /**
  * The outcome of a successful uninstall.
  *
@@ -1062,6 +1085,11 @@ export interface InstalledPackage {
    * (DOR-2306). Absent when it loads.
    */
   heldBack?: HeldBackState;
+  /**
+   * Whether the installed files still match what was installed (DOR-2197).
+   * Present only when the caller asked for verification (`?verify=true`).
+   */
+  integrity?: InstallIntegrity;
 }
 
 /** Why a global package is held back from sessions. */
@@ -1113,6 +1141,65 @@ export interface HeldBackPackage extends HeldBackState {
    * install. Opaque: send it back with {@link effects} exactly as listed.
    */
   bindsTo?: string;
+}
+
+/** Why an install's files cannot be checked against what was installed. */
+export type InstallIntegrityUnknownReason = 'no-record' | 'unreadable-record' | 'linked';
+
+/**
+ * Whether an install's files still match what was installed (DOR-2197), read
+ * from its installed-files record (DOR-2245). Paths are relative to the
+ * install folder, sorted, and each list holds at most 50 (`truncated` when
+ * there were more).
+ *
+ * - `clean`: every shipped file is as installed. `customized` names shipped
+ *   files the package marks as yours to edit that you changed; those never
+ *   count as a modification.
+ * - `modified`: `changed` shipped files differ, `missing` ones are gone, and
+ *   `added` files sit where a package keeps what it runs (a new skill, a
+ *   hook), so they change what runs.
+ * - `unknown`: the record cannot speak for the install. `no-record` is an
+ *   install made before DorkOS recorded a package's files ("Check files" can
+ *   record them; see `check`);
+ *   `unreadable-record` is a damaged record; `linked` is a developer's working
+ *   copy.
+ */
+export type InstallIntegrity =
+  | { status: 'clean'; customized: string[]; truncated?: true }
+  | {
+      status: 'modified';
+      changed: string[];
+      missing: string[];
+      added: string[];
+      customized: string[];
+      truncated?: true;
+    }
+  | {
+      status: 'unknown';
+      reason: InstallIntegrityUnknownReason;
+      /** Present for `no-record` only: whether "Check files" can record its files. */
+      check?: InstallCheckInfo;
+    };
+
+/**
+ * Whether an install made before DorkOS recorded package files can have them
+ * recorded ("Check files", DOR-2320), and what the last attempt said.
+ */
+export interface InstallCheckInfo {
+  /**
+   * `fetchable`: DorkOS can fetch the exact version it came from. `local`: it
+   * was installed from a folder on this computer, so nothing can be fetched and
+   * a reinstall is the way to start tracking its files.
+   */
+  source: 'fetchable' | 'local';
+  /** Why the last attempt (the background check after boot, or a person's) recorded nothing. */
+  last?: InstallCheckResult;
+}
+
+/** A "Check files" attempt that recorded nothing, and why, in one sentence. */
+export interface InstallCheckResult {
+  outcome: 'mismatch' | 'fetch-failed' | 'no-source';
+  message: string;
 }
 
 // ---------------------------------------------------------------------------

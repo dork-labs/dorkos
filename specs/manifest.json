@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260924-175336",
+      "slug": "marketplace-install-verification",
+      "title": "Say whether an installed package still matches what was installed",
+      "created": "2026-09-24",
+      "status": "implemented",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2197"
+    },
+    {
       "id": "260924-212851",
       "slug": "agent-workspace-config",
       "title": "An agent package can't ship its sessions' harness configuration",

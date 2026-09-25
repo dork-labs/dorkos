@@ -42,13 +42,20 @@ function printed(spy: MockInstance<typeof console.log>): string {
 
 describe('parseMarketplaceInstalledArgs', () => {
   it('defaults to every scope and human output', () => {
-    expect(parseMarketplaceInstalledArgs([])).toEqual({ projectPath: undefined, json: false });
+    expect(parseMarketplaceInstalledArgs([])).toEqual({
+      projectPath: undefined,
+      json: false,
+      verify: false,
+    });
   });
 
   it('parses --project and --json', () => {
-    expect(parseMarketplaceInstalledArgs(['--project', '/work/alpha', '--json'])).toEqual({
+    expect(
+      parseMarketplaceInstalledArgs(['--project', '/work/alpha', '--json', '--verify'])
+    ).toEqual({
       projectPath: '/work/alpha',
       json: true,
+      verify: true,
     });
   });
 
@@ -120,7 +127,7 @@ describe('runMarketplaceInstalled', () => {
   it('lists every scope from GET /installed and exits 0', async () => {
     fetchMock.mockResolvedValueOnce(mockResponse(200, { packages: [GLOBAL_FLOW, ALPHA_FLOW] }));
 
-    const code = await runMarketplaceInstalled({ json: false });
+    const code = await runMarketplaceInstalled({ json: false, verify: false });
 
     expect(code).toBe(0);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -132,10 +139,56 @@ describe('runMarketplaceInstalled', () => {
   it("forwards --project as the projectPath query, for that project's view", async () => {
     fetchMock.mockResolvedValueOnce(mockResponse(200, { packages: [] }));
 
-    await runMarketplaceInstalled({ projectPath: '/work/my app', json: false });
+    await runMarketplaceInstalled({ projectPath: '/work/my app', json: false, verify: false });
 
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toMatch(/\/api\/marketplace\/installed\?projectPath=%2Fwork%2Fmy%20app$/);
+  });
+
+  // Purpose (DOR-2197): --verify asks the server to verify, shows a FILES
+  // column, and says what an older install needs.
+  it('--verify asks for integrity and shows a FILES column', async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, {
+        packages: [
+          { ...GLOBAL_FLOW, integrity: { status: 'clean', customized: [] } },
+          {
+            ...ALPHA_FLOW,
+            integrity: {
+              status: 'modified',
+              changed: ['a.md', 'b.md'],
+              missing: ['c.md'],
+              added: [],
+              customized: [],
+            },
+          },
+          {
+            ...GLOBAL_FLOW,
+            name: 'old',
+            integrity: { status: 'unknown', reason: 'no-record', check: { source: 'fetchable' } },
+          },
+          {
+            ...GLOBAL_FLOW,
+            name: 'from-folder',
+            integrity: { status: 'unknown', reason: 'no-record', check: { source: 'local' } },
+          },
+        ],
+      })
+    );
+
+    await runMarketplaceInstalled({ json: false, verify: true });
+
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toMatch(/\/api\/marketplace\/installed\?verify=true$/);
+    const out = printed(logSpy);
+    expect(out.split('\n')[0]).toMatch(/WHERE\s+FILES$/);
+    expect(out).toMatch(/flow\s+0\.7\.3\s+plugin\s+global\s+as installed/);
+    expect(out).toMatch(/Alpha\s+changed \(3\)/);
+    expect(out).toMatch(/old\s.*\s+unknown/);
+    expect(out).toMatch(/dorkos marketplace check-files old/);
+    // A package installed from a folder has nothing to compare with: reinstall.
+    expect(out).toMatch(/from-folder.*reinstall/i);
+    expect(out).not.toMatch(/check-files from-folder/);
   });
 
   it('explains a linked install beneath the table', async () => {
@@ -143,7 +196,7 @@ describe('runMarketplaceInstalled', () => {
       mockResponse(200, { packages: [{ ...GLOBAL_FLOW, linked: true }] })
     );
 
-    await runMarketplaceInstalled({ json: false });
+    await runMarketplaceInstalled({ json: false, verify: false });
 
     expect(printed(logSpy)).toMatch(/linked:.*update .*source/i);
   });
@@ -151,7 +204,7 @@ describe('runMarketplaceInstalled', () => {
   it('says so when nothing is installed', async () => {
     fetchMock.mockResolvedValueOnce(mockResponse(200, { packages: [] }));
 
-    const code = await runMarketplaceInstalled({ json: false });
+    const code = await runMarketplaceInstalled({ json: false, verify: false });
 
     expect(code).toBe(0);
     expect(printed(logSpy)).toContain('No packages installed.');
@@ -162,7 +215,7 @@ describe('runMarketplaceInstalled', () => {
     // outdated's, holding the API's own rows.
     fetchMock.mockResolvedValueOnce(mockResponse(200, { packages: [GLOBAL_FLOW, ALPHA_FLOW] }));
 
-    const code = await runMarketplaceInstalled({ json: true });
+    const code = await runMarketplaceInstalled({ json: true, verify: false });
 
     expect(code).toBe(0);
     expect(writeSpy).toHaveBeenCalledTimes(1);
@@ -175,7 +228,7 @@ describe('runMarketplaceInstalled', () => {
   it('exits 1 with the reason on stderr when the server cannot be reached', async () => {
     fetchMock.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
 
-    const code = await runMarketplaceInstalled({ json: true });
+    const code = await runMarketplaceInstalled({ json: true, verify: false });
 
     expect(code).toBe(1);
     expect(writeSpy).not.toHaveBeenCalled();

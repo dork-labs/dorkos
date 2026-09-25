@@ -6,15 +6,21 @@ import { render, screen, cleanup, act, fireEvent, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import type {
   InstallationUpdateCheck,
+  InstallIntegrity,
   InstalledPackage,
   InstalledShapeSummary,
 } from '@dorkos/shared/marketplace-schemas';
-import { useApplyingInstallPaths, useInstalledPackages } from '@/layers/entities/marketplace';
+import {
+  useApplyingInstallPaths,
+  useInstalledIntegrity,
+  useInstalledPackages,
+} from '@/layers/entities/marketplace';
 import { useShapes } from '@/layers/entities/shapes';
 import { useAppStore } from '@/layers/shared/model';
 
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
+import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
 import {
   useInstalledUpdatesView,
   type InstalledUpdatesView,
@@ -38,6 +44,11 @@ vi.mock('@/layers/entities/marketplace', () => ({
     isPending: false,
     variables: undefined,
   }),
+  useInstalledIntegrity: vi.fn(),
+}));
+
+vi.mock('../model/use-check-files-with-toast', () => ({
+  useCheckFilesWithToast: vi.fn(),
 }));
 
 vi.mock('@/layers/entities/shapes', () => ({
@@ -57,6 +68,22 @@ vi.mock('../model/use-installed-updates-view', () => ({
 }));
 
 const uninstallMutate = vi.fn();
+const checkFilesMutate = vi.fn();
+
+/** Set what verification says about each installation, by installPath (DOR-2197). */
+function setIntegrity(byPath: Record<string, InstallIntegrity> = {}) {
+  vi.mocked(useInstalledIntegrity).mockReturnValue({
+    data: new Map(Object.entries(byPath)),
+  } as unknown as ReturnType<typeof useInstalledIntegrity>);
+}
+
+function setCheckFilesState(state: { isPending?: boolean; variables?: { name: string } } = {}) {
+  vi.mocked(useCheckFilesWithToast).mockReturnValue({
+    mutate: checkFilesMutate,
+    isPending: state.isPending ?? false,
+    variables: state.variables,
+  } as unknown as ReturnType<typeof useCheckFilesWithToast>);
+}
 const applyUpdates = vi.fn();
 const recheck = vi.fn();
 
@@ -202,6 +229,8 @@ describe('InstalledPackagesView', () => {
     setUpdatesState();
     vi.mocked(useApplyUpdatesWithToast).mockReturnValue({ apply: applyUpdates });
     setShapesState();
+    setIntegrity();
+    setCheckFilesState();
     useAppStore.setState({ shapeSwitcherOpen: false, shapeSwitcherFocus: null });
   });
 
@@ -938,6 +967,255 @@ describe('InstalledPackagesView', () => {
       render(<InstalledPackagesView />);
 
       expect(screen.queryByRole('button', { name: /update all/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('whether files changed since install (DOR-2197, DOR-2320)', () => {
+    const FLOW = makeInstalled({
+      name: 'flow',
+      type: 'plugin',
+      version: '0.7.2',
+      installPath: '/tmp/.dork/plugins/flow',
+    });
+    const MODIFIED: InstallIntegrity = {
+      status: 'modified',
+      changed: ['skills/a/SKILL.md', 'hooks/hooks.json'],
+      missing: ['README.md'],
+      added: ['skills/mine/SKILL.md'],
+      customized: [],
+    };
+    const legacy = (check?: InstallIntegrity extends infer T ? unknown : never) =>
+      ({ status: 'unknown', reason: 'no-record', ...(check ? { check } : {}) }) as InstallIntegrity;
+
+    // Purpose (review 3): the note counts each kind of change in its own words,
+    // and says what an update does to each: edited files are replaced (the
+    // person's copies kept), added files stay, removed files come back.
+    it('counts each kind of change and says what an update does to it', () => {
+      showRows([FLOW], [staleCheck(FLOW, '0.7.3')]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity');
+      expect(note).toHaveTextContent(
+        '4 files changed since install (2 edited, 1 added, 1 removed). Updating replaces the 2 files you edited and keeps your copies beside them, keeps the file you added, and puts back the file you removed.'
+      );
+      expect(note).not.toHaveTextContent('.dork-old');
+    });
+
+    // Purpose (review 2, item 4): on a phone the long "Updating…" sentence moves
+    // inside the disclosure, so the closed note stays one short line; from sm up
+    // it sits in the summary.
+    it('moves what an update does inside the disclosure on small screens', () => {
+      showRows([FLOW], [staleCheck(FLOW, '0.7.3')]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+      render(<InstalledPackagesView />);
+      const note = screen.getByTestId('installation-integrity');
+      const wide = within(note.querySelector('summary')!).getByText(/^Updating replaces/);
+      expect(wide.className).toContain('hidden');
+      expect(wide.className).toContain('sm:inline');
+      const narrow = [...note.querySelectorAll('p')].find((p) =>
+        p.textContent?.startsWith('Updating replaces')
+      )!;
+      expect(narrow.className).toContain('sm:hidden');
+    });
+
+    // Purpose (review 3): with no update on offer, the note says what changed
+    // and nothing about updating.
+    it('says nothing about updating when there is no update', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByTestId('installation-integrity')).not.toHaveTextContent('Updating');
+    });
+
+    // Purpose (review 4): the note is a native disclosure (a <summary>, so a
+    // keyboard, a click or a tap opens it; the real-browser keyboard pass is in
+    // the implementation log), listing the paths grouped Edited/Added/Removed.
+    it('opens to the paths, grouped by kind', async () => {
+      const user = userEvent.setup();
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+      render(<InstalledPackagesView />);
+      const note = screen.getByTestId('installation-integrity');
+      expect(note).not.toHaveAttribute('open');
+
+      const summary = note.querySelector('summary')!;
+      expect(summary.tabIndex).toBe(0);
+      await user.click(summary);
+
+      expect(note).toHaveAttribute('open');
+      expect(within(note).getByRole('list', { name: 'Edited' })).toHaveTextContent(
+        'skills/a/SKILL.mdhooks/hooks.json'
+      );
+      expect(within(note).getByRole('list', { name: 'Added' })).toHaveTextContent(
+        'skills/mine/SKILL.md'
+      );
+      expect(within(note).getByRole('list', { name: 'Removed' })).toHaveTextContent('README.md');
+    });
+
+    // Purpose (review 7): only the icon is coloured; the text stays muted, so
+    // a real failure on the row remains the only urgent line.
+    it('keeps the note text muted', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+      render(<InstalledPackagesView />);
+      const summary = screen.getByTestId('installation-integrity').querySelector('summary')!;
+      expect(summary.className).toContain('text-muted-foreground');
+      expect(summary.className).not.toMatch(/text-amber/);
+    });
+
+    // Purpose: an unchanged install, or one not yet verified, says nothing new.
+    it('adds nothing for a clean or unverified install', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: { status: 'clean', customized: [] } });
+      render(<InstalledPackagesView />);
+      expect(screen.queryByTestId('installation-integrity')).not.toBeInTheDocument();
+      cleanup();
+
+      setIntegrity({});
+      render(<InstalledPackagesView />);
+      expect(screen.queryByTestId('installation-integrity')).not.toBeInTheDocument();
+    });
+
+    // Purpose (review 5, 6): an older install with a version to compare with
+    // says what Check files does, and the button checks exactly that installation.
+    it('offers Check files for an older install, with what it does', async () => {
+      const user = userEvent.setup();
+      const onAlpha = makeInstalled({
+        ...FLOW,
+        scope: 'agent-local',
+        agentPath: '/work/alpha',
+        agentName: 'Alpha',
+        installPath: '/work/alpha/.dork/plugins/flow',
+      });
+      showRows([onAlpha], [makeCheck(onAlpha)]);
+      setIntegrity({ [onAlpha.installPath]: legacy({ source: 'fetchable' }) });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
+        'Installed by an older DorkOS. Check files to compare it with the version you installed, so updates keep your edits.'
+      );
+      await user.click(screen.getByRole('button', { name: 'Check the files of Flow on Alpha' }));
+      expect(checkFilesMutate).toHaveBeenCalledWith({
+        name: 'flow',
+        options: { installRoot: onAlpha.installPath, projectPath: '/work/alpha' },
+        where: 'Alpha',
+      });
+    });
+
+    // Purpose (review 5): a package installed from a folder has nothing to
+    // compare with, and one whose files were found to differ would only get the
+    // same answer again: neither offers the button, and each says why.
+    it.each([
+      [
+        'installed from a folder',
+        { source: 'local' },
+        'Installed from a folder by an older DorkOS, so there’s no version to compare it with. Reinstall it so updates keep your edits.',
+      ],
+    ])('offers no Check files for an install %s, and says why', (_label, check, text) => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: legacy(check as never) });
+      render(<InstalledPackagesView />);
+      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(text);
+      expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
+    });
+
+    // Purpose (review 2, item 6): after the files were found to differ, the
+    // note gives the reason and a small Try again, not the full button: the
+    // person may have put their edits back and want to check again.
+    it('gives the reason and a Try again after the files were found to differ', async () => {
+      const user = userEvent.setup();
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: legacy({
+          source: 'fetchable',
+          last: { outcome: 'mismatch', message: 'Some files differ.' },
+        } as never),
+      });
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity');
+      expect(note).toHaveTextContent('Some files differ.');
+      expect(
+        screen.queryByRole('button', { name: 'Check the files of Flow' })
+      ).not.toBeInTheDocument();
+      await user.click(within(note).getByRole('button', { name: 'Check the files of Flow again' }));
+      expect(checkFilesMutate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'flow', options: { installRoot: FLOW.installPath } })
+      );
+    });
+
+    // Purpose: a check that could not reach the network says so, and can be
+    // tried again.
+    it('offers Check files again after a failed fetch, with the reason', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: legacy({
+          source: 'fetchable',
+          last: {
+            outcome: 'fetch-failed',
+            message: 'Couldn’t fetch it. Try again when you’re online.',
+          },
+        } as never),
+      });
+      render(<InstalledPackagesView />);
+      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
+        'Try again when you’re online.'
+      );
+      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
+    });
+
+    // Purpose: a linked working copy or an unreadable record is not something
+    // Check files can fix, so neither offers it.
+    it('offers Check files only for an older install', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      for (const reason of ['linked', 'unreadable-record'] as const) {
+        setIntegrity({ [FLOW.installPath]: { status: 'unknown', reason } });
+        render(<InstalledPackagesView />);
+        expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
+        cleanup();
+      }
+    });
+
+    // Purpose: while one installation's files are being checked its button
+    // says so and cannot be pressed again.
+    it('shows Check files as busy while that installation is being checked', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({ [FLOW.installPath]: legacy({ source: 'fetchable' } as never) });
+      setCheckFilesState({ isPending: true, variables: { name: 'flow' } });
+
+      render(<InstalledPackagesView />);
+
+      expect(screen.getByRole('button', { name: 'Checking the files of Flow' })).toBeDisabled();
+    });
+
+    // Purpose (review 3): the update-all confirm says, per installation, what
+    // an update does to changed files: edited ones replaced with copies kept,
+    // added ones kept, removed ones put back; no `.dork-old` jargon.
+    it('says in the update-all confirm what an update does to changed files', async () => {
+      const user = userEvent.setup();
+      const other = makeInstalled({ installPath: '/tmp/.dork/agents/reviewer' });
+      showRows([FLOW, other], [staleCheck(FLOW, '0.7.3'), staleCheck(other, '1.3.0')]);
+      setIntegrity({ [FLOW.installPath]: MODIFIED });
+
+      render(<InstalledPackagesView />);
+      await user.click(screen.getByRole('button', { name: 'Update all…' }));
+      const dialog = await screen.findByRole('dialog');
+      const items = within(
+        within(dialog).getByRole('list', { name: 'Packages to update' })
+      ).getAllByRole('listitem');
+
+      const flowItem = items.find((i) => i.textContent?.includes('Flow'))!;
+      expect(flowItem).toHaveTextContent(
+        'Updating replaces the 2 files you edited and keeps your copies beside them, keeps the file you added, and puts back the file you removed.'
+      );
+      expect(flowItem).not.toHaveTextContent('.dork-old');
+      const otherItem = items.find((i) => i.textContent?.includes('Reviewer'))!;
+      expect(otherItem).not.toHaveTextContent('Updating replaces');
     });
   });
 

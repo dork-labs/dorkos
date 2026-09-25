@@ -39,7 +39,11 @@ import { describePackageLink, findPackageLinks } from './package-links.js';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
-import { isReservedPackagePath, userEditableReaches } from './user-editable.js';
+import {
+  declaredEffectPaths,
+  isReservedPackagePath,
+  userEditableReaches,
+} from './user-editable.js';
 import { findAgentWorkspaceConfig } from './agent-workspace-config.js';
 
 /**
@@ -496,29 +500,6 @@ async function validatePackageFiles(
   return { ok: !hasErrors, issues, manifest, declaredVersion };
 }
 
-/** plugin.json fields whose string values name files or folders a package runs from. */
-const DECLARED_EFFECT_FIELDS = [
-  'hooks',
-  'mcpServers',
-  'lspServers',
-  'monitors',
-  'skills',
-  'commands',
-  'agents',
-  'outputStyles',
-];
-
-/** Every package-relative path a plugin.json field names (a string, or strings in an array). */
-function declaredPathsOf(value: unknown): string[] {
-  const values = Array.isArray(value) ? value : [value];
-  return values
-    .filter((v): v is string => typeof v === 'string' && v.length > 0)
-    .map((v) =>
-      path.posix.normalize(v.split('\\').join('/')).replace(/^\.\//, '').replace(/\/$/, '')
-    )
-    .filter((v) => v !== '.' && !v.startsWith('../') && !path.posix.isAbsolute(v));
-}
-
 /**
  * Fail for every `userEditable` entry that reaches a location plugin.json
  * declares something runnable at. A person approves the new version's copy of
@@ -548,11 +529,7 @@ async function checkUserEditableDeclaredPaths(
     if (err instanceof RefusedPackageFileError) throw err;
     return;
   }
-  const experimental = pluginJson.experimental as Record<string, unknown> | undefined;
-  const declared = [
-    ...DECLARED_EFFECT_FIELDS.flatMap((field) => declaredPathsOf(pluginJson[field])),
-    ...declaredPathsOf(experimental?.monitors),
-  ];
+  const declared = declaredEffectPaths(pluginJson);
   for (const pattern of userEditable) {
     const reached = declared.find((p) => userEditableReaches(pattern, p));
     if (reached === undefined) continue;

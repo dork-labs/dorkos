@@ -245,6 +245,14 @@ import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
 import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
+import {
+  legacySweepDirs,
+  rebuildLegacyRecords,
+  removeRecordTempLeftovers,
+  type LegacySweepSummary,
+} from './services/marketplace/lib/integrity/legacy-record-sweep.js';
+import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
+import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -624,6 +632,29 @@ function registerRestoredAgents(roots: readonly string[]): void {
 /** Register the agents {@link registerRestoredAgents} held until Mesh started. */
 function flushRestoredAgents(): void {
   registerRestoredAgents(agentRootsAwaitingMesh.splice(0));
+}
+
+/**
+ * The project install-recovery sweep, and the projects it read. The legacy
+ * record sweep (DOR-2197) waits for it, so a root is settled before its record
+ * is rebuilt, and reads the same projects.
+ */
+let projectInstallRecovery: Promise<unknown> = Promise.resolve();
+/** Aborted on shutdown, so the legacy record sweep stops between installs. */
+const legacyRecordSweep = new AbortController();
+let sweptProjects: string[] = [];
+
+/**
+ * Log what the legacy record sweep did, when it did anything.
+ *
+ * @param summary - The sweep's outcome lists.
+ */
+function logLegacySweep(summary: LegacySweepSummary): void {
+  const { rebuilt, mismatch, noSource, fetchFailed } = summary;
+  if (rebuilt.length + mismatch.length + noSource.length + fetchFailed.length === 0) return;
+  logger.info(
+    `[Marketplace] Records for packages an older DorkOS installed: ${rebuilt.length} rebuilt, ${mismatch.length} changed since install, ${noSource.length} installed from a local folder, ${fetchFailed.length} to retry`
+  );
 }
 
 let taskFileWatcher: TaskFileWatcher | undefined;
@@ -2069,7 +2100,11 @@ async function start() {
     flushRestoredAgents();
     try {
       const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
-      recoverInterruptedInstalls(projects.flatMap(projectSweepDirs), logger)
+      sweptProjects = projects;
+      projectInstallRecovery = recoverInterruptedInstalls(
+        projects.flatMap(projectSweepDirs),
+        logger
+      )
         .then((summary) => logInstallSweep('project installs', summary))
         .catch((err: unknown) => {
           logger.warn('[Marketplace] Project install recovery failed', logError(err));
@@ -3735,6 +3770,19 @@ async function start() {
     relayFailedToStart: relayEnabled && !relayCore,
     adaptersFailedToStart: relayEnabled && Boolean(relayCore) && !adapterManager,
     meshFailedToStart: !meshCore,
+    // Every installation, verified against what was installed (DOR-2197): the
+    // same one-entry-per-installation scan the Installed view lists.
+    installedPackages: {
+      listIntegrity: async () => {
+        const scopes = (meshCore?.listWithPaths() ?? []).map((a) => ({
+          projectPath: a.projectPath,
+          id: a.id,
+          name: a.displayName ?? a.name,
+        }));
+        const verified = await withIntegrity(await scanInstallationsAcrossScopes(dorkHome, scopes));
+        return verified.map(({ name, integrity }) => ({ name, integrity }));
+      },
+    },
   } satisfies DeepHealthDeps;
 
   // The same live reads, for `GET /api/debug/*`. A separate bag from the one
@@ -4183,6 +4231,23 @@ async function start() {
       });
     }
     const marketplaceFetcher = new PackageFetcher(marketplaceCache, gitTreeSource, logger);
+    // Give packages an older DorkOS installed an exact installed-files record,
+    // in the background once interrupted installs are settled (DOR-2197). It
+    // never blocks startup and writes nothing it cannot prove; what it cannot
+    // rebuild waits for the next boot or the "Check files" action.
+    void projectInstallRecovery
+      .then(() => removeRecordTempLeftovers())
+      .then(() =>
+        rebuildLegacyRecords(
+          legacySweepDirs(dorkHome, sweptProjects),
+          { fetcher: marketplaceFetcher, logger },
+          { signal: legacyRecordSweep.signal }
+        )
+      )
+      .then(logLegacySweep)
+      .catch((err: unknown) => {
+        logger.warn('[Marketplace] Rebuilding records for older installs failed', logError(err));
+      });
     const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
     const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);
     const marketplacePreviewBuilder = new PermissionPreviewBuilder(
@@ -5053,6 +5118,7 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
   remoteCommunitySubscriptions = undefined;
   setRemoteCommunitySubscriptionProbe(undefined);

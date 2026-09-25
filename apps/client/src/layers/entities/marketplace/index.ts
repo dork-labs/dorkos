@@ -20,6 +20,7 @@ export { usePermissionPreview } from './model/use-permission-preview';
 export { PreviewRefusedNotice, isPreviewRefusal } from './ui/PreviewRefusedNotice';
 export { useInstalledPackages } from './model/use-installed-packages';
 export { usePackageInstallations } from './model/use-package-installations';
+export { useInstalledIntegrity } from './model/use-installed-integrity';
 export { useInstalledUpdates, UPDATE_CHECK_STALE_MS } from './model/use-installed-updates';
 export type { UseInstalledUpdatesOptions } from './model/use-installed-updates';
 export { useMarketplaceSources } from './model/use-marketplace-sources';
@@ -30,6 +31,9 @@ export type { InstallPackageArgs } from './model/use-install-package';
 
 export { useUninstallPackage } from './model/use-uninstall-package';
 export type { UninstallPackageArgs } from './model/use-uninstall-package';
+
+export { useCheckPackageFiles } from './model/use-check-package-files';
+export type { CheckPackageFilesArgs } from './model/use-check-package-files';
 
 export {
   settleAppliedCheck,

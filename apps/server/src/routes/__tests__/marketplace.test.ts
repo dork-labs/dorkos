@@ -2,10 +2,18 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, realpathSync, rmSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  mkdirSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -116,15 +124,20 @@ const SAMPLE_MARKETPLACE_JSON: MarketplaceJson = {
 };
 
 /** Minimal PackageFetcher stub — only the methods the router touches. */
-interface FakeFetcher extends Pick<PackageFetcher, 'fetchMarketplaceJson' | 'fetchDorkosSidecar'> {
+interface FakeFetcher extends Pick<
+  PackageFetcher,
+  'fetchMarketplaceJson' | 'fetchDorkosSidecar' | 'fetchAtCommit'
+> {
   fetchMarketplaceJson: ReturnType<typeof vi.fn>;
   fetchDorkosSidecar: ReturnType<typeof vi.fn>;
+  fetchAtCommit: ReturnType<typeof vi.fn>;
 }
 
 function createFakeFetcher(): FakeFetcher {
   return {
     fetchMarketplaceJson: vi.fn().mockResolvedValue(SAMPLE_MARKETPLACE_JSON),
     fetchDorkosSidecar: vi.fn().mockResolvedValue(null),
+    fetchAtCommit: vi.fn().mockRejectedValue(new Error('no network in tests')),
   };
 }
 
@@ -905,6 +918,60 @@ describe('Marketplace Routes', () => {
       expect(plugin.type).toBe('plugin');
       expect(plugin.version).toBe('1.2.3');
       expect(plugin.installPath).toBe(pluginDir);
+    });
+
+    // Purpose (DOR-2197): `?verify=true` adds each install's integrity, and a
+    // plain list is unchanged (verification hashes files, so it is opt-in).
+    it('adds integrity only when asked to verify', async () => {
+      const pluginDir = join(dorkHome, 'plugins', 'my-plugin');
+      writePackageManifest(pluginDir, {
+        manifest: 1,
+        type: 'plugin',
+        name: 'my-plugin',
+        version: '1.0.0',
+      });
+      const { computeInstalledFiles, writeInstalledFiles } =
+        await import('../../services/marketplace/lib/installed-files.js');
+      await writeInstalledFiles(
+        pluginDir,
+        await computeInstalledFiles(pluginDir, {
+          identity: { name: 'my-plugin', type: 'plugin' },
+          userEditable: [],
+          npmRan: false,
+        })
+      );
+      const legacyDir = join(dorkHome, 'plugins', 'old-plugin');
+      writePackageManifest(legacyDir, {
+        manifest: 1,
+        type: 'plugin',
+        name: 'old-plugin',
+        version: '1.0.0',
+      });
+
+      const plain = await request(fixtureServer).get('/api/marketplace/installed');
+      expect(plain.body.packages.every((p: object) => !('integrity' in p))).toBe(true);
+
+      const verified = await request(fixtureServer).get('/api/marketplace/installed?verify=true');
+      const byName = Object.fromEntries(
+        verified.body.packages.map((p: { name: string; integrity: unknown }) => [
+          p.name,
+          p.integrity,
+        ])
+      );
+      expect(byName['my-plugin']).toEqual({ status: 'clean', customized: [] });
+      expect(byName['old-plugin']).toEqual({
+        status: 'unknown',
+        reason: 'no-record',
+        check: { source: 'local' },
+      });
+
+      const one = await request(fixtureServer).get(
+        '/api/marketplace/installed/old-plugin?verify=true'
+      );
+      expect(one.body.installations[0].integrity).toMatchObject({
+        status: 'unknown',
+        reason: 'no-record',
+      });
     });
 
     it('returns empty list when no packages installed', async () => {
@@ -2186,6 +2253,162 @@ describe('Marketplace Routes', () => {
         '/api/marketplace/sources/readable/refresh'
       );
       expect(refresh.status).toBe(200);
+    });
+  });
+
+  describe('POST /packages/:name/check-files (DOR-2320)', () => {
+    const SHA = 'b'.repeat(40);
+    const SHIPPED = {
+      '.dork/manifest.json':
+        '{"schemaVersion":1,"name":"old-plugin","version":"1.0.0","type":"plugin","description":"An older install"}',
+      'skills/a/SKILL.md': '---\nname: a\ndescription: A.\n---\n\nA.\n',
+    };
+
+    function writeTree(dir: string, files: Record<string, string>): void {
+      for (const [rel, content] of Object.entries(files)) {
+        mkdirSync(join(dir, dirname(rel)), { recursive: true });
+        writeFileSync(join(dir, rel), content);
+      }
+    }
+
+    /** An install an older DorkOS made: shipped files and a sidecar, no record. */
+    function legacyInstall(files: Record<string, string> = SHIPPED, sidecar: object = {}): string {
+      const root = join(dorkHome, 'plugins', 'old-plugin');
+      writeTree(root, files);
+      writeFileSync(
+        join(root, '.dork', 'install-metadata.json'),
+        JSON.stringify({
+          name: 'old-plugin',
+          version: '1.0.0',
+          type: 'plugin',
+          installedAt: '2026-09-01T00:00:00.000Z',
+          commitSha: SHA,
+          sourceKey: {
+            cloneUrl: 'https://github.com/acme/plugins',
+            subpath: 'old-plugin',
+            ref: 'main',
+          },
+          ...sidecar,
+        })
+      );
+      return root;
+    }
+
+    /** The fetcher serves the installed commit's tree. */
+    function serveCommit(files: Record<string, string> = SHIPPED): void {
+      const tree = join(dorkHome, 'commit-tree');
+      writeTree(tree, files);
+      fetcher.fetchAtCommit.mockResolvedValue({ path: tree, commitSha: SHA, fromCache: false });
+    }
+
+    // Purpose: the action rebuilds an exact record and says so in one sentence.
+    it('rebuilds the record of an install that matches its commit', async () => {
+      const root = legacyInstall();
+      serveCommit();
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/old-plugin/check-files')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({
+        outcome: 'rebuilt',
+        message:
+          'Checked old-plugin. Its files match the version you installed, so updates will keep your edits.',
+      });
+      expect(existsSync(join(root, '.dork', 'installed-files.json'))).toBe(true);
+    });
+
+    // Purpose: every outcome that writes nothing is answered in plain words,
+    // and nothing is written.
+    it.each([
+      [
+        'mismatch',
+        () => {
+          legacyInstall({ ...SHIPPED, 'skills/a/SKILL.md': 'edited' });
+          serveCommit();
+        },
+        "Some of old-plugin's files differ from the version you installed, so DorkOS can't tell your edits from the package's files. Its next update still keeps your copies.",
+      ],
+      [
+        'fetch-failed',
+        () => {
+          legacyInstall();
+        },
+        "Couldn't fetch the version of old-plugin you installed (no network in tests). Try again when you're online.",
+      ],
+      [
+        'no-source',
+        () => {
+          legacyInstall(SHIPPED, { commitSha: undefined, sourceKey: undefined });
+        },
+        "old-plugin was installed from a folder on this computer, so there's no version to compare it with. Reinstall it so updates keep your edits.",
+      ],
+    ])('answers %s and writes nothing', async (outcome, setup, message) => {
+      setup();
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/old-plugin/check-files')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ outcome, message });
+      expect(
+        existsSync(join(dorkHome, 'plugins', 'old-plugin', '.dork', 'installed-files.json'))
+      ).toBe(false);
+    });
+
+    // Purpose: an install that already has a record needs nothing.
+    it('says a recorded install needs no checking', async () => {
+      const root = legacyInstall();
+      writeFileSync(join(root, '.dork', 'installed-files.json'), '{}');
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/old-plugin/check-files')
+        .send({});
+
+      expect(res.body).toEqual({
+        outcome: 'not-needed',
+        message: "old-plugin's files are already checked.",
+      });
+      expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();
+    });
+
+    // Purpose: `installRoot` narrows the lookup to one installation, and can
+    // never point it at a folder the name and scope would not find.
+    it('prepares only the installation installRoot names, and never an arbitrary folder', async () => {
+      const root = legacyInstall();
+      serveCommit();
+      const elsewhere = join(dorkHome, 'elsewhere', 'old-plugin');
+      writeTree(elsewhere, SHIPPED);
+
+      const refused = await request(fixtureServer)
+        .post('/api/marketplace/packages/old-plugin/check-files')
+        .send({ installRoot: elsewhere });
+      expect(refused.status).toBe(404);
+
+      const named = await request(fixtureServer)
+        .post('/api/marketplace/packages/old-plugin/check-files')
+        .send({ installRoot: root });
+      expect(named.body.outcome).toBe('rebuilt');
+    });
+
+    // Purpose: a package that is not installed is a 404, like update and uninstall.
+    it('returns 404 when the package is not installed', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/nowhere/check-files')
+        .send({});
+      expect(res.status).toBe(404);
+    });
+
+    // Purpose: `:name` is joined into dorkHome, so a traversal is refused
+    // before anything is looked up or fetched.
+    it.each(['..%2F..%2Fvictim', 'Old-Plugin'])('refuses the name %s with 400', async (raw) => {
+      const res = await request(fixtureServer)
+        .post(`/api/marketplace/packages/${raw}/check-files`)
+        .send({});
+      expect(res.status).toBe(400);
+      expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();
     });
   });
 

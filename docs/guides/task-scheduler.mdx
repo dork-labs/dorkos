@@ -175,7 +175,7 @@ What the schedule does, its instructions, its name and its settings, still belon
 You can make your own schedules for an agent you installed from the marketplace, the same way as for any other agent. DorkOS keeps them when the package updates. Two things are turned down, each with a note saying why:
 
 - a name the package already uses for one of its own schedules, because its next update would put that schedule back; pick a different name;
-- any new schedule for an agent whose package was installed by an older version of DorkOS, because DorkOS can't yet tell that package's files from yours. This works after the package's next update.
+- any new schedule for an agent whose package was installed by an older version of DorkOS, because DorkOS can't yet tell that package's files from yours. Choose **Check files** on the package in Marketplace's **Installed** tab (or run `dorkos marketplace check-files <package>`), then try again.
 
 If a later version of the package starts shipping a schedule with the same name as one of yours, the update keeps a copy of yours beside it (its file ends in `.dork-old`) and tells you. Yours stops running until you make it again under another name.
 

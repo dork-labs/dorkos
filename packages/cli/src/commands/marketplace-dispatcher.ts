@@ -47,6 +47,10 @@ Packages:
   update [<name>]             Check for updates; add --apply to install them
   uninstall <name>            Remove an installed package
   installed                   List what is installed, and where
+                                (--verify: whether files changed since)
+  check-files <name>          Compare a package an older DorkOS installed
+                                with the version you installed, so updates
+                                keep your edits
   outdated                    List only the packages that have an update
                                 (exits 1 when any do, for scripts)
   held-back                   List global packages held back from sessions,
@@ -177,11 +181,32 @@ is installed. A package installed globally and for two agents is three rows.
 
 Options:
       --project <path>  List what this project sees (global installs plus its own)
+      --verify          Also say whether each package's files still match what was
+                        installed (a FILES column). Reads every installed file.
       --json            Print { "installed": [...] } instead of a table
 
 Examples:
   dorkos marketplace installed
   dorkos marketplace installed --project .
+  dorkos marketplace installed --verify
+`,
+  'check-files': `
+Usage: dorkos marketplace check-files <name> [options]
+
+Compares this package with the version you installed, so updates keep your edits.
+
+A package an older DorkOS installed has no record of which files are its own.
+This fetches the exact version you installed and records its files, only when
+every installed file still matches that version. Otherwise it changes nothing
+and says why.
+
+Options:
+      --project <path>  The project the package is installed in
+      --json            Print the answer as JSON
+
+Examples:
+  dorkos marketplace check-files flow
+  dorkos marketplace check-files flow --project .
 `,
   outdated: `
 Usage: dorkos marketplace outdated [options]
@@ -212,7 +237,7 @@ Examples:
 
 /** Every subcommand, in the order the one-line usage names them. */
 const SUBCOMMANDS =
-  'install|update|uninstall|installed|outdated|held-back|add|remove|list|refresh|validate';
+  'install|update|uninstall|installed|outdated|held-back|check-files|add|remove|list|refresh|validate';
 
 /**
  * Dispatch a `dorkos marketplace <subcommand>` invocation.
@@ -271,6 +296,11 @@ export async function runMarketplaceDispatcher(
       const { runMarketplaceInstalled, parseMarketplaceInstalledArgs } =
         await import('./marketplace-installed.js');
       return await runMarketplaceInstalled(parseMarketplaceInstalledArgs(subArgs));
+    }
+    if (subcommand === 'check-files') {
+      const { runMarketplaceCheckFiles, parseMarketplaceCheckFilesArgs } =
+        await import('./marketplace-check-files.js');
+      return await runMarketplaceCheckFiles(parseMarketplaceCheckFilesArgs(subArgs));
     }
     if (subcommand === 'add') {
       const { runMarketplaceAdd, parseMarketplaceAddArgs } = await import('./marketplace-add.js');

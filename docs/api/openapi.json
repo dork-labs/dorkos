@@ -18630,6 +18630,19 @@
             "required": false,
             "name": "projectPath",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ],
+              "description": "Add each installation's `integrity`. Reads every shipped file."
+            },
+            "required": false,
+            "description": "Add each installation's `integrity`. Reads every shipped file.",
+            "name": "verify",
+            "in": "query"
           }
         ],
         "responses": {
@@ -18723,6 +18736,109 @@
                               "reviewable"
                             ],
                             "description": "Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder."
+                          },
+                          "integrity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clean"
+                                    ]
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "modified"
+                                    ]
+                                  },
+                                  "changed": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "missing": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "added": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "changed",
+                                  "missing",
+                                  "added",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unknown"
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-record",
+                                      "unreadable-record",
+                                      "linked"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "reason"
+                                ]
+                              }
+                            ],
+                            "description": "Present only with verify=true: whether the installed files still match what was installed (DOR-2197)."
                           }
                         },
                         "required": [
@@ -18779,6 +18895,19 @@
             "required": true,
             "name": "name",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ],
+              "description": "Add each installation's `integrity`. Reads every shipped file."
+            },
+            "required": false,
+            "description": "Add each installation's `integrity`. Reads every shipped file.",
+            "name": "verify",
+            "in": "query"
           }
         ],
         "responses": {
@@ -18872,6 +19001,109 @@
                               "reviewable"
                             ],
                             "description": "Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder."
+                          },
+                          "integrity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clean"
+                                    ]
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "modified"
+                                    ]
+                                  },
+                                  "changed": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "missing": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "added": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "changed",
+                                  "missing",
+                                  "added",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unknown"
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-record",
+                                      "unreadable-record",
+                                      "linked"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "reason"
+                                ]
+                              }
+                            ],
+                            "description": "Present only with verify=true: whether the installed files still match what was installed (DOR-2197)."
                           },
                           "provides": {
                             "type": "object",
@@ -21679,6 +21911,94 @@
                   "required": [
                     "error"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages/{name}/check-files": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Check the files of a package an older DorkOS installed",
+        "description": "Give an install made before DorkOS recorded a package's files its installed-files record, from the exact commit it was installed at, only when that commit matches the installed files byte for byte. Otherwise nothing is written and the answer says why (DOR-2320).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectPath": {
+                    "type": "string"
+                  },
+                  "installRoot": {
+                    "type": "string",
+                    "description": "One installation the caller already sees; narrows, never widens, the lookup."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the check did, and one sentence saying so",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "rebuilt",
+                        "not-needed",
+                        "no-source",
+                        "fetch-failed",
+                        "mismatch"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or an invalid package name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

@@ -158,6 +158,9 @@ import type {
   InstallOptions,
   InstallResult,
   UninstallOptions,
+  ListInstalledOptions,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
@@ -2366,8 +2369,22 @@ export interface Transport
    * reinstall detection in the install dialog.
    *
    * @param projectPath - Optional agent project path for the merged view.
+   * @param opts - `verify` adds each installation's `integrity` (DOR-2197).
    */
-  listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]>;
+  listInstalledPackages(
+    projectPath?: string,
+    opts?: ListInstalledOptions
+  ): Promise<InstalledPackage[]>;
+
+  /**
+   * Give an installation an older DorkOS made its installed-files record, from
+   * the exact commit it was installed at, or say why not (DOR-2320). Writes
+   * only when that commit matches the installed files byte for byte.
+   *
+   * @param name - Installed package name. Will be URL-encoded.
+   * @param opts - The installation to check (`installRoot`) and its scope.
+   */
+  checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult>;
 
   /**
    * List every installation of a single package across all scopes (global +

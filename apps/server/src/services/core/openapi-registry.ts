@@ -2410,6 +2410,30 @@ const InstalledPackageSchema = z.object({
     .describe(
       'Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder.'
     ),
+  integrity: z
+    .union([
+      z.object({
+        status: z.literal('clean'),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('modified'),
+        changed: z.array(z.string()),
+        missing: z.array(z.string()),
+        added: z.array(z.string()),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('unknown'),
+        reason: z.enum(['no-record', 'unreadable-record', 'linked']),
+      }),
+    ])
+    .optional()
+    .describe(
+      'Present only with verify=true: whether the installed files still match what was installed (DOR-2197).'
+    ),
 });
 
 /**
@@ -2591,7 +2615,13 @@ registry.registerPath({
     'With projectPath: the merged view for that single project — one entry per install root ' +
     'and name — scanned at the canonical path, so its install paths match `GET /updates`.',
   request: {
-    query: z.object({ projectPath: z.string().optional() }),
+    query: z.object({
+      projectPath: z.string().optional(),
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
@@ -2623,6 +2653,12 @@ registry.registerPath({
     'each enriched with capability counts (commands, skills, hooks).',
   request: {
     params: z.object({ name: z.string() }),
+    query: z.object({
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
@@ -2838,6 +2874,56 @@ registry.registerPath({
           }),
         },
       },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/packages/{name}/check-files',
+  tags: ['Marketplace'],
+  summary: 'Check the files of a package an older DorkOS installed',
+  description:
+    "Give an install made before DorkOS recorded a package's files its installed-files record, " +
+    'from the exact commit it was installed at, only when that commit matches the installed ' +
+    'files byte for byte. Otherwise nothing is written and the answer says why (DOR-2320).',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectPath: z.string().optional(),
+            installRoot: z
+              .string()
+              .optional()
+              .describe(
+                'One installation the caller already sees; narrows, never widens, the lookup.'
+              ),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What the check did, and one sentence saying so',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outcome: z.enum(['rebuilt', 'not-needed', 'no-source', 'fetch-failed', 'mismatch']),
+            message: z.string(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or an invalid package name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
