@@ -16,6 +16,7 @@ covers:
   - 'refactor(server): one per-file digest for the installed-files record and the package content hash (DOR-2197)'
   - 'fix(server): agents are told marketplace_list_installed can verify files (DOR-2197)'
   - 'fix(server): loading the file-hash cache never reads fs/promises, so tests that mock it still import (DOR-2197)'
+  - 'fix(operating-skills): older installs point at Check files, not a later update (DOR-2197)'
 ---
 
 ### Added
