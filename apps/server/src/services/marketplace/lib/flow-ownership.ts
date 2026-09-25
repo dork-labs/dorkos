@@ -25,6 +25,9 @@ export const NOTICE_SENTENCE_LIMIT = 4;
  * @param notices - What the install did with files the person may have changed.
  */
 export function describeFileNotices(notices: readonly PackageFileNotice[]): string[] {
+  // Files kept because nothing proved whose they were get one sentence of
+  // their own from the transaction, which knows why (DOR-2322).
+  notices = notices.filter((n) => n.outcome !== 'kept-unproven');
   if (notices.length > NOTICE_SENTENCE_LIMIT) {
     return [
       `${notices.length} files you had changed or added were kept, or saved beside the new version's copies. The install result lists each one.`,
@@ -44,6 +47,9 @@ export function describeFileNotices(notices: readonly PackageFileNotice[]): stri
           : `${n.path} changed while the update ran; kept the newest copy.`;
       case 'skipped-special':
         return `Skipped ${n.path}: it is a special file (a socket or pipe), so it was not copied.`;
+      case 'kept-unproven':
+        // Filtered out above; here so the switch stays exhaustive.
+        return '';
     }
   });
 }

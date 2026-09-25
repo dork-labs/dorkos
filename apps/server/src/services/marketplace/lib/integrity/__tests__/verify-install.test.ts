@@ -240,6 +240,60 @@ describe('verifyInstall', () => {
     });
   });
 
+  // Purpose (DOR-2322): a record rebuilt by guessing cannot speak for the
+  // install, so it reads as not yet recorded, with Check files on offer.
+  // Fails if an inferred record verifies clean or modified.
+  it('reports an inferred record as unknown, with Check files on offer', async () => {
+    const root = await installed({ 'a.md': 'a' });
+    const { readInstalledFiles } = await import('../../installed-files.js');
+    const record = await readInstalledFiles(root);
+    await writeInstalledFiles(root, { ...record!, inferred: true });
+    expect(await verifyInstall(root)).toEqual({
+      status: 'unknown',
+      reason: 'inferred',
+      check: { source: 'local' },
+    });
+  });
+
+  // Purpose (DOR-2322): files an update kept because nothing proved whose they
+  // were stay named after the update, apart from `added` (they are not the
+  // person's additions, and not known to be the package's), with whether
+  // Check files can sort them. Fails if they vanish into `added` or go unnamed.
+  it('names the files an update kept unproven, apart from added', async () => {
+    const root = await installed({ 'a.md': 'a' });
+    const { readInstalledFiles } = await import('../../installed-files.js');
+    const record = await readInstalledFiles(root);
+    await put(root, 'skills/old/SKILL.md', 'old');
+    await put(root, 'notes.txt', 'mine');
+    await writeInstalledFiles(root, {
+      ...record!,
+      unproven: {
+        why: 'fetch-failed',
+        from: {
+          name: 'pkg',
+          commitSha: 'c'.repeat(40),
+          sourceKey: { cloneUrl: 'https://github.com/acme/p', subpath: '', ref: 'main' },
+        },
+        files: {
+          'skills/old/SKILL.md': 'skills/old/SKILL.md',
+          'notes.txt': 'notes.txt',
+          'gone.md': 'gone.md',
+        },
+      },
+    });
+    // skills/old/SKILL.md sits where a package keeps what it runs: it still
+    // runs, and says so (review 3). notes.txt does not.
+    expect(await verifyInstall(root)).toEqual({
+      status: 'clean',
+      customized: [],
+      unproven: {
+        files: ['notes.txt', 'skills/old/SKILL.md'],
+        running: ['skills/old/SKILL.md'],
+        check: { source: 'fetchable' },
+      },
+    });
+  });
+
   // Purpose: a very edited install names at most the limit per list, and says
   // there were more.
   it('caps each list and flags truncation', async () => {

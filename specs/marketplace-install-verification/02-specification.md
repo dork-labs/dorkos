@@ -192,3 +192,35 @@ The first adversarial review asked for these; the implementation log records eac
 - **DOR-2272 follow-through.** Its older-install refusals now point at Check files instead of "after the package's next update".
 - **Round 2:** after a mismatch the note offers a small Try again instead of hiding the action; on phones the "Updating…" sentence moves inside the disclosure; the rebuild re-reads the sidecar under the lock and writes nothing if it now names another commit (an older DorkOS sharing the data directory does not honour the lock).
 - **Deferred as DOR-2322:** update and uninstall trying the strict rebuild first (an offline product decision).
+
+## 13. Updates and uninstalls of an older install (DOR-2322)
+
+An update, reinstall or uninstall of an install with no record rebuilds one first (`rebuildInstalledFiles`, `lib/legacy-record.ts`). Until now, when the version it came from could not be fetched, that rebuild matched bytes against the new version without saying so. A file the package changed between versions then matched nothing, counted as the person's, and was carried along or left behind silently.
+
+Decision (coordinator, 2026-09-25):
+
+1. **The strict rebuild is tried first.** When the exact installed commit can be fetched, the rebuild checks it the way Check files does (`strictDifferences`, shared with `rebuildRecordStrict`, so the two rules cannot drift): every recorded file the same (files the package marks as the person's to edit may differ) and nothing extra where a package keeps what it runs. On a miss, the existing 10% tolerance still applies, because the record still comes from the exact commit (some files are just edited). The log says which proof held.
+2. **When nothing can be proven, it falls back to byte-matching against the new version, but never silently.** This covers an unfetchable commit (offline, deleted, force-pushed), a local-folder install, and a fetched tree rejected by the tolerance. The inferred record now carries `unproven: { why, from?, files }`:
+   - `why` is `fetch-failed`, `no-source` or `mismatch`.
+   - `from` names the commit to fetch later.
+   - `files` lists every live file the fallback could not tie to the package, as a path → the path it had in the old version.
+
+   Every one of those files is kept as the person's, the data-safe direction.
+
+3. **An update says so.**
+   - Each unproven file gets a `kept-unproven` notice (with `savedAs` when the new version's copy took its place), replacing the edit wording, which would be a guess.
+   - One plain warning names them (up to 10) and what to do next: Check files once online for `fetch-failed` and `mismatch`, or delete what isn't needed for `no-source`.
+   - The new install's record keeps `unproven` with each file mapped to where it now sits, so the Installed view and `--verify` keep reminding the person.
+4. **An uninstall says so.** `UninstallResult.unproven` lists the kept files that could not be proven (absolute paths, like `preservedData`), with one warning. Nothing unproven is removed.
+5. **Check files re-verifies later.**
+   - **An inferred record** (an older install whose update was rolled back, or which was only recorded by guessing) counts as not yet recorded. Verify reports it `unknown` with reason `inferred`, and Check files and the sweep after boot run the strict rebuild on it.
+   - **An install whose record lists unproven files:**
+     - Check files fetches `from`.
+     - It sets aside (renames to a free `.dork-old` name, execute bits cleared; never deletes) each kept file whose bytes are exactly the old version's copy and which the current version does not ship. Those are leftovers an online update would have replaced.
+     - It keeps the rest as the person's, then drops the list.
+     - It moves nothing when `from` is absent or the fetch fails, and says why.
+   - **The sweep after boot** never moves anything: resolving unproven files is a person's action.
+6. **Surfacing.**
+   - Verify: `clean` and `modified` gain `unproven`, excluded from `added`.
+   - App: the Installed row note names the kept files and offers Check files; a single update's toast shows its warnings; the uninstall toast shows its warnings.
+   - CLI: `dorkos marketplace update --apply` prints each update's warnings; `uninstall` lists the unproven files; `installed --verify` shows them.

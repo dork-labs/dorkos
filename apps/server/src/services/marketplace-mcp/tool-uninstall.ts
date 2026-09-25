@@ -228,6 +228,10 @@ export function createUninstallHandler(deps: MarketplaceMcpDeps) {
       removedFiles: result.removedFiles,
       purgedPaths: [],
       preservedPaths: result.preservedData ?? [],
+      // Files kept because nothing proved whose they were (DOR-2322): the
+      // agent passes the warning on rather than calling them the person's.
+      ...(result.unproven && { unprovenPaths: result.unproven }),
+      ...(result.warnings && { warnings: result.warnings }),
     });
   };
 }

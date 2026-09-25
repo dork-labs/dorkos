@@ -383,6 +383,90 @@ describe('in-place uninstall (DOR-2245)', () => {
   });
 });
 
+describe('uninstalling an older install nothing proves (DOR-2322)', () => {
+  // Purpose: offline, an older install's files cannot be told apart. The
+  // uninstall removes none of them and names every one it kept, with why and
+  // what to do. Fails if an unproven file is removed or goes unnamed.
+  it('keeps the files it cannot prove and says which', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { 'a.md': 'a' });
+    await rm(path.join(root, '.dork', 'installed-files.json'));
+    await put(
+      root,
+      '.dork/install-metadata.json',
+      JSON.stringify({
+        name: 'pkg',
+        version: '1.0.0',
+        type: 'plugin',
+        installedAt: 'x',
+        commitSha: 'c'.repeat(40),
+        sourceKey: { cloneUrl: 'https://github.com/acme/pkg', subpath: '', ref: 'main' },
+      })
+    );
+    await put(root, 'notes/mine.txt', 'mine');
+    const { rebuildInstalledFiles } = await import('../../lib/legacy-record.js');
+    const { noopLogger } = await import('@dorkos/shared/logger');
+    const offline = (installRoot: string) =>
+      rebuildInstalledFiles(installRoot, {
+        fetcher: { fetchAtCommit: vi.fn(async () => Promise.reject(new Error('offline'))) },
+        logger: noopLogger,
+      });
+
+    const result = await new UninstallFlow(deps(dorkHome, { rebuildLegacy: offline })).uninstall({
+      name: 'pkg',
+    });
+
+    expect(await readFile(path.join(root, 'a.md'), 'utf8')).toBe('a');
+    expect(await readFile(path.join(root, 'notes', 'mine.txt'), 'utf8')).toBe('mine');
+    expect(result.unproven).toEqual([
+      path.join(root, 'a.md'),
+      path.join(root, 'notes', 'mine.txt'),
+    ]);
+    const said = (result.warnings ?? []).join(' ');
+    expect(said).toMatch(/couldn't download the version of pkg you had/);
+    expect(said).toMatch(/It kept them: a\.md, notes\/mine\.txt\. Delete any you don't need\./);
+  });
+
+  // Purpose (review 1): after an update kept files it could not prove, the
+  // record is no longer a guess but still lists them. The uninstall keeps and
+  // names them. Fails if only an inferred record's list is read.
+  it('keeps and names the files an earlier update kept', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { 'a.md': 'a' });
+    const { readInstalledFiles: read } = await import('../../lib/installed-files.js');
+    const record = await read(root);
+    await put(root, 'old.md', 'old');
+    await writeInstalledFiles(root, {
+      ...record!,
+      unproven: { why: 'fetch-failed', files: { 'old.md': 'old.md' } },
+    });
+
+    const result = await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
+
+    expect(await readFile(path.join(root, 'old.md'), 'utf8')).toBe('old');
+    expect(result.unproven).toEqual([path.join(root, 'old.md')]);
+    expect((result.warnings ?? []).join(' ')).toMatch(
+      /An earlier update of pkg kept 1 file DorkOS couldn't tell was yours\. It's still here: old\.md\. Delete any you don't need\./
+    );
+  });
+
+  // Purpose: a proven record says nothing new. Fails if every uninstall grows
+  // the list.
+  it('lists nothing when the record proves the files', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { 'a.md': 'a' });
+    await put(root, 'mine.txt', 'mine');
+
+    const result = await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
+
+    expect(result.unproven).toBeUndefined();
+    expect(result.warnings).toBeUndefined();
+  });
+});
+
 describe('uninstalling an agent package (DOR-2245 §5)', () => {
   async function agentRoot(dorkHome: string): Promise<string> {
     const root = path.join(dorkHome, 'agents', 'bot');

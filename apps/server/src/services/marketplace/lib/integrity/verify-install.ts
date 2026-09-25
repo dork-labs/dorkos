@@ -19,29 +19,16 @@
  *
  * @module services/marketplace/lib/integrity/verify-install
  */
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  CLAUDE_PLUGIN_MANIFEST_PATH,
-  declaredEffectPaths,
-  EFFECT_BEARING_PATHS,
-  INSTALLED_FILES_PATH,
-  isReservedPackagePath,
-  matchesUserEditable,
-  validUserEditable,
-} from '@dorkos/marketplace';
+import { INSTALLED_FILES_PATH, matchesUserEditable, validUserEditable } from '@dorkos/marketplace';
 import type { InstallCheckInfo, InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
 import { readInstallMetadataStrict } from '../../installed-metadata.js';
 import { fetchableSourceOf } from '../legacy-record.js';
 import { lastCheck } from './check-results.js';
-import {
-  isNeverCarried,
-  lstatChain,
-  readInstalledFiles,
-  scanTree,
-  type InstalledFiles,
-} from '../installed-files.js';
+import { lstatChain, readInstalledFiles } from '../installed-files.js';
 import { cachedHashFile } from './file-hash-cache.js';
+import { addedEffectFiles } from './strict-differences.js';
 
 /**
  * Whether "Check files" can record a legacy install's files (its sidecar names
@@ -80,6 +67,10 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
     if (hasFile) return { status: 'unknown', reason: 'unreadable-record' };
     return { status: 'unknown', reason: 'no-record', check: await checkInfoOf(root) };
   }
+  // Guessed by matching bytes, so it speaks for nothing yet (DOR-2322).
+  if (record.inferred) {
+    return { status: 'unknown', reason: 'inferred', check: await checkInfoOf(root) };
+  }
 
   const changed: string[] = [];
   const missing: string[] = [];
@@ -98,7 +89,17 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
     if ((await cachedHashFile(fsPath(root, p))) === hash) continue;
     (editable ? customized : changed).push(p);
   }
-  const added = await addedEffectFiles(root, record);
+  // Files an update kept unproven are neither the person's additions nor
+  // known to be the package's: named on their own, never as `added`.
+  const unprovenPaths = Object.keys(record.unproven?.files ?? {});
+  const unrecorded = await addedEffectFiles(root, record);
+  const added = unrecorded.filter((p) => !unprovenPaths.includes(p));
+  // Kept files where a package keeps what it runs still run (DOR-2322).
+  const running = unrecorded.filter((p) => unprovenPaths.includes(p));
+  const stillThere: string[] = [];
+  for (const p of unprovenPaths) {
+    if ((await lstatChain(root, p)).kind !== 'missing') stillThere.push(p);
+  }
 
   let truncated = false;
   const cap = (list: string[]): string[] => {
@@ -112,59 +113,24 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
     added: cap(added),
     customized: cap(customized),
   };
+  const unproven =
+    stillThere.length > 0
+      ? {
+          unproven: {
+            files: cap(stillThere),
+            running: cap(running),
+            check: {
+              source: record.unproven?.from ? ('fetchable' as const) : ('local' as const),
+              ...(lastCheck(root) && { last: lastCheck(root)! }),
+            },
+          },
+        }
+      : {};
   const extra = truncated ? { truncated: true as const } : {};
   if (lists.changed.length + lists.missing.length + lists.added.length === 0) {
-    return { status: 'clean', customized: lists.customized, ...extra };
+    return { status: 'clean', customized: lists.customized, ...unproven, ...extra };
   }
-  return { status: 'modified', ...lists, ...extra };
-}
-
-/**
- * The locations the install's own plugin.json declares something runnable at
- * (`declaredEffectPaths`), read only when it is a regular file reached through
- * real directories. None when it is absent or unreadable.
- */
-async function declaredLocationsOf(root: string): Promise<string[]> {
-  if ((await lstatChain(root, CLAUDE_PLUGIN_MANIFEST_PATH)).kind !== 'file') return [];
-  try {
-    return declaredEffectPaths(
-      JSON.parse(await readFile(fsPath(root, CLAUDE_PLUGIN_MANIFEST_PATH), 'utf-8'))
-    );
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Unrecorded files and links at or under an effect-bearing path (the defaults,
- * and every location the install's plugin.json declares), found without
- * following any link. Exported for the strict rebuild, which must find none. The installer's files, reserved paths (data, secrets,
- * `.dork-old` / `.dork-new` copies) and owned paths are never counted. An
- * agent's identity files (`.dork/agent.json`, `.dork/SOUL.md`, …) sit outside
- * every effect-bearing path, so they never reach this check.
- */
-export async function addedEffectFiles(root: string, record: InstalledFiles): Promise<string[]> {
-  const counts = (p: string): boolean =>
-    !(p in record.files) && !isReservedPackagePath(p) && !isNeverCarried(p, record.ownedPaths);
-  const added = new Set<string>();
-  const effectPaths = new Set<string>([
-    ...Object.values(EFFECT_BEARING_PATHS),
-    ...(await declaredLocationsOf(root)),
-  ]);
-  for (const effectPath of effectPaths) {
-    const { kind } = await lstatChain(root, effectPath);
-    if (kind === 'file' || kind === 'symlink') {
-      if (counts(effectPath)) added.add(effectPath);
-      continue;
-    }
-    if (kind !== 'dir') continue;
-    const scan = await scanTree(fsPath(root, effectPath));
-    for (const [rel, entry] of scan.entries) {
-      const p = `${effectPath}/${rel}`;
-      if ((entry.kind === 'file' || entry.kind === 'symlink') && counts(p)) added.add(p);
-    }
-  }
-  return [...added];
+  return { status: 'modified', ...lists, ...unproven, ...extra };
 }
 
 /** How many installs {@link withIntegrity} verifies at once, like update checks. */

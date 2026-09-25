@@ -537,6 +537,8 @@ const LocalUninstallResultSchema = z.object({
   packageName: z.string(),
   removedFiles: z.number().int().nonnegative(),
   preservedData: z.array(z.string()),
+  unproven: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
 });
 
 const registry = new OpenAPIRegistry();
@@ -2932,7 +2934,14 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            outcome: z.enum(['rebuilt', 'not-needed', 'no-source', 'fetch-failed', 'mismatch']),
+            outcome: z.enum([
+              'rebuilt',
+              'sorted',
+              'not-needed',
+              'no-source',
+              'fetch-failed',
+              'mismatch',
+            ]),
             message: z.string(),
           }),
         },

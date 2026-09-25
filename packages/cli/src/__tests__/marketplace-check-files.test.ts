@@ -82,6 +82,12 @@ describe('runMarketplaceCheckFiles (DOR-2320)', () => {
     expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('why not');
   });
 
+  // Purpose (DOR-2322): sorting the files an update kept is a success.
+  it('exits 0 once the kept files are sorted', async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse(200, { outcome: 'sorted', message: 'sorted' }));
+    expect(await runMarketplaceCheckFiles({ name: 'flow', json: false })).toBe(0);
+  });
+
   // Purpose: --json prints the server's answer untouched.
   it('--json prints the answer as JSON', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);

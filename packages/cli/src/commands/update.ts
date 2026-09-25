@@ -294,6 +294,8 @@ function reportApplied(result: InstallationUpdatesResult): number {
     console.log('Applied:');
     for (const { check, result: a } of applied) {
       console.log(`  ${labelOf(check)}@${a.version} → ${a.installPath}`);
+      // What the update had to say, such as files it kept (DOR-2322).
+      for (const warning of a.warnings ?? []) console.log(`    ${warning}`);
     }
   }
   const failed = result.checks.filter((c) => c.applyError !== undefined);

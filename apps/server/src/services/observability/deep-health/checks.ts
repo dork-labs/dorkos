@@ -276,21 +276,43 @@ export function checkInstalledPackages(input: InstalledPackagesInput): CheckResu
   );
   const older = unique(
     input.installs
-      .filter((i) => i.integrity.status === 'unknown' && i.integrity.reason === 'no-record')
+      .filter(
+        (i) =>
+          i.integrity.status === 'unknown' &&
+          (i.integrity.reason === 'no-record' || i.integrity.reason === 'inferred')
+      )
       .map((i) => i.name)
   );
-  if (changed.length + older.length === 0) {
+  // Files an update kept because nothing proved whose they were (DOR-2322).
+  const keptInstalls = input.installs.filter(
+    (i) =>
+      (i.integrity.status === 'clean' || i.integrity.status === 'modified') &&
+      i.integrity.unproven !== undefined
+  );
+  const kept = unique(keptInstalls.map((i) => i.name));
+  const keptRunning = new Set(
+    keptInstalls
+      .filter(
+        (i) =>
+          (i.integrity.status === 'clean' || i.integrity.status === 'modified') &&
+          (i.integrity.unproven?.running.length ?? 0) > 0
+      )
+      .map((i) => i.name)
+  );
+  const total = unique([...changed, ...older, ...kept]).length;
+  if (total === 0) {
     return { label: 'Installed packages match what was installed', status: 'pass' };
   }
-  const total = changed.length + older.length;
   const label =
-    older.length === 0
+    older.length + kept.length === 0
       ? `${total} installed ${plural(total, 'package', 'packages')} changed since install`
       : `${total} installed ${plural(total, 'package', 'packages')} need a look`;
   const detail = [
     changed.length > 0 && `Changed since install: ${changed.join(', ')}.`,
     older.length > 0 &&
       `Installed by an older DorkOS: ${older.join(', ')}. DorkOS can't tell their files from yours yet.`,
+    kept.length > 0 &&
+      `Kept files an update couldn't sort: ${kept.map((n) => (keptRunning.has(n) ? `${n} (some still run)` : n)).join(', ')}. DorkOS couldn't tell whether they were yours.`,
   ]
     .filter(Boolean)
     .join(' ');
@@ -299,6 +321,8 @@ export function checkInstalledPackages(input: InstalledPackagesInput): CheckResu
       'An update replaces files you edited and keeps your copies, keeps files you added, and puts back files you removed. See which files with:\n  dorkos marketplace installed --verify',
     older.length > 0 &&
       `Compare an older install with the version you installed, so updates keep your edits:\n  dorkos marketplace check-files ${older[0]}`,
+    kept.length > 0 &&
+      `Sort the files an update kept: leftovers from the earlier version are removed, yours stay:\n  dorkos marketplace check-files ${kept[0]}`,
   ]
     .filter(Boolean)
     .join('\n');

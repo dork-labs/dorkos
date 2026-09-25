@@ -13,17 +13,20 @@
  *    the sidecar's `name` is).
  * 2. The tree is staged with the same copy every install uses, and its record
  *    computed exactly as an install would.
- * 3. **Trust check.** Before DOR-2248 the fetcher ignored the ref on `github`
- *    and `url` sources, so a recorded commit may never have been the tree that
- *    was installed. If more than {@link LEGACY_MISMATCH_SHARE} of the recorded
- *    paths present in the live root, and at least
+ * 3. **Strict first** (DOR-2322). The record is exact when the live folder
+ *    matches it by the rule Check files uses (`strictDifferences`).
+ * 4. **Trust check.** Otherwise some files were edited, or the commit is not
+ *    what was installed: before DOR-2248 the fetcher ignored the ref on
+ *    `github` and `url` sources. If more than {@link LEGACY_MISMATCH_SHARE} of
+ *    the recorded paths present in the live root, and at least
  *    {@link LEGACY_MISMATCH_MIN} of them, differ in bytes, the rebuild is not
- *    the installed tree and step 4 is used instead.
- * 4. **Fallback** (no tree, a failed fetch, or a rejected rebuild): a live file
+ *    the installed tree and step 5 is used instead.
+ * 5. **Fallback** (no tree, a failed fetch, or a rejected rebuild): a live file
  *    is the package's only when some obtainable tree (the new version being
  *    installed, or the fetched old one) has the same bytes at the same path.
- *    The record is marked `inferred`. Everything else is kept as the person's:
- *    nothing is deleted on a guess.
+ *    The record is marked `inferred`. Everything else is kept as the person's
+ *    and listed as `unproven`, with why and the commit to compare it with
+ *    later: nothing is deleted on a guess, and nothing is kept silently.
  *
  * @module services/marketplace/lib/legacy-record
  */
@@ -51,7 +54,9 @@ import {
   scanTree,
   writeInstalledFiles,
   type InstalledFiles,
+  type UnprovenWhy,
 } from './installed-files.js';
+import { strictDifferences } from './integrity/strict-differences.js';
 import { materializePackageSchedules } from './materialize-schedules.js';
 import { stagePackageContents } from './stage-package.js';
 
@@ -148,36 +153,46 @@ export async function rebuildInstalledFiles(
     const identity = recordIdentityOf(metadata, name, type);
 
     if (oldTree) {
-      const rebuilt = await computeInstalledFiles(oldTree, {
-        identity,
-        userEditable: await userEditableOf(oldTree),
-        npmRan,
-      });
+      const userEditable = await userEditableOf(oldTree);
+      const rebuilt = await computeInstalledFiles(oldTree, { identity, userEditable, npmRan });
+      // The strict rule first, exactly as Check files applies it; the tolerance
+      // only when it misses, because the record still comes from the exact
+      // commit and only some files were edited.
+      const exact = (await strictDifferences(installRoot, rebuilt, userEditable)).length === 0;
       const { present, differing } = await compareWithLive(installRoot, rebuilt);
-      const trusted = !(
-        differing >= LEGACY_MISMATCH_MIN && differing > present * LEGACY_MISMATCH_SHARE
-      );
-      deps.logger.info('[marketplace/legacy-record] rebuilt a record from the installed commit', {
-        installRoot,
-        present,
-        differing,
-        trusted,
-      });
+      const trusted =
+        exact || !(differing >= LEGACY_MISMATCH_MIN && differing > present * LEGACY_MISMATCH_SHARE);
       if (trusted) {
+        deps.logger.info('[marketplace/legacy-record] rebuilt a record from the installed commit', {
+          installRoot,
+          proof: exact ? 'exact' : 'tolerant',
+          present,
+          differing,
+        });
         await writeInstalledFiles(installRoot, rebuilt);
         return rebuilt;
       }
+      deps.logger.info('[marketplace/legacy-record] the installed commit does not match', {
+        installRoot,
+        present,
+        differing,
+      });
     }
 
+    const why: UnprovenWhy = !source ? 'no-source' : oldTree ? 'mismatch' : 'fetch-failed';
     const inferred = await inferRecord(installRoot, {
       identity,
       npmRan,
       trees: [newTree, oldTree].filter((t): t is string => t !== undefined),
+      why,
+      ...(source && { from: source }),
     });
     await writeInstalledFiles(installRoot, inferred);
     deps.logger.info('[marketplace/legacy-record] inferred a record by matching bytes', {
       installRoot,
+      why,
       files: Object.keys(inferred.files).length,
+      unproven: Object.keys(inferred.unproven?.files ?? {}).length,
     });
     return inferred;
   } finally {
@@ -314,11 +329,18 @@ async function compareWithLive(
 /**
  * The fallback record: the live files whose bytes equal the same path in one
  * of `trees`. Owned paths, the installer's files, reserved paths and an agent's
- * identity files are never listed.
+ * identity files are never listed. Every other live file is `unproven`: kept
+ * as the person's, named, and tied to the commit that can sort it later.
  */
 async function inferRecord(
   root: string,
-  opts: { identity: InstalledFiles['package']; npmRan: boolean; trees: string[] }
+  opts: {
+    identity: InstalledFiles['package'];
+    npmRan: boolean;
+    trees: string[];
+    why: UnprovenWhy;
+    from?: FetchableSource;
+  }
 ): Promise<InstalledFiles> {
   const ownedPaths = opts.npmRan ? ['node_modules', 'package-lock.json'] : [];
   const identityFiles: readonly string[] =
@@ -328,6 +350,7 @@ async function inferRecord(
     hash: () => true,
   });
   const files: Record<string, string> = {};
+  const unproven: Record<string, string> = {};
   for (const [p, entry] of [...live.entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (entry.kind !== 'file' || !entry.hash || identityFiles.includes(p)) continue;
     for (const tree of opts.trees) {
@@ -341,6 +364,7 @@ async function inferRecord(
         break;
       }
     }
+    if (!(p in files)) unproven[p] = p;
   }
   return {
     version: 1,
@@ -350,5 +374,8 @@ async function inferRecord(
     pendingDefaults: {},
     userEditable: [],
     inferred: true,
+    ...(Object.keys(unproven).length > 0 && {
+      unproven: { why: opts.why, ...(opts.from && { from: opts.from }), files: unproven },
+    }),
   };
 }

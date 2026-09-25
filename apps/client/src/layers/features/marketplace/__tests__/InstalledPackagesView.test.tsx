@@ -1183,6 +1183,121 @@ describe('InstalledPackagesView', () => {
       }
     });
 
+    // Purpose (DOR-2322): a record an update only guessed is not a record:
+    // the row reads like an older install and offers Check files. Fails if
+    // `inferred` is treated as a verified install (no note, no button).
+    it('treats a guessed record like an older install', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'unknown',
+          reason: 'inferred',
+          check: { source: 'fetchable' },
+        },
+      });
+      render(<InstalledPackagesView />);
+      expect(screen.getByTestId('installation-integrity')).toHaveTextContent(
+        'Installed by an older DorkOS. Check files to compare it with the version you installed, so updates keep your edits.'
+      );
+      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
+    });
+
+    // Purpose (DOR-2322): files an update kept because nothing proved whose
+    // they were stay on the row: a note that counts them, opens to the paths,
+    // says what happened, and offers Check files to sort them. Fails if they
+    // go unmentioned or Check files is not offered.
+    it('names the files an update kept unproven, and offers Check files to sort them', async () => {
+      const user = userEvent.setup();
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: { files: ['notes.txt', 'old.md'], running: [], check: { source: 'fetchable' } },
+        },
+      });
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity-unproven');
+      expect(note).toHaveTextContent('Kept 2 files DorkOS couldn’t sort after an update.');
+      await user.click(note.querySelector('summary')!);
+      expect(within(note).getByRole('list', { name: 'Kept' })).toHaveTextContent('notes.txt');
+      expect(note).toHaveTextContent(
+        'DorkOS couldn’t tell whether these were yours or left over from the earlier version, so it kept them. Check files sets aside the leftovers and keeps yours.'
+      );
+      expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
+    });
+
+    // Purpose (review 3): a kept file where a package keeps what it runs still
+    // runs, so the note says how many in its closed line, lists them apart,
+    // and carries the amber weight a quiet note does not. Fails if running
+    // kept files read like inert ones.
+    it('says which kept files still run, in the stronger weight', async () => {
+      const user = userEvent.setup();
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: {
+            files: ['commands/old.md', 'notes.txt', 'skills/old/SKILL.md'],
+            running: ['commands/old.md', 'skills/old/SKILL.md'],
+            check: { source: 'fetchable' },
+          },
+        },
+      });
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity-unproven');
+      expect(note).toHaveAttribute('data-runs', 'true');
+      expect(note.querySelector('summary')).toHaveTextContent(
+        'Kept 3 files DorkOS couldn’t sort after an update. 2 of them still run.'
+      );
+      await user.click(note.querySelector('summary')!);
+      expect(within(note).getByRole('list', { name: 'Still runs' })).toHaveTextContent(
+        'commands/old.mdskills/old/SKILL.md'
+      );
+      const kept = within(note).getByRole('list', { name: 'Kept' });
+      expect(kept).toHaveTextContent('notes.txt');
+      // Each file is listed once, under the heading that fits it.
+      expect(kept).not.toHaveTextContent('commands/old.md');
+    });
+
+    // Purpose (review 3): kept files that run nothing keep the quiet weight.
+    it('keeps the quiet weight when no kept file runs', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: { files: ['notes.txt'], running: [], check: { source: 'fetchable' } },
+        },
+      });
+      render(<InstalledPackagesView />);
+      expect(screen.getByTestId('installation-integrity-unproven')).toHaveAttribute(
+        'data-runs',
+        'false'
+      );
+    });
+
+    // Purpose (DOR-2322): kept files from a package installed from a folder
+    // have nothing to be sorted against: no button, and the note says so.
+    it('offers no Check files for kept files with nothing to compare against', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: { files: ['notes.txt'], running: [], check: { source: 'local' } },
+        },
+      });
+      render(<InstalledPackagesView />);
+      expect(screen.getByTestId('installation-integrity-unproven')).toHaveTextContent(
+        'Kept 1 file DorkOS couldn’t sort after an update.'
+      );
+      expect(screen.queryByRole('button', { name: /Check the files/ })).not.toBeInTheDocument();
+    });
+
     // Purpose: while one installation's files are being checked its button
     // says so and cannot be pressed again.
     it('shows Check files as busy while that installation is being checked', () => {

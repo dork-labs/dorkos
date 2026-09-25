@@ -1254,7 +1254,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
       });
       if (root === null) throw new PackageNotInstalledError(req.params.name);
-      const result = await rebuildRecordStrict(root, { fetcher, logger });
+      // A person's Check files also sorts what an update kept unproven (DOR-2322).
+      const result = await rebuildRecordStrict(root, { fetcher, logger }, { sortUnproven: true });
       return res.json({
         outcome: result.outcome,
         message: describeStrictRebuild(req.params.name, result),

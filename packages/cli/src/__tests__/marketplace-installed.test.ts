@@ -191,6 +191,44 @@ describe('runMarketplaceInstalled', () => {
     expect(out).not.toMatch(/check-files from-folder/);
   });
 
+  // Purpose (DOR-2322): a guessed record reads as unknown, like an older
+  // install, and files an update kept unproven show in FILES with what to do.
+  it('--verify shows guessed records as unknown and counts unsorted kept files', async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockResponse(200, {
+        packages: [
+          {
+            ...GLOBAL_FLOW,
+            integrity: {
+              status: 'clean',
+              customized: [],
+              unproven: {
+                files: ['a.md', 'skills/b/SKILL.md'],
+                running: ['skills/b/SKILL.md'],
+                check: { source: 'fetchable' },
+              },
+            },
+          },
+          {
+            ...GLOBAL_FLOW,
+            name: 'guessed',
+            integrity: { status: 'unknown', reason: 'inferred', check: { source: 'fetchable' } },
+          },
+        ],
+      })
+    );
+
+    await runMarketplaceInstalled({ json: false, verify: true });
+
+    const out = printed(logSpy);
+    expect(out).toMatch(/flow\s.*\s+as installed, 2 kept \(1 still runs\)/);
+    expect(out).toMatch(/guessed\s.*\s+unknown/);
+    expect(out).toMatch(/dorkos marketplace check-files guessed/);
+    expect(out).toMatch(
+      /kept: files an update kept because DorkOS couldn't tell whether they were yours\. Some still run\. Run 'dorkos marketplace check-files flow' to sort them\./
+    );
+  });
+
   it('explains a linked install beneath the table', async () => {
     fetchMock.mockResolvedValueOnce(
       mockResponse(200, { packages: [{ ...GLOBAL_FLOW, linked: true }] })

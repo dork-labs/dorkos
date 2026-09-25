@@ -18,21 +18,26 @@
  * paths' own rebuild (`rebuildInstalledFiles`) still has one; this is what the
  * background sweep after boot and the "Check files" action use.
  *
+ * A record that fallback only guessed (`inferred`) counts as no record yet, so
+ * both run this on it (DOR-2322). A record that lists files an update kept
+ * because nothing proved whose they were (`unproven`) is sorted only when a
+ * person asks (`sortUnproven`, the "Check files" action): see `./unproven-sort.ts`.
+ *
  * @module services/marketplace/lib/integrity/strict-record
  */
 import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import {
-  INSTALL_METADATA_POSIX_PATH,
-  INSTALLED_FILES_PATH,
-  matchesUserEditable,
-} from '@dorkos/marketplace';
+import { INSTALL_METADATA_POSIX_PATH, INSTALLED_FILES_PATH } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { readInstallMetadataStrict, type InstallMetadata } from '../../installed-metadata.js';
 import type { PackageFetcher } from '../../package-fetcher.js';
 import { withInstallTargetLock } from '../../transaction.js';
-import { computeInstalledFiles, lstatChain, writeInstalledFiles } from '../installed-files.js';
+import {
+  computeInstalledFiles,
+  readInstalledFiles,
+  writeInstalledFiles,
+} from '../installed-files.js';
 import {
   fetchableSourceOf,
   recordIdentityOf,
@@ -40,22 +45,26 @@ import {
   userEditableOf,
 } from '../legacy-record.js';
 import { hasPackageIdentity } from '../locate-install.js';
-import { cachedHashFile } from './file-hash-cache.js';
 import { rememberCheck } from './check-results.js';
-import { addedEffectFiles } from './verify-install.js';
+import { STRICT_RECORD_TEMP_PREFIX, strictDifferences } from './strict-differences.js';
 
-/** The prefix of every scratch folder a strict rebuild stages into, for leftover cleanup. */
-export const STRICT_RECORD_TEMP_PREFIX = 'dorkos-strict-record-';
+export { STRICT_RECORD_TEMP_PREFIX };
+import { sortUnprovenFiles } from './unproven-sort.js';
 
 /** Most differing paths a mismatch names. */
 export const STRICT_MISMATCH_LIST_LIMIT = 50;
 
-/** What a strict rebuild did. Only `rebuilt` wrote anything. */
+/**
+ * What a strict rebuild did. Only `rebuilt` and `sorted` changed anything.
+ * `unproven` on `no-source` and `fetch-failed` says the attempt was to sort an
+ * update's kept files rather than to record an older install.
+ */
 export type StrictRebuildResult =
   | { outcome: 'rebuilt'; files: number }
+  | { outcome: 'sorted'; setAside: { path: string; savedAs: string }[]; kept: string[] }
   | { outcome: 'not-needed'; why: 'has-record' | 'not-installed' | 'linked' }
-  | { outcome: 'no-source' }
-  | { outcome: 'fetch-failed'; message: string }
+  | { outcome: 'no-source'; unproven?: true }
+  | { outcome: 'fetch-failed'; message: string; unproven?: true }
   | { outcome: 'mismatch'; differing: string[] };
 
 /** What {@link rebuildRecordStrict} needs. */
@@ -75,12 +84,22 @@ async function exists(p: string): Promise<boolean> {
   return (await lstat(p).catch(() => undefined)) !== undefined;
 }
 
-/** Whether `root` is a legacy install, or why it needs no rebuild. */
-async function legacyState(
+/**
+ * Whether `root` is a legacy install (no record, or one only guessed), holds
+ * files an update kept unproven, or why it needs nothing.
+ *
+ * @param root - The install folder.
+ */
+export async function legacyState(
   root: string
-): Promise<'legacy' | 'linked' | 'has-record' | 'not-installed'> {
+): Promise<'legacy' | 'unproven' | 'linked' | 'has-record' | 'not-installed'> {
   if ((await lstat(root).catch(() => undefined))?.isSymbolicLink()) return 'linked';
-  if (await exists(fsPath(root, INSTALLED_FILES_PATH))) return 'has-record';
+  if (await exists(fsPath(root, INSTALLED_FILES_PATH))) {
+    const record = await readInstalledFiles(root);
+    if (record?.inferred) return (await hasPackageIdentity(root)) ? 'legacy' : 'not-installed';
+    if (record?.unproven) return 'unproven';
+    return 'has-record';
+  }
   if (!(await hasPackageIdentity(root))) return 'not-installed';
   return 'legacy';
 }
@@ -95,13 +114,23 @@ async function legacyState(
  *
  * @param root - The install folder.
  * @param deps - The fetcher and a logger.
- * @returns What happened; only `rebuilt` changed anything on disk.
+ * @param opts - `sortUnproven`: also sort the files an update kept unproven
+ *   (the "Check files" action; it can remove leftovers, so the sweep never asks).
+ * @returns What happened; only `rebuilt` and `sorted` changed anything on disk.
  */
 export async function rebuildRecordStrict(
   root: string,
-  deps: StrictRecordDeps
+  deps: StrictRecordDeps,
+  opts: { sortUnproven?: boolean } = {}
 ): Promise<StrictRebuildResult> {
   const before = await legacyState(root);
+  if (before === 'unproven') {
+    if (!opts.sortUnproven) return { outcome: 'not-needed', why: 'has-record' };
+    const result = await sortUnprovenFiles(root, deps);
+    const name = (await readInstalledFiles(root))?.package.name ?? path.basename(root);
+    rememberCheck(root, name, result);
+    return result;
+  }
   if (before !== 'legacy') return { outcome: 'not-needed', why: before };
 
   let metadata: InstallMetadata | null = null;
@@ -143,7 +172,8 @@ export async function rebuildRecordStrict(
         // Re-checked under the lock: an install, update or uninstall that held
         // it may have changed what stands here.
         const now = await legacyState(root);
-        if (now !== 'legacy') return { outcome: 'not-needed', why: now };
+        if (now !== 'legacy')
+          return { outcome: 'not-needed', why: now === 'unproven' ? 'has-record' : now };
         // An older DorkOS sharing this data directory does not honour the lock:
         // if it reinstalled the package while the fetch ran, the sidecar names
         // another commit and the fetched tree is no longer the installed one.
@@ -155,18 +185,7 @@ export async function rebuildRecordStrict(
           return { outcome: 'mismatch', differing: [INSTALL_METADATA_POSIX_PATH] };
         }
 
-        const differing: string[] = [];
-        for (const [p, hash] of Object.entries(record.files)) {
-          if (matchesUserEditable(p, userEditable)) continue;
-          const { kind } = await lstatChain(root, p);
-          if (kind !== 'file' || (await cachedHashFile(fsPath(root, p))) !== hash)
-            differing.push(p);
-        }
-        // The live folder must also hold nothing extra where a package keeps
-        // what it runs: an unrecorded skill or hook would otherwise verify
-        // clean while it runs. This also catches a case-only rename, whose
-        // live spelling is unrecorded.
-        differing.push(...(await addedEffectFiles(root, record)));
+        const differing = await strictDifferences(root, record, userEditable);
         if (differing.length > 0) {
           deps.logger.info('[marketplace/strict-record] the installed commit does not match', {
             root,
@@ -174,7 +193,7 @@ export async function rebuildRecordStrict(
           });
           return {
             outcome: 'mismatch',
-            differing: [...new Set(differing)].sort().slice(0, STRICT_MISMATCH_LIST_LIMIT),
+            differing: differing.slice(0, STRICT_MISMATCH_LIST_LIMIT),
           };
         }
 
@@ -202,12 +221,25 @@ export function describeStrictRebuild(name: string, result: StrictRebuildResult)
   switch (result.outcome) {
     case 'rebuilt':
       return `Checked ${name}. Its files match the version you installed, so updates will keep your edits.`;
+    case 'sorted': {
+      const aside = result.setAside.length;
+      const kept = result.kept.length;
+      if (aside === 0) {
+        return `Checked the files ${name} kept: ${kept === 1 ? 'the 1 file is yours, so it stays' : `all ${kept} are yours, so they stay`}.`;
+      }
+      const where = result.setAside.map((f) => f.savedAs).join(', ');
+      return `Checked the files ${name} kept: set aside ${aside} left over from the version you had before (${where})${kept > 0 ? `, and kept ${kept} as yours` : ''}.`;
+    }
     case 'not-needed':
       return `${name}'s files are already checked.`;
     case 'no-source':
-      return `${name} was installed from a folder on this computer, so there's no version to compare it with. Reinstall it so updates keep your edits.`;
+      return result.unproven
+        ? `${name} was installed from a folder on this computer, so there's no earlier version to sort the files it kept against. Delete any you don't need.`
+        : `${name} was installed from a folder on this computer, so there's no version to compare it with. Reinstall it so updates keep your edits.`;
     case 'fetch-failed':
-      return `Couldn't fetch the version of ${name} you installed (${result.message}). Try again when you're online.`;
+      return result.unproven
+        ? `Couldn't fetch the version of ${name} you had before (${result.message}), so the files it kept stay as they are. Try again when you're online.`
+        : `Couldn't fetch the version of ${name} you installed (${result.message}). Try again when you're online.`;
     case 'mismatch':
       return `Some of ${name}'s files differ from the version you installed, so DorkOS can't tell your edits from the package's files. Its next update still keeps your copies.`;
   }

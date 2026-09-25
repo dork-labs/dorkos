@@ -832,9 +832,18 @@ export interface PackageFileNotice {
    * - `late-write`: it changed while the update ran; the newest copy is in place
    *   (the person's at `savedAs` when it collided with a package file).
    * - `skipped-special`: a socket, pipe or device file, which was not copied.
+   * - `kept-unproven`: the install had no record and the version it came from
+   *   could not be checked, so DorkOS could not tell whether this was the
+   *   person's file or the old version's. It was kept, at `savedAs` when the new
+   *   version's copy took its place (DOR-2322).
    */
   outcome:
-    'replaced-edit' | 'kept-edit' | 'kept-no-longer-shipped' | 'late-write' | 'skipped-special';
+    | 'replaced-edit'
+    | 'kept-edit'
+    | 'kept-no-longer-shipped'
+    | 'late-write'
+    | 'skipped-special'
+    | 'kept-unproven';
   /** Where the other copy was saved, when one was written. */
   savedAs?: string;
 }
@@ -863,10 +872,15 @@ export interface CheckFilesOptions {
 
 /**
  * What checking the files of a package an older DorkOS installed did (DOR-2320): only
- * `rebuilt` wrote anything, and `message` says the outcome in one sentence.
+ * `rebuilt` and `sorted` changed anything, and `message` says the outcome in one sentence.
  */
 export interface CheckFilesResult {
-  outcome: 'rebuilt' | 'not-needed' | 'no-source' | 'fetch-failed' | 'mismatch';
+  /**
+   * `sorted`: an update had kept files it could not prove, and Check files
+   * compared them with the earlier version: leftovers were removed, the rest
+   * kept as the person's (DOR-2322).
+   */
+  outcome: 'rebuilt' | 'sorted' | 'not-needed' | 'no-source' | 'fetch-failed' | 'mismatch';
   message: string;
 }
 
@@ -897,6 +911,12 @@ export interface UninstallResult {
    * (DOR-2245). A reinstall restores none of {@link AgentRemovedSummary.removed}.
    */
   agentRemoved?: AgentRemovedSummary;
+  /**
+   * Absolute paths of files kept because the install had no record and nothing
+   * proved whether they were the package's or yours (DOR-2322). Also named in
+   * {@link UninstallResult.warnings}.
+   */
+  unproven?: string[];
   /** Non-fatal notes, such as a cleanup the recovery sweep will finish later. */
   warnings?: string[];
 }
@@ -1195,7 +1215,26 @@ export interface HeldBackPackage extends HeldBackState {
 }
 
 /** Why an install's files cannot be checked against what was installed. */
-export type InstallIntegrityUnknownReason = 'no-record' | 'unreadable-record' | 'linked';
+export type InstallIntegrityUnknownReason =
+  'no-record' | 'inferred' | 'unreadable-record' | 'linked';
+
+/**
+ * Files an update kept because the install it replaced had no record and
+ * nothing proved whose they were (DOR-2322): not the person's additions, and
+ * not known to be the package's. "Check files" sorts them once the earlier
+ * version can be fetched (see `check`).
+ */
+export interface InstallUnprovenFiles {
+  /** Where each kept file sits now, relative to the install folder, sorted (at most 50). */
+  files: string[];
+  /**
+   * The kept files that sit where a package keeps what it runs (a skill, a
+   * command, a hook, a program), so they still run. Sorted, at most 50.
+   */
+  running: string[];
+  /** Whether "Check files" can sort them, and what the last attempt said. */
+  check: InstallCheckInfo;
+}
 
 /**
  * Whether an install's files still match what was installed (DOR-2197), read
@@ -1210,25 +1249,29 @@ export type InstallIntegrityUnknownReason = 'no-record' | 'unreadable-record' | 
  *   `added` files sit where a package keeps what it runs (a new skill, a
  *   hook), so they change what runs.
  * - `unknown`: the record cannot speak for the install. `no-record` is an
- *   install made before DorkOS recorded a package's files ("Check files" can
- *   record them; see `check`);
- *   `unreadable-record` is a damaged record; `linked` is a developer's working
- *   copy.
+ *   install made before DorkOS recorded a package's files, and `inferred` one
+ *   whose record was only guessed by matching bytes ("Check files" can record
+ *   either; see `check`); `unreadable-record` is a damaged record; `linked` is
+ *   a developer's working copy.
+ *
+ * `clean` and `modified` carry `unproven` when an update kept files it could
+ * not prove were the person's or the package's.
  */
 export type InstallIntegrity =
-  | { status: 'clean'; customized: string[]; truncated?: true }
+  | { status: 'clean'; customized: string[]; unproven?: InstallUnprovenFiles; truncated?: true }
   | {
       status: 'modified';
       changed: string[];
       missing: string[];
       added: string[];
       customized: string[];
+      unproven?: InstallUnprovenFiles;
       truncated?: true;
     }
   | {
       status: 'unknown';
       reason: InstallIntegrityUnknownReason;
-      /** Present for `no-record` only: whether "Check files" can record its files. */
+      /** Present for `no-record` and `inferred`: whether "Check files" can record its files. */
       check?: InstallCheckInfo;
     };
 

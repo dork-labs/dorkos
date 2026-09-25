@@ -111,6 +111,8 @@ import { listEnabledPluginNames } from './installed-scanner.js';
 import { readInstallMetadata, writeInstallMetadata } from './installed-metadata.js';
 import { packageContentHash, RUNTIME_STATE_PATHS } from './lib/content-hash.js';
 import { readRunnableDeclarations } from './permission-preview.js';
+import { readInstalledFiles } from './lib/installed-files.js';
+import { runningUnproven } from './lib/integrity/unproven.js';
 
 /** The package types the SDK loads into every session from the global scope. */
 export const GLOBALLY_ACTIVATED_TYPES: ReadonlySet<PackageType> = new Set<PackageType>([
@@ -332,6 +334,15 @@ export async function readActivationState(packageDir: string): Promise<Activatio
   };
 }
 
+/**
+ * The files an update kept unproven that still run in `packageDir`, or none.
+ * Reads nothing past the record unless it lists kept files.
+ */
+async function keptRunningIn(packageDir: string): Promise<string[]> {
+  const record = await readInstalledFiles(packageDir).catch(() => null);
+  return record?.unproven ? runningUnproven(packageDir, record) : [];
+}
+
 /** Why a global package is left out of every session. */
 export type GlobalWithheldReason =
   'refused' | 'unasked' | 'unrecorded' | 'unreadable' | 'unreadable-config';
@@ -362,6 +373,12 @@ export interface WithheldGlobalPlugin {
   unreadable?: string[];
   /** Why the settings file could not be read, when {@link reason} is `unreadable-config`. */
   configProblem?: string;
+  /**
+   * Files an update kept because it could not tell whose they were, that sit
+   * where a package keeps what it runs (DOR-2322). Present only when there
+   * are some: the reason the package waits is then likely them.
+   */
+  keptRunning?: string[];
 }
 
 /** Every global package candidate, split into what loads and what is left out. */
@@ -443,6 +460,7 @@ export async function partitionGlobalPlugins(
     } else if (approved.includes(entry)) {
       partition.activate.push(name);
     } else {
+      const keptRunning = await keptRunningIn(packageDir);
       partition.withheld.push({
         name,
         packageDir,
@@ -450,6 +468,7 @@ export async function partitionGlobalPlugins(
         effects,
         subject,
         ...(approved.some(isEntryFor(name)) && { changedSinceApproval: true }),
+        ...(keptRunning.length > 0 && { keptRunning }),
       });
     }
   }
@@ -617,6 +636,12 @@ export const globalConsentRecorder: GlobalConsentRecorder = {
     // before writing anything.
     if (reading.subject?.kind !== 'installed') return;
     if (reading.subject.contentHash !== approved.contentHash) return;
+    // The hash is the package as it arrived, before the update carried any
+    // file over, so it never covers a file an update kept because it could not
+    // tell whose it was (DOR-2322). One that runs is in `reading.effects` but
+    // was never in what the person was shown: it must not ride their approval.
+    // The package waits for a person, and its held-back note names the files.
+    if ((await keptRunningIn(install.installPath)).length > 0) return;
     recordGlobalActivationApproval(name, reading.effects, reading.subject.contentHash);
   },
   removed(name) {

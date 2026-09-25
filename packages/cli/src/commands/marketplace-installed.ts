@@ -77,11 +77,17 @@ export function parseMarketplaceInstalledArgs(rawArgs: string[]): MarketplaceIns
 function filesOf(pkg: InstalledPackage): string | undefined {
   const integrity = pkg.integrity;
   if (!integrity) return undefined;
+  const kept = integrity.status !== 'unknown' && integrity.unproven;
+  const keptNote = !kept
+    ? ''
+    : kept.running.length > 0
+      ? `, ${kept.files.length} kept (${kept.running.length} still ${kept.running.length === 1 ? 'runs' : 'run'})`
+      : `, ${kept.files.length} kept`;
   switch (integrity.status) {
     case 'clean':
-      return 'as installed';
+      return `as installed${keptNote}`;
     case 'modified':
-      return `changed (${integrity.changed.length + integrity.missing.length + integrity.added.length}${integrity.truncated ? '+' : ''})`;
+      return `changed (${integrity.changed.length + integrity.missing.length + integrity.added.length}${integrity.truncated ? '+' : ''})${keptNote}`;
     case 'unknown':
       return integrity.reason === 'linked' ? '-' : 'unknown';
   }
@@ -171,7 +177,9 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
 
   console.log(renderInstalledTable(packages));
   const older = packages.filter(
-    (p) => p.integrity?.status === 'unknown' && p.integrity.reason === 'no-record'
+    (p) =>
+      p.integrity?.status === 'unknown' &&
+      (p.integrity.reason === 'no-record' || p.integrity.reason === 'inferred')
   );
   const checkable = older.filter(
     (p) => p.integrity?.status === 'unknown' && p.integrity.check?.source !== 'local'
@@ -190,6 +198,30 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
         `  ${fromFolder.map((p) => p.name).join(', ')}: installed from a folder on this computer; reinstall to keep your edits on update.`
       );
     }
+  }
+  // Files an update kept because nothing proved whose they were (DOR-2322).
+  const sortable = packages.filter(
+    (p) =>
+      p.integrity !== undefined &&
+      p.integrity.status !== 'unknown' &&
+      p.integrity.unproven !== undefined &&
+      p.integrity.unproven.check.source !== 'local'
+  );
+  const withKept = packages.filter(
+    (p) => p.integrity !== undefined && p.integrity.status !== 'unknown' && p.integrity.unproven
+  );
+  if (withKept.length > 0) {
+    const anyRuns = withKept.some(
+      (p) => p.integrity?.status !== 'unknown' && (p.integrity?.unproven?.running.length ?? 0) > 0
+    );
+    console.log('');
+    console.log(
+      "kept: files an update kept because DorkOS couldn't tell whether they were yours." +
+        (anyRuns ? ' Some still run.' : '') +
+        (sortable.length > 0
+          ? ` Run 'dorkos marketplace check-files ${sortable[0].name}' to sort them.`
+          : " Delete any you don't need.")
+    );
   }
   if (packages.some((p) => p.linked)) {
     console.log('');

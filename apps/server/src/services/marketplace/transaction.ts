@@ -148,6 +148,7 @@ import {
   type PackageFileNotice,
 } from '@dorkos/shared/marketplace-schemas';
 import { carryPersonFiles, lateWritePass, type CarryResult } from './lib/carry-over.js';
+import { describeUnproven, runningUnproven } from './lib/integrity/unproven.js';
 import {
   computeInstalledFiles,
   readInstalledFiles,
@@ -155,8 +156,8 @@ import {
   writeInstalledFiles,
   type InstalledFiles,
   type RecordIdentity,
+  type UnprovenFiles,
 } from './lib/installed-files.js';
-import { isReservedPackagePath } from '@dorkos/marketplace';
 import { hasPackageIdentity } from './lib/locate-install.js';
 import { currentRecordOwner, formatRecordOwner } from './lib/record-owner.js';
 import {
@@ -546,19 +547,25 @@ async function prepareOwnership(
     } else {
       carry = await carryPersonFiles({ liveRoot: target, stagingDir, rOld, oldHasIdentity, rNew });
     }
-    if (rOld?.inferred && carry) {
-      const kept = carry.plan.actions
-        .filter(
-          (a) =>
-            (a.kind === 'carry' || a.kind === 'carry-dir') &&
-            !(a.path in rNew.files) &&
-            !isReservedPackagePath(a.path)
-        )
-        .map((a) => a.path);
-      if (kept.length > 0) {
-        const shown = kept.slice(0, 10).join(', ');
+    if (rOld?.unproven && carry) {
+      // Nothing proved these files the package's or the person's (DOR-2322):
+      // each was kept, and each is named in words that do not guess. A list an
+      // earlier update left is carried forward the same way, so it lasts until
+      // Check files sorts it.
+      const unproven = placeUnproven(rOld.unproven, carry.plan);
+      if (Object.keys(unproven.files).length > 0) {
+        rNew.unproven = unproven;
         warnings.push(
-          `Kept ${kept.length} item${kept.length === 1 ? '' : 's'} this package's new version doesn't include, because DorkOS couldn't tell whether you added ${kept.length === 1 ? 'it' : 'them'}: ${shown}${kept.length > 10 ? ', …' : ''}. Delete any you don't need.`
+          describeUnproven(
+            ownership.identity.name,
+            unproven.why,
+            Object.keys(unproven.files),
+            'update',
+            {
+              carried: !rOld.inferred,
+              running: await runningUnproven(stagingDir, rNew),
+            }
+          )
         );
       }
     }
@@ -576,6 +583,43 @@ async function prepareOwnership(
     ownedPaths: [...(rOld?.ownedPaths ?? []), ...rNew.ownedPaths],
     warnings,
   };
+}
+
+/**
+ * Where each unproven file of the old install ended up in the new one, and its
+ * notice. The carry plan decided what happened to every live file; for an
+ * unproven one its edit wording would be a guess, so its notices are replaced
+ * by one `kept-unproven` notice (with `savedAs` when the new version's copy
+ * took its place). Each placed file keeps the path it had in the version the
+ * list was made against, so Check files compares it with the right file. A
+ * file the plan left alone is dropped: either the new version ships it byte
+ * for byte (it is the package's again), or it is gone.
+ *
+ * @internal
+ */
+function placeUnproven(unproven: UnprovenFiles, plan: CarryResult['plan']): UnprovenFiles {
+  const placed: Record<string, string> = {};
+  const notices: PackageFileNotice[] = [];
+  for (const live of Object.keys(unproven.files).sort()) {
+    let where: string | undefined;
+    for (const a of plan.actions) {
+      if ((a.kind === 'carry' || a.kind === 'save-new-as') && a.path === live) where = live;
+      else if (a.kind === 'carry-as' && a.path === live) where = a.savedAs;
+      else if (a.kind === 'carry-dir' && live.startsWith(`${a.path}/`)) where = live;
+      else if (a.kind === 'carry-dir-as' && live.startsWith(`${a.path}/`))
+        where = `${a.savedAs}${live.slice(a.path.length)}`;
+      if (where !== undefined) break;
+    }
+    if (where === undefined) continue;
+    placed[where] = unproven.files[live]!;
+    notices.push({
+      path: live,
+      outcome: 'kept-unproven',
+      ...(where !== live && { savedAs: where }),
+    });
+  }
+  plan.notices = [...plan.notices.filter((n) => !(n.path in unproven.files)), ...notices];
+  return { ...unproven, files: placed };
 }
 
 /** A recorded source, as a person reads it. */

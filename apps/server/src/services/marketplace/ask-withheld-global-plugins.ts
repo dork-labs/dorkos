@@ -446,18 +446,25 @@ function heldBackStateOf(plugin: WithheldGlobalPlugin, origin: Origin): HeldBack
       const why = plugin.changedSinceApproval
         ? 'it was reinstalled or changed what it runs since you approved it'
         : 'you have not approved it as it is now';
+      // Files an update kept because it could not tell whose they were, that
+      // still run, were never in what anyone approved (DOR-2322): say so.
+      const kept = plugin.keptRunning ?? [];
+      const keptNote =
+        kept.length === 0
+          ? ''
+          : ` An update kept ${kept.length === 1 ? '1 file' : `${kept.length} files`} DorkOS couldn't sort that still ${kept.length === 1 ? 'runs' : 'run'} (${kept.slice(0, 10).join(', ')}${kept.length > 10 ? ', …' : ''}). Choose Check files on ${plugin.name} to set aside any left over from the earlier version.`;
       return fits
         ? {
             reason: 'unasked',
             reviewable: true,
             ...linked,
-            note: `Held back: ${why}.${linkedNote} Review it to decide.`,
+            note: `Held back: ${why}.${linkedNote}${keptNote} Review it to decide.`,
           }
         : {
             reason: 'unasked',
             reviewable: false,
             ...linked,
-            note: `Held back: ${why}, and ${reviewInTerminal}`,
+            note: `Held back: ${why}, and ${reviewInTerminal}${keptNote}`,
           };
     }
   }

@@ -42,6 +42,19 @@ describe('rebuildLegacyRecords', () => {
     await put(plugins, 'legacy/.dork/manifest.json', '{}');
     await put(plugins, 'recorded/.dork/manifest.json', '{}');
     await put(plugins, 'recorded/.dork/installed-files.json', '{}');
+    // A record rebuilt by guessing is not a record yet (DOR-2322).
+    await put(plugins, 'guessed/.dork/manifest.json', '{}');
+    await put(
+      plugins,
+      'guessed/.dork/installed-files.json',
+      JSON.stringify({
+        version: 1,
+        package: { name: 'guessed', type: 'plugin' },
+        ownedPaths: [],
+        files: {},
+        inferred: true,
+      })
+    );
     await put(plugins, 'leftovers/config/mine.json', 'mine');
     await put(plugins, 'legacy.dorkos-bak-1-2-3/.dork/manifest.json', '{}');
     const elsewhere = await tmp();
@@ -56,9 +69,9 @@ describe('rebuildLegacyRecords', () => {
       logger: noopLogger,
     });
 
-    expect(spy.mock.calls.map(([root]) => path.basename(root))).toEqual(['legacy']);
+    expect(spy.mock.calls.map(([root]) => path.basename(root))).toEqual(['guessed', 'legacy']);
     expect(summary).toEqual({
-      rebuilt: [path.join(plugins, 'legacy')],
+      rebuilt: [path.join(plugins, 'guessed'), path.join(plugins, 'legacy')],
       mismatch: [],
       noSource: [],
       fetchFailed: [],
