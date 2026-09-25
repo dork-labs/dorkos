@@ -70,8 +70,29 @@ checkout another agent is working in (DOR-1056).
   Only after the gate passes does the staged clone move into place, the
   `after_create` commands that were shown run, and the `before_remove` commands
   that were shown land on the manifest as `removeHooks`. Those are the only
-  hooks `remove` runs. A workspace made before that record existed runs none.
-  `before_run` and `after_run` are parsed but never run.
+  hooks `remove` runs. `before_run` and `after_run` are parsed but never run.
+  - **A workspace made before `removeHooks` existed.** A person removing one
+    whose source declares `before_remove` gets a 409
+    `remove_hooks_need_review` listing the commands. They can run exactly
+    those with `?approvedRemoveHooks=<reviewHash>`, or skip them with
+    `?skipRemoveHooks=true`. Any other caller, and `sweep`, skips them. The
+    result lists whatever was skipped in `skippedHooks`.
+  - **A person's remembered worktree hooks.** A person's approval of their own
+    worktree's hooks is kept in the operator-only hook decision list
+    (`harness.approvedHooks`) as `<source real path>@workspace-<digest>`. The
+    digest covers the provider and both hook lists. `dorkos harness hooks
+--list` shows it, and `--revoke <folder>` forgets it. An unchanged hook set
+    passes without asking; a changed command asks again. It never covers a
+    clone and never applies to an agent.
+  - **Card tiers.** A card that brings nothing is `workspaces.create` (`act`).
+    One with settings, links, skill effects or hooks is
+    `workspaces.create_with_effects` (`destructive`).
+  - **Remembered cards.** They are keyed by the source's real path and the
+    destination. After a restart, `ConfirmationProvider.reopen`
+    (`ApprovalService.reissue`) rotates a fresh token onto the card still open
+    for exactly the same request, instead of raising a second one.
+  - **Boot.** `sweepStaging` clears `<root>/.staging/` before anything can
+    stage.
 
 - **Ports.** The server is the authority for managed workspaces (allocate block →
   write `.env`). `worktree-setup.sh`'s hash derivation is the offline fallback for
