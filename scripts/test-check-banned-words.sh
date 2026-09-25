@@ -42,7 +42,14 @@ run_case() {
   out=$(ROOT="$tmp" bash "$CHECK" 2>&1)
   got=$?
 
-  if [ "$got" -eq "$want" ]; then
+  # A red case must be red BECAUSE of the seeded file: the guard has to name it.
+  # Exit 1 alone proves nothing, since bash 3.2 (macOS) also exits 1 on the
+  # empty file list a tree the guard does not scan leaves behind (DOR-2068).
+  if [ "$want" -eq 1 ] && [ "$got" -eq 1 ] && ! printf '%s' "$out" | grep -qF "  $path:"; then
+    got="1, without naming $path"
+  fi
+
+  if [ "$got" = "$want" ]; then
     pass=$((pass + 1))
     printf 'ok   %s (exit %s)\n' "$name" "$got"
   else
@@ -91,6 +98,16 @@ run_case 'the PWA manifest says "cockpit"' 1 'apps/client/public/manifest.webman
 # this file is scanned.
 run_case 'generated openapi.json says "cockpit"' 1 'docs/api/openapi.json' \
   '{ "description": "so a cockpit never needs this route" }'
+
+# The operating skills are TypeScript files, but everything they export is
+# prose seeded into every agent's `.agents/skills/`, and the agent reads it back
+# to the user in its own words. Neither gate read them until DOR-2068, and a
+# "cockpit" sat in reading-activity.ts on main because of it.
+run_case 'an operating skill says "cockpit"' 1 'packages/operating-skills/src/skills/reading-activity.ts' \
+  '  its most recent session, newest first: the same map the cockpit uses for'
+
+run_case 'the shared tool-name note says "mission control"' 1 'packages/operating-skills/src/tool-name-note.ts' \
+  'export const TOOL_NAME_NOTE = `> Call it from mission control.`;'
 
 echo ""
 echo "== the guard must stay GREEN on everything we deliberately kept =="

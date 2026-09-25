@@ -43,6 +43,16 @@
 # WHAT IT SCANS. Only files whose entire content is prose or user-visible data,
 # listed in SCAN_TARGETS below. Adding a surface means adding a glob there.
 #
+# One of those surfaces is TypeScript: packages/operating-skills (DOR-2068).
+# Its skills are template-literal prose seeded into every agent's
+# `.agents/skills/`, and an agent repeats what they say to the person it works
+# for. check-vocab-gate.ts cannot judge them (it reads render positions in
+# apps/*/src, and a skill body is none), so they are read here as prose, line by
+# line. That is safe only because the package is prose all the way down: its
+# identifiers are skill names and it keeps no internal "cockpit" vocabulary.
+# Its __tests__ are not scanned. Should a legitimate use ever appear, mark the
+# line with `vocab-allow` rather than dropping the directory.
+#
 # WHAT IS DELIBERATELY EXEMPT (see ALLOW_PATTERNS):
 #   - docs/changelog.mdx and docs/changelog-archive.mdx are COMPILED from
 #     CHANGELOG.md, which AGENTS.md forbids editing by hand. They record what
@@ -88,10 +98,12 @@ SCAN_TARGETS=(
   'packages/cli/README.md'
   'apps/client/public/manifest.webmanifest'
   'docs/api/openapi.json'
+  'packages/operating-skills/src/tool-name-note.ts'
 )
 SCAN_GLOB_DIRS=(
   'docs:mdx'
   'blog:mdx'
+  'packages/operating-skills/src/skills:ts'
 )
 
 # A line matching any of these is exempt. Keep each one justified in the header.
