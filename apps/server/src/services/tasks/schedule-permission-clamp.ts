@@ -349,6 +349,91 @@ export const CHANGED_REASON =
   'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
   'Read what it does now, then approve it or delete it.';
 
+/**
+ * Why an approved schedule that follows its agent is waiting again: the agent's
+ * runtime, model or effort was changed outside DorkOS (DOR-2337).
+ *
+ * Fixed, like every park sentence a sync keeps, so the next sync recognises it
+ * rather than rewriting it (`file-sync-gates.ts`). What changed is on the card
+ * beside it, old → new.
+ */
+export const AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON =
+  'This schedule runs on its agent’s own runtime, model or effort, and those were changed ' +
+  'outside DorkOS, so it is waiting for you again. Check what changed, then approve it or ' +
+  'change the agent back.';
+
+/** One of an agent's execution defaults a schedule can follow. */
+export type FollowedAgentField = 'runtime' | 'model' | 'effort';
+
+/**
+ * A change to one of an agent's execution defaults, as a followed schedule
+ * records it: `from` is the value when the change was first seen, `to` the
+ * value now.
+ */
+export interface FollowedAgentChange {
+  field: FollowedAgentField;
+  from: string | null;
+  to: string | null;
+}
+
+/** The followed fields, in the order a card lists them. */
+const FOLLOWED_AGENT_FIELDS: readonly FollowedAgentField[] = ['runtime', 'model', 'effort'];
+
+/**
+ * Read `pulse_schedules.followed_agent_changes` back, strictly: anything this
+ * build did not write reads as no changes at all.
+ *
+ * @param stored - The column's value.
+ */
+export function parseFollowedAgentChanges(stored: string | null): FollowedAgentChange[] {
+  if (stored === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const nullableText = (v: unknown): v is string | null => v === null || typeof v === 'string';
+  return parsed.filter(
+    (entry): entry is FollowedAgentChange =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      FOLLOWED_AGENT_FIELDS.includes((entry as FollowedAgentChange).field) &&
+      nullableText((entry as FollowedAgentChange).from) &&
+      nullableText((entry as FollowedAgentChange).to)
+  );
+}
+
+/**
+ * Fold a newly seen change into what a schedule already records: the first
+ * `from` is kept and the latest `to` wins. A field that is back where it
+ * started stays listed (`from` equal to `to`), because "changed and changed
+ * back" is still something a person approving should know. Listed in card
+ * order.
+ *
+ * @param recorded - What the schedule records already.
+ * @param seen - The change just seen.
+ */
+export function mergeFollowedAgentChanges(
+  recorded: readonly FollowedAgentChange[],
+  seen: readonly FollowedAgentChange[]
+): FollowedAgentChange[] {
+  const byField = new Map(recorded.map((c) => [c.field, c]));
+  for (const change of seen) {
+    const earlier = byField.get(change.field);
+    byField.set(change.field, {
+      field: change.field,
+      from: earlier ? earlier.from : change.from,
+      to: change.to,
+    });
+  }
+  return FOLLOWED_AGENT_FIELDS.flatMap((field) => {
+    const change = byField.get(field);
+    return change ? [change] : [];
+  });
+}
+
 /** What {@link resolveFileArmStatus} decided about a file-discovered schedule. */
 export interface FileArmVerdict {
   /** The status to write: `active` only when a person's approval still covers this content. */

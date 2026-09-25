@@ -703,6 +703,38 @@ describe('TaskReconciler', () => {
     });
   });
 
+  describe('the check after each five-minute pass (DOR-2337)', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('runs after the pass, even when the pass failed', async () => {
+      // Purpose: the check for an agent changed outside DorkOS rides this
+      // timer; a pass that throws must not also silence it.
+      vi.useFakeTimers();
+      const order: string[] = [];
+      const recon = new TaskReconciler(
+        store,
+        new TaskRegistrar({ store, scheduler }),
+        new ScheduleIdentityRegistry(),
+        undefined,
+        async () => {
+          order.push('check');
+        }
+      );
+      vi.spyOn(recon, 'reconcile').mockImplementation(async () => {
+        order.push('pass');
+        throw new Error('disk went away');
+      });
+      recon.start();
+
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+      recon.stop();
+
+      expect(order).toEqual(['pass', 'check']);
+    });
+  });
+
   describe('a standing fault logs once an hour, not twelve times', () => {
     const HOUR_MS = 60 * 60 * 1000;
     /** Twelve passes is one hour at the real 5-minute cadence. */

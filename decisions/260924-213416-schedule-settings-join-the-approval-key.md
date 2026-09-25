@@ -43,5 +43,5 @@ The approval a park withdraws is kept in `previous_approval_key` (migration `011
 ### Negative
 
 - Hand-editing any of these fields in a SKILL.md parks the schedule at the next sync, like a prompt edit.
-- A schedule that follows its agent's runtime, model or effort is still moved by a change to the agent's defaults. DOR-2328 gates that write when an agent makes it through any DorkOS door (`operator.update_agent_execution`, whose card shows old → new); a hand edit of `.dork/agent.json` and the server-wide runtime defaults are not gated by it.
+- A schedule that follows its agent's runtime, model or effort is still moved by a change to the agent's defaults. DOR-2328 gates that write when an agent makes it through any DorkOS door (`operator.update_agent_execution`, whose card shows old → new); the server-wide runtime defaults are not gated by it. A hand edit of `.dork/agent.json` is not blocked; since 260925-050657 it is recorded and re-asks for the schedules that follow the agent.
 - A downgrade to a build before this reads a nine-part key as unmatched and parks approved schedules once.

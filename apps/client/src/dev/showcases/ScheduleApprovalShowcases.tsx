@@ -255,9 +255,32 @@ export function ScheduleApprovalShowcases() {
               model: 'gpt-5',
               maxRuntime: 7_200_000,
               approvalChanges: [
-                { field: 'runtime', from: null, to: 'codex' },
-                { field: 'model', from: 'claude-sonnet-4', to: 'gpt-5' },
-                { field: 'maxRuntime', from: 600_000, to: 7_200_000 },
+                { field: 'runtime', from: null, to: 'codex', via: 'schedule' },
+                { field: 'model', from: 'claude-sonnet-4', to: 'gpt-5', via: 'schedule' },
+                { field: 'maxRuntime', from: 600_000, to: 7_200_000, via: 'schedule' },
+              ],
+            })}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Waiting again because its agent’s model was changed outside DorkOS (DOR-2337)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full max-w-lg">
+          <ScheduleApprovalCard
+            task={proposal({
+              id: 'task-agent-changed-outside',
+              proposedBySessionId: null,
+              proposedByAgentPath: null,
+              proposedByName: null,
+              reasonSource: 'dorkos',
+              reason:
+                'This schedule runs on its agent’s own runtime, model or effort, and those were changed outside DorkOS, so it is waiting for you again. Check what changed, then approve it or change the agent back.',
+              approvalChanges: [
+                { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'agent' },
+                { field: 'effort', from: null, to: 'max', via: 'agent' },
               ],
             })}
           />

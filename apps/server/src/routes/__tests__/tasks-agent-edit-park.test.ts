@@ -216,8 +216,8 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
     const res = await agentEdit(task.id, { runtime: 'codex', model: 'gpt-5' });
 
     expect(res.body.approvalChanges).toEqual([
-      { field: 'runtime', from: null, to: 'codex' },
-      { field: 'model', from: null, to: 'gpt-5' },
+      { field: 'runtime', from: null, to: 'codex', via: 'schedule' },
+      { field: 'model', from: null, to: 'gpt-5', via: 'schedule' },
     ]);
     expect((await resync()).approvalChanges).toEqual(res.body.approvalChanges);
   });

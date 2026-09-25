@@ -51,6 +51,13 @@ function formatDuration(ms: number): string {
   return `${ms}ms`;
 }
 
+/** The card's name for a part of the agent the schedule follows (DOR-2337). */
+const AGENT_LABEL: Partial<Record<Change['field'], string>> = {
+  runtime: 'Agent’s runtime',
+  model: 'Agent’s model',
+  effort: 'Agent’s effort',
+};
+
 /** One value of one part, in words. */
 function formatValue(field: Change['field'], value: Change['from']): string {
   if (field === 'sticky') return value === true ? 'yes' : 'no';
@@ -74,13 +81,28 @@ function formatValue(field: Change['field'], value: Change['from']): string {
  */
 export function describeApprovalChanges(changes: Task['approvalChanges']): ApprovalChangeLine[] {
   return changes.map((change) =>
-    change.field === 'prompt'
-      ? { label: LABEL.prompt, from: null, to: 'changed (see below)', unbroken: false }
-      : {
-          label: LABEL[change.field],
-          from: formatValue(change.field, change.from),
-          to: formatValue(change.field, change.to),
-          unbroken: change.field !== 'cron',
+    change.via === 'agent'
+      ? {
+          // The agent's own value, changed outside DorkOS: unset on the agent
+          // is the runtime's default, not "the agent's own".
+          label: AGENT_LABEL[change.field] ?? LABEL[change.field],
+          from: change.from === null ? 'the default' : String(change.from),
+          // Back where it was approved, after a change in between (DOR-2337).
+          to:
+            change.from === change.to
+              ? 'changed, then changed back'
+              : change.to === null
+                ? 'the default'
+                : String(change.to),
+          unbroken: change.from !== change.to,
         }
+      : change.field === 'prompt'
+        ? { label: LABEL.prompt, from: null, to: 'changed (see below)', unbroken: false }
+        : {
+            label: LABEL[change.field],
+            from: formatValue(change.field, change.from),
+            to: formatValue(change.field, change.to),
+            unbroken: change.field !== 'cron',
+          }
   );
 }

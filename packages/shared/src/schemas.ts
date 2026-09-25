@@ -4585,12 +4585,18 @@ export const TaskSchema = z
           ]),
           from: z.union([z.string(), z.number(), z.boolean(), z.null()]),
           to: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+          /**
+           * Whose value changed: the schedule's own (`schedule`), or its agent's
+           * runtime, model or effort, which a schedule that leaves that part
+           * unset follows, changed outside DorkOS (`agent`, DOR-2337).
+           */
+          via: z.enum(['schedule', 'agent']).default('schedule'),
         })
       )
       .default([])
       .openapi({
         description:
-          'For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to).',
+          "For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to). via 'agent' marks a change to the agent's own runtime, model or effort that this schedule follows.",
       }),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),

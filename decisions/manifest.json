@@ -6483,6 +6483,22 @@
         "packages/marketplace/src/package-validator.ts",
         "apps/server/src/services/marketplace/lib/stage-package.ts"
       ]
+    },
+    {
+      "id": "260925-050657",
+      "slug": "outside-agent-execution-changes-re-ask-followers",
+      "title": "An agent's runtime, model or effort changed outside DorkOS re-asks for the schedules that follow it",
+      "status": "accepted",
+      "created": "2026-09-25",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/agent-observation/outside-change-observer.ts",
+        "apps/server/src/services/tasks/approvals/agent-execution-observer.ts",
+        "apps/server/src/services/tasks/approvals/task-approvals.ts",
+        "apps/client/src/layers/features/schedule-approval/lib/describe-approval-changes.ts"
+      ]
     }
   ]
 }

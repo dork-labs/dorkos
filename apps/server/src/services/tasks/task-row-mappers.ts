@@ -11,7 +11,11 @@ import type { pulseSchedules, pulseRuns } from '@dorkos/db';
 import type { Task, TaskRun, TaskRunStatus, TaskRunTrigger } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
 import { effectiveTiming, effectiveWork } from './timing/effective-timing.js';
-import { parseContentKey, type IncomingTaskContent } from './schedule-permission-clamp.js';
+import {
+  parseContentKey,
+  parseFollowedAgentChanges,
+  type IncomingTaskContent,
+} from './schedule-permission-clamp.js';
 
 /** The parts of the approved work, in the order the card lists them. */
 const WORK_FIELDS = [
@@ -33,17 +37,26 @@ const WORK_FIELDS = [
  * approval this build can read.
  */
 function approvalChangesOf(row: typeof pulseSchedules.$inferSelect): Task['approvalChanges'] {
-  if (row.status !== 'pending_approval' || row.previousApprovalKey === null) return [];
-  const approved = parseContentKey(row.previousApprovalKey);
-  if (!approved) return [];
+  if (row.status !== 'pending_approval') return [];
+  // The agent's own runtime, model or effort, changed outside DorkOS, for a
+  // schedule that follows it (DOR-2337). The schedule's key cannot show these:
+  // it records "follow the agent" on both sides.
+  const agentChanges = parseFollowedAgentChanges(row.followedAgentChanges).map((change) => ({
+    ...change,
+    via: 'agent' as const,
+  }));
+  const approved =
+    row.previousApprovalKey === null ? null : parseContentKey(row.previousApprovalKey);
+  if (!approved) return agentChanges;
   const now = effectiveWork(row);
-  return WORK_FIELDS.filter((field) => approved[field] !== now[field]).map((field) =>
+  const ownChanges = WORK_FIELDS.filter((field) => approved[field] !== now[field]).map((field) =>
     // The instructions are not quoted: the card says they changed and shows
     // the new ones in full, and the old ones need not travel with every task.
     field === 'prompt'
-      ? { field, from: null, to: null }
-      : { field, from: approved[field], to: now[field] }
+      ? { field, from: null, to: null, via: 'schedule' as const }
+      : { field, from: approved[field], to: now[field], via: 'schedule' as const }
   );
+  return [...ownChanges, ...agentChanges];
 }
 
 /**
