@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { Context } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { CommunityAuth } from './auth.js';
-import { ApiError } from './http.js';
+import { ApiError, RateLimited } from './http.js';
 import { createPasswordConfirmation } from './password-confirmation.js';
 
 // The Postgres fixture proves the limit end to end. These cases control timing, which real HTTP
@@ -33,7 +33,7 @@ function harness(ceiling = 2) {
     ceiling,
     // The same contract as the app's limitAttempts: check and spend synchronously.
     spend: (key, limit) => {
-      if ((spent.get(key) ?? 0) >= limit) throw new ApiError(429, 'RATE_LIMITED', 'limited');
+      if ((spent.get(key) ?? 0) >= limit) throw new RateLimited('limited', 42);
       spent.set(key, (spent.get(key) ?? 0) + 1);
     },
     refund: (key) => spent.set(key, (spent.get(key) ?? 1) - 1),
@@ -89,6 +89,11 @@ describe('createPasswordConfirmation', () => {
     expect(await outcome(confirm('account-1', 'x'))).toBe('403 REAUTH_FAILED');
     expect(await outcome(confirm('account-1', 'y'))).toBe('403 REAUTH_FAILED');
     expect(await outcome(confirm('account-1', RIGHT))).toBe('429 RATE_LIMITED');
+    // The refusal keeps the limiter's wait, so the response can say when to try again.
+    await expect(confirm('account-1', RIGHT)).rejects.toMatchObject({
+      retryAfterSeconds: 42,
+      message: 'Too many wrong passwords. Wait a minute, then try again.',
+    });
     expect(checked).toEqual(['x', 'y']);
     // Another account (from the same address, which the budget no longer looks at) is untouched.
     expect(await outcome(confirm('account-2', RIGHT))).toBe('accepted');
