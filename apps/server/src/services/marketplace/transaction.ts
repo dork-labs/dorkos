@@ -148,7 +148,7 @@ import {
   type PackageFileNotice,
 } from '@dorkos/shared/marketplace-schemas';
 import { carryPersonFiles, lateWritePass, type CarryResult } from './lib/carry-over.js';
-import { describeUnproven } from './lib/integrity/unproven.js';
+import { describeUnproven, runningUnproven } from './lib/integrity/unproven.js';
 import {
   computeInstalledFiles,
   readInstalledFiles,
@@ -547,9 +547,11 @@ async function prepareOwnership(
     } else {
       carry = await carryPersonFiles({ liveRoot: target, stagingDir, rOld, oldHasIdentity, rNew });
     }
-    if (rOld?.inferred && rOld.unproven && carry) {
+    if (rOld?.unproven && carry) {
       // Nothing proved these files the package's or the person's (DOR-2322):
-      // each was kept, and each is named in words that do not guess.
+      // each was kept, and each is named in words that do not guess. A list an
+      // earlier update left is carried forward the same way, so it lasts until
+      // Check files sorts it.
       const unproven = placeUnproven(rOld.unproven, carry.plan);
       if (Object.keys(unproven.files).length > 0) {
         rNew.unproven = unproven;
@@ -558,7 +560,11 @@ async function prepareOwnership(
             ownership.identity.name,
             unproven.why,
             Object.keys(unproven.files),
-            'update'
+            'update',
+            {
+              carried: !rOld.inferred,
+              running: await runningUnproven(stagingDir, rNew),
+            }
           )
         );
       }
@@ -580,33 +586,36 @@ async function prepareOwnership(
 }
 
 /**
- * Where each unproven file of a legacy install ended up in the new one, and
- * its notice. The carry plan decided what happened to every live file; for an
+ * Where each unproven file of the old install ended up in the new one, and its
+ * notice. The carry plan decided what happened to every live file; for an
  * unproven one its edit wording would be a guess, so its notices are replaced
  * by one `kept-unproven` notice (with `savedAs` when the new version's copy
- * took its place).
+ * took its place). Each placed file keeps the path it had in the version the
+ * list was made against, so Check files compares it with the right file. A
+ * file the plan left alone is dropped: either the new version ships it byte
+ * for byte (it is the package's again), or it is gone.
  *
  * @internal
  */
 function placeUnproven(unproven: UnprovenFiles, plan: CarryResult['plan']): UnprovenFiles {
   const placed: Record<string, string> = {};
   const notices: PackageFileNotice[] = [];
-  for (const origin of Object.keys(unproven.files).sort()) {
+  for (const live of Object.keys(unproven.files).sort()) {
     let where: string | undefined;
     for (const a of plan.actions) {
-      if ((a.kind === 'carry' || a.kind === 'save-new-as') && a.path === origin) where = origin;
-      else if (a.kind === 'carry-as' && a.path === origin) where = a.savedAs;
-      else if (a.kind === 'carry-dir' && origin.startsWith(`${a.path}/`)) where = origin;
-      else if (a.kind === 'carry-dir-as' && origin.startsWith(`${a.path}/`))
-        where = `${a.savedAs}${origin.slice(a.path.length)}`;
+      if ((a.kind === 'carry' || a.kind === 'save-new-as') && a.path === live) where = live;
+      else if (a.kind === 'carry-as' && a.path === live) where = a.savedAs;
+      else if (a.kind === 'carry-dir' && live.startsWith(`${a.path}/`)) where = live;
+      else if (a.kind === 'carry-dir-as' && live.startsWith(`${a.path}/`))
+        where = `${a.savedAs}${live.slice(a.path.length)}`;
       if (where !== undefined) break;
     }
     if (where === undefined) continue;
-    placed[where] = origin;
+    placed[where] = unproven.files[live]!;
     notices.push({
-      path: origin,
+      path: live,
       outcome: 'kept-unproven',
-      ...(where !== origin && { savedAs: where }),
+      ...(where !== live && { savedAs: where }),
     });
   }
   plan.notices = [...plan.notices.filter((n) => !(n.path in unproven.files)), ...notices];

@@ -412,7 +412,8 @@ export class UninstallFlow {
           req.name,
           record.unproven.why,
           unproven.map((p) => path.relative(root, p).split(path.sep).join('/')),
-          'uninstall'
+          'uninstall',
+          { carried: !record.inferred }
         )
       );
     }
@@ -929,19 +930,12 @@ async function readManifestIfPresent(
 }
 
 /**
- * What an uninstall kept in `root`: every remaining entry, collapsed to the
- * highest directory whose whole contents were kept. After an uninstall
- * finishes, everything left is the person's except the pruned record, so a
- * directory is listed whole unless the record sits inside it. Empty when the
- * root is gone.
- */
-/**
- * The files a rebuilt (inferred) record could not prove that are still in
- * `root` after the uninstall, as absolute paths, sorted. None for a proven
- * record.
+ * The files the record lists as unproven (a rebuild could not prove them, or
+ * an earlier update kept them) that are still in `root` after the uninstall,
+ * as absolute paths, sorted. None when the record lists none.
  */
 async function keptUnproven(root: string, record: InstalledFiles | null): Promise<string[]> {
-  if (!record?.inferred || !record.unproven) return [];
+  if (!record?.unproven) return [];
   const kept: string[] = [];
   for (const p of Object.keys(record.unproven.files).sort()) {
     const abs = path.join(root, ...p.split('/'));
@@ -950,6 +944,13 @@ async function keptUnproven(root: string, record: InstalledFiles | null): Promis
   return kept;
 }
 
+/**
+ * What an uninstall kept in `root`: every remaining entry, collapsed to the
+ * highest directory whose whole contents were kept. After an uninstall
+ * finishes, everything left is the person's except the pruned record, so a
+ * directory is listed whole unless the record sits inside it. Empty when the
+ * root is gone.
+ */
 async function keptEntries(root: string): Promise<string[]> {
   const recordPath = path.join(root, '.dork', 'installed-files.json');
   const kept: string[] = [];

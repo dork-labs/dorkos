@@ -428,6 +428,30 @@ describe('uninstalling an older install nothing proves (DOR-2322)', () => {
     expect(said).toMatch(/It kept them: a\.md, notes\/mine\.txt\. Delete any you don't need\./);
   });
 
+  // Purpose (review 1): after an update kept files it could not prove, the
+  // record is no longer a guess but still lists them. The uninstall keeps and
+  // names them. Fails if only an inferred record's list is read.
+  it('keeps and names the files an earlier update kept', async () => {
+    const dorkHome = await home();
+    const root = path.join(dorkHome, 'plugins', 'pkg');
+    await installed(root, { 'a.md': 'a' });
+    const { readInstalledFiles: read } = await import('../../lib/installed-files.js');
+    const record = await read(root);
+    await put(root, 'old.md', 'old');
+    await writeInstalledFiles(root, {
+      ...record!,
+      unproven: { why: 'fetch-failed', files: { 'old.md': 'old.md' } },
+    });
+
+    const result = await new UninstallFlow(deps(dorkHome)).uninstall({ name: 'pkg' });
+
+    expect(await readFile(path.join(root, 'old.md'), 'utf8')).toBe('old');
+    expect(result.unproven).toEqual([path.join(root, 'old.md')]);
+    expect((result.warnings ?? []).join(' ')).toMatch(
+      /An earlier update of pkg kept 1 file DorkOS couldn't tell was yours\. It's still here: old\.md\. Delete any you don't need\./
+    );
+  });
+
   // Purpose: a proven record says nothing new. Fails if every uninstall grows
   // the list.
   it('lists nothing when the record proves the files', async () => {

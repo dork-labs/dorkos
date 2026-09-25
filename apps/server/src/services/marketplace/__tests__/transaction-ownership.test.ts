@@ -447,6 +447,57 @@ describe('an offline update of an install made before records existed (DOR-2322)
     });
   });
 
+  // Purpose (review 1): the list outlives the next update. A second update,
+  // online this time and over a proven record, still keeps and names every
+  // file, maps each to where it now sits and to the path it had in the version
+  // it came from, and says an earlier update kept them. Only a file the new
+  // version ships byte for byte leaves the list (it is the package's again).
+  // Fails if the list is read from inferred records only.
+  it('carries the list through a later update, dropping only what the new version ships identically', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await legacyAt(target, { 'a.md': 'a v1', 'b.md': 'b v1' });
+    await put(target, 'keep.txt', 'mine');
+    await install(target, { 'a.md': 'a v2' }, { rebuildLegacy: offline });
+    // Now: a.md.dork-old ← a.md, b.md, keep.txt kept unproven.
+
+    const { notices, warnings } = await install(target, {
+      'a.md': 'a v3',
+      'b.md': 'b v1',
+      'keep.txt': 'shipped now',
+    });
+
+    const record = await readInstalledFiles(target);
+    expect(record?.unproven?.files).toEqual({
+      'a.md.dork-old': 'a.md',
+      'keep.txt.dork-old': 'keep.txt',
+    });
+    expect(record?.unproven?.why).toBe('fetch-failed');
+    expect(record?.unproven?.from?.commitSha).toBe(SHA);
+    expect(await read(target, 'keep.txt.dork-old')).toBe('mine');
+    expect(notices).toEqual(
+      expect.arrayContaining([
+        { path: 'a.md.dork-old', outcome: 'kept-unproven' },
+        { path: 'keep.txt', outcome: 'kept-unproven', savedAs: 'keep.txt.dork-old' },
+      ])
+    );
+    expect(notices.some((n) => n.path === 'b.md')).toBe(false);
+    expect(warnings.join(' ')).toMatch(/An earlier update of pkg kept 2 files/);
+  });
+
+  // Purpose (review 3): a kept file where a package keeps what it runs still
+  // runs, so the warning says which. Fails if a running kept file goes unsaid.
+  it('says which kept files still run', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await legacyAt(target, { 'a.md': 'a v1', 'skills/old/SKILL.md': 'old skill' });
+    await put(target, 'commands/mine.md', 'mine');
+
+    const { warnings } = await install(target, { 'a.md': 'a v1' }, { rebuildLegacy: offline });
+
+    expect(warnings[0]).toMatch(
+      /2 of these still run: commands\/mine\.md, skills\/old\/SKILL\.md\./
+    );
+  });
+
   // Purpose: a proven record changes nothing: no unproven notices, no warning,
   // no list on the new record. Fails if the new wording leaks into a normal update.
   it('says nothing new when the record was proven', async () => {

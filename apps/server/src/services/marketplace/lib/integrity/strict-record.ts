@@ -21,7 +21,7 @@
  * A record that fallback only guessed (`inferred`) counts as no record yet, so
  * both run this on it (DOR-2322). A record that lists files an update kept
  * because nothing proved whose they were (`unproven`) is sorted only when a
- * person asks (`sortUnproven`, the "Check files" action): see `./unproven.ts`.
+ * person asks (`sortUnproven`, the "Check files" action): see `./unproven-sort.ts`.
  *
  * @module services/marketplace/lib/integrity/strict-record
  */
@@ -49,7 +49,7 @@ import { rememberCheck } from './check-results.js';
 import { STRICT_RECORD_TEMP_PREFIX, strictDifferences } from './strict-differences.js';
 
 export { STRICT_RECORD_TEMP_PREFIX };
-import { sortUnprovenFiles } from './unproven.js';
+import { sortUnprovenFiles } from './unproven-sort.js';
 
 /** Most differing paths a mismatch names. */
 export const STRICT_MISMATCH_LIST_LIMIT = 50;
