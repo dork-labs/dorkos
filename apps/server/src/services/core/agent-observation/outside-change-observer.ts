@@ -317,17 +317,21 @@ export class OutsideChangeObserver<V, C> {
    * in any way is discarded.
    *
    * @param agentPath - The agent's project directory.
-   * @param next - What the write stores in the watched part.
+   * @param next - What the write stores in the watched part, or a reader for
+   *   it, asked after the write, for a write that merges into what is there.
    * @param write - The write itself.
    */
-  writing(agentPath: string, next: V, write: () => Promise<void>): Promise<void> {
+  writing(
+    agentPath: string,
+    next: V | (() => Promise<V>),
+    write: () => Promise<void>
+  ): Promise<void> {
     const agent = this.deps.agentAt(agentPath);
     if (!agent) return write();
     const agentId = agent.id;
     const bump = () => this.generations.set(agentId, (this.generations.get(agentId) ?? 0) + 1);
     return this.exclusive(agentId, async () => {
       bump();
-      let landed: V = next;
       try {
         await write();
       } catch (writeErr) {
@@ -336,7 +340,7 @@ export class OutsideChangeObserver<V, C> {
         // there, so the next read does not report DorkOS's own half-write as
         // an outside edit.
         try {
-          landed = await this.deps.read(agentPath);
+          const landed = await this.deps.read(agentPath);
           const snapshots = await this.load();
           snapshots.set(agentId, JSON.stringify(this.deps.canonical(landed)));
           await this.persist();
@@ -348,6 +352,9 @@ export class OutsideChangeObserver<V, C> {
         bump();
       }
       try {
+        // A reader is asked only now, after the write, and a failure to read
+        // is a failure to remember, never a failure of the write.
+        const landed = typeof next === 'function' ? await (next as () => Promise<V>)() : next;
         const snapshots = await this.load();
         snapshots.set(agentId, JSON.stringify(this.deps.canonical(landed)));
         await this.persist();

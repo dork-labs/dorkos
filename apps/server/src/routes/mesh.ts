@@ -49,6 +49,7 @@ import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
+import { writeAgentManifest } from '../services/core/agent-observation/agent-execution-writes.js';
 
 /**
  * Canonical UUID regex — used to exclude session-ID-shaped subject segments
@@ -604,14 +605,13 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
 
     // Guard: system agents cannot have identity fields changed
     const SYSTEM_PROTECTED_FIELDS = ['name', 'description', 'namespace', 'isSystem'] as const;
-    const agent = meshCore.get(req.params.id);
-    if (agent?.isSystem) {
-      const blockedFields = SYSTEM_PROTECTED_FIELDS.filter((f) => f in req.body);
-      if (blockedFields.length > 0) {
-        return res.status(403).json({
-          error: `Cannot modify ${blockedFields.join(', ')} on system agents`,
-        });
-      }
+    const blockedFields = meshCore.get(req.params.id)?.isSystem
+      ? SYSTEM_PROTECTED_FIELDS.filter((f) => f in req.body)
+      : [];
+    if (blockedFields.length > 0) {
+      return res.status(403).json({
+        error: `Cannot modify ${blockedFields.join(', ')} on system agents`,
+      });
     }
 
     // Strip keys that were absent from the request body (defaults filled in by Zod).
@@ -637,8 +637,12 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     // re-review). Anything else rethrows to the error middleware, which is where
     // an unexpected failure belongs.
     let updated;
+    // Through the observer of outside changes when it names the runtime, model
+    // or effort, so this person's change is never reported as one (DOR-2337).
     try {
-      updated = await meshCore.update(req.params.id, explicitFields);
+      updated = await writeAgentManifest(req.body, meshCore.getProjectPath(req.params.id), () =>
+        meshCore.update(req.params.id, explicitFields)
+      );
     } catch (err) {
       if (!(err instanceof ManifestUnreadableError)) throw err;
       return res.status(409).json({ error: err.message, code: 'MANIFEST_UNREADABLE' });

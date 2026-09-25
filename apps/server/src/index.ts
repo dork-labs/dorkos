@@ -56,6 +56,10 @@ import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
+import { AgentExecutionObserver } from './services/tasks/approvals/agent-execution-observer.js';
+import { initAgentExecutionWrites } from './services/core/agent-observation/agent-execution-writes.js';
+import { raiseStanding } from './services/notifications/standing-events.js';
+import { broadcastTasksChanged } from './services/tasks/task-sse-events.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
@@ -3364,6 +3368,51 @@ async function start() {
   // is registered and set as the default above, so that is what a task with no
   // runtime of its own resolves to.
   if (tasksEnabled && taskStore) {
+    // An agent's runtime, model or effort changed by editing its file rather
+    // than through DorkOS re-asks for the approved schedules that follow it
+    // (DOR-2337). Looked at before every scheduled fire and after every
+    // five-minute reconciler pass; DorkOS's own writes run through it so they
+    // are never taken for an outside change.
+    const agentExecutionObserver = new AgentExecutionObserver({
+      snapshotFile: path.join(dorkHome, 'agents', 'observed-agent-execution.json'),
+      agentAt: (agentPath) => {
+        const agent = meshCore?.listWithPaths().find((a) => a.projectPath === agentPath);
+        return agent ? { id: agent.id, name: agent.displayName || agent.name } : undefined;
+      },
+      approvals: taskStore.approvals,
+      onParked: async (taskIds) => {
+        for (const id of taskIds) {
+          const parked = taskStore.getTask(id);
+          if (!parked) continue;
+          taskRegistrar?.syncTask(id);
+          raiseStanding('schedule.parked', await resolveScheduleParkPayload(parked));
+        }
+        broadcastTasksChanged();
+      },
+      activity: activityService,
+      logger,
+    });
+    initAgentExecutionWrites((agentPath, write) =>
+      agentExecutionObserver.writingExecution(agentPath, write)
+    );
+    const agentPathOf = (agentId: string) => meshCore?.getProjectPath(agentId);
+    // Every registered agent that an approved or waiting schedule follows for
+    // at least one of the three.
+    const followedAgentPaths = (): string[] => {
+      const paths = new Set<string>();
+      for (const task of taskStore.getTasks()) {
+        if (!task.agentId) continue;
+        if (task.status !== 'active' && task.status !== 'pending_approval') continue;
+        if (task.runtime !== null && task.model !== null && task.effort !== null) continue;
+        const agentPath = agentPathOf(task.agentId);
+        if (agentPath) paths.add(agentPath);
+      }
+      return [...paths];
+    };
+    const checkFollowedAgents = async (): Promise<void> => {
+      for (const agentPath of followedAgentPaths()) await agentExecutionObserver.check(agentPath);
+    };
+
     schedulerService = new TaskSchedulerService({
       store: taskStore,
       runtimes: runtimeRegistry,
@@ -3391,6 +3440,10 @@ async function start() {
       meshCore,
       activityService,
       dorkHome,
+      beforeScheduledFire: async (task) => {
+        const agentPath = task.agentId ? agentPathOf(task.agentId) : undefined;
+        if (agentPath) await agentExecutionObserver.check(agentPath);
+      },
     });
     // The ONE registration seam, shared by every writer that can change what a
     // task's schedule is: these routes, the file watcher, and the reconciler.
@@ -3444,7 +3497,8 @@ async function start() {
       taskStore,
       taskRegistrar,
       scheduleIdentities,
-      taskFileWatcher
+      taskFileWatcher,
+      () => checkFollowedAgents()
     );
     const discovery = { watcher: taskFileWatcher, reconciler: taskReconciler };
 
@@ -3528,6 +3582,10 @@ async function start() {
 
     taskReconciler.start();
     logger.info('[Tasks] File watcher and reconciler started');
+    // Seed what every followed agent runs on now, before the first fire, so an
+    // edit made after this boot is compared with something (DOR-2337). The
+    // first sighting of an agent is silent: there is nothing to compare with.
+    await checkFollowedAgents();
 
     // Ensure default templates exist
     ensureDefaultTemplates(dorkHome).catch((err) => {

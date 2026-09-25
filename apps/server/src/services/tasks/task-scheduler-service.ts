@@ -352,6 +352,14 @@ export interface SchedulerDeps {
    * scheduler build the real lock.
    */
   leaderLock?: LeaderLock;
+  /**
+   * Asked before every scheduled fire, before the task is re-read: checks the
+   * task's agent for a runtime, model or effort changed outside DorkOS, which
+   * parks the schedules that follow it (DOR-2337). A fire reads the agent's
+   * manifest fresh, so without this a changed agent would run once, approved,
+   * before anything noticed. Never throws; absent in tests that do not care.
+   */
+  beforeScheduledFire?: (task: Task) => Promise<void>;
 }
 
 /**
@@ -400,6 +408,8 @@ export class TaskSchedulerService {
   private started = false;
   /** Damps the log when a task's schedule cannot be run. See {@link RefusedScheduleLog}. */
   private readonly refusedSchedules = new RefusedScheduleLog();
+  /** See {@link SchedulerDeps.beforeScheduledFire}. */
+  private beforeScheduledFire: ((task: Task) => Promise<void>) | null = null;
 
   constructor(
     store: TaskStore,
@@ -425,6 +435,7 @@ export class TaskSchedulerService {
       this.relayHoldsRuntime = storeOrDeps.relayHoldsRuntime ?? V1_RELAY_RUNTIME;
       this.meshCore = storeOrDeps.meshCore ?? null;
       this.activityService = storeOrDeps.activityService ?? null;
+      this.beforeScheduledFire = storeOrDeps.beforeScheduledFire ?? null;
       this.leaderLock =
         storeOrDeps.leaderLock ??
         (storeOrDeps.dorkHome ? new SchedulerLock({ dorkHome: storeOrDeps.dorkHome }) : null);
@@ -966,6 +977,11 @@ export class TaskSchedulerService {
       logger.debug(`skipping "${task.name}" — not the scheduler leader`);
       return;
     }
+
+    // An agent changed outside DorkOS parks the schedules that follow it, so
+    // it is checked BEFORE the re-read below: a schedule this parks is then not
+    // active, and is skipped like any other (DOR-2337).
+    if (task.agentId) await this.beforeScheduledFire?.(task);
 
     // Re-read task to check current state
     const current = this.store.getTask(task.id);

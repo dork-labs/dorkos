@@ -34,6 +34,7 @@ import {
   soulProseBudget,
   SOUL_MAX_CHARS,
 } from '@dorkos/shared/convention-files';
+import { writeAgentManifest } from '../agent-observation/agent-execution-writes.js';
 import {
   describeAgentOperatorOnlyRefusal,
   findOperatorOnlyAgentPaths,
@@ -456,7 +457,12 @@ export async function updateAgentManifest(opts: {
     await writeConventionFile(agentPath, CONVENTION_FILES.memory, conventionUpdates.memoryContent);
   }
 
-  await writeManifest(agentPath, updated);
+  // A write that names the runtime, model or effort runs through the observer
+  // of outside changes, so DorkOS's own change is never reported as one, and an
+  // earlier edit to the file is seen before this write carries it along
+  // (DOR-2337). The callers that reach here with those fields are a person's,
+  // or an approved `update_agent_execution` (DOR-2328).
+  await writeAgentManifest(rawBody, agentPath, () => writeManifest(agentPath, updated));
 
   // ADR-0043: sync to Mesh DB cache (best-effort).
   try {

@@ -38,6 +38,10 @@
  * for it. The reconciler only mirrors a file into the database; it never writes
  * the file, so it cannot be used to launder a change either.
  *
+ * Not blocking the file is not the same as not noticing it: an edit to these
+ * three that DorkOS did not make is recorded and re-asks for every approved
+ * schedule that follows the agent (DOR-2337, `tasks/approvals/agent-execution-observer.ts`).
+ *
  * @module services/core/operator/agent-execution
  */
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';

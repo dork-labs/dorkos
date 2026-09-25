@@ -1363,8 +1363,8 @@ describe('what changed since the person approved it (DOR-2323)', () => {
         reasonSource: 'dorkos',
         reason: 'An agent changed how this schedule runs, so it is waiting for you again.',
         approvalChanges: [
-          { field: 'runtime', from: null, to: 'codex' },
-          { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4' },
+          { field: 'runtime', from: null, to: 'codex', via: 'schedule' },
+          { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'schedule' },
         ],
       })
     );

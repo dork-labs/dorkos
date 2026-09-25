@@ -422,6 +422,60 @@ describe('TaskSchedulerService', () => {
     });
   });
 
+  describe('an agent changed outside DorkOS (DOR-2337)', () => {
+    it('checks the agent before the fire, and a schedule that check parks does not run', async () => {
+      // Purpose: a fire reads the agent's manifest fresh. A change made in the
+      // file must meet the approval before that read, or the changed agent
+      // runs once, approved, before anything noticed.
+      const task = store.createTask(
+        taskInput({ name: 'Follows', prompt: 'test', cron: '0 * * * *', agentId: 'agent-1' })
+      );
+      const checked: string[] = [];
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+        beforeScheduledFire: async (t) => {
+          checked.push(t.id);
+          store.approvals.parkAgentFollowers('agent-1', [
+            { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4' },
+          ]);
+        },
+      });
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(checked).toEqual([task.id]);
+      expect(store.getTask(task.id)!.status).toBe('pending_approval');
+      expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('does not ask about a schedule with no agent', async () => {
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Alone', prompt: 'test', cron: '0 * * * *' })
+      );
+      const checked: string[] = [];
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+        beforeScheduledFire: async (t) => {
+          checked.push(t.id);
+        },
+      });
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(checked).toEqual([]);
+      expect(store.listRuns().length).toBeGreaterThan(0);
+      await service.stop();
+    });
+  });
+
   describe('dispatch idempotency (ADR-285)', () => {
     const okAgent = () =>
       vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {

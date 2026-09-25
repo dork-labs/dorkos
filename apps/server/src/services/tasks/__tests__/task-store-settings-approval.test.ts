@@ -140,8 +140,8 @@ describe('the settings are part of the approval', () => {
         reasonSource: 'dorkos',
       });
       expect(parked.approvalChanges).toEqual([
-        { field: 'runtime', from: null, to: 'codex' },
-        { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4' },
+        { field: 'runtime', from: null, to: 'codex', via: 'schedule' },
+        { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'schedule' },
       ]);
     });
 
@@ -187,7 +187,9 @@ describe('the settings are part of the approval', () => {
 
       expect(store.getTask(id)).toMatchObject({
         reason: AGENT_SETTINGS_CHANGE_REASON,
-        approvalChanges: [{ field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4' }],
+        approvalChanges: [
+          { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4', via: 'schedule' },
+        ],
       });
     });
 
@@ -207,7 +209,9 @@ describe('the settings are part of the approval', () => {
         status: 'pending_approval',
         reason: AGENT_SETTINGS_CHANGE_REASON,
       });
-      expect(synced.approvalChanges).toEqual([{ field: 'model', from: null, to: 'claude-opus-4' }]);
+      expect(synced.approvalChanges).toEqual([
+        { field: 'model', from: null, to: 'claude-opus-4', via: 'schedule' },
+      ]);
     });
   });
 
@@ -243,7 +247,9 @@ describe('the settings are part of the approval', () => {
     store.updateTask(id, { prompt: 'Delete the digest.' });
     store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
 
-    expect(store.getTask(id)!.approvalChanges).toEqual([{ field: 'prompt', from: null, to: null }]);
+    expect(store.getTask(id)!.approvalChanges).toEqual([
+      { field: 'prompt', from: null, to: null, via: 'schedule' },
+    ]);
   });
 
   it('does not park over an effort value the API cannot show', () => {
@@ -279,7 +285,9 @@ describe('the settings are part of the approval', () => {
       undefined,
       DISCOVERY
     );
-    expect(synced.approvalChanges).toEqual([{ field: 'prompt', from: null, to: null }]);
+    expect(synced.approvalChanges).toEqual([
+      { field: 'prompt', from: null, to: null, via: 'schedule' },
+    ]);
   });
 
   it('says nothing changed on a schedule that is not waiting', () => {
