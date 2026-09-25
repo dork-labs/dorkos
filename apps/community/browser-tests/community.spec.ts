@@ -311,12 +311,21 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
       await ownerPage.setViewportSize({ width, height: 900 });
       await settingsDownload.scrollIntoViewIfNeeded();
       await expect(settingsDownload).toBeInViewport();
-      // The button and its size fit the width. Measured on the box, not with an intersection
-      // ratio: a vertical scroll can leave a fraction of a pixel off screen, which a ratio of 1
-      // reads as clipped.
-      const box = (await settingsDownload.boundingBox())!;
-      expect(box.x, `download button starts on screen at ${width}px`).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width, `download button fits at ${width}px`).toBeLessThanOrEqual(width);
+      // The button stays inside its panel's padding, and the panel keeps the page's gutter.
+      const fit = await settingsDownload.evaluate((link) => {
+        const panel = link.closest('.panel')!;
+        const style = getComputedStyle(panel);
+        const outer = panel.getBoundingClientRect();
+        const box = link.getBoundingClientRect();
+        return {
+          overflow: box.right - (outer.right - parseFloat(style.paddingRight)),
+          gutter: document.documentElement.clientWidth - outer.right,
+        };
+      });
+      expect(fit.overflow, `download button stays in its panel at ${width}px`).toBeLessThanOrEqual(
+        0
+      );
+      expect(fit.gutter, `the panel keeps its gutter at ${width}px`).toBeGreaterThanOrEqual(16);
       expect(
         await ownerPage.evaluate(
           () => document.documentElement.scrollWidth <= document.documentElement.clientWidth

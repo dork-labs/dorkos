@@ -172,9 +172,13 @@ export function ExportPanel({ scope, idPrefix }: Props) {
             href={tenantApiPath(`/api/v1/exports/${current.id}/archive`)}
             download={fileName}
             onClick={(event) => void downloadIfStillReady(event)}
+            aria-label={
+              current.byteSize !== null ? `Download (${formatSize(current.byteSize)})` : 'Download'
+            }
           >
-            <Download size={16} /> Download
-            {current.byteSize !== null ? ` (${formatSize(current.byteSize)})` : ''}
+            <Download size={16} aria-hidden="true" />
+            <span>Download</span>
+            {current.byteSize !== null && <span>({formatSize(current.byteSize)})</span>}
           </a>
           {current.expiresAt && (
             <p className="small muted">

@@ -629,6 +629,12 @@ p {
   accent-color: var(--accent);
 }
 .export-ready .button {
+  /* A narrow settings column wraps the size under the label rather than pushing the button
+     past its panel; each word group stays whole. */
+  flex-wrap: wrap;
   max-width: 100%;
+  row-gap: 0.1rem;
+}
+.export-ready .button > span {
   white-space: nowrap;
 }
