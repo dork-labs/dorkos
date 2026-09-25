@@ -66,7 +66,37 @@ export type WorkChangeSettlement = 'unchanged' | 'rekeyed' | 'parked';
  * writes. See the module TSDoc for what lives here and why.
  */
 export class TaskApprovals {
+  /** See {@link setOnApproved}. */
+  private onApproved: ((agentId: string) => void) | null = null;
+
   constructor(private readonly db: Db) {}
+
+  /**
+   * Be told the agent of every schedule a person approves, or that is created
+   * approved (DOR-2337). The observer of an agent's runtime, model and effort
+   * looks at that agent then, so a schedule that starts following it has a
+   * baseline to be compared with. Called after the write, and never allowed
+   * to fail it.
+   *
+   * @param listener - Told the agent id; `null` stops telling anyone.
+   */
+  setOnApproved(listener: ((agentId: string) => void) | null): void {
+    this.onApproved = listener;
+  }
+
+  /**
+   * Tell the listener about a schedule's agent, when it has one.
+   *
+   * @param agentId - The schedule's agent, if any.
+   */
+  notifyApproved(agentId: string | null | undefined): void {
+    if (!agentId || !this.onApproved) return;
+    try {
+      this.onApproved(agentId);
+    } catch {
+      // A listener's failure is its own; the approval stands.
+    }
+  }
 
   /**
    * Record that a person has approved this schedule's CURRENT content.
@@ -92,6 +122,7 @@ export class TaskApprovals {
       })
       .where(eq(pulseSchedules.id, id))
       .run();
+    this.notifyApproved(row.agentId);
   }
 
   /**
@@ -107,26 +138,33 @@ export class TaskApprovals {
    *   the changed agent the moment somebody switched it on. Its approval is kept
    *   for the card (`previous_approval_key`), and the change is recorded
    *   (`followed_agent_changes`) so the card can say old → new.
+   * - Any other schedule that still holds an approval (a schedule paused
+   *   because its file went away keeps one, and would arm on it when the file
+   *   came back) loses it the same way, with the change recorded, and keeps
+   *   its status.
    * - A schedule already waiting since an approval (or since an earlier change
    *   like this) has the change folded into what it records, with no status
-   *   change: the first value is kept, the latest wins, and a field changed
-   *   back drops out. It stays waiting; only a person switches anything on.
-   * - Anything else is left alone: a paused schedule holds no approval to move,
-   *   and a proposal nobody approved has no approved value to measure from.
+   *   change: the first value is kept and the latest wins, and a field changed
+   *   back stays listed, so the card can say it was changed and changed back.
+   *   It stays waiting; only a person switches anything on.
+   * - A proposal nobody approved is left alone: there is no approved value to
+   *   measure from.
    *
    * One transaction, so a read never sees half of an agent's schedules parked.
    * Never touches `enabled`.
    *
    * @param agentId - The agent whose defaults changed.
    * @param changes - What changed, old → new, as seen.
-   * @returns The ids it parked, and the ids whose record it only updated.
+   * @returns The ids it parked, the ids it only took an approval from, and the
+   *   ids whose record it only updated.
    */
   parkAgentFollowers(
     agentId: string,
     changes: readonly FollowedAgentChange[]
-  ): { parked: string[]; updated: string[] } {
+  ): { parked: string[]; withdrawn: string[]; updated: string[] } {
     return this.db.transaction((tx) => {
       const parked: string[] = [];
+      const withdrawn: string[] = [];
       const updated: string[] = [];
       const rows = tx
         .select()
@@ -154,10 +192,18 @@ export class TaskApprovals {
             .where(eq(pulseSchedules.id, row.id))
             .run();
           parked.push(row.id);
-        } else if (
-          row.status === 'pending_approval' &&
-          (row.previousApprovalKey !== null || row.followedAgentChanges !== null)
-        ) {
+        } else if (row.approvedContentKey !== null) {
+          tx.update(pulseSchedules)
+            .set({
+              approvedContentKey: null,
+              previousApprovalKey: row.approvedContentKey,
+              followedAgentChanges: merged,
+              updatedAt: now,
+            })
+            .where(eq(pulseSchedules.id, row.id))
+            .run();
+          withdrawn.push(row.id);
+        } else if (row.previousApprovalKey !== null || row.followedAgentChanges !== null) {
           tx.update(pulseSchedules)
             .set({ followedAgentChanges: merged, updatedAt: now })
             .where(eq(pulseSchedules.id, row.id))
@@ -165,7 +211,7 @@ export class TaskApprovals {
           updated.push(row.id);
         }
       }
-      return { parked, updated };
+      return { parked, withdrawn, updated };
     });
   }
 

@@ -20,12 +20,9 @@
  * - nothing is ever switched on, and changing the agent back does not undo the
  *   park: a person decides.
  *
- * **When it looks.** Before every scheduled fire of a schedule with an agent
- * (the fire reads the manifest fresh, so an edit is caught before it can run),
- * and on the task reconciler's five-minute pass, so the card appears without
- * waiting for a fire. An edit that lands in the few milliseconds between the
- * check and the fire's own read of the manifest runs once, and is caught by the
- * next check.
+ * **When it looks** is `agent-execution-watch.ts`'s: every registered agent,
+ * at boot, on registration, on an approval, after each five-minute pass, and
+ * before every scheduled fire, which then runs on the values the check read.
  *
  * **What is not outside.** A write DorkOS makes, through the app, the routes or
  * an approved `update_agent_execution`, is bracketed by
@@ -191,15 +188,18 @@ export class AgentExecutionObserver {
    * is not a change, and a failure is logged.
    *
    * @param agentPath - The agent's project directory.
+   * @returns The values the check read, so a caller about to act on them (a
+   *   scheduled fire) uses exactly those; `undefined` when nothing could be read.
    */
-  async check(agentPath: string): Promise<void> {
+  async check(agentPath: string): Promise<AgentExecutionValues | undefined> {
     try {
-      await this.core.readObserved(agentPath);
+      return await this.core.readObserved(agentPath);
     } catch (err) {
       this.deps.logger.warn('[AgentExecution] Could not read an agent to check it', {
         agentPath,
         err: err instanceof Error ? err.message : String(err),
       });
+      return undefined;
     }
   }
 
