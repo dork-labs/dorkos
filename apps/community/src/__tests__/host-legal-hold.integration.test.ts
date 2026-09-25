@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
+import { drainExports } from './export-test-helpers.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import type { BlobStore } from '../storage/index.js';
 import {
@@ -573,6 +574,44 @@ it('keeps the community’s rows when a hold lands during the last file deletion
   expect(
     (await h.pool.query('SELECT 1 FROM members WHERE community_id=$1', [c.id])).rowCount
   ).toBeGreaterThan(0);
+});
+
+it('lets an owner export finish under a legal hold, with or without a lifecycle hold', async () => {
+  // Purpose: a legal hold only stops deletion. An owner export is not a deletion, so a job
+  // started before the legal hold, and one started while the community is also on hold, must
+  // still reach ready.
+  const exportState = async (communityId: string) =>
+    (
+      await h.pool.query<{ state: string }>(
+        `SELECT state FROM export_archives WHERE community_id=$1 AND scope='owner'
+         ORDER BY created_at DESC LIMIT 1`,
+        [communityId]
+      )
+    ).rows[0]?.state;
+  const startExport = async (c: Community) =>
+    expect(
+      (
+        await h.call(`${tenant(c.id)}/owner/export`, {
+          cookie: c.owner.cookie,
+          body: { password: TENANCY_PASSWORD },
+        })
+      ).status
+    ).toBeLessThan(300);
+
+  const before = await community();
+  await upload(before, 'one');
+  await startExport(before);
+  await expectStatus(await legalHold('PUT', before.id), 200, 'legal hold after the export began');
+
+  const both = await community();
+  await upload(both, 'one');
+  await expectStatus(await legalHold('PUT', both.id), 200, 'legal hold');
+  await expectStatus(await host(both.id, 'hold', { deletionNoticeAt: null }), 200, 'hold');
+  await startExport(both);
+
+  await drainExports(h.pool, h.blobStore);
+  expect(await exportState(before.id)).toBe('ready');
+  expect(await exportState(both.id)).toBe('ready');
 });
 
 it('finishes the owner’s deletion once the legal hold is released', async () => {
