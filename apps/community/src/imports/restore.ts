@@ -150,6 +150,7 @@ export async function insertImportedRows(
   );
   const members = new Set(manifest.members.map((member) => member.id));
   await insert(
+    // content-change: import-restore
     `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id,mentioned_agent_id)
      SELECT r.entry_id,r.position,$2,r.member_id,r.agent_id
      FROM jsonb_to_recordset($1::jsonb) AS r(entry_id uuid,position integer,member_id uuid,
