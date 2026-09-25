@@ -670,6 +670,72 @@ describe('globalConsentRecorder', () => {
     expect(config.harness.approvedHooks).toEqual([]);
   });
 
+  // Purpose (DOR-2322 review 3): the hash a person's approval binds is the
+  // package as it arrived, before the update carried any file over, so a file
+  // an offline update kept because it could not tell whose it was is not part
+  // of it. Recording the live declarations would let such a file, when it
+  // runs, ride an approval of a disclosure that never showed it. So nothing is
+  // recorded, the package waits for a person, and the held-back entry names
+  // the kept files that run. Fails if the approval is recorded anyway, or the
+  // entry says nothing about them.
+  it('records nothing while a kept file nobody was shown still runs, and says which', async () => {
+    const root = await installGlobal('tool', { hooks: stopHook('echo done') });
+    const seen = await shown(root);
+    // What the update carried over after the hash was taken: an old program.
+    await mkdir(path.join(root, 'bin'), { recursive: true });
+    await writeFile(path.join(root, 'bin', 'old-tool'), '#!/bin/sh\necho old');
+    const { computeInstalledFiles, writeInstalledFiles } =
+      await import('../lib/installed-files.js');
+    const record = await computeInstalledFiles(root, {
+      identity: { name: 'tool', type: 'plugin' },
+      userEditable: [],
+      npmRan: false,
+    });
+    delete record.files['bin/old-tool'];
+    await writeInstalledFiles(root, {
+      ...record,
+      unproven: { why: 'fetch-failed', files: { 'bin/old-tool': 'bin/old-tool' } },
+    });
+    expect(
+      (
+        JSON.parse(await readFile(path.join(root, '.dork', 'install-metadata.json'), 'utf8')) as {
+          contentHash: string;
+        }
+      ).contentHash
+    ).toBe(seen.contentHash);
+
+    await globalConsentRecorder.settle({ installPath: root, type: 'plugin', global: true }, seen);
+
+    expect(config.harness.approvedHooks).toEqual([]);
+    const { withheld } = await partitionGlobalPlugins(dorkHome);
+    expect(withheld).toEqual([
+      expect.objectContaining({ name: 'tool', reason: 'unasked', keptRunning: ['bin/old-tool'] }),
+    ]);
+  });
+
+  // Purpose: kept files that run nothing change nothing about consent.
+  it('still records the approval when no kept file runs', async () => {
+    const root = await installGlobal('tool', { hooks: stopHook('echo done') });
+    const seen = await shown(root);
+    await writeFile(path.join(root, 'notes.txt'), 'mine');
+    const { computeInstalledFiles, writeInstalledFiles } =
+      await import('../lib/installed-files.js');
+    const record = await computeInstalledFiles(root, {
+      identity: { name: 'tool', type: 'plugin' },
+      userEditable: [],
+      npmRan: false,
+    });
+    delete record.files['notes.txt'];
+    await writeInstalledFiles(root, {
+      ...record,
+      unproven: { why: 'fetch-failed', files: { 'notes.txt': 'notes.txt' } },
+    });
+
+    await globalConsentRecorder.settle({ installPath: root, type: 'plugin', global: true }, seen);
+
+    expect(await listConsentedPluginNames(dorkHome)).toEqual(['tool']);
+  });
+
   it('forgets a removed package’s approvals', async () => {
     const root = await installGlobal('tool', { hooks: stopHook('echo done') });
     await approveAsIs('tool', root);

@@ -453,6 +453,35 @@ describe('held-back packages a person can see and review (DOR-2306, I2)', () => 
   });
 });
 
+describe('a held-back package that kept files it could not sort (DOR-2322)', () => {
+  // Purpose (review 3): when a package is held back while files an update
+  // kept still run, the note says so and points at Check files, rather than
+  // a bare "changed what it runs". Fails if the note does not name them.
+  it('names the kept files that run, and what to do', async () => {
+    const root = await installHooked('tool', 'echo done');
+    await mkdir(path.join(root, 'commands'), { recursive: true });
+    await writeFile(path.join(root, 'commands', 'old.md'), 'old');
+    const { computeInstalledFiles, writeInstalledFiles } =
+      await import('../lib/installed-files.js');
+    const record = await computeInstalledFiles(root, {
+      identity: { name: 'tool', type: 'plugin' },
+      userEditable: [],
+      npmRan: false,
+    });
+    delete record.files['commands/old.md'];
+    await writeInstalledFiles(root, {
+      ...record,
+      unproven: { why: 'fetch-failed', files: { 'commands/old.md': 'commands/old.md' } },
+    });
+
+    const [listed] = await listHeldBackPackages(dorkHome);
+
+    expect(listed?.note).toMatch(
+      /An update kept 1 file DorkOS couldn't sort that still runs \(commands\/old\.md\)\. Choose Check files on tool to set aside any left over from the earlier version\./
+    );
+  });
+});
+
 describe('describeGlobalActivationCapability', () => {
   it('names the card and marks it as needing a decision, and nothing else', () => {
     expect(describeGlobalActivationCapability(GLOBAL_ACTIVATION_CAPABILITY_ID)).toEqual({
