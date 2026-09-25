@@ -722,9 +722,10 @@ it('drops a file upload that stops sending, and keeps one that trickles', async 
 // cancelled import frees that name at once, with no cool-off, so a retried move can use it.
 // A reserved or taken name is refused before anything is created.
 it('names an imported community at creation and frees the name when cancelled', async () => {
+  const sameKey = `named-${randomUUID()}`;
   const first = await h.call('/api/v1/host/imports', {
     bearer: keyImport,
-    body: { idempotencyKey: `named-${randomUUID()}`, name: 'Named', shortName: 'moved-here' },
+    body: { idempotencyKey: sameKey, name: 'Named', shortName: 'moved-here' },
   });
   expect(first.status).toBe(201);
   const created = (await first.json()).import;
@@ -740,6 +741,13 @@ it('names an imported community at creation and frees the name when cancelled', 
   });
   expect(taken.status).toBe(409);
   expect((await taken.json()).code).toBe('SHORT_NAME_TAKEN');
+  // Changing only the name under the same key is a different request, not a replay.
+  const renamed = await h.call('/api/v1/host/imports', {
+    bearer: keyImport,
+    body: { idempotencyKey: sameKey, name: 'Named', shortName: 'moved-elsewhere' },
+  });
+  expect(renamed.status).toBe(409);
+  expect((await renamed.json()).code).toBe('IDEMPOTENCY_CONFLICT');
   const reserved = await h.call('/api/v1/host/imports', {
     bearer: keyImport,
     body: { idempotencyKey: `named-${randomUUID()}`, name: 'Reserved', shortName: 'admin' },
