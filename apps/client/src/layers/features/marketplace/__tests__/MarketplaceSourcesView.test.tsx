@@ -144,13 +144,14 @@ describe('MarketplaceSourcesView', () => {
       // over a list that has several.
       setSourcesState({ data: undefined, isLoading: false });
 
-      render(
+      const { container } = render(
         <IsRestoringProvider value={true}>
           <MarketplaceSourcesView />
         </IsRestoringProvider>
       );
 
       expect(screen.queryByText(/no marketplaces added yet/i)).toBeNull();
+      expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(2);
     });
 
     it('renders one card per source with name, URL, and date', () => {
