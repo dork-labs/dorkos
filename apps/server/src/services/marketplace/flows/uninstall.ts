@@ -53,6 +53,7 @@ import {
   type InstallRootCandidate,
 } from '../lib/locate-install.js';
 import { assertPackageName } from '../lib/package-paths.js';
+import { describeUnproven } from '../lib/integrity/unproven.js';
 import { readInstallMetadata } from '../installed-metadata.js';
 import {
   isProvenPackageFile,
@@ -131,6 +132,11 @@ export interface UninstallResult {
   preservedData: string[];
   /** Set when uninstalling an agent package removed the agent from the team. */
   agentRemoved?: AgentRemovedSummary;
+  /**
+   * Absolute paths of files kept because the install had no record and nothing
+   * proved whether they were the package's or the person's (DOR-2322).
+   */
+  unproven?: string[];
   /** Non-fatal notes: cleanup the recovery sweep will finish, files moved back. */
   warnings?: string[];
 }
@@ -382,6 +388,7 @@ export class UninstallFlow {
     // Committed: the uninstall is decided. A failure from here on is logged and
     // left for recovery to finish; it never rolls back a torn-down package.
     let preservedData: string[] = [];
+    let unproven: string[] = [];
     try {
       if (req.purge) {
         await rm(sibling, { recursive: true, force: true });
@@ -389,6 +396,7 @@ export class UninstallFlow {
       } else {
         await finishUninstall(sibling, journal);
         preservedData = await keptEntries(root);
+        unproven = await keptUnproven(root, record);
       }
     } catch (err) {
       this.deps.logger.warn('[marketplace/uninstall] cleanup after the uninstall failed', {
@@ -398,12 +406,23 @@ export class UninstallFlow {
       warnings.push('Some cleanup did not finish; DorkOS will finish it the next time it starts.');
     }
     await releaseSupersededRecords(kept);
+    if (unproven.length > 0 && record?.unproven) {
+      warnings.unshift(
+        describeUnproven(
+          req.name,
+          record.unproven.why,
+          unproven.map((p) => path.relative(root, p).split(path.sep).join('/')),
+          'uninstall'
+        )
+      );
+    }
     return {
       ok: true,
       packageName: req.name,
       removedFiles: journal.moves.length,
       preservedData,
       ...(agentRemoved && { agentRemoved }),
+      ...(unproven.length > 0 && { unproven }),
       ...(warnings.length > 0 && { warnings }),
     };
   }
@@ -916,6 +935,21 @@ async function readManifestIfPresent(
  * directory is listed whole unless the record sits inside it. Empty when the
  * root is gone.
  */
+/**
+ * The files a rebuilt (inferred) record could not prove that are still in
+ * `root` after the uninstall, as absolute paths, sorted. None for a proven
+ * record.
+ */
+async function keptUnproven(root: string, record: InstalledFiles | null): Promise<string[]> {
+  if (!record?.inferred || !record.unproven) return [];
+  const kept: string[] = [];
+  for (const p of Object.keys(record.unproven.files).sort()) {
+    const abs = path.join(root, ...p.split('/'));
+    if (await pathExists(abs)) kept.push(abs);
+  }
+  return kept;
+}
+
 async function keptEntries(root: string): Promise<string[]> {
   const recordPath = path.join(root, '.dork', 'installed-files.json');
   const kept: string[] = [];

@@ -148,6 +148,7 @@ import {
   type PackageFileNotice,
 } from '@dorkos/shared/marketplace-schemas';
 import { carryPersonFiles, lateWritePass, type CarryResult } from './lib/carry-over.js';
+import { describeUnproven } from './lib/integrity/unproven.js';
 import {
   computeInstalledFiles,
   readInstalledFiles,
@@ -552,7 +553,14 @@ async function prepareOwnership(
       const unproven = placeUnproven(rOld.unproven, carry.plan);
       if (Object.keys(unproven.files).length > 0) {
         rNew.unproven = unproven;
-        warnings.push(describeUnproven(ownership.identity.name, unproven));
+        warnings.push(
+          describeUnproven(
+            ownership.identity.name,
+            unproven.why,
+            Object.keys(unproven.files),
+            'update'
+          )
+        );
       }
     }
     const oldSource = rOld?.package.source;
@@ -570,9 +578,6 @@ async function prepareOwnership(
     warnings,
   };
 }
-
-/** Most kept files an {@link describeUnproven} sentence names. */
-const UNPROVEN_NAMED_LIMIT = 10;
 
 /**
  * Where each unproven file of a legacy install ended up in the new one, and
@@ -606,30 +611,6 @@ function placeUnproven(unproven: UnprovenFiles, plan: CarryResult['plan']): Unpr
   }
   plan.notices = [...plan.notices.filter((n) => !(n.path in unproven.files)), ...notices];
   return { ...unproven, files: placed };
-}
-
-/**
- * One sentence about the files an update kept because nothing proved whose
- * they were: why, which (up to {@link UNPROVEN_NAMED_LIMIT}), and what the
- * person can do next.
- *
- * @internal
- */
-function describeUnproven(name: string, unproven: UnprovenFiles): string {
-  const kept = Object.keys(unproven.files).sort();
-  const n = kept.length;
-  const files = n === 1 ? '1 file' : `${n} files`;
-  const them = n === 1 ? 'it' : 'them';
-  const was = n === 1 ? 'was' : 'were';
-  const shown = `${kept.slice(0, UNPROVEN_NAMED_LIMIT).join(', ')}${n > UNPROVEN_NAMED_LIMIT ? ', …' : ''}`;
-  switch (unproven.why) {
-    case 'fetch-failed':
-      return `DorkOS couldn't download the version of ${name} you had, so it couldn't tell whether ${files} ${was} yours or left over from that version. It kept ${them}: ${shown}. Once you're online, choose Check files on ${name} to sort ${them} out.`;
-    case 'mismatch':
-      return `The version of ${name} DorkOS downloaded didn't match the files you had, so it couldn't tell whether ${files} ${was} yours. It kept ${them}: ${shown}. Choose Check files on ${name} to sort ${them} out.`;
-    case 'no-source':
-      return `${name} was installed from a folder on this computer, so DorkOS had no earlier version to compare with and couldn't tell whether ${files} ${was} yours. It kept ${them}: ${shown}. Delete any you don't need.`;
-  }
 }
 
 /** A recorded source, as a person reads it. */

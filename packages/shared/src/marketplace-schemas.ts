@@ -906,6 +906,12 @@ export interface UninstallResult {
    * (DOR-2245). A reinstall restores none of {@link AgentRemovedSummary.removed}.
    */
   agentRemoved?: AgentRemovedSummary;
+  /**
+   * Absolute paths of files kept because the install had no record and nothing
+   * proved whether they were the package's or yours (DOR-2322). Also named in
+   * {@link UninstallResult.warnings}.
+   */
+  unproven?: string[];
   /** Non-fatal notes, such as a cleanup the recovery sweep will finish later. */
   warnings?: string[];
 }

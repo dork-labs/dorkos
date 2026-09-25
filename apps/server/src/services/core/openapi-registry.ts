@@ -536,6 +536,8 @@ const LocalUninstallResultSchema = z.object({
   packageName: z.string(),
   removedFiles: z.number().int().nonnegative(),
   preservedData: z.array(z.string()),
+  unproven: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
 });
 
 const registry = new OpenAPIRegistry();
