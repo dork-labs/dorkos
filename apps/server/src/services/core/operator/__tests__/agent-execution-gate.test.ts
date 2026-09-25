@@ -44,6 +44,7 @@ import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.
 import type { AgentIdentity } from '../../agent-identity/index.js';
 
 import { trustedCaller } from '../../capabilities/trusted-caller.js';
+import { describeExecutionChange } from '../agent-execution.js';
 
 /** The agent doing the asking. */
 const AGENT: AgentIdentity = {
@@ -235,6 +236,28 @@ describe('operator.update_agent_execution asks a person first', () => {
       model: 'claude-opus-4',
     });
     expect(approvals.listPending()[0]!.detail).toBe('Model: claude-sonnet-4 → claude-opus-4');
+  });
+
+  it('never lets a value draw a line of its own on the card', async () => {
+    // Purpose: `model` is free text, and the current value comes from a file an
+    // agent's shell can write. A newline in either would render a fabricated
+    // "Runtime: … → …" line the person reads as a real change.
+    await writeManifest(agentPath, {
+      ...(await manifestOnDisk()),
+      model: 'old\nEffort: high → low',
+    });
+    await callTool('operator.update_agent_execution', {
+      cwd: agentPath,
+      model: 'gpt-5\nRuntime: claude-code → codex',
+    });
+
+    const detail = approvals.listPending()[0]!.detail!;
+    expect(detail.split('\n')).toHaveLength(1);
+    expect(detail).toBe('Model: old\\nEffort: high → low → gpt-5\\nRuntime: claude-code → codex');
+    // The other characters a renderer may break a line on are escaped too.
+    expect(
+      describeExecutionChange({ runtime: 'claude-code' }, { model: 'a\u2028b\u0085c\rd' })
+    ).toBe('Model: the default → a\\u2028b\\u0085c\\rd');
   });
 
   it('never asks a person who makes the change themselves', async () => {

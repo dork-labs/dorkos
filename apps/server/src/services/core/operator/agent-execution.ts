@@ -84,9 +84,27 @@ export function requestNamesExecutionField(body: unknown): boolean {
   return AGENT_EXECUTION_FIELDS.some((field) => Object.hasOwn(body, field));
 }
 
-/** One value as a card says it. */
+/** The escapes a person recognises; any other control character is written `\uXXXX`. */
+const ESCAPES: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+
+/**
+ * One value as a card says it.
+ *
+ * Control characters are written out as escapes rather than passed through.
+ * Both sides are untrusted text: `model` is free text in the request, and the
+ * current value comes from a file an agent's shell can write. A raw newline in
+ * either would draw a line of its own on the card, one the person would read as
+ * a real change.
+ */
 function say(value: string | null | undefined): string {
-  return value === null || value === undefined || value === '' ? 'the default' : value;
+  if (value === null || value === undefined || value === '') return 'the default';
+  return Array.from(value, (char) => {
+    const code = char.charCodeAt(0);
+    const breaksALine =
+      code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029;
+    if (!breaksALine) return char;
+    return ESCAPES[char] ?? `\\u${code.toString(16).padStart(4, '0')}`;
+  }).join('');
 }
 
 /**
