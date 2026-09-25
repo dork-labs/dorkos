@@ -1837,6 +1837,26 @@ describe('Marketplace Routes', () => {
 
         expect(res.status).toBe(200);
         expect(approvals.listPending()).toEqual([]);
+        // Held to what the preview fetched even with no card: a source that
+        // serves an agent package to the install is refused (DOR-2325).
+        expect(installer.install.mock.calls[0][0]).toMatchObject({
+          approvedContentHash: expect.stringMatching(/^sha256:/),
+          approvedPackageType: 'plugin',
+        });
+      });
+
+      it('holds an uncarded global install to the previewed files and type too (DOR-2325)', async () => {
+        previewing([]);
+
+        await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({});
+
+        expect(approvals.listPending()).toEqual([]);
+        expect(installer.install.mock.calls[0][0]).toMatchObject({
+          approvedContentHash: expect.stringMatching(/^sha256:/),
+          approvedPackageType: 'plugin',
+        });
       });
     });
 

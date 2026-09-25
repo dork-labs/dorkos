@@ -665,7 +665,10 @@ describe('createInstallHandler — settling consent after the install (DOR-2306)
     await createInstallHandler(deps)({ name: 'flow' });
 
     const carded = confirmationProvider.requestInstallConfirmation.mock.calls[0]?.[0].contentHash;
-    expect(vi.mocked(deps.installer.install).mock.calls[0]?.[0].approvedContentHash).toBe(carded);
+    expect(vi.mocked(deps.installer.install).mock.calls[0]?.[0]).toMatchObject({
+      approvedContentHash: carded,
+      approvedPackageType: 'plugin',
+    });
   });
 
   it('says a project install is not global', async () => {

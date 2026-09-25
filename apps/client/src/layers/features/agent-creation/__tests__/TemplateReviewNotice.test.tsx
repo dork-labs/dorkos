@@ -66,6 +66,21 @@ describe('TemplateReviewNotice', () => {
     expect(files).toHaveLength(2);
     expect(files[0]).toHaveTextContent('Show .codex/config.toml');
     expect(files[1]).toHaveTextContent('Too long to show here (40000 bytes)');
+    // The button says what the person has not seen.
+    expect(
+      screen.getByRole('button', { name: 'Create without seeing .codex/hooks.json' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers plain Create with these when every file was shown', () => {
+    renderNotice({
+      source: 'github:someone/tpl',
+      contentHash: 'sha256:x',
+      findings: [{ path: '.claude/settings.json', message: 'settings' }],
+      settings: [{ path: '.claude/settings.json', bytes: SETTINGS.length, content: SETTINGS }],
+      disclosed: NOTHING_RUNS,
+    });
+    expect(screen.getByRole('button', { name: 'Create with these' })).toBeInTheDocument();
   });
 
   it('shows the commands a skill’s text runs, with hidden characters made visible (DOR-2327)', () => {

@@ -18,6 +18,7 @@ import {
   mergeMarketplace,
   primaryCategory,
   type MergedMarketplaceEntry,
+  type PackageType,
   type PluginSource,
 } from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -1158,6 +1159,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       let approved: ApprovedPackage | undefined;
       let heldTo = approvedDisclosure;
       let heldToFiles: string | undefined;
+      let heldToType: PackageType | undefined;
       if (trustedCaller(readCallerAuthority(req, res))) {
         // The person saw what it runs and which files: the installer holds the
         // install to the disclosure, and consent records it only when the
@@ -1180,12 +1182,16 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           global
         );
         if ('refused' in asked) return asked.refused;
+        // Held to the files and the type the preview fetched, card or not: the
+        // install is a second fetch, and a source that serves something else
+        // to it is refused before anything lands (DOR-2325).
+        heldToFiles = asked.contentHash;
+        heldToType = asked.packageType;
         if (!('unasked' in asked)) {
           approved = asked.approved;
           // Held to what was previewed either way: a source that changes what
           // it runs before the install lands is refused, card or not.
           heldTo = asked.previewed;
-          heldToFiles = asked.contentHash;
         }
       }
       const result = await installer.install({
@@ -1193,6 +1199,7 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         ...request,
         ...(heldTo !== undefined && { approvedDisclosure: heldTo }),
         ...(heldToFiles !== undefined && { approvedContentHash: heldToFiles }),
+        ...(heldToType !== undefined && { approvedPackageType: heldToType }),
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // After the install landed, never before: a failed install records nothing.
@@ -1494,9 +1501,10 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
    * A project install of any other type is not asked about here: its hooks
    * are gated when projected.
    *
-   * @returns What the install is held to, and the person's approval when a
-   *   card was granted; `unasked` for a project install this does not cover;
-   *   or the response that ends the request unrun.
+   * @returns What the install is held to (always the previewed content hash
+   *   and type, DOR-2325), and the person's approval when a card was granted;
+   *   `unasked` for a project install no card covers; or the response that
+   *   ends the request unrun.
    */
   const askAboutAgentInstall = async (
     req: Request,
@@ -1506,26 +1514,25 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     global: boolean
   ): Promise<
     | { refused: Response }
-    | { unasked: true }
-    | {
-        previewed: DisclosedEffects | undefined;
-        approved?: ApprovedPackage;
-        contentHash?: string;
-      }
+    | ({ contentHash: string; packageType: PackageType } & (
+        { unasked: true } | { previewed: DisclosedEffects | undefined; approved?: ApprovedPackage }
+      ))
   > => {
     const name = String(req.params.name);
     const staged = await installer.preview({ name, ...request });
     const previewed = disclosedEffectsOf(staged.preview) ?? undefined;
-    const agentPackage = staged.manifest.type === 'agent';
+    // What the install is held to, asked about or not (DOR-2325).
+    const contentHash = await packageContentHash(staged.packagePath);
+    const packageType = staged.manifest.type;
+    const agentPackage = packageType === 'agent';
     if (!agentPackage) {
-      if (!global) return { unasked: true };
+      if (!global) return { unasked: true, contentHash, packageType };
       const activated = GLOBALLY_ACTIVATED_TYPES.has(staged.manifest.type);
       const replaces = await globalPackageExists(dorkHome, staged.manifest.name);
       const runs = disclosesAnything(activationEffectsOf(previewed ?? null));
-      if (!activated || (!replaces && !runs)) return { previewed };
+      if (!activated || (!replaces && !runs)) return { previewed, contentHash, packageType };
     }
 
-    const contentHash = await packageContentHash(staged.packagePath);
     const identity = getRequestAgentIdentity(res);
     const confirmation: ConfirmationRequest = {
       packageName: name,
@@ -1576,7 +1583,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
     return {
       previewed,
       approved: { disclosed: previewed ?? null, contentHash },
-      ...(agentPackage && { contentHash }),
+      contentHash,
+      packageType,
     };
   };
 

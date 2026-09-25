@@ -32,6 +32,8 @@ The app created a marketplace agent by cloning the package's `source` as a templ
 
 **An agent installing an agent package.** `POST /api/marketplace/packages/:name/install` from a caller that is not a trusted person always raises the `marketplace.install` card for an agent package, whatever `projectPath` says. The card names and binds the folder it lands in (`computeTargetDir`, the flow's own), its staged content hash and what its skills run. The install is then held to that hash (`approvedContentHash`), and `marketplace_install` passes the same hash. A declined card lands nothing, and a token replayed for different bytes raises a new card.
 
+**Every untrusted install is held to its preview.** The preview and the install are two fetches. So every install by a caller that is not a trusted person, carded or not, passes the preview's content hash (`approvedContentHash`) and package type (`approvedPackageType`), and so does `marketplace_install`. The installer enforces both for every package type before writing anything. A source that previews as a plugin (no card) and installs as an agent package is refused with `disclosure_changed`.
+
 **App.**
 
 - A gallery pick from the marketplace and a seeded offer are both treated as a marketplace package. The arrival card and the naming step fetch its preview (`useOfferSchedules`), which already feeds the schedule offer, and send `package` with its approval.

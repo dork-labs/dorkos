@@ -79,6 +79,19 @@ function omittedText(file: TemplateSettingsFile): string {
   return `Too long to show here (${file.bytes} bytes). Read it in the template before you create the agent.`;
 }
 
+/**
+ * What the create button says. When a settings file could not be shown here,
+ * it says so, so nobody agrees to a file they were never shown.
+ */
+function createLabel(template: TemplateBrings): string {
+  const unseen = (template.settings ?? []).filter(
+    (f) => f.omitted === 'too-long' || f.omitted === 'not-text'
+  );
+  if (unseen.length === 0) return 'Create with these';
+  if (unseen.length === 1) return `Create without seeing ${unseen[0]!.path}`;
+  return `Create without seeing ${unseen.length} files`;
+}
+
 /** One line per thing the template runs or allows, in plain words. */
 function linesOf(template: TemplateBrings): ReviewLine[] {
   const { disclosed } = template;
@@ -163,7 +176,7 @@ export function TemplateReviewNotice({
                   {file.path === line.label ? 'Show what it contains' : `Show ${file.path}`}
                 </summary>
                 {file.content !== undefined ? (
-                  <pre className="border-border/60 bg-muted/40 mt-1 max-h-56 overflow-auto rounded border p-2 font-mono text-xs break-words whitespace-pre-wrap">
+                  <pre className="border-border/60 bg-muted/40 mt-1 max-h-[50dvh] overflow-auto rounded border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56">
                     {file.content}
                   </pre>
                 ) : (
@@ -178,8 +191,14 @@ export function TemplateReviewNotice({
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={isCreating}>
           Don’t create it
         </Button>
-        <Button size="sm" onClick={onCreateAnyway} disabled={isCreating}>
-          {isCreating ? 'Creating…' : 'Create with these'}
+        <Button
+          size="sm"
+          onClick={onCreateAnyway}
+          disabled={isCreating}
+          // A file's path can be long; the label wraps rather than leaving the card.
+          className="h-auto max-w-full py-1.5 text-left [overflow-wrap:anywhere] whitespace-normal"
+        >
+          {isCreating ? 'Creating…' : createLabel(template)}
         </Button>
       </div>
     </div>
