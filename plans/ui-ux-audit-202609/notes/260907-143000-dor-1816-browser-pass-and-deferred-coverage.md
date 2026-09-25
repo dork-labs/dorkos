@@ -42,6 +42,13 @@ green and still reports every OTHER escape on that page; that entry also fails
 the test if the escape ever stops happening, so fixing this forces the entry's
 deletion.
 
+**Resolved (2026-09-25).** The chip that yields is the room-wide Stop's word:
+below a 576px bar (`@max-xl/bar`, the bar's own width) `RoomHaltButton` drops
+to a 24px icon, keeping its accessible name and tooltip. Measured at 768px with
+the sidebar docked, the row now fits with 12, 120 and 1200 members, where it
+had overshot by 9px, 17px and more. `EXPECTED_ESCAPES` and the two-member
+roster pin are gone; the sweep now judges Home at 12 and 120 members instead.
+
 ### F2 — `TaskTemplateCard`'s toggle variant nests a button inside a button
 
 **P3 · S · lens 6** — found by the browser pass added in DOR-1816.

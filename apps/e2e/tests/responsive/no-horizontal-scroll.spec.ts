@@ -22,16 +22,15 @@ import { test, expect } from '../../fixtures';
  *
  * That second check is quiet by construction. Truncation sets `overflow:hidden`
  * to earn its ellipsis, a scroller sets `auto`, and both are skipped — only
- * text painting outside a box that does not clip is reported. Across the
- * sixteen route×width cells it reports one escape today (see
- * {@link EXPECTED_ESCAPES}), and it reports the Workspaces line the moment the
- * path goes back into the sentence.
+ * text painting outside a box that does not clip is reported. It reports
+ * nothing on any route at either width today, with no exceptions, and it
+ * reports the Workspaces line the moment the path goes back into the sentence.
  *
  * **Every route is judged at two widths, and the second is not a formality**
  * (DOR-1816). See {@link WIDTHS}: DOR-1747's own review found a real escape
  * that only exists at 768px, and this file could not have caught it. The
- * tablet pass found another one on its first run — see {@link EXPECTED_ESCAPES}
- * — which is the answer to whether it was worth adding.
+ * tablet pass found another one on its first run — Home's bar, see
+ * {@link HOME_ROSTERS} — which is the answer to whether it was worth adding.
  *
  * **What it costs, measured rather than estimated.** Back-to-back on one
  * machine at `--workers=2`: the eight phone cases sum to 38.1s of test time
@@ -39,7 +38,9 @@ import { test, expect } from '../../fixtures';
  * 49.5s. So the sum went up 1.9× and nothing else did — the cost is in the
  * cases, not in some per-run overhead that would have made this a bad trade.
  * CI runs one worker per shard, where the sum IS the wall clock: about 35
- * extra seconds on a shard that already takes ~16 minutes. Nothing is sampled
+ * extra seconds on a shard that already takes ~16 minutes. Home is judged at
+ * two team sizes rather than one ({@link HOME_ROSTERS}), which is two more
+ * cases of the same cost — eighteen in all. Nothing is sampled
  * or sharded away to pay for it: a guard that quietly checked half its routes
  * would be worse than one that honestly checked one width.
  *
@@ -221,149 +222,96 @@ async function escapedText(page: Page): Promise<{ escapes: string[]; textLeaves:
  */
 const MIN_TEXT_LEAVES = 16;
 
-/** One escape this guard already knows about — see {@link EXPECTED_ESCAPES}. */
-interface ExpectedEscape {
-  /**
-   * Enough of the escape's own description to name the box it is about.
-   *
-   * The tag and its class list, which identifies WHICH element escaped. The
-   * size deliberately lives in {@link maxOvershootPx} instead of here: matching
-   * on `+4px` too would make a one-pixel change of layout rounding read as "the
-   * escape was fixed", and this file would then fail for a reason nobody did
-   * anything about.
-   */
-  fragment: string;
-  /** The most it may escape by, in CSS pixels, before this stops being excused. */
-  maxOvershootPx: number;
-}
-
 /**
- * How far one escape reported by {@link escapedText} actually escaped.
+ * The team sizes Home's bar is judged at — a two-digit and a three-digit head
+ * count, each on both widths.
  *
- * Parsed back out of the description rather than returned alongside it: the
- * probe's answer is what a failure prints, so the number a reader sees and the
- * number this asserts on are the same number by construction.
+ * **Why a roster is forced at all.** Home's bar carries #team's head count, and
+ * #team holds every agent any earlier spec on this server created — so the
+ * number, and with it the width of the members chip, depended on which specs
+ * happened to run first. That is how this file first saw DOR-1816 finding F1:
+ * at 768px, with the sidebar docked, Home's bar had 293px and wanted more, and
+ * the overshoot grew with the count — 4px at two members, 9px at twelve, about
+ * 12px at the 37 a merge-group run happened to reach, 17px at 120. For a while
+ * the roster was pinned to two members so the case measured one known width,
+ * which made it deterministic without making the bar correct.
  *
- * @param escape - One entry from `escapes`.
- * @returns The overshoot in CSS pixels, or `Infinity` when the description does
- *   not start with one — which fails every ceiling rather than passing it.
+ * **Why these two numbers.** The bar is fixed now (the room-wide Stop drops its
+ * word on a bar that narrow — `RoomHaltButton`), so the roster is forced LARGE
+ * instead of small: the widest counts a real team plausibly shows are the ones
+ * that would find the next regression first. Twelve is the first two-digit
+ * count past the ten agents a heavy user runs; 120 is the three-digit case the
+ * old pin could never have seen. A count is monotonic in width, so a bar that
+ * holds 120 holds every smaller number too.
  */
-function overshootOf(escape: string): number {
-  const match = /^\+(\d+)px /.exec(escape);
-  return match === null ? Number.POSITIVE_INFINITY : Number(match[1]);
-}
+const HOME_ROSTERS = [12, 120] as const;
 
 /**
- * Escapes this guard has already found, reported, and deliberately not fixed
- * here — keyed `route@width`, valued with a fragment of the escape's own
- * description.
- *
- * **An entry is a promise in three directions, and that is what stops this from
- * being a mute button.** An escape naming one of these is not reported, and
- * every other escape on the same page still is. An entry that stops matching
- * fails the test, so the moment somebody fixes the bar this guard goes red and
- * asks for the entry to be deleted — which is the only reliable way an
- * allowance like this ever gets removed. And an entry excuses a SIZE as well as
- * a shape: `fragment` names the box, `maxOvershootPx` says how far it is
- * allowed to escape, so the same box escaping ten times as far is a failure
- * rather than a fact this file already knew.
- *
- * ── `/` at 768px — Home's bar overflows its own row by ~4px (DOR-1816) ──
- *
- * Measured: the cross-fade wrapper that holds the route's bar gets 293px of the
- * header, and its children want 297.3px. Nothing in the row will yield the
- * difference, and each refusal is deliberate: `BarTabStrip` is already at the
- * `min-w-28` floor DOR-1748 gave it, the chips zone is `shrink-0`, and
- * `RoomRunState` reserves ~70px whether or not anything is running (its own
- * "reserved-space mechanism (I3)" — an agent picking work up must not move the
- * row). So the health dot, last in the row, paints 4.3px past the wrapper.
- *
- * 768px is the first width at which this can happen at all, which is why no
- * earlier guard saw it: `RoomRunState` draws nothing below the mobile
- * breakpoint by design, so the ~70px it reserves appears for the first time at
- * exactly the width this sweep added.
- *
- * **Not fixed here on purpose.** It is invisible today — the 4.3px lands in the
- * header's own 8px gap and overlaps nothing — and every candidate fix is a
- * product decision about which chip yields on Home's bar, which does not belong
- * in a coverage PR. Recorded as finding F1 in
- * `plans/ui-ux-audit-202609/notes/260907-143000-dor-1816-browser-pass-and-deferred-coverage.md`
- * and filed under UI/UX Audit 2026-09 instead.
- */
-const EXPECTED_ESCAPES: Readonly<Record<string, ExpectedEscape>> = {
-  '/@768': {
-    fragment: '<div class="flex shrink-0 items-center gap-2">',
-    // Measured at 4px with a single-digit #team roster, which is what
-    // PINNED_TEAM_ROSTER holds this case to (a two-digit roster reaches ~12px;
-    // see there). Five is that plus a pixel of rounding — deliberately
-    // NOT open-ended: an excuse with no ceiling would go on excusing this
-    // escape at 40px and at 400px, which is precisely the regression F1's own
-    // recommendation predicts (the overshoot grows the moment the chips do).
-    maxOvershootPx: 5,
-  },
-};
-
-/**
- * How many #team members Home's bar is shown, whatever the server really has.
- *
- * **This pin makes the `/` case deterministic. It does NOT make the bar
- * correct.** Home's bar carries #team's head count, and #team holds every
- * agent any earlier spec on this server created — so the number, and with it
- * the width of the chip, depended on which specs happened to run first. At
- * 768px a two-digit count (37, in merge-group run 35847511684) pushes the bar
- * about 12px past its row, against the ~4px {@link EXPECTED_ESCAPES} was
- * measured at with a single-digit roster. That is DOR-1816 finding F1 getting
- * worse exactly as predicted, and it is a real defect for anyone running ten or
- * more agents; it is tracked as a product fix, not excused here.
- *
- * What the pin buys is that this case always measures the state it was written
- * against: the two members a fresh install's #team has (the owner and DorkBot,
- * the oldest memberships, so the first two the roster lists). A green `/` case
- * therefore says "no worse than F1 as measured", never "the bar is fixed".
- */
-const PINNED_TEAM_ROSTER = 2;
-
-/**
- * Serve #team's roster trimmed to {@link PINNED_TEAM_ROSTER} members.
+ * Serve #team's roster at exactly `size` members, whatever the server has.
  *
  * The same mechanism `rooms/canvas/room-follow.spec.ts` uses to fix a roster:
  * the real response is fetched and only `members` is changed, so everything
- * else Home reads about the room is still what the server said.
+ * else Home reads about the room is still what the server said. The real
+ * members come first; the rest are copies of the last real one under ids of
+ * their own, so nothing keyed on a member's id sees the same one twice.
  *
  * @param page - The page whose requests to rewrite.
  * @param teamRoomId - #team's id, from `teamRoomApi.teamRoom()`.
+ * @param size - How many members the roster should report.
  */
-async function pinTeamRoster(page: Page, teamRoomId: string): Promise<void> {
+async function forceTeamRoster(page: Page, teamRoomId: string, size: number): Promise<void> {
   await page.route(`**/api/rooms/${teamRoomId}`, async (route) => {
     const response = await route.fetch();
-    const body = (await response.json()) as { members: unknown[] };
-    body.members = body.members.slice(0, PINNED_TEAM_ROSTER);
+    const body = (await response.json()) as { members: Array<Record<string, unknown>> };
+    const real = body.members.slice(0, size);
+    const template = real[real.length - 1];
+    if (template === undefined) throw new Error('#team came back with no members to copy');
+    const author = (template.author ?? {}) as Record<string, unknown>;
+    const copies = Array.from({ length: size - real.length }, (_, i) => {
+      const id = `e2e-roster-${i}`;
+      return { ...template, authorId: id, author: { ...author, id } };
+    });
+    body.members = [...real, ...copies];
     await route.fulfill({ response, json: body });
   });
 }
+
+/** One case: a route, and for Home the team size its bar is shown. */
+interface RouteCase {
+  route: (typeof ROUTES)[number];
+  roster?: (typeof HOME_ROSTERS)[number];
+}
+
+/** Every route once, except Home, which is judged once per {@link HOME_ROSTERS} entry. */
+const CASES: RouteCase[] = ROUTES.flatMap((route): RouteCase[] =>
+  route === '/' ? HOME_ROSTERS.map((roster) => ({ route, roster })) : [{ route }]
+);
 
 for (const { name, viewport } of WIDTHS) {
   test.describe(`Responsive — nothing escapes its container at ${viewport.width}px @smoke`, () => {
     test.use({ viewport });
 
-    for (const route of ROUTES) {
-      test(`${route} contains its own content on a ${name}`, async ({
+    for (const { route, roster } of CASES) {
+      const suffix = roster === undefined ? '' : ` with ${roster} on the team`;
+      test(`${route} contains its own content on a ${name}${suffix}`, async ({
         page,
         basePage,
         teamRoomApi,
       }) => {
-        if (route === '/') await pinTeamRoster(page, (await teamRoomApi.teamRoom()).id);
+        if (roster !== undefined) {
+          await forceTeamRoster(page, (await teamRoomApi.teamRoom()).id, roster);
+        }
         await basePage.goto(route);
         await basePage.waitForAppReady();
         // The shell mounting is not the route having anything in it — an API
         // that never answers still passes `app-shell`. Settle network first so
         // the sample below looks at real content rather than a skeleton.
         await page.waitForLoadState('networkidle');
-        if (route === '/') {
-          // Proof the pin reached the bar. A roster shorter than the pin (a
-          // fresh #team that stopped holding the owner and DorkBot) shows a
-          // different number here instead of silently measuring another width.
-          await expect(page.getByTestId('bar-members-chip')).toHaveText(String(PINNED_TEAM_ROSTER));
+        if (roster !== undefined) {
+          // Proof the roster reached the bar. Without it a rewrite that stopped
+          // matching the request would measure whatever #team really holds and
+          // report it as the width this case is named for.
+          await expect(page.getByTestId('bar-members-chip')).toHaveText(String(roster));
         }
 
         // **The width the page BELIEVES it is, not the one Playwright asked
@@ -395,41 +343,12 @@ for (const { name, viewport } of WIDTHS) {
             `likely never loaded its data`
         ).toBeGreaterThanOrEqual(MIN_TEXT_LEAVES);
 
-        const expected = EXPECTED_ESCAPES[`${route}@${viewport.width}`];
-        const matched =
-          expected === undefined ? [] : escapes.filter((one) => one.includes(expected.fragment));
-        const unexpected =
-          expected === undefined
-            ? escapes
-            : escapes.filter((one) => !one.includes(expected.fragment));
         expect(
-          unexpected,
-          `${route} paints content outside its container at ${viewport.width}px`
+          escapes,
+          `${route} paints content outside its container at ${viewport.width}px${suffix}`
         ).toEqual([]);
-        if (expected !== undefined) {
-          // The second half of the promise EXPECTED_ESCAPES makes. Stated as a
-          // count rather than a boolean so a failure prints which way it went:
-          // 0 means the escape is gone and the entry is owed a deletion, and
-          // anything above 1 means the fragment has stopped naming one thing.
-          expect(
-            matched.length,
-            `${route} at ${viewport.width}px no longer paints the ONE escape ` +
-              `EXPECTED_ESCAPES records for it (${expected.fragment}). If it was fixed, delete ` +
-              `that entry — it is now hiding whatever escapes this route grows next`
-          ).toBe(1);
-          // The third half: excused, but not excused without limit. Without
-          // this the entry above goes on covering the same box escaping by
-          // 40px or 400px, which is the growth F1 itself predicts.
-          const worstExcused = Math.max(...matched.map(overshootOf));
-          expect(
-            worstExcused,
-            `${route} at ${viewport.width}px escapes by ${worstExcused}px, and ` +
-              `EXPECTED_ESCAPES only excuses it up to ${expected.maxOvershootPx}px. The escape ` +
-              `this file already knew about has got worse; it is not the one that was measured`
-          ).toBeLessThanOrEqual(expected.maxOvershootPx);
-        }
 
-        expect(worst, `${route} scrolled ${worst}px past ${viewport.width}px`).toBe(0);
+        expect(worst, `${route} scrolled ${worst}px past ${viewport.width}px${suffix}`).toBe(0);
       });
     }
   });
