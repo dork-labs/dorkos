@@ -13,6 +13,7 @@
  */
 import { ChevronRight, FileWarning, History } from 'lucide-react';
 import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
+import { cn } from '@/layers/shared/lib';
 
 /** A modified installation's integrity. */
 export type ModifiedIntegrity = Extract<InstallIntegrity, { status: 'modified' }>;
@@ -120,16 +121,34 @@ function UnprovenNote({
   unproven: NonNullable<Extract<InstallIntegrity, { status: 'clean' }>['unproven']>;
 }) {
   const count = unproven.files.length;
+  const running = unproven.running;
+  const runs = running.length > 0;
   const local = unproven.check.source === 'local';
+  const inert = unproven.files.filter((p) => !running.includes(p));
   return (
-    <details data-testid="installation-integrity-unproven" className="group/kept mt-1 text-xs">
-      <summary className="text-muted-foreground hover:text-foreground focus-ring flex cursor-pointer list-none items-start gap-1 rounded-sm select-none [&::-webkit-details-marker]:hidden">
+    <details
+      data-testid="installation-integrity-unproven"
+      data-runs={runs ? 'true' : 'false'}
+      className="group/kept mt-1 text-xs"
+    >
+      <summary
+        className={cn(
+          'focus-ring flex cursor-pointer list-none items-start gap-1 rounded-sm select-none [&::-webkit-details-marker]:hidden',
+          // A kept file that still runs is the one thing here worth a glance:
+          // it carries the amber the icon alone carries otherwise.
+          runs
+            ? 'text-amber-700 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300'
+            : 'text-muted-foreground hover:text-foreground'
+        )}
+      >
         <History
           className="mt-0.5 size-3 shrink-0 text-amber-600 dark:text-amber-400"
           aria-hidden
         />
         <span>
           Kept {count} {count === 1 ? 'file' : 'files'} DorkOS couldn’t sort after an update.
+          {runs &&
+            ` ${running.length} of ${count === 1 ? 'it' : 'them'} still ${running.length === 1 ? 'runs' : 'run'}.`}
         </span>
         <ChevronRight
           className="mt-0.5 size-3 shrink-0 transition-transform duration-200 group-open/kept:rotate-90"
@@ -145,7 +164,8 @@ function UnprovenNote({
             : 'Check files sets aside the leftovers and keeps yours.'}
         </p>
         {unproven.check.last && <p>{unproven.check.last.message}</p>}
-        <PathGroup title="Kept" paths={unproven.files} />
+        <PathGroup title="Still runs" paths={running} />
+        <PathGroup title="Kept" paths={inert} />
       </div>
     </details>
   );

@@ -1227,6 +1227,11 @@ export type InstallIntegrityUnknownReason =
 export interface InstallUnprovenFiles {
   /** Where each kept file sits now, relative to the install folder, sorted (at most 50). */
   files: string[];
+  /**
+   * The kept files that sit where a package keeps what it runs (a skill, a
+   * command, a hook, a program), so they still run. Sorted, at most 50.
+   */
+  running: string[];
   /** Whether "Check files" can sort them, and what the last attempt said. */
   check: InstallCheckInfo;
 }

@@ -92,7 +92,10 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
   // Files an update kept unproven are neither the person's additions nor
   // known to be the package's: named on their own, never as `added`.
   const unprovenPaths = Object.keys(record.unproven?.files ?? {});
-  const added = (await addedEffectFiles(root, record)).filter((p) => !unprovenPaths.includes(p));
+  const unrecorded = await addedEffectFiles(root, record);
+  const added = unrecorded.filter((p) => !unprovenPaths.includes(p));
+  // Kept files where a package keeps what it runs still run (DOR-2322).
+  const running = unrecorded.filter((p) => unprovenPaths.includes(p));
   const stillThere: string[] = [];
   for (const p of unprovenPaths) {
     if ((await lstatChain(root, p)).kind !== 'missing') stillThere.push(p);
@@ -115,6 +118,7 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
       ? {
           unproven: {
             files: cap(stillThere),
+            running: cap(running),
             check: {
               source: record.unproven?.from ? ('fetchable' as const) : ('local' as const),
               ...(lastCheck(root) && { last: lastCheck(root)! }),

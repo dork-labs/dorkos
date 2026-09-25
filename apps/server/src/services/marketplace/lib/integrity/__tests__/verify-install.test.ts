@@ -281,10 +281,16 @@ describe('verifyInstall', () => {
         },
       },
     });
+    // skills/old/SKILL.md sits where a package keeps what it runs: it still
+    // runs, and says so (review 3). notes.txt does not.
     expect(await verifyInstall(root)).toEqual({
       status: 'clean',
       customized: [],
-      unproven: { files: ['notes.txt', 'skills/old/SKILL.md'], check: { source: 'fetchable' } },
+      unproven: {
+        files: ['notes.txt', 'skills/old/SKILL.md'],
+        running: ['skills/old/SKILL.md'],
+        check: { source: 'fetchable' },
+      },
     });
   });
 

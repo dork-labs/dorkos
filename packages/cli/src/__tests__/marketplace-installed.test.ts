@@ -202,7 +202,11 @@ describe('runMarketplaceInstalled', () => {
             integrity: {
               status: 'clean',
               customized: [],
-              unproven: { files: ['a.md', 'b.md'], check: { source: 'fetchable' } },
+              unproven: {
+                files: ['a.md', 'skills/b/SKILL.md'],
+                running: ['skills/b/SKILL.md'],
+                check: { source: 'fetchable' },
+              },
             },
           },
           {
@@ -217,11 +221,11 @@ describe('runMarketplaceInstalled', () => {
     await runMarketplaceInstalled({ json: false, verify: true });
 
     const out = printed(logSpy);
-    expect(out).toMatch(/flow\s.*\s+as installed, 2 kept/);
+    expect(out).toMatch(/flow\s.*\s+as installed, 2 kept \(1 still runs\)/);
     expect(out).toMatch(/guessed\s.*\s+unknown/);
     expect(out).toMatch(/dorkos marketplace check-files guessed/);
     expect(out).toMatch(
-      /kept: files an update kept because DorkOS couldn't tell whether they were yours\. Run 'dorkos marketplace check-files flow' to sort them\./
+      /kept: files an update kept because DorkOS couldn't tell whether they were yours\. Some still run\. Run 'dorkos marketplace check-files flow' to sort them\./
     );
   });
 

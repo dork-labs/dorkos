@@ -78,7 +78,11 @@ function filesOf(pkg: InstalledPackage): string | undefined {
   const integrity = pkg.integrity;
   if (!integrity) return undefined;
   const kept = integrity.status !== 'unknown' && integrity.unproven;
-  const keptNote = kept ? `, ${kept.files.length} kept` : '';
+  const keptNote = !kept
+    ? ''
+    : kept.running.length > 0
+      ? `, ${kept.files.length} kept (${kept.running.length} still ${kept.running.length === 1 ? 'runs' : 'run'})`
+      : `, ${kept.files.length} kept`;
   switch (integrity.status) {
     case 'clean':
       return `as installed${keptNote}`;
@@ -203,10 +207,17 @@ export async function runMarketplaceInstalled(args: MarketplaceInstalledArgs): P
       p.integrity.unproven !== undefined &&
       p.integrity.unproven.check.source !== 'local'
   );
-  if (packages.some((p) => p.integrity?.status !== 'unknown' && p.integrity?.unproven)) {
+  const withKept = packages.filter(
+    (p) => p.integrity !== undefined && p.integrity.status !== 'unknown' && p.integrity.unproven
+  );
+  if (withKept.length > 0) {
+    const anyRuns = withKept.some(
+      (p) => p.integrity?.status !== 'unknown' && (p.integrity?.unproven?.running.length ?? 0) > 0
+    );
     console.log('');
     console.log(
       "kept: files an update kept because DorkOS couldn't tell whether they were yours." +
+        (anyRuns ? ' Some still run.' : '') +
         (sortable.length > 0
           ? ` Run 'dorkos marketplace check-files ${sortable[0].name}' to sort them.`
           : " Delete any you don't need.")

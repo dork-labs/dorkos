@@ -284,12 +284,18 @@ export function checkInstalledPackages(input: InstalledPackagesInput): CheckResu
       .map((i) => i.name)
   );
   // Files an update kept because nothing proved whose they were (DOR-2322).
-  const kept = unique(
-    input.installs
+  const keptInstalls = input.installs.filter(
+    (i) =>
+      (i.integrity.status === 'clean' || i.integrity.status === 'modified') &&
+      i.integrity.unproven !== undefined
+  );
+  const kept = unique(keptInstalls.map((i) => i.name));
+  const keptRunning = new Set(
+    keptInstalls
       .filter(
         (i) =>
           (i.integrity.status === 'clean' || i.integrity.status === 'modified') &&
-          i.integrity.unproven !== undefined
+          (i.integrity.unproven?.running.length ?? 0) > 0
       )
       .map((i) => i.name)
   );
@@ -306,7 +312,7 @@ export function checkInstalledPackages(input: InstalledPackagesInput): CheckResu
     older.length > 0 &&
       `Installed by an older DorkOS: ${older.join(', ')}. DorkOS can't tell their files from yours yet.`,
     kept.length > 0 &&
-      `Kept files an update couldn't sort: ${kept.join(', ')}. DorkOS couldn't tell whether they were yours.`,
+      `Kept files an update couldn't sort: ${kept.map((n) => (keptRunning.has(n) ? `${n} (some still run)` : n)).join(', ')}. DorkOS couldn't tell whether they were yours.`,
   ]
     .filter(Boolean)
     .join(' ');

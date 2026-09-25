@@ -691,8 +691,9 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
  * What verification says about {@link MOCK_INSTALLED_FOR_UPDATES} (DOR-2197):
  * Release Bot's flow has files edited, added and removed with an update
  * waiting; python-skills was installed by an older DorkOS and can be checked;
- * the global flow was checked and found to differ; code-reviewer kept two
- * files after an offline update that Check files can sort (DOR-2322);
+ * the global flow was checked and found to differ; code-reviewer kept three
+ * files after an offline update, one of which still runs, that Check files
+ * can sort (DOR-2322);
  * obsidian-sync is a linked working copy; the rest are as installed.
  */
 export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UPDATES.map((pkg) => {
@@ -742,7 +743,8 @@ export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UP
         status: 'clean' as const,
         customized: [],
         unproven: {
-          files: ['prompts/review.md.dork-old', 'notes/team-style.md'],
+          files: ['commands/old-review.md', 'notes/team-style.md', 'prompts/review.md.dork-old'],
+          running: ['commands/old-review.md'],
           check: { source: 'fetchable' as const },
         },
       },

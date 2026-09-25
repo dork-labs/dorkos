@@ -236,7 +236,11 @@ describe('checkInstalledPackages (DOR-2197)', () => {
           integrity: {
             status: 'clean',
             customized: [],
-            unproven: { files: ['notes/a.md'], check: { source: 'fetchable' } },
+            unproven: {
+              files: ['notes/a.md', 'skills/x/SKILL.md'],
+              running: ['skills/x/SKILL.md'],
+              check: { source: 'fetchable' },
+            },
           },
         },
       ],
@@ -245,7 +249,7 @@ describe('checkInstalledPackages (DOR-2197)', () => {
     expect(result.label).toBe('2 installed packages need a look');
     expect(result.detail).toContain('Installed by an older DorkOS: guessed.');
     expect(result.detail).toContain(
-      "Kept files an update couldn't sort: kept. DorkOS couldn't tell whether they were yours."
+      "Kept files an update couldn't sort: kept (some still run). DorkOS couldn't tell whether they were yours."
     );
     expect(result.fix).toContain('dorkos marketplace check-files kept');
     expect(result.detail).not.toMatch(/\//);

@@ -1213,7 +1213,7 @@ describe('InstalledPackagesView', () => {
         [FLOW.installPath]: {
           status: 'clean',
           customized: [],
-          unproven: { files: ['notes.txt', 'old.md'], check: { source: 'fetchable' } },
+          unproven: { files: ['notes.txt', 'old.md'], running: [], check: { source: 'fetchable' } },
         },
       });
       render(<InstalledPackagesView />);
@@ -1228,6 +1228,55 @@ describe('InstalledPackagesView', () => {
       expect(screen.getByRole('button', { name: 'Check the files of Flow' })).toBeEnabled();
     });
 
+    // Purpose (review 3): a kept file where a package keeps what it runs still
+    // runs, so the note says how many in its closed line, lists them apart,
+    // and carries the amber weight a quiet note does not. Fails if running
+    // kept files read like inert ones.
+    it('says which kept files still run, in the stronger weight', async () => {
+      const user = userEvent.setup();
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: {
+            files: ['commands/old.md', 'notes.txt', 'skills/old/SKILL.md'],
+            running: ['commands/old.md', 'skills/old/SKILL.md'],
+            check: { source: 'fetchable' },
+          },
+        },
+      });
+      render(<InstalledPackagesView />);
+
+      const note = screen.getByTestId('installation-integrity-unproven');
+      expect(note).toHaveAttribute('data-runs', 'true');
+      expect(note.querySelector('summary')).toHaveTextContent(
+        'Kept 3 files DorkOS couldn’t sort after an update. 2 of them still run.'
+      );
+      await user.click(note.querySelector('summary')!);
+      expect(within(note).getByRole('list', { name: 'Still runs' })).toHaveTextContent(
+        'commands/old.mdskills/old/SKILL.md'
+      );
+      expect(within(note).getByRole('list', { name: 'Kept' })).toHaveTextContent('notes.txt');
+    });
+
+    // Purpose (review 3): kept files that run nothing keep the quiet weight.
+    it('keeps the quiet weight when no kept file runs', () => {
+      showRows([FLOW], [makeCheck(FLOW)]);
+      setIntegrity({
+        [FLOW.installPath]: {
+          status: 'clean',
+          customized: [],
+          unproven: { files: ['notes.txt'], running: [], check: { source: 'fetchable' } },
+        },
+      });
+      render(<InstalledPackagesView />);
+      expect(screen.getByTestId('installation-integrity-unproven')).toHaveAttribute(
+        'data-runs',
+        'false'
+      );
+    });
+
     // Purpose (DOR-2322): kept files from a package installed from a folder
     // have nothing to be sorted against: no button, and the note says so.
     it('offers no Check files for kept files with nothing to compare against', () => {
@@ -1236,7 +1285,7 @@ describe('InstalledPackagesView', () => {
         [FLOW.installPath]: {
           status: 'clean',
           customized: [],
-          unproven: { files: ['notes.txt'], check: { source: 'local' } },
+          unproven: { files: ['notes.txt'], running: [], check: { source: 'local' } },
         },
       });
       render(<InstalledPackagesView />);
