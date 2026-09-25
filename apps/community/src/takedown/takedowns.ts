@@ -121,6 +121,8 @@ export function projectTakedown(row: TakedownRow, overdueBefore: Date): Takedown
 export interface TakedownHooks {
   /** Runs after the community row is locked and before the actor is rechecked. */
   afterCommunityLock?: () => Promise<void>;
+  /** Runs after the target is locked and read for evidence, before it is removed. */
+  afterSnapshot?: () => Promise<void>;
 }
 
 /** What one takedown request resolved to, before it is written. */
@@ -230,6 +232,7 @@ export async function createItemTakedown(
     key: community.icon_blob_key,
     contentType: community.icon_content_type,
   });
+  await hooks.afterSnapshot?.();
   const evidenceState: EvidenceState = !snapshot.hasContent
     ? 'nothing_to_preserve'
     : input.evidenceStore

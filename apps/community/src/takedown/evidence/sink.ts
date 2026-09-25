@@ -267,6 +267,27 @@ export async function sweepEvidenceStagingFolders(
   return removed;
 }
 
+/**
+ * At startup, remove what a write that stopped midway left behind: the filesystem sink's old
+ * temporary files (the only files the server ever deletes in the evidence folder), or the S3
+ * sink's old staging folders. Tidying never stops startup: a leftover it cannot remove is logged.
+ */
+export async function tidyEvidenceSink(
+  sink: EvidenceSink | null,
+  options: { warn?: (message: string, detail: string) => void; stagingDirectory?: string } = {}
+): Promise<void> {
+  if (!sink) return;
+  try {
+    if (sink instanceof FileSystemEvidenceSink) await sink.sweepTemporaryFiles();
+    else await sweepEvidenceStagingFolders(Date.now(), options.stagingDirectory);
+  } catch (error) {
+    (options.warn ?? ((message, detail) => console.warn(message, detail)))(
+      'Community evidence cleanup unavailable',
+      error instanceof Error ? error.name : 'unknown'
+    );
+  }
+}
+
 /** The configured evidence store, or null when the host set none. */
 export function createEvidenceSink(
   evidence: CommunityConfig['evidence']

@@ -192,8 +192,10 @@ export async function snapshotTarget(
     const entry = await lockEntrySnapshot(client, community.id, target.entryId);
     if (!entry) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
     const files = await client.query<EvidenceFileRow>(
+      // Locked here, in id order as every removal takes files: a file erasure deletes between this
+      // read and the removal would leave a staged record naming bytes that are already queued.
       `SELECT ${EVIDENCE_FILE_COLUMNS} FROM attachments
-       WHERE community_id=$1 AND entry_id=$2 ORDER BY uploaded_at,id`,
+       WHERE community_id=$1 AND entry_id=$2 ORDER BY id FOR UPDATE`,
       [community.id, entry.id]
     );
     // A message its author or an admin already removed has no files left, but their bytes may

@@ -73,6 +73,8 @@ let operator: { cookie: string; communityId: string };
 let bareOperator: { cookie: string; communityId: string };
 /** Runs inside a takedown on `h`, after the community lock. */
 let lockHook: (() => Promise<void>) | null = null;
+/** Runs inside a takedown on `h`, after its target is read for evidence. */
+let snapshotHook: (() => Promise<void>) | null = null;
 const keys = {} as Record<'takedown' | 'read' | 'all' | 'other', { id: string; secret: string }>;
 let bareKey: { id: string; secret: string };
 let counter = 0;
@@ -82,7 +84,10 @@ beforeAll(async () => {
   h = await startTenancyHarness('takedown', {
     now: clock,
     env: { COMMUNITY_EVIDENCE_DRIVER: 'filesystem', COMMUNITY_EVIDENCE_PATH: evidenceDirectory },
-    hooks: { afterTakedownCommunityLock: async () => lockHook?.() },
+    hooks: {
+      afterTakedownCommunityLock: async () => lockHook?.(),
+      afterTakedownSnapshot: async () => snapshotHook?.(),
+    },
   });
   operator = await bootstrapHost(h, 'Hana Host', 'hana@host.test');
   bare = await startTenancyHarness('takedownbare');
@@ -1878,6 +1883,35 @@ describe('after review', () => {
     );
     expect(outcome[0]).toBe('erased');
     expect(outcome[1].status).toBe(404);
+  });
+
+  // Purpose: fails if an erasure can delete a message's file between the takedown reading it for
+  // evidence and removing it: the staged record would name bytes already queued for deletion,
+  // and the copy would fail and hold the community's deletion for good.
+  it('keeps a message’s files locked from the evidence read to the removal', async () => {
+    const c = await canary(h, operator.cookie, 'snapshotlock');
+    const key = await fileKeyOf(h, c.attachmentId);
+    let erasure: Promise<unknown> | undefined;
+    snapshotHook = async () => {
+      snapshotHook = null;
+      erasure = eraseMembership(h.pool, c.s.communityId, c.s.p.memberId, { log: () => {} });
+      // The erasure reaches a lock the takedown holds: the file (fixed) or the message.
+      await waitForLockWaiters(h, 1);
+    };
+    const t = await created(
+      await takedown(
+        h,
+        c.s.communityId,
+        { bearer: keys.takedown.secret },
+        {
+          target: { kind: 'entry', entryId: c.entryId },
+        }
+      )
+    );
+    expect(await erasure).toBe('erased');
+    expect((await blobState(h, key)).state).toBe('evidence_hold');
+    await onlyDue(h, t.id);
+    expect(await copyEvidence(h)).toEqual({ claimed: true, stored: true });
   });
 
   // Purpose: fails if a download that started before a takedown keeps sending the file: its

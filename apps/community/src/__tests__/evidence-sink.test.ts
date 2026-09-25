@@ -21,6 +21,7 @@ import {
   FileSystemEvidenceSink,
   S3EvidenceSink,
   sweepEvidenceStagingFolders,
+  tidyEvidenceSink,
 } from '../takedown/evidence/sink.js';
 
 const id = '0f8c6a44-7a3e-4f3b-9c55-0d2c1b6f8a11';
@@ -210,6 +211,23 @@ it('sweeps only the S3 sink’s own staging folders older than an hour', async (
     await utimes(join(root, name), old, old);
   expect(await sweepEvidenceStagingFolders(Date.now(), root)).toBe(1);
   expect((await readdir(root)).sort()).toEqual([names.fresh, names.lookalike, names.other].sort());
+});
+
+// Purpose: fails if a startup tidy that cannot read its folder stops the server from starting.
+it('logs a failed startup tidy instead of throwing', async () => {
+  const warnings: string[] = [];
+  const sink = new S3EvidenceSink({
+    bucket: 'evidence',
+    region: 'auto',
+    client: { send: async () => ({}) } as never,
+  });
+  await expect(
+    tidyEvidenceSink(sink, {
+      stagingDirectory: join(root, 'missing'),
+      warn: (message) => warnings.push(message),
+    })
+  ).resolves.toBeUndefined();
+  expect(warnings).toEqual(['Community evidence cleanup unavailable']);
 });
 
 describe('the evidence record', () => {
