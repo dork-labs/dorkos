@@ -172,7 +172,9 @@ p {
   font-size: 0.83rem;
   font-weight: 700;
 }
-.field input,
+/* Not a visually hidden input (a file picker inside a button): this rule's width and padding
+   would outrank .sr-only and stretch it across the page, off screen but still scrollable. */
+.field input:not(.sr-only),
 .field textarea,
 .field select {
   width: 100%;
@@ -564,7 +566,7 @@ p {
     min-height: 44px;
     min-width: 44px;
   }
-  .field input,
+  .field input:not(.sr-only),
   .field textarea,
   .field select {
     min-height: 44px;
