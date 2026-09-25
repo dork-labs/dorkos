@@ -371,7 +371,9 @@ An item takedown is one short transaction plus a background copy of at most a fe
 
 ## Open Questions
 
-None. Resolved while specifying:
+- **Content removed before its takedown (decided during task 1.1 review, 2026-09-24).** A takedown of a message its author or an admin already removed holds again that message's files whose bytes the cleanup sweep has not deleted yet (a `removed_file_blobs` row describes each until the sweep) and copies them as evidence, instead of `nothing_to_preserve`. **Residual gap, open:** files the sweep already deleted, and the removed message's original text (replaced in place by the tombstone at removal), are gone; the record says `contentAlreadyRemoved: true`. Keeping them would mean retaining removed content for every removal just in case, which the single-item delete promise rules out.
+
+Resolved while specifying:
 
 - ~~Two-person rule?~~ (RESOLVED) **Answer:** not now. **Rationale:** it delays removal, which is the purpose; a dedicated scope lets a host restrict takedowns to a reviewed tool. A later host setting can add approval without changing the data model.
 - ~~Remove first or copy first?~~ (RESOLVED) **Answer:** hide first, hold the bytes, copy, then delete. **Rationale:** content is never visible while evidence is pending, and never lost to an outage.

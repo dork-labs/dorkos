@@ -98,6 +98,15 @@ CREATE TABLE community_takedowns (
   last_error_class text CHECK (last_error_class ~ '^[A-Z][A-Z0-9_]{0,63}$'),
   created_at timestamptz NOT NULL DEFAULT now(),
   reversed_at timestamptz,
+  -- Who gave up an unsaved copy and let its bytes go: a host operator, or the offline command.
+  -- Kept here because this row outlives the community, unlike most of its audit trail.
+  released_by_kind text CHECK (released_by_kind IN ('person','offline')),
+  released_by_user_id text REFERENCES "user"(id),
+  released_at timestamptz,
+  CONSTRAINT community_takedowns_release CHECK (
+    (released_at IS NULL) = (released_by_kind IS NULL)
+    AND (released_by_kind = 'person') = (released_by_user_id IS NOT NULL)
+  ),
   CONSTRAINT community_takedowns_target CHECK (
     (target_kind = 'entry' AND entry_id IS NOT NULL AND attachment_id IS NULL)
     OR (target_kind = 'attachment' AND attachment_id IS NOT NULL)
@@ -136,3 +145,21 @@ CREATE TABLE takedown_evidence_staging (
   record jsonb NOT NULL,
   blob_keys text[] NOT NULL
 );
+
+-- A file an author or admin removed, whose bytes are queued but not yet swept. If the host then
+-- takes down the removed message, these rows let the takedown hold the bytes again and describe
+-- them in its evidence. The sweep deletes each row with its bytes, and erasure never writes one.
+CREATE TABLE removed_file_blobs (
+  blob_key text PRIMARY KEY,
+  community_id uuid NOT NULL REFERENCES communities(id),
+  entry_id uuid NOT NULL,
+  attachment_id uuid NOT NULL,
+  display_name text NOT NULL,
+  content_type text NOT NULL,
+  byte_size integer NOT NULL CHECK (byte_size > 0),
+  checksum text NOT NULL CHECK (checksum ~ '^[a-f0-9]{64}$'),
+  uploaded_at timestamptz NOT NULL,
+  uploader_member_id uuid,
+  uploader_agent_id uuid
+);
+CREATE INDEX removed_file_blobs_entry_idx ON removed_file_blobs(community_id, entry_id);

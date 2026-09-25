@@ -16,7 +16,11 @@ import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
 import { ERASURE_POLL_MS, pruneErasureRequests, sweepErasures } from './erasure/worker.js';
 import { sweepExpiredPairings } from './routes/pairings.js';
-import { createEvidenceSink, FileSystemEvidenceSink } from './takedown/evidence/sink.js';
+import {
+  createEvidenceSink,
+  FileSystemEvidenceSink,
+  sweepEvidenceStagingFolders,
+} from './takedown/evidence/sink.js';
 import { sweepTakedownEvidence } from './takedown/worker.js';
 
 const config = parseConfig(process.env);
@@ -32,6 +36,8 @@ const evidenceSink = createEvidenceSink(config.evidence);
 // A write that stopped midway leaves a temporary file in the evidence folder; remove the old ones.
 // They are the only files the server ever deletes there.
 if (evidenceSink instanceof FileSystemEvidenceSink) await evidenceSink.sweepTemporaryFiles();
+// The S3 sink stages each file in the temporary folder; a crash can leave one behind.
+else if (evidenceSink) await sweepEvidenceStagingFolders();
 const app = createCommunityApp({ config, pool, blobStore });
 const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
 app.use('/assets/*', serveStatic({ root: staticRoot }));

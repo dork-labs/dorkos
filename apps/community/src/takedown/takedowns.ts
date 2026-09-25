@@ -10,6 +10,7 @@ import {
   deleteReadyExports,
   holdBlobs,
   queueBlobs,
+  reholdRemovedFiles,
   releaseHeldBlobs,
   removeAttachment,
   removeEntry,
@@ -21,6 +22,7 @@ import {
   recordHostAudit,
   type HostActor,
   type HostAuditActor,
+  type HostPersonActor,
 } from '../host/authority.js';
 import { ApiError } from '../http.js';
 
@@ -236,6 +238,7 @@ export async function createItemTakedown(
         ? 'held_on_primary'
         : 'not_configured';
   const hold = evidenceState === 'pending' || evidenceState === 'held_on_primary';
+  if (hold) await reholdRemovedFiles(client, community.id, snapshot.reheldKeys);
 
   if (input.target.kind === 'entry') {
     await removeEntry(client, {
@@ -382,11 +385,10 @@ export async function retryTakedownEvidence(
  */
 export async function releaseHeldEvidence(
   client: PoolClient,
-  input: { takedownId: string; actor: HostAuditActor; now: Date }
+  input: { takedownId: string; actor: HostPersonActor | { kind: 'offline' }; now: Date }
 ): Promise<TakedownRow> {
   const row = await lockTakedown(client, input.takedownId);
-  if (input.actor.kind === 'person' || input.actor.kind === 'api_key')
-    await assertHostActor(client, input.actor, input.now);
+  if (input.actor.kind === 'person') await assertHostActor(client, input.actor, input.now);
   const releasable: readonly EvidenceState[] =
     input.actor.kind === 'offline' ? UNSETTLED_EVIDENCE : ['held_on_primary'];
   if (!releasable.includes(row.evidence_state))
@@ -398,9 +400,9 @@ export async function releaseHeldEvidence(
   await releaseHeldBlobs(client, row.community_id, staged.rows[0]?.blob_keys ?? []);
   const updated = await client.query<TakedownRow>(
     `UPDATE community_takedowns SET evidence_state='not_configured',next_attempt_at=NULL,
-       lease_until=NULL
+       lease_until=NULL,released_by_kind=$2,released_by_user_id=$3,released_at=$4
      WHERE id=$1 RETURNING ${TAKEDOWN_COLUMNS}`,
-    [row.id]
+    [row.id, input.actor.kind, input.actor.kind === 'person' ? input.actor.userId : null, input.now]
   );
   await recordHostAudit(client, input.actor, {
     action: 'takedown.release_held',

@@ -1469,6 +1469,9 @@ export const communityTakedowns = pgTable(
     lastErrorClass: text('last_error_class'),
     createdAt: time('created_at'),
     reversedAt: timestamp('reversed_at', { withTimezone: true }),
+    releasedByKind: text('released_by_kind'),
+    releasedByUserId: text('released_by_user_id').references(() => users.id),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
   },
   (table) => [
     uniqueIndex('community_takedowns_idempotency').on(
@@ -1538,6 +1541,14 @@ export const communityTakedowns = pgTable(
       sql`(${table.evidenceState} = 'stored') = (${table.evidenceRecordSha256} IS NOT NULL) AND (${table.evidenceState} = 'stored') = (${table.evidenceLocation} IS NOT NULL)`
     ),
     check(
+      'community_takedowns_released_by_kind_check',
+      sql`${table.releasedByKind} IN ('person','offline')`
+    ),
+    check(
+      'community_takedowns_release',
+      sql`(${table.releasedAt} IS NULL) = (${table.releasedByKind} IS NULL) AND (${table.releasedByKind} = 'person') = (${table.releasedByUserId} IS NOT NULL)`
+    ),
+    check(
       'community_takedowns_evidence_due',
       sql`${table.evidenceState} NOT IN ('pending','retrying') OR ${table.nextAttemptAt} IS NOT NULL`
     ),
@@ -1555,3 +1566,31 @@ export const takedownEvidenceStaging = pgTable('takedown_evidence_staging', {
   record: jsonb('record').notNull(),
   blobKeys: text('blob_keys').array().notNull(),
 });
+
+/**
+ * A removed file whose bytes are queued but not yet swept, so a later host takedown of its
+ * message can hold them again as evidence (0017). The sweep deletes the row with the bytes.
+ */
+export const removedFileBlobs = pgTable(
+  'removed_file_blobs',
+  {
+    blobKey: text('blob_key').primaryKey(),
+    communityId: uuid('community_id')
+      .notNull()
+      .references(() => communities.id),
+    entryId: uuid('entry_id').notNull(),
+    attachmentId: uuid('attachment_id').notNull(),
+    displayName: text('display_name').notNull(),
+    contentType: text('content_type').notNull(),
+    byteSize: integer('byte_size').notNull(),
+    checksum: text('checksum').notNull(),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull(),
+    uploaderMemberId: uuid('uploader_member_id'),
+    uploaderAgentId: uuid('uploader_agent_id'),
+  },
+  (table) => [
+    index('removed_file_blobs_entry_idx').on(table.communityId, table.entryId),
+    check('removed_file_blobs_byte_size_check', sql`${table.byteSize} > 0`),
+    check('removed_file_blobs_checksum_check', sql`${table.checksum} ~ '^[a-f0-9]{64}$'`),
+  ]
+);

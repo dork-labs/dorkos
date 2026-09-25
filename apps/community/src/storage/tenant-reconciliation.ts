@@ -382,7 +382,7 @@ async function reconcileWithLock(
         if (existing) {
           await client.query(
             `UPDATE managed_blobs SET state='pending_delete'
-             WHERE blob_key=$1 AND community_id=$2 AND state<>'committed'`,
+             WHERE blob_key=$1 AND community_id=$2 AND state<>'committed' AND state<>'evidence_hold'`,
             [key, community.id]
           );
         } else {

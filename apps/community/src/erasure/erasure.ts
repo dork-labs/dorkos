@@ -232,7 +232,15 @@ async function eraseFiles(target: Target): Promise<void> {
     );
     if (!candidates.rows.length) return;
     await withMember(target, async (client) => {
-      // Bump first: this transaction writes redaction rows (content-removal.ts).
+      // Files before the version, in id order, as every removal takes them (content-removal.ts):
+      // a takedown of one of these files holds it and then waits for the version, so taking the
+      // version first would wait on it in a cycle (DOR-2330 covers erasure against removal).
+      await client.query(
+        `SELECT 1 FROM attachments WHERE id=ANY($3::uuid[]) AND ${AUTHORED_ATTACHMENT}
+         ORDER BY id FOR UPDATE`,
+        [target.communityId, target.memberId, candidates.rows.map((row) => row.id)]
+      );
+      // Then the version: this transaction writes redaction rows (content-removal.ts).
       await bumpContentVersion(client, target.communityId);
       const deleted = await client.query<{
         blob_key: string;

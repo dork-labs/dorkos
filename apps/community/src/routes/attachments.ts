@@ -348,6 +348,13 @@ export function registerAttachmentRoutes(
         const channel = await lockChannel(client, attachment.channel_id, current, 'read');
         requireJoined(channel);
         await lockPrincipalAuthority(client, current, 'read');
+        // A file removed or taken down while it downloads stops at the next chunk: a held file's
+        // bytes stay in storage for the evidence copy, so the stream alone would not end.
+        const present = await client.query(
+          'SELECT 1 FROM attachments WHERE id=$1 AND community_id=$2 AND entry_id IS NOT NULL',
+          [attachment.id, principal.community_id]
+        );
+        if (!present.rowCount) throw new ApiError(404, 'NOT_FOUND', 'File not found.');
       } finally {
         client.release();
       }

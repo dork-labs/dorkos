@@ -25,7 +25,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import { REMOVED_ENTRY_TEXT } from '../content-removal.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
-import { ERASED_ENTRY_TEXT } from '../erasure/erasure.js';
+import { ERASED_ENTRY_TEXT, eraseMembership } from '../erasure/erasure.js';
 import {
   FileSystemEvidenceSink,
   S3EvidenceSink,
@@ -43,7 +43,9 @@ import {
   bootstrapHost,
   createPendingCommunity,
   expectStatus,
+  holdingLock,
   startTenancyHarness,
+  waitForLockWaiters,
   type TenancyHarness,
 } from './tenancy-test-harness.js';
 import {
@@ -290,6 +292,16 @@ async function due(harness: TenancyHarness, id: string) {
     "UPDATE community_takedowns SET next_attempt_at=now()-interval '1 second' WHERE id=$1",
     [id]
   );
+}
+
+/** Make only this takedown due, so the worker cannot pick one an earlier test left pending. */
+async function onlyDue(harness: TenancyHarness, id: string) {
+  await harness.pool.query(
+    `UPDATE community_takedowns SET next_attempt_at=now()+interval '1 day'
+     WHERE id<>$1 AND evidence_state IN ('pending','retrying')`,
+    [id]
+  );
+  await due(harness, id);
 }
 
 const fsSink = () => new FileSystemEvidenceSink(evidenceDirectory);
@@ -1482,6 +1494,32 @@ describe('an item takedown with no evidence store', () => {
       []
     );
     expect(leaks([...held.needles, ...plain.needles])).toEqual([]);
+    // Who let the copy go outlives the community itself.
+    await ownerDeletionDue(bare, held.s);
+    expect(await runDeletion(bare, held.s.communityId)).toBe(true);
+    const operatorId = (
+      await bare.pool.query<{ id: string }>(`SELECT id FROM "user" WHERE email='bo@host.test'`)
+    ).rows[0].id;
+    const record = await bare.pool.query(
+      'SELECT released_by_kind,released_by_user_id,released_at FROM community_takedowns WHERE id=$1',
+      [t.id]
+    );
+    expect(record.rows).toEqual([
+      {
+        released_by_kind: 'person',
+        released_by_user_id: operatorId,
+        released_at: expect.any(Date),
+      },
+    ]);
+    const kept = await bare.pool.query<{ action: string; actor_user_id: string | null }>(
+      `SELECT action,actor_user_id FROM host_audit_events WHERE community_id=$1 ORDER BY created_at`,
+      [held.s.communityId]
+    );
+    expect(kept.rows.map((row) => row.action)).toEqual([
+      'takedown.create',
+      'takedown.release_held',
+    ]);
+    expect(kept.rows[1].actor_user_id).toBe(operatorId);
   });
 
   // Purpose (AC-6c, AC-6d): fails if a deletion outruns held evidence, if the staged record
@@ -1600,5 +1638,297 @@ describe('storage', () => {
       h.pool.query('UPDATE managed_blobs SET checksum=NULL WHERE blob_key=$1', [key])
     ).rejects.toThrow(/managed_blobs_stored_metadata/);
     await h.pool.query("UPDATE managed_blobs SET state='committed' WHERE blob_key=$1", [key]);
+  });
+});
+
+describe('after review', () => {
+  async function setIcon(harness: TenancyHarness, s: Scene, marker: string): Promise<string> {
+    const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from(marker)]);
+    const settings = await body<{ settingsVersion: number }>(
+      await harness.call(`${s.base}/settings`, { cookie: s.owner.cookie }),
+      200,
+      'settings'
+    );
+    await expectStatus(
+      await harness.call(`${s.base}/settings/icon`, {
+        method: 'PUT',
+        cookie: s.owner.cookie,
+        headers: { 'if-match': `"${settings.settingsVersion}"` },
+        raw: png,
+      }),
+      200,
+      'icon'
+    );
+    return (
+      await harness.pool.query<{ icon_blob_key: string }>(
+        'SELECT icon_blob_key FROM communities WHERE id=$1',
+        [s.communityId]
+      )
+    ).rows[0].icon_blob_key;
+  }
+
+  async function fileKeyOf(harness: TenancyHarness, attachmentId: string) {
+    return (
+      await harness.pool.query<{ blob_key: string }>(
+        'SELECT blob_key FROM attachments WHERE id=$1',
+        [attachmentId]
+      )
+    ).rows[0].blob_key;
+  }
+
+  async function staged(harness: TenancyHarness, id: string) {
+    return (
+      await harness.pool.query('SELECT 1 FROM takedown_evidence_staging WHERE takedown_id=$1', [id])
+    ).rowCount;
+  }
+
+  // Purpose: fails if a person could destroy a copy that is still being saved, or one that failed
+  // while a store exists. Only bytes held for want of a store can be released online.
+  it('refuses a person’s release of a copy that is pending or failed', async () => {
+    const c = await canary(h, operator.cookie, 'norelease');
+    const key = await fileKeyOf(h, c.attachmentId);
+    const t = await created(
+      await takedown(
+        h,
+        c.s.communityId,
+        { bearer: keys.takedown.secret },
+        {
+          target: { kind: 'entry', entryId: c.entryId },
+          category: 'child_safety',
+        }
+      )
+    );
+    const release = () =>
+      hostCall(
+        h,
+        `/takedowns/${t.id}/release-held`,
+        { cookie: operator.cookie },
+        {
+          password: TENANCY_PASSWORD,
+        }
+      );
+    for (let round = 0; round <= EVIDENCE_MAX_FAILURES; round++) {
+      const state = (await takedownRow(h, t.id)).evidence_state;
+      expect(['pending', 'retrying', 'failed']).toContain(state);
+      expect((await release()).status).toBe(409);
+      expect(await staged(h, t.id)).toBe(1);
+      expect((await blobState(h, key)).state).toBe('evidence_hold');
+      if (state === 'failed') break;
+      await onlyDue(h, t.id);
+      await copyEvidence(h, downSink);
+    }
+    expect((await takedownRow(h, t.id)).evidence_state).toBe('failed');
+  });
+
+  // Purpose: fails if a takedown that commits between the deletion worker choosing a job and
+  // locking its community is outrun: the job must stay waiting and the bytes held.
+  it('does not delete a community whose takedown lands while its deletion is being claimed', async () => {
+    const c = await canary(h, operator.cookie, 'claimrace');
+    const key = await fileKeyOf(h, c.attachmentId);
+    await ownerDeletionDue(h, c.s);
+    let raced = false;
+    const result = await sweepCommunityDeletions(h.pool, h.blobStore, 100, {
+      afterCandidate: async (communityId) => {
+        if (communityId !== c.s.communityId || raced) return;
+        raced = true;
+        await created(
+          await takedown(
+            h,
+            c.s.communityId,
+            { bearer: keys.takedown.secret },
+            {
+              target: { kind: 'entry', entryId: c.entryId },
+            }
+          )
+        );
+      },
+    });
+    expect(raced).toBe(true);
+    expect(result).toMatchObject({ claimed: 0, completed: 0 });
+    const job = await h.pool.query(
+      'SELECT state FROM community_deletion_jobs WHERE community_id=$1',
+      [c.s.communityId]
+    );
+    expect(job.rows).toEqual([{ state: 'waiting' }]);
+    expect((await blobState(h, key)).state).toBe('evidence_hold');
+    expect((await readdir(storageDirectory(h))).includes(key)).toBe(true);
+    // Settle it, so no later test's deletion pass finds this one.
+    const raceTakedown = (
+      await h.pool.query<{ id: string }>(
+        'SELECT id FROM community_takedowns WHERE community_id=$1',
+        [c.s.communityId]
+      )
+    ).rows[0].id;
+    await onlyDue(h, raceTakedown);
+    expect(await copyEvidence(h)).toEqual({ claimed: true, stored: true });
+    expect(await runDeletion(h, c.s.communityId)).toBe(true);
+  });
+
+  // Purpose: fails if an idempotency key could replay another community's takedown.
+  it('refuses a replayed key aimed at another community', async () => {
+    const a = await makeScene(h, operator.cookie, 'idema');
+    const b = await makeScene(h, operator.cookie, 'idemb');
+    await setIcon(h, a, 'idem-a');
+    await setIcon(h, b, 'idem-b');
+    const request = { idempotencyKey: 'icon-case-7', target: { kind: 'icon' } };
+    await created(await takedown(h, a.communityId, { bearer: keys.takedown.secret }, request));
+    const replayed = await takedown(h, b.communityId, { bearer: keys.takedown.secret }, request);
+    expect({ status: replayed.status, code: (await replayed.json()).code }).toEqual({
+      status: 409,
+      code: 'IDEMPOTENCY_CONFLICT',
+    });
+    expect((await h.call(`${b.base}/icon`, { cookie: b.q.cookie })).status).toBe(200);
+  });
+
+  // Purpose: fails if taking down a message its author already removed lets the removed file's
+  // bytes be swept before the copy; a file already swept is gone, and the takedown says so.
+  it('holds again the files of a removed message that the sweep has not reached', async () => {
+    const c = await canary(h, operator.cookie, 'rehold');
+    const key = await fileKeyOf(h, c.attachmentId);
+    await expectStatus(
+      await h.call(`${c.s.base}/entries/${c.entryId}`, { method: 'DELETE', cookie: c.s.p.cookie }),
+      200,
+      'author removes'
+    );
+    expect((await blobState(h, key)).state).toBe('pending_delete');
+    const t = await created(
+      await takedown(
+        h,
+        c.s.communityId,
+        { bearer: keys.takedown.secret },
+        {
+          target: { kind: 'entry', entryId: c.entryId },
+        }
+      )
+    );
+    expect(t.evidence.state).toBe('pending');
+    expect((await blobState(h, key)).state).toBe('evidence_hold');
+    for (const table of ['pending_blob_deletions', 'removed_file_blobs'])
+      expect((await h.pool.query(`SELECT 1 FROM ${table} WHERE blob_key=$1`, [key])).rowCount).toBe(
+        0
+      );
+    await drainCleanup(h);
+    expect((await readdir(storageDirectory(h))).includes(key)).toBe(true);
+    await onlyDue(h, t.id);
+    expect(await copyEvidence(h)).toEqual({ claimed: true, stored: true });
+    const folder = `takedowns/${t.id}/attempt-1/`;
+    const record = CommunityEvidenceRecordV1Schema.parse(
+      JSON.parse((await evidenceFile(`${folder}record.json`)).toString())
+    );
+    expect(record.entry).toMatchObject({
+      contentAlreadyRemoved: true,
+      text: REMOVED_ENTRY_TEXT.author,
+    });
+    expect(record.files).toEqual([
+      expect.objectContaining({ id: c.attachmentId, name: c.fileName, sha256: c.checksum }),
+    ]);
+    expect((await evidenceFile(`${folder}files/${c.attachmentId}`)).toString()).toBe(c.bytes);
+    await drainCleanup(h);
+    expect(await scanDatabase(h.pool, c.content)).toEqual([]);
+
+    // Swept already: nothing is left to hold, and the takedown says so.
+    const swept = await canary(h, operator.cookie, 'swept');
+    await expectStatus(
+      await h.call(`${swept.s.base}/entries/${swept.entryId}`, {
+        method: 'DELETE',
+        cookie: swept.s.p.cookie,
+      }),
+      200,
+      'author removes'
+    );
+    await drainCleanup(h);
+    const gone = await created(
+      await takedown(
+        h,
+        swept.s.communityId,
+        { bearer: keys.takedown.secret },
+        {
+          target: { kind: 'entry', entryId: swept.entryId },
+        }
+      )
+    );
+    expect(gone.evidence.state).toBe('nothing_to_preserve');
+  });
+
+  // Purpose: fails if erasing a member's files and taking down one of them wait on each other in
+  // a cycle (each holding one lock the other needs), which Postgres ends by failing one.
+  it('lets an erasure of files and a takedown of one of them both finish', async () => {
+    const c = await canary(h, operator.cookie, 'lockorder');
+    const outcome = await holdingLock(
+      h,
+      'SELECT 1 FROM community_content_versions WHERE community_id=$1 FOR UPDATE',
+      [c.s.communityId],
+      async (release) => {
+        const erasure = eraseMembership(h.pool, c.s.communityId, c.s.p.memberId, {
+          log: () => {},
+        });
+        await waitForLockWaiters(h, 1);
+        const removal = takedown(
+          h,
+          c.s.communityId,
+          { bearer: keys.takedown.secret },
+          {
+            target: { kind: 'attachment', attachmentId: c.attachmentId },
+          }
+        );
+        await waitForLockWaiters(h, 2);
+        await release();
+        return Promise.all([erasure, removal]);
+      }
+    );
+    expect(outcome[0]).toBe('erased');
+    expect(outcome[1].status).toBe(404);
+  });
+
+  // Purpose: fails if a download that started before a takedown keeps sending the file: its
+  // bytes stay in storage for the copy, so only a per-chunk check can stop it.
+  it('stops a download in progress once the file is taken down', async () => {
+    const s = await makeScene(h, operator.cookie, 'download');
+    const size = 8 * 1024 * 1024;
+    const fileId = await upload(
+      h,
+      s.communityId,
+      s.channelId,
+      s.p.cookie,
+      'big.txt',
+      'a'.repeat(size)
+    );
+    await post(
+      h,
+      s.communityId,
+      s.channelId,
+      { cookie: s.p.cookie },
+      {
+        text: 'big file',
+        idempotencyKey: 'big',
+        attachmentIds: [fileId],
+      }
+    );
+    const response = await h.call(`${s.base}/attachments/${fileId}`, { cookie: s.q.cookie });
+    expect(response.status).toBe(200);
+    const reader = response.body!.getReader();
+    let received = (await reader.read()).value?.length ?? 0;
+    await created(
+      await takedown(
+        h,
+        s.communityId,
+        { bearer: keys.takedown.secret },
+        {
+          target: { kind: 'attachment', attachmentId: fileId },
+        }
+      )
+    );
+    let failed = false;
+    try {
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        received += next.value.length;
+      }
+    } catch {
+      failed = true;
+    }
+    expect(failed).toBe(true);
+    expect(received).toBeLessThan(size);
   });
 });

@@ -68,7 +68,12 @@ export async function sweepCommunityDeletions(
   pool: Pool,
   blobStore: BlobStore,
   blobBatchSize = DELETE_BATCH,
-  options: { shortNameHolds?: ShortNameHolds; now?: () => Date } = {}
+  options: {
+    shortNameHolds?: ShortNameHolds;
+    now?: () => Date;
+    /** Test seam: runs after a job is chosen and before its community is locked. */
+    afterCandidate?: (communityId: string) => Promise<void>;
+  } = {}
 ): Promise<{ claimed: number; deletedBlobs: number; completed: number; failed: number }> {
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
@@ -85,6 +90,7 @@ export async function sweepCommunityDeletions(
     );
     const candidate = selected.rows[0];
     if (!candidate) return null;
+    await options.afterCandidate?.(candidate.community_id);
     const community = await client.query<{ lifecycle: string; lifecycle_version: number }>(
       'SELECT lifecycle,lifecycle_version FROM communities WHERE id=$1 FOR UPDATE SKIP LOCKED',
       [candidate.community_id]
@@ -331,7 +337,13 @@ export async function sweepCommunityDeletions(
       job.community_id,
     ]);
     await client.query('DELETE FROM bootstrap_grants WHERE community_id=$1', [job.community_id]);
-    await client.query('DELETE FROM host_audit_events WHERE community_id=$1', [job.community_id]);
+    // Takedown audit rows stay, with the takedowns themselves: they hold ids and states only,
+    // and they are what shows who removed illegal content, and who let its copy go.
+    await client.query(
+      "DELETE FROM host_audit_events WHERE community_id=$1 AND action NOT LIKE 'takedown.%'",
+      [job.community_id]
+    );
+    await client.query('DELETE FROM removed_file_blobs WHERE community_id=$1', [job.community_id]);
     await client.query(
       `DELETE FROM pending_blob_deletions p USING managed_blobs m
        WHERE p.blob_key=m.blob_key AND m.community_id=$1`,

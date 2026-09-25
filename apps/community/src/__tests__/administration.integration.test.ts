@@ -107,6 +107,7 @@ const TENANT_TABLES = [
   'owner_quota_windows',
   'pending_admissions',
   'read_cursors',
+  'removed_file_blobs',
   'tenant_reconciliation',
 ];
 

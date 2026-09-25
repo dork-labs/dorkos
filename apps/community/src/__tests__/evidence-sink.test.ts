@@ -20,6 +20,7 @@ import {
   EvidenceSinkError,
   FileSystemEvidenceSink,
   S3EvidenceSink,
+  sweepEvidenceStagingFolders,
 } from '../takedown/evidence/sink.js';
 
 const id = '0f8c6a44-7a3e-4f3b-9c55-0d2c1b6f8a11';
@@ -189,6 +190,26 @@ describe('the S3 evidence sink', () => {
     );
     expect((await stagingFolders()).filter((name) => !before.includes(name))).toEqual([]);
   });
+});
+
+// Purpose: fails if a staging folder a crashed S3 write left behind stays in the temporary folder
+// for good, or if the sweep touches anything that is not its own old staging folder.
+it('sweeps only the S3 sink’s own staging folders older than an hour', async () => {
+  const old = new Date(Date.now() - 2 * 60 * 60_000);
+  const names = {
+    stale: 'community-evidence-Ab12Cd',
+    fresh: 'community-evidence-Ef34Gh',
+    other: 'community-s3-Ij56Kl',
+    lookalike: 'community-evidence-too-long',
+  };
+  for (const name of Object.values(names)) {
+    await mkdir(join(root, name));
+    await writeFile(join(root, name, 'object'), 'x');
+  }
+  for (const name of [names.stale, names.other, names.lookalike])
+    await utimes(join(root, name), old, old);
+  expect(await sweepEvidenceStagingFolders(Date.now(), root)).toBe(1);
+  expect((await readdir(root)).sort()).toEqual([names.fresh, names.lookalike, names.other].sort());
 });
 
 describe('the evidence record', () => {

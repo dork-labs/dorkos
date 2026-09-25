@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import type { z } from 'zod';
 import type { CommunityAdminTakedownRequestSchema } from '@dorkos/shared/community-admin-wire';
+import { lockRemovedFiles } from '../../content-removal.js';
 import { ApiError } from '../../http.js';
 import {
   EVIDENCE_FILE_COLUMNS,
@@ -129,6 +130,11 @@ export interface TargetSnapshot {
   channelId: string | null;
   subjectMemberId: string | null;
   subjectId: string;
+  /**
+   * Files an author or admin removed from this message earlier whose bytes the sweep has not
+   * deleted yet: a takedown holds them again. Already swept is already gone.
+   */
+  reheldKeys: string[];
 }
 
 /**
@@ -159,20 +165,18 @@ export async function snapshotTarget(
        WHERE blob_key=$1 AND community_id=$2 AND state IN ('committed','stored')`,
       [icon.key, community.id]
     );
-    if (!blob.rows[0])
-      throw new ApiError(
-        409,
-        'STATE_CONFLICT',
-        'Storage ownership must be reconciled before this icon can be taken down.'
-      );
+    // The icon's foreign key (communities_icon_tenant_fk) keeps its inventory row, and an icon
+    // is committed before it is set, so its size and checksum are always there.
+    const found = blob.rows[0];
+    if (!found) throw new Error('Community icon inventory is missing');
     return {
       content: {
         ...base,
         icon: {
           contentType: icon.contentType,
-          byteSize: Number(blob.rows[0].byte_size),
+          byteSize: Number(found.byte_size),
           path: 'icon',
-          sha256: blob.rows[0].checksum,
+          sha256: found.checksum,
         },
       },
       blobKeys: [icon.key],
@@ -181,6 +185,7 @@ export async function snapshotTarget(
       channelId: null,
       subjectMemberId: null,
       subjectId: community.id,
+      reheldKeys: [],
     };
   }
   if (target.kind === 'entry') {
@@ -191,6 +196,14 @@ export async function snapshotTarget(
        WHERE community_id=$1 AND entry_id=$2 ORDER BY uploaded_at,id`,
       [community.id, entry.id]
     );
+    // A message its author or an admin already removed has no files left, but their bytes may
+    // still be waiting for the sweep. An erased message stays erased.
+    const removed =
+      entry.removed_at && !entry.erased_at
+        ? await lockRemovedFiles(client, community.id, entry.id)
+        : [];
+    for (const row of removed)
+      files.rows.push({ ...row, id: row.attachment_id } as EvidenceFileRow);
     const who = await readEvidenceAuthor(client, community.id, {
       memberId: entry.author_member_id,
       agentId: entry.author_agent_id,
@@ -205,11 +218,12 @@ export async function snapshotTarget(
         files: files.rows.map(evidenceFile),
       },
       blobKeys: files.rows.map((row) => row.blob_key),
-      hasContent: !entry.removed_at && !entry.erased_at,
+      hasContent: (!entry.removed_at && !entry.erased_at) || removed.length > 0,
       entryId: entry.id,
       channelId: entry.channel_id,
       subjectMemberId: who.subjectMemberId,
       subjectId: entry.id,
+      reheldKeys: removed.map((row) => row.blob_key),
     };
   }
   const { file, entry } = await lockAttachmentSnapshot(client, community.id, target.attachmentId);
@@ -232,5 +246,6 @@ export async function snapshotTarget(
     channelId: file.channel_id,
     subjectMemberId: who.subjectMemberId,
     subjectId: file.id,
+    reheldKeys: [],
   };
 }

@@ -240,6 +240,33 @@ export class S3EvidenceSink implements EvidenceSink {
   }
 }
 
+/** The S3 sink's local staging folders: `mkdtemp` adds six characters to this prefix. */
+const STAGING_FOLDER = /^community-evidence-[A-Za-z0-9]{6}$/;
+
+/**
+ * Remove the S3 evidence sink's own staging folders older than an hour, left in the temporary
+ * folder by a write that stopped midway (a crash or a kill between staging and cleanup). It
+ * never follows a link and never touches another folder.
+ *
+ * @returns How many folders it removed.
+ */
+export async function sweepEvidenceStagingFolders(
+  now = Date.now(),
+  directory = tmpdir()
+): Promise<number> {
+  let removed = 0;
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !STAGING_FOLDER.test(entry.name)) continue;
+    const path = join(directory, entry.name);
+    const stat = await lstat(path);
+    if (stat.isDirectory() && now - stat.mtimeMs > TEMPORARY_MAX_AGE_MS) {
+      await rm(path, { recursive: true, force: true });
+      removed++;
+    }
+  }
+  return removed;
+}
+
 /** The configured evidence store, or null when the host set none. */
 export function createEvidenceSink(
   evidence: CommunityConfig['evidence']

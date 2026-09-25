@@ -134,6 +134,10 @@ export async function sweepPendingBlobDeletions(pool: Pool, blobStore: BlobStore
           "DELETE FROM managed_blobs WHERE blob_key=$1 AND state='pending_delete'",
           [candidate.blob_key]
         );
+        // A removed file's description goes with its bytes.
+        await client.query('DELETE FROM removed_file_blobs WHERE blob_key=$1', [
+          candidate.blob_key,
+        ]);
         attempt.outcome = 'deleted';
       });
     } catch (error) {
