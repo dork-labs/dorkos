@@ -349,8 +349,11 @@ export class NotificationService {
    * the same key still in flight waits for it to settle, then checks again. So
    * the second of two overlapping raises sees the first one's row and is
    * deduped, and when the first stored nothing (a refused note) the second is
-   * judged on its own. Only raises of the SAME key queue; the wait is at most
-   * one in-process relay hand-off.
+   * judged on its own. Only raises of the SAME key queue, but the wait is not
+   * short: the relay hand-off to Telegram or Slack waits on the adapter's
+   * delivery, which can take up to its two-minute timeout, and every raise of
+   * the key waits that long behind it. Raises queued behind a refused first
+   * raise each re-run the whole path, one after another.
    *
    * @param kind - Which registry entry.
    * @param payload - That kind's payload.
