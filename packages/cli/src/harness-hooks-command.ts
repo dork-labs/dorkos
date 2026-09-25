@@ -105,8 +105,12 @@ async function listDecisions(dorkHome: string): Promise<number> {
     return 0;
   }
 
-  const { hookApprovalEntry, hookEntryPackageName, isGlobalActivationEntry } =
-    await import('../server/services/harness/hook-consent.js');
+  const {
+    hookApprovalEntry,
+    hookEntryPackageName,
+    isGlobalActivationEntry,
+    isWorkspaceHooksEntry,
+  } = await import('../server/services/harness/hook-consent.js');
   const { scanHookRequests } = await import('../server/services/harness/project-with-consent.js');
 
   // The entries this project's packages would produce RIGHT NOW. Scanning the
@@ -128,16 +132,22 @@ async function listDecisions(dorkHome: string): Promise<number> {
     for (const entry of entries) {
       // A global package's decision is about its programs loading into every
       // session, not about a project's hook files (DOR-2306).
-      const where = isGlobalActivationEntry(entry)
-        ? 'for the globally installed package, in every session'
-        : here.has(entry)
-          ? 'matches the hooks installed in this project'
-          : 'from another project, or from before this package changed its hooks';
+      // A worktree's workspace commands, which DorkOS runs when it makes or
+      // removes a workspace of that folder (DOR-2335).
+      const where = isWorkspaceHooksEntry(entry)
+        ? 'workspace commands for new worktrees of this folder'
+        : isGlobalActivationEntry(entry)
+          ? 'for the globally installed package, in every session'
+          : here.has(entry)
+            ? 'matches the hooks installed in this project'
+            : 'from another project, or from before this package changed its hooks';
       console.log(`  ${hookEntryPackageName(entry)} — ${where}`);
     }
   }
   console.log('');
-  console.log('Forget one with `dorkos harness hooks --revoke <package>`.');
+  console.log(
+    'Forget one with `dorkos harness hooks --revoke <package>`, or `--revoke <folder>` for workspace commands.'
+  );
   return 0;
 }
 

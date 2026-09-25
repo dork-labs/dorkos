@@ -45,6 +45,8 @@ import {
   type OperatorCookieRefusal,
 } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
+import { trustedCaller } from '../services/core/capabilities/index.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { askEntitlement, type AskSubject } from '../services/session/asks/ask-entitlement.js';
 import { getUserById, readOwnerAccount, type RequestUser } from '../services/core/auth/index.js';
 import { resolveAnswererName } from '../services/identity/operator-profile.js';
@@ -81,7 +83,7 @@ import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
 import path from 'node:path';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
-import { getWorkspaceManager } from '../services/workspace/index.js';
+import { getWorkspaceManager, workspaceGateFor } from '../services/workspace/index.js';
 import {
   resolveSessionCwdWithRoom,
   type RoomSessionPlacePort,
@@ -1146,12 +1148,21 @@ router.post('/:id/messages', async (req, res) => {
     try {
       const source = cwd ?? DEFAULT_CWD;
       const projectKey = sanitizeWorkspaceKey(path.basename(source));
-      const workspace = await getWorkspaceManager().ensure({
-        projectKey,
-        key: workspaceKey,
-        source,
-        provider: workspaceProvider,
-      });
+      // A new workspace is shown before anything runs there (DOR-2335). A turn
+      // cannot wait on a review, so one that needs it is skipped below and the
+      // turn runs where it would have: a person makes it through
+      // `POST /api/workspaces`, and an agent's card is remembered, so a later
+      // turn after the person approved gets the workspace.
+      const identity = getRequestAgentIdentity(res);
+      const workspace = await getWorkspaceManager().ensure(
+        { projectKey, key: workspaceKey, source, provider: workspaceProvider },
+        workspaceGateFor({
+          trusted: trustedCaller(readCallerAuthority(req, res)) !== undefined,
+          name: `${projectKey}/${sanitizeWorkspaceKey(workspaceKey)}`,
+          carriesToken: false,
+          ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+        })
+      );
       effectiveCwd = workspace.path;
       logger.info('[POST /messages] bound to workspace', {
         sessionId,

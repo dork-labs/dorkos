@@ -18,6 +18,7 @@ apps/server/src/services/workspace/
   providers/worktree.ts | clone.ts | git.ts# WorkspaceProvider impls + shared git + dirty-state
   hooks.ts                                 # Symphony's 4 hooks (.dork/workspace.json)
   port-env.ts                              # writes the allocated block into the workspace .env
+  workspace-gate.ts                        # what a new workspace brings, and who sees it (DOR-2335)
   workspace-service.ts                     # the WorkspaceManager (ensure/list/resolve/remove/…)
   workspace-reconciler.ts                  # 5-min cache↔manifest sync
   worktree-scan.ts                         # read-only adoption scan of the root (DOR-1056)
@@ -49,6 +50,61 @@ checkout another agent is working in (DOR-1056).
   passed; `pinned` workspaces are exempt from `sweep`. The DELETE route returns a
   `200` with `{ removed:false, blocked:'dirty' }` (not a 409) so the client can
   escalate to a force-confirm.
+- **A new workspace is shown before anything runs there (DOR-2335).** `ensure`
+  takes a `WorkspaceGate` and refuses to make a workspace without one. A clone
+  is staged in `<root>/.staging/` (no scan lists dot folders) and read there by
+  `inspectWorkspace`. It records the harness configuration, each settings file
+  written out, what the clone's skills run, every link, and the source
+  `workspace.json` `after_create` and `before_remove` commands, which run from
+  the server with no permission prompt. Then the gate decides:
+  - **A person** is shown a workspace that brings anything (409
+    `workspace_needs_review` on `POST /api/workspaces`) and sends back
+    `approvedReviewHash`.
+  - **An agent** gets a `workspaces.create` approval card for every clone and
+    for a worktree whose source runs hooks. It retries with
+    `confirmationToken`.
+  - **A caller that cannot carry a token** remembers its pending card per
+    workspace, so each turn does not raise another. These are the session
+    `workspaceKey` turn and an agent's managed checkout.
+
+  Only after the gate passes does the staged clone move into place, the
+  `after_create` commands that were shown run, and the `before_remove` commands
+  that were shown land on the manifest as `removeHooks`. Those are the only
+  hooks `remove` runs. `before_run` and `after_run` are parsed but never run.
+  - **A workspace made before `removeHooks` existed.** A person removing one
+    whose source declares `before_remove` gets a 409
+    `remove_hooks_need_review` listing the commands. They can run exactly
+    those with `?approvedRemoveHooks=<reviewHash>`, or skip them with
+    `?skipRemoveHooks=true`. Any other caller, and `sweep`, skips them. The
+    result lists whatever was skipped in `skippedHooks`.
+  - **A person's remembered worktree hooks.** A person's approval of their own
+    worktree's hooks is kept in the operator-only hook decision list
+    (`harness.approvedHooks`) as `<source real path>@workspace-<digest>`. The
+    digest covers the provider and both hook lists. `dorkos harness hooks
+--list` shows it, and `--revoke <folder>` forgets it. An unchanged hook set
+    passes without asking; a changed command asks again. It never covers a
+    clone and never applies to an agent.
+  - **Card tiers.** A card that brings nothing is `workspaces.create` (`act`).
+    One with settings, links, skill effects or hooks is
+    `workspaces.create_with_effects` (`destructive`).
+  - **Remembered cards.** They are keyed by the source's real path and the
+    destination. After a restart, `ConfirmationProvider.reopen`
+    (`ApprovalService.reissue`) rotates a fresh token onto the card still open
+    for exactly the same request, instead of raising a second one.
+  - **Boot.** `sweepStaging` clears `<root>/.staging/` before anything can
+    stage.
+  - **Git's own hooks.** Making a checkout runs git in DorkOS's process
+    (`worktree add`, `clone`, `checkout -b`). A gate built by
+    `personWorkspaceGate` carries `person: true`, and only then does the
+    service set `personGit`, so the provider uses `PERSON_REPO_GIT_CONFIG` and
+    the person's `post-checkout`, `core.hooksPath` (`.husky`) and template
+    hooks run as their own git would. Every other gate gets
+    `internalGitConfig()`, with hooks and fsmonitor off (DOR-2326's setting).
+    It is never read from a request body. DorkOS turns them off rather than
+    detecting hooks and raising a card, because hooks can come from `.git/hooks`,
+    `core.hooksPath`, includes, global config or `init.templateDir`, and a
+    detector that misses one runs it.
+
 - **Ports.** The server is the authority for managed workspaces (allocate block →
   write `.env`). `worktree-setup.sh`'s hash derivation is the offline fallback for
   plain `gtr` worktrees.

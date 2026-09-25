@@ -6483,6 +6483,22 @@
         "packages/marketplace/src/package-validator.ts",
         "apps/server/src/services/marketplace/lib/stage-package.ts"
       ]
+    },
+    {
+      "id": "260925-041616",
+      "slug": "new-workspaces-are-shown-before-anything-runs-there",
+      "title": "New workspaces are shown before anything runs there, and their hooks run only as shown",
+      "status": "accepted",
+      "created": "2026-09-25",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/workspace/workspace-gate.ts",
+        "apps/server/src/services/workspace/workspace-service.ts",
+        "apps/server/src/routes/workspaces.ts",
+        "apps/server/src/services/workspace/resolve-session-cwd.ts"
+      ]
     }
   ]
 }

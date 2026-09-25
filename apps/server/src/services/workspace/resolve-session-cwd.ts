@@ -60,7 +60,7 @@ import { logger } from '../../lib/logger.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { logResolvedCwd, type ResolvedCwd } from './session-cwd-rung.js';
-import { getWorkspaceManager } from './index.js';
+import { getWorkspaceManager, workspaceGateFor } from './index.js';
 
 export type { SessionCwdRung, ResolvedCwd } from './session-cwd-rung.js';
 
@@ -182,7 +182,21 @@ export function sessionCwdDeps(
 ): ResolveSessionCwdDeps {
   return {
     readManifest: (agentPath) => readManifest(agentPath, logger),
-    ensureWorkspace: (req) => getWorkspaceManager().ensure(req),
+    // An agent's managed checkout is made from a binding in its own
+    // `agent.json`, which it can rewrite, so a new one always goes through an
+    // agent's card (DOR-2335). A turn cannot carry the token back; the pending
+    // card is remembered, and until a person approves, the turn runs in the
+    // agent's own folder.
+    ensureWorkspace: (req) =>
+      getWorkspaceManager().ensure(
+        req,
+        workspaceGateFor({
+          trusted: false,
+          name: `${req.projectKey}/${req.key}`,
+          carriesToken: false,
+          ...(req.owner && { requestedBy: req.owner.ref }),
+        })
+      ),
     sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
     validateAgentHome: (candidate) => validateBoundaryOrDorkHome(candidate),
     validateManagedCheckout: (candidate) => validateBoundary(candidate),

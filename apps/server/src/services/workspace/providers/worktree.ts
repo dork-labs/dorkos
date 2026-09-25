@@ -15,6 +15,7 @@ import type {
   ProviderResult,
   DirtyState,
 } from '@dorkos/shared/workspace';
+import { internalGitConfig } from '@dorkos/shared/git-hardening';
 import {
   assertSafeWorkspaceSource,
   computeDirtyState,
@@ -46,9 +47,9 @@ export class WorktreeProvider implements WorkspaceProvider {
     await runGit(
       [...gitDir, 'worktree', 'add', '-b', req.branch, '--end-of-options', req.path],
       req.source,
-      {
-        config: PERSON_REPO_GIT_CONFIG,
-      }
+      // A person's own hooks run; for anyone else, git runs none of the
+      // source's hooks or fsmonitor in DorkOS's process (DOR-2335).
+      { config: req.personGit ? PERSON_REPO_GIT_CONFIG : internalGitConfig() }
     );
     return { path: req.path, branch: req.branch };
   }
