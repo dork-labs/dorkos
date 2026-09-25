@@ -1,19 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
+import { REMOVED_ENTRY_TEXT, type RemovedBy } from './content/tombstones.js';
 import { ApiError } from './http.js';
-
-/**
- * The text a removed message shows in place of what it said, by who removed it. The kind of
- * remover is shown, never the person.
- */
-export const REMOVED_ENTRY_TEXT = {
-  author: 'This message was deleted.',
-  moderator: 'This message was removed by a community admin.',
-  host: 'This message was removed by the host.',
-} as const;
-
-/** Who removed a message or file: its author (or their agent), an owner or admin, or the host. */
-export type RemovedBy = keyof typeof REMOVED_ENTRY_TEXT;
 
 /** A named, content-free reason a content change could not be made. */
 export class ContentChangeError extends Error {

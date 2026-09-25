@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUp, Download, MessageCircle, Paperclip, RotateCcw, X } from 'lucide-react';
-import type { CommunityWireEvent } from '@dorkos/shared/community-wire';
-import { describeError, download, RequestError, request, tenantApiPath, upload } from '../api.js';
-import type { Channel as ChannelType, Entry } from '../types.js';
-import { ReportEntryLink } from './HostLinks.js';
+import { ArrowLeft, ArrowUp, MessageCircle, Paperclip, RotateCcw, X } from 'lucide-react';
+import {
+  CommunityWireEntryRemoveResponseSchema,
+  type CommunityWireEvent,
+} from '@dorkos/shared/community-wire';
+import { describeError, RequestError, request, tenantApiPath, upload } from '../api.js';
+import { expectedTombstone, removalAction, type RemovalViewer } from '../entry-removal.js';
+import type { Agent, Channel as ChannelType, Entry, Member } from '../types.js';
+import { EntryCard } from './EntryCard.js';
+import type { RemovalRequest } from './EntryRemoval.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
 type Post = { entry: Entry; cursor: string };
 type Props = {
   communityId: string;
   channel: ChannelType;
+  /** The signed-in member: whose messages are theirs, and what their role lets them remove. */
+  me: Member;
   onChanged: () => void;
   readOnly?: boolean;
   /** Read-only because the host holds the community, not because its owner archived it. */
@@ -20,59 +27,11 @@ function mergeEntries(previous: Entry[], incoming: Entry[]) {
   for (const entry of incoming) byId.set(entry.id, entry);
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
 }
-function EntryCard({
-  communityId,
-  entry,
-  onThread,
-  threadReadOnly = false,
-}: {
-  communityId: string;
-  entry: Entry;
-  onThread?: (entry: Entry) => void;
-  threadReadOnly?: boolean;
-}) {
-  return (
-    <article className="entry">
-      <div className="avatar" aria-hidden="true">
-        {entry.authorDisplayName.slice(0, 1).toUpperCase()}
-      </div>
-      <div>
-        <div className="entry-meta">
-          <strong>{entry.authorDisplayName}</strong>
-          <time className="small muted" dateTime={entry.createdAt}>
-            {new Date(entry.createdAt).toLocaleTimeString([], {
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </time>
-        </div>
-        <p className="entry-text">{entry.text}</p>
-        {entry.attachments.map((attachment) => (
-          <button
-            className="button small mt-1 mr-2"
-            type="button"
-            key={attachment.id}
-            onClick={() => void download(`/api/v1/attachments/${attachment.id}`, attachment.name)}
-          >
-            <Download size={14} />
-            {attachment.name}
-          </button>
-        ))}
-        {onThread && (
-          <button className="button ghost small mt-1" type="button" onClick={() => onThread(entry)}>
-            <MessageCircle size={14} /> {threadReadOnly ? 'View thread' : 'Reply in thread'}
-          </button>
-        )}
-        <ReportEntryLink communityId={communityId} entryId={entry.id} />
-      </div>
-    </article>
-  );
-}
-
 /** Render channel history, live events, threads and composition. */
 export function ChannelView({
   communityId,
   channel,
+  me,
   onChanged,
   readOnly = false,
   held = false,
@@ -96,6 +55,10 @@ export function ChannelView({
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [readCursor, setReadCursor] = useState<string | null>(null);
+  const [ownAgentIds, setOwnAgentIds] = useState<ReadonlySet<string>>(new Set());
+  const [roster, setRoster] = useState<RemovalViewer['roster']>(new Map());
+  // The server's refusal of the last removal tried on each message, shown under it.
+  const [removalErrors, setRemovalErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const threadRef = useRef(thread);
   const listRef = useRef<HTMLDivElement>(null);
   const activeChannelId = useRef(channel.id);
@@ -229,6 +192,32 @@ export function ChannelView({
     }, 450);
     return () => window.clearTimeout(timer);
   }, [readCursor, channel.id, channel.joined, onChanged]);
+  // Your agents' messages are yours to delete. A listing failure only hides that Delete; the
+  // server still decides every removal.
+  useEffect(() => {
+    let active = true;
+    void request<{ agents: Agent[] }>('/api/v1/agents')
+      .then((body) => {
+        if (active) setOwnAgentIds(new Set(body.agents.map((agent) => agent.memberId)));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [me.memberId]);
+  // An admin's Remove depends on who is the owner or an admin, and whose agent is whose.
+  useEffect(() => {
+    if (me.role !== 'admin' || !channel.joined) return;
+    let active = true;
+    void request<{ members: Member[] }>(`/api/v1/channels/${channel.id}/members`)
+      .then((body) => {
+        if (active) setRoster(new Map(body.members.map((member) => [member.memberId, member])));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [channel.id, channel.joined, me.role]);
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [entries.length]);
@@ -245,6 +234,64 @@ export function ChannelView({
       setErrorAction('reload');
     }
   }
+  /** Put one message's current state everywhere it shows: the channel, the thread, its root. */
+  function replaceEntry(next: Entry) {
+    const swap = (list: Entry[]) =>
+      list.some((entry) => entry.id === next.id)
+        ? list.map((entry) => (entry.id === next.id ? next : entry))
+        : list;
+    setEntries(swap);
+    setReplies(swap);
+    setThread((current) => (current?.id === next.id ? next : current));
+  }
+  function setRemovalError(entryId: string, message: string | null) {
+    setRemovalErrors((previous) => {
+      const next = new Map(previous);
+      if (message) next.set(entryId, message);
+      else next.delete(entryId);
+      return next;
+    });
+  }
+  /**
+   * Delete or remove a message or one of its files. The change shows at once; the server's answer
+   * then replaces it, and a refusal puts the message back with the server's sentence under it.
+   */
+  async function remove(entry: Entry, { target, action }: RemovalRequest) {
+    setRemovalError(entry.id, null);
+    replaceEntry(
+      target.kind === 'message'
+        ? expectedTombstone(entry, action)
+        : {
+            ...entry,
+            attachments: entry.attachments.filter((file) => file.id !== target.attachment.id),
+          }
+    );
+    try {
+      const body = await request<unknown>(
+        target.kind === 'message'
+          ? `/api/v1/entries/${entry.id}`
+          : `/api/v1/attachments/${target.attachment.id}`,
+        'DELETE'
+      );
+      // No body: the server removed it and has nothing more to show than what is on screen.
+      if (body !== undefined)
+        replaceEntry(CommunityWireEntryRemoveResponseSchema.parse(body).entry);
+    } catch (cause) {
+      replaceEntry(entry);
+      setRemovalError(entry.id, describeError(cause));
+    }
+  }
+  const viewer: RemovalViewer = {
+    memberId: me.memberId,
+    role: me.role,
+    ownAgentIds,
+    roster,
+  };
+  const controlsFor = (entry: Entry) => ({
+    action: removalAction(entry, viewer),
+    onRemove: (target: Entry, removal: RemovalRequest) => void remove(target, removal),
+    error: removalErrors.get(entry.id),
+  });
   async function submit() {
     if (!text.trim() && files.length === 0) return;
     setBusy(true);
@@ -378,6 +425,7 @@ export function ChannelView({
                 key={entry.id}
                 communityId={communityId}
                 entry={entry}
+                controls={controlsFor(entry)}
                 onThread={setThread}
                 threadReadOnly={readOnly}
               />
@@ -529,10 +577,15 @@ export function ChannelView({
               </button>
             </div>
             <div className="drawer-content">
-              <EntryCard communityId={communityId} entry={thread} />
+              <EntryCard communityId={communityId} entry={thread} controls={controlsFor(thread)} />
               <hr className="divider" />
               {replies.map((entry) => (
-                <EntryCard key={entry.id} communityId={communityId} entry={entry} />
+                <EntryCard
+                  key={entry.id}
+                  communityId={communityId}
+                  entry={entry}
+                  controls={controlsFor(entry)}
+                />
               ))}
               {replies.length === 0 && <p className="muted small">No replies yet.</p>}
             </div>

@@ -8,13 +8,12 @@ import {
   recordRedactions,
 } from '../content-removal.js';
 import { transaction } from '../data.js';
+import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
 import { MENTION_ADDRESS, MENTION_TRAILING_STRIP, maskedText } from '../mentions.js';
 import { remove } from '../routes/members.js';
 
 /** Hours between a request and the erasure it schedules. A constant, not configuration. */
 export const ERASURE_WINDOW_HOURS = 72;
-/** The text every erased message shows in place of what it said. */
-export const ERASED_ENTRY_TEXT = 'This message was erased.';
 /** The author name of an erased person's messages. */
 export const ERASED_MEMBER_NAME = 'Erased member';
 /** The author name of an erased person's agents' messages. */

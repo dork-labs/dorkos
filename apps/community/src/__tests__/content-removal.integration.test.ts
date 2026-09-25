@@ -11,8 +11,9 @@ import {
   CommunityWireEntrySchema,
   type CommunityWireEntry,
 } from '@dorkos/shared/community-wire';
-import { REMOVED_ENTRY_TEXT, removeEntry } from '../content-removal.js';
-import { ERASED_ENTRY_TEXT, eraseMembership } from '../erasure/erasure.js';
+import { removeEntry } from '../content-removal.js';
+import { ERASED_ENTRY_TEXT, REMOVED_ENTRY_TEXT } from '../content/tombstones.js';
+import { eraseMembership } from '../erasure/erasure.js';
 import { runHostKeyCommand } from '../host-keys.js';
 import {
   admit,

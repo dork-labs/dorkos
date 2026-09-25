@@ -359,7 +359,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.getByLabel('Message #general').fill('Here are the notes');
     await memberPage.getByRole('button', { name: 'Send' }).click();
     await expect(ownerPage.getByText('Here are the notes')).toBeVisible();
-    const file = ownerPage.getByRole('button', { name: 'notes.txt' });
+    const file = ownerPage.getByRole('button', { name: 'notes.txt', exact: true });
     await expect(file).toBeVisible();
     await expect
       .poll(async () =>

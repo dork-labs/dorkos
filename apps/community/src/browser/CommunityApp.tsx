@@ -480,6 +480,7 @@ export function CommunityApp() {
             key={selected.id}
             communityId={community!.id}
             channel={selected}
+            me={me.member}
             onChanged={onChanged}
             readOnly={readOnly}
             held={held}
