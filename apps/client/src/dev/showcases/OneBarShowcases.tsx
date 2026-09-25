@@ -435,11 +435,19 @@ export function OneBarShowcases() {
         </ShowcaseDemo>
 
         <ShowcaseLabel>
-          The channel bar in a 390px-wide frame, mid-run. Stop drops its word here because that rule
-          answers to the bar’s own width (below 576px), the same way it does on Home at a 768px
-          window. What this CANNOT show: hiding the topic is an `sm:` rule, which answers to the
-          VIEWPORT, not to this box, and on a real phone the run state is not drawn at all. Resize
-          the window to see it
+          Mid-run in a 540px frame: below a 576px bar Stop drops its word and becomes a 24px square.
+          The rule answers to the bar’s own width, so this box shows it on any window
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChannelBarFrame room={BUSY_ROOM} working={3} width={540} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The channel bar in a 390px-wide frame, mid-run. Below a 512px bar Stop is not drawn at all
+          — the width a 768px window with the sidebar docked leaves — and the live lane above the
+          composer is where the room is stopped. What this CANNOT show: hiding the topic is an `sm:`
+          rule, which answers to the VIEWPORT, not to this box, and on a real phone the run state is
+          not drawn at all. Resize the window to see it
         </ShowcaseLabel>
         <ShowcaseDemo>
           <ChannelBarFrame room={BUSY_PHONE_ROOM} working={2} width={390} />

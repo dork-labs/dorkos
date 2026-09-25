@@ -79,16 +79,26 @@ interface RoomHaltButtonProps {
  * they already said stays — and red would put the room's most ordinary recovery
  * action in the same register as deleting something.
  *
- * **The word yields before anything else in the row does (DOR-1816 F1).**
- * "Stop" spelled out is worth its ~30px wherever the bar has them, and a
- * docked sidebar at a 768px window leaves the bar only 472px. There, Home's
- * tab strip is already at its floor and every chip is `shrink-0`, so the
- * word's width came straight out of the row: the health dot painted past its
- * own box, further with every digit the team's head count grew (17px at 120
- * members). Below the `xl` bar width (576px — the bar's own, via
- * `@container/bar`, never the window's) the button drops to its icon, the
- * same 24px square as the bar's other icon buttons. Nothing is lost: the
- * accessible name and the tooltip still say what it stops.
+ * **It yields before anything else in the row does, in two steps (DOR-1816
+ * F1).** A docked sidebar at a 768px window leaves the bar 472px, and there
+ * Home's tab strip is already at its floor and every chip is `shrink-0`, so
+ * whatever this button spends comes straight out of the row: the health dot
+ * painted over the glyph beside it, further with every digit of the team's
+ * head count (17px at 120 members), and further still with remote access on,
+ * whose button takes another 36px of the same header. Both steps answer to the
+ * bar's own width (`@container/bar`), never the window's:
+ *
+ * - Below the `xl` bar (576px) the word goes and the button becomes a 24px
+ *   square, the size of the bar's other icon buttons. Its accessible name and
+ *   tooltip still say what it stops. The square comes from `size-6` alone: the
+ *   `xs` size's own `has-[>svg]:px-1.5` outranks a plain padding override, and
+ *   the 14px icon centres inside the 24px box with that padding anyway.
+ * - Below the `lg` bar (512px) — which is where a 768px window with the
+ *   sidebar docked lands — the button is not drawn at all, for the same reason
+ *   {@link RoomRunState} draws nothing on a phone: the live lane's stop-all
+ *   above the composer is on screen exactly when something is running, so the
+ *   room can still be stopped, and the bar keeps the width for the room's name
+ *   and the controls that are always there.
  */
 export function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
   const halt = useHaltRoom();
@@ -103,7 +113,7 @@ export function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
           aria-label={`Stop all agents in ${roomName}`}
           disabled={halt.isPending}
           onClick={() => halt.mutate({ roomId })}
-          className="@max-xl/bar:size-6 @max-xl/bar:px-0"
+          className="@max-xl/bar:size-6 @max-lg/bar:hidden"
         >
           <CircleStop aria-hidden className="size-3.5" />
           <span data-slot="room-halt-label" className="@max-xl/bar:hidden">

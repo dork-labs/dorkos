@@ -42,12 +42,18 @@ green and still reports every OTHER escape on that page; that entry also fails
 the test if the escape ever stops happening, so fixing this forces the entry's
 deletion.
 
-**Resolved (2026-09-25).** The chip that yields is the room-wide Stop's word:
-below a 576px bar (`@max-xl/bar`, the bar's own width) `RoomHaltButton` drops
-to a 24px icon, keeping its accessible name and tooltip. Measured at 768px with
-the sidebar docked, the row now fits with 12, 120 and 1200 members, where it
-had overshot by 9px, 17px and more. `EXPECTED_ESCAPES` and the two-member
-roster pin are gone; the sweep now judges Home at 12 and 120 members instead.
+**Resolved (2026-09-25).** What yields is the room-wide Stop, in two steps
+that answer to the bar's own width (`@container/bar`): below 576px
+`RoomHaltButton` drops to a 24px icon, keeping its accessible name and
+tooltip; below 512px (a 768px window with the sidebar docked) it is not drawn,
+as on a phone, and the live lane's stop-all is where the room is stopped.
+Measured from 768px to 1024px with the sidebar docked, the row fits with 2 and
+120 members, with remote access on and off, where at 768px it had overshot by
+up to 17px (53px with remote access on). The two-member roster pin and the
+excuse entry for this escape (`EXPECTED_ESCAPES`) are gone from the sweep,
+which now judges Home at 12 and 120 members, with remote access on at tablet
+width. The same overflow on a PHONE with remote access on (+7px at 12 members,
++17px at 120) is a separate defect this fix cannot reach, filed as DOR-2350.
 
 ### F2 — `TaskTemplateCard`'s toggle variant nests a button inside a button
 

@@ -236,8 +236,8 @@ const MIN_TEXT_LEAVES = 16;
  * the roster was pinned to two members so the case measured one known width,
  * which made it deterministic without making the bar correct.
  *
- * **Why these two numbers.** The bar is fixed now (the room-wide Stop drops its
- * word on a bar that narrow — `RoomHaltButton`), so the roster is forced LARGE
+ * **Why these two numbers.** The bar is fixed now (the room-wide Stop gives up
+ * its width on a bar that narrow — `RoomHaltButton`), so the roster is forced LARGE
  * instead of small: the widest counts a real team plausibly shows are the ones
  * that would find the next regression first. Twelve is the first two-digit
  * count past the ten agents a heavy user runs; 120 is the three-digit case the
@@ -276,6 +276,43 @@ async function forceTeamRoster(page: Page, teamRoomId: string, size: number): Pr
   });
 }
 
+/**
+ * Report remote access as on, so the header draws its remote-access button.
+ *
+ * That button sits in the same header row as Home's bar and takes 36px of it
+ * (a 28px control and its gap) whenever a tunnel is up — which, for anyone
+ * reaching the app from a phone or tablet, is most of the time. Home's tablet
+ * cases run with it on because it is the narrowest the bar ever gets: the
+ * adversarial review of the F1 fix found the row still overflowing by 19px at
+ * 120 members with it on, after the fix had made the same row fit with it off.
+ * A bar that fits with the button fits without it, so one setting covers both.
+ *
+ * **Tablet only, for now, and that is a known defect rather than a choice.**
+ * On a phone the same button pushes Home's bar 7px past its row at 12 members
+ * and 17px at 120 — the run state that F1's fix shrinks is not drawn on a
+ * phone at all, so that fix cannot reach it. Tracked as DOR-2350; turning this
+ * on for the phone cases is its regression test.
+ *
+ * Only reads are rewritten, and only the `tunnel` block of them; a write goes
+ * to the server untouched.
+ *
+ * @param page - The page whose requests to rewrite.
+ */
+async function reportRemoteAccessOn(page: Page): Promise<void> {
+  await page.route('**/api/config', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch();
+    const body = (await response.json()) as { tunnel?: Record<string, unknown> };
+    body.tunnel = {
+      ...body.tunnel,
+      isRunning: true,
+      connected: true,
+      url: 'https://e2e-remote-access.example',
+    };
+    await route.fulfill({ response, json: body });
+  });
+}
+
 /** One case: a route, and for Home the team size its bar is shown. */
 interface RouteCase {
   route: (typeof ROUTES)[number];
@@ -292,7 +329,10 @@ for (const { name, viewport } of WIDTHS) {
     test.use({ viewport });
 
     for (const { route, roster } of CASES) {
-      const suffix = roster === undefined ? '' : ` with ${roster} on the team`;
+      // See reportRemoteAccessOn for why the phone cases leave it off (DOR-2350).
+      const remoteAccessOn = roster !== undefined && name === 'tablet';
+      const remoteSuffix = remoteAccessOn ? ' and remote access on' : '';
+      const suffix = roster === undefined ? '' : ` with ${roster} on the team${remoteSuffix}`;
       test(`${route} contains its own content on a ${name}${suffix}`, async ({
         page,
         basePage,
@@ -301,6 +341,7 @@ for (const { name, viewport } of WIDTHS) {
         if (roster !== undefined) {
           await forceTeamRoster(page, (await teamRoomApi.teamRoom()).id, roster);
         }
+        if (remoteAccessOn) await reportRemoteAccessOn(page);
         await basePage.goto(route);
         await basePage.waitForAppReady();
         // The shell mounting is not the route having anything in it — an API
@@ -312,6 +353,11 @@ for (const { name, viewport } of WIDTHS) {
           // matching the request would measure whatever #team really holds and
           // report it as the width this case is named for.
           await expect(page.getByTestId('bar-members-chip')).toHaveText(String(roster));
+        }
+        if (remoteAccessOn) {
+          // And that the remote-access button is really taking its share of
+          // the row, rather than the case quietly measuring the wider bar.
+          await expect(page.getByTestId('remote-access-beacon')).toBeVisible();
         }
 
         // **The width the page BELIEVES it is, not the one Playwright asked
