@@ -16,6 +16,7 @@ import { renumberedSequences } from '../imports/manifest.js';
 import type { ImportWorkerHooks } from '../imports/process.js';
 import { sweepImports } from '../imports/worker.js';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
+import { REMOVED_ENTRY_TEXT } from '../content-removal.js';
 import { responseCookies } from './bootstrap-test-helper.js';
 import { drainCleanup, person, post, seedCanaries, upload } from './member-erasure-fixture.js';
 import {
@@ -1325,4 +1326,60 @@ it('leaves a finished import with no community after its owner deletes the commu
   expect(await readImport(h, importId, key)).toMatchObject({ state: 'ready', communityId: null });
   const list = await (await h.call('/api/v1/host/communities', { bearer: key })).json();
   expect(list.communities.some((c: { id: string }) => c.id === communityId)).toBe(false);
+});
+
+// Purpose: a version 1 export says nothing about which messages were removed or erased, only
+// what text they show. A restored message is never marked removed or erased from its text
+// alone: one whose text equals a removal sentence arrives as an ordinary message, as-is, and
+// still reads back through the member API.
+it('restores a message whose text is a removal sentence as an ordinary message', async () => {
+  const sentences = Object.values(REMOVED_ENTRY_TEXT);
+  const archive = handBuilt((manifest) => {
+    sentences.forEach((text, index) =>
+      manifest.entries.push({
+        id: randomUUID(),
+        channel_id: manifest.channels[0].id,
+        seq: String(index + 1),
+        author_member_id: manifest.requesterMemberId,
+        author_agent_id: null,
+        author_display_name: 'O',
+        text,
+        mentions: [],
+        parent_entry_id: null,
+        thread_root_entry_id: null,
+        created_at: '2026-01-02T00:00:00.000Z',
+      })
+    );
+  });
+  const { communityId } = await importArchive(archive, { autoCommit: true });
+  const rows = await h.pool.query<{
+    text: string;
+    removed_at: Date | null;
+    removed_by: string | null;
+    erased_at: Date | null;
+  }>(
+    'SELECT text,removed_at,removed_by,erased_at FROM entries WHERE community_id=$1 ORDER BY seq',
+    [communityId]
+  );
+  expect(rows.rows).toEqual(
+    sentences.map((text) => ({ text, removed_at: null, removed_by: null, erased_at: null }))
+  );
+  const owner = await claim(communityId, 'Sentence Owner', `sentence-${randomUUID()}@e.test`);
+  const channel = await h.pool.query<{ id: string }>(
+    'SELECT id FROM channels WHERE community_id=$1',
+    [communityId]
+  );
+  const page = await expectStatus(
+    await h.call(
+      `/api/v1/communities/${communityId}/channels/${channel.rows[0].id}/entries?limit=50`,
+      {
+        cookie: owner.cookie,
+      }
+    ),
+    200,
+    'history'
+  );
+  expect((await page.json()).entries.map((entry: { text: string }) => entry.text)).toEqual(
+    sentences
+  );
 });
