@@ -18,6 +18,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
+import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
 import {
   scheduleContentKey,
   taskWorkOf,
@@ -67,7 +68,7 @@ function definition(settings: Settings = {}, body = PROMPT) {
     filePath: FILE_PATH,
     dirPath: FILE_PATH.replace(`/${SKILL_FILENAME}`, ''),
     scope: 'global',
-  } as Parameters<TaskStore['upsertFromFile']>[0];
+  } as Parameters<TaskFileSync['upsertFromFile']>[0];
 }
 
 const DISCOVERY = { source: 'discovery' } as const;
@@ -86,7 +87,7 @@ describe('the settings are part of the approval', () => {
 
   /** A schedule a person approved (an operator write arrives with a grant). */
   const approvedSchedule = (settings: Settings = {}) =>
-    store.upsertFromFile(definition(settings)).id;
+    store.fileSync.upsertFromFile(definition(settings)).id;
 
   it.each([
     ['runtime', { runtime: 'codex' }],
@@ -99,7 +100,7 @@ describe('the settings are part of the approval', () => {
     // a person who approved one value did not approve another.
     approvedSchedule();
 
-    expect(store.upsertFromFile(definition(settings), undefined, DISCOVERY).status).toBe(
+    expect(store.fileSync.upsertFromFile(definition(settings), undefined, DISCOVERY).status).toBe(
       'pending_approval'
     );
   });
@@ -116,7 +117,9 @@ describe('the settings are part of the approval', () => {
     };
     approvedSchedule(settings);
 
-    expect(store.upsertFromFile(definition(settings), undefined, DISCOVERY).status).toBe('active');
+    expect(store.fileSync.upsertFromFile(definition(settings), undefined, DISCOVERY).status).toBe(
+      'active'
+    );
   });
 
   describe('an agent’s edit through the API', () => {
@@ -126,7 +129,9 @@ describe('the settings are part of the approval', () => {
       const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
       store.updateTask(id, { model: 'claude-opus-4', runtime: 'codex' });
 
-      expect(store.settleApprovedWorkChange(id, before, { trusted: false })).toBe('parked');
+      expect(store.approvals.settleApprovedWorkChange(id, before, { trusted: false })).toBe(
+        'parked'
+      );
 
       const parked = store.getTask(id)!;
       expect(parked).toMatchObject({
@@ -148,13 +153,13 @@ describe('the settings are part of the approval', () => {
         [{ cron: '0 8 * * *' }, AGENT_TIMING_CHANGE_REASON],
       ] as const;
       for (const [change, reason] of cases) {
-        const id = store.upsertFromFile({
+        const id = store.fileSync.upsertFromFile({
           ...definition(),
           filePath: `/x/${reason.length}/${Object.keys(change).join()}/SKILL.md`,
         }).id;
         const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
         store.updateTask(id, change, { timingLandsOn: 'file' });
-        store.settleApprovedWorkChange(id, before, { trusted: false });
+        store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
         expect(store.getTask(id)!.reason).toBe(reason);
       }
     });
@@ -165,7 +170,7 @@ describe('the settings are part of the approval', () => {
       const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
       store.updateTask(id, { model: 'claude-opus-4' });
 
-      store.settleApprovedWorkChange(id, before, { trusted: false });
+      store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
 
       expect(store.getTask(id)!.enabled).toBe(false);
     });
@@ -175,10 +180,10 @@ describe('the settings are part of the approval', () => {
       // and the row write, and withdraws the grant with its own sentence.
       const id = approvedSchedule({ model: 'claude-sonnet-4' });
       const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
-      store.upsertFromFile(definition({ model: 'claude-opus-4' }), undefined, DISCOVERY);
+      store.fileSync.upsertFromFile(definition({ model: 'claude-opus-4' }), undefined, DISCOVERY);
       store.updateTask(id, { model: 'claude-opus-4' });
 
-      store.settleApprovedWorkChange(id, before, { trusted: false });
+      store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
 
       expect(store.getTask(id)).toMatchObject({
         reason: AGENT_SETTINGS_CHANGE_REASON,
@@ -190,9 +195,9 @@ describe('the settings are part of the approval', () => {
       const id = approvedSchedule();
       const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
       store.updateTask(id, { model: 'claude-opus-4' });
-      store.settleApprovedWorkChange(id, before, { trusted: false });
+      store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
 
-      const synced = store.upsertFromFile(
+      const synced = store.fileSync.upsertFromFile(
         definition({ model: 'claude-opus-4' }),
         undefined,
         DISCOVERY
@@ -211,10 +216,10 @@ describe('the settings are part of the approval', () => {
       // Purpose: the person changing it is the approval.
       const id = approvedSchedule();
       store.updateTask(id, { runtime: 'codex' });
-      store.recordApproval(id);
+      store.approvals.recordApproval(id);
 
       expect(
-        store.upsertFromFile(definition({ runtime: 'codex' }), undefined, DISCOVERY).status
+        store.fileSync.upsertFromFile(definition({ runtime: 'codex' }), undefined, DISCOVERY).status
       ).toBe('active');
     });
 
@@ -222,7 +227,7 @@ describe('the settings are part of the approval', () => {
       const id = approvedSchedule();
       const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
       store.updateTask(id, { model: 'claude-opus-4' });
-      store.settleApprovedWorkChange(id, before, { trusted: false });
+      store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
 
       store.updateTask(id, { status: 'active' });
 
@@ -236,7 +241,7 @@ describe('the settings are part of the approval', () => {
     const id = approvedSchedule();
     const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
     store.updateTask(id, { prompt: 'Delete the digest.' });
-    store.settleApprovedWorkChange(id, before, { trusted: false });
+    store.approvals.settleApprovedWorkChange(id, before, { trusted: false });
 
     expect(store.getTask(id)!.approvalChanges).toEqual([{ field: 'prompt', from: null, to: null }]);
   });
@@ -247,11 +252,13 @@ describe('the settings are part of the approval', () => {
     // would look like a change to the approved work.
     const id = approvedSchedule();
     db.update(pulseSchedules).set({ effort: 'turbo' }).where(eq(pulseSchedules.id, id)).run();
-    store.recordApproval(id);
+    store.approvals.recordApproval(id);
     const before = { ...taskWorkOf(store.getTask(id)!), status: 'active' };
     store.updateTask(id, { description: 'Tidier words' });
 
-    expect(store.settleApprovedWorkChange(id, before, { trusted: false })).toBe('unchanged');
+    expect(store.approvals.settleApprovedWorkChange(id, before, { trusted: false })).toBe(
+      'unchanged'
+    );
     expect(store.getTask(id)!.status).toBe('active');
   });
 
@@ -259,7 +266,7 @@ describe('the settings are part of the approval', () => {
     // Purpose: the card's "what changed" must work for every park, the
     // migration's included.
     const id = approvedSchedule();
-    store.rekeyMigratedFile(FILE_PATH, '/new/home/SKILL.md', {
+    store.approvals.rekeyMigratedFile(FILE_PATH, '/new/home/SKILL.md', {
       prompt: 'An edited prompt.',
       cron: CRON,
       timezone: 'UTC',
@@ -267,7 +274,7 @@ describe('the settings are part of the approval', () => {
 
     expect(store.getTask(id)).toMatchObject({ status: 'pending_approval' });
     // The row takes the file's new prompt at the next sync of its new home.
-    const synced = store.upsertFromFile(
+    const synced = store.fileSync.upsertFromFile(
       { ...definition({}, 'An edited prompt.'), filePath: '/new/home/SKILL.md' },
       undefined,
       DISCOVERY
@@ -291,7 +298,7 @@ describe('the settings are part of the approval', () => {
 
   it('says nothing changed on a schedule nobody approved yet', () => {
     // Purpose: "what changed" is against an approval; a first sighting has none.
-    const parked = store.upsertFromFile(definition(), undefined, DISCOVERY);
+    const parked = store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY);
 
     expect(parked.status).toBe('pending_approval');
     expect(parked.approvalChanges).toEqual([]);
@@ -312,9 +319,9 @@ describe('the settings are part of the approval', () => {
       const id = approvedSchedule(settings);
       withGrant(id, threePart());
 
-      expect(store.upgradeLegacyApprovalKeys()).toBe(1);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
 
-      expect(store.upsertFromFile(definition(settings), undefined, DISCOVERY).status).toBe(
+      expect(store.fileSync.upsertFromFile(definition(settings), undefined, DISCOVERY).status).toBe(
         'active'
       );
     });
@@ -322,10 +329,11 @@ describe('the settings are part of the approval', () => {
     it('covers only the settings it runs with now (never silently widens)', () => {
       const id = approvedSchedule({ model: 'claude-sonnet-4' });
       withGrant(id, threePart());
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
       expect(
-        store.upsertFromFile(definition({ model: 'claude-opus-4' }), undefined, DISCOVERY).status
+        store.fileSync.upsertFromFile(definition({ model: 'claude-opus-4' }), undefined, DISCOVERY)
+          .status
       ).toBe('pending_approval');
     });
 
@@ -333,9 +341,9 @@ describe('the settings are part of the approval', () => {
       const id = approvedSchedule();
       withGrant(id, threePart('an older prompt'));
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
         'pending_approval'
       );
     });
@@ -344,7 +352,7 @@ describe('the settings are part of the approval', () => {
       const id = approvedSchedule({ model: 'gpt-5' });
       withGrant(id, JSON.stringify([PROMPT, CRON]));
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
       expect(row(id).approvedContentKey).toBe(
         scheduleContentKey({ ...taskWorkOf(store.getTask(id)!) })
@@ -355,8 +363,8 @@ describe('the settings are part of the approval', () => {
       const id = approvedSchedule();
       withGrant(id, threePart());
 
-      expect(store.upgradeLegacyApprovalKeys()).toBe(1);
-      expect(store.upgradeLegacyApprovalKeys()).toBe(0);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(0);
     });
   });
 });

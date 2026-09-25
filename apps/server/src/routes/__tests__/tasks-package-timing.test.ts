@@ -60,7 +60,7 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
     if (!parsed.ok || !hasSchedule(parsed.definition.meta)) throw new Error('fixture unreadable');
-    return store.upsertFromFile(
+    return store.fileSync.upsertFromFile(
       {
         ...parsed.definition,
         meta: parsed.definition.meta,

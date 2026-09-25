@@ -89,7 +89,7 @@ const meshCore = { getProjectPath: () => projectPath };
 /** Discover what is on disk, the way the five-minute pass does. */
 async function sweep(): Promise<Task> {
   await reconciler.reconcile();
-  return store.getByFilePath(packagedFile)!;
+  return store.fileSync.getByFilePath(packagedFile)!;
 }
 
 /**
@@ -106,7 +106,7 @@ async function patch(
   if (!outcome.ok) return { ok: false, code: outcome.code };
   store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn });
   if (!outcome.changesFile) {
-    store.settleApprovedWorkChange(
+    store.approvals.settleApprovedWorkChange(
       existing.id,
       { ...taskWorkOf(existing), status: 'active' },
       { trusted }

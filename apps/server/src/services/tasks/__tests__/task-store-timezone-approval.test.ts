@@ -17,6 +17,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
+import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
 import { scheduleContentKey, upgradeLegacyContentKey } from '../schedule-permission-clamp.js';
 
 /** The fixture's settings, which are part of every approval key (DOR-2323). */
@@ -51,7 +52,7 @@ function definition(overrides: { timezone?: string; body?: string; permissions?:
     filePath: FILE_PATH,
     dirPath: FILE_PATH.replace(`/${SKILL_FILENAME}`, ''),
     scope: 'global',
-  } as Parameters<TaskStore['upsertFromFile']>[0];
+  } as Parameters<TaskFileSync['upsertFromFile']>[0];
 }
 
 const DISCOVERY = { source: 'discovery' } as const;
@@ -101,7 +102,7 @@ describe('the timezone is part of the approval', () => {
     db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get()!;
 
   /** A schedule a person approved (an operator write arrives with a grant). */
-  const approvedSchedule = () => store.upsertFromFile(definition()).id;
+  const approvedSchedule = () => store.fileSync.upsertFromFile(definition()).id;
 
   /** Put a row back to the grant an older build would have written for it. */
   function withLegacyGrant(id: string, prompt = PROMPT, cron = CRON): void {
@@ -125,7 +126,7 @@ describe('the timezone is part of the approval', () => {
     // schedule approved while its real run time moved.
     approvedSchedule();
 
-    const synced = store.upsertFromFile(
+    const synced = store.fileSync.upsertFromFile(
       definition({ timezone: 'Pacific/Kiritimati' }),
       undefined,
       DISCOVERY
@@ -137,10 +138,10 @@ describe('the timezone is part of the approval', () => {
   it('drops an approved bypass when the file moves the timezone', () => {
     // Purpose: the bypass keep-grant compares the same key the arm gate does,
     // so the two cannot disagree about whether this is still the approved work.
-    const id = store.upsertFromFile(definition({ permissions: 'bypassPermissions' })).id;
+    const id = store.fileSync.upsertFromFile(definition({ permissions: 'bypassPermissions' })).id;
     store.updateTask(id, { permissionMode: 'bypassPermissions' });
 
-    const synced = store.upsertFromFile(
+    const synced = store.fileSync.upsertFromFile(
       definition({ permissions: 'bypassPermissions', timezone: 'Pacific/Kiritimati' }),
       undefined,
       DISCOVERY
@@ -156,9 +157,11 @@ describe('the timezone is part of the approval', () => {
       const id = approvedSchedule();
       withLegacyGrant(id);
 
-      expect(store.upgradeLegacyApprovalKeys()).toBe(1);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
 
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+        'active'
+      );
     });
 
     it('covers only the timezone it runs in now (never silently widens)', () => {
@@ -166,9 +169,9 @@ describe('the timezone is part of the approval', () => {
       // anywhere": moving the zone after it asks again.
       const id = approvedSchedule();
       withLegacyGrant(id);
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
-      const synced = store.upsertFromFile(
+      const synced = store.fileSync.upsertFromFile(
         definition({ timezone: 'Pacific/Kiritimati' }),
         undefined,
         DISCOVERY
@@ -187,7 +190,7 @@ describe('the timezone is part of the approval', () => {
         .run();
       withLegacyGrant(id);
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
       expect(row(id).approvedContentKey).toBe(
         scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: CRON, timezone: 'Asia/Tokyo' })
@@ -199,9 +202,9 @@ describe('the timezone is part of the approval', () => {
       const id = approvedSchedule();
       withLegacyGrant(id, 'an older prompt');
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
         'pending_approval'
       );
     });
@@ -211,25 +214,27 @@ describe('the timezone is part of the approval', () => {
       // file comes back.
       const id = approvedSchedule();
       withLegacyGrant(id);
-      store.markRemovedByFilePath(FILE_PATH);
+      store.fileSync.markRemovedByFilePath(FILE_PATH);
 
-      store.upgradeLegacyApprovalKeys();
+      store.approvals.upgradeLegacyApprovalKeys();
 
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+        'active'
+      );
     });
 
     it('does nothing the second time, and nothing to a row with no approval', () => {
       // Purpose: runs on every boot; it must be a no-op once done.
       const id = approvedSchedule();
       withLegacyGrant(id);
-      const parked = store.upsertFromFile(
+      const parked = store.fileSync.upsertFromFile(
         { ...definition(), filePath: '/elsewhere/SKILL.md' },
         undefined,
         DISCOVERY
       );
 
-      expect(store.upgradeLegacyApprovalKeys()).toBe(1);
-      expect(store.upgradeLegacyApprovalKeys()).toBe(0);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
+      expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(0);
       expect(row(parked.id).approvedContentKey).toBeNull();
     });
   });

@@ -96,7 +96,7 @@ export const PARKED_SCHEDULE_NOTE =
  * A person's approval is keyed on the schedule's CONTENT — the prompt, the
  * cron and, since DOR-2307, the timezone (`scheduleContentKey`) — so changing
  * any of them means nobody has read this piece of work. DorkOS parks the
- * schedule in the same call (`TaskStore.settleApprovedWorkChange`), so the
+ * schedule in the same call (`TaskApprovals.settleApprovedWorkChange`), so the
  * schedule this tool hands back already says `pending_approval`. An agent that
  * read only the status could still report "updated the schedule" and end the
  * turn, leaving a person to discover a stopped schedule on their own, so the
@@ -705,7 +705,7 @@ export function createUpdateScheduleHandler(
     // not, exactly as the REST route does for an agent (DOR-2313). Left to the
     // sync, the agent's new work would run approved until the watcher or the
     // sweep caught up.
-    const settled = deps.taskStore!.settleApprovedWorkChange(
+    const settled = deps.taskStore!.approvals.settleApprovedWorkChange(
       updated.id,
       { ...taskWorkOf(existing), status: existing.status },
       { trusted: false }

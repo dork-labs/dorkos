@@ -36,7 +36,7 @@
  * ## Order, and why it is load-bearing
  *
  * Runs at boot BEFORE the watcher and reconciler start, and BEFORE
- * `TaskStore.backfillApprovalGrants`. The first is obvious — discovery must not
+ * `TaskApprovals.backfillApprovalGrants`. The first is obvious — discovery must not
  * race a file being rewritten under it. The second is subtler: the backfill
  * writes a grant for every already-live row from the row's own content, so it
  * has to see the final state of the migration, not the middle of it.
@@ -72,7 +72,7 @@
  *   which is also what makes running this on every boot free.
  *
  * The re-key itself is one transaction that either moves the row and keeps its
- * approval or does neither ({@link TaskStore.rekeyMigratedFile}). The direction
+ * approval or does neither ({@link TaskApprovals.rekeyMigratedFile}). The direction
  * of every failure is the same: a schedule parks and waits for a person. Nothing
  * here can arm something nobody has read.
  *
@@ -105,7 +105,8 @@ import { DurationSchema } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { writeSkillFile } from '@dorkos/skills/writer';
-import type { TaskStore } from './task-store.js';
+import type { TaskApprovals } from './approvals/task-approvals.js';
+import type { TaskFileSync } from './sync/task-file-sync.js';
 import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from './skills-roots.js';
 import { TASK_TEMPLATES_DIRNAME, resolveTemplatesDir } from './task-templates.js';
 import { logger } from '../../lib/logger.js';
@@ -286,7 +287,10 @@ export interface LegacyMigrationDeps {
   /** Every registered agent, so its project's legacy root is covered too. */
   agents: readonly { agentId: string; projectPath: string }[];
   /** The row half of the migration. */
-  store: Pick<TaskStore, 'rekeyMigratedFile' | 'upsertFromFile'>;
+  store: {
+    approvals: Pick<TaskApprovals, 'rekeyMigratedFile'>;
+    fileSync: Pick<TaskFileSync, 'upsertFromFile'>;
+  };
 }
 
 /** A legacy root and the new root its contents belong in. */
@@ -550,7 +554,7 @@ async function migrateOneSchedule(
   const collision = destination.collided
     ? collisionReason(path.join(pair.to, dirName), path.join(pair.to, destination.name))
     : null;
-  const outcome = deps.store.rekeyMigratedFile(
+  const outcome = deps.store.approvals.rekeyMigratedFile(
     oldFile,
     newFile,
     {
@@ -569,7 +573,7 @@ async function migrateOneSchedule(
     // The row now names a file that is not there. Put it back and park it: an
     // inert row a person can see beats a live one firing from a path nothing
     // can read, and the next boot will try the move again.
-    const reverted = deps.store.rekeyMigratedFile(
+    const reverted = deps.store.approvals.rekeyMigratedFile(
       newFile,
       oldFile,
       {
@@ -790,7 +794,7 @@ function parkUnreadable(
     schedule: { ...ScheduleBlockSchema.parse({}), enabled: false },
   };
 
-  deps.store.upsertFromFile(
+  deps.store.fileSync.upsertFromFile(
     {
       name: dirName,
       body: '',

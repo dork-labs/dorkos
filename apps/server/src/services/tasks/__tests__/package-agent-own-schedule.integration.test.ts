@@ -130,7 +130,7 @@ const meshCore = { getProjectPath: () => agentDir };
 /** Discover what is on disk, the way the five-minute pass does. */
 async function sweep(filePath: string): Promise<Task> {
   await reconciler.reconcile();
-  const task = store.getByFilePath(filePath);
+  const task = store.fileSync.getByFilePath(filePath);
   expect(task).not.toBeNull();
   return task!;
 }
@@ -331,7 +331,7 @@ describe('a package schedule the record stops listing', () => {
     const own = await sweep(ownFile);
     db.run(sql`UPDATE pulse_schedules SET package_owned = 'unknown' WHERE id = ${own.id}`);
     // `unknown` is the sync's bookkeeping; the app is never told about it.
-    expect(store.getByFilePath(ownFile)!.packageOwned).toBeNull();
+    expect(store.fileSync.getByFilePath(ownFile)!.packageOwned).toBeNull();
     const before = await fs.readFile(ownFile, 'utf-8');
 
     await sweep(ownFile);
@@ -397,7 +397,7 @@ describe('a package schedule the record stops listing', () => {
     );
     if (parsed.kind !== 'schedule') throw new Error('expected a schedule');
     const syncOnce = () =>
-      store.upsertFromFile(parsed.discovered.def, AGENT_ID, {
+      store.fileSync.upsertFromFile(parsed.discovered.def, AGENT_ID, {
         source: 'discovery',
         problem: parsed.discovered.problem,
         packageOwned: null,
@@ -462,7 +462,9 @@ describe('a package schedule the record stops listing', () => {
       { cron: '*/5 * * * *' },
       { timingLandsOn: outcome.timingLandsOn }
     );
-    expect(store.settleApprovedWorkChange(approved.id, before, { trusted: false })).toBe('parked');
+    expect(store.approvals.settleApprovedWorkChange(approved.id, before, { trusted: false })).toBe(
+      'parked'
+    );
     const parked = store.getTask(approved.id)!;
 
     await releaseShippedFile();

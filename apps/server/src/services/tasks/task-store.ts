@@ -26,25 +26,13 @@ import type {
   TaskRunTrigger,
   UpdateTaskRequest,
 } from '@dorkos/shared/types';
-import type { TaskDefinition } from '@dorkos/skills/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { logger } from '../../lib/logger.js';
-import { FileSyncGates, fileSettingsOf, type FileSyncSource } from './file-sync-gates.js';
-import {
-  scheduleContentKey,
-  scheduleSettingsOf,
-  upgradeLegacyContentKey,
-  type IncomingTaskContent,
-} from './schedule-permission-clamp.js';
+import { TaskApprovals } from './approvals/task-approvals.js';
+import { TaskFileSync } from './sync/task-file-sync.js';
+import { scheduleContentKey } from './schedule-permission-clamp.js';
 import { mapTaskRow, mapRunRow } from './task-row-mappers.js';
-import {
-  agentChangeReason,
-  effectiveContentKey,
-  effectiveTiming,
-  effectiveWork,
-  timingColumnWrites,
-  type TimingLandsOn,
-} from './timing/effective-timing.js';
+import { timingColumnWrites, type TimingLandsOn } from './timing/effective-timing.js';
 
 /** Options for listing runs. */
 interface ListRunsOptions {
@@ -108,77 +96,6 @@ export interface ScheduleReliability {
 }
 
 /**
- * What {@link TaskStore.upsertFromFile} needs to know beyond the file itself:
- * who is writing, and what is wrong with the file.
- *
- * Defined by the module that acts on it — see {@link FileSyncSource}, which
- * documents both fields — and re-exported here under the name its one caller
- * uses.
- */
-export type UpsertFromFileOptions = FileSyncSource;
-
-/**
- * The provenance columns a discovery sync may write to a row that ALREADY
- * EXISTS — which is usually none of them.
- *
- * Discovery re-reads every file every five minutes, and the legacy roots it
- * reads hold rows that discovery did not create: an agent's proposal, carrying
- * the case it made for itself and the session it was proposed from, and an
- * operator's own schedule, carrying nothing. Writing the arm gate's generic
- * story over either one destroys real provenance — an agent's reason replaced
- * by "DorkOS found this schedule in a file", an operator's row stamped
- * `origin: 'file'` in flat contradiction of what that column means (DOR-1485
- * review, B2).
- *
- * So:
- *
- * - `origin` is written only when the row was BORN from discovery. A row that
- *   arrived through a route is never re-labelled by a later sync of its file.
- * - `reason` is written only when discovery owns the row, or when the row has
- *   no story of its own to overwrite.
- * - `reasonSource` rides with any reason we DO write, marking it as DorkOS's
- *   own words. Without it the drift sentence on an operator's own schedule
- *   rendered on the approval card as an agent's quoted case — our words in
- *   somebody else's mouth.
- *
- * The arm STATUS is not conditional and is applied by the caller regardless:
- * that is the security property, and it holds for every row whatever wrote it.
- *
- * @param existing - The row being updated.
- * @param arm - What the arm gate decided.
- * @returns The provenance columns to include in the update, possibly none.
- */
-function fileProvenance(
-  existing: { origin: string | null; reason: string | null },
-  arm: { reason: string | null }
-): { reason?: string | null; origin?: 'file'; reasonSource?: 'dorkos' | null } {
-  const source = arm.reason === null ? null : ('dorkos' as const);
-  if (existing.origin === 'file')
-    return { reason: arm.reason, origin: 'file', reasonSource: source };
-  if (existing.reason === null) return { reason: arm.reason, reasonSource: source };
-  return {};
-}
-
-/**
- * What {@link TaskStore.rekeyMigratedFile} did with one migrated row.
- *
- * `no-row` is not an error — a legacy file that never synced has no row, and a
- * re-run over an already-migrated file finds none at the old path either.
- */
-export type RekeyOutcome = 'rekeyed' | 'reparked' | 'moved' | 'no-row';
-
-/**
- * Why a migrated schedule is waiting for a person again: its file no longer says
- * what the row it was approved as says.
- *
- * Only reachable when the file was edited while DorkOS was not running, since
- * the migration itself never changes a schedule's prompt or cron.
- */
-const DRIFTED_DURING_MIGRATION_REASON =
-  'This schedule’s file changed since it was last approved, so it is waiting for you again. ' +
-  'Read what it does now, then approve it or delete it.';
-
-/**
  * How {@link TaskStore.updateTask} writes a request's timing — see
  * {@link TimingLandsOn}.
  */
@@ -203,12 +120,6 @@ export type UntimedTaskUpdate = Omit<UpdateTaskRequest, 'cron' | 'timezone' | 'r
   timezone?: never;
   resetTiming?: never;
 };
-
-/**
- * What {@link TaskStore.settleApprovedWorkChange} did about a schedule whose
- * approved work changed.
- */
-export type WorkChangeSettlement = 'unchanged' | 'rekeyed' | 'parked';
 
 /** Fields that can be updated on a run. */
 interface RunUpdate {
@@ -291,14 +202,22 @@ export class TaskStore {
   /** Optional listener fired once per run's terminal transition (DOR-240). */
   private onRunTerminal: RunTerminalListener | null = null;
   /**
-   * The content gates every file-sourced write passes: the permission clamp and
-   * the arm gate, plus the memory that keeps a standing refusal from writing a
-   * log line every five minutes (`file-sync-gates.ts`).
+   * The file half of the store, over its database (DOR-2329): SKILL.md → row
+   * with the content gates, a vanished file's pause, and the lookup by path.
+   * See `sync/task-file-sync.ts`.
    */
-  private readonly fileGates = new FileSyncGates();
+  readonly fileSync: TaskFileSync;
+  /**
+   * The approval lifecycle, over this store's database (DOR-2329): recording,
+   * withdrawing and settling a person's approval, and carrying it across a
+   * file move or a key-format upgrade. See `approvals/task-approvals.ts`.
+   */
+  readonly approvals: TaskApprovals;
 
   constructor(db: Db) {
     this.db = db;
+    this.approvals = new TaskApprovals(db);
+    this.fileSync = new TaskFileSync(db, (id) => this.getTask(id));
   }
 
   /**
@@ -451,310 +370,10 @@ export class TaskStore {
     // Read AFTER the update, deliberately: a single PATCH may change the cron
     // and approve it in the same breath, and what was approved is the content
     // the caller is leaving behind, not the one they found.
-    if (input.status === 'active') this.recordApproval(id);
-    else if (input.status !== undefined) this.withdrawApproval(id);
+    if (input.status === 'active') this.approvals.recordApproval(id);
+    else if (input.status !== undefined) this.approvals.withdrawApproval(id);
 
     return this.getTask(id);
-  }
-
-  /**
-   * Record that a person has approved this schedule's CURRENT content.
-   *
-   * The arm grant (`pulse_schedules.approved_content_key`). Stored positively so
-   * that no amount of status-writing elsewhere can fabricate it — see
-   * {@link resolveFileArmStatus} for the two writers that used to.
-   *
-   * @param id - The schedule a person just armed.
-   */
-  recordApproval(id: string): void {
-    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
-    if (!row) return;
-    // The content that RUNS, a person's own timing included (DOR-2302): an
-    // approval recorded against the package's cron while theirs ran would be
-    // an approval of work nobody looked at.
-    this.db
-      .update(pulseSchedules)
-      .set({ approvedContentKey: effectiveContentKey(row), previousApprovalKey: null })
-      .where(eq(pulseSchedules.id, id))
-      .run();
-  }
-
-  /**
-   * Keep a schedule's approval honest after the work it approved changed: its
-   * prompt, timing or settings (`scheduleContentKey`), in the request that
-   * changed it rather than at the next sync.
-   *
-   * - **A person** (the caller cleared the agent bar) changing the timing of a
-   *   schedule they approved re-approves it in the same act: the grant moves to
-   *   the new timing. Keyed on the grant covering the OLD content rather than on
-   *   `status`, so a switched-off or paused schedule the person approved is
-   *   still approved when it comes back, and a schedule nobody approved yet is
-   *   not approved by an edit. Routes only ask this for a change no file carried
-   *   (a package's row-only timing, DOR-2302); a person's file-backed edit is
-   *   re-approved by the route itself.
-   * - **An agent** gets an `active` schedule parked at once, with DorkOS's own
-   *   sentence saying what it changed (`agentChangeReason`: the prompt, how it
-   *   runs, or when), and keeps the approval it withdrew for the card
-   *   (`previousApprovalKey`, DOR-2323). Left to
-   *   the sync, the agent's new work would run on an approved schedule until
-   *   the watcher or the five-minute sweep caught up (DOR-2313), and the sync
-   *   would say the FILE changed. A sync that landed mid-request, between the
-   *   file write and this call, has already parked the row with its own
-   *   sentence; the schedule was active before this request, so the agent's
-   *   sentence replaces it. A schedule that was not active keeps its status; its
-   *   grant no longer matches what would run, so nothing can arm it again
-   *   without a person.
-   *
-   * It never touches `enabled`: a park stops a schedule, it never starts one.
-   *
-   * @param id - The schedule whose approved work may just have changed.
-   * @param before - What would have run before the update, and the status the
-   *   schedule had then.
-   * @param caller - Whether the caller cleared the agent bar.
-   * @returns What was done, so a caller can tell the agent or raise the park.
-   */
-  settleApprovedWorkChange(
-    id: string,
-    before: IncomingTaskContent & { status: string },
-    caller: { trusted: boolean }
-  ): WorkChangeSettlement {
-    const row = this.db.select().from(pulseSchedules).where(eq(pulseSchedules.id, id)).get();
-    if (!row) return 'unchanged';
-    const previousKey = scheduleContentKey(before);
-    const key = effectiveContentKey(row);
-    if (key === previousKey) return 'unchanged';
-
-    if (caller.trusted) {
-      if (row.approvedContentKey !== previousKey) return 'unchanged';
-      this.db
-        .update(pulseSchedules)
-        .set({ approvedContentKey: key, previousApprovalKey: null })
-        .where(eq(pulseSchedules.id, id))
-        .run();
-      return 'rekeyed';
-    }
-
-    const parkedMidRequest = before.status === 'active' && row.status === 'pending_approval';
-    if (row.status !== 'active' && !parkedMidRequest) return 'unchanged';
-    this.db
-      .update(pulseSchedules)
-      .set({
-        status: 'pending_approval',
-        approvedContentKey: null,
-        // What was approved, so the card can say what the agent changed. A sync
-        // that parked mid-request already moved it here; keep that.
-        previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
-        reason: agentChangeReason(before, effectiveWork(row)),
-        reasonSource: 'dorkos',
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(pulseSchedules.id, id))
-      .run();
-    return 'parked';
-  }
-
-  /**
-   * Drop the arm grant, because this schedule is no longer approved.
-   *
-   * Called whenever a row leaves `active` through the API — parking it, pausing
-   * it — so an approval can never outlive the decision that made it.
-   *
-   * @param id - The schedule to withdraw approval from.
-   */
-  withdrawApproval(id: string): void {
-    this.db
-      .update(pulseSchedules)
-      .set({ approvedContentKey: null })
-      .where(eq(pulseSchedules.id, id))
-      .run();
-  }
-
-  /**
-   * Move a row onto its file's new home, keeping any approval it holds — the DB
-   * half of the legacy migration (DOR-1486).
-   *
-   * One transaction, because the two writes are one fact: a row whose path moved
-   * without its grant re-keying is a schedule an operator approved that quietly
-   * asks to be approved again, and a grant re-keyed without the path moving is a
-   * grant for a file nothing reads. Either half alone is worse than neither.
-   *
-   * ## Why the key is compared against the ROW, not just taken from the file
-   *
-   * The migration rewrites frontmatter and never touches the body or the cron
-   * line, so the content key it produces is the key the row already had. That is
-   * the ordinary case, and it is why an approved schedule survives the upgrade
-   * without anyone re-approving it.
-   *
-   * The case worth writing code for is the other one: the file was edited while
-   * the server was down. Then the row's `(prompt, cron)` and the file's are
-   * DIFFERENT pieces of work, and stamping the file's key onto an active row
-   * would hand a person's approval to content nobody has read — grant without
-   * review, the one outcome this whole gate exists to prevent. So the two keys
-   * are compared, and a mismatch parks the row instead of re-keying it. That is
-   * the same answer the first sync after boot would reach on its own; reaching it
-   * here just means the schedule never fires the unread content in between.
-   *
-   * A row that is not `active` migrates exactly as it is — parked stays parked,
-   * paused stays paused, and whatever grant it holds is left alone, because
-   * moving a file is not a decision about it. Provenance follows the same rules
-   * every discovery write follows ({@link fileProvenance}): DorkOS never
-   * overwrites an agent's proposal reason with its own prose.
-   *
-   * @param from - The path the row is keyed on now.
-   * @param to - The path its file lives at after the move, symlinks resolved.
-   * @param rewritten - The migrated file's material content.
-   * @param park - A reason to park the row regardless (the name-collision case),
-   *   or `null` to let the comparison above decide.
-   * @returns What happened, for the caller's log and counters.
-   */
-  rekeyMigratedFile(
-    from: string,
-    to: string,
-    rewritten: Pick<IncomingTaskContent, 'prompt' | 'cron' | 'timezone'>,
-    park: string | null = null
-  ): RekeyOutcome {
-    return this.db.transaction((tx) => {
-      const existing = tx
-        .select()
-        .from(pulseSchedules)
-        .where(eq(pulseSchedules.filePath, from))
-        .get();
-      // No row is an ordinary outcome, not a failure: a legacy file DorkOS never
-      // managed to sync has none, and a re-run after a crash finds the row
-      // already moved.
-      if (!existing) return 'no-row';
-
-      const now = new Date().toISOString();
-      // Both sides as they would RUN: the row's own timing override applies to
-      // the migrated file exactly as it applied to the file it came from
-      // (DOR-2302), so a person's timing neither passes for drift nor is lost
-      // from the grant.
-      const fileKey = effectiveContentKey({
-        ...existing,
-        prompt: rewritten.prompt,
-        cron: rewritten.cron,
-        timezone: rewritten.timezone,
-      });
-      const agrees = effectiveContentKey(existing) === fileKey;
-
-      if (existing.status === 'active' && park === null && agrees) {
-        tx.update(pulseSchedules)
-          .set({ filePath: to, approvedContentKey: fileKey, updatedAt: now })
-          .where(eq(pulseSchedules.id, existing.id))
-          .run();
-        return 'rekeyed';
-      }
-
-      if (existing.status === 'active') {
-        const reason = park ?? DRIFTED_DURING_MIGRATION_REASON;
-        tx.update(pulseSchedules)
-          .set({
-            filePath: to,
-            status: 'pending_approval',
-            approvedContentKey: null,
-            // Kept for the card's "what changed" (DOR-2323).
-            previousApprovalKey: existing.approvedContentKey ?? existing.previousApprovalKey,
-            ...fileProvenance(existing, { reason }),
-            updatedAt: now,
-          })
-          .where(eq(pulseSchedules.id, existing.id))
-          .run();
-        return 'reparked';
-      }
-
-      tx.update(pulseSchedules)
-        .set({ filePath: to, updatedAt: now })
-        .where(eq(pulseSchedules.id, existing.id))
-        .run();
-      return 'moved';
-    });
-  }
-
-  /**
-   * Move every approval recorded in an older key format onto today's key: the
-   * timezone joined it in DOR-2307, the settings in DOR-2323.
-   *
-   * Runs once at boot, before any watcher starts, and before
-   * {@link backfillApprovalGrants} would have anything to say about these rows.
-   * Without it, every approved schedule's stored key would stop matching the
-   * key the gates now compute, and the first sync of each would park it — an
-   * upgrade that silently takes every schedule a person approved off the clock.
-   *
-   * What each grant is extended with, and why that widens nothing, is
-   * {@link upgradeLegacyContentKey}'s to explain: the timezone the row runs in
-   * now, the only one the old grant was ever checked against. Every row with a
-   * grant is upgraded, whatever its status — a paused or switched-off schedule a
-   * person approved is still approved when it comes back.
-   *
-   * Idempotent: a key already in today's format is left alone, so a second
-   * boot changes nothing. Computed in JS row by row for the reason
-   * {@link backfillApprovalGrants} gives.
-   *
-   * @returns How many grants were upgraded.
-   */
-  upgradeLegacyApprovalKeys(): number {
-    const rows = this.db
-      .select()
-      .from(pulseSchedules)
-      .where(isNotNull(pulseSchedules.approvedContentKey))
-      .all();
-
-    let upgraded = 0;
-    for (const row of rows) {
-      const key = upgradeLegacyContentKey(row.approvedContentKey!, {
-        ...scheduleSettingsOf(row),
-        timezone: effectiveTiming(row).timezone,
-      });
-      if (key === null) continue;
-      this.db
-        .update(pulseSchedules)
-        .set({ approvedContentKey: key })
-        .where(eq(pulseSchedules.id, row.id))
-        .run();
-      upgraded++;
-    }
-    return upgraded;
-  }
-
-  /**
-   * Give every already-live schedule a grant for the content it is already
-   * running (DOR-1485).
-   *
-   * Runs once at boot, before any watcher starts. Every alpha user has `active`
-   * rows that predate the grant column, and without this the first sync of each
-   * would find no key, park it, and confront them with a list of schedules they
-   * approved months ago. The row being `active` before this build existed IS the
-   * historical approval; this writes it down in the form the gate now reads.
-   *
-   * Idempotent and cheap: it only touches rows whose key is NULL, so a second
-   * boot matches nothing. Deliberately narrow, too — a `paused` or
-   * `pending_approval` row is not evidence of anything and gets no key, which is
-   * exactly the laundering the positive grant exists to stop.
-   *
-   * The keys are computed in JS, one row at a time, rather than by a single
-   * `UPDATE ... json_array(prompt, cron)`. SQLite's JSON writer and
-   * `JSON.stringify` agree on ordinary text and are not guaranteed to agree on
-   * escaping — a newline or an emoji in a prompt would be enough — and a key
-   * that differs by one byte from the one the gate computes is a grant that
-   * silently never matches. There are tens of these rows, not thousands.
-   *
-   * @returns How many rows were back-filled.
-   */
-  backfillApprovalGrants(): number {
-    const rows = this.db
-      .select()
-      .from(pulseSchedules)
-      .where(and(eq(pulseSchedules.status, 'active'), isNull(pulseSchedules.approvedContentKey)))
-      .all();
-
-    for (const row of rows) {
-      this.db
-        .update(pulseSchedules)
-        .set({ approvedContentKey: effectiveContentKey(row) })
-        .where(eq(pulseSchedules.id, row.id))
-        .run();
-    }
-    return rows.length;
   }
 
   /**
@@ -839,7 +458,7 @@ export class TaskStore {
       return result.changes > 0;
     });
 
-    if (deleted && filePath) this.fileGates.forget(filePath);
+    if (deleted && filePath) this.fileSync.fileGates.forget(filePath);
     return deleted;
   }
 
@@ -1399,261 +1018,6 @@ export class TaskStore {
       .where(and(...conditions))
       .groupBy(pulseRuns.scheduleId)
       .all();
-  }
-
-  // === File-based task sync ===
-
-  /**
-   * Upsert a task from a parsed SKILL.md file definition.
-   *
-   * @see {@link UpsertFromFileOptions} for what `options` decides.
-   *
-   * Looks up existing tasks by `filePath`. If found, updates in place.
-   * If not found, inserts a new row with a fresh ULID.
-   *
-   * The file's declared `permissions` is resolved through
-   * {@link resolveFilePermissionMode} rather than written straight in: this is
-   * the primary create path for every task, and a file on disk is nobody's
-   * approval. Read that function for what a file may and may not do to the mode.
-   *
-   * `options.source` decides whether the SECOND content gate applies. A write
-   * from `discovery` — the watcher or the reconciler finding a file — can never
-   * arm itself and parks at `pending_approval` until a person says otherwise
-   * ({@link resolveFileArmStatus}). A write from `operator` is a person or an
-   * install acting through DorkOS, and the act itself is the approval, so the
-   * status is left exactly as it was. That is the default, because it is what
-   * every caller here did before the gate existed.
-   *
-   * @param def - Parsed task definition from a SKILL.md file
-   * @param agentId - Agent ID derived from directory location (optional)
-   * @param options - Where the write came from, and what is wrong with the file
-   * @returns The upserted Task
-   */
-  upsertFromFile(def: TaskDefinition, agentId?: string, options?: UpsertFromFileOptions): Task {
-    const now = new Date().toISOString();
-    // The schedule block is the only place scheduling lives since DOR-1486.
-    // Until then this read went through a flattened copy of it that discovery
-    // built for the legacy roots' benefit; those roots are gone and so is the
-    // copy.
-    const schedule = def.meta.schedule;
-    const maxRuntimeMs = schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null;
-
-    const existing = this.db
-      .select()
-      .from(pulseSchedules)
-      .where(eq(pulseSchedules.filePath, def.filePath))
-      .get();
-
-    const incomingCron = schedule.cron ?? '';
-    // What a file on disk may do to this row, decided in one place so the
-    // permission clamp and the arm gate cannot disagree — see
-    // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
-    const { permissionMode, arm, keepsRowEnabled, dropsTimingOverride, packageOwned } =
-      this.fileGates.resolve(def, existing, options);
-
-    if (existing) {
-      this.db
-        .update(pulseSchedules)
-        .set({
-          name: def.name,
-          displayName: def.meta['display-name'] ?? null,
-          description: def.meta.description ?? null,
-          prompt: def.body,
-          cron: incomingCron,
-          timezone: schedule.timezone,
-          agentId: agentId ?? null,
-          // The file's switch, unless the row is the only place a person's own
-          // can live: a schedule inside an installed package is one DorkOS
-          // refuses to write, so switching it on is recorded on the row and
-          // this sync must not copy `enabled: false` back over it (FB-26).
-          // `file-sync-gates.ts` owns that condition.
-          ...(keepsRowEnabled ? {} : { enabled: schedule.enabled }),
-          sticky: schedule.sticky,
-          maxRuntime: maxRuntimeMs,
-          permissionMode,
-          // The file is the source of truth for these three, like every other
-          // scheduling column here — so a key REMOVED from the block clears the
-          // row's override rather than leaving a stale one behind (DOR-1615).
-          runtime: schedule.runtime ?? null,
-          model: schedule.model ?? null,
-          effort: schedule.effort ?? null,
-          // The file is no longer a package's, so it is the one source of
-          // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
-          ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
-          // Who owns the file, kept so the next sync can see ownership lapse and
-          // the app can show it (DOR-2272); `file-sync-gates.ts` decides what to
-          // record while a release is still being written. A write that did not
-          // ask leaves it as it was.
-          ...(packageOwned !== undefined ? { packageOwned } : {}),
-          // A `paused` row whose file is back is un-paused here, because
-          // nothing else ever will: the scheduler requires `enabled` AND
-          // `status === 'active'`, and restoring only `enabled` leaves a task
-          // that looks live and never fires.
-          //
-          // Safe because `paused` is a server-owned signal, not a person's
-          // choice. It is written only by this service — file gone
-          // (`markRemovedByFilePath`), agent unregistered
-          // (`disableTasksByAgentId`) — and `SettableTaskStatusSchema` keeps
-          // the update API from setting it, precisely because a DB-only status
-          // cannot survive this line. A person pausing a task sends
-          // `enabled: false`, which lands in the file's frontmatter and is
-          // re-read above, so their choice holds.
-          // `pending_approval` is untouched: that gate is a person's to clear.
-          //
-          // Under the arm gate this un-pausing is the gate's call instead: a
-          // returning file keeps its approval when the content key still
-          // matches (a save is an unlink-and-recreate), and re-parks when it
-          // does not.
-          ...(arm
-            ? {
-                status: arm.status,
-                ...fileProvenance(existing, arm),
-                // Parking withdraws the grant, so the next sync has to ask again
-                // rather than finding a key it left lying around.
-                ...(arm.status === 'pending_approval'
-                  ? {
-                      approvedContentKey: null,
-                      // Kept for the card's "what changed" (DOR-2323).
-                      previousApprovalKey:
-                        existing.approvedContentKey ?? existing.previousApprovalKey,
-                    }
-                  : { previousApprovalKey: null }),
-              }
-            : existing.status === 'paused'
-              ? {
-                  status: 'active' as const,
-                  // ...and with a grant, because this branch ARMS the row. An
-                  // operator write that un-pauses a schedule is the operator's
-                  // approval of it, exactly as the insert branch treats a create;
-                  // leaving the key null would put the row live and ungranted
-                  // until the next sync noticed and parked it (DOR-1485 review,
-                  // R2). Reachable through `shape-schedule-service` and through a
-                  // route write over a path whose file had been deleted.
-                  // What will RUN, a person's own timing included (DOR-2302).
-                  approvedContentKey: effectiveContentKey({
-                    ...existing,
-                    ...fileSettingsOf(def),
-                    prompt: def.body,
-                    cron: incomingCron,
-                    timezone: schedule.timezone,
-                  }),
-                  previousApprovalKey: null,
-                }
-              : {}),
-          tags: '[]',
-          updatedAt: now,
-        })
-        .where(eq(pulseSchedules.id, existing.id))
-        .run();
-      return this.getTask(existing.id)!;
-    }
-
-    const id = ulid();
-    this.db
-      .insert(pulseSchedules)
-      .values({
-        id,
-        name: def.name,
-        displayName: def.meta['display-name'] ?? null,
-        description: def.meta.description ?? null,
-        prompt: def.body,
-        cron: incomingCron,
-        timezone: schedule.timezone,
-        agentId: agentId ?? null,
-        enabled: schedule.enabled,
-        sticky: schedule.sticky,
-        maxRuntime: maxRuntimeMs,
-        permissionMode,
-        runtime: schedule.runtime ?? null,
-        model: schedule.model ?? null,
-        effort: schedule.effort ?? null,
-        status: arm?.status ?? 'active',
-        reason: arm?.reason ?? null,
-        origin: arm ? 'file' : null,
-        reasonSource: arm?.reason ? 'dorkos' : null,
-        // An operator write IS the approval — the install or the route that
-        // reached here is a person acting through DorkOS — so it arrives with a
-        // grant. A discovered file never does; it has to be looked at first.
-        approvedContentKey: arm
-          ? null
-          : scheduleContentKey({
-              ...fileSettingsOf(def),
-              prompt: def.body,
-              cron: incomingCron,
-              timezone: schedule.timezone,
-            }),
-        filePath: def.filePath,
-        packageOwned: options?.packageOwned ?? null,
-        tags: '[]',
-        createdAt: now,
-        updatedAt: now,
-      })
-      .run();
-
-    return this.getTask(id)!;
-  }
-
-  /**
-   * Pause the one task whose file lived at `filePath`, because it is gone.
-   *
-   * Matched on the exact absolute path, never on the directory slug. Slugs are
-   * only unique within one tasks directory, and DorkOS watches several at once
-   * (the global one plus every registered agent's), so a slug match pauses a
-   * live task in another project that happens to share the name — observed on
-   * real data with two `flow-drain` tasks in different checkouts.
-   *
-   * The arm grant is deliberately LEFT ALONE here. A schedule whose file went
-   * away has not been un-approved by anybody; if the same content comes back —
-   * which is what an ordinary atomic-rename save looks like from the outside, and
-   * what a package update does — the stored key still matches and the schedule
-   * picks up where it left off. If different content comes back, the key does not
-   * match and it parks. Neither outcome needs this method to have an opinion,
-   * which is the point of storing the grant rather than inferring it from status:
-   * an earlier round of this work had to special-case `pending_approval` here to
-   * stop a pause laundering a missing approval, and that special case is now
-   * unnecessary.
-   *
-   * `enabled` is left alone for the same reason. `paused` alone stops the clock
-   * (the scheduler needs `enabled` AND `active`), and `enabled` is a person's
-   * switch, not the server's. For most files the returning file's own switch is
-   * copied back anyway, but a schedule shipped in an installed package keeps its
-   * switch on the row (FB-26, `file-sync-gates.ts`), and a package update looks
-   * like the file going away and coming back. Writing `false` here erased the
-   * person's approval with nothing anywhere saying why.
-   *
-   * @param filePath - Absolute path to the SKILL.md that is no longer on disk
-   * @returns The number of tasks marked as removed (0 or 1)
-   */
-  markRemovedByFilePath(filePath: string): number {
-    // A file that came back is a fresh conflict, worth stating again.
-    this.fileGates.forget(filePath);
-    const now = new Date().toISOString();
-    const result = this.db
-      .update(pulseSchedules)
-      .set({ status: 'paused', updatedAt: now })
-      .where(eq(pulseSchedules.filePath, filePath))
-      .run();
-    return result.changes;
-  }
-
-  /**
-   * Find the task defined by an exact SKILL.md path.
-   *
-   * Keyed on the full path, never a directory slug: a slug is unique only
-   * within one tasks directory, and DorkOS watches the global one plus every
-   * registered agent's, so a slug lookup silently returns an arbitrary one of
-   * several matches.
-   *
-   * @param filePath - Absolute path to the task's SKILL.md
-   * @returns The matching Task or null
-   */
-  getByFilePath(filePath: string): Task | null {
-    const row = this.db
-      .select()
-      .from(pulseSchedules)
-      .where(eq(pulseSchedules.filePath, filePath))
-      .get();
-    return row ? mapTaskRow(row) : null;
   }
 
   /** Close the database connection. No-op since the shared Db lifecycle is managed externally. */

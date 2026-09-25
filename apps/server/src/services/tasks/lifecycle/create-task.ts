@@ -411,7 +411,7 @@ export async function createScheduledTask(
 
   let schedule: Task;
   if (discovered) {
-    schedule = deps.store.upsertFromFile(discovered.def, home.agentId ?? undefined);
+    schedule = deps.store.fileSync.upsertFromFile(discovered.def, home.agentId ?? undefined);
   } else {
     // Fallback: create the row directly. NOT a file path, so it gets none of
     // `upsertFromFile`'s clamping — which is why the mode handed in was clamped at

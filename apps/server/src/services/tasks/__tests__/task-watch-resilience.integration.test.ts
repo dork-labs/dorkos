@@ -179,7 +179,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       const file = await writeSkill('written-in-the-window');
 
       await w.ready();
-      expect(store.getByFilePath(file)).not.toBeNull();
+      expect(store.fileSync.getByFilePath(file)).not.toBeNull();
     });
 
     // The same sequence with the window closed to nothing: the catch-up scan
@@ -194,7 +194,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       const file = await writeSkill('written-after-the-scan');
 
       await w.ready();
-      expect(store.getByFilePath(file)).toBeNull();
+      expect(store.fileSync.getByFilePath(file)).toBeNull();
     });
   });
 
@@ -246,12 +246,12 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
 
       const file = await writeSkill('lands-anyway');
-      expect(store.getByFilePath(file)).toBeNull();
+      expect(store.fileSync.getByFilePath(file)).toBeNull();
 
       await r.sweepUnwatchedRoots();
 
-      expect(store.getByFilePath(file)).not.toBeNull();
-      expect(store.getByFilePath(file)?.cron).toBe('0 9 * * *');
+      expect(store.fileSync.getByFilePath(file)).not.toBeNull();
+      expect(store.fileSync.getByFilePath(file)?.cron).toBe('0 9 * * *');
     });
 
     it('picks up an EDIT to a schedule that already existed, not only a new one', async () => {
@@ -263,7 +263,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       const fake = onlyWatcher();
       fake.emit('ready');
       await w.ready();
-      expect(store.getByFilePath(file)?.cron).toBe('0 9 * * *');
+      expect(store.fileSync.getByFilePath(file)?.cron).toBe('0 9 * * *');
       fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
 
       await writeSkill('edited-while-blind', '30 6 * * *');
@@ -271,7 +271,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
 
       // The comparison stats the SKILL.md rather than its directory, because an
       // edit in place moves neither the root's mtime nor its entry's.
-      expect(store.getByFilePath(file)?.cron).toBe('30 6 * * *');
+      expect(store.fileSync.getByFilePath(file)?.cron).toBe('30 6 * * *');
     });
 
     it('costs nothing but a look when the root has not changed', async () => {
@@ -286,7 +286,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
 
       await r.sweepUnwatchedRoots();
-      const upserts = vi.spyOn(store, 'upsertFromFile');
+      const upserts = vi.spyOn(store.fileSync, 'upsertFromFile');
       await r.sweepUnwatchedRoots();
       await r.sweepUnwatchedRoots();
 
@@ -307,7 +307,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
 
       // The tightened pass is for roots nothing is listening to. Sweeping a live
       // root every ten seconds would be a full scan of every project, forever.
-      expect(store.getByFilePath(file)).toBeNull();
+      expect(store.fileSync.getByFilePath(file)).toBeNull();
     });
   });
 
@@ -327,12 +327,12 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
     fake.emit('ready');
     await w.ready();
     // The catch-up scan skipped it, because `scanSkillDirectory` does.
-    expect(store.getByFilePath(file)).toBeNull();
+    expect(store.fileSync.getByFilePath(file)).toBeNull();
 
     // And so does a live event naming the very same path.
     for (const handler of fake.handlers.get('add') ?? []) handler(file);
     await new Promise((r) => setTimeout(r, 50));
-    expect(store.getByFilePath(file)).toBeNull();
+    expect(store.fileSync.getByFilePath(file)).toBeNull();
   });
 
   // The catch-up scan is the third door into `applyOutcome`, and until DOR-1908's
@@ -351,19 +351,21 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       try {
         for (const name of ['a-first', 'b-second', 'c-third', 'd-fourth']) await writeSkill(name);
 
-        const real = store.upsertFromFile.bind(store);
+        const real = store.fileSync.upsertFromFile.bind(store.fileSync);
         let attempts = 0;
-        const upsert = vi.spyOn(store, 'upsertFromFile').mockImplementation((def, id, opts) => {
-          attempts++;
-          // The ordinary reason a write fails here: another writer holds the
-          // database. It says nothing about the file in hand, which is exactly
-          // why it must not cost the files behind it.
-          if (attempts === 1)
-            throw Object.assign(new Error('database is locked'), {
-              code: 'SQLITE_BUSY',
-            });
-          return real(def, id, opts);
-        });
+        const upsert = vi
+          .spyOn(store.fileSync, 'upsertFromFile')
+          .mockImplementation((def, id, opts) => {
+            attempts++;
+            // The ordinary reason a write fails here: another writer holds the
+            // database. It says nothing about the file in hand, which is exactly
+            // why it must not cost the files behind it.
+            if (attempts === 1)
+              throw Object.assign(new Error('database is locked'), {
+                code: 'SQLITE_BUSY',
+              });
+            return real(def, id, opts);
+          });
 
         const { watcher: w } = build();
         w.watch(skillsRoot(skillsDir, 'global'));
@@ -434,19 +436,19 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
     await w.ready();
 
     // Filed under the real path, which is NOT the path the root reaches it by.
-    expect(store.getByFilePath(realFile)).not.toBeNull();
-    expect(store.getByFilePath(walkedInPath)).toBeNull();
-    expect(store.getByFilePath(realFile)?.status).not.toBe('paused');
+    expect(store.fileSync.getByFilePath(realFile)).not.toBeNull();
+    expect(store.fileSync.getByFilePath(walkedInPath)).toBeNull();
+    expect(store.fileSync.getByFilePath(realFile)?.status).not.toBe('paused');
 
     // The person turns the scheduled skill back into an ordinary one.
     await writeFile(realFile, plainSkillFile('sweeper'), 'utf-8');
     for (const handler of onlyWatcher().handlers.get('change') ?? []) handler(walkedInPath);
     await waitUntil(
-      () => store.getByFilePath(realFile)?.status === 'paused',
+      () => store.fileSync.getByFilePath(realFile)?.status === 'paused',
       'the plugin schedule to be paused by its real path'
     );
 
-    expect(store.getByFilePath(realFile)?.status).toBe('paused');
+    expect(store.fileSync.getByFilePath(realFile)?.status).toBe('paused');
   });
 
   describe('the cadences', () => {
@@ -466,7 +468,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       fake.emit('error', errnoError('EMFILE', 'EMFILE: too many open files, watch'));
 
       const file = await writeSkill('ten-seconds-later');
-      expect(store.getByFilePath(file)).toBeNull();
+      expect(store.fileSync.getByFilePath(file)).toBeNull();
 
       // Fake timers to reach the tick without waiting ten real seconds; real
       // ones to let the scan the tick started actually read the disk. Advancing
@@ -480,9 +482,12 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       } finally {
         vi.useRealTimers();
       }
-      await waitUntil(() => store.getByFilePath(file) !== null, 'the tightened pass to land it');
+      await waitUntil(
+        () => store.fileSync.getByFilePath(file) !== null,
+        'the tightened pass to land it'
+      );
 
-      expect(store.getByFilePath(file)).not.toBeNull();
+      expect(store.fileSync.getByFilePath(file)).not.toBeNull();
     });
 
     it('runs the tightened pass every ten seconds, and the full pass not at all in that time', async () => {
@@ -560,7 +565,7 @@ describe('the scheduler keeps its promise with the watch dead (DOR-1908)', () =>
       onlyWatcher().emit('ready');
       await w.ready();
 
-      expect(store.getByFilePath(file)).not.toBeNull();
+      expect(store.fileSync.getByFilePath(file)).not.toBeNull();
       expect(w.rootsWithoutLiveWatch()).toEqual([]);
     });
   });

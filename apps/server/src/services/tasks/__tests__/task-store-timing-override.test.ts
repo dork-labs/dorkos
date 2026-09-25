@@ -17,6 +17,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
+import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
 import { mapTaskRow } from '../task-row-mappers.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
 
@@ -56,7 +57,7 @@ function definition(
     filePath: FILE_PATH,
     dirPath: FILE_PATH.replace(`/${SKILL_FILENAME}`, ''),
     scope: 'global',
-  } as Parameters<TaskStore['upsertFromFile']>[0];
+  } as Parameters<TaskFileSync['upsertFromFile']>[0];
 }
 
 /** The sync a package's file gets every five minutes. */
@@ -78,14 +79,14 @@ describe('a person’s own timing on a package’s schedule', () => {
 
   /** An approved, live package schedule, as an install leaves it. */
   function approvedSchedule(): string {
-    return store.upsertFromFile(definition()).id;
+    return store.fileSync.upsertFromFile(definition()).id;
   }
 
   /** A person setting their own cron from the Schedules page. */
   function personRetimes(id: string, cron: string): void {
     const before = store.getTask(id)!;
     store.updateTask(id, { cron }, { timingLandsOn: 'row' });
-    store.settleApprovedWorkChange(
+    store.approvals.settleApprovedWorkChange(
       id,
       {
         ...SETTINGS,
@@ -153,7 +154,7 @@ describe('a person’s own timing on a package’s schedule', () => {
     it('records an approval against the person’s cron, so the next sync keeps it live', () => {
       // Purpose: `recordApproval` keyed on the package's cron while the person's
       // runs would leave a grant the next sync finds does not match, and park it.
-      const id = store.upsertFromFile(definition(), undefined, DISCOVERY).id;
+      const id = store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).id;
       expect(store.getTask(id)!.status).toBe('pending_approval');
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
@@ -162,7 +163,9 @@ describe('a person’s own timing on a package’s schedule', () => {
         scheduleContentKey({ ...SETTINGS, prompt: PROMPT, cron: MY_CRON, timezone: 'UTC' })
       );
 
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+        'active'
+      );
     });
 
     it('keeps an overridden schedule approved when the package changes only its own timing', () => {
@@ -171,7 +174,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      const synced = store.upsertFromFile(
+      const synced = store.fileSync.upsertFromFile(
         definition({ cron: '0 */6 * * *' }),
         undefined,
         DISCOVERY
@@ -186,7 +189,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      const synced = store.upsertFromFile(
+      const synced = store.fileSync.upsertFromFile(
         definition({ body: 'Do something new.' }),
         undefined,
         DISCOVERY
@@ -199,11 +202,11 @@ describe('a person’s own timing on a package’s schedule', () => {
       // Purpose: the bypass keep-grant compares the same content the arm gate
       // does. Read off the package's cron on one side and the person's on the
       // other, it would see changed work and drop a level a person granted.
-      const id = store.upsertFromFile(definition({ permissions: 'bypassPermissions' })).id;
+      const id = store.fileSync.upsertFromFile(definition({ permissions: 'bypassPermissions' })).id;
       store.updateTask(id, { permissionMode: 'bypassPermissions' });
       personRetimes(id, MY_CRON);
 
-      const synced = store.upsertFromFile(
+      const synced = store.fileSync.upsertFromFile(
         definition({ permissions: 'bypassPermissions' }),
         undefined,
         DISCOVERY
@@ -223,9 +226,11 @@ describe('a person’s own timing on a package’s schedule', () => {
         .where(eq(pulseSchedules.id, id))
         .run();
 
-      expect(store.backfillApprovalGrants()).toBe(1);
+      expect(store.approvals.backfillApprovalGrants()).toBe(1);
 
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+        'active'
+      );
     });
 
     it('re-arms a returning package file with a grant for the timing that runs', () => {
@@ -233,10 +238,12 @@ describe('a person’s own timing on a package’s schedule', () => {
       // it would be a grant the very next discovery sync finds does not match.
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
-      store.markRemovedByFilePath(FILE_PATH);
+      store.fileSync.markRemovedByFilePath(FILE_PATH);
 
-      expect(store.upsertFromFile(definition()).status).toBe('active');
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
+      expect(store.fileSync.upsertFromFile(definition()).status).toBe('active');
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+        'active'
+      );
     });
 
     it('re-keys a migrated row onto its new path with the person’s timing intact', () => {
@@ -246,7 +253,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      const outcome = store.rekeyMigratedFile(FILE_PATH, '/moved/SKILL.md', {
+      const outcome = store.approvals.rekeyMigratedFile(FILE_PATH, '/moved/SKILL.md', {
         prompt: PROMPT,
         cron: PACKAGE_CRON,
         timezone: 'UTC',
@@ -270,7 +277,11 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      const synced = store.upsertFromFile(definition({ cron: '0 6 * * *' }), undefined, UNOWNED);
+      const synced = store.fileSync.upsertFromFile(
+        definition({ cron: '0 6 * * *' }),
+        undefined,
+        UNOWNED
+      );
 
       expect(synced).toMatchObject({ cron: '0 6 * * *', timingOverridden: false });
       expect(row(id)).toMatchObject({ cronOverride: null, timezoneOverride: null });
@@ -282,9 +293,9 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      expect(store.upsertFromFile(definition({ cron: MY_CRON }), undefined, UNOWNED).status).toBe(
-        'active'
-      );
+      expect(
+        store.fileSync.upsertFromFile(definition({ cron: MY_CRON }), undefined, UNOWNED).status
+      ).toBe('active');
     });
 
     it('asks again when the timing that runs changes with it', () => {
@@ -293,7 +304,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      expect(store.upsertFromFile(definition(), undefined, UNOWNED).status).toBe(
+      expect(store.fileSync.upsertFromFile(definition(), undefined, UNOWNED).status).toBe(
         'pending_approval'
       );
     });
@@ -304,7 +315,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       personRetimes(id, MY_CRON);
 
-      expect(store.upsertFromFile(definition()).cron).toBe(MY_CRON);
+      expect(store.fileSync.upsertFromFile(definition()).cron).toBe(MY_CRON);
     });
   });
 
@@ -323,7 +334,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
@@ -340,10 +351,10 @@ describe('a person’s own timing on a package’s schedule', () => {
       // Purpose: keyed on the grant, not on `active` — a paused schedule is
       // still one the person approved.
       const id = approvedSchedule();
-      store.markRemovedByFilePath(FILE_PATH);
+      store.fileSync.markRemovedByFilePath(FILE_PATH);
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      store.settleApprovedWorkChange(
+      store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         {
@@ -351,15 +362,17 @@ describe('a person’s own timing on a package’s schedule', () => {
         }
       );
 
-      expect(store.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe('active');
+      expect(store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).status).toBe(
+        'active'
+      );
     });
 
     it('approves nothing a person had not approved before', () => {
       // Purpose: a timing edit on a parked schedule is not its approval.
-      const id = store.upsertFromFile(definition(), undefined, DISCOVERY).id;
+      const id = store.fileSync.upsertFromFile(definition(), undefined, DISCOVERY).id;
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: true }
@@ -375,7 +388,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
@@ -394,10 +407,10 @@ describe('a person’s own timing on a package’s schedule', () => {
       // Purpose: only an active schedule has anything to stop; the grant's
       // mismatch already keeps a paused one from arming without a person.
       const id = approvedSchedule();
-      store.markRemovedByFilePath(FILE_PATH);
+      store.fileSync.markRemovedByFilePath(FILE_PATH);
       store.updateTask(id, { cron: MY_CRON }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'paused' },
         { trusted: false }
@@ -413,7 +426,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { timezone: 'Pacific/Kiritimati' }, { timingLandsOn: 'row' });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
@@ -429,7 +442,7 @@ describe('a person’s own timing on a package’s schedule', () => {
       const id = approvedSchedule();
       store.updateTask(id, { enabled: false });
 
-      const outcome = store.settleApprovedWorkChange(
+      const outcome = store.approvals.settleApprovedWorkChange(
         id,
         { ...SETTINGS, prompt: PROMPT, cron: PACKAGE_CRON, timezone: 'UTC', status: 'active' },
         { trusted: false }
@@ -447,7 +460,7 @@ describe('mapTaskRow', () => {
     // `cron`; resolving it here is what makes them all see the right one.
     const db = createTestDb();
     const store = new TaskStore(db);
-    const id = store.upsertFromFile(definition()).id;
+    const id = store.fileSync.upsertFromFile(definition()).id;
     db.update(pulseSchedules)
       .set({ cronOverride: '', timezoneOverride: null })
       .where(eq(pulseSchedules.id, id))

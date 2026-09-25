@@ -562,7 +562,7 @@ describe('schedules discovered in skills roots', () => {
       expect(store.getTask(row.id)?.status).toBe('pending_approval');
       expect(scheduler.isRegistered(row.id)).toBe(false);
       // Nothing anywhere recorded an approval, because nobody made one.
-      expect(store.backfillApprovalGrants()).toBe(0);
+      expect(store.approvals.backfillApprovalGrants()).toBe(0);
     });
 
     it('does not arm a parked schedule that is deleted and restored', async () => {
@@ -638,11 +638,11 @@ describe('schedules discovered in skills roots', () => {
         timezone: 'UTC',
         filePath: await realPath(filePath),
       });
-      store.withdrawApproval(seeded.id);
+      store.approvals.withdrawApproval(seeded.id);
 
-      expect(store.backfillApprovalGrants()).toBe(1);
+      expect(store.approvals.backfillApprovalGrants()).toBe(1);
       // Idempotent: a second boot has nothing left to do.
-      expect(store.backfillApprovalGrants()).toBe(0);
+      expect(store.approvals.backfillApprovalGrants()).toBe(0);
 
       await reconciler.reconcile();
 
@@ -672,7 +672,7 @@ describe('schedules discovered in skills roots', () => {
       // An install writes the same path again, as an operator action.
       await writeFile(filePath, scheduledSkill('shaped', { cron: '0 6 * * *' }), 'utf-8');
       const resolved = await realPath(filePath);
-      store.upsertFromFile(
+      store.fileSync.upsertFromFile(
         {
           name: 'shaped',
           body: 'Do the thing.',
@@ -735,9 +735,9 @@ describe('schedules discovered in skills roots', () => {
       const row = rowFor('waiting');
 
       // Neither a parked row nor a paused one is evidence of a decision.
-      expect(store.backfillApprovalGrants()).toBe(0);
+      expect(store.approvals.backfillApprovalGrants()).toBe(0);
       store.disableTasksByAgentId(AGENT_ID);
-      expect(store.backfillApprovalGrants()).toBe(0);
+      expect(store.approvals.backfillApprovalGrants()).toBe(0);
       expect(store.getTask(row.id)?.status).not.toBe('active');
     });
   });

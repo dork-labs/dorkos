@@ -1178,10 +1178,12 @@ That module carries its own removal date (2027-02 or v1.0, whichever comes first
 
 ### Key Components
 
-| Module                      | Purpose                                                                 |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `task-store.ts`             | SQLite database + JSON file for task and run state                      |
-| `task-scheduler-service.ts` | Cron engine using `croner` with overrun protection and concurrency caps |
+| Module                        | Purpose                                                                                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task-store.ts`               | SQLite database + JSON file for task and run state                                                                                           |
+| `approvals/task-approvals.ts` | The approval lifecycle: record, withdraw, settle a changed schedule, carry a grant across a file move or key upgrade (`TaskStore.approvals`) |
+| `sync/task-file-sync.ts`      | SKILL.md → row through the content gates, the pause when a file goes away, and the lookup by path (`TaskStore.fileSync`)                     |
+| `task-scheduler-service.ts`   | Cron engine using `croner` with overrun protection and concurrency caps                                                                      |
 
 ### Dispatch Modes
 

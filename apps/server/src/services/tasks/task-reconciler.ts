@@ -373,8 +373,8 @@ export class TaskReconciler {
     // Most files in a skills root are plain skills that never had a row, and
     // this runs for every one of them on every pass. The read is indexed and the
     // write is not free, so ask before writing.
-    if (this.store.getByFilePath(filePath) === null) return false;
-    if (this.store.markRemovedByFilePath(filePath) === 0) return false;
+    if (this.store.fileSync.getByFilePath(filePath) === null) return false;
+    if (this.store.fileSync.markRemovedByFilePath(filePath) === 0) return false;
     this.registrar.syncTaskByFilePath(filePath);
     logger.info(`[TaskReconciler] Schedule block removed from ${filePath} — paused`);
     return true;
@@ -567,7 +567,7 @@ export class TaskReconciler {
         if (!this.identities.claim(discovered.def.filePath, root.dir, result.filePath)) continue;
         try {
           const packageOwned = await packageOwnershipInRoot(discovered.def.filePath, root);
-          const task = this.store.upsertFromFile(discovered.def, root.agentId, {
+          const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, {
             source: 'discovery',
             problem: discovered.problem,
             // See the watcher's call: the same rule, on the pass that catches
@@ -687,7 +687,7 @@ export class TaskReconciler {
           resolveParkedScheduleRemoved(task);
           orphaned++;
         } else if (task.status !== 'paused') {
-          this.store.markRemovedByFilePath(task.filePath);
+          this.store.fileSync.markRemovedByFilePath(task.filePath);
           // Pausing a row the operator can see, while its job keeps firing, is
           // the same lie the watcher told before the registrar existed.
           this.registrar.syncTask(task.id);

@@ -113,7 +113,7 @@ const meshCore = { getProjectPath: () => projectPath };
 /** Discover what is on disk, the way the five-minute pass does. */
 async function sweep(): Promise<Task> {
   await reconciler.reconcile();
-  const task = store.getByFilePath(packagedFile);
+  const task = store.fileSync.getByFilePath(packagedFile);
   expect(task).not.toBeNull();
   return task!;
 }
@@ -200,8 +200,8 @@ describe('a schedule that came with an installed package', () => {
     // server-written value for the person's decision, or an updated package's
     // schedule ends up active, off, and asking nobody (the reviewer's finding).
     await patch(await sweep(), { status: 'active', enabled: true });
-    expect(store.markRemovedByFilePath(packagedFile)).toBe(1);
-    expect(store.getByFilePath(packagedFile)?.status).toBe('paused');
+    expect(store.fileSync.markRemovedByFilePath(packagedFile)).toBe(1);
+    expect(store.fileSync.getByFilePath(packagedFile)?.status).toBe('paused');
 
     const back = await sweep();
 
@@ -232,7 +232,7 @@ describe('a schedule that came with an installed package', () => {
     // way they set it, and never takes the file's shipped value for theirs.
     const approved = await patch(await sweep(), { status: 'active', enabled: true });
     await patch(approved.task!, { enabled: false });
-    store.markRemovedByFilePath(packagedFile);
+    store.fileSync.markRemovedByFilePath(packagedFile);
 
     const back = await sweep();
 

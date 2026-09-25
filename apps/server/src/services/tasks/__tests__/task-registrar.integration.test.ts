@@ -125,7 +125,7 @@ describe('a task file on disk drives the running scheduler', () => {
     const filePath = await writeTask('nightly', '0 9 * * *');
     watcher.watch(skillsRoot(skillsDir, 'global'));
 
-    const task = await waitFor(() => store.getByFilePath(filePath), 'the task to sync');
+    const task = await waitFor(() => store.fileSync.getByFilePath(filePath), 'the task to sync');
     approve(task.id);
     await waitFor(() => scheduler.isRegistered(task.id) || null, 'the task to be scheduled');
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(9);
@@ -152,7 +152,10 @@ describe('a task file on disk drives the running scheduler', () => {
 
     const filePath = await writeTask('brand-new', '0 4 * * *');
 
-    const task = await waitFor(() => store.getByFilePath(filePath), 'the new task to sync');
+    const task = await waitFor(
+      () => store.fileSync.getByFilePath(filePath),
+      'the new task to sync'
+    );
     // Dropping a file on disk is not permission to run it unattended.
     expect(task.status).toBe('pending_approval');
     expect(task.origin).toBe('file');
@@ -167,7 +170,7 @@ describe('a task file on disk drives the running scheduler', () => {
   it('drops the job when a good cron is edited into a bad one', async () => {
     const filePath = await writeTask('drifts', '0 8 * * *');
     watcher.watch(skillsRoot(skillsDir, 'global'));
-    const task = await waitFor(() => store.getByFilePath(filePath), 'the task to sync');
+    const task = await waitFor(() => store.fileSync.getByFilePath(filePath), 'the task to sync');
     approve(task.id);
     await waitFor(() => scheduler.isRegistered(task.id) || null, 'the task to be scheduled');
 
@@ -195,7 +198,7 @@ describe('a task file on disk drives the running scheduler', () => {
     reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
-    const task = store.getByFilePath(filePath)!;
+    const task = store.fileSync.getByFilePath(filePath)!;
     approve(task.id);
     expect(scheduler.getNextRun(task.id)?.getUTCHours()).toBe(7);
 
@@ -218,7 +221,7 @@ describe('a task file on disk drives the running scheduler', () => {
     reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
-    const task = store.getByFilePath(filePath)!;
+    const task = store.fileSync.getByFilePath(filePath)!;
     approve(task.id);
     expect(scheduler.isRegistered(task.id)).toBe(true);
 
@@ -244,7 +247,7 @@ describe('a task file on disk drives the running scheduler', () => {
     reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
-    const task = store.getByFilePath(filePath)!;
+    const task = store.fileSync.getByFilePath(filePath)!;
     approve(task.id);
     expect(scheduler.isRegistered(task.id)).toBe(true);
 
@@ -269,7 +272,7 @@ describe('a task file on disk drives the running scheduler', () => {
     reconciler.addRoot(skillsRoot(skillsDir, 'global'));
 
     await reconciler.reconcile();
-    const task = store.getByFilePath(filePath)!;
+    const task = store.fileSync.getByFilePath(filePath)!;
     approve(task.id);
     expect(scheduler.isRegistered(task.id)).toBe(true);
 
@@ -297,8 +300,8 @@ describe('a task file on disk drives the running scheduler', () => {
 
     await expect(reconciler.reconcile()).resolves.toMatchObject({ upserted: 2 });
 
-    const good = store.getByFilePath(goodPath)!;
-    const bad = store.getByFilePath(badPath)!;
+    const good = store.fileSync.getByFilePath(goodPath)!;
+    const bad = store.fileSync.getByFilePath(badPath)!;
     // The unreadable one keeps its row — its history and id are not the typo's
     // to take — and says what is wrong with it, which is new: the complaint
     // used to exist only in the log.
