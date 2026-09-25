@@ -139,6 +139,16 @@ tracked:
       the count; a day collected before it existed has none and is left out,
       never read as 0. PRs closed without merging are not counted, as for every
       other ejection figure.
+  - id: tracked.neon-preview-branches
+    unit: count
+    definition: >-
+      Neon branches in the site's database project (the Vercel project
+      dorkos-web), read once a day as the "branches before" count in the
+      neon-preview-sweep job summary. Not computed by the collector: it lives
+      in Neon, which the collector has no credential for, so a verdict on it is
+      read by hand from that workflow's runs. The Vercel-Neon integration makes
+      one per deployed git branch; the plan includes 10 per project and bills
+      the rest.
   - id: tracked.review-runs-per-merged-pr
     unit: count
     definition: Automated review runs per merged PR.
