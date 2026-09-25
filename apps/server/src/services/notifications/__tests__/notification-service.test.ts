@@ -126,6 +126,30 @@ describe('NotificationService.notify', () => {
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(1);
   });
 
+  it('says a thing once even when the same notification is raised twice at the same moment', async () => {
+    // The second call starts while the first is still handing off to the chat
+    // relay, so neither has stored its row yet when the other checks for one.
+    const publish = vi.fn(
+      () =>
+        new Promise<{ deliveredTo: number; messageId: string }>((resolve) =>
+          setTimeout(() => resolve({ deliveredTo: 1, messageId: 'm-1' }), 5)
+        )
+    );
+    const deps = relayDeps({ relayCore: { publish } });
+    const service = new NotificationService(store, { relay: () => deps });
+    const opts = { relay: { fromPrincipal: 'relay.system.tasks.notifier' } };
+
+    const results = await Promise.all([
+      service.notify('run.completed', run('run-1', 'failed'), opts),
+      service.notify('run.completed', run('run-1', 'failed'), opts),
+    ]);
+
+    expect(results.map((result) => result.deduped)).toEqual([false, true]);
+    expect(rowCount()).toBe(1);
+    expect(sentAs('notification')).toHaveLength(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
   it('raises a second notification once the window has passed', async () => {
     vi.useFakeTimers();
     try {
