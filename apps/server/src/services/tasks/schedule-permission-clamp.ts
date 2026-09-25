@@ -407,8 +407,10 @@ export function parseFollowedAgentChanges(stored: string | null): FollowedAgentC
 
 /**
  * Fold a newly seen change into what a schedule already records: the first
- * `from` is kept, the latest `to` wins, and a field that is back where it
- * started drops out. Listed in card order.
+ * `from` is kept and the latest `to` wins. A field that is back where it
+ * started stays listed (`from` equal to `to`), because "changed and changed
+ * back" is still something a person approving should know. Listed in card
+ * order.
  *
  * @param recorded - What the schedule records already.
  * @param seen - The change just seen.
@@ -428,7 +430,7 @@ export function mergeFollowedAgentChanges(
   }
   return FOLLOWED_AGENT_FIELDS.flatMap((field) => {
     const change = byField.get(field);
-    return change && change.from !== change.to ? [change] : [];
+    return change ? [change] : [];
   });
 }
 

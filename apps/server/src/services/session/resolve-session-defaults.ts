@@ -351,15 +351,19 @@ export function resolveSessionDefaults(opts: {
  *   authority on where its defaults live and whether it takes an effort at all.
  *   Omitted → neither is known, and the safe direction for each is
  *   {@link resolveSessionDefaults}'s.
+ * @param opts.agent - The agent's values, already read by the caller, in place
+ *   of reading `agentPath` again. A scheduled fire passes what it checked for
+ *   a change made outside DorkOS, so the run uses exactly that (DOR-2337).
  */
 export async function resolveUnattendedSessionDefaults(opts: {
   runtimeType: string;
   agentPath?: string;
   declared?: Pick<RuntimeSettingsCapability, 'configSection' | 'supportsEffort'>;
+  agent?: AgentExecutionDefaults;
 }): Promise<SessionSettings> {
   return resolveSessionDefaults({
     runtimeType: opts.runtimeType,
-    agent: await readAgentExecutionDefaults(opts.agentPath),
+    agent: opts.agent ?? (await readAgentExecutionDefaults(opts.agentPath)),
     configSection: opts.declared?.configSection,
     supportsEffort: opts.declared?.supportsEffort,
   });

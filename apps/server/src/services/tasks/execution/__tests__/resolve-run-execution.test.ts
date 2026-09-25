@@ -187,6 +187,22 @@ describe('resolveRunExecution — which runtime', () => {
   });
 });
 
+describe('resolveRunExecution — the agent values the fire already checked (DOR-2337)', () => {
+  it('runs on the values it is handed, not on what the manifest says a moment later', async () => {
+    // Purpose: the fire checks the agent for a change made outside DorkOS and
+    // hands over what it saw. A second read here would let an edit landing in
+    // between run unchecked.
+    const agentPath = await agentDir({ runtime: 'codex', model: 'gpt-5-edited' });
+    const resolved = await resolveRunExecution(task(), {
+      runtimes: registry(['claude-code', 'codex']),
+      agentPath,
+      agentDefaults: { runtime: 'claude-code', model: 'claude-sonnet-4' },
+    });
+    expect(resolved.runtimeType).toBe('claude-code');
+    expect(resolved.settings.model).toBe('claude-sonnet-4');
+  });
+});
+
 describe('resolveRunExecution — a runtime that is not turned on (decision 9)', () => {
   it('FAILS the run loudly when the task names a runtime that is not registered', async () => {
     // Never a silent fall back: a task set to run on Codex that quietly ran on

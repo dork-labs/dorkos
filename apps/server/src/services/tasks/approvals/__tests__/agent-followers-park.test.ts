@@ -90,17 +90,32 @@ describe('parking the schedules that follow an agent', () => {
     expect(row(task.id).enabled).toBe(false);
   });
 
-  it('never touches a paused schedule, or another agent’s', () => {
-    // Paused the way a vanished file pauses it (`markRemovedByFilePath`).
+  it('takes the approval from a paused follower without unpausing it', () => {
+    // Purpose: a schedule paused because its file went away keeps its approval,
+    // and would arm again on that approval when the file came back, running
+    // the changed agent unseen.
     const paused = schedule('paused');
+    const grant = row(paused.id).approvedContentKey;
     store.fileSync.markRemovedByFilePath(paused.filePath);
-    const other = schedule('other', {}, 'agent-2');
 
     const outcome = store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
 
     expect(outcome.parked).toEqual([]);
-    expect(row(paused.id).status).toBe('paused');
+    expect(outcome.withdrawn).toEqual([paused.id]);
+    const after = row(paused.id);
+    expect(after.status).toBe('paused');
+    expect(after.approvedContentKey).toBeNull();
+    expect(after.previousApprovalKey).toBe(grant);
+    expect(after.followedAgentChanges).not.toBeNull();
+  });
+
+  it('never touches another agent’s schedules', () => {
+    const other = schedule('other', {}, 'agent-2');
+
+    store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
+
     expect(row(other.id).status).toBe('active');
+    expect(row(other.id).approvedContentKey).not.toBeNull();
   });
 
   it('keeps the first value and follows the latest across two changes', () => {
@@ -111,13 +126,13 @@ describe('parking the schedules that follow an agent', () => {
       { field: 'model', from: 'claude-opus-4', to: 'gpt-5' },
     ]);
 
-    expect(outcome).toEqual({ parked: [], updated: [task.id] });
+    expect(outcome).toEqual({ parked: [], withdrawn: [], updated: [task.id] });
     expect(store.getTask(task.id)!.approvalChanges).toEqual([
       { field: 'model', from: 'claude-sonnet-4', to: 'gpt-5', via: 'agent' },
     ]);
   });
 
-  it('stays parked when the agent is changed back, and shows nothing left to compare', () => {
+  it('stays parked when the agent is changed back, and says it was changed and changed back', () => {
     // Purpose: an agent that edits, gets caught, and reverts must not get its
     // schedule running again on its own; only a person switches anything on.
     const task = schedule('digest');
@@ -129,14 +144,21 @@ describe('parking the schedules that follow an agent', () => {
 
     expect(row(task.id).status).toBe('pending_approval');
     expect(row(task.id).reason).toBe(AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON);
-    expect(store.getTask(task.id)!.approvalChanges).toEqual([]);
+    // Not an empty list: a person approving should know it moved at all.
+    expect(store.getTask(task.id)!.approvalChanges).toEqual([
+      { field: 'model', from: 'claude-sonnet-4', to: 'claude-sonnet-4', via: 'agent' },
+    ]);
   });
 
-  it('starts afresh once a person approves', () => {
+  it('starts afresh once a person approves, and says so to whoever watches approvals', () => {
     const task = schedule('digest');
     store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
+    const approved: string[] = [];
+    store.approvals.setOnApproved((agentId) => approved.push(agentId));
     store.updateTask(task.id, { status: 'active' });
 
+    // A newly approved follower's agent is looked at, so it has a baseline.
+    expect(approved).toEqual([AGENT]);
     expect(row(task.id).followedAgentChanges).toBeNull();
     expect(store.getTask(task.id)!.approvalChanges).toEqual([]);
 
@@ -199,7 +221,22 @@ describe('parking the schedules that follow an agent', () => {
 
     const outcome = store.approvals.parkAgentFollowers(AGENT, [...MODEL_CHANGE]);
 
-    expect(outcome).toEqual({ parked: [], updated: [] });
+    expect(outcome).toEqual({ parked: [], withdrawn: [], updated: [] });
     expect(row(task.id).followedAgentChanges).toBeNull();
+  });
+
+  it('tells whoever watches approvals about a schedule created armed', () => {
+    const approved: string[] = [];
+    store.approvals.setOnApproved((agentId) => approved.push(agentId));
+
+    schedule('fresh');
+    store.createTask({
+      name: 'no-agent',
+      description: 'x',
+      prompt: 'x',
+      filePath: '/skills/no-agent/SKILL.md',
+    });
+
+    expect(approved).toEqual([AGENT]);
   });
 });

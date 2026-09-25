@@ -54,6 +54,7 @@ import {
   type RunExecutionRuntimes,
 } from './execution/resolve-run-execution.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import type { AgentExecutionDefaults } from '../session/resolve-session-defaults.js';
 
 /**
  * Whether the relay can run a turn on this runtime — asked per run, answered by
@@ -357,9 +358,13 @@ export interface SchedulerDeps {
    * task's agent for a runtime, model or effort changed outside DorkOS, which
    * parks the schedules that follow it (DOR-2337). A fire reads the agent's
    * manifest fresh, so without this a changed agent would run once, approved,
-   * before anything noticed. Never throws; absent in tests that do not care.
+   * before anything noticed. Answers the agent's runtime, model and effort as
+   * that check read them, and the run resolves on exactly those rather than
+   * reading the manifest again, so an edit landing in between cannot run
+   * unchecked; `undefined` when it read nothing. Never throws; absent in tests
+   * that do not care.
    */
-  beforeScheduledFire?: (task: Task) => Promise<void>;
+  beforeScheduledFire?: (task: Task) => Promise<AgentExecutionDefaults | undefined>;
 }
 
 /**
@@ -409,7 +414,8 @@ export class TaskSchedulerService {
   /** Damps the log when a task's schedule cannot be run. See {@link RefusedScheduleLog}. */
   private readonly refusedSchedules = new RefusedScheduleLog();
   /** See {@link SchedulerDeps.beforeScheduledFire}. */
-  private beforeScheduledFire: ((task: Task) => Promise<void>) | null = null;
+  private beforeScheduledFire:
+    ((task: Task) => Promise<AgentExecutionDefaults | undefined>) | null = null;
 
   constructor(
     store: TaskStore,
@@ -981,7 +987,7 @@ export class TaskSchedulerService {
     // An agent changed outside DorkOS parks the schedules that follow it, so
     // it is checked BEFORE the re-read below: a schedule this parks is then not
     // active, and is skipped like any other (DOR-2337).
-    if (task.agentId) await this.beforeScheduledFire?.(task);
+    const checkedAgent = task.agentId ? await this.beforeScheduledFire?.(task) : undefined;
 
     // Re-read task to check current state
     const current = this.store.getTask(task.id);
@@ -1043,7 +1049,7 @@ export class TaskSchedulerService {
       return;
     }
 
-    await this.executeRun(current, run);
+    await this.executeRun(current, run, checkedAgent);
   }
 
   /** Why a tick was not run, in the words a person reads on the run row. */
@@ -1072,7 +1078,11 @@ export class TaskSchedulerService {
    * the bus, and the envelope's `dispatchId` is what keeps it one on the far
    * side.
    */
-  private async executeRun(task: Task, run: TaskRun): Promise<void> {
+  private async executeRun(
+    task: Task,
+    run: TaskRun,
+    checkedAgent?: AgentExecutionDefaults
+  ): Promise<void> {
     const dispatchId = newDispatchId();
     recordDispatchStart({ dispatchId, origin: 'task' });
     return runInDispatch({ dispatchId, origin: 'task' }, () =>
@@ -1088,7 +1098,7 @@ export class TaskSchedulerService {
         let execution: RunExecution;
         try {
           placement = await this.resolveRunPlacement(task);
-          execution = await this.resolveExecution(task, placement);
+          execution = await this.resolveExecution(task, placement, checkedAgent);
         } catch (err) {
           this.failRun(run, err);
           recordDispatchEnd(dispatchId, 'failed');
@@ -1207,12 +1217,18 @@ export class TaskSchedulerService {
    *
    * @param task - The task being dispatched.
    * @param placement - Where this run happens, already resolved.
+   * @param checkedAgent - The agent's values as the fire's check read them.
    * @throws {TaskRuntimeUnavailableError} When the resolved runtime is off.
    */
-  private async resolveExecution(task: Task, placement: RunPlacement): Promise<RunExecution> {
+  private async resolveExecution(
+    task: Task,
+    placement: RunPlacement,
+    checkedAgent?: AgentExecutionDefaults
+  ): Promise<RunExecution> {
     return resolveRunExecution(task, {
       runtimes: this.runtimes,
       ...(placement.agentPath !== undefined ? { agentPath: placement.agentPath } : {}),
+      ...(checkedAgent !== undefined ? { agentDefaults: checkedAgent } : {}),
     });
   }
 

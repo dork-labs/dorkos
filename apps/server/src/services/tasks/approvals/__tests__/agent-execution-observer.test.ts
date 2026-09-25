@@ -205,7 +205,9 @@ describe('AgentExecutionObserver', () => {
     const still = store.getTask(task.id)!;
     expect(still.status).toBe('pending_approval');
     expect(still.enabled).toBe(true);
-    expect(still.approvalChanges).toEqual([]);
+    expect(still.approvalChanges).toEqual([
+      { field: 'model', from: 'claude-sonnet-4', to: 'claude-sonnet-4', via: 'agent' },
+    ]);
   });
 
   it('sees nothing of an edit reverted before anything looked', async () => {

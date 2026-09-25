@@ -64,6 +64,7 @@ import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import {
   readAgentExecutionDefaults,
+  type AgentExecutionDefaults,
   resolveUnattendedSessionDefaults,
 } from '../../session/resolve-session-defaults.js';
 import { createTaggedLogger } from '../../../lib/logger.js';
@@ -218,13 +219,21 @@ async function readSkillDialectDefaults(
  * @param opts.agentPath - The task's agent directory, the one holding
  *   `.dork/agent.json`. Omitted for a task with no agent, and the agent tiers
  *   drop out.
+ * @param opts.agentDefaults - The agent's runtime, model and effort as the
+ *   fire already read them, checking for a change made outside DorkOS
+ *   (DOR-2337). Used in place of reading the manifest again, so an edit landing
+ *   between that check and this read cannot run unchecked. Absent → read here.
  * @throws {TaskRuntimeUnavailableError} When the resolved runtime is not
  *   registered. Deliberately loud: a run that quietly moved to another runtime
  *   would be a different task with nothing on screen to say so.
  */
 export async function resolveRunExecution(
   task: Task,
-  opts: { runtimes: RunExecutionRuntimes; agentPath?: string | undefined }
+  opts: {
+    runtimes: RunExecutionRuntimes;
+    agentPath?: string | undefined;
+    agentDefaults?: AgentExecutionDefaults;
+  }
 ): Promise<RunExecution> {
   const { runtimes, agentPath } = opts;
 
@@ -232,7 +241,7 @@ export async function resolveRunExecution(
   // it (ADR-0043). Read through the same tolerant helper the shared ladder uses,
   // so "no directory, no manifest, an unreadable file" answers the same "no
   // opinion" here as it does there.
-  const agent = await readAgentExecutionDefaults(agentPath);
+  const agent = opts.agentDefaults ?? (await readAgentExecutionDefaults(agentPath));
 
   const { type, tier } = resolveRuntimeType(task, runtimes, agent.runtime);
   // REGISTRATION is the whole availability question — see {@link
@@ -257,6 +266,7 @@ export async function resolveRunExecution(
     runtimeType: type,
     ...(agentPath !== undefined ? { agentPath } : {}),
     ...(declared !== undefined ? { declared } : {}),
+    ...(opts.agentDefaults !== undefined ? { agent: opts.agentDefaults } : {}),
   });
   // Only these two keys. That call never resolves a permission mode — no caller
   // here hands it the runtime's declared modes, which is what keeps an ATTENDED

@@ -440,6 +440,7 @@ describe('TaskSchedulerService', () => {
           store.approvals.parkAgentFollowers('agent-1', [
             { field: 'model', from: 'claude-sonnet-4', to: 'claude-opus-4' },
           ]);
+          return undefined;
         },
       });
 
@@ -448,6 +449,28 @@ describe('TaskSchedulerService', () => {
       expect(checked).toEqual([task.id]);
       expect(store.getTask(task.id)!.status).toBe('pending_approval');
       expect(store.listRuns()).toHaveLength(0);
+      await service.stop();
+    });
+
+    it('runs on the agent values the check saw, not on a later read', async () => {
+      // Purpose: an edit landing between the check and the run's own read of
+      // the manifest would otherwise run unchecked.
+      vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {
+        yield { type: 'text_delta', data: { text: 'ok' } };
+      });
+      const task = store.createTask(
+        taskInput({ name: 'Checked', prompt: 'test', cron: '0 * * * *', agentId: 'agent-1' })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: { ...DEFAULT_CONFIG },
+        beforeScheduledFire: async () => ({ runtime: 'claude-code', model: 'model-the-check-saw' }),
+      });
+
+      await (service as unknown as { dispatch(t: typeof task): Promise<void> }).dispatch(task);
+
+      expect(store.listRuns()[0]!.resolvedModel).toBe('model-the-check-saw');
       await service.stop();
     });
 
@@ -465,6 +488,7 @@ describe('TaskSchedulerService', () => {
         config: { ...DEFAULT_CONFIG },
         beforeScheduledFire: async (t) => {
           checked.push(t.id);
+          return undefined;
         },
       });
 

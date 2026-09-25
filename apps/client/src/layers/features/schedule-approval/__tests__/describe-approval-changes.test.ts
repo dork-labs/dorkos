@@ -66,4 +66,19 @@ describe('describeApprovalChanges (DOR-2323)', () => {
       { label: 'Agent’s effort', from: 'the default', to: 'max', unbroken: true },
     ]);
   });
+
+  it('says an agent setting was changed and changed back, rather than saying nothing', () => {
+    expect(
+      describeApprovalChanges([
+        { field: 'model', from: 'claude-sonnet-4', to: 'claude-sonnet-4', via: 'agent' },
+      ])
+    ).toEqual([
+      {
+        label: 'Agent’s model',
+        from: 'claude-sonnet-4',
+        to: 'changed, then changed back',
+        unbroken: false,
+      },
+    ]);
+  });
 });

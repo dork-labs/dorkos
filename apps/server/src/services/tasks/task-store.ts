@@ -296,6 +296,8 @@ export class TaskStore {
       })
       .run();
 
+    // Created armed, so it is an approval like any other (DOR-2337).
+    this.approvals.notifyApproved(input.agentId);
     return this.getTask(id)!;
   }
 

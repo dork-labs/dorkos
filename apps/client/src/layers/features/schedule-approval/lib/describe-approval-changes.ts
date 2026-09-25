@@ -87,8 +87,14 @@ export function describeApprovalChanges(changes: Task['approvalChanges']): Appro
           // is the runtime's default, not "the agent's own".
           label: AGENT_LABEL[change.field] ?? LABEL[change.field],
           from: change.from === null ? 'the default' : String(change.from),
-          to: change.to === null ? 'the default' : String(change.to),
-          unbroken: true,
+          // Back where it was approved, after a change in between (DOR-2337).
+          to:
+            change.from === change.to
+              ? 'changed, then changed back'
+              : change.to === null
+                ? 'the default'
+                : String(change.to),
+          unbroken: change.from !== change.to,
         }
       : change.field === 'prompt'
         ? { label: LABEL.prompt, from: null, to: 'changed (see below)', unbroken: false }
