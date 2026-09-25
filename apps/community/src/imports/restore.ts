@@ -18,6 +18,10 @@ export interface RestoredFile {
  * transaction, with IDs derived from the import and the source IDs. Nothing here is visible
  * until that transaction commits.
  *
+ * A version 1 export does not say which messages were removed or erased, only the text they
+ * show, so no restored message is marked removed or erased; one whose text is a removal
+ * sentence arrives as an ordinary message. Version 2 carries the marks (`removal`).
+ *
  * Audit events keep `origin='imported'`, so nothing an export claims passes for an event this
  * host wrote. Members and agents are historical: no account, inactive, `origin='imported'`; agents are
  * revoked. The owner who made the export is the one row the claimant later adopts, and it is
