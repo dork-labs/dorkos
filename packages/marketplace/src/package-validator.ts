@@ -79,6 +79,14 @@ export interface ValidatePackageOptions {
    * person's data, so the reserved-path check is skipped there.
    */
   tree?: 'package' | 'installed';
+  /**
+   * The package is a folder on this machine that the person pointed at. A
+   * `.git` FILE at its root is then its own worktree's link, not a package
+   * steering git elsewhere, and the install drops every `.git` as it copies,
+   * so that one refusal is skipped. A root shaped like a git repository is
+   * still refused.
+   */
+  localSource?: boolean;
 }
 
 /**
@@ -473,7 +481,7 @@ async function validatePackageFiles(
   //     a person may make their installed agent's folder a repository of
   //     their own, and that must not hide the agent.
   if ((options.tree ?? 'package') === 'package') {
-    await checkGitShapedRoot(packagePath, manifest.type, issues);
+    await checkGitShapedRoot(packagePath, manifest.type, options.localSource === true, issues);
   }
 
   // 8. Declared schedules that point at nothing.
@@ -798,12 +806,14 @@ async function searchForSkill(root: string, skillName: string, depth: number): P
  *
  * @param packagePath - Absolute path to the package root directory.
  * @param type - The package's type.
+ * @param localSource - A folder on this machine; see {@link ValidatePackageOptions}.
  * @param issues - Mutable issue list to append a finding to.
  * @internal
  */
 async function checkGitShapedRoot(
   packagePath: string,
   type: string,
+  localSource: boolean,
   issues: ValidationIssue[]
 ): Promise<void> {
   const kindOf = async (name: string): Promise<'file' | 'dir' | null> => {
@@ -821,7 +831,7 @@ async function checkGitShapedRoot(
   if (head === 'file' && (objects === 'dir' || refs === 'dir' || packedRefs === 'file')) {
     found.push('HEAD with objects/, refs/ or packed-refs');
   }
-  if (dotGit === 'file') {
+  if (dotGit === 'file' && !localSource) {
     let text: string;
     try {
       text = await readPackageFileWithin(packagePath, '.git', 4096, "The package's .git");

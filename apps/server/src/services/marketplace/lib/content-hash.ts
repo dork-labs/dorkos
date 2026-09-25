@@ -146,7 +146,8 @@ function skipsForPackage(posixPath: string): boolean {
     posixPath === STRIPPED_AT_ROOT ||
     // Every `.git`, at any depth: the install strips them (DOR-2326), and an
     // installed folder a person made their own repository hashes as its files.
-    posixPath.split('/').includes('.git')
+    // Case-insensitive: `.GIT` is the same folder on macOS and Windows.
+    posixPath.toLowerCase().split('/').includes('.git')
   );
 }
 

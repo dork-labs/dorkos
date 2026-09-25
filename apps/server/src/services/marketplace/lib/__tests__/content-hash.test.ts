@@ -122,6 +122,15 @@ describe('packageContentHash', () => {
     expect(withGit).toBe(staged);
   });
 
+  it('leaves out .GIT in any case', async () => {
+    const staged = await packageContentHash(root);
+    await mkdir(path.join(root, 'hooks', '.GIT'), { recursive: true });
+    await writeFile(path.join(root, 'hooks', '.GIT', 'config'), 'x');
+    const withGit = await packageContentHash(root);
+    await rm(path.join(root, 'hooks', '.GIT'), { recursive: true });
+    expect(withGit).toBe(staged);
+  });
+
   it('covers a file whose name only contains .git', async () => {
     const staged = await packageContentHash(root);
     await writeFile(path.join(root, '.gitignore'), 'x');

@@ -4,16 +4,20 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 /** What the mocked `git --version` prints, or an error code to fail with. */
-let gitAnswer: { stdout: string } | { code: string } = { stdout: 'git version 2.49.1\n' };
+let gitAnswer: { stdout: string } | { code: string } | { throws: true } = {
+  stdout: 'git version 2.49.1\n',
+};
 
 vi.mock('node:child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('node:child_process')>()),
   execFile: vi.fn(
     (_cmd: string, _args: string[], _opts: unknown, cb: (...a: unknown[]) => void) => {
+      const answer = gitAnswer;
+      if ('throws' in answer) throw new Error('child_process is mocked');
       setImmediate(() =>
-        'code' in gitAnswer
-          ? cb(Object.assign(new Error('spawn git'), { code: gitAnswer.code }))
-          : cb(null, { stdout: gitAnswer.stdout, stderr: '' })
+        'code' in answer
+          ? cb(Object.assign(new Error('spawn git'), { code: answer.code }))
+          : cb(null, { stdout: answer.stdout, stderr: '' })
       );
     }
   ),
@@ -51,6 +55,13 @@ describe('the installed git (DOR-2326)', () => {
     gitAnswer = answer;
     await (await freshSafety()).warnAboutGitProtection();
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('never rejects, even when starting git throws', async () => {
+    gitAnswer = { throws: true };
+    const mod = await freshSafety();
+    await expect(mod.installedGitProtection()).resolves.toMatchObject({ status: 'info' });
+    await expect(mod.warnAboutGitProtection()).resolves.toBeUndefined();
   });
 
   it('reads git once and shares the answer with the health line', async () => {

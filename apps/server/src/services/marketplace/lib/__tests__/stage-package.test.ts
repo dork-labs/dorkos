@@ -242,4 +242,17 @@ describe('stagePackageContents', () => {
     expect(warned.some((m) => m.includes('Stripped .git '))).toBe(true);
     expect(warned.some((m) => m.includes('Stripped vendor/lib/.git '))).toBe(true);
   });
+
+  it('drops .GIT in any case, the same folder on macOS and Windows', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+    await mkdir(path.join(src, 'sub', '.GIT'), { recursive: true });
+    await writeFile(path.join(src, 'sub', '.GIT', 'config'), 'x');
+    await writeFile(path.join(src, 'sub', 'keep.txt'), 'k');
+    await stagePackageContents(src, dest, buildLogger());
+    expect(await exists(path.join(dest, 'sub', '.GIT'))).toBe(false);
+    expect(await exists(path.join(dest, 'sub', 'keep.txt'))).toBe(true);
+  });
 });

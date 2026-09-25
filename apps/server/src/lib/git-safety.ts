@@ -86,14 +86,22 @@ let installedGitCheck: Promise<CheckResult> | undefined;
 export function installedGitProtection(): Promise<CheckResult> {
   // Bound here, not at load: many modules import this one only for its env,
   // under tests that mock `node:child_process` without `execFile`.
-  installedGitCheck ??= promisify(execFile)('git', ['--version'], {
-    timeout: GIT_VERSION_TIMEOUT_MS,
-    env: hardenedGitEnv(),
-  }).then(
-    ({ stdout }) => gitProtectionCheck(stdout),
-    (err: NodeJS.ErrnoException & { stdout?: string }) =>
-      gitProtectionCheck(err.code === 'ENOENT' ? undefined : String(err.stdout ?? ''))
-  );
+  installedGitCheck ??= (async () => {
+    try {
+      const { stdout } = await promisify(execFile)('git', ['--version'], {
+        timeout: GIT_VERSION_TIMEOUT_MS,
+        env: hardenedGitEnv(),
+      });
+      return gitProtectionCheck(stdout);
+    } catch (err) {
+      const { code, stdout } = (err ?? {}) as NodeJS.ErrnoException & { stdout?: unknown };
+      // Missing git is its own line; anything else (a timeout, a mocked or
+      // broken child_process) is an unknown version.
+      return gitProtectionCheck(
+        code === 'ENOENT' ? undefined : typeof stdout === 'string' ? stdout : ''
+      );
+    }
+  })();
   return installedGitCheck;
 }
 

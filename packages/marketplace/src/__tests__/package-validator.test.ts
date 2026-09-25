@@ -1501,6 +1501,26 @@ describe('a package folder shaped like a git repository (DOR-2326)', () => {
     expect(result.issues.map((i) => i.code)).toContain('GIT_REPOSITORY_SHAPED');
   });
 
+  // Purpose: a local folder that is someone's own git worktree has a root
+  // `.git` file saying gitdir:; staging drops it, so a local install accepts
+  // it, while a git-shaped root is still refused there.
+  it.each(['agent', 'plugin'] as const)('accepts a local %s worktree root', async (type) => {
+    const root = await packageWith(type, async (r) =>
+      writeText(path.join(r, '.git'), 'gitdir: /repo/.git/worktrees/x\n')
+    );
+    const result = await validatePackage(root, { localSource: true });
+    expect(result.issues.map((i) => i.code)).not.toContain('GIT_REPOSITORY_SHAPED');
+  });
+
+  it('still refuses a git-shaped root from a local source', async () => {
+    const root = await packageWith('agent', async (r) => {
+      await writeText(path.join(r, 'HEAD'), 'ref: refs/heads/main\n');
+      await fs.mkdir(path.join(r, 'objects'));
+    });
+    const result = await validatePackage(root, { localSource: true });
+    expect(result.issues.map((i) => i.code)).toContain('GIT_REPOSITORY_SHAPED');
+  });
+
   // Purpose: an installed agent whose folder the person made a repository of
   // their own stays valid; the refusal is for packages before install.
   it('leaves an installed agent with its own .git alone', async () => {

@@ -351,7 +351,9 @@ describe('MarketplaceInstaller', () => {
       const result = await installer.install(req);
 
       expect(result).toEqual(installResult);
-      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/hello-plugin');
+      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/hello-plugin', {
+        localSource: true,
+      });
       expect(previewBuilder.build).toHaveBeenCalledWith(
         '/tmp/hello-plugin',
         manifest,
@@ -401,7 +403,9 @@ describe('MarketplaceInstaller', () => {
         gitUrl: 'https://example.com/git-plugin.git',
         force: undefined,
       });
-      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/cached/git-plugin');
+      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/cached/git-plugin', {
+        localSource: false,
+      });
       expect(mockedReportInstallEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           marketplace: 'dorkos-community',
@@ -455,7 +459,9 @@ describe('MarketplaceInstaller', () => {
         force: undefined,
       });
       expect(fetcher.fetchFromGit).not.toHaveBeenCalled();
-      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/cached/code-reviewer');
+      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/cached/code-reviewer', {
+        localSource: false,
+      });
     });
 
     it('refuses to sparse-clone from a marketplace address git would run as a command (DOR-1710)', async () => {
@@ -2067,7 +2073,9 @@ describe('MarketplaceInstaller', () => {
       );
 
       expect(commitLookup).not.toHaveBeenCalled();
-      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/personal/plugins/local-pkg');
+      expect(mockedValidatePackage).toHaveBeenCalledWith('/tmp/personal/plugins/local-pkg', {
+        localSource: false,
+      });
       expect(result).toEqual({
         kind: 'resolved',
         declaredVersion: '1.1.0',

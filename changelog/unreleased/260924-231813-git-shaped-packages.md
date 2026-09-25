@@ -2,6 +2,7 @@
 covers:
   - 'fix(security): refuse git-shaped packages and harden every git DorkOS and its agents run (DOR-2326)'
   - "fix(security): keep people's hooks, strip package .git, warn below git 2.38 (DOR-2326)"
+  - 'fix(security): local worktree roots install, .GIT in any case, ADR for the git split (DOR-2326)'
 ---
 
 ### Security

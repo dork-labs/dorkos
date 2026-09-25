@@ -92,7 +92,8 @@ export async function stagePackageContents(
         return false;
       }
       const rel = path.relative(source, src).split(path.sep).join('/');
-      if (path.basename(src) === GIT_DIR_NAME && rel !== '') {
+      // Case-insensitive: `.GIT` is the same folder on macOS and Windows.
+      if (path.basename(src).toLowerCase() === GIT_DIR_NAME && rel !== '') {
         logger.warn(
           `[marketplace/stage] Stripped ${rel} from the package: git would obey the settings and hooks in it, and a package is its files, not a repository.`
         );
