@@ -35,6 +35,7 @@ import {
   HeldBackReviewError,
   listHeldBackPackages,
   reviewHeldBackPackage,
+  summariseGlobalActivation,
 } from '../ask-withheld-global-plugins.js';
 import {
   bindingOf,
@@ -459,5 +460,39 @@ describe('describeGlobalActivationCapability', () => {
       tier: 'destructive',
     });
     expect(describeGlobalActivationCapability('marketplace.install')).toBeUndefined();
+  });
+});
+
+describe('summariseGlobalActivation', () => {
+  it("counts the commands a skill's text runs among what the package runs (DOR-2327)", () => {
+    // Purpose: a package whose only runnable part is a skill-text command
+    // must not be summarised as running nothing.
+    expect(
+      summariseGlobalActivation('ctx', {
+        hooks: [],
+        schedules: [],
+        mcpServers: [],
+        lspServers: [],
+        monitors: [],
+        executables: [],
+        skillTools: [],
+        skillCommands: [
+          {
+            source: 'skills/c/SKILL.md',
+            skill: 'c',
+            form: 'inline',
+            command: 'git status',
+            usesArguments: false,
+          },
+          {
+            source: 'skills/c/SKILL.md',
+            skill: 'c',
+            form: 'block',
+            command: 'id',
+            usesArguments: false,
+          },
+        ],
+      })
+    ).toContain('run 2 programs and commands in every session');
   });
 });

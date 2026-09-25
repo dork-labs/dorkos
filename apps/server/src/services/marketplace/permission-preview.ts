@@ -331,6 +331,7 @@ export type RunnableDeclarations = Pick<
   | 'hooks'
   | 'unreadableHooks'
   | 'skillTools'
+  | 'skillCommands'
   | 'mcpServers'
   | 'lspServers'
   | 'monitors'
@@ -373,6 +374,7 @@ export async function readRunnableDeclarations(
     hooks: [...hookDeclarations.hooks, ...skills.hooks],
     unreadableHooks: [...hookDeclarations.unreadable, ...skills.unreadable],
     skillTools: skills.skillTools,
+    skillCommands: skills.skillCommands,
     mcpServers: programs.mcpServers,
     lspServers: programs.lspServers,
     monitors: programs.monitors,
@@ -417,8 +419,8 @@ export class PermissionPreviewBuilder {
    *   `hooks/hooks.json` and plugin.json `hooks` (`lib/package-hooks.ts`),
    *   flattened to `{ event, matcher?, command }` with the command verbatim,
    *   plus every hook in a skill's or command's frontmatter, tagged with its
-   *   `source` (`lib/package-skills.ts`), and each one's `allowed-tools` in
-   *   `skillTools`.
+   *   `source` (`lib/package-skills.ts`), each one's `allowed-tools` in
+   *   `skillTools`, and the shell commands its text runs in `skillCommands`.
    * - `unreadableHooks` — every hook declaration the package ships that could
    *   not be parsed. Reported separately so "declares hooks we could not read"
    *   never renders as "declares no hooks".
@@ -470,6 +472,7 @@ export class PermissionPreviewBuilder {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
       skippedLinks: [],
       unreadableDeclarations: [],
       schedules: [],

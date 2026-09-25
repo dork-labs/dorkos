@@ -19648,6 +19648,42 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -19842,6 +19878,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -20049,6 +20086,41 @@
                               "tools"
                             ]
                           }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "default": []
                         }
                       },
                       "required": [
@@ -20336,6 +20408,41 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command",
+                            "usesArguments"
+                          ]
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -20565,6 +20672,42 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -20759,6 +20902,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -21003,6 +21147,41 @@
                               "tools"
                             ]
                           }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "default": []
                         }
                       },
                       "required": [
@@ -21289,6 +21468,41 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command",
+                            "usesArguments"
+                          ]
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -21616,6 +21830,42 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -21810,6 +22060,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -22630,6 +22881,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -22847,6 +23133,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -23137,6 +23458,41 @@
                                   "tools"
                                 ]
                               }
+                            },
+                            "skillCommands": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string"
+                                  },
+                                  "skill": {
+                                    "type": "string"
+                                  },
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "inline",
+                                      "block"
+                                    ]
+                                  },
+                                  "command": {
+                                    "type": "string"
+                                  },
+                                  "usesArguments": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "skill",
+                                  "form",
+                                  "command",
+                                  "usesArguments"
+                                ]
+                              },
+                              "default": []
                             }
                           },
                           "required": [
@@ -23554,6 +23910,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -23771,6 +24162,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -24183,6 +24609,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -24497,6 +24958,41 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command",
+                            "usesArguments"
+                          ]
+                        },
+                        "default": []
                       }
                     },
                     "required": [

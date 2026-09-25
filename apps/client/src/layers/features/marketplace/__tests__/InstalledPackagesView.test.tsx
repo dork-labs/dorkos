@@ -558,6 +558,7 @@ describe('InstalledPackagesView', () => {
           monitors: [],
           executables: [],
           skillTools: [],
+          skillCommands: [],
         },
       };
       showRows([REVIEWER], [hooked]);
@@ -930,6 +931,7 @@ describe('InstalledPackagesView', () => {
           monitors: [],
           executables: [],
           skillTools: [],
+          skillCommands: [],
         },
       };
       showRows([REVIEWER, FLOW_ON_ALPHA], [quiet, withServer]);

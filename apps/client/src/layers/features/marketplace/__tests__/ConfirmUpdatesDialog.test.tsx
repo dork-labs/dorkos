@@ -25,6 +25,7 @@ const NOTHING: DisclosedEffects = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
 };
 
 const hook = (command: string) => ({ event: 'Stop', matcher: null, command, source: null });

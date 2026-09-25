@@ -262,6 +262,7 @@ const EMPTY_PREVIEW: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -282,6 +283,7 @@ const PKG_DETAIL: MarketplacePackageDetail = {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
   },
   contentHash: 'sha256:staged',
   manifest: {

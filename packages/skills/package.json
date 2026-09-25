@@ -48,6 +48,10 @@
       "types": "./src/duration.ts",
       "default": "./dist/duration.js"
     },
+    "./shell-commands": {
+      "types": "./src/shell-commands.ts",
+      "default": "./dist/shell-commands.js"
+    },
     "./frontmatter": {
       "types": "./src/frontmatter.ts",
       "default": "./dist/frontmatter.js"

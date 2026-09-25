@@ -167,6 +167,8 @@ The browse surface has three sections:
 
 The install confirmation dialog always shows you exactly what the package wants to do (which files it will write, which network hosts it needs to reach, which permissions it will request) before any state changes. You can deny at any point and DorkOS leaves your installation untouched.
 
+That includes commands written into a skill or command's text. A skill can ask Claude Code to run a shell command the moment it is used, before the agent reads it, so each of those commands is listed with the skill it comes from. A new version that adds or changes one asks you again.
+
 ## Keeping packages up to date
 
 The **Installed** tab of Marketplace lists every package you've installed, in every place it's installed. When you open Marketplace, DorkOS checks all of them for a newer version at once. The **Installed** tab shows how many have an update waiting, so you can see it from Browse too.

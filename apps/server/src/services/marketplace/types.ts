@@ -86,6 +86,30 @@ export interface PreviewSkillTools {
 }
 
 /**
+ * A shell command a skill's, command's, agent's or output style's TEXT runs
+ * when it is used (DOR-2327):
+ * `` !`cmd` `` or a fenced block whose info string is `!`. Claude Code runs it
+ * while it renders the skill, before the model sees it; OpenCode runs the
+ * inline form in the command wrappers Harness Sync writes for it.
+ */
+export interface PreviewSkillCommand {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name, from its frontmatter or its location. */
+  skill: string;
+  /** `inline` for `` !`cmd` ``, `block` for a ```` ```! ```` block. */
+  form: 'inline' | 'block';
+  /** The command exactly as written. */
+  command: string;
+  /**
+   * Whether it names a placeholder (`$ARGUMENTS`, `$1`, a named `$name`) that
+   * Claude Code and OpenCode fill with the text typed after the command BEFORE
+   * running it, so what it runs depends on that text.
+   */
+  usesArguments: boolean;
+}
+
+/**
  * A hook declaration the package ships that could not be read.
  *
  * Surfaced as its own preview field rather than folded into `hooks`: a package
@@ -232,6 +256,8 @@ export interface PermissionPreview {
   executables: string[];
   /** Tools each skill or command lets the agent use without asking */
   skillTools: PreviewSkillTools[];
+  /** Shell commands each skill's or command's text runs when it is used */
+  skillCommands: PreviewSkillCommand[];
   /** Program declarations (MCP, LSP, monitors) that could not be read */
   unreadableDeclarations: UnreadableDeclaration[];
   /**

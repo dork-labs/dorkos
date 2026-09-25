@@ -134,6 +134,7 @@ const emptyPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],

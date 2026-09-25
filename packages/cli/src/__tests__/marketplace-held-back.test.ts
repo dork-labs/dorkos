@@ -29,6 +29,7 @@ const EFFECTS = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
 };
 
 const HELD = {

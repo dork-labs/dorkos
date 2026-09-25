@@ -199,6 +199,7 @@ function emptyPreview(): PermissionPreview {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],

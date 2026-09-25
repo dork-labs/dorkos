@@ -175,6 +175,7 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -284,6 +285,22 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   skillTools: [
     { source: 'skills/deploy/SKILL.md', skill: 'deploy', tools: ['Bash(kubectl:*)', 'Read'] },
   ],
+  skillCommands: [
+    {
+      source: 'skills/deploy/SKILL.md',
+      skill: 'deploy',
+      form: 'inline',
+      command: 'kubectl config current-context',
+      usesArguments: false,
+    },
+    {
+      source: 'commands/release.md',
+      skill: 'release',
+      form: 'block',
+      command: 'git fetch --tags\ngit describe --tags --abbrev=0',
+      usesArguments: false,
+    },
+  ],
   skippedLinks: [],
   unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'legacy' }],
   npmDependencies: [
@@ -339,6 +356,7 @@ export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -464,6 +482,7 @@ const FLOW_NEXT_RUNS: DisclosedEffects = {
   monitors: [],
   executables: [],
   skillTools: [{ source: 'skills/triage/SKILL.md', skill: 'triage', tools: ['Bash(gh:*)'] }],
+  skillCommands: [],
 };
 
 /** What the Flow plugin installed now runs: one hook fewer, an older server. */
@@ -482,6 +501,7 @@ const RUNS_NOTHING: DisclosedEffects = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
 };
 
 /** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
@@ -630,6 +650,7 @@ export const MOCK_PERMISSION_PREVIEW_MANY_FILES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -655,6 +676,7 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],

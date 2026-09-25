@@ -44,6 +44,7 @@ const PREVIEW_WITH_SCHEDULE = {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     schedules: [

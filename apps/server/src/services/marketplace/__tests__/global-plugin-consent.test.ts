@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { stableStringify } from '@dorkos/shared/capabilities';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -546,6 +548,41 @@ describe('the stored entry', () => {
     expect(isGlobalActivationEntry('tool@0123abcd')).toBe(false);
     expect(globalActivationEntry('other', reading.effects, bindsTo)).not.toBe(entry);
     expect(globalActivationEntry('tool', reading.effects, 'sha256:other')).not.toBe(entry);
+  });
+
+  it('matches an approval recorded before skill commands existed, for a package that has none (DOR-2327)', async () => {
+    // Purpose: v0.83 stored entries whose digest had no `skillCommands` key.
+    // Adding an empty list to every digest would re-ask about every approved
+    // global plugin on upgrade, for nothing that changed.
+    const root = await installGlobal('tool', { hooks: stopHook('echo done') });
+    const reading = await readable(root);
+    const bindsTo = bindingOf(reading.subject!);
+    const { skillCommands: _none, ...v083 } = { ...reading.effects, schedules: [] };
+    const recordedByV083 = `tool@global-${createHash('sha256')
+      .update(stableStringify(['global-activation', 'tool', v083, bindsTo]), 'utf8')
+      .digest('hex')}`;
+
+    expect(reading.effects.skillCommands).toEqual([]);
+    expect(globalActivationEntry('tool', reading.effects, bindsTo)).toBe(recordedByV083);
+    // A package that does have one is a different decision.
+    expect(
+      globalActivationEntry(
+        'tool',
+        {
+          ...reading.effects,
+          skillCommands: [
+            {
+              source: 'skills/a/SKILL.md',
+              skill: 'a',
+              form: 'inline',
+              command: 'id',
+              usesArguments: false,
+            },
+          ],
+        },
+        bindsTo
+      )
+    ).not.toBe(recordedByV083);
   });
 
   it('ignores scheduled jobs, which the SDK does not load', async () => {

@@ -385,6 +385,25 @@ export interface PreviewLspServer {
 }
 
 /**
+ * A shell command a skill's or command's text runs when it is used
+ * (DOR-2327): `` !`cmd` `` or a fenced block whose info string is `!`.
+ *
+ * Mirrors `PreviewSkillCommand` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewSkillCommand {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name. */
+  skill: string;
+  /** `inline` for `` !`cmd` ``, `block` for a ```` ```! ```` block. */
+  form: 'inline' | 'block';
+  /** The command exactly as written. */
+  command: string;
+  /** Whether it uses the text typed after the command, filled in before it runs. */
+  usesArguments: boolean;
+}
+
+/**
  * The tools a skill or command lets the agent use without asking.
  *
  * Mirrors `PreviewSkillTools` in `apps/server/src/services/marketplace/types.ts`.
@@ -540,6 +559,8 @@ export interface PermissionPreview {
   executables: string[];
   /** Tools each skill or command lets the agent use without asking. */
   skillTools: PreviewSkillTools[];
+  /** Shell commands each skill's or command's text runs when it is used. */
+  skillCommands: PreviewSkillCommand[];
   /** Program declarations that could not be read or point outside the package. */
   unreadableDeclarations: UnreadableDeclaration[];
   /**
@@ -582,6 +603,29 @@ export interface DisclosedHook {
   command: string;
   /** The skill or command file it belongs to (it runs while that is in use); `null` for a plugin hook. */
   source: string | null;
+}
+
+/**
+ * A shell command a skill's or command's text runs when it is used, as an
+ * approval binds it (DOR-2327). Same shape as {@link PreviewSkillCommand}.
+ */
+export type DisclosedSkillCommand = PreviewSkillCommand;
+
+/**
+ * What kind of file a skill-text command is written in, so every surface can
+ * say "when the skill "x" is used" (or command, agent, output style) the same
+ * way.
+ *
+ * @param source - Package-relative path of the file the command is written in.
+ * @returns `skill` for a `SKILL.md`, `agent` under an `agents` folder,
+ *   `output style` under an `output-styles` folder, `command` otherwise.
+ */
+export function skillCommandKind(source: string): 'skill' | 'command' | 'agent' | 'output style' {
+  const parts = source.split(/[\\/]/);
+  if (parts[parts.length - 1] === 'SKILL.md') return 'skill';
+  if (parts.includes('agents')) return 'agent';
+  if (parts.includes('output-styles')) return 'output style';
+  return 'command';
 }
 
 /** A skill or command's `allowed-tools`: tools it may use without asking. */
@@ -662,11 +706,17 @@ export interface DisclosedEffects {
   executables: string[];
   /** Every skill or command's allowed tools, sorted by file. */
   skillTools: DisclosedSkillTools[];
+  /**
+   * Every shell command a skill's or command's text runs when it is used,
+   * sorted by file and in document order within one (they run in it).
+   */
+  skillCommands: DisclosedSkillCommand[];
 }
 
 /**
  * Whether a disclosure names anything that runs on its own: a hook, a program,
- * a scheduled job, or a skill allowed to use tools without asking. `null`
+ * a scheduled job, a skill allowed to use tools without asking, or a command a
+ * skill's text runs. `null`
  * (nothing was previewed) runs nothing.
  *
  * @param effects - A disclosure, or `null`.
@@ -681,7 +731,8 @@ export function disclosesAnything(effects: DisclosedEffects | null | undefined):
       effects.lspServers.length +
       effects.monitors.length +
       effects.executables.length +
-      effects.skillTools.length >
+      effects.skillTools.length +
+      effects.skillCommands.length >
     0
   );
 }

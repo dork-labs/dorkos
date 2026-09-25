@@ -90,7 +90,8 @@ function countOf(effects: DisclosedEffects): number {
     effects.lspServers.length +
     effects.monitors.length +
     effects.executables.length +
-    effects.skillTools.length
+    effects.skillTools.length +
+    effects.skillCommands.length
   );
 }
 

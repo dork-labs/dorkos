@@ -147,7 +147,9 @@ export function PermissionItem({ item }: { item: FormattedPermission }) {
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
         {item.mono ? (
-          <code className="bg-muted text-foreground block rounded px-1.5 py-1 font-mono text-xs [overflow-wrap:anywhere]">
+          // `whitespace-pre-wrap`: a command is shown exactly, and a script's lines
+          // must not collapse into one line that reads as a single command.
+          <code className="bg-muted text-foreground block rounded px-1.5 py-1 font-mono text-xs [overflow-wrap:anywhere] whitespace-pre-wrap">
             {withBreakPoints(item.label)}
           </code>
         ) : (

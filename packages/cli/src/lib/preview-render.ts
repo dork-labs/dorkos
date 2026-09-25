@@ -15,6 +15,7 @@ import {
   describeSchedulePermissionMode,
   PLUGIN_PROGRAMS_SCOPE_NOTE,
   revealHiddenCharacters,
+  skillCommandKind,
 } from '@dorkos/shared/marketplace-schemas';
 
 /** A single planned filesystem mutation surfaced by the preview. */
@@ -38,6 +39,15 @@ export interface PreviewHook {
   command: string;
   /** The skill or command file whose frontmatter declares it, when it is one. */
   source?: string;
+}
+
+/** A shell command a skill's or command's text runs when it is used (DOR-2327). */
+export interface PreviewSkillCommand {
+  source: string;
+  skill: string;
+  form: 'inline' | 'block';
+  command: string;
+  usesArguments: boolean;
 }
 
 /** The tools a skill or command lets the agent use without asking. */
@@ -113,6 +123,8 @@ export interface PreviewPayload {
   monitors: PreviewMonitor[];
   executables: string[];
   skillTools: PreviewSkillTools[];
+  /** Absent from a server older than DOR-2327. */
+  skillCommands?: PreviewSkillCommand[];
   unreadableDeclarations: UnreadableDeclaration[];
   skippedLinks: { path: string; message: string }[];
   npmDependencies: PreviewNpmDependency[];
@@ -179,12 +191,23 @@ export function renderPreview(
     lines.push('');
   }
 
-  if (preview.hooks.length > 0) {
+  // A server older than DOR-2327 sends no skillCommands.
+  const skillCommands = preview.skillCommands ?? [];
+  if (preview.hooks.length + skillCommands.length > 0) {
     lines.push('Commands this package declares:');
     for (const hook of preview.hooks) {
       const scope = hook.source ? `, while ${revealHiddenCharacters(hook.source)} is in use` : '';
       lines.push(`  Runs ${describeHookEvent(hook.event, hook.matcher)}${scope}`);
       lines.push(`    ${revealHiddenCharacters(hook.command)}`);
+    }
+    // Written into a skill's or command's text: run as it loads (DOR-2327).
+    for (const entry of skillCommands) {
+      lines.push(
+        `  Runs when the ${skillCommandKind(entry.source)} ${revealHiddenCharacters(entry.skill)} is used (${revealHiddenCharacters(entry.source)})` +
+          (entry.usesArguments ? ', using the text typed after it' : '')
+      );
+      for (const line of revealHiddenCharacters(entry.command).split('\n'))
+        lines.push(`    ${line}`);
     }
     lines.push('');
   }

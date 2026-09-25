@@ -12,6 +12,7 @@ import {
   describeProgramLine,
   PLUGIN_PROGRAMS_SCOPE_NOTE,
   revealHiddenCharacters,
+  skillCommandKind,
   type DisclosedEffects,
   type PermissionPreview,
   type PreviewSchedule,
@@ -117,6 +118,7 @@ type RunnableParts = Pick<
   | 'monitors'
   | 'executables'
   | 'skillTools'
+  | 'skillCommands'
   | 'unreadableDeclarations'
 >;
 
@@ -394,6 +396,21 @@ function formatCommands(
     mono: true,
   }));
 
+  // Commands written into a skill's or command's text: Claude Code runs them
+  // as it loads that skill, before the model sees it (DOR-2327).
+  for (const entry of preview.skillCommands) {
+    const kind = skillCommandKind(entry.source);
+    rows.push({
+      icon: 'terminal',
+      label: revealHiddenCharacters(entry.command),
+      description:
+        `Runs when the ${kind} "${revealHiddenCharacters(entry.skill)}" is used (${revealHiddenCharacters(entry.source)})` +
+        // Filled in before the command runs, so what runs depends on it.
+        (entry.usesArguments ? '. It uses the text typed after the command' : ''),
+      mono: true,
+    });
+  }
+
   for (const unreadable of preview.unreadableHooks) {
     rows.push({
       icon: 'alert-triangle',
@@ -553,7 +570,8 @@ export function summarizePermissionPreview(preview: PermissionPreview): string {
   });
   const files = clauses.length === 0 ? 'Changes no files' : joinClauses(clauses);
 
-  const commands = preview.hooks.length + preview.unreadableHooks.length;
+  const commands =
+    preview.hooks.length + preview.skillCommands.length + preview.unreadableHooks.length;
   const declares =
     commands === 0
       ? 'Declares no commands'
@@ -680,6 +698,7 @@ export function formatDisclosedEffects(
     })),
     executables: effects.executables,
     skillTools: effects.skillTools,
+    skillCommands: effects.skillCommands,
     unreadableDeclarations: [],
   };
   const schedules: PreviewSchedule[] = effects.schedules.map((job) => ({
@@ -724,11 +743,13 @@ const NOTHING_DISCLOSED: DisclosedEffects = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
 };
 
 /** The kinds of things a disclosure lists, in the order rows are shown. */
 const DISCLOSURE_KINDS = [
   'hooks',
+  'skillCommands',
   'mcpServers',
   'lspServers',
   'monitors',
@@ -739,7 +760,8 @@ const DISCLOSURE_KINDS = [
 
 /** The name a named item goes by, so a changed one is told from a new one. */
 function nameOf(kind: (typeof DISCLOSURE_KINDS)[number], item: unknown): string | undefined {
-  if (kind === 'hooks' || kind === 'executables') return undefined;
+  // A command is its own identity: an edited one reads as new, beside the old.
+  if (kind === 'hooks' || kind === 'skillCommands' || kind === 'executables') return undefined;
   if (kind === 'skillTools') return (item as { source: string }).source;
   return (item as { name: string }).name;
 }
