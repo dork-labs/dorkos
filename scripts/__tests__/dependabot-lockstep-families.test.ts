@@ -397,7 +397,9 @@ describe('dependabot lockstep families', () => {
     // over a lockfile still on 1.39.0, and #1983 repeated it with 1.47.0 in
     // five manifests over a lockfile on 1.44.0. Only EXACT overrides are held
     // to this — a range override (`hono: ^4.13.5`) is a security floor, not a
-    // dedupe, and a manifest range below it is the expected shape.
+    // dedupe, and a manifest range below it is the expected shape. Peer ranges
+    // are skipped too: a peer is a compatibility window a consumer satisfies,
+    // not a claim about what this workspace installs.
     const exactOverrides = declarations.filter(
       (d) => d.label === 'package.json pnpm.overrides' && /^\d+\.\d+\.\d+/.test(d.specifier)
     );
@@ -409,6 +411,7 @@ describe('dependabot lockstep families', () => {
     for (const override of exactOverrides) {
       for (const decl of declarations) {
         if (decl.name !== override.name || decl.label === override.label) continue;
+        if (decl.label.endsWith(' peerDependencies')) continue;
         const version = comparableVersion(decl.specifier);
         if (version !== null && version !== override.specifier) {
           lies.push(`${decl.label}: ${decl.name}@${decl.specifier}`);
