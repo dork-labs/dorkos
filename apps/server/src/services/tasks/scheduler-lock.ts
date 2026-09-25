@@ -12,7 +12,18 @@
  * @module services/tasks/scheduler-lock
  */
 
-import { mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
+import {
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { hostname as osHostname } from 'node:os';
 
@@ -41,6 +52,9 @@ export interface LeaderLock {
   /** Whether this process currently holds leadership (cached from the last acquire/heartbeat). */
   readonly isLeaderNow: boolean;
 }
+
+/** What an exclusive create came to: see {@link SchedulerLock.createExclusive}. */
+type CreateOutcome = 'created' | 'exists' | 'failed';
 
 /** The on-disk lock record. */
 interface LockRecord {
@@ -84,7 +98,8 @@ export class SchedulerLock implements LeaderLock {
   /**
    * Whether the current run of write failures has already been reported, so a
    * disk that stays full does not fill the log with the same line. Cleared by
-   * the next successful write — see {@link SchedulerLock.onWriteFailed}.
+   * the next successful write of either kind — see
+   * {@link SchedulerLock.onWriteFailed} and {@link SchedulerLock.onWriteSucceeded}.
    */
   private reportedWriteFailure = false;
 
@@ -112,18 +127,34 @@ export class SchedulerLock implements LeaderLock {
     if (existing === null) {
       // Fast path: an exclusive (O_EXCL) create has exactly one winner, so a
       // simultaneous no-lock race can never elect two leaders.
-      if (this.createExclusive()) {
+      const created = this.createExclusive();
+      if (created === 'created') {
         this.leader = true;
         return true;
       }
-      // Lost the create race — another process just claimed it. Re-read; we are
-      // a follower (its fresh lock is not ours).
+      if (created === 'failed') {
+        this.leader = false;
+        return false;
+      }
+      // The file exists. Usually another process just claimed it: re-read, and
+      // a whole record there makes us a follower (its fresh lock is not ours).
       const claimed = this.read();
-      this.leader = claimed !== null && this.isOurs(claimed);
-      return this.leader;
+      if (claimed !== null) {
+        this.leader = this.isOurs(claimed);
+        return this.leader;
+      }
+      // Present but unreadable: debris from a write that died partway (an older
+      // build wrote the lock in place, so a full disk or a crash could leave it
+      // empty or cut short). Nothing will ever parse it, and obeying it would
+      // keep every process a follower forever, so it is claimed exactly like a
+      // stale lock, through the atomic overwrite below (DOR-2131). The one
+      // live case that looks the same is another process between its create
+      // and its write, a window of microseconds; overwriting then is the same
+      // brief two-leader handoff a concurrent stale-steal already has, settled
+      // by that process's next heartbeat and covered by dispatch idempotency.
     }
-    // Stale lock, or already ours → claim by atomic overwrite, then verify we
-    // won (a concurrent stale-steal may have raced us; last rename wins).
+    // Stale or unreadable lock, or already ours → claim by atomic overwrite,
+    // then verify we won (a concurrent steal may have raced us; last rename wins).
     // A claim we could not write is simply a claim we did not win.
     if (!this.write()) {
       this.leader = false;
@@ -181,7 +212,7 @@ export class SchedulerLock implements LeaderLock {
    *
    * The heartbeat runs every {@link SCHEDULER_HEARTBEAT_MS}, so a disk that
    * stays full would otherwise write six identical lines a minute into the very
-   * log file competing for the space that ran out. The counter resets on the
+   * log file competing for the space that ran out. The flag resets on the
    * next successful write, so a second outage is reported again.
    */
   private onWriteFailed(err: unknown): void {
@@ -198,24 +229,80 @@ export class SchedulerLock implements LeaderLock {
   }
 
   /**
-   * Exclusively create the lock file (O_EXCL). Returns `false` (without throwing)
-   * if it already exists — the caller then re-reads and becomes a follower.
+   * End a spell of write failures, so the next one is reported again.
    *
-   * Nor does it throw for anything else. This is reached from the heartbeat
-   * timer via `tryAcquire`, so a throw here is the same uncaught exception, and
-   * the same whole-server shutdown, that {@link SchedulerLock.write} documents.
-   * An unwritable lock file means we did not become leader; it never means the
-   * process should die.
+   * Both write paths call this. When only the rename path did, a spell that
+   * ended with a fresh create (the usual first acquire after a clean shutdown)
+   * left the flag set, and every later outage went unreported (DOR-2132).
    */
-  private createExclusive(): boolean {
+  private onWriteSucceeded(): void {
+    this.reportedWriteFailure = false;
+  }
+
+  /**
+   * Exclusively create the lock file (O_EXCL) and write our record into it.
+   *
+   * - `'created'`: the file is ours and holds a whole record.
+   * - `'exists'`: a file was already there; the caller re-reads it.
+   * - `'failed'`: anything else. Never a throw: this is reached from the
+   *   heartbeat timer via `tryAcquire`, so a throw here is the same uncaught
+   *   exception, and the same whole-server shutdown, that
+   *   {@link SchedulerLock.write} documents. An unwritable lock file means we
+   *   did not become leader; it never means the process should die.
+   *
+   * The open and the write are separate steps so a failure between them is
+   * ours to clean up: the file we just created is removed rather than left
+   * empty at the lock path, where it would be the unreadable debris
+   * `tryAcquire` otherwise has to steal (DOR-2131). It never unlinks a file
+   * someone else owns: a failed open created nothing, and after a failed write
+   * the path is removed only while it still names the file we opened, since
+   * another process may have claimed our empty file in the meantime and
+   * renamed its own whole record over it.
+   */
+  private createExclusive(): CreateOutcome {
+    let fd: number;
     try {
-      writeFileSync(this.lockPath, JSON.stringify(this.record()), { flag: 'wx' });
-      return true;
+      fd = openSync(this.lockPath, 'wx');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return 'exists';
       this.onWriteFailed(err);
-      return false;
+      return 'failed';
     }
+    let written = false;
+    // Which file we created, so cleanup can tell it from a replacement.
+    let created: { dev: number; ino: number } | null = null;
+    try {
+      created = fstatSync(fd);
+      const data = Buffer.from(JSON.stringify(this.record()));
+      // `writeSync` may write fewer bytes than asked; loop until the record is whole.
+      for (let offset = 0; offset < data.length;) {
+        offset += writeSync(fd, data, offset, data.length - offset);
+      }
+      written = true;
+    } catch (err) {
+      this.onWriteFailed(err);
+    }
+    try {
+      closeSync(fd);
+    } catch (err) {
+      // A close can surface a deferred write error on some filesystems, so a
+      // record we cannot close is not one we can trust.
+      if (written) this.onWriteFailed(err);
+      written = false;
+    }
+    if (written) {
+      this.onWriteSucceeded();
+      return 'created';
+    }
+    try {
+      const current = statSync(this.lockPath);
+      if (created !== null && current.dev === created.dev && current.ino === created.ino) {
+        unlinkSync(this.lockPath);
+      }
+    } catch {
+      // Already gone, or not removable; `tryAcquire` claims unreadable debris anyway.
+    }
+    return 'failed';
   }
 
   /**
@@ -246,8 +333,7 @@ export class SchedulerLock implements LeaderLock {
     try {
       writeFileSync(tmp, JSON.stringify(this.record()));
       renameSync(tmp, this.lockPath);
-      // Recovered — let a future outage be reported again.
-      this.reportedWriteFailure = false;
+      this.onWriteSucceeded();
       return true;
     } catch (err) {
       this.onWriteFailed(err);
