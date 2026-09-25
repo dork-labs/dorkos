@@ -632,6 +632,13 @@ describe('execGitClone', () => {
     expect(spawn).toHaveBeenCalledWith(
       'git',
       [
+        // Git before 2.31 ignores the environment copy of the hardening (DOR-2326).
+        '-c',
+        'safe.bareRepository=explicit',
+        '-c',
+        'core.fsmonitor=',
+        '-c',
+        `core.hooksPath=${process.platform === 'win32' ? 'NUL' : '/dev/null'}`,
         'clone',
         '--depth',
         '1',

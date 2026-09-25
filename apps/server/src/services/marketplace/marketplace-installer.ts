@@ -743,7 +743,9 @@ export class MarketplaceInstaller implements InstallerLike {
       }
 
       const staged = await this.stagePackage(resolved, req);
-      const validation = await validatePackage(staged.path);
+      const validation = await validatePackage(staged.path, {
+        localSource: resolved.kind === 'local',
+      });
       if (!validation.ok) {
         const errors = validation.issues.filter((i) => i.level === 'error').map((i) => i.message);
         return {
@@ -789,7 +791,11 @@ export class MarketplaceInstaller implements InstallerLike {
   ): Promise<StagedPackage> {
     const staged = await this.stagePackage(resolved, req);
 
-    const validation = await validatePackage(staged.path);
+    // A local folder may be someone's own git worktree, whose root `.git` is a
+    // `gitdir:` file; staging drops it (DOR-2326).
+    const validation = await validatePackage(staged.path, {
+      localSource: resolved.kind === 'local',
+    });
     if (!validation.ok || !validation.manifest) {
       const errorMessages = validation.issues
         .filter((i) => i.level === 'error')

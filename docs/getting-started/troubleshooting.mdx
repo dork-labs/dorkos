@@ -121,6 +121,16 @@ See [Agent Discovery](/docs/guides/agent-discovery) for the full list of what Me
 
 By default DorkOS only listens on your own machine (`localhost`), so other devices can't see it yet. You have two options for opening it up safely: a temporary public link, or a proper reverse proxy for something more permanent. See [Tunnel Setup](/docs/self-hosting/tunnel-setup) and [Reverse Proxy](/docs/self-hosting/reverse-proxy).
 
+## "The doctor says my git is too old to protect my agents"
+
+Your agents use git in their folders. A folder can be set up to look like a git repository and carry a setting that makes git run a program the moment anyone looks inside. DorkOS tells git to ignore those settings every time it or one of your agents runs git. Git 2.38 and later honor all of it. Git 2.31 to 2.37 honor part of it, and older git none of it for your agents.
+
+1. Check your version with `git --version`.
+2. Update git to 2.38 or later. On a Mac, `brew install git`. On Linux, your package manager's git or the [git downloads page](https://git-scm.com/downloads). On Windows, the installer from the same page.
+3. Restart DorkOS and run `dorkos doctor` again.
+
+DorkOS also refuses to install a marketplace package shaped like a git repository, whatever your git version.
+
 ## "My file upload was rejected"
 
 DorkOS enforces upload limits so one runaway attachment can't fill your disk: a max file size (10 MB by default), a max number of files per upload (10 by default), and optionally a list of allowed file types (any type, by default).

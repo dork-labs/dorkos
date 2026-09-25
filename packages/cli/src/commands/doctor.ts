@@ -39,6 +39,7 @@ import {
   checkDorkHomeWritable,
   checkPortFree,
   checkClaudeCli,
+  checkGitProtection,
   checkClaudeAuth,
   checkRuntimeAuth,
   checkExtensions,
@@ -267,6 +268,7 @@ async function gatherResults(dorkHome: string, store: ConfigStore | null): Promi
     checkFileDescriptors(readFileDescriptorLimit()),
     checkClaudeCli(),
     checkClaudeAuth(homeDir),
+    checkGitProtection(),
     ...checkUnreadableSettings(store),
     ...checkRuntimeAuth({
       codexEnabled: readBool(store, 'runtimes.codex.enabled', true),

@@ -6,6 +6,7 @@ import type { Dirent } from 'fs';
 import type { FileEntry } from '@dorkos/shared/schemas';
 import { FILE_LIMITS, FILE_LISTING } from '../../config/constants.js';
 import { validateBoundary } from '../../lib/boundary.js';
+import { internalGitArgs } from '../../lib/git-safety.js';
 
 /** Convert an OS-separated relative path to a POSIX (`/`) path for the wire. */
 function toPosix(rel: string): string {
@@ -54,7 +55,7 @@ class FileListService {
   private async listViaGit(cwd: string): Promise<string[]> {
     const { stdout } = await execFileAsync(
       'git',
-      ['ls-files', '--cached', '--others', '--exclude-standard'],
+      [...internalGitArgs(), 'ls-files', '--cached', '--others', '--exclude-standard'],
       {
         cwd,
         maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,
@@ -191,10 +192,14 @@ class FileListService {
       // `check-ignore` echoes the ignored inputs (one per line). `-z` is not used
       // because it requires `--stdin`; directory-entry names never contain
       // newlines in practice, so line-splitting is safe here.
-      const { stdout } = await execFileAsync('git', ['check-ignore', '--', ...relPaths], {
-        cwd,
-        maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,
-      });
+      const { stdout } = await execFileAsync(
+        'git',
+        [...internalGitArgs(), 'check-ignore', '--', ...relPaths],
+        {
+          cwd,
+          maxBuffer: FILE_LIMITS.GIT_MAX_BUFFER,
+        }
+      );
       return new Set(stdout.split('\n').filter(Boolean));
     } catch (err) {
       const e = err as { code?: number; stdout?: string };

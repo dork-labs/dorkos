@@ -6466,6 +6466,23 @@
         "apps/server/src/routes/agents.ts",
         "apps/client/src/layers/features/agent-creation/ui/CreateAgentDialog.tsx"
       ]
+    },
+    {
+      "id": "260925-002601",
+      "slug": "git-hardening-split-dorkos-git-and-agent-sessions",
+      "title": "DorkOS's own git gets full hardening; agent sessions get bare-repository and fsmonitor settings only",
+      "status": "accepted",
+      "created": "2026-09-24",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/git-hardening.ts",
+        "apps/server/src/lib/git-safety.ts",
+        "apps/server/src/services/runtimes/shared/runtime-environment-config.ts",
+        "packages/marketplace/src/package-validator.ts",
+        "apps/server/src/services/marketplace/lib/stage-package.ts"
+      ]
     }
   ]
 }

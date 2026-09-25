@@ -40,7 +40,7 @@ import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { isSafeGitUrl } from '@dorkos/marketplace';
 import { logger } from '../../../lib/logger.js';
-import { hardenedGitEnv } from '../../../lib/git-safety.js';
+import { hardenedGitEnv, internalGitArgs } from '../../../lib/git-safety.js';
 import { env } from '../../../env.js';
 
 /** Progress callback invoked during git clone. */
@@ -500,6 +500,9 @@ export async function execGitClone(
     const proc = spawn(
       'git',
       [
+        // The hardening as `-c` too: the environment copy is read only by git
+        // 2.31 and later, and this repo supports 2.25.
+        ...internalGitArgs(),
         'clone',
         '--depth',
         '1',

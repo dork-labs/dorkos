@@ -54,6 +54,16 @@ C3=$(git rev-parse HEAD)
 echo 4 > pkg/f && git commit -qam 4 && git checkout -q main
 cd /tmp && git clone -q --bare w b.git && git -C b.git config uploadpack.allowFilter true
 U=file:///tmp/b.git
+
+# git-tree.ts leads every git call with the DOR-2326 hardening as `-c` settings,
+# so every git below (inside `sh -c` too) goes through a wrapper that does the
+# same. Fixture edits to the bare server repository use the real git: with
+# safe.bareRepository=explicit, `git -C b.git` is refused, as it should be.
+real_git=$(command -v git)
+mkdir -p /tmp/bin
+printf '#!/bin/sh\nexec %s -c safe.bareRepository=explicit -c core.fsmonitor= -c core.hooksPath=/dev/null "$@"\n' "$real_git" >/tmp/bin/git
+chmod +x /tmp/bin/git
+export PATH="/tmp/bin:$PATH"
 export GIT_ALLOW_PROTOCOL=file
 
 step() { name=$1; shift; out=$("$@" 2>&1); if [ $? = 0 ]; then echo "ok   $name"; else echo "FAIL $name: $(echo "$out" | tail -1)"; fi; }
@@ -72,8 +82,8 @@ step head-is-commit sh -c "test \"\$(git rev-parse --verify HEAD)\" = $C1"
 step no-deleted-files sh -c 'test -z "$(git ls-files --deleted)"'
 
 # A server that refuses unadvertised objects (protocol v0, no allow*SHA1InWant).
-git -C /tmp/b.git config uploadpack.allowReachableSHA1InWant false
-git -C /tmp/b.git config uploadpack.allowAnySHA1InWant false
+"$real_git" -C /tmp/b.git config uploadpack.allowReachableSHA1InWant false
+"$real_git" -C /tmp/b.git config uploadpack.allowAnySHA1InWant false
 # `-c protocol.version=0` rather than GIT_CONFIG_COUNT: git before 2.31 ignores the latter.
 fresh d2
 step refused-by-commit sh -c "git -c protocol.version=0 fetch --quiet --no-tags --depth=1 --end-of-options origin $C3 2>&1 | grep -qi 'unadvertised object\|not our ref'"

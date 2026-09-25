@@ -65,7 +65,7 @@ describe('GET /api/health/deep', () => {
 
     expect(res.status).toBe(200);
     expect(DeepHealthResponseSchema.safeParse(res.body).success).toBe(true);
-    expect(res.body.checks).toHaveLength(6);
+    expect(res.body.checks).toHaveLength(7);
     expect(res.body.checks[1].label).toContain('Could not run the check');
   });
 
