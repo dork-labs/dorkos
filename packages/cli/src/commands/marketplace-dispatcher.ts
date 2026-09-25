@@ -200,6 +200,10 @@ This fetches the exact version you installed and records its files, only when
 every installed file still matches that version. Otherwise it changes nothing
 and says why.
 
+If an update of such a package couldn't get the version you had, it kept the
+files it couldn't tell were yours. This fetches that version and removes the
+kept files that are exactly what it shipped, and keeps the rest as yours.
+
 Options:
       --project <path>  The project the package is installed in
       --json            Print the answer as JSON

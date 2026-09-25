@@ -22216,6 +22216,7 @@
                       "type": "string",
                       "enum": [
                         "rebuilt",
+                        "sorted",
                         "not-needed",
                         "no-source",
                         "fetch-failed",
@@ -22309,6 +22310,18 @@
                       "minimum": 0
                     },
                     "preservedData": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "unproven": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "warnings": {
                       "type": "array",
                       "items": {
                         "type": "string"
