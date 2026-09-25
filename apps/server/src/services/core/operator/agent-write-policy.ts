@@ -121,13 +121,18 @@ export const AGENT_WRITE_POLICY = {
   name: 'operator-only',
   displayName: 'agent-writable',
   description: 'agent-writable',
-  // Which program runs this agent's turns. Considered for operator-only and
-  // deliberately left writable: it grants no capability, removes no approval,
-  // and it is the one field on this seam the person's own Runs-on popover
-  // writes here (`RunsOnPopover.tsx` → `PATCH /api/agents/current`), so refusing
-  // it would break the operator's control to bar a change that is visible on
-  // the roster the moment it happens. The money question next to it —
-  // whose subscription pays — is `account`, and that one is refused.
+  // Which program runs this agent's turns. `agent-writable` at THIS seam, which
+  // is a verdict on the field, not on the caller: the person's own Runs-on
+  // popover writes it here (`RunsOnPopover.tsx` → `PATCH /api/agents/current`),
+  // and `operator-only` would refuse that popover. An AGENT changing it is
+  // gated one layer up instead, like `conventions.nope`: every schedule that
+  // leaves its runtime unset follows the agent, so a change moves work a person
+  // already approved (DOR-2328). Both agent-editing routes refuse it from a
+  // caller that has not cleared the agent bar, and `operator.update_agent`
+  // refuses it outright, pointing at `operator.update_agent_execution`, a
+  // `destructive` capability whose card shows old → new
+  // (`agent-execution.ts`). The money question next to it — whose subscription
+  // pays — is `account`, and that one is refused here.
   runtime: 'agent-writable',
   // Free-text labels the roster filters on. Documentation, not a grant: nothing
   // reads this list to decide what the agent may do.
@@ -179,9 +184,10 @@ export const AGENT_WRITE_POLICY = {
   icon: 'agent-writable',
   // Which model and how hard it thinks. A preference inside a lane the person
   // already chose: the account that pays is `account`, the ceiling on what the
-  // agent may DO is `tierCeiling`, and neither moves because a model did. An
-  // agent that has been told to stop using the expensive model needs to be able
-  // to write the cheap one.
+  // agent may DO is `tierCeiling`, and neither moves because a model did. Left
+  // writable here for the person's own editors, and gated for an agent caller
+  // on the same terms as `runtime` above (DOR-2328): an agent told to switch to
+  // the cheap model asks, and the card says which one it is moving from.
   model: 'agent-writable',
   effort: 'agent-writable',
   // Whose subscription this agent's work bills to (spec `billing-account-ladder`

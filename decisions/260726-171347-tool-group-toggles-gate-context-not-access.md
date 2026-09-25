@@ -73,7 +73,7 @@ carry, `tasks_delete` and `mesh_unregister`, for three months. Neither was ever
 exposed, because `allowedTools` only decides whether the SDK asks before invoking a
 tool and cannot reach inside the handler where the tier gate sits. (The registry-side
 destructive capabilities, `marketplace.uninstall` and later
-`operator.update_agent_boundaries` among them, are in no tool group and were never in
+`operator.update_agent_boundaries` and `operator.update_agent_execution` among them, are in no tool group and were never in
 those lists. The set is declared across two tables: `mcp-tool-tiers.ts` and
 `defineCapability`.)
 

@@ -579,6 +579,8 @@ Everything but the ceiling is **refused, not stripped**: a partial write that si
 
 `operator.update_agent_boundaries` is tier `destructive`, so an agent changing either one waits for a person's approval, and the card carries the full new text rather than a preview. Both are refused the same way `permissions` is — present at any value, whole patch rejected — so an agent cannot be told half a change landed. See `contributing/agent-operator-surface.md`.
 
+**Three more are refused for an agent caller on this route and on `PATCH /api/mesh/agents/:id`, and accepted from a person** (DOR-2328): `runtime`, `model` and `effort`. A schedule that leaves them unset follows its agent, and a person's approval of it records the unset value, so moving an agent's defaults moves every such approved schedule. A caller that presents an agent identity (`X-Dorkos-Agent`) or an approval token, or that lacks the session cookie under login-on, gets `403` with code `NEEDS_APPROVAL` and a pointer to `operator.update_agent_execution` (tier `destructive`, whose card shows each change old → new). The Runs-on popover and the agent settings page are a person and are not asked. `update_agent` refuses the three for every caller, as it does the boundaries fields.
+
 **Responses:**
 
 - `200` - Updated `AgentManifest`

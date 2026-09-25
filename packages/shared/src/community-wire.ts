@@ -10,7 +10,10 @@
  * @module shared/community-wire
  */
 import { z } from 'zod';
-import { CommunityAdminLifecycleSchema } from './community-admin-wire.js';
+import {
+  CommunityAdminAdmissionPolicySchema,
+  CommunityAdminLifecycleSchema,
+} from './community-admin-wire.js';
 import { HANDLE_PATTERN } from './handle.js';
 
 const id = z.string().min(1);
@@ -64,7 +67,10 @@ export const COMMUNITY_API_V1_ROUTES = {
   channelReadCursor: '/api/v1/channels/:id/read-cursor',
   channelEvents: '/api/v1/channels/:id/events',
   attachment: '/api/v1/attachments/:id',
+  exports: '/api/v1/exports',
   exportArchive: '/api/v1/exports/:id',
+  exportArchiveBytes: '/api/v1/exports/:id/archive',
+  exportCancel: '/api/v1/exports/:id/cancel',
   agents: '/api/v1/agents',
   me: '/api/v1/me',
   connectionAccess: '/api/v1/me/connection-access',
@@ -771,12 +777,200 @@ export const CommunityWireOwnerTransferResponseSchema = z.strictObject({
 });
 /** Owner export requires current password confirmation. */
 export const CommunityWireOwnerExportRequestSchema = z.strictObject({ password: id });
-/** Archive manifest metadata; archive bytes use an authorized download stream. */
-export const CommunityWireExportResponseSchema = z.strictObject({
-  archiveId: id,
-  version: z.literal(1),
+/** Why an export job stopped without an archive. */
+export const CommunityWireExportFailureCodeSchema = z.enum([
+  'EXPORT_TIMED_OUT',
+  'EXPORT_ACCESS_ENDED',
+  'EXPORT_CONTENT_CHANGING',
+  'EXPORT_STORAGE_UNAVAILABLE',
+]);
+/** One export failure code. */
+export type CommunityWireExportFailureCode = z.infer<typeof CommunityWireExportFailureCodeSchema>;
+
+/**
+ * One export job or archive, as its requester sees it. An export is prepared in the background;
+ * `progress` counts messages plus files written, against the total once the job has counted them.
+ * Only the same-origin browser bundle parses this object.
+ */
+export const CommunityWireExportSchema = z.strictObject({
+  id,
+  scope: z.enum(['personal', 'owner']),
+  state: z.enum(['queued', 'building', 'ready', 'failed', 'cancelled', 'expired']),
+  progress: z.strictObject({
+    done: z.int().nonnegative(),
+    total: z.int().nonnegative().nullable(),
+  }),
+  /** Set once ready. */
+  byteSize: z.int().positive().nullable(),
+  failureCode: CommunityWireExportFailureCodeSchema.nullable(),
   createdAt: timestamp,
+  readyAt: timestamp.nullable(),
+  expiresAt: timestamp.nullable(),
 });
+/** One export job or archive. */
+export type CommunityWireExport = z.infer<typeof CommunityWireExportSchema>;
+/** Answer to creating, reading or cancelling one export. */
+export const CommunityWireExportResponseSchema = z.strictObject({
+  export: CommunityWireExportSchema,
+});
+/** The caller's exports that are open or ended within the last seven days, newest first. */
+export const CommunityWireExportListSchema = z.strictObject({
+  exports: z.array(CommunityWireExportSchema).max(50),
+});
+
+/** A relative, forward-slash path of one entry inside an export archive. */
+const archivePath = z
+  .string()
+  .min(1)
+  .max(1_024)
+  .refine((path) => path.split('/').every((part) => part !== '' && part !== '.' && part !== '..'));
+const nullableId = id.nullable();
+
+/** One `channels/NNNNNN.ndjson` line of an export archive (version 2). */
+export const CommunityExportChannelRowSchema = z.strictObject({
+  id,
+  name: z.string().min(1),
+  description: z.string().nullable(),
+  visibility: z.enum(['public', 'private']),
+  archived: z.boolean(),
+  created_at: timestamp,
+});
+/**
+ * One `members/NNNNNN.ndjson` line. `email` is present for owner exports (null for an erased
+ * member) and, in a personal export, only on the requester's own row.
+ */
+export const CommunityExportMemberRowSchema = z.strictObject({
+  id,
+  display_name: z.string(),
+  handle: z.string(),
+  role: z.enum(['owner', 'admin', 'member']),
+  active: z.boolean(),
+  created_at: timestamp,
+  removed_at: timestamp.nullable(),
+  email: z.string().nullable(),
+});
+/** One `agents/NNNNNN.ndjson` line. */
+export const CommunityExportAgentRowSchema = z.strictObject({
+  id,
+  owner_member_id: id,
+  display_name: z.string(),
+  handle: z.string(),
+  active: z.boolean(),
+  created_at: timestamp,
+  revoked_at: timestamp.nullable(),
+});
+/** One `channel-members/NNNNNN.ndjson` line: a person's membership of a channel. */
+export const CommunityExportChannelMemberRowSchema = z.strictObject({
+  channel_id: id,
+  member_id: id,
+  joined_at: timestamp,
+});
+/** One `agent-channel-members/NNNNNN.ndjson` line: an agent's membership of a channel. */
+export const CommunityExportAgentChannelMemberRowSchema = z.strictObject({
+  channel_id: id,
+  agent_id: id,
+  joined_at: timestamp,
+});
+/** One `audit-events/NNNNNN.ndjson` line (owner exports only). */
+export const CommunityExportAuditEventRowSchema = z.strictObject({
+  id,
+  community_id: id,
+  actor_member_id: nullableId,
+  actor_kind: z.enum(['member', 'system']),
+  action: z.string().min(1),
+  subject_id: z.string().nullable(),
+  prior_state: z.string().nullable(),
+  next_state: z.string().nullable(),
+  changed_fields: z.array(z.string()),
+  created_at: timestamp,
+});
+/**
+ * One `entries/NNNNNN.ndjson` line: a message. `removal` says who removed it (`author`,
+ * `moderator`, `host`) or that its author was erased; the text is then the tombstone sentence.
+ */
+export const CommunityExportEntryRowSchema = z.strictObject({
+  id,
+  channel_id: id,
+  seq: z.int().positive(),
+  author_member_id: nullableId,
+  author_agent_id: nullableId,
+  author_display_name: z.string(),
+  text: z.string(),
+  mentions: z.array(id),
+  parent_entry_id: nullableId,
+  thread_root_entry_id: nullableId,
+  created_at: timestamp,
+  removal: z.enum(['author', 'moderator', 'host', 'erased']).nullable(),
+});
+/** One `attachments/NNNNNN.ndjson` line: a file's metadata; its bytes are at `archivePath`. */
+export const CommunityExportAttachmentRowSchema = z.strictObject({
+  id,
+  channelId: id,
+  entryId: id,
+  uploaderMemberId: nullableId,
+  uploaderAgentId: nullableId,
+  name: z.string().min(1),
+  contentType: z.string().min(1),
+  byteSize: z.int().positive(),
+  checksum: z.string().regex(/^[a-f0-9]{64}$/),
+  uploadedAt: timestamp,
+  archivePath,
+});
+
+const exportFileKeys = {
+  channels: z.array(archivePath),
+  members: z.array(archivePath),
+  agents: z.array(archivePath),
+  channelMembers: z.array(archivePath),
+  agentChannelMembers: z.array(archivePath),
+  auditEvents: z.array(archivePath),
+  entries: z.array(archivePath),
+  attachments: z.array(archivePath),
+};
+const count = z.int().nonnegative();
+
+/**
+ * `manifest.json` of an export archive, version 2: the last entry before the central directory.
+ * Rows live in the NDJSON files it lists, each line parsed by its row schema above.
+ */
+export const CommunityExportManifestV2Schema = z.strictObject({
+  version: z.literal(2),
+  scope: z.enum(['personal', 'owner']),
+  exportId: id,
+  requesterMemberId: id,
+  createdAt: timestamp,
+  completedAt: timestamp,
+  community: z.strictObject({
+    id,
+    name: z.string().min(1).max(80),
+    description: z.string().max(1_000).nullable(),
+    admissionPolicy: CommunityAdminAdmissionPolicySchema,
+    lifecycle: z.enum(['active', 'archived']),
+    lifecycleVersion: z.int().positive(),
+    settingsVersion: z.int().positive(),
+    icon: z
+      .strictObject({
+        path: z.literal('community/icon'),
+        contentType: z.string().min(1),
+        byteSize: z.int().positive(),
+        checksum: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .nullable(),
+  }),
+  files: z.strictObject(exportFileKeys),
+  counts: z.strictObject({
+    channels: count,
+    members: count,
+    agents: count,
+    channelMembers: count,
+    agentChannelMembers: count,
+    auditEvents: count,
+    entries: count,
+    attachments: count,
+  }),
+});
+/** Version 2 export manifest. */
+export type CommunityExportManifestV2 = z.infer<typeof CommunityExportManifestV2Schema>;
 
 /**
  * One request to erase a person from one community (`membership`) or from the

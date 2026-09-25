@@ -48,6 +48,7 @@ import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
+import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 
 /**
  * Canonical UUID regex — used to exclude session-ID-shaped subject segments
@@ -577,7 +578,9 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
   });
 
   // PATCH /agents/:id — Update agent fields
-  router.patch('/agents/:id', async (req, res) => {
+  // An agent's runtime, model and effort move every schedule that follows it,
+  // so an agent changing them is sent to the tool that asks a person (DOR-2328).
+  router.patch('/agents/:id', refuseAgentExecutionWrites, async (req, res) => {
     // What an agent may do is never written here (spec `agent-permissions` D10).
     // This route has no caller guard of its own, so any local program can reach
     // it; the permission routes are the one way in, behind a person and with an

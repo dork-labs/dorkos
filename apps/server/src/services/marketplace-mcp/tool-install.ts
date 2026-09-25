@@ -249,6 +249,11 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
         // (DOR-647). Passed even on the `preApproved` path: the tier gate's yes is
         // still a yes about the package as it stood when this preview was built.
         approvedDisclosure: disclosedEffectsOf(preview.preview),
+        // And the files and type the card showed: a staged copy that hashes
+        // differently, or that became another type of package, is refused
+        // before anything lands (DOR-2325).
+        approvedContentHash: contentHash,
+        approvedPackageType: preview.manifest.type,
       });
     } catch (err) {
       // The package that resolved for the install is not the one that was

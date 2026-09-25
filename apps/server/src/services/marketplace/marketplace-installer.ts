@@ -314,6 +314,15 @@ export class MarketplaceInstaller implements InstallerLike {
       const staged = prestaged ?? (await this.resolveAndValidate(req));
       resolved = staged.resolved;
       packageType = staged.manifest.type;
+      // The type decides where a package lands and whether an agent's install
+      // was carded, so a source that served one type to the preview and
+      // another to this fetch is refused before anything is written (DOR-2325).
+      if (req.approvedPackageType !== undefined && req.approvedPackageType !== packageType) {
+        throw new DisclosureChangedError(
+          `a ${req.approvedPackageType} package`,
+          `a ${packageType} package`
+        );
+      }
 
       // Refusals that depend only on the package's content: a schedule that
       // could never run, an unparseable SKILL.md. Checked before any flow
@@ -355,6 +364,15 @@ export class MarketplaceInstaller implements InstallerLike {
       // approval of a global package binds, the same hash the preview showed
       // (DOR-2306).
       const shippedHash = await recordableContentHash(staged.packagePath);
+      // Held to the files its preview fetched, whatever the type (DOR-2325):
+      // nothing is written when the source served something else since. A
+      // copy that cannot be hashed is refused too.
+      if (
+        req.approvedContentHash !== undefined &&
+        shippedHash.contentHash !== req.approvedContentHash
+      ) {
+        throw new DisclosureChangedError('the files you were shown', 'different files');
+      }
       // A `skillRef` schedule is written into the package's own SKILL.md in the
       // staged tree, before the installed-files record is computed, so the
       // record holds the file as installed: an untouched update then reports

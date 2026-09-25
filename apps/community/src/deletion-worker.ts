@@ -16,8 +16,13 @@ const MISSING_DELETION_INVENTORY_SQL = `
   SELECT e.blob_key FROM export_archives e
   LEFT JOIN managed_blobs m ON m.blob_key=e.blob_key
     AND m.community_id=e.community_id AND m.purpose='export'
-  WHERE e.community_id=$1 AND e.deleted_at IS NULL
+  WHERE e.community_id=$1 AND e.deleted_at IS NULL AND e.blob_key IS NOT NULL
     AND (m.blob_key IS NULL OR m.state<>'committed')
+  UNION ALL
+  SELECT s.blob_key FROM export_segments s
+  LEFT JOIN managed_blobs m ON m.blob_key=s.blob_key
+    AND m.community_id=s.community_id AND m.purpose='export'
+  WHERE s.community_id=$1 AND (m.blob_key IS NULL OR m.state<>'committed')
   UNION ALL
   SELECT c.icon_blob_key FROM communities c
   LEFT JOIN managed_blobs m ON m.blob_key=c.icon_blob_key

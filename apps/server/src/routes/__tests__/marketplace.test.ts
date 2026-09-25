@@ -1829,13 +1829,124 @@ describe('Marketplace Routes', () => {
         expect(consent.settle).not.toHaveBeenCalled();
       });
 
-      it('does not ask about a project install, whose hooks are gated when projected', async () => {
+      it('does not ask about a project install of a plugin, whose hooks are gated when projected', async () => {
+        previewing(shownDisclosure.hooks);
         const res = await request(fixtureServer)
           .post('/api/marketplace/packages/sample-plugin/install')
           .send({ projectPath: '/some/project' });
 
         expect(res.status).toBe(200);
-        expect(installer.preview).not.toHaveBeenCalled();
+        expect(approvals.listPending()).toEqual([]);
+        // Held to what the preview fetched even with no card: a source that
+        // serves an agent package to the install is refused (DOR-2325).
+        expect(installer.install.mock.calls[0][0]).toMatchObject({
+          approvedContentHash: expect.stringMatching(/^sha256:/),
+          approvedPackageType: 'plugin',
+        });
+      });
+
+      it('holds an uncarded global install to the previewed files and type too (DOR-2325)', async () => {
+        previewing([]);
+
+        await request(fixtureServer)
+          .post('/api/marketplace/packages/sample-plugin/install')
+          .send({});
+
+        expect(approvals.listPending()).toEqual([]);
+        expect(installer.install.mock.calls[0][0]).toMatchObject({
+          approvedContentHash: expect.stringMatching(/^sha256:/),
+          approvedPackageType: 'plugin',
+        });
+      });
+    });
+
+    describe("an agent's install of an agent package (DOR-2325)", () => {
+      let staged: string;
+
+      /** Preview a staged agent package whose skill may run Bash without asking. */
+      function previewingAgent() {
+        installer.preview.mockResolvedValue({
+          manifest: { ...buildSamplePluginManifest(), name: 'helper', type: 'agent' },
+          packagePath: staged,
+          preview: {
+            ...buildEmptyPermissionPreview(),
+            skillTools: [
+              { source: '.claude/skills/ship/SKILL.md', skill: 'ship', tools: ['Bash(*)'] },
+            ],
+          },
+        });
+      }
+
+      const install = (body: Record<string, unknown> = {}) =>
+        request(fixtureServer).post('/api/marketplace/packages/./helper/install').send(body);
+
+      beforeEach(() => {
+        agentHeader = 'agent-token';
+        staged = mkdtempSync(join(tmpdir(), 'agent-package-staged-'));
+        mkdirSync(join(staged, '.claude', 'skills', 'ship'), { recursive: true });
+        writeFileSync(join(staged, '.claude', 'skills', 'ship', 'SKILL.md'), '# ship');
+        installer.install.mockResolvedValue({
+          ...buildSampleInstallResult(),
+          packageName: 'helper',
+          type: 'agent',
+        });
+        previewingAgent();
+      });
+
+      afterEach(() => {
+        rmSync(staged, { recursive: true, force: true });
+      });
+
+      it('gets a card naming where it lands and what its skills do, and lands nothing until a person approves (the exploit)', async () => {
+        const first = await install();
+
+        expect(first.status).toBe(202);
+        expect(first.body.status).toBe('requires_confirmation');
+        expect(installer.install).not.toHaveBeenCalled();
+        const [card] = approvals.listPending();
+        expect(card?.capabilityId).toBe('marketplace.install');
+        expect(card?.detail).toContain('Bash(*)');
+        expect(card?.detail).toContain(join(dorkHome, 'agents', 'helper'));
+
+        approvals.grant(card!.approvalId);
+        const granted = await install({ confirmationToken: first.body.confirmationToken });
+
+        expect(granted.status).toBe(200);
+        // Held to the bytes and the disclosure the card showed: the installer
+        // refuses an agent package whose shipped files hash differently.
+        expect(installer.install.mock.calls[0][0]).toMatchObject({
+          approvedContentHash: expect.stringMatching(/^sha256:/),
+          approvedDisclosure: expect.objectContaining({
+            skillTools: [expect.objectContaining({ tools: ['Bash(*)'] })],
+          }),
+        });
+      });
+
+      it('asks for a project-scoped call too: an agent package always lands in its own folder', async () => {
+        const res = await install({ projectPath: '/some/project' });
+        expect(res.status).toBe(202);
+        expect(installer.install).not.toHaveBeenCalled();
+      });
+
+      it('lands nothing when the person turns the card down', async () => {
+        const first = await install();
+        approvals.deny(approvals.listPending()[0]!.approvalId, 'no');
+
+        const res = await install({ confirmationToken: first.body.confirmationToken });
+
+        expect(res.status).toBe(403);
+        expect(installer.install).not.toHaveBeenCalled();
+      });
+
+      it('cannot spend an approval on different bytes', async () => {
+        const first = await install();
+        approvals.grant(approvals.listPending()[0]!.approvalId);
+        writeFileSync(join(staged, '.claude', 'skills', 'ship', 'SKILL.md'), '# ship, changed');
+
+        const replay = await install({ confirmationToken: first.body.confirmationToken });
+
+        expect(replay.status).toBe(202);
+        expect(installer.install).not.toHaveBeenCalled();
       });
     });
 

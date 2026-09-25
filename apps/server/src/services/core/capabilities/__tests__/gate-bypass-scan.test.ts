@@ -445,6 +445,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'trustedCaller(',
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
+      'routes/agents.ts':
+        'a person creating an agent from a template or a marketplace package in their own app (DOR-2325). It does not skip a gate: a person is SHOWN what a template brings (409 `template_needs_review`) and creates it with the hash they saw, and a package is held to the preview they saw. Everyone else gets an approval card for a template and is refused a package',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/shapes.ts':
         'a person clicking a Shape in their own cockpit — applying one writes files, rewrites config and creates and deletes scheduled work, so an agent is asked first (DOR-625)',
@@ -531,6 +533,72 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the agent swap in `rebridge`, operator-gated at the top of that method — the old agent leaves so exactly one agent is ever bound to a chat (D-6 Q3)',
     },
   },
+  {
+    // Watched from DOR-2328. A schedule that leaves its runtime, model or effort
+    // unset follows its agent, so a write of those three moves work a person
+    // approved. Every door below refuses them from an agent or asks a person.
+    what: "writes an agent's manifest, including the runtime, model and effort its schedules follow",
+    call: 'updateAgentManifest(',
+    allowed: {
+      'routes/agents.ts':
+        '`PATCH /api/agents/current`, mounted behind `refuseAgentExecutionWrites`, which refuses the three from a caller that has not cleared the agent bar',
+      'services/core/operator/operator-tool-handlers.ts':
+        '`update_agent` refuses the three outright; `update_agent_boundaries` writes only the NOPE fields; `update_agent_execution` is tier `destructive`, so a person approved the call before it gets here',
+      'services/core/operator/agent-updater.ts': 'the definition itself',
+    },
+  },
+  // `meshCore.update(` and its spellings. A mesh handle is named `mesh` or
+  // `meshCore` across the server, and a non-null or optional receiver is still
+  // the same write, so each spelling is its own entry: the scan matches text.
+  {
+    what: "writes any agent's manifest by id, runtime, model and effort included",
+    call: 'meshCore.update(',
+    allowed: {
+      'routes/mesh.ts':
+        '`PATCH /api/mesh/agents/:id`, mounted behind `refuseAgentExecutionWrites` (DOR-2328), and refusing permission fields by name (spec `agent-permissions` D10)',
+    },
+  },
+  {
+    what: "writes any agent's manifest by id, through a handle named `mesh`",
+    call: 'mesh.update(',
+    allowed: {
+      'services/core/permissions/index.ts':
+        'writes `permissions` and nothing else, behind the permission routes a person drives and with an audit event (spec `agent-permissions` D10)',
+      'index.ts':
+        "the boot-time permission upgrade sweep (spec `agent-permissions` D13): `writeFolded` is typed to `permissions` and `enabledToolGroups` only, folded from the agent's own legacy fields, never runtime, model or effort",
+    },
+  },
+  {
+    what: "writes any agent's manifest by id, through a non-null `meshCore`",
+    call: 'meshCore!.update(',
+    allowed: {},
+  },
+  {
+    what: "writes any agent's manifest by id, through an optional `meshCore`",
+    call: 'meshCore?.update(',
+    allowed: {},
+  },
+  {
+    // The file write beneath every door above. A caller that reaches it
+    // directly skips `updateAgentManifest`'s field policy and the execution
+    // gate together (DOR-2328 review).
+    what: "writes an agent's `.dork/agent.json` directly, beneath every field policy",
+    call: 'writeManifest(',
+    allowed: {
+      'routes/agents.ts':
+        '`POST /api/agents`, which only CREATES: it answers 409 when the folder already has a manifest, so no existing agent or schedule is moved',
+      'services/core/agent-creator.ts':
+        'creates a new agent workspace; a fresh id has no schedules following it',
+      'services/core/operator/agent-updater.ts':
+        '`updateAgentManifest`, the one edit path, whose callers are pinned in the entry above',
+      'services/mesh/agent-mcp-server-service.ts':
+        'writes `mcpServers` only, spreading the manifest it just read, so every other field lands unchanged',
+      'services/mesh/ensure-dorkbot.ts':
+        'boot-time DorkBot creation and upgrade: system flags, namespace, capabilities and display name, never runtime, model or effort',
+      'routes/test-control.ts':
+        'the test-control routes, which seed fixture agents: mounted by `app.ts` only under `DORKOS_TEST_RUNTIME`, and by the eval harness boot, never by a production start',
+    },
+  },
 ];
 
 /** Every `.ts` file under `apps/server/src`, excluding tests and declaration files. */
@@ -593,8 +661,10 @@ function callersOf(call: string): string[] {
   // Matched on an identifier boundary, so `isTrustedCaller(` is not read as a
   // call to `trustedCaller(` — a plain substring match reports the guard itself
   // as a bypass. A leading `.` is deliberately allowed, because a receiver
-  // (`deps.uninstallFlow.uninstall(`) is still that call.
-  const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace('(', '\\(')}`);
+  // (`deps.uninstallFlow.uninstall(`) is still that call. Every regex
+  // metacharacter in `call` is escaped, not just the paren: `meshCore?.update(`
+  // would otherwise read as an optional `e` and match things it does not name.
+  const pattern = new RegExp(`(?<![A-Za-z0-9_$])${call.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
   for (const [relative, code] of LEXED) {
     if (pattern.test(code)) hits.push(relative);
   }

@@ -36,6 +36,10 @@ function toSelectedTemplate(pkg: AggregatedPackage): SelectedTemplate {
     icon: pkg.icon,
     tags: pkg.tags,
     category: pkg.category,
+    // A gallery agent is a marketplace package: created through the installer
+    // and held to its preview, never cloned blind (DOR-2325).
+    packageName: pkg.name,
+    ...(pkg.marketplace ? { marketplace: pkg.marketplace } : {}),
   };
 }
 

@@ -12,6 +12,7 @@ import {
 } from '@/layers/shared/ui';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { OpenMeshNotice } from '@/layers/entities/mesh';
+import { useConfig } from '@/layers/entities/config';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
 import { useConfigureForm } from '../model/use-configure-form';
@@ -23,6 +24,11 @@ import { buildKickoffMessage, type KickoffOrigin } from '@dorkos/shared/kickoff-
 import { AgentGallery } from './AgentGallery';
 import { NamingStep } from './NamingStep';
 import { ArrivalConfirm } from './ArrivalConfirm';
+import {
+  TemplateReviewNotice,
+  templateReviewOf,
+  type TemplateBrings,
+} from './TemplateReviewNotice';
 
 /**
  * The global agent-creation dialog. Controlled by `useAgentCreationStore`.
@@ -73,7 +79,26 @@ export function CreateAgentDialog() {
   // already there by the time a person has finished reading the card. The store
   // clears `seed` on both close and generic open, so a non-null seed is always a
   // live offer.
-  const offerSchedules = useOfferSchedules(seed);
+  // A gallery agent from the marketplace is an offer too: it is created
+  // through the marketplace installer, held to what its preview showed
+  // (DOR-2325), so its preview is asked for as a seeded offer's is.
+  const offerPackage =
+    seed?.packageName !== undefined
+      ? seed
+      : template?.packageName !== undefined
+        ? { packageName: template.packageName, marketplace: template.marketplace }
+        : null;
+  const offerSchedules = useOfferSchedules(offerPackage);
+  const { data: config } = useConfig();
+  // Where a marketplace agent lives: its package's own folder, so updates find
+  // it. The person's name for it is its display name.
+  const packageDirectory =
+    offerPackage && offerSchedules.packageAgentName && config?.dorkHome
+      ? `${config.dorkHome}/agents/${offerSchedules.packageAgentName}`
+      : undefined;
+  // A custom template that brings settings or programs is shown before the
+  // agent is created from it (DOR-2325).
+  const [templateReview, setTemplateReview] = useState<TemplateBrings | null>(null);
 
   const form = useConfigureForm({
     step,
@@ -107,6 +132,7 @@ export function CreateAgentDialog() {
 
   function resetAll() {
     form.reset();
+    setTemplateReview(null);
     setTemplate(null);
     setStep('gallery');
   }
@@ -141,19 +167,33 @@ export function CreateAgentDialog() {
     openImport();
   }
 
-  function handleCreate() {
+  function handleCreate(approvedTemplateHash?: string) {
     if (!form.canSubmit || createAgent.isPending) return;
-    // The download source: a gallery template, or a seeded offer that carries one
-    // (a marketplace agent package). A shape offer has no source (inline template).
-    const templateSource = template?.source ?? seed?.template.source;
+    // A marketplace agent (a gallery pick or a seeded offer) is created through
+    // the marketplace installer, held to what its preview showed (DOR-2325).
+    // Anything else with a source is a template: cloned, and shown first when
+    // it brings settings or programs. A shape offer has no source.
+    const packageOffer =
+      offerPackage?.packageName !== undefined && offerSchedules.approval
+        ? {
+            package: {
+              name: offerPackage.packageName,
+              ...(offerPackage.marketplace ? { marketplace: offerPackage.marketplace } : {}),
+              ...offerSchedules.approval,
+            },
+          }
+        : undefined;
+    const templateSource = packageOffer ? undefined : (template?.source ?? seed?.template.source);
     createAgent.mutate(
       {
         name: form.slug,
         displayName: form.displayName.trim() || undefined,
         runtime: form.runtime,
-        ...(form.directoryOverride ? { directory: form.directoryOverride } : {}),
+        ...(!packageOffer && form.directoryOverride ? { directory: form.directoryOverride } : {}),
         ...(form.icon ? { icon: form.icon } : {}),
+        ...(packageOffer ?? {}),
         ...(templateSource ? { template: templateSource } : {}),
+        ...(approvedTemplateHash ? { approvedTemplateHash } : {}),
         // A seeded offer carries its own voice + abilities through to create. For
         // a marketplace agent the persona is the package's own description — an
         // honest starting soul, not the blank default.
@@ -211,8 +251,12 @@ export function CreateAgentDialog() {
             search: { dir: data._path, session: newSessionId, runtime: data.runtime },
           });
         },
-        // No local onError: `useCreateAgent`'s `meta.errorLabel` routes the
-        // failure through the shared mutation toast instead.
+        // A template that needs reviewing is shown here (`isShownInline` keeps
+        // it out of the toast); every other failure is the shared toast's.
+        onError: (error) => {
+          const review = templateReviewOf(error);
+          if (review) setTemplateReview(review);
+        },
       }
     );
   }
@@ -273,10 +317,10 @@ export function CreateAgentDialog() {
                     isCheckingOffer={offerSchedules.isChecking}
                     offerCheckFailed={offerSchedules.failed}
                     offerRefusal={offerSchedules.refusal}
-                    resolvedDirectory={form.resolvedDirectory}
+                    resolvedDirectory={packageDirectory ?? form.resolvedDirectory}
                     canSubmit={form.canSubmit}
                     isCreating={createAgent.isPending}
-                    onCreate={handleCreate}
+                    onCreate={() => handleCreate()}
                     onCustomize={() => setStep('naming')}
                     onNotNow={() => handleOpenChange(false)}
                   />
@@ -289,12 +333,23 @@ export function CreateAgentDialog() {
                     previewCapabilities={previewCapabilities}
                     onBack={handleBackFromNaming}
                     onImportInstead={handleImport}
-                    onCreate={handleCreate}
+                    onCreate={() => handleCreate()}
                     isCreating={createAgent.isPending}
                     packageSchedules={offerSchedules.schedules}
                     offerCheckFailed={offerSchedules.failed}
                     offerRefusal={offerSchedules.refusal}
                     isCheckingOffer={offerSchedules.isChecking}
+                    packageDirectory={packageDirectory}
+                    templateReview={
+                      templateReview ? (
+                        <TemplateReviewNotice
+                          template={templateReview}
+                          isCreating={createAgent.isPending}
+                          onCreateAnyway={() => handleCreate(templateReview.contentHash)}
+                          onCancel={() => setTemplateReview(null)}
+                        />
+                      ) : undefined
+                    }
                   />
                 )}
               </motion.div>

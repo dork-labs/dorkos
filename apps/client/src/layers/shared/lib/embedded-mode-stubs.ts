@@ -156,7 +156,7 @@ import type {
 import type {
   AgentManifest,
   AgentManifestUpdate,
-  CreateAgentOptions,
+  CreateAgentRequestBody,
   DiscoveryCandidate,
   DenialRecord,
   AgentHealth,
@@ -902,7 +902,7 @@ export const serverOnlyStubs = {
     };
   },
 
-  async createAgent(_opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }> {
+  async createAgent(_opts: CreateAgentRequestBody): Promise<AgentManifest & { _path: string }> {
     throw new Error('Agent creation is not supported in Obsidian plugin mode.');
   },
 

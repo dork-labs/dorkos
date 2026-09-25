@@ -9,6 +9,7 @@
  * @module services/core/agent-creator
  */
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { z } from 'zod';
 import { ulid } from 'ulidx';
@@ -43,6 +44,8 @@ import { logConfigWrite } from './operator/config-write.js';
 import { notifyAgentCreated } from './agent-created-hook.js';
 import { ScaffoldLedger } from '../../lib/scaffold-ledger.js';
 import { logger } from '../../lib/logger.js';
+import { stagePackageContents } from '../marketplace/lib/stage-package.js';
+import { inspectTemplate, type TemplateGate } from './agent-templates/template-gate.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 
 /** Minimal MeshCore interface for sync-on-write. */
@@ -69,6 +72,14 @@ export interface AgentWorkspaceInternalOptions {
    * where absent. Requires `skipTemplateDownload`.
    */
   marketplace?: true;
+  /**
+   * Who has to see a template before it lands (DOR-2325, `agent-templates/template-gate.ts`).
+   * Required whenever `template` is set: a template is cloned into a staging
+   * folder, inspected there, and moved into the agent's folder only when this
+   * gate lets it through. There is no default, so a caller that forgets it is
+   * refused rather than let through.
+   */
+  templateGate?: TemplateGate;
 }
 
 /** Error thrown when agent creation fails due to a known condition. */
@@ -125,6 +136,46 @@ function defaultAgentsTemplate(displayName: string): string {
     'a generated pointer.',
     '',
   ].join('\n');
+}
+
+/** The errors a {@link TemplateGate} stops with, passed through as they are. */
+const TEMPLATE_GATE_ERRORS: ReadonlySet<string> = new Set([
+  'TemplateNeedsReviewError',
+  'TemplateApprovalPendingError',
+  'TemplateDeclinedError',
+]);
+
+/**
+ * Clone a template ONCE into a staging folder outside the agent's folder,
+ * read what it brings there, let the gate decide, and only then copy it into
+ * the agent's folder (DOR-2325). The clone's own `.git` never lands: it is the
+ * template's history, not its content, and a git directory in an agent's folder
+ * is a place for git configuration to run from. Links are stripped on the way
+ * in, as an install strips them.
+ *
+ * @param source - The template to clone.
+ * @param resolvedPath - The agent's (empty, just created) folder.
+ * @param gate - Who has to see it first.
+ * @returns The creation metadata.
+ * @throws Whatever the download or the gate throws; nothing has landed then.
+ */
+async function landTemplate(
+  source: string,
+  resolvedPath: string,
+  gate: TemplateGate
+): Promise<AgentCreationMeta> {
+  const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-template-'));
+  try {
+    const cloned = path.join(staging, 'template');
+    const { downloadTemplate } = await import('./agent-templates/template-downloader.js');
+    await downloadTemplate(source, cloned);
+    await fs.rm(path.join(cloned, '.git'), { recursive: true, force: true });
+    await gate(await inspectTemplate(source, cloned));
+    await stagePackageContents(cloned, resolvedPath, logger);
+    return { hasPostInstall: await checkForPostInstallHook(resolvedPath), templateMethod: 'git' };
+  } finally {
+    await fs.rm(staging, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -190,7 +241,7 @@ function endSentence(text: string): string {
  * than because the download went wrong (DOR-1825).
  *
  * Read off the error's `code` rather than an `instanceof TemplateDownloadError`
- * check, and that is the point rather than a shortcut: `template-downloader.js`
+ * check, and that is the point rather than a shortcut: `agent-templates/template-downloader.js`
  * is imported dynamically here, and the suites that stub that module supply
  * only the `downloadTemplate` function — an `instanceof` against a class the
  * stub never exports would throw where it should answer `false`. Only
@@ -381,15 +432,26 @@ export async function createAgentWorkspace(
   let meta: AgentCreationMeta | undefined;
 
   if (opts.template && !opts.skipTemplateDownload) {
+    const gate = internal.templateGate;
+    if (!gate) {
+      const cleanup = await undoScaffold(resolvedPath, createdWorkspaceDir, ledger);
+      throw new AgentCreationError(
+        `A template can only be used through a caller that shows what it brings. ${cleanup}`,
+        'TEMPLATE',
+        500
+      );
+    }
     try {
-      const { downloadTemplate } = await import('./template-downloader.js');
-      await downloadTemplate(opts.template, resolvedPath);
-      const hasPostInstall = await checkForPostInstallHook(resolvedPath);
-      meta = { hasPostInstall, templateMethod: 'git' };
+      meta = await landTemplate(opts.template, resolvedPath, gate);
     } catch (templateErr) {
       // Templates are refused for existing directories above, so this always
       // rolls back a directory this run created.
       const cleanup = await undoScaffold(resolvedPath, createdWorkspaceDir, ledger);
+      // The gate's own answers (a person must look, a card is waiting, it was
+      // turned down) reach the caller as they are: nothing landed.
+      if (templateErr instanceof Error && TEMPLATE_GATE_ERRORS.has(templateErr.name)) {
+        throw templateErr;
+      }
       const message = templateErr instanceof Error ? templateErr.message : String(templateErr);
       throw new AgentCreationError(
         `Template download failed: ${endSentence(message)} ${cleanup}`,

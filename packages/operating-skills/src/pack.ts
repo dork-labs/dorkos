@@ -290,8 +290,13 @@ export interface OperatingSkill {
  *   package's next update, and that Make my own copy isn't offered for one yet;
  *   `using-the-marketplace` gains `verify` and Check files. An agent
  *   seeded at 28 would tell a person to wait for an update that may never ship.
+ * - 30: an agent's runtime, model and effort moved off \`update_agent\` to
+ *   \`update_agent_execution\` at tier \`destructive\` (DOR-2328), because every
+ *   schedule that follows the agent moves with them. \`managing-agents\` teaches
+ *   it. An agent seeded at 29 has no page naming the capability, so a refused
+ *   \`update_agent\` or \`NEEDS_APPROVAL\` from the HTTP API would read as broken.
  */
-export const OPERATING_SKILLS_VERSION = 29;
+export const OPERATING_SKILLS_VERSION = 30;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

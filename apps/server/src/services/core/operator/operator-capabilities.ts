@@ -22,7 +22,8 @@
 import { z } from 'zod';
 import { ListActivityQuerySchema } from '@dorkos/shared/activity-schemas';
 import { RecentSessionsQuerySchema } from '@dorkos/shared/schemas';
-import { TraitsSchema } from '@dorkos/shared/mesh-schemas';
+import { AgentRuntimeSchema, TraitsSchema } from '@dorkos/shared/mesh-schemas';
+import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { NOPE_MAX_CHARS, SOUL_MAX_CHARS } from '@dorkos/shared/convention-files';
 import { CAPABILITY_TIERS } from '@dorkos/shared/capabilities';
 
@@ -37,6 +38,8 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 import {
   createUpdateAgentHandler,
   createUpdateAgentBoundariesHandler,
+  createUpdateAgentExecutionHandler,
+  describeAgentExecutionApproval,
   createActivityListHandler,
   createConfigGetHandler,
   createConfigPatchHandler,
@@ -47,6 +50,7 @@ import {
   createFeedbackDraftHandler,
   type UpdateAgentArgs,
   type UpdateAgentBoundariesArgs,
+  type UpdateAgentExecutionArgs,
   type SidebarAddToGroupArgs,
   type SidebarRemoveFromGroupArgs,
   type FeedbackDraftArgs,
@@ -398,6 +402,8 @@ export const operatorDomain: CapabilityDomain = {
         // harness chooses the prefix, so a bare name is uncallable on
         // claude-code and unreliable everywhere else (DOR-1292). The form is
         // enforced by `messaging/__tests__/context-tool-names.test.ts`.
+        "An agent's runtime, model and effort are NOT changed here: they are changed with the tool " +
+        'whose name ends in `update_agent_execution`, which asks a person first. ' +
         "NOPE.md (the agent's safety boundaries) is NOT edited here, and neither is the switch that " +
         'decides whether the agent is given it. Both live on the boundaries tool, whose name ends in ' +
         '`update_agent_boundaries`; it asks a person first. ' +
@@ -504,6 +510,30 @@ export const operatorDomain: CapabilityDomain = {
             'Refused here. Change NOPE.md with the boundaries tool, whose name ends in ' +
               '`update_agent_boundaries`; it asks a person first.'
           ),
+        // Declared only so they can be REFUSED with a pointer, for the reason
+        // `nopeContent` is (DOR-2328): undeclared, `z.object` would strip them
+        // and an agent would report a model change that never happened.
+        runtime: z
+          .unknown()
+          .optional()
+          .describe(
+            'Refused here. Change it with the tool whose name ends in `update_agent_execution`; ' +
+              'it asks a person first.'
+          ),
+        model: z
+          .unknown()
+          .optional()
+          .describe(
+            'Refused here. Change it with the tool whose name ends in `update_agent_execution`; ' +
+              'it asks a person first.'
+          ),
+        effort: z
+          .unknown()
+          .optional()
+          .describe(
+            'Refused here. Change it with the tool whose name ends in `update_agent_execution`; ' +
+              'it asks a person first.'
+          ),
       }),
       output: z.unknown(),
       surfaces: {
@@ -583,6 +613,61 @@ export const operatorDomain: CapabilityDomain = {
         unwrapMcpEnvelope(
           await createUpdateAgentBoundariesHandler(requireOperatorDeps(deps))(
             input as UpdateAgentBoundariesArgs
+          )
+        ),
+    }),
+    // An agent's runtime, model and effort get their own capability for the
+    // reason NOPE.md did (DOR-2328): a tier is per-capability, and these three
+    // decide what every schedule that follows the agent runs on and what it
+    // costs, so a person sees the change, old → new, before it happens.
+    defineCapability({
+      id: 'operator.update_agent_execution',
+      title: 'Change what an agent runs on',
+      description:
+        "Change an agent's runtime, model or effort (how hard it thinks). Every schedule that " +
+        'follows the agent runs differently afterwards, so a person approves every call, your own ' +
+        "agent's included, and the card shows each change as it is now and as it would be. Send " +
+        'only what should change; null returns model or effort to the default. Target the agent ' +
+        'by agent_id or cwd. Say plainly what you want to change and why before you ask.',
+      tier: 'destructive',
+      area: null,
+      areaNote: AREA_PENDING_PHASE_3,
+      input: z.object({
+        ...agentSelectorSchema,
+        runtime: AgentRuntimeSchema.optional().describe('Which program runs the agent'),
+        model: z
+          .string()
+          .min(1)
+          .nullable()
+          .optional()
+          .describe("The model, in the runtime's own ids; null returns it to the default"),
+        effort: z
+          .enum(EFFORT_LEVELS)
+          .nullable()
+          .optional()
+          .describe('How hard it thinks; null returns it to the default'),
+      }),
+      output: z.unknown(),
+      // The sentence names the agent; the change itself, old → new, is the
+      // card's detail, read from the agent as it stands and bound into the
+      // approval (`describeApprovalChange`).
+      approvalDisplayFields: ['agent_id', 'cwd'],
+      describeApprovalChange: (deps, input) =>
+        describeAgentExecutionApproval(
+          requireOperatorDeps(deps),
+          input as UpdateAgentExecutionArgs
+        ),
+      surfaces: {
+        mcp: {
+          toolName: 'update_agent_execution',
+          servers: ['in-session', 'external'],
+          annotations: { idempotentHint: true },
+        },
+      },
+      invoke: async (deps, input) =>
+        unwrapMcpEnvelope(
+          await createUpdateAgentExecutionHandler(requireOperatorDeps(deps))(
+            input as UpdateAgentExecutionArgs
           )
         ),
     }),
