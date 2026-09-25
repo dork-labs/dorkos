@@ -484,6 +484,44 @@ describe('an offline update of an install made before records existed (DOR-2322)
     expect(warnings.join(' ')).toMatch(/An earlier update of pkg kept 2 files/);
   });
 
+  // Purpose (delta review): three updates in a row, the second of which ships
+  // a FILE where a kept folder stood, so the folder is renamed aside whole.
+  // Each kept file must follow its folder to the new name, keep the path it
+  // had in the version the list was made against, and survive the third
+  // update unchanged. Fails if a carry-dir-as move drops entries or rewrites
+  // their origin.
+  it('keeps the list through three updates when a kept folder is renamed aside', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await legacyAt(target, { 'a.md': 'a v1' });
+    await put(target, 'notes/one.md', 'mine 1');
+    await put(target, 'notes/two.md', 'mine 2');
+
+    // 1: offline, over the legacy install.
+    await install(target, { 'a.md': 'a v2' }, { rebuildLegacy: offline });
+    expect((await readInstalledFiles(target))?.unproven?.files).toEqual({
+      'a.md.dork-old': 'a.md',
+      'notes/one.md': 'notes/one.md',
+      'notes/two.md': 'notes/two.md',
+    });
+
+    // 2: the new version ships a file named `notes`, so the kept folder moves aside.
+    await install(target, { 'a.md': 'a v3', notes: 'a file now' });
+    const second = (await readInstalledFiles(target))?.unproven;
+    expect(second?.files).toEqual({
+      'a.md.dork-old': 'a.md',
+      'notes.dork-old/one.md': 'notes/one.md',
+      'notes.dork-old/two.md': 'notes/two.md',
+    });
+    expect(await read(target, 'notes.dork-old/one.md')).toBe('mine 1');
+    expect(await read(target, 'notes')).toBe('a file now');
+
+    // 3: an ordinary update leaves the list as it was.
+    const { warnings } = await install(target, { 'a.md': 'a v4', notes: 'a file now' });
+    expect((await readInstalledFiles(target))?.unproven).toEqual(second);
+    expect(await read(target, 'notes.dork-old/two.md')).toBe('mine 2');
+    expect(warnings.join(' ')).toMatch(/An earlier update of pkg kept 3 files/);
+  });
+
   // Purpose (review 3): a kept file where a package keeps what it runs still
   // runs, so the warning says which. Fails if a running kept file goes unsaid.
   it('says which kept files still run', async () => {
