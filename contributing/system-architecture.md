@@ -6,6 +6,8 @@ This is the cross-system map of DorkOS: what runs where, how the pieces communic
 
 **Code snapshot:** `ea6e06765385258d2cf07a5f078de1fec0041df5`, reviewed 2026-09-23. “Implemented” means present in this public source snapshot. Planned paths are labeled separately; a published contract does not prove service deployment. Cloud coverage uses only public contracts and public app code.
 
+For proposed improvements and independently selectable workstreams, see the [architecture improvement roadmap](../plans/architecture-improvement-roadmap.md). Linear tracks their live execution state.
+
 ## Key Files
 
 Paths are relative to this repository. These are evidence pointers for the diagrams, not a complete module inventory.
