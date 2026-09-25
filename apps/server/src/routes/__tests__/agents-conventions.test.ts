@@ -61,6 +61,9 @@ vi.mock('ulidx', async (importOriginal) => ({
   // The real factory: the agents route now reaches modules that mint ids with it.
   monotonicFactory: (await importOriginal<typeof import('ulidx')>()).monotonicFactory,
   ulid: vi.fn(() => 'MOCK_ULID_001'),
+  // The PATCH route's caller check (lib/caller-authority) reaches the capability
+  // registry, whose relay imports build a monotonic ULID factory at load.
+  monotonicFactory: vi.fn(() => vi.fn(() => 'MOCK_ULID_001')),
 }));
 
 vi.mock('@dorkos/shared/dorkbot-templates', () => ({

@@ -124,6 +124,13 @@ question beside them is `account`, which is refused, and the capability question
 `tierCeiling`, which is direction-checked. `runtime` is also the one operator-only
 candidate the person's own Runs-on popover writes through this seam.
 
+_Amended 2026-09-25 (DOR-2328):_ "remove no approval" stopped being true once a schedule's
+approval recorded "follow the agent" rather than a resolved value (ADR `260924-213416`).
+The three stay `agent-writable` in this table, for the person's editors, and are gated for
+an agent caller one layer up, like NOPE.md: `operator.update_agent` refuses them and points
+at the `destructive` `operator.update_agent_execution`, and both agent-editing routes refuse
+them from a caller that has not cleared the agent bar.
+
 **Two error shapes changed.** `AgentUpdateErrorCode` lost `IMMUTABLE_NAME`: a slug rename
 is now refused as `OPERATOR_ONLY` with a 403 rather than a 400, because the slug is not
 immutable everywhere — a person renames an agent on the operator route. The refusal

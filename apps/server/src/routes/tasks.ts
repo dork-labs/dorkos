@@ -42,8 +42,7 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
-import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { clearsTheAgentBar, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
@@ -65,62 +64,6 @@ import {
   OPERATOR_ONLY_TRIGGER_REFUSAL,
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
-
-/**
- * Whether this caller is trusted to arm a scheduled task itself — that is, to
- * skip the approval gate, un-clamp its power, and write the operator-only fields.
- * It composes the SAME two bars the approval, config, and extension-approval
- * routes do, and for the same reason: trust here must be POSITIVE, never the mere
- * ABSENCE of an agent marker.
- *
- * ## Two bars, checked together (DOR-1569)
- *
- * - **The cookie bar, under login-on only** ({@link requireOperatorCookieUnderLogin}).
- *   When login is on, `sessionGate` accepts a per-user API key as the same
- *   identity a browser cookie proves (DOR-474). An agent with shell access can
- *   read the operator's key off `~/.dork` and present it while dropping its
- *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
- *   session cookie is. This bar refuses every credential but a cookie while login
- *   is on, and — being the `...UnderLogin` half, not the full
- *   `requireOperatorCookie` — it ALLOWS with login off, so the shipped default
- *   posture is unchanged and the residual there stays the documented DOR-505 one.
- * - **The agent bar, in every posture** ({@link resolveDecisionAuthority}). A
- *   caller that names itself an agent, or holds an approval token, is refused.
- *
- * ## Why this replaced trust-by-absence, and what it costs
- *
- * It used to read `resolveDecisionAuthority(...).allowed` alone. Under login-on
- * that clears any valid credential, so an agent that read the operator's API key
- * off disk and dropped its header was trusted to un-clamp `bypassPermissions` and
- * arm a live cron with no approval — the DOR-1569 exploit, observed on a live
- * server. The one signal a header-stripping caller on loopback cannot fake is a
- * session cookie, so under login-on the cookie is now required, exactly as it is
- * to DECIDE an approval (whoever may decide may act without one).
- *
- * The cost is borne by the operator's own login-on CLI: `dorkos task create`
- * presents an API key and no cookie, so under login-on it now PROPOSES a task
- * (parked at `pending_approval`, clamped) for the operator to approve in the
- * cockpit, rather than arming it directly, and `dorkos task update` can no longer
- * set an operator-only field. That is the deliberate, conservative trade of a
- * security fix — an occasional extra approval, never a live full-power cron
- * nobody looked at. This is the DOR-553 question ("should an agent holding the
- * operator's key schedule unattended work?"), answered for tasks: no.
- *
- * @param req - The incoming request.
- * @param res - The response, for `sessionGate`'s resolved user.
- * @returns True only when a person is positively established — a session cookie
- *   under login-on, or the operator on the login-off local machine — with neither
- *   an agent identity nor an approval token presented.
- */
-function clearsTheAgentBar(req: Request, res: Response): boolean {
-  // The cookie bar first, mirroring `routes/config.ts`. Under login-off this is a
-  // no-op (undefined); under login-on it refuses everything but a session cookie,
-  // so a stolen API key never reaches the agent bar as "trusted".
-  if (requireOperatorCookieUnderLogin(res, 'how a scheduled task runs') !== undefined) {
-    return false;
-  }
-  return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
-}
 
 /**
  * Refuse a task write that reaches for a field only a person may set (DOR-504),

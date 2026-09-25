@@ -85,8 +85,8 @@ Target the agent with \`agent_id\` OR \`cwd\` (the tool and the capability input
 The slug (\`name\`) is immutable. You cannot rename an agent by editing it.
 
 NOPE.md is NOT on this list, and neither is \`conventions.nope\`. \`update_agent\`
-refuses a patch that names either one and changes nothing at all. See the next
-section.
+refuses a patch that names either one and changes nothing at all. The same goes
+for \`runtime\`, \`model\` and \`effort\`. See the next two sections.
 
 ## Change safety boundaries (tier: destructive)
 
@@ -107,6 +107,15 @@ Two fields, either or both:
 
 Say plainly what you want to change and why before you ask; a person is about to
 read the whole new text on a card and decide.
+
+## Change what an agent runs on (tier: destructive)
+
+\`runtime\`, \`model\` and \`effort\` are defaults every schedule without its own
+follows, so use \`update_agent_execution\`
+(\`dorkos call operator.update_agent_execution --input '<json>'\`); it waits for a
+person, for your own agent too. Send only what changes (\`null\` resets
+\`model\`/\`effort\`); the card shows old → new. The HTTP API refuses these three
+from an agent with \`NEEDS_APPROVAL\`.
 
 ## Self-edit etiquette
 

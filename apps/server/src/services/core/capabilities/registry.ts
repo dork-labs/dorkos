@@ -601,11 +601,17 @@ export function composeRegistry(
         // an action that can raise a card and declares its subject gets a card
         // that says WHICH thing it is about.
         const subject = await resolveApprovalSubject(capability.approvalSubject, parsed);
+        // What would change, read from what is there now, for the card and for
+        // the approval's binding (DOR-2328, `describeApprovalChange`).
+        const change = capability.describeApprovalChange
+          ? await capability.describeApprovalChange(deps, parsed)
+          : undefined;
         const decision = enforceCapabilityTier({
           action: capability,
           input: parsed,
           permission,
           ...(subject ? { subject } : {}),
+          ...(change !== undefined ? { change } : {}),
           ...(supplied.identity ? { identity: supplied.identity } : {}),
           ...(supplied.approvalToken ? { approvalToken: supplied.approvalToken } : {}),
           retryChannel: supplied.retryChannel ?? 'http-header',

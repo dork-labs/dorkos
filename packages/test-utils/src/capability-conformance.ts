@@ -163,6 +163,11 @@ export interface ConformanceCapability {
   /** The one input field the card carries in full, when the entry declares one. */
   approvalDetailField?: string;
   /**
+   * The server-side "what changes" for the card, when the entry declares one
+   * (DOR-2328). Only its presence is read here.
+   */
+  describeApprovalChange?: unknown;
+  /**
    * The entry's input schema.
    *
    * Typed as `unknown` so this suite stays free of a Zod import and the real
@@ -532,6 +537,30 @@ export function checkCapabilityConformance(
         'approval-card-fields',
         `capability "${cap.id}" declares approvalDetailField "${field}", which is not a field of ` +
           `its own input — the card would render nothing where the whole decision belongs`
+      );
+    }
+  }
+
+  // ── Scope add (1c'): a described change is one detail, on a card that exists ─
+  //
+  // `describeApprovalChange` (DOR-2328) is the card's detail computed from the
+  // state a call would change. Like `approvalDetailField` it only means
+  // something on a tier that stops for a card, and a capability declaring both
+  // would have two claims on the one detail slot.
+  for (const cap of caps) {
+    if (cap.describeApprovalChange === undefined) continue;
+    if (cap.tier !== 'destructive') {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" declares describeApprovalChange but is tier "${cap.tier}" — only ` +
+          `a destructive capability stops for a card to put it on`
+      );
+    }
+    if (cap.approvalDetailField !== undefined) {
+      add(
+        'approval-card-fields',
+        `capability "${cap.id}" declares BOTH describeApprovalChange and approvalDetailField — a ` +
+          `card carries one detail`
       );
     }
   }
