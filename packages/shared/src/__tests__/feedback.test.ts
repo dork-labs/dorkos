@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import type { z } from 'zod';
+import { UserConfigSchema } from '../config-schema.js';
+import { ServerConfigSchema } from '../schemas.js';
 import {
   buildIssueDraft,
   buildIssueUrl,
@@ -554,19 +557,49 @@ describe('redactSecrets over prose a person would actually write', () => {
 });
 
 describe('FEEDBACK_FLAG_ALLOWLIST is the union across surfaces, not one schema', () => {
-  // Two of its keys resolve in the ServerConfig DTO the web app reads and in NO
-  // stored config, so the CLI and the capability read them and always get
-  // `undefined`. That looked like dead weight on review and is not: deleting
-  // them silently drops two real flags from every report made from the web app
-  // (`build-issue-report.ts` supplies both from `config.tasks` / `config.mesh`,
-  // which report what is RUNNING). Pinned here so the next cleanup has to read
-  // this sentence first.
+  // Every allowlisted key must name a real leaf in one of the two schemas a
+  // surface reads flags from: `UserConfigSchema` (the stored config the CLI and
+  // the `feedback_draft` capability read) or `ServerConfigSchema` (the DTO the
+  // web app reads). A key that resolves in neither is dead: no surface can ever
+  // supply it, so a rename in the schema would silently drop a flag from every
+  // report. Both lists below are DERIVED from the schemas, never typed by hand.
+  //
+  // Two keys resolve in the DTO and in NO stored config, so the CLI and the
+  // capability read them and always get `undefined`. That looked like dead
+  // weight on review and is not: deleting them silently drops two real flags
+  // from every report made from the web app (`build-issue-report.ts` supplies
+  // both from `config.tasks` / `config.mesh`, which report what is RUNNING).
+  // Pinned here so the next cleanup has to read this sentence first.
   const DTO_ONLY_KEYS = ['tasks.enabled', 'mesh.enabled'];
 
-  it('keeps the two keys only the web surface can supply', () => {
-    for (const key of DTO_ONLY_KEYS) {
-      expect(FEEDBACK_FLAG_ALLOWLIST[key]).toBe('boolean');
-    }
+  const allowlisted = Object.entries(FEEDBACK_FLAG_ALLOWLIST);
+  const storedKeys = allowlisted
+    .filter(([key]) => schemaLeaf(UserConfigSchema, key) !== undefined)
+    .map(([key]) => key);
+  const dtoOnlyKeys = allowlisted
+    .filter(([key]) => schemaLeaf(UserConfigSchema, key) === undefined)
+    .map(([key]) => key);
+
+  it('names only keys that exist in the stored config or the server config DTO', () => {
+    const dead = dtoOnlyKeys.filter((key) => schemaLeaf(ServerConfigSchema, key) === undefined);
+    expect(dead).toEqual([]);
+  });
+
+  it('keeps exactly the two keys only the web surface can supply', () => {
+    expect(dtoOnlyKeys.sort()).toEqual([...DTO_ONLY_KEYS].sort());
+    expect(storedKeys.length + dtoOnlyKeys.length).toBe(allowlisted.length);
+  });
+
+  it.each(allowlisted)('declares %s with the type its schema leaf holds', (key, type) => {
+    const leaf = schemaLeaf(UserConfigSchema, key) ?? schemaLeaf(ServerConfigSchema, key);
+    const accepted: Record<string, readonly string[]> = {
+      boolean: ['boolean'],
+      number: ['number', 'int'],
+      // `runtimes.default` is a free string in the schema, bounded here by
+      // FEEDBACK_ENUM_VALUES instead.
+      enum: ['enum', 'string'],
+    };
+    expect(accepted[type]).toContain(leaf);
   });
 
   it('reports them when a surface does supply them', () => {
@@ -576,3 +609,34 @@ describe('FEEDBACK_FLAG_ALLOWLIST is the union across surfaces, not one schema',
     });
   });
 });
+
+/**
+ * The Zod type name (`boolean`, `enum`, ...) of the leaf a dotted path names in
+ * an object schema, or `undefined` when any hop is missing. Wrappers that do not
+ * change what a value IS (default, optional, nullable, pipe) are looked through.
+ */
+function schemaLeaf(schema: z.ZodType, dotPath: string): string | undefined {
+  let node: z.core.$ZodType | undefined = schema;
+  for (const segment of dotPath.split('.')) {
+    const def: z.core.$ZodTypeDef | undefined = unwrapSchema(node)?._zod.def;
+    if (def?.type !== 'object') return undefined;
+    node = (def as z.core.$ZodObjectDef).shape[segment];
+  }
+  return unwrapSchema(node)?._zod.def.type;
+}
+
+/** Look through the wrappers {@link schemaLeaf} treats as transparent. */
+function unwrapSchema(node: z.core.$ZodType | undefined): z.core.$ZodType | undefined {
+  let current = node;
+  while (current) {
+    const def = current._zod.def as {
+      type: string;
+      innerType?: z.core.$ZodType;
+      in?: z.core.$ZodType;
+    };
+    if (def.innerType) current = def.innerType;
+    else if (def.type === 'pipe' && def.in) current = def.in;
+    else return current;
+  }
+  return undefined;
+}

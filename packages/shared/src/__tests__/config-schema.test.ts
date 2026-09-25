@@ -4,6 +4,7 @@ import { PERMISSION_STOPS } from '../permission-semantics.js';
 import {
   UserConfigSchema,
   USER_CONFIG_DEFAULTS,
+  configuredRuntimes,
   healClaudeAccountRename,
   slugifyAccountId,
   claudeAccountId,
@@ -2048,5 +2049,37 @@ describe('permissions section (spec agent-permissions D4)', () => {
       permissions: { defaults: { areas: { future: 'ask' } } },
     });
     expect(parsed.permissions.defaults.areas).toEqual({ future: 'ask' });
+  });
+});
+
+describe('configuredRuntimes', () => {
+  /** A dotted-path reader over a flat map, standing in for a config store. */
+  const reader =
+    (values: Record<string, unknown>) =>
+    (key: string): unknown =>
+      values[key];
+
+  it('lists every runtime when nothing turns one off', () => {
+    expect(configuredRuntimes(reader({}))).toEqual(['claude-code', 'codex', 'opencode']);
+  });
+
+  it('drops only a runtime that is explicitly off, keeping claude-code first', () => {
+    expect(configuredRuntimes(reader({ 'runtimes.codex.enabled': false }))).toEqual([
+      'claude-code',
+      'opencode',
+    ]);
+    expect(
+      configuredRuntimes(
+        reader({ 'runtimes.codex.enabled': false, 'runtimes.opencode.enabled': false })
+      )
+    ).toEqual(['claude-code']);
+  });
+
+  it('treats an unreadable value as the default rather than as off', () => {
+    expect(configuredRuntimes(reader({ 'runtimes.opencode.enabled': 'no' }))).toEqual([
+      'claude-code',
+      'codex',
+      'opencode',
+    ]);
   });
 });

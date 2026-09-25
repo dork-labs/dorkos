@@ -1670,6 +1670,18 @@ describe('GET /api/config', () => {
 
       expect(res.body.runtimes).toEqual(['claude-code', 'codex', 'opencode']);
     });
+
+    it('drops a runtime the person turned off from the runtimes list', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.setDot('runtimes.codex.enabled', false);
+      try {
+        const res = await request(server).get('/api/config').expect(200);
+
+        expect(res.body.runtimes).toEqual(['claude-code', 'opencode']);
+      } finally {
+        configManager.setDot('runtimes.codex.enabled', true);
+      }
+    });
   });
 
   it('reports a directory the person configured as their own, tilde expanded', async () => {
