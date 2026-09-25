@@ -190,7 +190,34 @@ interface TemplateBrings {
   source: string;
   contentHash: string;
   findings: { path: string; message: string }[];
+  /** Each file under `findings`: its text (hidden characters already made visible), or why not. */
+  settings?: {
+    path: string;
+    bytes: number;
+    content?: string;
+    omitted?: 'too-long' | 'not-text' | 'link';
+  }[];
   disclosed: DisclosedEffects;
+}
+
+/**
+ * One settings file, written out under its name. Every line carries a `│ `
+ * gutter, so nothing in the file can pass itself off as this prompt's own text.
+ */
+function describeSettingsFile(file: NonNullable<TemplateBrings['settings']>[number]): string[] {
+  if (file.content === undefined) {
+    const why =
+      file.omitted === 'link'
+        ? 'is a link, which is not copied'
+        : file.omitted === 'not-text'
+          ? `is not text (${file.bytes} bytes)`
+          : `is too long to show here (${file.bytes} bytes); read it in the template first`;
+    return [`      ${file.path} ${why}`];
+  }
+  return [
+    `      ${file.path} (${file.bytes} bytes):`,
+    ...file.content.split('\n').map((line) => `      │ ${line}`),
+  ];
 }
 
 /** The lines that say what a template brings into the new agent's folder. */
@@ -198,9 +225,12 @@ function describeTemplate(template: TemplateBrings): string[] {
   return [
     `The template ${template.source} brings:`,
     ...(template.findings.length > 0
-      ? template.findings.map((f) => `    ${f.path}: settings the new agent's sessions load`)
+      ? [
+          ...template.findings.map((f) => `    ${f.path}: settings the new agent's sessions load`),
+          ...(template.settings ?? []).flatMap(describeSettingsFile),
+        ]
       : ["    no settings files for the new agent's sessions"]),
-    ...renderDisclosureLines(template.disclosed, 'global'),
+    ...renderDisclosureLines(template.disclosed, 'agent'),
   ];
 }
 

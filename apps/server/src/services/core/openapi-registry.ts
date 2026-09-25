@@ -4452,6 +4452,19 @@ const TemplateBringsSchema = z.object({
   source: z.string(),
   contentHash: z.string(),
   findings: z.array(z.object({ path: z.string(), message: z.string() })),
+  settings: z
+    .array(
+      z.object({
+        path: z.string(),
+        bytes: z.number().int(),
+        content: z.string().optional(),
+        omitted: z.enum(['too-long', 'not-text', 'link']).optional(),
+      })
+    )
+    .describe(
+      'Each file under `findings`, its text verbatim with hidden and control characters shown ' +
+        'as <U+XXXX>, or why it is not shown.'
+    ),
   disclosed: DisclosedEffectsSchema,
 });
 
@@ -4473,7 +4486,7 @@ registry.registerPath({
     body: {
       content: {
         'application/json': {
-          schema: CreateAgentOptionsSchema.extend({
+          schema: CreateAgentOptionsSchema.omit({ skipTemplateDownload: true }).extend({
             approvedTemplateHash: z.string().optional(),
             confirmationToken: z.string().optional(),
             package: z

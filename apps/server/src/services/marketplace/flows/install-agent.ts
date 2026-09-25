@@ -19,6 +19,7 @@ import {
   AGENT_IDENTITY_FILES,
   UNINSTALLED_AGENT_PATH,
   type AgentPackageManifest,
+  type MarketplacePackageManifest,
 } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { isSingleEmoji } from '@dorkos/shared/agent-face';
@@ -232,11 +233,17 @@ export class AgentInstallFlow {
  * `permission-preview.ts` has always shown this path, so the disclosure and the
  * behavior now agree.
  *
- * @internal
+ * Exported so an approval card names, and binds, the folder the install will
+ * really write (DOR-2325).
+ *
+ * @param dorkHome - The DorkOS data directory.
+ * @param manifest - The package's manifest; its `type` and `name` pick the folder.
+ * @param projectPath - The project a scoped install lands under, if any.
+ * @returns The folder the agent package installs into.
  */
-function computeTargetDir(
+export function computeTargetDir(
   dorkHome: string,
-  manifest: AgentPackageManifest,
+  manifest: Pick<MarketplacePackageManifest, 'type' | 'name'>,
   projectPath: string | undefined
 ): string {
   if (projectPath) {

@@ -223,7 +223,9 @@ export interface InstallRequest {
    * refuses a staged copy that hashes differently before writing anything
    * (DOR-2325): the app creates a marketplace agent through this installer, and
    * a source that moved after the preview is not the agent the person chose.
-   * Server-internal: the agents route sets it from what the app sent back.
+   * Server-internal: the agents route sets it from what the app sent back, and
+   * an agent's install (`POST /packages/:name/install`, `marketplace_install`)
+   * from the hash its approval card bound.
    */
   approvedContentHash?: string;
   /**

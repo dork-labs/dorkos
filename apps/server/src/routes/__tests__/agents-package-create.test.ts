@@ -60,7 +60,7 @@ async function exists(p: string): Promise<boolean> {
 
 /** What the person was shown for the package: its preview's disclosure and hash. */
 async function shown() {
-  const { preview, packagePath } = await harness.installer.preview({ name: source });
+  const { preview, packagePath } = await harness.installer.preview({ name: 'valid-agent' });
   return {
     approvedDisclosure: disclosedEffectsOf(preview)!,
     approvedContentHash: await packageContentHash(packagePath),
@@ -77,6 +77,12 @@ beforeEach(async () => {
   initConfigManager(dorkHome);
   agentHeader = undefined;
   harness = buildInstallerForTests(dorkHome);
+  // `valid-agent` resolves to the local copy, as a marketplace name would to
+  // its listing: the route takes a package name, never a path.
+  const resolve = harness.resolver.resolve.bind(harness.resolver);
+  vi.spyOn(harness.resolver, 'resolve').mockImplementation((input: string) =>
+    resolve(input === 'valid-agent' ? source : input)
+  );
   // The creator writes the manifest the route reads back, with the identity
   // the install passed it.
   harness.spies.createAgentWorkspace.mockImplementation(async (input: unknown) => {
@@ -119,7 +125,7 @@ describe('creating a marketplace agent in the app', () => {
     const res = await create({
       name: 'ignored-slug',
       displayName: 'Reviewer Rae',
-      package: { name: source, ...(await shown()) },
+      package: { name: 'valid-agent', ...(await shown()) },
     });
 
     expect(res.status).toBe(201);
@@ -136,7 +142,7 @@ describe('creating a marketplace agent in the app', () => {
     const seen = await shown();
     await writeFile(path.join(source, 'notes.md'), 'changed after the preview');
 
-    const res = await create({ name: 'x', package: { name: source, ...seen } });
+    const res = await create({ name: 'x', package: { name: 'valid-agent', ...seen } });
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('disclosure_changed');
@@ -150,7 +156,7 @@ describe('creating a marketplace agent in the app', () => {
     const res = await create({
       name: 'x',
       package: {
-        name: source,
+        name: 'valid-agent',
         approvedDisclosure: disclosedEffectsOf({
           hooks: [],
           schedules: [],
@@ -170,7 +176,7 @@ describe('creating a marketplace agent in the app', () => {
 
   it('is a person’s only: an agent installs through marketplace_install', async () => {
     agentHeader = 'agent-token';
-    const res = await create({ name: 'x', package: { name: source, ...(await shown()) } });
+    const res = await create({ name: 'x', package: { name: 'valid-agent', ...(await shown()) } });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('operator_only');
   });
@@ -182,11 +188,20 @@ describe('creating a marketplace agent in the app', () => {
     expect(res.body.code).toBe('COLLISION');
   });
 
+  it.each(['./valid-agent', 'github:someone/agent', '../../escape'])(
+    'refuses %s: a package is named, never a path or an address',
+    async (name) => {
+      const res = await create({ name: 'x', package: { name, ...(await shown()) } });
+      expect(res.status).toBe(400);
+      expect(harness.spies.createAgentWorkspace).not.toHaveBeenCalled();
+    }
+  );
+
   it('refuses a template and a package together', async () => {
     const res = await create({
       name: 'x',
       template: 'github:a/b',
-      package: { name: source, ...(await shown()) },
+      package: { name: 'valid-agent', ...(await shown()) },
     });
     expect(res.status).toBe(400);
   });

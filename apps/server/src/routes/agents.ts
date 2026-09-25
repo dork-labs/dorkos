@@ -64,12 +64,14 @@ import {
 } from '../services/core/agent-templates/template-gate.js';
 import type { ConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
 import { DisclosedEffectsSchema } from '../services/marketplace/disclosed-effects.js';
+import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
 import {
   DisclosureChangedError,
   InvalidPackageError,
   type MarketplaceInstaller,
 } from '../services/marketplace/marketplace-installer.js';
 import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
+import { PackageNameSchema } from '@dorkos/marketplace';
 
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
@@ -100,7 +102,9 @@ export interface AgentCreationDeps {
  */
 const PackageCreationSchema = z
   .object({
-    name: z.string().min(1),
+    // A listed package's name, never a path or an address: it also names the
+    // folder the agent lands in, checked for a collision before the install.
+    name: PackageNameSchema,
     marketplace: z.string().min(1).optional(),
     approvedDisclosure: DisclosedEffectsSchema,
     approvedContentHash: z.string().min(1),
@@ -136,6 +140,7 @@ function templateOf(inspection: TemplateInspection) {
     source: inspection.source,
     contentHash: inspection.contentHash,
     findings: inspection.findings,
+    settings: inspection.settings,
     disclosed: inspection.disclosed,
   };
 }
@@ -398,7 +403,11 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
     }
     // One agent per package: it lives where marketplace agents live, so a
     // second one would replace the first.
-    const target = path.join(marketplace.dorkHome, 'agents', pkg.data.name);
+    const target = computeTargetDir(
+      marketplace.dorkHome,
+      { type: 'agent', name: pkg.data.name },
+      undefined
+    );
     if (await pathExists(target)) {
       return res.status(409).json({
         code: 'COLLISION',
@@ -454,8 +463,12 @@ export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationD
               ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
             });
       }
+      // `skipTemplateDownload` is the marketplace install's own switch: it skips
+      // the existing-folder check and the template gate, which only the
+      // installer's staged copy may do. Never taken from a request.
+      const { skipTemplateDownload: _internalOnly, ...options } = req.body ?? {};
       const result = await createAgentWorkspace(
-        req.body,
+        options,
         meshCore,
         templateGate ? { templateGate } : {}
       );

@@ -656,6 +656,18 @@ describe('createInstallHandler — settling consent after the install (DOR-2306)
     });
   });
 
+  it('holds the install to the files the card showed (DOR-2325)', async () => {
+    // Purpose: the installer refuses an agent package whose staged copy hashes
+    // differently from what a person approved, so it has to be told the hash.
+    confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });
+    const { deps } = stubs();
+
+    await createInstallHandler(deps)({ name: 'flow' });
+
+    const carded = confirmationProvider.requestInstallConfirmation.mock.calls[0]?.[0].contentHash;
+    expect(vi.mocked(deps.installer.install).mock.calls[0]?.[0].approvedContentHash).toBe(carded);
+  });
+
   it('says a project install is not global', async () => {
     const projectPath = await boundedProjectPath();
     confirmationProvider.requestInstallConfirmation.mockResolvedValue({ status: 'approved' });

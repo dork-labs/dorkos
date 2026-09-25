@@ -45,6 +45,7 @@ import { setOnAgentCreated } from '../../agent-created-hook.js';
 import {
   cardTemplateGate,
   inspectTemplate,
+  SETTINGS_FILE_MAX_BYTES,
   personTemplateGate,
   TemplateApprovalPendingError,
   TemplateDeclinedError,
@@ -211,7 +212,10 @@ describe('an agent creating from a template gets a card (the exploit)', () => {
       packageName: 'minion',
       projectPath: path.join(agentsHome, 'minion'),
       contentHash: expect.stringMatching(/^sha256:/),
-      templateDisclosure: { findings: ['.claude/settings.json'] },
+      templateDisclosure: {
+        findings: ['.claude/settings.json'],
+        settings: [expect.objectContaining({ content: HOOKED_SETTINGS })],
+      },
       requestedBy: 'agent-a',
     });
     expect(await exists(path.join(agentsHome, 'minion'))).toBe(false);
@@ -242,6 +246,65 @@ describe('an agent creating from a template gets a card (the exploit)', () => {
       TemplateDeclinedError
     );
     expect(await exists(path.join(agentsHome, 'minion'))).toBe(false);
+  });
+});
+
+describe('inspectTemplate: the settings files, written out', () => {
+  let dir = '';
+  beforeEach(async () => {
+    dir = path.join(tmpRoot, 'staged');
+    await fs.mkdir(path.join(dir, '.claude'), { recursive: true });
+  });
+
+  it('shows each settings file verbatim, so a person reads what the sessions load', async () => {
+    await fs.writeFile(path.join(dir, '.claude', 'settings.json'), HOOKED_SETTINGS);
+    const { settings } = await inspectTemplate('x', dir);
+    expect(settings).toEqual([
+      {
+        path: '.claude/settings.json',
+        bytes: Buffer.byteLength(HOOKED_SETTINGS),
+        content: HOOKED_SETTINGS,
+      },
+    ]);
+  });
+
+  it('makes hidden, direction-changing and control characters visible', async () => {
+    await fs.writeFile(
+      path.join(dir, '.claude', 'settings.json'),
+      '{"a":"safe\u202Etxt.sh"}\r\n\u001b[2Khidden\rover'
+    );
+    const [file] = (await inspectTemplate('x', dir)).settings;
+    expect(file?.content).toBe('{"a":"safe<U+202E>txt.sh"}\n<U+001B>[2Khidden<U+000D>over');
+  });
+
+  it('never follows a link: the file it points at is not read, and not copied', async () => {
+    const secret = path.join(tmpRoot, 'secret.txt');
+    await fs.writeFile(secret, 'TOP SECRET');
+    await fs.mkdir(path.join(dir, '.codex'), { recursive: true });
+    await fs.symlink(secret, path.join(dir, '.codex', 'config.toml'));
+    const { settings } = await inspectTemplate('x', dir);
+    expect(settings).toEqual([{ path: '.codex/config.toml', bytes: 0, omitted: 'link' }]);
+    expect(JSON.stringify(settings)).not.toContain('TOP SECRET');
+  });
+
+  it('lists every file in a settings folder, and names one too long to show', async () => {
+    await fs.mkdir(path.join(dir, '.codex'), { recursive: true });
+    await fs.writeFile(path.join(dir, '.codex', 'config.toml'), 'model = "x"');
+    await fs.writeFile(
+      path.join(dir, '.codex', 'hooks.json'),
+      'x'.repeat(SETTINGS_FILE_MAX_BYTES + 1)
+    );
+    const { settings } = await inspectTemplate('x', dir);
+    expect(settings).toEqual([
+      { path: '.codex/config.toml', bytes: 11, content: 'model = "x"' },
+      { path: '.codex/hooks.json', bytes: SETTINGS_FILE_MAX_BYTES + 1, omitted: 'too-long' },
+    ]);
+  });
+
+  it('says a file is not text rather than showing bytes as characters', async () => {
+    await fs.writeFile(path.join(dir, '.mcp.json'), Buffer.from([0xff, 0xfe, 0x00]));
+    const { settings } = await inspectTemplate('x', dir);
+    expect(settings).toEqual([{ path: '.mcp.json', bytes: 3, omitted: 'not-text' }]);
   });
 });
 

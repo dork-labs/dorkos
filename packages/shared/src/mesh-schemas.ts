@@ -1070,8 +1070,10 @@ export type CreateAgentOptions = z.infer<typeof CreateAgentOptionsSchema>;
  *   `template_needs_review` answer, to create from that template knowingly.
  * - `confirmationToken`: an agent's retry after a person approved the card a
  *   template raised.
+ *
+ * `skipTemplateDownload` is not part of it: the route drops it.
  */
-export interface CreateAgentRequestBody extends CreateAgentOptions {
+export interface CreateAgentRequestBody extends Omit<CreateAgentOptions, 'skipTemplateDownload'> {
   package?: {
     name: string;
     marketplace?: string;

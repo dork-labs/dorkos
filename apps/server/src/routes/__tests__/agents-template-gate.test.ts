@@ -123,6 +123,11 @@ describe('an agent creating from a template (the exploit)', () => {
     const [card] = approvals.listPending();
     expect(card).toMatchObject({ capabilityId: 'agents.create_from_template' });
     expect(card?.detail).toContain('.claude/settings.json');
+    // The file itself, whole, behind a gutter nothing in it can fake.
+    expect(card?.detail).toContain(`│ ${HOOKED_SETTINGS}`);
+    expect(first.body.template.settings).toEqual([
+      expect.objectContaining({ path: '.claude/settings.json', content: HOOKED_SETTINGS }),
+    ]);
 
     // Retrying before anyone decided still lands nothing.
     const early = await create({ confirmationToken: first.body.confirmationToken });
@@ -155,6 +160,20 @@ describe('an agent creating from a template (the exploit)', () => {
     const retried = await create({ confirmationToken: first.body.confirmationToken });
 
     expect(retried.status).toBe(403);
+    expect(await exists(path.join(agentsHome, 'minion'))).toBe(false);
+  });
+
+  it('is refused, not cut, when the settings are too long to show on a card', async () => {
+    agentHeader = 'agent-token';
+    templateFiles.current = {
+      '.claude/settings.json': JSON.stringify({ env: { NOTE: 'x'.repeat(5000) } }),
+    };
+
+    const res = await create({});
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain('template brings too much to show');
+    expect(approvals.listPending()).toEqual([]);
     expect(await exists(path.join(agentsHome, 'minion'))).toBe(false);
   });
 
@@ -226,6 +245,24 @@ describe('template download outcomes (moved from the mocked-fs suite)', () => {
     const res = await create({});
     expect(res.status).toBe(201);
     expect(res.body._meta).toEqual({ hasPostInstall: expected, templateMethod: 'git' });
+  });
+
+  it('ignores skipTemplateDownload from HTTP: it is the marketplace install’s own switch', async () => {
+    // Purpose: the flag skips the existing-folder check and the template gate,
+    // which only the installer's staged copy may do. Over HTTP it would scaffold
+    // over an existing agent's folder.
+    const existing = path.join(agentsHome, 'taken');
+    await fs.mkdir(path.join(existing, '.dork'), { recursive: true });
+    await fs.writeFile(path.join(existing, '.dork', 'agent.json'), '{"name":"taken"}');
+
+    const res = await request(testServer.server)
+      .post('/api/agents/create')
+      .send({ name: 'taken', directory: existing, skipTemplateDownload: true });
+
+    expect(res.status).toBe(409);
+    expect(await fs.readFile(path.join(existing, '.dork', 'agent.json'), 'utf8')).toBe(
+      '{"name":"taken"}'
+    );
   });
 
   it('carries no template metadata when no template was used', async () => {

@@ -22,6 +22,11 @@ export interface TemplateBrings {
   contentHash: string;
   /** Settings files the new agent's sessions load. */
   findings: { path: string; message: string }[];
+  /**
+   * Each file under `findings`, its text with hidden and control characters
+   * already shown as `<U+XXXX>`, or why it is not shown.
+   */
+  settings?: TemplateSettingsFile[];
   /** What its skills run and may do without asking. */
   disclosed: DisclosedEffects;
 }
@@ -37,14 +42,48 @@ export function templateReviewOf(error: unknown): TemplateBrings | undefined {
   return body?.code === 'template_needs_review' ? body.template : undefined;
 }
 
+/** One settings file a template carries, as the server wrote it out. */
+export interface TemplateSettingsFile {
+  /** Its path in the template. */
+  path: string;
+  /** Its size. */
+  bytes: number;
+  /** Its text, with hidden characters made visible; absent when not shown. */
+  content?: string;
+  /** Why it is not shown. */
+  omitted?: 'too-long' | 'not-text' | 'link';
+}
+
+/** One line of the review, with the settings files behind it when it is one. */
+interface ReviewLine {
+  key: string;
+  label: string;
+  detail: string;
+  files?: TemplateSettingsFile[];
+}
+
+/** The files a finding covers: the file itself, or everything in its folder. */
+function filesOf(finding: string, settings: readonly TemplateSettingsFile[]) {
+  const folder = finding.replace(/\/*$/, '/');
+  return settings.filter((f) => f.path === finding || f.path.startsWith(folder));
+}
+
+/** Why a settings file is not written out, in plain words. */
+function omittedText(file: TemplateSettingsFile): string {
+  if (file.omitted === 'link') return 'A link, which is not copied into the new agent.';
+  if (file.omitted === 'not-text') return `Not text (${file.bytes} bytes).`;
+  return `Too long to show here (${file.bytes} bytes). Read it in the template before you create the agent.`;
+}
+
 /** One line per thing the template runs or allows, in plain words. */
-function linesOf(template: TemplateBrings): { key: string; label: string; detail: string }[] {
+function linesOf(template: TemplateBrings): ReviewLine[] {
   const { disclosed } = template;
   return [
     ...template.findings.map((f) => ({
       key: `finding:${f.path}`,
       label: f.path,
       detail: 'Settings the new agent’s sessions load (hooks, permission rules or servers).',
+      files: filesOf(f.path, template.settings ?? []),
     })),
     ...disclosed.hooks.map((h, i) => ({
       key: `hook:${i}`,
@@ -106,6 +145,20 @@ export function TemplateReviewNotice({
               {line.label}
             </code>
             <span className="text-muted-foreground">{line.detail}</span>
+            {line.files?.map((file) => (
+              <details key={file.path} className="mt-1" data-testid="template-settings-file">
+                <summary className="text-muted-foreground hover:text-foreground cursor-pointer">
+                  {file.path === line.label ? 'Show what it contains' : `Show ${file.path}`}
+                </summary>
+                {file.content !== undefined ? (
+                  <pre className="border-border/60 bg-muted/40 mt-1 max-h-56 overflow-auto rounded border p-2 font-mono text-xs break-words whitespace-pre-wrap">
+                    {file.content}
+                  </pre>
+                ) : (
+                  <p className="text-muted-foreground mt-1">{omittedText(file)}</p>
+                )}
+              </details>
+            ))}
           </li>
         ))}
       </ul>

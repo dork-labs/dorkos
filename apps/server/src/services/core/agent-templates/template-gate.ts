@@ -37,14 +37,21 @@
  *
  * @module services/core/agent-templates/template-gate
  */
+import { lstat, readdir, readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { findAgentWorkspaceConfig } from '@dorkos/marketplace/agent-workspace-config';
-import { disclosesAnything, type DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
+import {
+  disclosesAnything,
+  revealHiddenCharacters,
+  type DisclosedEffects,
+} from '@dorkos/shared/marketplace-schemas';
 import { disclosedEffectsOf } from '../../marketplace/disclosed-effects.js';
 import { packageContentHash } from '../../marketplace/lib/content-hash.js';
 import { readRunnableDeclarations } from '../../marketplace/permission-preview.js';
 import type {
   ConfirmationProvider,
   ConfirmationRequest,
+  TemplateSettingsFileShown,
 } from '../../marketplace-mcp/confirmation-provider.js';
 
 /** One harness file a template carries into the agent's working directory. */
@@ -55,6 +62,12 @@ export interface TemplateFinding {
   message: string;
 }
 
+/**
+ * One settings file a template carries, written out for the person deciding.
+ * The content hash binds these bytes, so what is shown is what lands.
+ */
+export type TemplateSettingsFile = TemplateSettingsFileShown;
+
 /** What a staged template brings, read before it lands anywhere. */
 export interface TemplateInspection {
   /** Where it was cloned from, as the caller named it. */
@@ -63,8 +76,91 @@ export interface TemplateInspection {
   contentHash: string;
   /** Harness configuration an agent package may not ship. */
   findings: TemplateFinding[];
+  /** Every file under those findings, with its contents, for the review. */
+  settings: TemplateSettingsFile[];
   /** What its skills run and may do without asking, in the disclosure shape. */
   disclosed: DisclosedEffects;
+}
+
+/** The longest settings file shown in full; a longer one is named, not cut. */
+export const SETTINGS_FILE_MAX_BYTES = 32 * 1024;
+
+/** The most files listed under one finding (a whole `.codex/` folder, say). */
+const SETTINGS_FILES_MAX = 50;
+
+/** C0 and C1 control characters other than tab and newline. */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const CONTROL_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+
+/**
+ * Show a file's text as it is, with nothing able to hide in it: every
+ * invisible, direction-changing or control character (a carriage return
+ * included, which can overwrite a line in a terminal) becomes a visible
+ * `<U+XXXX>` marker.
+ *
+ * @param text - The file's text.
+ * @returns The same text, safe to show a person deciding about it.
+ */
+export function showVerbatim(text: string): string {
+  return revealHiddenCharacters(text.replace(/\r\n/g, '\n')).replace(
+    CONTROL_CHARACTERS,
+    (ch) => `<U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`
+  );
+}
+
+/** Read one settings file for the review, never following a link. */
+async function readSettingsFile(dir: string, rel: string): Promise<TemplateSettingsFile> {
+  const abs = path.join(dir, ...rel.split('/'));
+  const stat = await lstat(abs);
+  if (stat.isSymbolicLink()) return { path: rel, bytes: 0, omitted: 'link' };
+  if (stat.size > SETTINGS_FILE_MAX_BYTES) {
+    return { path: rel, bytes: stat.size, omitted: 'too-long' };
+  }
+  const raw = await readFile(abs);
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(raw);
+    return { path: rel, bytes: stat.size, content: showVerbatim(text) };
+  } catch {
+    return { path: rel, bytes: stat.size, omitted: 'not-text' };
+  }
+}
+
+/** Every file at or under `rel` (a finding may be a folder), links included but not followed. */
+async function filesUnder(dir: string, rel: string): Promise<string[]> {
+  const stat = await lstat(path.join(dir, ...rel.split('/'))).catch(() => undefined);
+  if (!stat) return [];
+  if (!stat.isDirectory()) return [rel];
+  const found: string[] = [];
+  const queue = [rel.replace(/\/+$/, '')];
+  while (queue.length > 0 && found.length < SETTINGS_FILES_MAX) {
+    const current = queue.shift()!;
+    const entries = await readdir(path.join(dir, ...current.split('/')), { withFileTypes: true });
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const child = `${current}/${entry.name}`;
+      if (entry.isDirectory()) queue.push(child);
+      else found.push(child);
+    }
+  }
+  return found.slice(0, SETTINGS_FILES_MAX);
+}
+
+/**
+ * Read every file the findings name, for the person to read before deciding.
+ *
+ * @param dir - The staging folder.
+ * @param findings - The template's harness configuration.
+ */
+async function readSettings(
+  dir: string,
+  findings: readonly TemplateFinding[]
+): Promise<TemplateSettingsFile[]> {
+  const files: TemplateSettingsFile[] = [];
+  for (const finding of findings) {
+    for (const rel of await filesUnder(dir, finding.path)) {
+      files.push(await readSettingsFile(dir, rel));
+    }
+  }
+  return files;
 }
 
 /**
@@ -84,7 +180,8 @@ export async function inspectTemplate(source: string, dir: string): Promise<Temp
   // No schedules: a template's scheduled skills arrive parked at
   // `pending_approval`, behind their own gate.
   const disclosed = disclosedEffectsOf({ ...declared, schedules: [] })!;
-  return { source, contentHash, findings, disclosed };
+  const settings = await readSettings(dir, findings);
+  return { source, contentHash, findings, settings, disclosed };
 }
 
 /**
@@ -204,6 +301,7 @@ function cardRequestOf(
     templateDisclosure: {
       disclosed: inspection.disclosed,
       findings: inspection.findings.map((f) => f.path),
+      settings: inspection.settings,
     },
     origin: { source: inspection.source },
     ...(opts.requestedBy ? { requestedBy: opts.requestedBy } : {}),

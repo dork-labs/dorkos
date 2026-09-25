@@ -20,13 +20,18 @@ import {
   type DisclosedEffects,
 } from '@dorkos/shared/marketplace-schemas';
 
-/** Where an installation is, which decides whether its own programs start. */
-export type DisclosureScope = 'global' | 'project';
+/**
+ * Where an installation is, which decides whether its own programs start.
+ * `agent` is a new agent's own folder, created from a template (DOR-2325):
+ * what it brings runs in that agent's sessions only.
+ */
+export type DisclosureScope = 'global' | 'project' | 'agent';
 
 /** When a package's own programs start, by where it is installed. */
 const PROGRAMS_START: Record<DisclosureScope, string> = {
   global: 'starts in every session',
   project: 'declared, not started for a project install',
+  agent: "starts in the new agent's sessions",
 };
 
 /**

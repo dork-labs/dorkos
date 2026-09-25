@@ -72,6 +72,22 @@ export type ConfirmationResult =
   | { status: 'pending'; token: string; reason?: string };
 
 /**
+ * One settings file a template carries, as the card writes it out (DOR-2325):
+ * its text with every hidden or control character made visible, or why it is
+ * not shown. The shape `inspectTemplate` produces.
+ */
+export interface TemplateSettingsFileShown {
+  /** Its path in the template. */
+  path: string;
+  /** Its size. */
+  bytes: number;
+  /** Its text, made visible; absent when `omitted` says why. */
+  content?: string;
+  /** Too long to show, not text, or a link (which is never copied). */
+  omitted?: 'too-long' | 'not-text' | 'link';
+}
+
+/**
  * Payload for {@link ConfirmationProvider.requestInstallConfirmation}.
  *
  * Every field here is part of what the user actually agreed to, so every field
@@ -155,10 +171,16 @@ export interface ConfirmationRequest {
    * the new agent's folder. `disclosed` (what its skills run and may do
    * without asking) is bound like an install's; `findings` (harness
    * configuration files it carries) is shown in full, and bound through
-   * {@link contentHash}, since they are files among the bytes it pins.
+   * {@link contentHash}, since they are files among the bytes it pins;
+   * `settings` is each of those files written out, so a person reads what the
+   * new agent's sessions will load rather than only its name.
    * `projectPath` carries the folder the agent lands in, and is bound.
    */
-  templateDisclosure?: { disclosed: DisclosedEffects; findings: readonly string[] };
+  templateDisclosure?: {
+    disclosed: DisclosedEffects;
+    findings: readonly string[];
+    settings?: readonly TemplateSettingsFileShown[];
+  };
   /**
    * Opaque label for the agent that asked, shown on the approval card so an
    * operator can see WHO wants this. Not part of the effect, so deliberately not
@@ -379,8 +401,17 @@ function tooLongToShow(req: ConfirmationRequest): boolean {
   );
 }
 
-/** Refuse an install whose full list will not fit on one card; nothing runs. */
-function tooMuchToShowRefusal(): ConfirmationResult {
+/** Refuse a request whose full list will not fit on one card; nothing runs. */
+function tooMuchToShowRefusal(req: ConfirmationRequest): ConfirmationResult {
+  if (req.operation === 'create-agent-from-template') {
+    return {
+      status: 'declined',
+      reason:
+        'This template brings too much to show in full on one approval card, so DorkOS did ' +
+        'not ask. Nothing was created. A person can review it and create the agent themselves ' +
+        'with `dorkos agent create --template`.',
+    };
+  }
   return {
     status: 'declined',
     reason:
@@ -429,12 +460,18 @@ function unbindableRefusal(
  * from, and everything the package runs on its own, written out whole.
  */
 function describeInstallInFull(req: ConfirmationRequest): string {
-  const where = req.projectPath
-    ? 'declared, but not started for a project install'
-    : 'in every session';
+  // An agent package lands in its own folder, and that folder is where the new
+  // agent's sessions run (DOR-2325).
+  const agent = req.packageType === 'agent';
+  const where = agent
+    ? 'in the new agent’s sessions'
+    : req.projectPath
+      ? 'declared, but not started for a project install'
+      : 'in every session';
   const lines = [
     `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
     `Version ${JSON.stringify(req.origin?.version ?? 'not stated')}, from ${JSON.stringify(req.origin?.source ?? req.marketplace ?? 'any enabled marketplace')}.`,
+    ...(agent && req.projectPath ? [`A new agent, in ${JSON.stringify(req.projectPath)}.`] : []),
     '',
     ...describeEffectsInFull(disclosedEffectsOf(req.preview), where),
   ];
@@ -458,10 +495,34 @@ function describeTemplateInFull(req: ConfirmationRequest): string {
           'Settings it carries, which the new agent’s sessions load (hooks, permission rules, servers):',
           ...findings.map((f) => `- ${JSON.stringify(f)}`),
           '',
+          ...(req.templateDisclosure?.settings ?? []).flatMap(describeSettingsFile),
         ]
       : ['It carries no settings files for the new agent’s sessions.', '']),
     ...describeEffectsInFull(disclosed, 'in the new agent’s sessions'),
   ].join('\n');
+}
+
+/**
+ * One settings file, written out whole under its name. Every line carries a
+ * `│ ` gutter, so nothing in the file can pass itself off as the card's own
+ * text; hidden and control characters were already made visible.
+ */
+function describeSettingsFile(file: TemplateSettingsFileShown): string[] {
+  const name = JSON.stringify(file.path);
+  if (file.content === undefined) {
+    const why =
+      file.omitted === 'link'
+        ? 'is a link, which is never copied into the new agent'
+        : file.omitted === 'not-text'
+          ? `is not text (${file.bytes} bytes)`
+          : `is too long to show (${file.bytes} bytes)`;
+    return [`${name} ${why}.`, ''];
+  }
+  return [
+    `${name} (${file.bytes} bytes):`,
+    ...file.content.split('\n').map((line) => `│ ${line}`),
+    '',
+  ];
 }
 
 /** Where an operation lands, for the card: a named project or the global scope. */
@@ -486,7 +547,9 @@ function summaryOf(req: ConfirmationRequest): string {
   const marketplace = req.marketplace ? quoteSummaryValue(req.marketplace) : undefined;
   switch (req.operation) {
     case 'install':
-      return `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
+      return req.packageType === 'agent'
+        ? `Add the agent ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}. Its sessions will run what the package brings, listed below.`
+        : `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
     case 'uninstall': {
       const base = req.purge
         ? `Uninstall ${name}${scopeOf(req)} and delete the files you and your agents added or changed`
@@ -585,7 +648,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
     if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
       return tooManyUpdatesRefusal(req.updates.length);
     }
-    if (tooLongToShow(req)) return tooMuchToShowRefusal();
+    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
@@ -644,7 +707,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
     if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
       return tooManyUpdatesRefusal(req.updates.length);
     }
-    if (tooLongToShow(req)) return tooMuchToShowRefusal();
+    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
