@@ -22,6 +22,8 @@ import type { PackageFileNotice } from '@dorkos/shared/marketplace-schemas';
 import { runTransaction, type TransactionOwnership } from '../transaction.js';
 import { atomicMove } from '../lib/atomic-move.js';
 import { readInstalledFiles } from '../lib/installed-files.js';
+import { rebuildInstalledFiles } from '../lib/legacy-record.js';
+import { noopLogger } from '@dorkos/shared/logger';
 
 let scratch: string;
 beforeEach(async () => {
@@ -55,6 +57,7 @@ async function install(
     duringActivate?: (target: string) => Promise<void>;
     failActivate?: boolean;
     source?: TransactionOwnership['identity']['source'];
+    rebuildLegacy?: TransactionOwnership['rebuildLegacy'];
   } = {}
 ): Promise<{ notices: PackageFileNotice[]; warnings: string[]; stagingPaths: string[] }> {
   const report = {
@@ -78,6 +81,7 @@ async function install(
     ownership: {
       identity: { name: 'pkg', type: 'plugin', ...(opts.source && { source: opts.source }) },
       userEditable: opts.userEditable ?? [],
+      ...(opts.rebuildLegacy && { rebuildLegacy: opts.rebuildLegacy }),
       onNotices: (n, w) => {
         report.notices.push(...n);
         report.warnings.push(...w);
@@ -357,3 +361,103 @@ async function snapshotTree(root: string): Promise<Record<string, string>> {
   await walk('');
   return out;
 }
+
+describe('an offline update of an install made before records existed (DOR-2322)', () => {
+  const SHA = 'b'.repeat(40);
+
+  /** A legacy install at `target`: the package's files, a sidecar naming its commit, no record. */
+  async function legacyAt(target: string, files: Record<string, string>): Promise<void> {
+    await put(target, '.dork/manifest.json', '{"name":"pkg"}');
+    for (const [rel, content] of Object.entries(files)) await put(target, rel, content);
+    await put(
+      target,
+      '.dork/install-metadata.json',
+      JSON.stringify({
+        name: 'pkg',
+        version: '1.0.0',
+        type: 'plugin',
+        installedAt: '2026-09-01T00:00:00.000Z',
+        commitSha: SHA,
+        sourceKey: { cloneUrl: 'https://github.com/acme/pkg', subpath: '', ref: 'main' },
+      })
+    );
+  }
+
+  const offline: TransactionOwnership['rebuildLegacy'] = (liveRoot, stagedTree) =>
+    rebuildInstalledFiles(
+      liveRoot,
+      {
+        fetcher: { fetchAtCommit: vi.fn(async () => Promise.reject(new Error('offline'))) },
+        logger: noopLogger,
+      },
+      stagedTree
+    );
+
+  // Purpose: THE decision. Offline, a file the package changed between
+  // versions and a file the person added both match nothing. Neither may be
+  // deleted or silently called theirs: each is kept, named on a notice (the
+  // package's changed file saved beside the new copy), and one plain warning
+  // says what to do. Fails if an unproven file gets the "you had changed"
+  // wording, is dropped, or goes unnamed.
+  it('keeps every file it cannot prove, names each one, and says what to do', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await legacyAt(target, { 'a.md': 'a v1', 'same.md': 'same' });
+    await put(target, 'keep.txt', 'mine');
+
+    const { notices, warnings } = await install(
+      target,
+      { 'a.md': 'a v2', 'same.md': 'same' },
+      { rebuildLegacy: offline }
+    );
+
+    expect(await read(target, 'a.md')).toBe('a v2');
+    expect(await read(target, 'a.md.dork-old')).toBe('a v1');
+    expect(await read(target, 'keep.txt')).toBe('mine');
+    expect(notices).toEqual([
+      { path: 'a.md', outcome: 'kept-unproven', savedAs: 'a.md.dork-old' },
+      { path: 'keep.txt', outcome: 'kept-unproven' },
+    ]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/couldn't download the version of pkg you had/);
+    expect(warnings[0]).toMatch(/2 files/);
+    expect(warnings[0]).toMatch(/a\.md\.dork-old, keep\.txt/);
+    expect(warnings[0]).toMatch(/Check files/);
+  });
+
+  // Purpose: the new install remembers what it could not prove, where each
+  // file now sits and which version to compare it with, so the Installed view
+  // keeps reminding the person and Check files can sort it once online.
+  it('records the kept files and the version to compare them with', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await legacyAt(target, { 'a.md': 'a v1' });
+    await put(target, 'notes/keep.txt', 'mine');
+
+    await install(target, { 'a.md': 'a v2' }, { rebuildLegacy: offline });
+
+    const record = await readInstalledFiles(target);
+    expect(record?.inferred).toBeUndefined();
+    expect(record?.unproven).toEqual({
+      why: 'fetch-failed',
+      from: {
+        name: 'pkg',
+        commitSha: SHA,
+        sourceKey: { cloneUrl: 'https://github.com/acme/pkg', subpath: '', ref: 'main' },
+      },
+      files: { 'a.md.dork-old': 'a.md', 'notes/keep.txt': 'notes/keep.txt' },
+    });
+  });
+
+  // Purpose: a proven record changes nothing: no unproven notices, no warning,
+  // no list on the new record. Fails if the new wording leaks into a normal update.
+  it('says nothing new when the record was proven', async () => {
+    const target = path.join(scratch, 'plugins', 'pkg');
+    await install(target, { 'a.md': 'a v1' });
+    await put(target, 'keep.txt', 'mine');
+
+    const { notices, warnings } = await install(target, { 'a.md': 'a v2' });
+
+    expect(notices).toEqual([]);
+    expect(warnings).toEqual([]);
+    expect((await readInstalledFiles(target))?.unproven).toBeUndefined();
+  });
+});

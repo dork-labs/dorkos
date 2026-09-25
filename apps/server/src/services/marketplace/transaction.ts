@@ -155,8 +155,8 @@ import {
   writeInstalledFiles,
   type InstalledFiles,
   type RecordIdentity,
+  type UnprovenFiles,
 } from './lib/installed-files.js';
-import { isReservedPackagePath } from '@dorkos/marketplace';
 import { hasPackageIdentity } from './lib/locate-install.js';
 import { currentRecordOwner, formatRecordOwner } from './lib/record-owner.js';
 import {
@@ -546,20 +546,13 @@ async function prepareOwnership(
     } else {
       carry = await carryPersonFiles({ liveRoot: target, stagingDir, rOld, oldHasIdentity, rNew });
     }
-    if (rOld?.inferred && carry) {
-      const kept = carry.plan.actions
-        .filter(
-          (a) =>
-            (a.kind === 'carry' || a.kind === 'carry-dir') &&
-            !(a.path in rNew.files) &&
-            !isReservedPackagePath(a.path)
-        )
-        .map((a) => a.path);
-      if (kept.length > 0) {
-        const shown = kept.slice(0, 10).join(', ');
-        warnings.push(
-          `Kept ${kept.length} item${kept.length === 1 ? '' : 's'} this package's new version doesn't include, because DorkOS couldn't tell whether you added ${kept.length === 1 ? 'it' : 'them'}: ${shown}${kept.length > 10 ? ', …' : ''}. Delete any you don't need.`
-        );
+    if (rOld?.inferred && rOld.unproven && carry) {
+      // Nothing proved these files the package's or the person's (DOR-2322):
+      // each was kept, and each is named in words that do not guess.
+      const unproven = placeUnproven(rOld.unproven, carry.plan);
+      if (Object.keys(unproven.files).length > 0) {
+        rNew.unproven = unproven;
+        warnings.push(describeUnproven(ownership.identity.name, unproven));
       }
     }
     const oldSource = rOld?.package.source;
@@ -576,6 +569,67 @@ async function prepareOwnership(
     ownedPaths: [...(rOld?.ownedPaths ?? []), ...rNew.ownedPaths],
     warnings,
   };
+}
+
+/** Most kept files an {@link describeUnproven} sentence names. */
+const UNPROVEN_NAMED_LIMIT = 10;
+
+/**
+ * Where each unproven file of a legacy install ended up in the new one, and
+ * its notice. The carry plan decided what happened to every live file; for an
+ * unproven one its edit wording would be a guess, so its notices are replaced
+ * by one `kept-unproven` notice (with `savedAs` when the new version's copy
+ * took its place).
+ *
+ * @internal
+ */
+function placeUnproven(unproven: UnprovenFiles, plan: CarryResult['plan']): UnprovenFiles {
+  const placed: Record<string, string> = {};
+  const notices: PackageFileNotice[] = [];
+  for (const origin of Object.keys(unproven.files).sort()) {
+    let where: string | undefined;
+    for (const a of plan.actions) {
+      if ((a.kind === 'carry' || a.kind === 'save-new-as') && a.path === origin) where = origin;
+      else if (a.kind === 'carry-as' && a.path === origin) where = a.savedAs;
+      else if (a.kind === 'carry-dir' && origin.startsWith(`${a.path}/`)) where = origin;
+      else if (a.kind === 'carry-dir-as' && origin.startsWith(`${a.path}/`))
+        where = `${a.savedAs}${origin.slice(a.path.length)}`;
+      if (where !== undefined) break;
+    }
+    if (where === undefined) continue;
+    placed[where] = origin;
+    notices.push({
+      path: origin,
+      outcome: 'kept-unproven',
+      ...(where !== origin && { savedAs: where }),
+    });
+  }
+  plan.notices = [...plan.notices.filter((n) => !(n.path in unproven.files)), ...notices];
+  return { ...unproven, files: placed };
+}
+
+/**
+ * One sentence about the files an update kept because nothing proved whose
+ * they were: why, which (up to {@link UNPROVEN_NAMED_LIMIT}), and what the
+ * person can do next.
+ *
+ * @internal
+ */
+function describeUnproven(name: string, unproven: UnprovenFiles): string {
+  const kept = Object.keys(unproven.files).sort();
+  const n = kept.length;
+  const files = n === 1 ? '1 file' : `${n} files`;
+  const them = n === 1 ? 'it' : 'them';
+  const was = n === 1 ? 'was' : 'were';
+  const shown = `${kept.slice(0, UNPROVEN_NAMED_LIMIT).join(', ')}${n > UNPROVEN_NAMED_LIMIT ? ', …' : ''}`;
+  switch (unproven.why) {
+    case 'fetch-failed':
+      return `DorkOS couldn't download the version of ${name} you had, so it couldn't tell whether ${files} ${was} yours or left over from that version. It kept ${them}: ${shown}. Once you're online, choose Check files on ${name} to sort ${them} out.`;
+    case 'mismatch':
+      return `The version of ${name} DorkOS downloaded didn't match the files you had, so it couldn't tell whether ${files} ${was} yours. It kept ${them}: ${shown}. Choose Check files on ${name} to sort ${them} out.`;
+    case 'no-source':
+      return `${name} was installed from a folder on this computer, so DorkOS had no earlier version to compare with and couldn't tell whether ${files} ${was} yours. It kept ${them}: ${shown}. Delete any you don't need.`;
+  }
 }
 
 /** A recorded source, as a person reads it. */

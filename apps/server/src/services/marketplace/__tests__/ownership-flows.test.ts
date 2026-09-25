@@ -324,7 +324,8 @@ describe('an agent package that ships identity seeds (code review 1)', () => {
 describe('an install made before records existed (DOR-2245 §9)', () => {
   // Purpose: the legacy path. With no record and no fetchable commit (a local
   // install), a reinstall keeps the person's file, replaces the package's own
-  // unchanged files silently, and names what it kept.
+  // unchanged files silently, and names what it kept and why it could not tell
+  // (DOR-2322). The new record remembers the kept file.
   it("keeps the person's files over a legacy install and says so", async () => {
     const harness = buildInstallerForTests(dorkHome);
     const name = path.join(FIXTURES_DIR, 'valid-plugin');
@@ -335,9 +336,16 @@ describe('an install made before records existed (DOR-2245 §9)', () => {
     const result = await harness.installer.install({ name });
 
     expect(await readFile(path.join(root, 'config', 'config.json'), 'utf8')).toBe('{"team":"DOR"}');
-    expect(result.fileNotices ?? []).toEqual([]);
-    expect(result.warnings.join(' ')).toMatch(/Kept 1 item .*: config\. /);
-    expect((await readInstalledFiles(root))?.inferred).toBeUndefined();
+    expect(result.fileNotices).toEqual([{ path: 'config/config.json', outcome: 'kept-unproven' }]);
+    const said = result.warnings.join(' ');
+    expect(said).toMatch(/installed from a folder on this computer/);
+    expect(said).toMatch(/It kept it: config\/config\.json\. Delete any you don't need\./);
+    const record = await readInstalledFiles(root);
+    expect(record?.inferred).toBeUndefined();
+    expect(record?.unproven).toEqual({
+      why: 'no-source',
+      files: { 'config/config.json': 'config/config.json' },
+    });
   });
 });
 

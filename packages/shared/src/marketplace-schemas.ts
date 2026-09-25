@@ -832,9 +832,18 @@ export interface PackageFileNotice {
    * - `late-write`: it changed while the update ran; the newest copy is in place
    *   (the person's at `savedAs` when it collided with a package file).
    * - `skipped-special`: a socket, pipe or device file, which was not copied.
+   * - `kept-unproven`: the install had no record and the version it came from
+   *   could not be checked, so DorkOS could not tell whether this was the
+   *   person's file or the old version's. It was kept, at `savedAs` when the new
+   *   version's copy took its place (DOR-2322).
    */
   outcome:
-    'replaced-edit' | 'kept-edit' | 'kept-no-longer-shipped' | 'late-write' | 'skipped-special';
+    | 'replaced-edit'
+    | 'kept-edit'
+    | 'kept-no-longer-shipped'
+    | 'late-write'
+    | 'skipped-special'
+    | 'kept-unproven';
   /** Where the other copy was saved, when one was written. */
   savedAs?: string;
 }
