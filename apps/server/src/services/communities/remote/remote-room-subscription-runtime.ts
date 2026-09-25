@@ -25,6 +25,7 @@ import {
   type RemoteSubscriptionFrame,
 } from './remote-room-subscription-bridge.js';
 import type { MirrorRoomInput } from './mirror-store.js';
+import { REDACTION_SYNC_INTERVAL_MS, type RemoteRedactionSync } from './remote-redaction-sync.js';
 
 /** A shared native adapter resolved for the exact community and local owner. */
 export interface RemoteRoomSubscriptionAdapter extends Pick<CommunityAdapter, 'listRooms'> {
@@ -68,6 +69,13 @@ export interface RemoteRoomSubscriptionRuntimeDeps {
   toLiveEntry?: (entry: CommunityEntry) => RemoteLiveEntry | null;
   /** Mesh is authoritative only after startup reconciliation completes. */
   isReady?: () => boolean;
+  /**
+   * Replaces cached copies of messages changed on the server. Read after every completed replay
+   * and every {@link redactionSyncMs} while a room is subscribed.
+   */
+  redactions?: Pick<RemoteRedactionSync, 'sync'>;
+  /** How often a subscribed room reads its redaction feed between reconnects. */
+  redactionSyncMs?: number;
 }
 
 interface DesiredSubscription {
@@ -92,6 +100,8 @@ interface RunningSubscription {
   ownerAuthorId: string;
   remoteRoomId: string;
   localAgentId: string;
+  /** The enrolled agent this stream reads as; the redaction feed is read the same way. */
+  context: CommunityReadContext;
 }
 
 /** Test-only readout of the current owner-qualified native replay boundary. */
@@ -124,6 +134,7 @@ export class RemoteRoomSubscriptionRuntime {
   private readonly observations = new Map<string, MutableObservation>();
   private timer: ReturnType<typeof setInterval> | undefined;
   private releaseTimer: ReturnType<typeof setInterval> | undefined;
+  private redactionTimer: ReturnType<typeof setInterval> | undefined;
   private checkingReleases: Promise<void> | undefined;
   private reconciling: Promise<void> | undefined;
   private refreshQueued = false;
@@ -145,6 +156,12 @@ export class RemoteRoomSubscriptionRuntime {
       () => this.checkReleases(),
       this.deps.releaseCheckMs ?? READ_ONLY_RECHECK_MS
     );
+    if (this.deps.redactions) {
+      this.redactionTimer = setInterval(
+        () => this.syncRedactions(),
+        this.deps.redactionSyncMs ?? REDACTION_SYNC_INTERVAL_MS
+      );
+    }
   }
 
   /** Abort every private remote stream before shutdown completes. */
@@ -154,6 +171,8 @@ export class RemoteRoomSubscriptionRuntime {
     this.timer = undefined;
     if (this.releaseTimer) clearInterval(this.releaseTimer);
     this.releaseTimer = undefined;
+    if (this.redactionTimer) clearInterval(this.redactionTimer);
+    this.redactionTimer = undefined;
     for (const subscription of this.running.values()) subscription.abort.abort();
     this.running.clear();
   }
@@ -307,6 +326,25 @@ export class RemoteRoomSubscriptionRuntime {
       });
   }
 
+  /**
+   * Read the redaction feed of every subscribed room once. Several agents' streams can share a
+   * room; the sync reads it once for all of them.
+   */
+  private syncRedactions(): void {
+    const redactions = this.deps.redactions;
+    if (this.stopped || !redactions) return;
+    for (const subscription of this.running.values()) {
+      void redactions.sync(
+        {
+          communityRef: subscription.communityRef,
+          remoteRoomId: subscription.remoteRoomId,
+          ownerAuthorId: subscription.ownerAuthorId,
+        },
+        subscription.context
+      );
+    }
+  }
+
   private refresh(): void {
     if (this.stopped || this.deps.isReady?.() === false) return;
     if (this.reconciling) {
@@ -445,6 +483,7 @@ export class RemoteRoomSubscriptionRuntime {
         ownerAuthorId: next.room.ownerAuthorId,
         remoteRoomId: next.room.remoteRoomId,
         localAgentId: next.localAgentId,
+        context: next.context,
       });
       void this.consume(next, abort);
     }
@@ -478,6 +517,18 @@ export class RemoteRoomSubscriptionRuntime {
                 },
                 replayComplete: () => {
                   observation.replayComplete = true;
+                  // Everything up to the replay boundary is cached now, so this is the moment a
+                  // (re)connected mirror catches up on messages changed while it was away.
+                  void this.deps.redactions?.sync(
+                    {
+                      communityRef: desired.room.communityRef,
+                      remoteRoomId: desired.room.remoteRoomId,
+                      ownerAuthorId: desired.room.ownerAuthorId,
+                    },
+                    desired.context,
+                    // A reconnect is when a server upgraded to publish changes is found.
+                    { recheck: true }
+                  );
                 },
               },
               { reconnect, wasActiveBeforeDisconnect }

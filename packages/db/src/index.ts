@@ -166,6 +166,18 @@ function configureAndWrap(sqlite: Database.Database) {
   // It is per-connection, so it protects connections opened through here and no
   // others. Anything writing `messages` must come through `createDb`.
   sqlite.pragma('recursive_triggers = ON');
+  // Deleted content is overwritten with zeros, not left in the file for a later write to cover.
+  //
+  // A Community message that was deleted, removed by a moderator or a host, or erased with its
+  // author has to leave this machine's copy too (specs/community-member-erasure task 2.1), and a
+  // row update or delete alone only unlinks the old bytes. Replacing them at that moment is not
+  // enough either: SQLite also leaves old bytes behind whenever it reorganizes a page — a leaf
+  // split into an interior page keeps its former cells in the unused area — and that happens on
+  // ordinary writes long before anyone asks for a deletion. Only a connection that zeroes as it
+  // goes never leaves such remnants, so it is on for every write rather than for the sync.
+  // It costs extra writes only where pages are freed, which on this mostly-append database is
+  // rare; it is the default on several platforms' own SQLite builds.
+  sqlite.pragma('secure_delete = ON');
   return drizzle(sqlite, { schema });
 }
 

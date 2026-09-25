@@ -293,7 +293,7 @@ describe('community outbox', () => {
         });
       }
       if (condition === 'stale') mirrors.markStale(REF, harness.human);
-      if (condition === 'revoked') mirrors.revoke(REF);
+      if (condition === 'revoked') mirrors.revoke(REF, harness.human);
       actual = new CommunityOutboxPolicy(mirrors, enrollments, harness.authors, outbox, () => NOW);
 
       expect(() =>

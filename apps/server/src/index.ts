@@ -386,6 +386,7 @@ import {
 import { CommunityOutboxRuntime } from './services/communities/remote/community-outbox-runtime.js';
 import { RemoteRoomSubscriptionBridge } from './services/communities/remote/remote-room-subscription-bridge.js';
 import { RemoteRoomSubscriptionRuntime } from './services/communities/remote/remote-room-subscription-runtime.js';
+import { RemoteRedactionSync } from './services/communities/remote/remote-redaction-sync.js';
 import { registerRemoteCommunityUnregisterCascade } from './services/communities/remote/mesh-unregister-cascade.js';
 import { isCurrentLocalMeshAgent } from './services/communities/remote/local-agent-authority.js';
 import { INTERVALS } from './config/constants.js';
@@ -553,6 +554,7 @@ let agentMcpServerService: AgentMcpServerService | undefined;
 let agentMcpOAuthService: AgentMcpOAuthService | undefined;
 let remoteCommunityRuntime: CommunityOutboxRuntime | undefined;
 let remoteCommunitySubscriptions: RemoteRoomSubscriptionRuntime | undefined;
+let remoteRedactionSync: RemoteRedactionSync | undefined;
 let extensionManager: ExtensionManager | undefined;
 let connectorRuntimeMcpListener: ConnectorRuntimeMcpListener | undefined;
 let testComposioFixture:
@@ -1515,6 +1517,9 @@ async function start() {
             ? isCurrentLocalMeshAgent(meshCore, localAgentId)
             : false,
         changes: { changed: publishRemoteCommunityDeliveryChanges },
+        // Bound below, once the sync exists: it rebuilds search and deletes files for a
+        // revoked mirror whose content the store just deleted.
+        mirrorPurged: (purge) => remoteRedactionSync?.afterPurge(purge),
       });
       return {
         mirrorAccess: remoteCommunityRuntime.mirrorAccess,
@@ -1548,6 +1553,13 @@ async function start() {
     remoteCommunityRuntime.outbox,
     remoteCommunityRuntime
   );
+  remoteRedactionSync = new RemoteRedactionSync({
+    db,
+    mirrors: remoteCommunityRuntime.mirrors,
+    readers: (communityRef, ownerAuthorId) =>
+      getRemoteCommunityAdapter(communityRef, ownerAuthorId),
+    attachmentBytes: roomAttachmentBytes,
+  });
   remoteCommunitySubscriptions = new RemoteRoomSubscriptionRuntime({
     bridge: remoteCommunityBridge.current,
     enrollments: remoteCommunityRuntime.enrollments,
@@ -1559,6 +1571,9 @@ async function start() {
     resolveLocalAgentAuthor: (localAgentId) =>
       resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     isReady: () => meshStartupReconciled && meshCore !== undefined,
+    // Messages deleted, removed, or erased on a Community server leave this machine's mirror
+    // and its search index too (member erasure task 2.1).
+    redactions: remoteRedactionSync,
   });
   setRemoteCommunityLifecycle(remoteCommunitySubscriptions);
   // Native room streams need Mesh's trusted manifest-to-path registry. Start

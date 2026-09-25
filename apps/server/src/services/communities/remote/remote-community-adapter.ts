@@ -46,6 +46,7 @@ import {
   CommunityWireEventSchema,
   CommunityWireMemberListResponseSchema,
   CommunityWireReadCursorResponseSchema,
+  CommunityWireRedactionPageSchema,
   CommunityWireThreadSummaryListSchema,
 } from '@dorkos/shared/community-wire';
 import { CommunityAgentEnrollmentSecretResponseSchema } from '@dorkos/shared/community-private-wire';
@@ -64,6 +65,7 @@ import {
   RemoteConnectionStore,
 } from './connection-store.js';
 import type { CommunityAgentEnrollmentStore } from './agent-enrollment-store.js';
+import type { NativeMirrorEntry } from './mirror-store.js';
 
 const capabilities: CommunityCapabilities = {
   type: 'dorkos-community',
@@ -264,6 +266,27 @@ function portableAttachment(value: {
     byteSize: value.byteSize,
     checksum: value.checksum,
   };
+}
+
+/** One page of a remote channel's redaction feed: changed entries as they stand now. */
+export interface RemoteRedactionPage {
+  /** Each changed entry with its native sequence and author, ready for the mirror. */
+  items: NativeMirrorEntry[];
+  /** Opaque, server-signed; store it even when `entries` is empty. */
+  nextCursor: string;
+  /** Whether to ask again at once. */
+  hasMore: boolean;
+}
+
+/**
+ * The Community server has no redaction feed: it answered the route with a bare `404` and no
+ * error code, as a server from before the route does. A readable-channel refusal carries a code.
+ */
+export class RemoteRedactionFeedUnsupportedError extends Error {
+  constructor(readonly community: CommunityRef) {
+    super('This Community server does not publish changed messages');
+    this.name = 'RemoteRedactionFeedUnsupportedError';
+  }
 }
 
 /** Private native stream events retain the server's replay watermark without widening the generic port. */
@@ -629,6 +652,52 @@ export class RemoteCommunityAdapter implements CommunityAdapter {
     return {
       entries,
       nextCursor: data.nextCursor as CommunityCursor | null,
+    };
+  }
+
+  /**
+   * Read one page of a channel's redaction feed: the entries that were deleted, removed, or
+   * erased (or rewritten because they mentioned an erased member) after the cursor.
+   *
+   * @throws RemoteRedactionFeedUnsupportedError when the server predates the feed.
+   * @throws StaleCommunityCursorError when the cursor is no longer valid (after a restore);
+   *   read again from the start.
+   * @throws CommunityRoomNotFoundError when the channel is no longer readable.
+   */
+  async readRedactions(
+    roomId: string,
+    opts: { cursor?: string; actingMemberId?: string; signal?: AbortSignal } = {}
+  ): Promise<RemoteRedactionPage> {
+    const query = new URLSearchParams();
+    if (opts.cursor) query.set('cursor', opts.cursor);
+    let data;
+    try {
+      data = CommunityWireRedactionPageSchema.parse(
+        await this.request(
+          `/api/v1/channels/${encodeURIComponent(roomId)}/redactions${query.size ? `?${query}` : ''}`,
+          undefined,
+          { actingMemberId: opts.actingMemberId },
+          'GET',
+          opts.signal
+        )
+      );
+    } catch (error) {
+      if (error instanceof PinnedHttpError && error.status === 404 && !error.remoteCode)
+        throw new RemoteRedactionFeedUnsupportedError(this.community);
+      throw remoteRoomError(error, this.community, roomId);
+    }
+    return {
+      items: data.redactions.map(({ entry: value }) => ({
+        entry: entry(this.community, value),
+        remoteSeq: value.seq,
+        author: {
+          memberId: value.authorMemberId,
+          displayName: value.authorDisplayName,
+          kind: value.authorKind,
+        },
+      })),
+      nextCursor: data.nextCursor,
+      hasMore: data.hasMore,
     };
   }
 

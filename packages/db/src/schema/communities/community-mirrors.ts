@@ -32,6 +32,11 @@ export const communityRoomMirrors = sqliteTable(
     state: text('state').notNull(),
     /** The last time a live remote authorization check admitted this room. */
     authorizedAt: text('authorized_at').notNull(),
+    /**
+     * Where this mirror last read the remote channel's redaction feed: an opaque, server-signed
+     * cursor, `null` before the first read (which starts from the beginning).
+     */
+    redactionCursor: text('redaction_cursor'),
   },
   (table) => [
     uniqueIndex('community_room_mirrors_ref_remote_room_unique').on(
@@ -92,6 +97,31 @@ export const communityMirrorEntries = sqliteTable(
     ),
     uniqueIndex('community_mirror_entries_local_entry_unique').on(table.localEntryId),
     index('idx_community_mirror_entries_room_seq').on(table.localRoomId, table.remoteSeq),
+  ]
+);
+
+/**
+ * A remote entry that changed (deleted, removed, or erased) before this installation cached it.
+ *
+ * The redaction feed moves on past such an entry, but a stream frame or history page read before
+ * the change can still arrive afterwards. The import consults this row and stores the entry as it
+ * stands now, never the older text, then drops the row. It holds only what the entry shows after
+ * the change.
+ */
+export const communityMirrorRedactions = sqliteTable(
+  'community_mirror_redactions',
+  {
+    communityRef: text('community_ref').notNull(),
+    remoteRoomId: text('remote_room_id').notNull(),
+    remoteEntryId: text('remote_entry_id').notNull(),
+    /** The validated adapter entry as the redaction feed returned it. */
+    entryJson: text('entry_json').notNull(),
+    /** The author label the entry shows now (`Erased member` after an erasure). */
+    authorDisplayName: text('author_display_name').notNull(),
+    authorKind: text('author_kind').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.communityRef, table.remoteRoomId, table.remoteEntryId] }),
   ]
 );
 

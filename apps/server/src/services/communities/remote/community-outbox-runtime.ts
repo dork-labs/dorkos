@@ -24,7 +24,7 @@ import {
   CommunityOutboxWorker,
   type CommunityOutboxChangeListener,
 } from './community-outbox-worker.js';
-import { RemoteMirrorStore } from './mirror-store.js';
+import { RemoteMirrorStore, type MirrorPurge } from './mirror-store.js';
 
 /** Dependencies the server bootstrap already owns after constructing its one room subsystem. */
 export interface CommunityOutboxRuntimeDeps {
@@ -38,6 +38,8 @@ export interface CommunityOutboxRuntimeDeps {
   isLocalAgentCurrent: (localAgentId: string) => boolean | Promise<boolean>;
   changes?: CommunityOutboxChangeListener;
   now?: () => number;
+  /** Told which mirrors a revocation emptied, so search and file storage can follow. */
+  mirrorPurged?: (purge: MirrorPurge) => void;
 }
 
 /**
@@ -64,7 +66,7 @@ export class CommunityOutboxRuntime {
     this.authors = deps.authors;
     this.changes = deps.changes;
     this.isLocalAgentCurrent = deps.isLocalAgentCurrent;
-    this.mirrors = new RemoteMirrorStore(deps.db, deps.roomStore, deps.authors);
+    this.mirrors = new RemoteMirrorStore(deps.db, deps.roomStore, deps.authors, deps.mirrorPurged);
     this.enrollments = new CommunityAgentEnrollmentStore(deps.db);
     this.outbox = new CommunityOutboxStore(deps.db);
     this.mirrorWrites = new CommunityOutboxPolicy(

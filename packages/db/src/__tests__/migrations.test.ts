@@ -147,6 +147,7 @@ describe('Database Migrations', () => {
       'community_entry_origins',
       'community_mirror_access',
       'community_mirror_entries',
+      'community_mirror_redactions',
       'community_outbox',
       'community_room_mirrors',
       // Derived cache binding a ConnectionId → owning connector provider

@@ -14,6 +14,7 @@ import {
 import type { Agent, Channel as ChannelType, Entry, Member } from '../types.js';
 import { EntryCard } from './EntryCard.js';
 import type { RemovalRequest } from './EntryRemoval.js';
+import { useChannelChanges } from './channel-changes.js';
 
 type Page = { entries: Entry[]; nextCursor: string | null };
 type MemberDirectoryPage = { members: Member[]; nextCursor: string | null };
@@ -34,6 +35,12 @@ function mergeEntries(previous: Entry[], incoming: Entry[]) {
   const byId = new Map(previous.map((entry) => [entry.id, entry]));
   for (const entry of incoming) byId.set(entry.id, entry);
   return [...byId.values()].sort((a, b) => a.seq - b.seq);
+}
+/** Replace the entries already shown with their changed versions; never add one. */
+function replaceEntries(previous: Entry[], changed: ReadonlyMap<string, Entry>) {
+  return previous.some((entry) => changed.has(entry.id))
+    ? previous.map((entry) => changed.get(entry.id) ?? entry)
+    : previous;
 }
 /** Render channel history, live events, threads and composition. */
 export function ChannelView({
@@ -76,6 +83,16 @@ export function ChannelView({
   // Files whose removal the server confirmed: a later refusal never brings them back on screen.
   const removedFiles = useRef(new Set<string>());
   const threadRef = useRef(thread);
+  const applyChanges = useCallback((changed: ReadonlyMap<string, Entry>) => {
+    setEntries((previous) => replaceEntries(previous, changed));
+    setReplies((previous) => replaceEntries(previous, changed));
+    setThread((current) => (current ? (changed.get(current.id) ?? current) : current));
+  }, []);
+  const {
+    asChanged,
+    begin: beginChanges,
+    remember: rememberChange,
+  } = useChannelChanges(channel.id, channel.joined, applyChanges);
   const listRef = useRef<HTMLDivElement>(null);
   const activeChannelId = useRef(channel.id);
   // A reload can overlap the initial request (or a retry). Only the newest
@@ -98,13 +115,16 @@ export function ChannelView({
     setLoading(true);
     setError('');
     try {
+      // Take the changes cursor before history, so a message removed between the two reads is
+      // still replaced by the next poll.
+      await beginChanges(requestedChannelId);
       const page = await request<Page>(`/api/v1/channels/${channel.id}/entries?limit=50`);
       if (
         generation !== historyGeneration.current ||
         activeChannelId.current !== requestedChannelId
       )
         return;
-      setEntries((previous) => mergeEntries(previous, page.entries));
+      setEntries((previous) => mergeEntries(previous, asChanged(page.entries)));
       setNextCursor(page.nextCursor);
       // Keep a cursor advanced by SSE. Moving it backward would make the next
       // read receipt describe an earlier point than the one already rendered.
@@ -116,7 +136,7 @@ export function ChannelView({
     } finally {
       if (activeChannelId.current === requestedChannelId) setLoading(false);
     }
-  }, [channel.id]);
+  }, [channel.id, asChanged, beginChanges]);
   useEffect(() => {
     if (channel.joined) void load();
     else setLoading(false);
@@ -130,20 +150,17 @@ export function ChannelView({
         if (event.type === 'snapshot') {
           setLivePaused(false);
           setEntries((previous) =>
-            mergeEntries(
-              previous,
-              event.entries.filter((entry) => !entry.parentEntryId)
-            )
+            mergeEntries(previous, asChanged(event.entries.filter((entry) => !entry.parentEntryId)))
           );
           if (event.entries.length) setReadCursor(event.cursor);
         } else if (event.type === 'entry') {
           setLivePaused(false);
           setEntries((previous) =>
-            event.entry.parentEntryId ? previous : mergeEntries(previous, [event.entry])
+            event.entry.parentEntryId ? previous : mergeEntries(previous, asChanged([event.entry]))
           );
           setReplies((previous) =>
             threadRef.current && event.entry.threadRootEntryId === threadRef.current.id
-              ? mergeEntries(previous, [event.entry])
+              ? mergeEntries(previous, asChanged([event.entry]))
               : previous
           );
           setReadCursor(event.cursor);
@@ -184,13 +201,13 @@ export function ChannelView({
       source.close();
       window.clearTimeout(retry);
     };
-  }, [channel.id, channel.joined, onChanged, readOnly, streamAttempt]);
+  }, [channel.id, channel.joined, onChanged, readOnly, streamAttempt, asChanged]);
   useEffect(() => {
     if (!threadId) return;
     let active = true;
     void request<Page>(`/api/v1/channels/${channel.id}/entries?thread=${threadId}&limit=100`)
       .then((page) => {
-        if (active) setReplies(page.entries.filter((entry) => entry.id !== threadId));
+        if (active) setReplies(asChanged(page.entries.filter((entry) => entry.id !== threadId)));
       })
       .catch((cause: unknown) => {
         if (active) setError(describeError(cause));
@@ -198,7 +215,7 @@ export function ChannelView({
     return () => {
       active = false;
     };
-  }, [threadId, channel.id]);
+  }, [threadId, channel.id, asChanged]);
   useEffect(() => {
     if (!readCursor || !channel.joined) return;
     const timer = window.setTimeout(() => {
@@ -269,7 +286,7 @@ export function ChannelView({
       const page = await request<Page>(
         `/api/v1/channels/${channel.id}/entries?limit=50&cursor=${encodeURIComponent(nextCursor)}`
       );
-      setEntries((previous) => mergeEntries(page.entries, previous));
+      setEntries((previous) => mergeEntries(asChanged(page.entries), previous));
       setNextCursor(page.nextCursor);
     } catch (cause) {
       setError(describeError(cause));
@@ -312,25 +329,33 @@ export function ChannelView({
       );
       // No body: the server removed it and has nothing more to show than what is on screen.
       if (target.kind === 'file') removedFiles.current.add(target.attachment.id);
-      if (body !== undefined)
-        replaceEntry(CommunityWireEntryRemoveResponseSchema.parse(body).entry);
+      if (body !== undefined) {
+        const confirmed = CommunityWireEntryRemoveResponseSchema.parse(body).entry;
+        // A slower history or stream read from before this removal must not bring it back.
+        rememberChange(confirmed);
+        replaceEntry(confirmed);
+      }
     } catch (cause) {
       const kept = (file: Entry['attachments'][number]) => !removedFiles.current.has(file.id);
+      // A rollback puts back only what this removal took, and never what the tab has since
+      // learned was changed by someone else (the redaction feed's version wins).
       if (target.kind === 'message')
-        replaceEntry({ ...entry, attachments: entry.attachments.filter(kept) });
+        replaceEntry(asChanged([{ ...entry, attachments: entry.attachments.filter(kept) }])[0]);
       else
         updateEntry(entry.id, (current) =>
           isRemovedEntry(current)
             ? current
-            : {
-                ...current,
-                // Only this file comes back, in its place among the files still there.
-                attachments: entry.attachments.filter(
-                  (file) =>
-                    file.id === target.attachment.id ||
-                    current.attachments.some((shown) => shown.id === file.id)
-                ),
-              }
+            : asChanged([
+                {
+                  ...current,
+                  // Only this file comes back, in its place among the files still there.
+                  attachments: entry.attachments.filter(
+                    (file) =>
+                      file.id === target.attachment.id ||
+                      current.attachments.some((shown) => shown.id === file.id)
+                  ),
+                },
+              ])[0]
         );
       setRemovalError({ entryId: entry.id, message: describeError(cause) });
       if (cause instanceof RequestError && cause.status === 403) {

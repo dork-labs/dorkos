@@ -1762,6 +1762,8 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /channels/:id/entries': 'ordinary reading',
   'GET /channels/:id/events': 'ordinary live stream',
   'GET /channels/:id/threads': 'ordinary reading of reply counts',
+  'GET /channels/:id/redactions':
+    "ordinary reading of changed messages, with history's authority; redaction-feed.integration.test.ts",
   'GET /channels/:id/read-cursor': "the caller's own read position",
   'PUT /channels/:id/read-cursor': "the caller's own read position",
   'GET /attention': "the caller's own unread counts",

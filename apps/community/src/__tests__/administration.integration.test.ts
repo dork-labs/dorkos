@@ -995,6 +995,10 @@ it('rejects foreign objects on every id-taking community route, even for an owne
       call: (x) => ({ path: `/channels/${x.channel}/threads?roots=${x.entry}` }),
     },
     {
+      route: 'GET /channels/:id/redactions',
+      call: (x) => ({ path: `/channels/${x.channel}/redactions` }),
+    },
+    {
       route: 'POST /invites',
       call: (x) => ({ path: '/invites', body: { channelId: x.channel, seats: 1 } }),
     },
@@ -1199,7 +1203,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   });
   // The number of probes that take the channel id. Update it when you add or
   // remove a channel probe; it stops the public run from silently shrinking.
-  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(17);
+  expect(variants.filter(({ ids }) => ids === foreignPublic)).toHaveLength(18);
 
   const before = await isolationSnapshot([communityId, otherId]);
   let executed = 0;

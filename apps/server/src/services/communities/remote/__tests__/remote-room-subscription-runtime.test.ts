@@ -590,6 +590,100 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     runtime.stop();
   });
 
+  // Purpose (member erasure task 2.1): a subscribed room reads its redaction feed as the
+  // enrolled agent after every completed replay and again on the interval, and never before its
+  // replay completes. It fails if the sync is not wired, runs as the owner, or stops on the timer.
+  it('reads the redaction feed after each replay and on the interval, as the enrolled agent', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: agent.mintedForManifestId!,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      new RemoteMirrorStore(harness.db, harness.store, harness.authors),
+      harness.service,
+      enrollments,
+      () => agent.id
+    );
+    const room = testRoom();
+    const expected = [
+      { communityRef: REF, remoteRoomId: ROOM_ID, ownerAuthorId: harness.human },
+      { actingMemberId: 'remote-ana' },
+    ];
+    const start = (redactionSyncMs: number, replayGate: Promise<void>) => {
+      const sync = vi.fn(async (..._args: unknown[]) => undefined);
+      const runtime = new RemoteRoomSubscriptionRuntime({
+        bridge,
+        enrollments,
+        resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
+        adapters: () => ({
+          listRooms: async () => [room],
+          subscribeNativeRoom: (_roomId, _cursor, signal) =>
+            (async function* () {
+              yield snapshot(room, [], 0);
+              await replayGate;
+              yield { type: 'replay_complete' as const, capturedSeq: 0 };
+              await new Promise<void>((resolve) =>
+                signal?.addEventListener('abort', () => resolve(), { once: true })
+              );
+            })(),
+        }),
+        resolveLocalAgentAuthor: () => agent.id,
+        isRoomJoined: () => true,
+        retryMs: 60_000,
+        redactions: { sync },
+        redactionSyncMs,
+      });
+      runtime.start();
+      return { runtime, sync };
+    };
+
+    // After the replay: once, and not before it.
+    let releaseReplay!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseReplay = resolve));
+    const replayed = start(60_000, gate);
+    try {
+      await settleUntil(
+        () => replayed.runtime.observation(REF, ROOM_ID, harness.human)?.snapshotComplete === true,
+        'the snapshot is cached'
+      );
+      expect(replayed.sync).not.toHaveBeenCalled();
+      releaseReplay();
+      await vi.waitFor(() => expect(replayed.sync).toHaveBeenCalledOnce());
+      // A replay also re-asks a server that lately answered without the feed.
+      expect(replayed.sync).toHaveBeenCalledWith(...expected, { recheck: true });
+    } finally {
+      replayed.runtime.stop();
+    }
+
+    // On the interval while subscribed, and never after stop.
+    const timed = start(20, Promise.resolve());
+    try {
+      await vi.waitFor(() => expect(timed.sync.mock.calls.length).toBeGreaterThanOrEqual(3));
+      // One replay call (which re-asks); every other call is the interval's, which honours the
+      // hour's wait.
+      const [replays, ticks] = [
+        timed.sync.mock.calls.filter((call) => call.length === 3),
+        timed.sync.mock.calls.filter((call) => call.length === 2),
+      ];
+      expect(replays).toEqual([[...expected, { recheck: true }]]);
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      for (const call of ticks) expect(call).toEqual(expected);
+      timed.runtime.stop();
+      const stopped = timed.sync.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(timed.sync.mock.calls.length).toBe(stopped);
+    } finally {
+      timed.runtime.stop();
+    }
+  });
+
   it('preserves persisted grants and pending work until Mesh becomes authoritative after restart', async () => {
     const harness = createRoomHarness({
       agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
