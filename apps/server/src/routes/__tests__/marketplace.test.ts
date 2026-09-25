@@ -2396,6 +2396,54 @@ describe('Marketplace Routes', () => {
       expect(named.body.outcome).toBe('rebuilt');
     });
 
+    // Purpose (DOR-2322): after an offline update kept files it could not
+    // prove, Check files sorts them: a leftover identical to the earlier
+    // version goes, the person's file stays. Fails if the route never asks
+    // for sorting (the sweep's default), which would answer not-needed.
+    it('sorts the files an update kept unproven, and says what it did', async () => {
+      const root = join(dorkHome, 'plugins', 'old-plugin');
+      writeTree(root, SHIPPED);
+      writeTree(root, { 'old.md': 'old v1', 'notes.txt': 'mine' });
+      const { computeInstalledFiles, writeInstalledFiles } =
+        await import('../../services/marketplace/lib/installed-files.js');
+      const record = await computeInstalledFiles(root, {
+        identity: { name: 'old-plugin', type: 'plugin' },
+        userEditable: [],
+        npmRan: false,
+      });
+      delete record.files['old.md'];
+      delete record.files['notes.txt'];
+      await writeInstalledFiles(root, {
+        ...record,
+        unproven: {
+          why: 'fetch-failed',
+          from: {
+            name: 'old-plugin',
+            commitSha: SHA,
+            sourceKey: {
+              cloneUrl: 'https://github.com/acme/plugins',
+              subpath: 'old-plugin',
+              ref: 'main',
+            },
+          },
+          files: { 'old.md': 'old.md', 'notes.txt': 'notes.txt' },
+        },
+      });
+      serveCommit({ ...SHIPPED, 'old.md': 'old v1' });
+
+      const res = await request(fixtureServer)
+        .post('/api/marketplace/packages/old-plugin/check-files')
+        .send({});
+
+      expect(res.body).toEqual({
+        outcome: 'sorted',
+        message:
+          'Checked the files old-plugin kept: removed 1 left over from the version you had before, and kept 1 as yours.',
+      });
+      expect(existsSync(join(root, 'old.md'))).toBe(false);
+      expect(existsSync(join(root, 'notes.txt'))).toBe(true);
+    });
+
     // Purpose: a package that is not installed is a 404, like update and uninstall.
     it('returns 404 when the package is not installed', async () => {
       const res = await request(fixtureServer)

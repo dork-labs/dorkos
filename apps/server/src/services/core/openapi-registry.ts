@@ -2933,7 +2933,14 @@ registry.registerPath({
       content: {
         'application/json': {
           schema: z.object({
-            outcome: z.enum(['rebuilt', 'not-needed', 'no-source', 'fetch-failed', 'mismatch']),
+            outcome: z.enum([
+              'rebuilt',
+              'sorted',
+              'not-needed',
+              'no-source',
+              'fetch-failed',
+              'mismatch',
+            ]),
             message: z.string(),
           }),
         },

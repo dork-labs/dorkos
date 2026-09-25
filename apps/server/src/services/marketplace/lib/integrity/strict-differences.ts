@@ -23,6 +23,9 @@ import {
 import { isNeverCarried, lstatChain, scanTree, type InstalledFiles } from '../installed-files.js';
 import { cachedHashFile } from './file-hash-cache.js';
 
+/** The prefix of every scratch folder a strict rebuild or a sort stages into, for leftover cleanup. */
+export const STRICT_RECORD_TEMP_PREFIX = 'dorkos-strict-record-';
+
 /** Join a root and a POSIX path. */
 function fsPath(root: string, posixPath: string): string {
   return path.join(root, ...posixPath.split('/'));

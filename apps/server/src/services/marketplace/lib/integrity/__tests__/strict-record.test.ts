@@ -11,10 +11,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { noopLogger } from '@dorkos/shared/logger';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
-import { computeInstalledFiles, readInstalledFiles } from '../../installed-files.js';
+import {
+  computeInstalledFiles,
+  readInstalledFiles,
+  writeInstalledFiles,
+} from '../../installed-files.js';
 import { materializePackageSchedules } from '../../materialize-schedules.js';
 import { withInstallTargetLock } from '../../../transaction.js';
-import { rebuildRecordStrict } from '../strict-record.js';
+import { describeStrictRebuild, rebuildRecordStrict } from '../strict-record.js';
 
 const SHA = 'a'.repeat(40);
 const dirs: string[] = [];
@@ -433,4 +437,185 @@ describe('rebuildRecordStrict', () => {
       expect(await readInstalledFiles(root)).toBeNull();
     }
   );
+});
+
+describe('Check files after a rebuild that could not prove everything (DOR-2322)', () => {
+  /** A recorded install of `files` whose record lists `unproven` kept files. */
+  async function recordedWithUnproven(
+    files: Record<string, string>,
+    kept: Record<string, string>,
+    unproven: Record<string, string>,
+    from = true
+  ): Promise<string> {
+    const root = path.join(await tmp(), 'flow');
+    for (const [p, c] of Object.entries(files)) await put(root, p, c);
+    const record = await computeInstalledFiles(root, {
+      identity: { name: 'flow', type: 'plugin' },
+      userEditable: [],
+      npmRan: false,
+    });
+    for (const [p, c] of Object.entries(kept)) await put(root, p, c);
+    await writeInstalledFiles(root, {
+      ...record,
+      unproven: {
+        why: 'fetch-failed',
+        ...(from && {
+          from: {
+            name: 'flow',
+            commitSha: SHA,
+            sourceKey: {
+              cloneUrl: 'https://github.com/dork-labs/marketplace',
+              subpath: 'plugins/flow',
+              ref: 'main',
+            },
+          },
+        }),
+        files: unproven,
+      },
+    });
+    return root;
+  }
+
+  // Purpose: an older install recorded only by guessing is not recorded yet:
+  // Check files and the sweep run the strict rebuild on it and replace the
+  // guess with an exact record. Fails if an inferred record reads "already checked".
+  it('rebuilds an inferred record strictly', async () => {
+    const root = await legacyInstall(shipped());
+    const guess = await computeInstalledFiles(root, {
+      identity: { name: 'flow', type: 'plugin' },
+      userEditable: [],
+      npmRan: false,
+    });
+    await writeInstalledFiles(root, { ...guess, files: {}, inferred: true });
+
+    const result = await rebuildRecordStrict(root, {
+      fetcher: fetcherFor(await tree(shipped())),
+      logger: noopLogger,
+    });
+
+    expect(result).toEqual({ outcome: 'rebuilt', files: 3 });
+    const record = await readInstalledFiles(root);
+    expect(record?.inferred).toBeUndefined();
+    expect(Object.keys(record!.files).sort()).toEqual(Object.keys(shipped()).sort());
+  });
+
+  // Purpose: THE re-verification. A kept file whose bytes are exactly the old
+  // version's copy, and which the current version does not ship, is a leftover
+  // an online update would have removed: it goes. A file with other bytes is
+  // the person's and stays; so does one the current version ships. The list is
+  // then dropped. Fails if a person's file is removed, a leftover survives, or
+  // the list stays.
+  it('removes proven leftovers, keeps the rest as yours, and drops the list', async () => {
+    const old = await tree({ 'old.md': 'old v1', 'a.md': 'a v1', 'skills/b/SKILL.md': 'b v1' });
+    const root = await recordedWithUnproven(
+      { '.dork/manifest.json': MANIFEST, 'a.md': 'a v2', 'skills/b/SKILL.md': 'b v2' },
+      {
+        'old.md': 'old v1',
+        'a.md.dork-old': 'a v1',
+        'mine.txt': 'mine',
+        'skills/b/SKILL.md.dork-old': 'b edited',
+      },
+      {
+        'old.md': 'old.md',
+        'a.md.dork-old': 'a.md',
+        'mine.txt': 'mine.txt',
+        'skills/b/SKILL.md.dork-old': 'skills/b/SKILL.md',
+        'a.md': 'a.md',
+      }
+    );
+
+    const result = await rebuildRecordStrict(
+      root,
+      { fetcher: fetcherFor(old), logger: noopLogger },
+      { sortUnproven: true }
+    );
+
+    expect(result).toEqual({
+      outcome: 'sorted',
+      removed: ['a.md.dork-old', 'old.md'],
+      kept: ['a.md', 'mine.txt', 'skills/b/SKILL.md.dork-old'],
+    });
+    const after = await snapshot(root);
+    expect(after['old.md']).toBeUndefined();
+    expect(after['a.md.dork-old']).toBeUndefined();
+    expect(after['mine.txt']).toBe('mine');
+    expect(after['a.md']).toBe('a v2');
+    expect(after['skills/b/SKILL.md.dork-old']).toBe('b edited');
+    expect((await readInstalledFiles(root))?.unproven).toBeUndefined();
+  });
+
+  // Purpose: sorting removes files, so only a person's Check files does it.
+  // The sweep after boot (no `sortUnproven`) leaves them exactly as they are.
+  it('never sorts kept files unless asked to', async () => {
+    const root = await recordedWithUnproven(
+      { '.dork/manifest.json': MANIFEST },
+      { 'old.md': 'old v1' },
+      { 'old.md': 'old.md' }
+    );
+    const before = await snapshot(root);
+    const fetcher = fetcherFor(await tree({ 'old.md': 'old v1' }));
+
+    const result = await rebuildRecordStrict(root, { fetcher, logger: noopLogger });
+
+    expect(result).toEqual({ outcome: 'not-needed', why: 'has-record' });
+    expect(fetcher.fetchAtCommit).not.toHaveBeenCalled();
+    expect(await snapshot(root)).toEqual(before);
+  });
+
+  // Purpose: with nothing to compare against, nothing is removed and the list
+  // stays, and the answer says why in words that fit kept files.
+  it('removes nothing when the old version cannot be fetched, or there is none', async () => {
+    const offline = await recordedWithUnproven(
+      { '.dork/manifest.json': MANIFEST },
+      { 'old.md': 'old v1' },
+      { 'old.md': 'old.md' }
+    );
+    const before = await snapshot(offline);
+    const failed = await rebuildRecordStrict(
+      offline,
+      {
+        fetcher: { fetchAtCommit: vi.fn(async () => Promise.reject(new Error('offline'))) },
+        logger: noopLogger,
+      },
+      { sortUnproven: true }
+    );
+    expect(failed).toEqual({ outcome: 'fetch-failed', message: 'offline', unproven: true });
+    expect(await snapshot(offline)).toEqual(before);
+
+    const local = await recordedWithUnproven(
+      { '.dork/manifest.json': MANIFEST },
+      { 'old.md': 'old v1' },
+      { 'old.md': 'old.md' },
+      false
+    );
+    const noSource = await rebuildRecordStrict(
+      local,
+      { fetcher: { fetchAtCommit: vi.fn() }, logger: noopLogger },
+      { sortUnproven: true }
+    );
+    expect(noSource).toEqual({ outcome: 'no-source', unproven: true });
+    expect((await readInstalledFiles(local))?.unproven?.files).toEqual({ 'old.md': 'old.md' });
+
+    expect(describeStrictRebuild('flow', failed)).toBe(
+      "Couldn't fetch the version of flow you had before (offline), so the files it kept stay as they are. Try again when you're online."
+    );
+    expect(describeStrictRebuild('flow', noSource)).toBe(
+      "flow was installed from a folder on this computer, so there's no earlier version to sort the files it kept against. Delete any you don't need."
+    );
+  });
+
+  // Purpose: the answer a person reads after sorting says what went and what stayed.
+  it('says what sorting removed and kept', () => {
+    expect(
+      describeStrictRebuild('flow', { outcome: 'sorted', removed: ['a', 'b'], kept: ['c'] })
+    ).toBe(
+      'Checked the files flow kept: removed 2 left over from the version you had before, and kept 1 as yours.'
+    );
+    expect(describeStrictRebuild('flow', { outcome: 'sorted', removed: [], kept: ['c'] })).toBe(
+      'Checked the files flow kept: the 1 file is yours, so it stays.'
+    );
+    expect(describeStrictRebuild('flow', { outcome: 'sorted', removed: ['a'], kept: [] })).toBe(
+      'Checked the files flow kept: removed 1 left over from the version you had before.'
+    );
+  });
 });

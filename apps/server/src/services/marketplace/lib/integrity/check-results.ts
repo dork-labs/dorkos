@@ -26,7 +26,11 @@ const lastResults = new Map<string, InstallCheckResult>();
  */
 export function rememberCheck(root: string, name: string, result: StrictRebuildResult): void {
   const key = path.resolve(root);
-  if (result.outcome === 'rebuilt' || result.outcome === 'not-needed') {
+  if (
+    result.outcome === 'rebuilt' ||
+    result.outcome === 'sorted' ||
+    result.outcome === 'not-needed'
+  ) {
     lastResults.delete(key);
     return;
   }

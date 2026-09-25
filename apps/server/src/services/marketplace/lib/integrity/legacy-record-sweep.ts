@@ -19,6 +19,7 @@ import path from 'node:path';
 import { INSTALLED_FILES_PATH } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { installRootsUnder, projectScopeRoot } from '../install-roots.js';
+import { readInstalledFiles } from '../installed-files.js';
 import { hasPackageIdentity } from '../locate-install.js';
 import {
   rebuildRecordStrict,
@@ -59,7 +60,10 @@ async function exists(p: string): Promise<boolean> {
   return (await lstat(p).catch(() => undefined)) !== undefined;
 }
 
-/** The legacy installs directly inside `dir`: real folders with a package identity and no record. */
+/**
+ * The legacy installs directly inside `dir`: real folders with a package
+ * identity and no record, or only a record guessed by matching bytes.
+ */
 async function legacyInstallsIn(dir: string): Promise<string[]> {
   let names: string[];
   try {
@@ -73,7 +77,12 @@ async function legacyInstallsIn(dir: string): Promise<string[]> {
     const root = path.join(dir, name);
     const stats = await lstat(root).catch(() => undefined);
     if (!stats?.isDirectory()) continue;
-    if (await exists(path.join(root, ...INSTALLED_FILES_PATH.split('/')))) continue;
+    // A record guessed by matching bytes is not a record yet (DOR-2322).
+    if (
+      (await exists(path.join(root, ...INSTALLED_FILES_PATH.split('/')))) &&
+      !(await readInstalledFiles(root))?.inferred
+    )
+      continue;
     if (!(await hasPackageIdentity(root))) continue;
     found.push(root);
   }

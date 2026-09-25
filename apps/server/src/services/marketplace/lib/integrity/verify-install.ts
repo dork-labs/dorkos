@@ -67,6 +67,10 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
     if (hasFile) return { status: 'unknown', reason: 'unreadable-record' };
     return { status: 'unknown', reason: 'no-record', check: await checkInfoOf(root) };
   }
+  // Guessed by matching bytes, so it speaks for nothing yet (DOR-2322).
+  if (record.inferred) {
+    return { status: 'unknown', reason: 'inferred', check: await checkInfoOf(root) };
+  }
 
   const changed: string[] = [];
   const missing: string[] = [];
@@ -85,7 +89,14 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
     if ((await cachedHashFile(fsPath(root, p))) === hash) continue;
     (editable ? customized : changed).push(p);
   }
-  const added = await addedEffectFiles(root, record);
+  // Files an update kept unproven are neither the person's additions nor
+  // known to be the package's: named on their own, never as `added`.
+  const unprovenPaths = Object.keys(record.unproven?.files ?? {});
+  const added = (await addedEffectFiles(root, record)).filter((p) => !unprovenPaths.includes(p));
+  const stillThere: string[] = [];
+  for (const p of unprovenPaths) {
+    if ((await lstatChain(root, p)).kind !== 'missing') stillThere.push(p);
+  }
 
   let truncated = false;
   const cap = (list: string[]): string[] => {
@@ -99,11 +110,23 @@ export async function verifyInstall(root: string): Promise<InstallIntegrity> {
     added: cap(added),
     customized: cap(customized),
   };
+  const unproven =
+    stillThere.length > 0
+      ? {
+          unproven: {
+            files: cap(stillThere),
+            check: {
+              source: record.unproven?.from ? ('fetchable' as const) : ('local' as const),
+              ...(lastCheck(root) && { last: lastCheck(root)! }),
+            },
+          },
+        }
+      : {};
   const extra = truncated ? { truncated: true as const } : {};
   if (lists.changed.length + lists.missing.length + lists.added.length === 0) {
-    return { status: 'clean', customized: lists.customized, ...extra };
+    return { status: 'clean', customized: lists.customized, ...unproven, ...extra };
   }
-  return { status: 'modified', ...lists, ...extra };
+  return { status: 'modified', ...lists, ...unproven, ...extra };
 }
 
 /** How many installs {@link withIntegrity} verifies at once, like update checks. */
