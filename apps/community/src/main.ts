@@ -4,11 +4,15 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Pool } from 'pg';
 import { createCommunityApp } from './app.js';
 import { parseConfig } from './config.js';
+import { oidcCallbackUrl } from './oidc.js';
 import { migrate } from './migrate.js';
 import { createSignalHandler, createStop } from './shutdown.js';
+import { reservedBoundShortNames, shortNameHoldKey } from './host/short-names.js';
+import { registerShortNamePages } from './short-names/pages.js';
 import { createBlobStore } from './storage/index.js';
 import { sweepExpiredAttachments } from './routes/attachments.js';
-import { sweepExpiredExports } from './routes/exports.js';
+import { sweepExpiredExports } from './exports/sweep.js';
+import { startExportWorker } from './exports/worker.js';
 import { sweepExpiredAdmissions } from './routes/invites.js';
 import { sweepPendingBlobDeletions } from './storage/pending-deletions.js';
 import { sweepCommunityDeletions, sweepCommunityDeletionTombstones } from './deletion-worker.js';
@@ -17,7 +21,13 @@ import { sweepExpiredPairings } from './routes/pairings.js';
 
 const config = parseConfig(process.env);
 await migrate(config.databaseUrl);
-const pool = new Pool({ connectionString: config.databaseUrl });
+// Each running export holds one connection for its collection read (one REPEATABLE READ
+// snapshot) and briefly a second to commit a segment, so the pool grows with export concurrency
+// and requests keep the ten connections they had before.
+const pool = new Pool({
+  connectionString: config.databaseUrl,
+  max: 10 + 2 * config.exports.concurrency,
+});
 // A database restart or failover drops idle connections. The pool has already discarded the
 // broken one and opens a fresh one for the next query, so log it rather than crash the server.
 pool.on('error', (error: Error & { code?: string }) => {
@@ -52,7 +62,27 @@ app.get(
   '/c/:communityId/*',
   serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
 );
+registerShortNamePages(app, {
+  indexPath: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
+  reservedNames: config.reservedShortNames,
+});
+// A name a community already holds may have become reserved since, by an upgrade or the host's
+// own list; that address no longer opens the community, so say so where the host will see it.
+for (const bound of await reservedBoundShortNames(pool, config.reservedShortNames)) {
+  console.warn(
+    `Community ${bound.communityId} has the web address /${bound.shortName}, which is now reserved and no longer opens it. Give the community another address on the host page.`
+  );
+}
+const shortNameHolds = {
+  key: shortNameHoldKey(config.authSecret),
+  cooloffDays: config.limits.shortNameCooloffDays,
+};
 const server = serve({ fetch: app.fetch, port: config.port });
+if (config.oidc)
+  // Discovery waits for the first sign-in, so this line is the only startup trace of the issuer.
+  console.info(
+    `Community single sign-on: register ${oidcCallbackUrl(config.publicUrl)} as the redirect URI`
+  );
 const cleanup = setInterval(() => {
   void sweepExpiredAttachments(pool, blobStore).catch((error: unknown) => {
     console.error(
@@ -78,12 +108,14 @@ const cleanup = setInterval(() => {
       error instanceof Error ? error.name : 'unknown'
     );
   });
-  void sweepCommunityDeletions(pool, blobStore).catch((error: unknown) => {
-    console.error(
-      'Community deletion unavailable',
-      error instanceof Error ? error.name : 'unknown'
-    );
-  });
+  void sweepCommunityDeletions(pool, blobStore, undefined, { shortNameHolds }).catch(
+    (error: unknown) => {
+      console.error(
+        'Community deletion unavailable',
+        error instanceof Error ? error.name : 'unknown'
+      );
+    }
+  );
   void sweepCommunityDeletionTombstones(pool).catch((error: unknown) => {
     console.error(
       'Community deletion receipt cleanup unavailable',
@@ -126,6 +158,15 @@ const erasures = setInterval(() => {
     });
 }, ERASURE_POLL_MS);
 erasures.unref();
-const onSignal = createSignalHandler(createStop({ server, pool, timers: [cleanup, erasures] }));
+// A job a stopped replica leaves behind is picked up by any replica once its lease expires.
+const exports = startExportWorker({
+  pool,
+  blobStore,
+  settings: config.exports,
+  concurrency: config.exports.concurrency,
+});
+const onSignal = createSignalHandler(
+  createStop({ server, pool, timers: [cleanup, erasures, exports] })
+);
 process.on('SIGINT', onSignal);
 process.on('SIGTERM', onSignal);

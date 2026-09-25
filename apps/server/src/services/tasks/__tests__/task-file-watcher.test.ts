@@ -83,9 +83,11 @@ function errnoError(code: string, message: string): NodeJS.ErrnoException {
 /** A TaskStore stub — only the methods TaskFileWatcher actually calls. */
 function makeStore(): TaskStore {
   return {
-    upsertFromFile: vi.fn(),
-    markRemovedByFilePath: vi.fn(),
-    getByFilePath: vi.fn().mockReturnValue(null),
+    fileSync: {
+      upsertFromFile: vi.fn(),
+      markRemovedByFilePath: vi.fn(),
+      getByFilePath: vi.fn().mockReturnValue(null),
+    },
     getTask: vi.fn().mockReturnValue(null),
   } as unknown as TaskStore;
 }
@@ -246,7 +248,7 @@ describe('TaskFileWatcher', () => {
     it('pauses the row and stops the job that ran from it', () => {
       const store = makeStore();
       const row = { id: 'task-1', filePath: FILE } as unknown as Task;
-      vi.mocked(store.getByFilePath).mockReturnValue(row);
+      vi.mocked(store.fileSync.getByFilePath).mockReturnValue(row);
       vi.mocked(store.getTask).mockReturnValue({
         ...row,
         enabled: false,
@@ -257,7 +259,7 @@ describe('TaskFileWatcher', () => {
 
       handlerFor('unlink')(FILE);
 
-      expect(store.markRemovedByFilePath).toHaveBeenCalledWith(FILE);
+      expect(store.fileSync.markRemovedByFilePath).toHaveBeenCalledWith(FILE);
       expect(scheduler.unregistered).toEqual(['task-1']);
     });
 
@@ -270,12 +272,12 @@ describe('TaskFileWatcher', () => {
 
       handlerFor('unlink')(FILE);
 
-      expect(store.getByFilePath).toHaveBeenCalledWith(FILE);
+      expect(store.fileSync.getByFilePath).toHaveBeenCalledWith(FILE);
     });
 
     it('does not throw when the store fails mid-retirement', () => {
       const store = makeStore();
-      vi.mocked(store.markRemovedByFilePath).mockImplementation(() => {
+      vi.mocked(store.fileSync.markRemovedByFilePath).mockImplementation(() => {
         throw new Error('database is locked');
       });
       const { watcher } = makeWatcher(store);

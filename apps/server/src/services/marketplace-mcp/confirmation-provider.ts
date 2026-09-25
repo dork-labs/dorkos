@@ -52,7 +52,8 @@ import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js'
 import { describeUpdatesInFull, UPDATE_DETAIL_MAX_LENGTH } from './update-approval-detail.js';
 
 /** The kind of mutation a confirmation request is gating. */
-export type ConfirmationOperation = 'install' | 'uninstall' | 'update' | 'create-package';
+export type ConfirmationOperation =
+  'install' | 'uninstall' | 'update' | 'create-package' | 'create-agent-from-template';
 
 /**
  * Result of a confirmation request, discriminated by `status`.
@@ -69,6 +70,22 @@ export type ConfirmationResult =
   | { status: 'approved' }
   | { status: 'declined'; reason?: string }
   | { status: 'pending'; token: string; reason?: string };
+
+/**
+ * One settings file a template carries, as the card writes it out (DOR-2325):
+ * its text with every hidden or control character made visible, or why it is
+ * not shown. The shape `inspectTemplate` produces.
+ */
+export interface TemplateSettingsFileShown {
+  /** Its path in the template. */
+  path: string;
+  /** Its size. */
+  bytes: number;
+  /** Its text, made visible; absent when `omitted` says why. */
+  content?: string;
+  /** Too long to show, not text, or a link (which is never copied). */
+  omitted?: 'too-long' | 'not-text' | 'link';
+}
 
 /**
  * Payload for {@link ConfirmationProvider.requestInstallConfirmation}.
@@ -150,6 +167,21 @@ export interface ConfirmationRequest {
    */
   origin?: { version?: string; source?: string };
   /**
+   * Create-agent-from-template only (DOR-2325): what the template brings into
+   * the new agent's folder. `disclosed` (what its skills run and may do
+   * without asking) is bound like an install's; `findings` (harness
+   * configuration files it carries) is shown in full, and bound through
+   * {@link contentHash}, since they are files among the bytes it pins;
+   * `settings` is each of those files written out, so a person reads what the
+   * new agent's sessions will load rather than only its name.
+   * `projectPath` carries the folder the agent lands in, and is bound.
+   */
+  templateDisclosure?: {
+    disclosed: DisclosedEffects;
+    findings: readonly string[];
+    settings?: readonly TemplateSettingsFileShown[];
+  };
+  /**
    * Opaque label for the agent that asked, shown on the approval card so an
    * operator can see WHO wants this. Not part of the effect, so deliberately not
    * bound into the approval hash — a different agent asking for the same install
@@ -227,12 +259,32 @@ export interface ConfirmationProvider {
   resolveToken(token: string, req: ConfirmationRequest): Promise<ConfirmationResult>;
 }
 
+/** The id a template-creation card is raised under (DOR-2325). */
+export const TEMPLATE_CREATION_CAPABILITY_ID = 'agents.create_from_template';
+
+/**
+ * Describe {@link TEMPLATE_CREATION_CAPABILITY_ID} for an approval card.
+ * `destructive`, because the new agent's sessions run what the template brings.
+ *
+ * @param capabilityId - The id `ApprovalService` is resolving.
+ * @returns The descriptor, or `undefined` for any other id.
+ */
+export function describeTemplateCreationCapability(
+  capabilityId: string
+): { title: string; tier: 'destructive' } | undefined {
+  if (capabilityId !== TEMPLATE_CREATION_CAPABILITY_ID) return undefined;
+  return { title: 'Create an agent from a template', tier: 'destructive' };
+}
+
 /** Capability id each marketplace operation is gated as. */
 const CAPABILITY_IDS: Record<ConfirmationOperation, string> = {
   install: 'marketplace.install',
   uninstall: 'marketplace.uninstall',
   update: 'marketplace.update',
   'create-package': 'marketplace.create_package',
+  // Not a capability anyone invokes: it names the card (DOR-2325), and
+  // `describeTemplateCreationCapability` gives it a title and tier.
+  'create-agent-from-template': TEMPLATE_CREATION_CAPABILITY_ID,
 };
 
 /**
@@ -271,7 +323,7 @@ interface MarketplaceBinding {
  *   disclosed, so a caller can name what a stale approval no longer covers.
  */
 function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
-  const disclosed = disclosedEffectsOf(req.preview);
+  const disclosed = req.templateDisclosure?.disclosed ?? disclosedEffectsOf(req.preview);
   return {
     capabilityId: CAPABILITY_IDS[req.operation],
     inputHash: hashApprovalInput({
@@ -339,6 +391,9 @@ function tooManyUpdatesRefusal(count: number): ConfirmationResult {
 
 /** Whether an install's full list would be cut on the card. */
 function tooLongToShow(req: ConfirmationRequest): boolean {
+  if (req.operation === 'create-agent-from-template') {
+    return describeTemplateInFull(req).length > UPDATE_DETAIL_MAX_LENGTH;
+  }
   return (
     req.operation === 'install' &&
     req.preview !== undefined &&
@@ -346,8 +401,17 @@ function tooLongToShow(req: ConfirmationRequest): boolean {
   );
 }
 
-/** Refuse an install whose full list will not fit on one card; nothing runs. */
-function tooMuchToShowRefusal(): ConfirmationResult {
+/** Refuse a request whose full list will not fit on one card; nothing runs. */
+function tooMuchToShowRefusal(req: ConfirmationRequest): ConfirmationResult {
+  if (req.operation === 'create-agent-from-template') {
+    return {
+      status: 'declined',
+      reason:
+        'This template brings too much to show in full on one approval card, so DorkOS did ' +
+        'not ask. Nothing was created. A person can review it and create the agent themselves ' +
+        'with `dorkos agent create --template`.',
+    };
+  }
   return {
     status: 'declined',
     reason:
@@ -396,16 +460,69 @@ function unbindableRefusal(
  * from, and everything the package runs on its own, written out whole.
  */
 function describeInstallInFull(req: ConfirmationRequest): string {
-  const where = req.projectPath
-    ? 'declared, but not started for a project install'
-    : 'in every session';
+  // An agent package lands in its own folder, and that folder is where the new
+  // agent's sessions run (DOR-2325).
+  const agent = req.packageType === 'agent';
+  const where = agent
+    ? 'in the new agent’s sessions'
+    : req.projectPath
+      ? 'declared, but not started for a project install'
+      : 'in every session';
   const lines = [
     `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
     `Version ${JSON.stringify(req.origin?.version ?? 'not stated')}, from ${JSON.stringify(req.origin?.source ?? req.marketplace ?? 'any enabled marketplace')}.`,
+    ...(agent && req.projectPath ? [`A new agent, in ${JSON.stringify(req.projectPath)}.`] : []),
     '',
     ...describeEffectsInFull(disclosedEffectsOf(req.preview), where),
   ];
   return lines.join('\n');
+}
+
+/**
+ * Every line of a template card's detail (DOR-2325): who asked, where it comes
+ * from and lands, the harness configuration it carries, and what its skills
+ * run, each written out whole.
+ */
+function describeTemplateInFull(req: ConfirmationRequest): string {
+  const findings = req.templateDisclosure?.findings ?? [];
+  const disclosed = req.templateDisclosure?.disclosed ?? null;
+  return [
+    `Asked by ${req.requestedBy ? JSON.stringify(req.requestedBy) : 'a caller that did not say who it is'}.`,
+    `From ${JSON.stringify(req.origin?.source ?? 'a template that was not named')}, into ${JSON.stringify(req.projectPath ?? 'the default agents folder')}.`,
+    '',
+    ...(findings.length > 0
+      ? [
+          'Settings it carries, which the new agent’s sessions load (hooks, permission rules, servers):',
+          ...findings.map((f) => `- ${JSON.stringify(f)}`),
+          '',
+          ...(req.templateDisclosure?.settings ?? []).flatMap(describeSettingsFile),
+        ]
+      : ['It carries no settings files for the new agent’s sessions.', '']),
+    ...describeEffectsInFull(disclosed, 'in the new agent’s sessions'),
+  ].join('\n');
+}
+
+/**
+ * One settings file, written out whole under its name. Every line carries a
+ * `│ ` gutter, so nothing in the file can pass itself off as the card's own
+ * text; hidden and control characters were already made visible.
+ */
+function describeSettingsFile(file: TemplateSettingsFileShown): string[] {
+  const name = JSON.stringify(file.path);
+  if (file.content === undefined) {
+    const why =
+      file.omitted === 'link'
+        ? 'is a link, which is never copied into the new agent'
+        : file.omitted === 'not-text'
+          ? `is not text (${file.bytes} bytes)`
+          : `is too long to show (${file.bytes} bytes)`;
+    return [`${name} ${why}.`, ''];
+  }
+  return [
+    `${name} (${file.bytes} bytes):`,
+    ...file.content.split('\n').map((line) => `│ ${line}`),
+    '',
+  ];
 }
 
 /** Where an operation lands, for the card: a named project or the global scope. */
@@ -430,7 +547,9 @@ function summaryOf(req: ConfirmationRequest): string {
   const marketplace = req.marketplace ? quoteSummaryValue(req.marketplace) : undefined;
   switch (req.operation) {
     case 'install':
-      return `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
+      return req.packageType === 'agent'
+        ? `Add the agent ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}. Its sessions will run what the package brings, listed below.`
+        : `Install ${name} from ${marketplace ?? 'any enabled marketplace'}${scopeOf(req)}`;
     case 'uninstall': {
       const base = req.purge
         ? `Uninstall ${name}${scopeOf(req)} and delete the files you and your agents added or changed`
@@ -447,6 +566,8 @@ function summaryOf(req: ConfirmationRequest): string {
     }
     case 'create-package':
       return `Create the ${req.packageType ? quoteSummaryValue(req.packageType) : 'new'} package ${name} in ${marketplace ?? 'your personal marketplace'}`;
+    case 'create-agent-from-template':
+      return `Create the agent ${name} from the template ${quoteSummaryValue(req.origin?.source ?? 'unnamed')}. Its sessions will run what the template brings, listed below.`;
   }
 }
 
@@ -456,6 +577,7 @@ const OPERATION_NOUNS: Record<ConfirmationOperation, string> = {
   uninstall: 'uninstall',
   update: 'update',
   'create-package': 'package creation',
+  'create-agent-from-template': 'agent creation',
 };
 
 /**
@@ -526,7 +648,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
     if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
       return tooManyUpdatesRefusal(req.updates.length);
     }
-    if (tooLongToShow(req)) return tooMuchToShowRefusal();
+    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);
@@ -554,9 +676,11 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
       summary: summaryOf(req),
       ...(req.updates
         ? { detail: describeUpdatesInFull(req.updates) }
-        : req.operation === 'install' && req.preview
-          ? { detail: describeInstallInFull(req) }
-          : {}),
+        : req.operation === 'create-agent-from-template'
+          ? { detail: describeTemplateInFull(req) }
+          : req.operation === 'install' && req.preview
+            ? { detail: describeInstallInFull(req) }
+            : {}),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),
     });
     return ticket.token;
@@ -583,7 +707,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
     if (req.updates && describeUpdatesInFull(req.updates).length > UPDATE_DETAIL_MAX_LENGTH) {
       return tooManyUpdatesRefusal(req.updates.length);
     }
-    if (tooLongToShow(req)) return tooMuchToShowRefusal();
+    if (tooLongToShow(req)) return tooMuchToShowRefusal(req);
     let binding: MarketplaceBinding;
     try {
       binding = bindingOf(req);

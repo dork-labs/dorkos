@@ -217,7 +217,7 @@ it('upgrades a populated foundation database without changing human authors', as
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
     await migrate(upgradeUrl.toString());
   } finally {
     await db.end();
@@ -407,7 +407,7 @@ it('expands a populated version-four database without changing files or cleanup 
       (await db.query('SELECT version FROM community_migrations ORDER BY version')).rows.map(
         (item) => item.version
       )
-    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+    ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]);
     expect(
       (
         await db.query(
@@ -1125,13 +1125,13 @@ it('refuses to run an unapplied migration below the newest applied one', async (
   }
 });
 
-/** Apply every migration before member erasure, recorded as already migrated. */
-async function applyBeforeErasure(db: Pool): Promise<void> {
+/** Apply every migration before `stop`, recorded as already migrated. */
+async function applyBefore(db: Pool, stop: string): Promise<void> {
   await db.query(
     'CREATE TABLE community_migrations(version integer PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())'
   );
   for (const [version, filename] of COMMUNITY_MIGRATIONS) {
-    if (filename === '0013_member_erasure.sql') break;
+    if (filename === stop) break;
     await db.query(
       await readFile(
         fileURLToPath(new URL(`../../migrations/${filename}`, import.meta.url)),
@@ -1154,7 +1154,7 @@ it('upgrades a populated database to member erasure without changing what old co
   await admin.query(`CREATE DATABASE ${name}`);
   const db = new Pool({ connectionString: url.toString() });
   try {
-    await applyBeforeErasure(db);
+    await applyBefore(db, '0013_member_erasure.sql');
     const one = async (sql: string, params: unknown[] = []): Promise<string> =>
       (await db.query(sql, params)).rows[0].id;
     await db.query(
@@ -1323,6 +1323,114 @@ it('upgrades a populated database to member erasure without changing what old co
     await db.end();
     // Never WITH (FORCE) straight after db.end(): the pool resolves before its connections
     // close, and forcing kills them mid-close into an uncaught pool error. A plain drop waits.
+    await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+  }
+});
+
+// Purpose: the export-jobs migration turns every existing archive into a ready version 1 row
+// that old code still writes and reads, and its constraints refuse the shapes a background job
+// must never take: a version 2 row naming one blob, a ready row without a size or lifetime, two
+// jobs in progress for one owner export, or a data segment without its message range.
+it('upgrades existing archives to ready version 1 exports and constrains the job shapes', async () => {
+  const name = `community_export_jobs_upgrade_${randomUUID().replaceAll('-', '')}`;
+  const url = new URL(adminUrl);
+  url.pathname = `/${name}`;
+  await admin.query(`CREATE DATABASE ${name}`);
+  const db = new Pool({ connectionString: url.toString() });
+  try {
+    await applyBefore(db, '0017_export_jobs.sql');
+    await db.query(
+      `INSERT INTO "user"(id,name,email,"emailVerified") VALUES ('u-owner','Owner','o@jobs.test',true)`
+    );
+    // The owner and the activation commit together, as the claim does.
+    const client = await db.connect();
+    let community: string;
+    let owner: string;
+    try {
+      await client.query('BEGIN');
+      community = (
+        await client.query<{ id: string }>(
+          "INSERT INTO communities(name,lifecycle) VALUES('Jobs','pending_owner') RETURNING id"
+        )
+      ).rows[0].id;
+      owner = (
+        await client.query<{ id: string }>(
+          `INSERT INTO members(community_id,user_id,display_name,handle,role)
+           VALUES($1,'u-owner','Owner','owner','owner') RETURNING id`,
+          [community]
+        )
+      ).rows[0].id;
+      await client.query(
+        "UPDATE communities SET lifecycle='active',activated_at=now() WHERE id=$1",
+        [community]
+      );
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    const oldInsert = (key: string) =>
+      db.query<{ id: string }>(
+        `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at)
+         VALUES($1,$2,'owner',$3,1,now()+interval '1 hour') RETURNING id`,
+        [community, owner, key]
+      );
+    const before = (await oldInsert('a'.repeat(64))).rows[0].id;
+
+    await migrate(url.toString());
+
+    expect(
+      (
+        await db.query(
+          'SELECT format_version,state,rebuild_passes,data_complete FROM export_archives WHERE id=$1',
+          [before]
+        )
+      ).rows
+    ).toEqual([{ format_version: 1, state: 'ready', rebuild_passes: 0, data_complete: false }]);
+    // Old code still writes its rows, which are ready version 1 archives.
+    const old = (await oldInsert('b'.repeat(64))).rows[0].id;
+    expect(
+      (await db.query('SELECT format_version,state FROM export_archives WHERE id=$1', [old])).rows
+    ).toEqual([{ format_version: 1, state: 'ready' }]);
+
+    const job = (fields: string, values: string) =>
+      db.query<{ id: string }>(
+        `INSERT INTO export_archives(community_id,requester_member_id,scope,format_version${fields})
+         VALUES($1,$2,'owner',2${values}) RETURNING id`,
+        [community, owner]
+      );
+    await expect(job(',state,blob_key', ",'queued','" + 'c'.repeat(64) + "'")).rejects.toThrow(
+      /export_archives_blob_key_format/
+    );
+    await expect(job(',state', ",'ready'")).rejects.toThrow(/export_archives_ready_fields/);
+    await expect(job(',state', ",'failed'")).rejects.toThrow(/export_archives_ended/);
+    await expect(
+      db.query(
+        `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,state)
+         VALUES($1,$2,'owner',$3,'queued')`,
+        [community, owner, 'd'.repeat(64)]
+      )
+    ).rejects.toThrow(/export_archives_version_one_ready/);
+    const queued = (await job(',state', ",'queued'")).rows[0].id;
+    await expect(job(',state', ",'building'")).rejects.toThrow(/export_archives_open_owner_unique/);
+    await expect(
+      db.query(
+        `INSERT INTO export_segments(export_id,segment_no,community_id,kind,blob_key,byte_size,
+           entries_index,content_digest,entry_count,file_count)
+         VALUES($1,1,$2,'data',$3,1,'\\x',$4,0,0)`,
+        [queued, community, 'e'.repeat(64), 'f'.repeat(64)]
+      )
+    ).rejects.toThrow(/export_segments_data_range/);
+    await db.query(
+      `INSERT INTO export_segments(export_id,segment_no,community_id,kind,blob_key,byte_size,
+         entries_index,content_digest,entry_count,file_count)
+       VALUES($1,1,$2,'tail',$3,1,'\\x',$4,0,0)`,
+      [queued, community, 'e'.repeat(64), 'f'.repeat(64)]
+    );
+    // Deleting the job deletes its segment rows with it.
+    await db.query('DELETE FROM export_archives WHERE id=$1', [queued]);
+    expect((await db.query('SELECT 1 FROM export_segments')).rowCount).toBe(0);
+  } finally {
+    await db.end();
     await admin.query(`DROP DATABASE IF EXISTS ${name}`);
   }
 });

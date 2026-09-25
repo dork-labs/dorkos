@@ -7,6 +7,12 @@ import express from 'express';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
+// Login off, so the agent bar on `PATCH /agents/:id` (DOR-2328) reads only the
+// agent header; the real config store is not opened in these route tests.
+vi.mock('../../services/core/config-manager.js', () => ({
+  configManager: { get: vi.fn(() => undefined), set: vi.fn(), getAll: vi.fn() },
+}));
+
 // Mock boundary validation — default to passthrough (returns path as-is)
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -717,6 +723,38 @@ describe('Mesh routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.name).toBe('Updated Agent');
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { name: 'Updated Agent' });
+    });
+
+    it.each([
+      ['runtime', 'codex'],
+      ['model', 'opus'],
+      ['effort', 'max'],
+    ])(
+      'refuses an AGENT changing any agent’s %s, pointing at the tool that asks (DOR-2328)',
+      async (field, value) => {
+        // Purpose: this route has no caller guard of its own, and an agent can
+        // reach it for ANY agent, not only itself.
+        const res = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({ [field]: value });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('NEEDS_APPROVAL');
+        expect(res.body.error).toContain('update_agent_execution');
+        expect(meshCore.update).not.toHaveBeenCalled();
+      }
+    );
+
+    it('lets a person change an agent’s model here', async () => {
+      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'opus' });
+
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ model: 'opus' });
+
+      expect(res.status).toBe(200);
+      expect(meshCore.update).toHaveBeenCalledWith('agent-1', { model: 'opus' });
     });
 
     // Both halves of the narrowed catch (DOR-486 re-review). It used to catch

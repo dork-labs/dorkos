@@ -150,6 +150,8 @@ dorkos marketplace uninstall <package> --purge            # Also remove preserve
 dorkos marketplace uninstall <package> --project <path>   # Uninstall from a specific project
 
 dorkos marketplace installed                              # List every installed package, and where
+dorkos marketplace installed --verify                     # ...and whether each one's files changed since install
+dorkos marketplace check-files <package>                  # Compare a package an older DorkOS installed with the version you installed
 dorkos marketplace outdated                               # List only the packages that have an update
 dorkos marketplace update                                 # Check every installed package, wherever it's installed
 dorkos marketplace update <package> --apply               # Review and install an available update
@@ -158,10 +160,11 @@ dorkos marketplace update --apply --yes                   # Install without the 
 dorkos marketplace update <package> --project <path>      # Check or apply within a specific project
 dorkos marketplace held-back                              # List packages held back from every session, and why
 dorkos marketplace held-back --allow <package>            # Print what it runs, then let it load (asks first)
+dorkos marketplace held-back --refuse <package>           # Keep it held back
 
-dorkos marketplace add <url> [--name <name>]              # Register a new source (you only)
+dorkos marketplace add <url> [--name <name>]              # Register a new source and fetch its listing (you only)
 dorkos marketplace remove <name>                          # Remove a source (you only)
-dorkos marketplace list                                   # List configured sources
+dorkos marketplace list                                   # List sources and whether their packages loaded
 dorkos marketplace refresh [<name>]                       # Re-fetch one or every source's listing
 dorkos marketplace validate <path-or-url>                 # Validate a marketplace.json before publishing
 ```
@@ -169,6 +172,8 @@ dorkos marketplace validate <path-or-url>                 # Validate a marketpla
 `dorkos install`, `dorkos update` and `dorkos uninstall` are shorter names for the same three commands. They take the same options and do exactly the same thing, so use whichever you like.
 
 `installed` shows one row per installation. A package you installed for everyone and for two agents shows up three times, and each row says where it lives: `global`, or the agent's name. A row marked `linked` is a folder linked to a working copy on your computer. DorkOS never updates a linked package, so update its source instead.
+
+Add `--verify` to see whether each package's files still match what was installed. The FILES column says `as installed`, `changed (3)` when files were edited, removed or added where the package keeps what it runs, or `unknown`. `unknown` usually means an older version of DorkOS installed the package and didn't record its files. Run `dorkos marketplace check-files <package>`. It compares the package with the version you installed, so updates keep your edits. DorkOS records its files only when they all still match that version. Otherwise it changes nothing and tells you why.
 
 For each package, `update` tells you one of three things: a newer version is available, the package is up to date, or it couldn't be checked (with the reason, for example when you're offline). On its own it only checks. Add `--apply` to install the updates it finds. It first prints everything each new version runs on its own and asks you, and then installs exactly that. Each package is updated where it's installed. A package installed for one agent is shown with that agent's name, like `flow [Alpha]`.
 
@@ -364,6 +369,8 @@ dorkos agent update --path <dir> --display-name "<name>"   # Edit self-editable 
 dorkos agent update --path <dir> --color "" --icon ""      # Pass "" to clear a field
 dorkos agent update --path <dir> --ceiling act             # Cap what this agent may ever do
 ```
+
+A template is copied into the new agent's folder, and that folder is where the agent's sessions run. So before it lands, DorkOS checks what it brings: settings files the sessions load (such as `.claude/settings.json` with its hooks and permission rules, or a `.mcp.json`), and skills that run commands or use tools without asking. If it brings any of those, `dorkos agent create` prints them and asks before creating the agent (`--yes` skips the question and still prints them). When an agent runs this command, a person has to approve it on a card first; the command prints the `--approval` retry. An agent from the marketplace is created from the Marketplace in the app, or with `dorkos marketplace install`, rather than as a template.
 
 `--ceiling` sets the most an agent is ever allowed to do: `observe` reads only, `act` changes things but never deletes them, and `destructive` is no extra limit, which is where every agent starts. Anything past the line is refused outright, and no approval unlocks it — so it is the way to say "read my repos, never uninstall anything." An agent can tighten its own limit; only you can loosen one.
 

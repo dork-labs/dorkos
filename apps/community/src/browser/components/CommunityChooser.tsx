@@ -24,15 +24,24 @@ function accountRequested(): boolean {
  * The chooser then says so in one sentence that is the same whether the community was never
  * theirs, they were removed, or it is paused, so the notice reveals nothing about it.
  */
-export function returnToChooserWithNotice(): void {
-  writeStorage(() => sessionStorage, ROUTE_NOTICE_KEY, 'unavailable');
+export function returnToChooserWithNotice(notice: RouteNotice = 'unavailable'): void {
+  writeStorage(() => sessionStorage, ROUTE_NOTICE_KEY, notice);
   window.location.replace('/');
 }
 
-function takeRouteNotice(): boolean {
-  const notice = readStorage(() => sessionStorage, ROUTE_NOTICE_KEY) === 'unavailable';
+/** Why the chooser was opened in place of a community route. */
+type RouteNotice = 'unavailable' | 'no-address';
+
+const ROUTE_NOTICES: Record<RouteNotice, string> = {
+  unavailable: 'That community is not available to this account.',
+  // A short address that leads nowhere says only that, whatever the reason.
+  'no-address': 'No community at this address.',
+};
+
+function takeRouteNotice(): RouteNotice | null {
+  const notice = readStorage(() => sessionStorage, ROUTE_NOTICE_KEY);
   writeStorage(() => sessionStorage, ROUTE_NOTICE_KEY, null);
-  return notice;
+  return notice === 'unavailable' || notice === 'no-address' ? notice : null;
 }
 
 function enterCommunity(communityId: string, replace = false, deletion = false): void {
@@ -154,7 +163,7 @@ export function CommunityChooser({ signedOut }: { signedOut: () => ReactNode }) 
         </h1>
         {routeNotice && (
           <p role="status" className="notice mb-4">
-            That community is not available to this account.
+            {ROUTE_NOTICES[routeNotice]}
           </p>
         )}
         {error ? (

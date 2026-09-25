@@ -39,6 +39,7 @@ const EMPTY_PREVIEW = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],

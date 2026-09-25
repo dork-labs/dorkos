@@ -23,9 +23,11 @@ import type { RoomSessionBinding } from '../../rooms/session-bindings/room-sessi
 import {
   checkAdapterEntries,
   checkDuplicateAgentIds,
+  checkInstalledPackages,
   checkRelayAccessRules,
   checkRelayBindingGhosts,
   checkRoomSessionTranscripts,
+  type InstalledPackageIntegrity,
   type RelayBinding,
 } from './checks.js';
 import { collectAgentManifests, listAgentHomeDirectories } from './collect.js';
@@ -53,6 +55,11 @@ export interface MeshAgentSource {
   listWithPaths(): ReadonlyArray<{ id: string; projectPath: string }>;
 }
 
+/** Every installation, verified against what was installed (DOR-2197). */
+export interface InstalledPackagesSource {
+  listIntegrity(): Promise<InstalledPackageIntegrity[]>;
+}
+
 /** Everything the deep checks may read. Each part is optional and degrades on its own. */
 export interface DeepHealthDeps {
   /** The resolved DorkOS data directory. */
@@ -68,6 +75,7 @@ export interface DeepHealthDeps {
   relay?: RelayAccessSource | undefined;
   adapters?: AdapterSource | undefined;
   mesh?: MeshAgentSource | undefined;
+  installedPackages?: InstalledPackagesSource | undefined;
   /**
    * Whether a missing subsystem is missing because it *failed*, rather than
    * because it was never turned on. An absent object cannot tell those apart,
@@ -76,6 +84,11 @@ export interface DeepHealthDeps {
   relayFailedToStart?: boolean | undefined;
   adaptersFailedToStart?: boolean | undefined;
   meshFailedToStart?: boolean | undefined;
+  /**
+   * How much protection the installed git gives agents' git (DOR-2326), read
+   * once per process by `lib/git-safety.ts`.
+   */
+  gitProtection?: (() => Promise<CheckResult>) | undefined;
 }
 
 /**
@@ -94,6 +107,14 @@ export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckRe
     await contain('Chat connections are readable', () => adapterEntriesCheck(deps)),
     await contain('Chat connections point at real agents', () => bindingGhostCheck(deps)),
     await contain('Agent ids are unique', () => duplicateAgentIdCheck(deps)),
+    await contain('Installed packages match what was installed', () =>
+      installedPackagesCheck(deps)
+    ),
+    await contain("Git protects your agents' git", () =>
+      deps.gitProtection
+        ? deps.gitProtection()
+        : skipped("Git protects your agents' git", 'the git check is not available')
+    ),
   ];
 }
 
@@ -102,7 +123,7 @@ export async function runDeepHealthChecks(deps: DeepHealthDeps): Promise<CheckRe
  *
  * A subsystem caught mid-crash throws rather than answering — `RelayCore`
  * refuses every read once it is closed, for instance. Letting that escape would
- * lose the other four checks and hand the operator a blank 500 at the exact
+ * lose the other checks and hand the operator a blank 500 at the exact
  * moment they are trying to find out what broke.
  *
  * The degraded line names the check and nothing else: the thrown error may
@@ -167,6 +188,17 @@ function relayAccessCheck(deps: DeepHealthDeps): CheckResult {
     quarantined,
     ruleCount: quarantined ? 0 : deps.relay.listAccessRules().length,
   });
+}
+
+/** Installed packages that changed since install, or that an older DorkOS installed. */
+async function installedPackagesCheck(deps: DeepHealthDeps): Promise<CheckResult> {
+  if (!deps.installedPackages) {
+    return skipped(
+      'Installed packages match what was installed',
+      'the marketplace is not available'
+    );
+  }
+  return checkInstalledPackages({ installs: await deps.installedPackages.listIntegrity() });
 }
 
 /** Saved chat connections whose settings could not be read. */

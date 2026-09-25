@@ -27,21 +27,34 @@ The service checks each setting before it opens its HTTP port. It rejects an inc
 
 Most people can keep the default limits. Restart the service after changing one. The maximums protect every Community, even when an environment variable requests more.
 
-| Setting                                        |                       Default |               Maximum |
-| ---------------------------------------------- | ----------------------------: | --------------------: |
-| `COMMUNITY_POSTS_PER_TEN_MINUTES`              |           120 posts per owner | 1,000 posts per owner |
-| `COMMUNITY_AGENTS_PER_OWNER`                   |              20 active agents |     100 active agents |
-| `COMMUNITY_TEXT_BYTES`                         |               16 KiB per post |       64 KiB per post |
-| `COMMUNITY_ATTACHMENTS_PER_POST`               |              4 files per post |      8 files per post |
-| `COMMUNITY_ATTACHMENT_BYTES`                   |               10 MiB per file |       25 MiB per file |
-| `COMMUNITY_UPLOAD_BYTES_PER_DAY`               |             200 MiB per owner |       1 GiB per owner |
-| `COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE`         |                     10 per IP |            100 per IP |
-| `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE`      |                     10 per IP |            100 per IP |
-| `COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE` |                     20 per IP |            100 per IP |
-| `COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE`        |                      5 per IP |            100 per IP |
-| `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`       |                     20 per IP |            100 per IP |
-| `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`         | 5 wrong passwords per account |        20 per account |
-| `COMMUNITY_HOST_DELETION_NOTICE_DAYS`          |             14 days of notice | 365 days (at least 7) |
+| Setting                                        |                       Default |                   Maximum |
+| ---------------------------------------------- | ----------------------------: | ------------------------: |
+| `COMMUNITY_POSTS_PER_TEN_MINUTES`              |           120 posts per owner |     1,000 posts per owner |
+| `COMMUNITY_AGENTS_PER_OWNER`                   |              20 active agents |         100 active agents |
+| `COMMUNITY_TEXT_BYTES`                         |               16 KiB per post |           64 KiB per post |
+| `COMMUNITY_ATTACHMENTS_PER_POST`               |              4 files per post |          8 files per post |
+| `COMMUNITY_ATTACHMENT_BYTES`                   |               10 MiB per file |           25 MiB per file |
+| `COMMUNITY_UPLOAD_BYTES_PER_DAY`               |             200 MiB per owner |           1 GiB per owner |
+| `COMMUNITY_SIGNUP_ATTEMPTS_PER_MINUTE`         |                     10 per IP |                100 per IP |
+| `COMMUNITY_BOOTSTRAP_ATTEMPTS_PER_MINUTE`      |                     10 per IP |                100 per IP |
+| `COMMUNITY_INVITE_PREVIEW_ATTEMPTS_PER_MINUTE` |                     20 per IP |                100 per IP |
+| `COMMUNITY_PAIRING_ATTEMPTS_PER_MINUTE`        |                      5 per IP |                100 per IP |
+| `COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE`       |                     20 per IP |                100 per IP |
+| `COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE`         | 5 wrong passwords per account |            20 per account |
+| `COMMUNITY_HOST_DELETION_NOTICE_DAYS`          |             14 days of notice |     365 days (at least 7) |
+| `COMMUNITY_SHORT_NAME_COOLOFF_DAYS`            |                       90 days | 365 days (0 turns it off) |
+| `COMMUNITY_NAME_LOOKUPS_PER_MINUTE`            |                     60 per IP |                600 per IP |
+
+Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
+
+Exports are prepared in the background. These settings shape that work; the [operations guide](OPERATIONS.md#exports) explains the disk they need.
+
+| Setting                          |  Default |           Range |
+| -------------------------------- | -------: | --------------: |
+| `COMMUNITY_EXPORT_SEGMENT_BYTES` |  256 MiB | 64 MiB to 1 GiB |
+| `COMMUNITY_EXPORT_TTL_HOURS`     | 24 hours |        1 to 168 |
+| `COMMUNITY_EXPORT_MAX_HOURS`     | 24 hours |        1 to 168 |
+| `COMMUNITY_EXPORT_CONCURRENCY`   |        1 |          1 to 8 |
 
 ## Optional Google and GitHub sign-in
 
@@ -55,6 +68,40 @@ https://community.example.com/api/auth/callback/github
 ```
 
 Use the same origin for `COMMUNITY_PUBLIC_URL`. Do not register a preview, internal, or local address as a production callback. Changing the public address requires updating these callbacks before people can sign in again.
+
+## Optional single sign-on (OpenID Connect)
+
+You can let people sign in through your own OpenID Connect provider, beside email and password. Set all three of these, or none:
+
+| Setting                        | Must be                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------- |
+| `COMMUNITY_OIDC_ISSUER_URL`    | The issuer's `https://` address (`http://` only on localhost)                     |
+| `COMMUNITY_OIDC_CLIENT_ID`     | The client ID your provider gave this Community                                   |
+| `COMMUNITY_OIDC_CLIENT_SECRET` | That client's secret                                                              |
+| `COMMUNITY_OIDC_LABEL`         | Optional. The button text, 1 to 40 characters. Default: "Single sign-on"          |
+| `COMMUNITY_OIDC_SCOPES`        | Optional. Space-separated, must include `openid`. Default: `openid email profile` |
+
+Register this redirect URI with your provider. The service also prints it when it starts:
+
+```text
+https://community.example.com/api/auth/callback/oidc
+```
+
+The service reads `<issuer>/.well-known/openid-configuration` the first time someone uses the button, not at startup, so a provider outage never stops the Community. That document must name exactly the issuer you set, and every address in it must be `https://`. If the provider does not answer within 10 seconds, or the document fails those checks, the button says single sign-on is unavailable, and the service asks again 30 seconds later. Sign-in uses PKCE, and every sign-in needs an ID token signed with the provider's published keys. People sign in only through the provider's own page; the service never accepts an ID token handed to it directly.
+
+Single sign-on changes nothing about who may join. A new account still needs an invitation or an owner claim link. The provider must say the email address is verified (`email_verified: true`), or sign-in is refused. Some providers, such as Microsoft Entra ID, leave that claim out, and their sign-ins are refused. If someone's email already belongs to an account here, single sign-on does not attach to it on its own: they sign in with their password, then choose **Link** under Settings, Account.
+
+The Community does not check email addresses when someone signs up with a password. So a person holding an invitation could create a password account with someone else's email, and the real owner of that email would then be refused by single sign-on. If that happens, and the password account has not joined any community, remove it with this command, then ask the real owner to sign in again:
+
+```bash
+docker compose -f apps/community/compose.yml run --rm --no-deps -T community node dist-server/host/release-unverified-account.js <email>
+```
+
+It removes the account only if its email was never verified, it signs in only with a password, it has no membership in any community (current or ended), it is not in the middle of joining one, and it has never operated this host. If it is joining right now, wait 10 minutes and run it again. If the account has already joined a community, this command keeps it: the person can erase their own membership or account, or the community's owner can remove them, and then the account can be released. Otherwise it changes nothing and says why. The host audit log records that it ran, without the email address.
+
+Email and password sign-in always stays on. Someone who joined through single sign-on can add a password (at least 12 characters) under Settings, Account, within five minutes of signing in, so they can still get in when your provider is down. Exporting, leaving, transferring ownership, and other careful actions still ask for a password. Until someone adds one, those actions say "Set a password in your account to do this." Confirming these actions through your provider instead is planned as a separate change.
+
+To turn single sign-on off, unset the variables. Accounts made through it stay, and can sign in with a password if they added one.
 
 ## Optional terms, privacy, and report links
 

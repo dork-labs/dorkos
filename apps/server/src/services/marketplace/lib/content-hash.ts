@@ -29,8 +29,8 @@
  *   ({@link assertShipsNoRuntimeState}), so nothing unhashed can arrive in them,
  *   and a shipped install record can never stand in for the one the installer
  *   writes.
- * - The root `.npmrc` and symbolic links, which the install strips before
- *   anything lands.
+ * - The root `.npmrc`, every `.git` and symbolic links, which the install
+ *   strips before anything lands.
  *
  * A shipped `node_modules` and lockfile ARE covered: npm obeys both. What npm
  * then fetches for the hashed `package.json` and lockfile (with
@@ -47,9 +47,9 @@
  * @module services/marketplace/lib/content-hash
  */
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import { access, lstat, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { fileSha256Hex } from './installed-files.js';
 
 /**
  * Paths inside an install root that DorkOS writes after the package lands:
@@ -93,13 +93,6 @@ export class TreeUnhashableError extends Error {
   }
 }
 
-/** SHA-256 of a file's bytes, streamed. */
-async function hashFileBytes(absPath: string): Promise<string> {
-  const hash = createHash('sha256');
-  for await (const chunk of createReadStream(absPath)) hash.update(chunk as Buffer);
-  return hash.digest('hex');
-}
-
 /**
  * Hash every regular file under a tree: each file's path, execute bit and
  * byte hash, in path order. Links are never followed or recorded.
@@ -134,7 +127,7 @@ export async function hashTree(
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
   const outer = createHash('sha256');
   for (const file of files) {
-    const bytes = await hashFileBytes(file.abs);
+    const bytes = await fileSha256Hex(file.abs);
     outer.update(`F\0${file.rel}\0${file.executable ? 'x' : '-'}\0${bytes}\n`, 'utf8');
   }
   return `sha256:${outer.digest('hex')}`;
@@ -148,7 +141,14 @@ const STRIPPED_AT_ROOT = '.npmrc';
 
 /** What {@link packageContentHash} leaves out. */
 function skipsForPackage(posixPath: string): boolean {
-  return isRuntimeStatePath(posixPath) || posixPath === STRIPPED_AT_ROOT;
+  return (
+    isRuntimeStatePath(posixPath) ||
+    posixPath === STRIPPED_AT_ROOT ||
+    // Every `.git`, at any depth: the install strips them (DOR-2326), and an
+    // installed folder a person made their own repository hashes as its files.
+    // Case-insensitive: `.GIT` is the same folder on macOS and Windows.
+    posixPath.toLowerCase().split('/').includes('.git')
+  );
 }
 
 /**

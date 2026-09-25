@@ -28,7 +28,11 @@ import { PackageDetailSheet } from '../ui/PackageDetailSheet';
 // so the component reads that feature-layer wrapper, not the entity hook.
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/marketplace', () => ({
+vi.mock('@/layers/entities/marketplace', async () => ({
+  // The real notice: what a refused preview says is part of what is tested.
+  ...(await vi.importActual<typeof import('@/layers/entities/marketplace/ui/PreviewRefusedNotice')>(
+    '@/layers/entities/marketplace/ui/PreviewRefusedNotice'
+  )),
   useMarketplacePackage: vi.fn(),
   useMarketplacePackages: vi.fn(),
   usePermissionPreview: vi.fn(),
@@ -129,6 +133,7 @@ function makePreview(overrides: Partial<PermissionPreview> = {}): PermissionPrev
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -152,6 +157,7 @@ function makeDetail(overrides: Partial<MarketplacePackageDetail> = {}): Marketpl
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     },
     contentHash: 'sha256:staged',
     manifest: {
@@ -201,7 +207,7 @@ const GLOBAL_INSTALLATION_ENRICHED: InstalledPackage = {
 // has to set the fields it cares about).
 // ---------------------------------------------------------------------------
 
-type DetailHookState = { data?: MarketplacePackageDetail; isLoading?: boolean };
+type DetailHookState = { data?: MarketplacePackageDetail; isLoading?: boolean; error?: unknown };
 
 function setCatalogState(packages: AggregatedPackage[] = []) {
   vi.mocked(useMarketplacePackages).mockReturnValue({
@@ -231,7 +237,7 @@ function setPreviewState(state: DetailHookState = {}) {
   vi.mocked(usePermissionPreview).mockReturnValue({
     data: state.data,
     isLoading: state.isLoading ?? false,
-    error: null,
+    error: state.error ?? null,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof usePermissionPreview>);
 }
@@ -378,6 +384,22 @@ describe('PackageDetailSheet', () => {
     ).toBeInTheDocument();
     // Secret rows render their key as the label.
     expect(screen.getByText('GITHUB_TOKEN')).toBeInTheDocument();
+  });
+
+  it('never reads "No special permissions" over a package the server refused to preview (DOR-2314)', () => {
+    openPackage(makePackage({ type: 'plugin' }));
+    setDetailState({ data: makeDetail() });
+    setPreviewState({
+      error: Object.assign(new Error('Package failed validation'), {
+        body: { errors: ["An agent package can't ship .mcp.json"] },
+      }),
+    });
+    setInstalledState([]);
+
+    render(<PackageDetailSheet />);
+
+    expect(screen.queryByText('No special permissions required.')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent("can't ship .mcp.json");
   });
 
   it('shows the Install button when the package is not installed and uses the store action on click', async () => {

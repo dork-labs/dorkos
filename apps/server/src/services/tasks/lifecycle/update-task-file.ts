@@ -99,7 +99,7 @@ export interface TaskFileUpdateSuccess {
    *
    * Always, except for a package's schedule whose change lands on its row alone
    * (DOR-2302): the package's file is never written, and a timing change there
-   * is settled against the approval instead (`TaskStore.settleApprovedWorkChange`
+   * is settled against the approval instead (`TaskApprovals.settleApprovedWorkChange`
    * parks an agent's), so the clamp has nothing to protect — and carried into
    * the request it would read as an attempt to change the package's permission
    * level, and refuse a timing change with a sentence about approval levels.
@@ -179,8 +179,9 @@ function packageOwnedRefusal(
     return (
       `This schedule sits in the "${packageName}" package, which an older version of DorkOS ` +
       `installed without a list of its files, so DorkOS can't yet tell them from yours and ` +
-      `didn't change ${grant ? 'how much it may do' : 'it'}. ${rowOnly} The rest will work ` +
-      `after the package's next update.`
+      `didn't change ${grant ? 'how much it may do' : 'it'}. ${rowOnly} To change the rest, ` +
+      `choose Check files on the package in Marketplace's Installed tab (or run ` +
+      `\`dorkos marketplace check-files ${packageName}\`), then try again.`
     );
   }
   return grant

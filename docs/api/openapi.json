@@ -5877,6 +5877,67 @@
             "default": null,
             "description": "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own)."
           },
+          "approvalChanges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string",
+                  "enum": [
+                    "prompt",
+                    "cron",
+                    "timezone",
+                    "name",
+                    "runtime",
+                    "model",
+                    "effort",
+                    "maxRuntime",
+                    "sticky"
+                  ]
+                },
+                "from": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "to": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "field",
+                "from",
+                "to"
+              ]
+            },
+            "default": [],
+            "description": "For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to)."
+          },
           "agentId": {
             "type": [
               "string",
@@ -18116,13 +18177,109 @@
                           },
                           "addedAt": {
                             "type": "string"
+                          },
+                          "lastFetch": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "never"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "state"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "fetched"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "packageCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "checkedAt",
+                                  "packageCount"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "failed"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "checkedAt",
+                                  "reason"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "state": {
+                                    "type": "string",
+                                    "enum": [
+                                      "stale"
+                                    ]
+                                  },
+                                  "checkedAt": {
+                                    "type": "string"
+                                  },
+                                  "reason": {
+                                    "type": "string"
+                                  },
+                                  "copyFetchedAt": {
+                                    "type": "string"
+                                  },
+                                  "packageCount": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  }
+                                },
+                                "required": [
+                                  "state",
+                                  "checkedAt",
+                                  "reason",
+                                  "copyFetchedAt",
+                                  "packageCount"
+                                ]
+                              }
+                            ],
+                            "description": "How the most recent attempt to fetch the listing went, from adding, refreshing, browsing or an update check. `stale`: it failed and an older copy, fetched at `copyFetchedAt`, is still listed. `failed`: it failed with no copy. Kept by the server, so it survives a reload."
                           }
                         },
                         "required": [
                           "name",
                           "source",
                           "enabled",
-                          "addedAt"
+                          "addedAt",
+                          "lastFetch"
                         ]
                       }
                     }
@@ -18141,7 +18298,7 @@
           "Marketplace"
         ],
         "summary": "Add a marketplace source (operator only)",
-        "description": "Only the person running DorkOS may add a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it.",
+        "description": "Only the person running DorkOS may add a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it. After saving, the server fetches the new source's listing once, the same way the refresh route does but without falling back to a cached copy; a failed fetch is reported in `listing` and never fails the add.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -18151,7 +18308,9 @@
                   "name": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 128
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+                    "description": "Letters, numbers, dots, dashes and underscores, starting with a letter or number. Checked by the server on add; names saved before the check still load."
                   },
                   "source": {
                     "type": "string",
@@ -18171,7 +18330,7 @@
         },
         "responses": {
           "201": {
-            "description": "Source added",
+            "description": "Source added, with how the first fetch of its listing went",
             "content": {
               "application/json": {
                 "schema": {
@@ -18188,20 +18347,63 @@
                     },
                     "addedAt": {
                       "type": "string"
+                    },
+                    "listing": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fetched": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "packageCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "fetched",
+                            "packageCount"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "fetched": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "fetched",
+                            "reason"
+                          ]
+                        }
+                      ],
+                      "description": "The first fetch of the new source's listing. `fetched: true` means fetched just now from this source, never an older cached copy. `fetched: false` never undoes the add: the source is saved, `reason` says in plain words why the listing is not there yet (including a source added with `enabled: false`, which is not fetched), and a refresh tries again."
                     }
                   },
                   "required": [
                     "name",
                     "source",
                     "enabled",
-                    "addedAt"
+                    "addedAt",
+                    "listing"
                   ]
                 }
               }
             }
           },
           "400": {
-            "description": "Validation error",
+            "description": "Validation error, a name DorkOS cannot use, or an address it will not fetch",
             "content": {
               "application/json": {
                 "schema": {
@@ -18258,7 +18460,7 @@
           "Marketplace"
         ],
         "summary": "Remove a marketplace source (operator only)",
-        "description": "Only the person running DorkOS may remove a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it.",
+        "description": "Only the person running DorkOS may remove a package source. Any caller that could not decide an approval is refused with 403, which includes one presenting an agent identity, one presenting an approval token, and (with local login on) one with no signed-in identity. There is no approval that unlocks it. The source's cached listing is removed with it, so a later source given the same name starts clean.",
         "parameters": [
           {
             "schema": {
@@ -18311,6 +18513,7 @@
           "Marketplace"
         ],
         "summary": "Force refetch of a source marketplace.json",
+        "description": "Checks the source now. When it cannot be reached but a copy is cached, answers 200 with that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. With nothing cached, answers 502.",
         "parameters": [
           {
             "schema": {
@@ -18323,7 +18526,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Refreshed marketplace document",
+            "description": "The listing, fetched now or (when `stale`) the last cached copy",
             "content": {
               "application/json": {
                 "schema": {
@@ -18368,12 +18571,22 @@
                       "additionalProperties": {}
                     },
                     "fetchedAt": {
-                      "type": "string"
+                      "type": "string",
+                      "description": "When this copy of the listing was fetched"
+                    },
+                    "stale": {
+                      "type": "boolean",
+                      "description": "True when the source could not be reached"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Why the source could not be reached; present only when `stale`"
                     }
                   },
                   "required": [
                     "marketplace",
-                    "fetchedAt"
+                    "fetchedAt",
+                    "stale"
                   ]
                 }
               }
@@ -18416,6 +18629,19 @@
             },
             "required": false,
             "name": "projectPath",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ],
+              "description": "Add each installation's `integrity`. Reads every shipped file."
+            },
+            "required": false,
+            "description": "Add each installation's `integrity`. Reads every shipped file.",
+            "name": "verify",
             "in": "query"
           }
         ],
@@ -18510,6 +18736,109 @@
                               "reviewable"
                             ],
                             "description": "Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder."
+                          },
+                          "integrity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clean"
+                                    ]
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "modified"
+                                    ]
+                                  },
+                                  "changed": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "missing": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "added": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "changed",
+                                  "missing",
+                                  "added",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unknown"
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-record",
+                                      "unreadable-record",
+                                      "linked"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "reason"
+                                ]
+                              }
+                            ],
+                            "description": "Present only with verify=true: whether the installed files still match what was installed (DOR-2197)."
                           }
                         },
                         "required": [
@@ -18566,6 +18895,19 @@
             "required": true,
             "name": "name",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ],
+              "description": "Add each installation's `integrity`. Reads every shipped file."
+            },
+            "required": false,
+            "description": "Add each installation's `integrity`. Reads every shipped file.",
+            "name": "verify",
+            "in": "query"
           }
         ],
         "responses": {
@@ -18659,6 +19001,109 @@
                               "reviewable"
                             ],
                             "description": "Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder."
+                          },
+                          "integrity": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "clean"
+                                    ]
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "modified"
+                                    ]
+                                  },
+                                  "changed": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "missing": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "added": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "customized": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "truncated": {
+                                    "type": "boolean",
+                                    "enum": [
+                                      true
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "changed",
+                                  "missing",
+                                  "added",
+                                  "customized"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "status": {
+                                    "type": "string",
+                                    "enum": [
+                                      "unknown"
+                                    ]
+                                  },
+                                  "reason": {
+                                    "type": "string",
+                                    "enum": [
+                                      "no-record",
+                                      "unreadable-record",
+                                      "linked"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "status",
+                                  "reason"
+                                ]
+                              }
+                            ],
+                            "description": "Present only with verify=true: whether the installed files still match what was installed (DOR-2197)."
                           },
                           "provides": {
                             "type": "object",
@@ -19203,6 +19648,42 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -19397,6 +19878,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -19604,6 +20086,41 @@
                               "tools"
                             ]
                           }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "default": []
                         }
                       },
                       "required": [
@@ -19891,6 +20408,41 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command",
+                            "usesArguments"
+                          ]
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -20120,6 +20672,42 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -20314,6 +20902,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -20558,6 +21147,41 @@
                               "tools"
                             ]
                           }
+                        },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "default": []
                         }
                       },
                       "required": [
@@ -20844,6 +21468,41 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command",
+                            "usesArguments"
+                          ]
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -21171,6 +21830,42 @@
                             ]
                           }
                         },
+                        "skillCommands": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "source": {
+                                "type": "string"
+                              },
+                              "skill": {
+                                "type": "string"
+                              },
+                              "form": {
+                                "type": "string",
+                                "enum": [
+                                  "inline",
+                                  "block"
+                                ]
+                              },
+                              "command": {
+                                "type": "string"
+                              },
+                              "usesArguments": {
+                                "type": "boolean",
+                                "description": "Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after the command before it runs."
+                              }
+                            },
+                            "required": [
+                              "source",
+                              "skill",
+                              "form",
+                              "command",
+                              "usesArguments"
+                            ]
+                          },
+                          "description": "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads the skill, before the model sees it."
+                        },
                         "unreadableDeclarations": {
                           "type": "array",
                           "items": {
@@ -21365,6 +22060,7 @@
                         "monitors",
                         "executables",
                         "skillTools",
+                        "skillCommands",
                         "unreadableDeclarations",
                         "skippedLinks",
                         "schedules",
@@ -21466,6 +22162,94 @@
                   "required": [
                     "error"
                   ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/marketplace/packages/{name}/check-files": {
+      "post": {
+        "tags": [
+          "Marketplace"
+        ],
+        "summary": "Check the files of a package an older DorkOS installed",
+        "description": "Give an install made before DorkOS recorded a package's files its installed-files record, from the exact commit it was installed at, only when that commit matches the installed files byte for byte. Otherwise nothing is written and the answer says why (DOR-2320).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "projectPath": {
+                    "type": "string"
+                  },
+                  "installRoot": {
+                    "type": "string",
+                    "description": "One installation the caller already sees; narrows, never widens, the lookup."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the check did, and one sentence saying so",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "rebuilt",
+                        "not-needed",
+                        "no-source",
+                        "fetch-failed",
+                        "mismatch"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or an invalid package name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package not installed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -22097,6 +22881,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -22314,6 +23133,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -22604,6 +23458,41 @@
                                   "tools"
                                 ]
                               }
+                            },
+                            "skillCommands": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string"
+                                  },
+                                  "skill": {
+                                    "type": "string"
+                                  },
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "inline",
+                                      "block"
+                                    ]
+                                  },
+                                  "command": {
+                                    "type": "string"
+                                  },
+                                  "usesArguments": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "skill",
+                                  "form",
+                                  "command",
+                                  "usesArguments"
+                                ]
+                              },
+                              "default": []
                             }
                           },
                           "required": [
@@ -23021,6 +23910,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -23238,6 +24162,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -23650,6 +24609,41 @@
                                     "tools"
                                   ]
                                 }
+                              },
+                              "skillCommands": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "source": {
+                                      "type": "string"
+                                    },
+                                    "skill": {
+                                      "type": "string"
+                                    },
+                                    "form": {
+                                      "type": "string",
+                                      "enum": [
+                                        "inline",
+                                        "block"
+                                      ]
+                                    },
+                                    "command": {
+                                      "type": "string"
+                                    },
+                                    "usesArguments": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "source",
+                                    "skill",
+                                    "form",
+                                    "command",
+                                    "usesArguments"
+                                  ]
+                                },
+                                "default": []
                               }
                             },
                             "required": [
@@ -23964,6 +24958,41 @@
                             "tools"
                           ]
                         }
+                      },
+                      "skillCommands": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string"
+                            },
+                            "skill": {
+                              "type": "string"
+                            },
+                            "form": {
+                              "type": "string",
+                              "enum": [
+                                "inline",
+                                "block"
+                              ]
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "usesArguments": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "skill",
+                            "form",
+                            "command",
+                            "usesArguments"
+                          ]
+                        },
+                        "default": []
                       }
                     },
                     "required": [
@@ -53739,6 +54768,732 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PermissionHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/create": {
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Create an agent",
+        "description": "Makes the folder, scaffolds the agent and registers it. Two sources need more than that (DOR-2325). `template` is cloned into a staging folder and read before it lands: a person whose template brings settings or programs gets 409 `template_needs_review` with what it brings, and creates it by sending back `approvedTemplateHash`; anyone else (an agent) gets 202 `requires_confirmation` and an approval card, and retries with `confirmationToken`. `package` creates the agent a marketplace package brings, through the marketplace installer, held to `approvedDisclosure` and `approvedContentHash` (the preview’s `disclosed` and `contentHash`); a person only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,62}[a-z0-9]$|^[a-z]$"
+                  },
+                  "displayName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "directory": {
+                    "type": "string"
+                  },
+                  "template": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "runtime": {
+                    "$ref": "#/components/schemas/AgentRuntime"
+                  },
+                  "persona": {
+                    "type": "string",
+                    "maxLength": 4000
+                  },
+                  "capabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "maxItems": 64
+                  },
+                  "icon": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "color": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "traits": {
+                    "$ref": "#/components/schemas/Traits"
+                  },
+                  "conventions": {
+                    "$ref": "#/components/schemas/Conventions"
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Model new sessions for this agent start on, in its own runtime's id space. Absent = inherit the server default.",
+                    "example": "opus"
+                  },
+                  "effort": {
+                    "type": "string",
+                    "enum": [
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "max",
+                      "xhigh"
+                    ],
+                    "description": "Reasoning effort new sessions for this agent start at. Absent = inherit the server default.",
+                    "example": "high"
+                  },
+                  "approvedTemplateHash": {
+                    "type": "string"
+                  },
+                  "confirmationToken": {
+                    "type": "string"
+                  },
+                  "package": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "marketplace": {
+                        "type": "string"
+                      },
+                      "approvedDisclosure": {
+                        "type": "object",
+                        "properties": {
+                          "hooks": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "event": {
+                                  "type": "string"
+                                },
+                                "matcher": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "event",
+                                "matcher",
+                                "command",
+                                "source"
+                              ]
+                            }
+                          },
+                          "schedules": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "cron": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "permissionMode": {
+                                  "type": "string"
+                                },
+                                "startsEnabled": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "cron",
+                                "permissionMode",
+                                "startsEnabled"
+                              ]
+                            }
+                          },
+                          "mcpServers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "transport": {
+                                  "type": "string"
+                                },
+                                "command": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "args": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "url": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "transport",
+                                "command",
+                                "args",
+                                "url"
+                              ]
+                            }
+                          },
+                          "lspServers": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "args": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "when": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "command",
+                                "args",
+                                "when"
+                              ]
+                            }
+                          },
+                          "monitors": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "args": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                },
+                                "when": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "name",
+                                "command",
+                                "args",
+                                "when"
+                              ]
+                            }
+                          },
+                          "executables": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "skillTools": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "skill": {
+                                  "type": "string"
+                                },
+                                "tools": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "skill",
+                                "tools"
+                              ]
+                            }
+                          },
+                          "skillCommands": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "source": {
+                                  "type": "string"
+                                },
+                                "skill": {
+                                  "type": "string"
+                                },
+                                "form": {
+                                  "type": "string",
+                                  "enum": [
+                                    "inline",
+                                    "block"
+                                  ]
+                                },
+                                "command": {
+                                  "type": "string"
+                                },
+                                "usesArguments": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "source",
+                                "skill",
+                                "form",
+                                "command",
+                                "usesArguments"
+                              ]
+                            },
+                            "default": []
+                          }
+                        },
+                        "required": [
+                          "hooks",
+                          "schedules",
+                          "mcpServers",
+                          "lspServers",
+                          "monitors",
+                          "executables",
+                          "skillTools"
+                        ]
+                      },
+                      "approvedContentHash": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "approvedDisclosure",
+                      "approvedContentHash"
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created: the agent manifest, with `_path`"
+          },
+          "202": {
+            "description": "A template waits on a person’s approval card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "requires_confirmation"
+                      ]
+                    },
+                    "confirmationToken": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "template": {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string"
+                        },
+                        "contentHash": {
+                          "type": "string"
+                        },
+                        "findings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "message"
+                            ]
+                          }
+                        },
+                        "settings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "bytes": {
+                                "type": "integer"
+                              },
+                              "content": {
+                                "type": "string"
+                              },
+                              "omitted": {
+                                "type": "string",
+                                "enum": [
+                                  "too-long",
+                                  "not-text",
+                                  "link"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "path",
+                              "bytes"
+                            ]
+                          },
+                          "description": "Each file under `findings`, its text verbatim with hidden and control characters shown as <U+XXXX>, or why it is not shown."
+                        },
+                        "disclosed": {
+                          "type": "object",
+                          "properties": {
+                            "hooks": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "event": {
+                                    "type": "string"
+                                  },
+                                  "matcher": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "command": {
+                                    "type": "string"
+                                  },
+                                  "source": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "event",
+                                  "matcher",
+                                  "command",
+                                  "source"
+                                ]
+                              }
+                            },
+                            "schedules": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "cron": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "permissionMode": {
+                                    "type": "string"
+                                  },
+                                  "startsEnabled": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "cron",
+                                  "permissionMode",
+                                  "startsEnabled"
+                                ]
+                              }
+                            },
+                            "mcpServers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "transport": {
+                                    "type": "string"
+                                  },
+                                  "command": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "args": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "url": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "transport",
+                                  "command",
+                                  "args",
+                                  "url"
+                                ]
+                              }
+                            },
+                            "lspServers": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "command": {
+                                    "type": "string"
+                                  },
+                                  "args": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "when": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "command",
+                                  "args",
+                                  "when"
+                                ]
+                              }
+                            },
+                            "monitors": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "command": {
+                                    "type": "string"
+                                  },
+                                  "args": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "when": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "command",
+                                  "args",
+                                  "when"
+                                ]
+                              }
+                            },
+                            "executables": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "skillTools": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string"
+                                  },
+                                  "skill": {
+                                    "type": "string"
+                                  },
+                                  "tools": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "skill",
+                                  "tools"
+                                ]
+                              }
+                            },
+                            "skillCommands": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string"
+                                  },
+                                  "skill": {
+                                    "type": "string"
+                                  },
+                                  "form": {
+                                    "type": "string",
+                                    "enum": [
+                                      "inline",
+                                      "block"
+                                    ]
+                                  },
+                                  "command": {
+                                    "type": "string"
+                                  },
+                                  "usesArguments": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "skill",
+                                  "form",
+                                  "command",
+                                  "usesArguments"
+                                ]
+                              },
+                              "default": []
+                            }
+                          },
+                          "required": [
+                            "hooks",
+                            "schedules",
+                            "mcpServers",
+                            "lspServers",
+                            "monitors",
+                            "executables",
+                            "skillTools"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "contentHash",
+                        "findings",
+                        "settings",
+                        "disclosed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "confirmationToken",
+                    "message",
+                    "template"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Turned down, nobody can be asked, or a package requested by an agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`template_needs_review` (with `template`), `disclosure_changed`, or a collision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

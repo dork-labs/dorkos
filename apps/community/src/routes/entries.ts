@@ -12,6 +12,7 @@ import {
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
+import { isTombstoneText } from '../content/tombstones.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
   lockChannel,
@@ -146,12 +147,18 @@ export function registerEntryRoutes(
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       // Channel first, then owner: all human and owned-agent posts share one quota lock.
       await lockPrincipalAuthority(client, principal);
-      const previous = await client.query<{ id: string; payload_hash: string }>(
-        `SELECT id,payload_hash FROM entries WHERE ${principal.kind === 'agent' ? 'author_agent_id' : 'author_member_id'}=$1 AND channel_id=$2 AND idempotency_key=$3`,
+      const previous = await client.query<{
+        id: string;
+        payload_hash: string;
+        gone: boolean;
+      }>(
+        `SELECT id,payload_hash,(removed_at IS NOT NULL OR erased_at IS NOT NULL) AS gone FROM entries WHERE ${principal.kind === 'agent' ? 'author_agent_id' : 'author_member_id'}=$1 AND channel_id=$2 AND idempotency_key=$3`,
         [principal.id, channel.id, body.idempotencyKey]
       );
       if (previous.rows[0]) {
-        if (previous.rows[0].payload_hash !== payloadHash) {
+        // A removed entry answers every retry of its post with its tombstone, whatever the
+        // payload, so a retry after a lost response can never bring deleted content back.
+        if (!previous.rows[0].gone && previous.rows[0].payload_hash !== payloadHash) {
           throw new ApiError(
             409,
             'IDEMPOTENCY_CONFLICT',
@@ -172,6 +179,14 @@ export function registerEntryRoutes(
           repeated: true,
         };
       }
+      // A new post may not pose as a removed one: the browser styles a message whose text is a
+      // tombstone sentence as removed. (A retry of a removed post, above, still answers.)
+      if (isTombstoneText(body.text.trim()))
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          "A message can't say only what a deleted message says. Change the text and send it again."
+        );
       let rootId: string | null = null;
       if (body.parentEntryId) {
         const parent = await loadEntry(client, body.parentEntryId);
@@ -234,6 +249,7 @@ export function registerEntryRoutes(
       );
       const kindsById = new Map(roster.rows.map((target) => [target.id, target.kind]));
       await client.query(
+        // content-change: post-binds-new-entry
         `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id,mentioned_agent_id)
          SELECT $1,mentioned.position,$2,
            CASE WHEN mentioned.kind='human' THEN mentioned.id END,
@@ -247,6 +263,7 @@ export function registerEntryRoutes(
         ]
       );
       if (body.attachmentIds?.length) {
+        // content-change: post-binds-new-entry
         await client.query('UPDATE attachments SET entry_id=$1 WHERE id=ANY($2::uuid[])', [
           inserted.rows[0].id,
           body.attachmentIds,

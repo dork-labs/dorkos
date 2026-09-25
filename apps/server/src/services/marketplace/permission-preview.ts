@@ -331,6 +331,7 @@ export type RunnableDeclarations = Pick<
   | 'hooks'
   | 'unreadableHooks'
   | 'skillTools'
+  | 'skillCommands'
   | 'mcpServers'
   | 'lspServers'
   | 'monitors'
@@ -349,20 +350,31 @@ export type RunnableDeclarations = Pick<
  * installed package with it (`global-plugin-consent.ts`), so the two can only
  * disagree when the files do.
  *
+ * For an agent package it also reads the skills and commands its sessions
+ * load from its working directory (`.claude/skills`, `.claude/commands`,
+ * `.agents/skills`, DOR-2314). The rest of what a harness loads from there is
+ * refused at validation (`@dorkos/marketplace` `agent-workspace-config`).
+ *
  * @param packagePath - Absolute path to a package directory, staged or installed.
+ * @param options.agentWorkspace - The package is an agent: its folder is the
+ *   working directory its sessions run in.
  * @returns The runnable declarations, verbatim.
  */
-export async function readRunnableDeclarations(packagePath: string): Promise<RunnableDeclarations> {
+export async function readRunnableDeclarations(
+  packagePath: string,
+  { agentWorkspace = false }: { agentWorkspace?: boolean } = {}
+): Promise<RunnableDeclarations> {
   const pluginJson = await readPluginJson(packagePath);
   const hookDeclarations = await readPackageHooks(packagePath, pluginJson);
   // A skill's or command's frontmatter hooks run while it is in use, and the
   // model picks skills by description, so they are listed with the plugin's.
-  const skills = await readPackageSkills(packagePath, pluginJson);
+  const skills = await readPackageSkills(packagePath, pluginJson, agentWorkspace);
   const programs = await readPackagePrograms(packagePath, pluginJson);
   return {
     hooks: [...hookDeclarations.hooks, ...skills.hooks],
     unreadableHooks: [...hookDeclarations.unreadable, ...skills.unreadable],
     skillTools: skills.skillTools,
+    skillCommands: skills.skillCommands,
     mcpServers: programs.mcpServers,
     lspServers: programs.lspServers,
     monitors: programs.monitors,
@@ -407,8 +419,8 @@ export class PermissionPreviewBuilder {
    *   `hooks/hooks.json` and plugin.json `hooks` (`lib/package-hooks.ts`),
    *   flattened to `{ event, matcher?, command }` with the command verbatim,
    *   plus every hook in a skill's or command's frontmatter, tagged with its
-   *   `source` (`lib/package-skills.ts`), and each one's `allowed-tools` in
-   *   `skillTools`.
+   *   `source` (`lib/package-skills.ts`), each one's `allowed-tools` in
+   *   `skillTools`, and the shell commands its text runs in `skillCommands`.
    * - `unreadableHooks` — every hook declaration the package ships that could
    *   not be parsed. Reported separately so "declares hooks we could not read"
    *   never renders as "declares no hooks".
@@ -460,6 +472,7 @@ export class PermissionPreviewBuilder {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
       skippedLinks: [],
       unreadableDeclarations: [],
       schedules: [],
@@ -478,7 +491,10 @@ export class PermissionPreviewBuilder {
       slots: extractSlots(extManifest.contributions),
     }));
 
-    Object.assign(preview, await readRunnableDeclarations(packagePath));
+    Object.assign(
+      preview,
+      await readRunnableDeclarations(packagePath, { agentWorkspace: manifest.type === 'agent' })
+    );
 
     // Staging drops every shortcut, so each one is named rather than a skill
     // folder silently missing once installed (DOR-2319).

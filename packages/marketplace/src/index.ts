@@ -8,6 +8,7 @@
  *   import { validatePackage } from '@dorkos/marketplace/package-validator';
  *   import { createPackage } from '@dorkos/marketplace/scaffolder';
  *   import { scanPackageDirectory } from '@dorkos/marketplace/package-scanner';
+ *   import { findAgentWorkspaceConfig } from '@dorkos/marketplace/agent-workspace-config';
  *
  * @module @dorkos/marketplace
  */
@@ -142,4 +143,6 @@ export {
   matchesUserEditable,
   userEditableReaches,
   UserEditablePathSchema,
+  validUserEditable,
+  declaredEffectPaths,
 } from './user-editable.js';

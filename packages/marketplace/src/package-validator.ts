@@ -40,7 +40,12 @@ import { PackageTooLargeError, measurePackageTree } from './package-size.js';
 import { requiresClaudePlugin } from './package-types.js';
 import { parseMarketplaceJson, parseDorkosSidecar } from './marketplace-json-parser.js';
 import { validateAgainstCcSchema } from './cc-validator.js';
-import { isReservedPackagePath, userEditableReaches } from './user-editable.js';
+import {
+  declaredEffectPaths,
+  isReservedPackagePath,
+  userEditableReaches,
+} from './user-editable.js';
+import { findAgentWorkspaceConfig } from './agent-workspace-config.js';
 
 /**
  * A single validation finding produced by {@link validatePackage}. Errors
@@ -75,6 +80,14 @@ export interface ValidatePackageOptions {
    * person's data, so the reserved-path check is skipped there.
    */
   tree?: 'package' | 'installed';
+  /**
+   * The package is a folder on this machine that the person pointed at. A
+   * `.git` FILE at its root is then its own worktree's link, not a package
+   * steering git elsewhere, and the install drops every `.git` as it copies,
+   * so that one refusal is skipped. A root shaped like a git repository is
+   * still refused.
+   */
+  localSource?: boolean;
 }
 
 /**
@@ -479,6 +492,14 @@ async function validatePackageFiles(
   //    that gate, never carried by the package.
   await checkPackagedMcpServers(packagePath, issues);
 
+  // 7b. A root git would read as a repository (DOR-2326): its `config` can
+  //     name a program git runs whenever it runs there. Only before install:
+  //     a person may make their installed agent's folder a repository of
+  //     their own, and that must not hide the agent.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkGitShapedRoot(packagePath, manifest.type, options.localSource === true, issues);
+  }
+
   // 8. Declared schedules that point at nothing.
   await checkScheduleSkillRefs(packagePath, manifest, issues);
 
@@ -493,31 +514,22 @@ async function validatePackageFiles(
   //     refused by the manifest schema; these locations only plugin.json knows.
   await checkUserEditableDeclaredPaths(packagePath, manifest.userEditable ?? [], issues);
 
+  // 11. An agent package's folder is its working directory, so harness
+  //     configuration there would run in every session unseen (DOR-2314).
+  //     Skipped on an installed tree, where DorkOS writes some of it itself.
+  if (manifest.type === 'agent' && (options.tree ?? 'package') === 'package') {
+    for (const finding of await findAgentWorkspaceConfig(packagePath)) {
+      issues.push({
+        level: 'error',
+        code: 'AGENT_WORKSPACE_CONFIG_FORBIDDEN',
+        message: finding.message,
+        path: finding.path,
+      });
+    }
+  }
+
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest, declaredVersion };
-}
-
-/** plugin.json fields whose string values name files or folders a package runs from. */
-const DECLARED_EFFECT_FIELDS = [
-  'hooks',
-  'mcpServers',
-  'lspServers',
-  'monitors',
-  'skills',
-  'commands',
-  'agents',
-  'outputStyles',
-];
-
-/** Every package-relative path a plugin.json field names (a string, or strings in an array). */
-function declaredPathsOf(value: unknown): string[] {
-  const values = Array.isArray(value) ? value : [value];
-  return values
-    .filter((v): v is string => typeof v === 'string' && v.length > 0)
-    .map((v) =>
-      path.posix.normalize(v.split('\\').join('/')).replace(/^\.\//, '').replace(/\/$/, '')
-    )
-    .filter((v) => v !== '.' && !v.startsWith('../') && !path.posix.isAbsolute(v));
 }
 
 /**
@@ -549,11 +561,7 @@ async function checkUserEditableDeclaredPaths(
     if (err instanceof RefusedPackageFileError) throw err;
     return;
   }
-  const experimental = pluginJson.experimental as Record<string, unknown> | undefined;
-  const declared = [
-    ...DECLARED_EFFECT_FIELDS.flatMap((field) => declaredPathsOf(pluginJson[field])),
-    ...declaredPathsOf(experimental?.monitors),
-  ];
+  const declared = declaredEffectPaths(pluginJson);
   for (const pattern of userEditable) {
     const reached = declared.find((p) => userEditableReaches(pattern, p));
     if (reached === undefined) continue;
@@ -790,6 +798,76 @@ async function searchForSkill(root: string, skillName: string, depth: number): P
     if (await searchForSkill(child, skillName, depth + 1)) return true;
   }
   return false;
+}
+
+/**
+ * Refuse a package whose root git would read as a repository (DOR-2326).
+ *
+ * Git treats a folder holding `HEAD` with `objects/`, `refs/` or `packed-refs`
+ * as a repository in its own right, and a `.git` file saying `gitdir:` makes
+ * the folder part of another one. Either way git reads a `config` the package
+ * wrote, and settings such as `core.fsmonitor` name a program git runs, so
+ * `git status` in the installed folder ran the package's code. That holds for
+ * any package type.
+ *
+ * An agent's folder is also where its sessions run git, so an agent may not
+ * carry the other pieces of a repository at its root either: no `config`
+ * file, `worktrees/` or `packed-refs`. (A plugin's `config` file or folder is
+ * an ordinary name, and nothing runs git inside a plugin's folder.) A `.git`
+ * FOLDER is not refused: a local agent that is someone's own repository is
+ * ordinary, and the install drops every `.git` as it copies the package
+ * (`stage-package.ts`). DorkOS's own git calls and every agent session's git
+ * are hardened as well (`@dorkos/shared/git-hardening`); this refusal keeps
+ * such a package from being installed at all.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param type - The package's type.
+ * @param localSource - A folder on this machine; see {@link ValidatePackageOptions}.
+ * @param issues - Mutable issue list to append a finding to.
+ * @internal
+ */
+async function checkGitShapedRoot(
+  packagePath: string,
+  type: string,
+  localSource: boolean,
+  issues: ValidationIssue[]
+): Promise<void> {
+  const kindOf = async (name: string): Promise<'file' | 'dir' | null> => {
+    try {
+      const stats = await fs.lstat(path.join(packagePath, name));
+      return stats.isDirectory() ? 'dir' : 'file';
+    } catch {
+      return null;
+    }
+  };
+  const [head, objects, refs, packedRefs, dotGit, config, worktrees] = await Promise.all(
+    ['HEAD', 'objects', 'refs', 'packed-refs', '.git', 'config', 'worktrees'].map(kindOf)
+  );
+  const found: string[] = [];
+  if (head === 'file' && (objects === 'dir' || refs === 'dir' || packedRefs === 'file')) {
+    found.push('HEAD with objects/, refs/ or packed-refs');
+  }
+  if (dotGit === 'file' && !localSource) {
+    let text: string;
+    try {
+      text = await readPackageFileWithin(packagePath, '.git', 4096, "The package's .git");
+    } catch {
+      // A link, too large, or unreadable: treated like one that points elsewhere.
+      text = 'gitdir:';
+    }
+    if (/^\s*gitdir:/m.test(text.slice(0, 4096))) found.push('a .git file that points elsewhere');
+  }
+  if (type === 'agent') {
+    if (config === 'file') found.push('a config file');
+    if (worktrees === 'dir') found.push('a worktrees folder');
+    if (packedRefs === 'file') found.push('packed-refs');
+  }
+  if (found.length === 0) return;
+  issues.push({
+    level: 'error',
+    code: 'GIT_REPOSITORY_SHAPED',
+    message: `The package's folder looks like a git repository (${[...new Set(found)].join(', ')}), and git would read settings from it that can run a program. Remove those files from the package.`,
+  });
 }
 
 /**

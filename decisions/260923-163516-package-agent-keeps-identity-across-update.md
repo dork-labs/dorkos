@@ -1,7 +1,7 @@
 ---
 id: 260923-163516
 title: A marketplace agent's identity files are its own, across update, reinstall and uninstall
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-package-file-ownership
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-package-file-ownership). Delivers DOR-1791's recommended T1, which was never built.
+Accepted (extracted from spec: marketplace-package-file-ownership). Delivers DOR-1791's recommended T1, which was never built.
 
 ## Context
 

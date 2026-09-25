@@ -21,6 +21,7 @@ function makePreview(overrides: Partial<PreviewPayload> = {}): PreviewPayload {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -145,6 +146,64 @@ describe('renderPreview', () => {
     expect(out).toContain('while skills/all/SKILL.md is in use');
     expect(out).toContain('Tools a skill may use without asking you:');
     expect(out).toContain('"Bash(curl:*)"');
+  });
+
+  it("prints each command a skill's or command's text runs, verbatim, under the commands (DOR-2327)", () => {
+    // Purpose: Claude Code runs these as the skill loads, before the model
+    // sees it; the terminal is a consent surface like the card.
+    const out = stripAnsi(
+      renderPreview(
+        'ctx',
+        '1.0.0',
+        makePreview({
+          skillCommands: [
+            {
+              source: 'skills/ctx/SKILL.md',
+              skill: 'ctx',
+              form: 'block',
+              command: 'node -v\ngit status',
+              usesArguments: false,
+            },
+            {
+              source: 'commands/ship.md',
+              skill: 'ship',
+              form: 'inline',
+              command: 'git push',
+              usesArguments: false,
+            },
+          ],
+        })
+      )
+    );
+
+    expect(out).toContain('Commands this package declares:');
+    expect(out).toContain(
+      '  Runs when the skill ctx is used (skills/ctx/SKILL.md)\n    node -v\n    git status'
+    );
+    expect(out).toContain('  Runs when the command ship is used (commands/ship.md)\n    git push');
+  });
+
+  it('says when a skill command uses the text typed after it (DOR-2327)', () => {
+    const out = stripAnsi(
+      renderPreview(
+        'co',
+        '1.0.0',
+        makePreview({
+          skillCommands: [
+            {
+              source: 'agents/co.md',
+              skill: 'co',
+              form: 'inline',
+              command: 'git checkout $1',
+              usesArguments: true,
+            },
+          ],
+        })
+      )
+    );
+    expect(out).toContain(
+      '  Runs when the agent co is used (agents/co.md), using the text typed after it\n    git checkout $1'
+    );
   });
 
   it('shows a hidden direction-changing character instead of letting it rewrite the line', () => {

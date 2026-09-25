@@ -4563,6 +4563,35 @@ export const TaskSchema = z
       description:
         "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own).",
     }),
+    /**
+     * What changed since this schedule was last approved, for a schedule
+     * waiting again (DOR-2323): each part of the approved work that differs,
+     * with its approved value and the one that would run now. Empty when the
+     * schedule is not waiting, or nobody approved it before.
+     */
+    approvalChanges: z
+      .array(
+        z.object({
+          field: z.enum([
+            'prompt',
+            'cron',
+            'timezone',
+            'name',
+            'runtime',
+            'model',
+            'effort',
+            'maxRuntime',
+            'sticky',
+          ]),
+          from: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+          to: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+        })
+      )
+      .default([])
+      .openapi({
+        description:
+          'For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to).',
+      }),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),
     /**

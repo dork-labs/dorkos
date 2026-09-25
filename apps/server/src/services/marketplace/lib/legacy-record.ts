@@ -36,6 +36,7 @@ import {
   AGENT_IDENTITY_FILES,
   isReservedPackagePath,
   MarketplacePackageManifestSchema,
+  validUserEditable,
   type MarketplacePackageManifest,
   type PackageType,
 } from '@dorkos/marketplace';
@@ -77,8 +78,12 @@ async function exists(p: string): Promise<boolean> {
   return (await stat(p).catch(() => undefined)) !== undefined;
 }
 
-/** A manifest's `userEditable`, read loosely (an old tree may predate the field). */
-async function userEditableOf(tree: string): Promise<string[]> {
+/**
+ * A manifest's `userEditable`, read loosely (an old tree may predate the field).
+ *
+ * @param tree - A package tree.
+ */
+export async function userEditableOf(tree: string): Promise<string[]> {
   try {
     const manifest = JSON.parse(
       await readTextFileWithin(
@@ -89,9 +94,9 @@ async function userEditableOf(tree: string): Promise<string[]> {
     ) as {
       userEditable?: unknown;
     };
-    return Array.isArray(manifest.userEditable)
-      ? manifest.userEditable.filter((p): p is string => typeof p === 'string')
-      : [];
+    // Read off a tree that may predate the rules: an entry the schema now
+    // refuses (`skills/**`, `**`) is never trusted (DOR-2197 review).
+    return Array.isArray(manifest.userEditable) ? validUserEditable(manifest.userEditable) : [];
   } catch {
     return [];
   }
@@ -127,34 +132,20 @@ export async function rebuildInstalledFiles(
   const scratch = await mkdtemp(path.join(tmpdir(), 'dorkos-legacy-record-'));
   try {
     let oldTree: string | undefined;
-    if (metadata?.sourceKey && isFullCommitSha(metadata.commitSha) && deps.fetcher) {
+    const source = fetchableSourceOf(metadata);
+    if (source && deps.fetcher) {
       try {
-        const fetched = await deps.fetcher.fetchAtCommit({
-          packageName: metadata.name,
-          sourceKey: metadata.sourceKey,
-          commitSha: metadata.commitSha,
-        });
         oldTree = path.join(scratch, 'old');
-        await stagePackageContents(fetched.path, oldTree, deps.logger);
-        await injectInstalledSchedules(oldTree, deps.logger);
+        await stageInstalledCommit(source, oldTree, { fetcher: deps.fetcher, logger: deps.logger });
       } catch (err) {
+        oldTree = undefined;
         deps.logger.warn('[marketplace/legacy-record] could not fetch the installed commit', {
           installRoot,
           error: err instanceof Error ? err.message : String(err),
         });
       }
     }
-    const identity = {
-      name,
-      type,
-      ...(metadata?.sourceKey && {
-        source: {
-          cloneUrl: metadata.sourceKey.cloneUrl,
-          subpath: metadata.sourceKey.subpath,
-          ref: metadata.sourceKey.ref,
-        },
-      }),
-    };
+    const identity = recordIdentityOf(metadata, name, type);
 
     if (oldTree) {
       const rebuilt = await computeInstalledFiles(oldTree, {
@@ -192,6 +183,76 @@ export async function rebuildInstalledFiles(
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
+}
+
+/** What {@link stageInstalledCommit} fetches: an install's name and exact commit. */
+export interface FetchableSource {
+  name: string;
+  sourceKey: NonNullable<InstallMetadata['sourceKey']>;
+  commitSha: string;
+}
+
+/**
+ * The name, source and full commit an install's sidecar records, or `null`
+ * when there is nothing exact to fetch (no source, a local-path install, or a
+ * commit that is not a full SHA).
+ *
+ * @param metadata - The install's sidecar, or `null`.
+ */
+export function fetchableSourceOf(metadata: InstallMetadata | null): FetchableSource | null {
+  if (!metadata?.sourceKey || !isFullCommitSha(metadata.commitSha)) return null;
+  return { name: metadata.name, sourceKey: metadata.sourceKey, commitSha: metadata.commitSha };
+}
+
+/**
+ * The identity a rebuilt record carries: the sidecar's name, type and source.
+ *
+ * @param metadata - The install's sidecar, or `null`.
+ * @param name - The name to use when the sidecar gives none.
+ * @param type - The type to use when the sidecar gives none.
+ */
+export function recordIdentityOf(
+  metadata: InstallMetadata | null,
+  name: string,
+  type: PackageType
+): InstalledFiles['package'] {
+  return {
+    name: metadata?.name ?? name,
+    type: metadata?.type ?? type,
+    ...(metadata?.sourceKey && {
+      source: {
+        cloneUrl: metadata.sourceKey.cloneUrl,
+        subpath: metadata.sourceKey.subpath,
+        ref: metadata.sourceKey.ref,
+      },
+    }),
+  };
+}
+
+/**
+ * Fetch the exact commit an install was made from and stage it at `dest` the
+ * way that install saw it: the usual copy (reserved paths stripped), then its
+ * `skillRef` schedules written in (DOR-2318). The one way both record
+ * rebuilds (the tolerant one here and the strict one) obtain the old tree, so
+ * the two can never disagree about what was installed.
+ *
+ * @param source - What to fetch ({@link fetchableSourceOf}).
+ * @param dest - Where to stage it; must not exist.
+ * @param deps - The fetcher and a logger.
+ * @throws When the fetch or the copy fails.
+ */
+export async function stageInstalledCommit(
+  source: FetchableSource,
+  dest: string,
+  deps: { fetcher: Pick<PackageFetcher, 'fetchAtCommit'>; logger: Logger }
+): Promise<void> {
+  const fetched = await deps.fetcher.fetchAtCommit({
+    packageName: source.name,
+    sourceKey: source.sourceKey,
+    commitSha: source.commitSha,
+  });
+  await stagePackageContents(fetched.path, dest, deps.logger);
+  await injectInstalledSchedules(dest, deps.logger);
 }
 
 /**

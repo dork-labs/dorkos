@@ -18,27 +18,11 @@
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { lstat, readdir, statfs } from 'node:fs/promises';
 import path from 'node:path';
-import { hardenedGitEnv } from '../../../../lib/git-safety.js';
+import { withGitConfigEnv, type GitConfigEntry } from '@dorkos/shared/git-hardening';
+import { hardenedGitEnv, internalGitArgs } from '../../../../lib/git-safety.js';
 
 /** One `git -c`-style setting, passed through the environment instead of argv. */
-export type GitConfigEntry = { key: string; value: string };
-
-/**
- * `env` with `entries` appended to git's environment config
- * (`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_<n>` / `GIT_CONFIG_VALUE_<n>`, read by
- * git ≥ 2.31), after any entries the environment already carries.
- */
-function withGitConfig(env: NodeJS.ProcessEnv, entries: GitConfigEntry[]): NodeJS.ProcessEnv {
-  if (entries.length === 0) return env;
-  const existing = Number.parseInt(env.GIT_CONFIG_COUNT ?? '0', 10);
-  const start = Number.isNaN(existing) || existing < 0 ? 0 : existing;
-  const next: NodeJS.ProcessEnv = { ...env, GIT_CONFIG_COUNT: String(start + entries.length) };
-  entries.forEach(({ key, value }, i) => {
-    next[`GIT_CONFIG_KEY_${start + i}`] = key;
-    next[`GIT_CONFIG_VALUE_${start + i}`] = value;
-  });
-  return next;
-}
+export type { GitConfigEntry };
 
 /** A byte count in plain words: GB from one gigabyte up, else MB. */
 function describeDownloadBytes(bytes: number): string {
@@ -303,11 +287,13 @@ export async function runGit(
     let settled = false;
     let stdout = '';
     let stderr = '';
-    const child = spawn('git', args, {
+    // The hardening as `-c` too: the environment copy is read only by git 2.31
+    // and later, and this repo supports 2.25 (DOR-2326).
+    const child = spawn('git', [...internalGitArgs(), ...args], {
       cwd,
       // Confine git to safe transports so an author-controlled URL cannot reach
       // the `ext::`/`file::` helpers, and never prompt for a credential.
-      env: { ...withGitConfig(hardenedGitEnv(), config), ...options.env },
+      env: { ...withGitConfigEnv(hardenedGitEnv(), config), ...options.env },
       windowsHide: true,
       // Its own process group on POSIX, so the whole tree can be stopped.
       detached: process.platform !== 'win32',

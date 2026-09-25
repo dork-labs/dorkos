@@ -21,6 +21,7 @@ const RUNNING_SCHEDULE: Task = {
   defaultTimezone: 'UTC',
   timingOverridden: false,
   packageOwned: null,
+  approvalChanges: [],
   agentId: null,
   enabled: true,
   sticky: false,
@@ -71,6 +72,7 @@ const RETIMED_PACKAGE_SCHEDULE: Task = {
   defaultTimezone: 'UTC',
   timingOverridden: true,
   packageOwned: null,
+  approvalChanges: [],
   filePath: '~/.dork/plugins/flow/skills/flow-drain/SKILL.md',
   nextRun: '2026-09-08T05:30:00.000Z',
 };

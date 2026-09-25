@@ -88,13 +88,17 @@ export function CommunityConnections() {
               ref={addressInput}
               id={`${id}-url`}
               type="url"
-              placeholder="https://community.example.com"
+              placeholder="https://spaces.example.com/acme"
+              aria-describedby={`${id}-url-hint`}
               required
               autoComplete="url"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               disabled={start.isPending || !authority}
             />
+            <p id={`${id}-url-hint`} className="text-muted-foreground text-xs">
+              Its full link or its short address both work.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={`${id}-name`}>Name for this installation</Label>

@@ -54,6 +54,7 @@ import {
   PackageTooLargeError,
   measurePackageTree,
 } from '@dorkos/marketplace/package-size';
+import { parseGitVersion } from '@dorkos/shared/git-hardening';
 import { GitDownloadTooLargeError, runGit, type GitConfigEntry } from './git-runner.js';
 import {
   gitHubAuthConfig,
@@ -61,7 +62,7 @@ import {
   redactAuthTokens,
   resolveGitAuth,
   withGitHubToken,
-} from '../../../core/template-downloader.js';
+} from '../../../core/agent-templates/template-downloader.js';
 
 export { GitDownloadTooLargeError } from './git-runner.js';
 
@@ -638,18 +639,6 @@ let cachedAuth: { token: string | undefined; at: number } | undefined;
 
 /** The installed git's `[major, minor]`, read once per process. */
 let installedGit: Promise<[number, number] | undefined> | undefined;
-
-/**
- * Parse `git --version` output into `[major, minor]`, tolerating the suffixes
- * vendors add: `git version 2.39.5 (Apple Git-154)`,
- * `git version 2.43.0.windows.1`. `undefined` when there is no version in it.
- *
- * @param stdout - What `git --version` printed.
- */
-export function parseGitVersion(stdout: string): [number, number] | undefined {
-  const match = /git version (\d+)\.(\d+)/.exec(stdout);
-  return match ? [Number(match[1]), Number(match[2])] : undefined;
-}
 
 /** The installed git's version, from one `git --version` per process. */
 function gitVersion(): Promise<[number, number] | undefined> {

@@ -17,6 +17,7 @@ export interface HostCommunityRow {
   held_from_state?: 'active' | 'archived' | null;
   deletion_notice_at: Date | null;
   deletion_requested_by: 'owner' | 'host' | null;
+  short_name: string | null;
 }
 
 /** The host projection of one community row. */
@@ -32,6 +33,7 @@ export function projectCommunity(row: HostCommunityRow) {
     deletionState: row.deletion_state,
     deletionNoticeAt: row.deletion_notice_at?.toISOString() ?? null,
     deletionRequestedBy: row.deletion_requested_by,
+    shortName: row.short_name,
     createdAt: row.created_at.toISOString(),
   };
 }
@@ -41,6 +43,8 @@ export const hostProjectionSql = `SELECT c.id,c.name,c.description,c.lifecycle,c
   c.settings_version,c.created_at,c.suspended_from_state,c.held_from_state,c.deletion_notice_at,
   CASE WHEN c.delete_requested_by_host_actor IS NOT NULL THEN 'host'
        WHEN c.delete_requested_by IS NOT NULL THEN 'owner' END AS deletion_requested_by,
+  (SELECT n.short_name FROM community_short_names n
+    WHERE n.community_id=c.id AND n.state='current') AS short_name,
   EXISTS(SELECT 1 FROM members m WHERE m.community_id=c.id AND m.role='owner' AND m.active) AS owner_present,
   j.state AS deletion_state
   FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id`;

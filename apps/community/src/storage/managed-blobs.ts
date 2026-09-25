@@ -204,7 +204,8 @@ export async function discardManagedBlob(
       `DELETE FROM managed_blobs m
        WHERE m.blob_key=$1 AND m.community_id=$2 AND m.state='pending_delete'
          AND NOT EXISTS(SELECT 1 FROM attachments a WHERE a.blob_key=m.blob_key)
-         AND NOT EXISTS(SELECT 1 FROM export_archives e WHERE e.blob_key=m.blob_key)`,
+         AND NOT EXISTS(SELECT 1 FROM export_archives e WHERE e.blob_key=m.blob_key)
+         AND NOT EXISTS(SELECT 1 FROM export_segments s WHERE s.blob_key=m.blob_key)`,
       [reservation.key, reservation.communityId]
     );
     await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [reservation.key]);

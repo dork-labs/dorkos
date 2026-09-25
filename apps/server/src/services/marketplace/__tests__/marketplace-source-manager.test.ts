@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
+import { InvalidSourceNameError, MarketplaceSourceManager } from '../marketplace-source-manager.js';
 
 describe('MarketplaceSourceManager', () => {
   let dorkHome: string;
@@ -148,6 +148,49 @@ describe('MarketplaceSourceManager', () => {
         expect(after.find((s) => s.name === name)).toMatchObject({ source, enabled: true });
       });
     }
+  });
+
+  describe('add() — which names are allowed (DOR-2304)', () => {
+    // A source's name is the key its listing is cached under, and removing a
+    // source removes that directory. `x/..` resolved to the cache root, so
+    // removing it deleted every source's listing.
+    it.each(['x/..', '.', '..', 'a/b', 'a\\b', '-leading-dash', '.hidden', 'has space', ''])(
+      'refuses %j, saves nothing, and says which names work',
+      async (name) => {
+        const before = await manager.list();
+
+        const attempt = manager.add({ name, source: 'https://github.com/me/marketplace' });
+
+        await expect(attempt).rejects.toBeInstanceOf(InvalidSourceNameError);
+        await expect(attempt).rejects.toThrow(
+          'A marketplace name can use letters, numbers, dots, dashes and underscores'
+        );
+        expect(await manager.list()).toEqual(before);
+      }
+    );
+
+    it.each(['my-team', 'Team_2', 'dorkos.community', 'a'])('accepts %j', async (name) => {
+      await expect(
+        manager.add({ name, source: 'https://github.com/me/marketplace' })
+      ).resolves.toMatchObject({ name });
+    });
+
+    it('still loads a file that holds a name an older DorkOS accepted', async () => {
+      // Purpose: only new adds are checked. A config written before this rule
+      // must keep loading, or one odd line would take the marketplace down.
+      await writeFile(
+        join(dorkHome, 'marketplaces.json'),
+        JSON.stringify({
+          version: 1,
+          sources: [
+            { name: 'x/..', source: 'https://github.com/me/m', enabled: true, addedAt: 'x' },
+          ],
+        }),
+        'utf-8'
+      );
+
+      expect((await manager.list()).map((s) => s.name)).toEqual(['x/..']);
+    });
   });
 
   it('remove() is idempotent when the name is absent', async () => {

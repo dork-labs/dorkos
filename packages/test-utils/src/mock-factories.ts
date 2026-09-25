@@ -112,6 +112,7 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     defaultTimezone: null,
     timingOverridden: false,
     packageOwned: null,
+    approvalChanges: [],
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     runtime: null,
@@ -1012,9 +1013,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     applyMarketplaceUpdates: vi.fn(),
     reviewHeldBackPackage: vi.fn().mockResolvedValue(undefined),
     listInstalledPackages: vi.fn().mockResolvedValue([]),
+    checkPackageFiles: vi.fn(),
     listPackageInstallations: vi.fn().mockResolvedValue([]),
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
+    refreshMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
     // Harness Sync (spec `harness-sync-status` §5). A clean `ready` status with
     // nothing in it: every existing client test keeps compiling and none of them

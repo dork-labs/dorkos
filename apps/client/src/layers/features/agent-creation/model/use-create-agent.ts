@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTransport } from '@/layers/shared/model';
-import type { CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
+import type { CreateAgentRequestBody } from '@dorkos/shared/mesh-schemas';
 
 /**
  * Mutation hook for creating a new agent via the Transport interface.
@@ -11,7 +11,7 @@ export function useCreateAgent() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (opts: CreateAgentOptions) => transport.createAgent(opts),
+    mutationFn: (opts: CreateAgentRequestBody) => transport.createAgent(opts),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents'] });
       queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });
@@ -23,6 +23,13 @@ export function useCreateAgent() {
     },
     // The shared mutation toast (`query-client.ts`) reports failures — the
     // dialog used to show its own on top of it.
-    meta: { errorLabel: 'Couldn’t create that agent' },
+    meta: {
+      errorLabel: 'Couldn’t create that agent',
+      // A template that brings settings or programs is shown in the dialog,
+      // which asks the person whether to create it anyway (DOR-2325). That is a
+      // question, not a failure.
+      isShownInline: (error: Error) =>
+        (error as Error & { body?: { code?: string } }).body?.code === 'template_needs_review',
+    },
   });
 }

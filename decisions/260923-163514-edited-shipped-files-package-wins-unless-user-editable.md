@@ -1,7 +1,7 @@
 ---
 id: 260923-163514
 title: A shipped file a person edited is replaced with their copy saved beside it, unless the package declares it userEditable
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-package-file-ownership
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-package-file-ownership)
+Accepted (extracted from spec: marketplace-package-file-ownership)
 
 ## Context
 

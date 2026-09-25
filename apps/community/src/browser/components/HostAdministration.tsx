@@ -5,6 +5,7 @@ import { FocusDialog } from './CommunityAdministration.js';
 import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
 import { HostHoldControls } from './HostHoldControls.js';
+import { HostShortNames } from './HostShortNames.js';
 
 type Lifecycle =
   'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
@@ -19,6 +20,7 @@ type Community = {
   deletionState: 'waiting' | 'deleting' | 'retrying' | null;
   deletionNoticeAt: string | null;
   deletionRequestedBy: 'owner' | 'host' | null;
+  shortName: string | null;
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };
@@ -279,6 +281,7 @@ export function HostAdministration() {
                       <p className="small muted">{community.description}</p>
                     )}
                     <p className="small muted">
+                      {community.shortName && <>/{community.shortName} · </>}
                       ID: {shortId(community.id)} · Owner{' '}
                       {community.ownerPresent ? 'assigned' : 'not assigned'}
                       {community.deletionState ? ` · Cleanup ${community.deletionState}` : ''}
@@ -339,6 +342,13 @@ export function HostAdministration() {
                         perform={perform}
                       />
                     </div>
+                    {community.lifecycle !== 'deletion_pending' && (
+                      <HostShortNames
+                        communityId={community.id}
+                        name={community.name}
+                        onChanged={refresh}
+                      />
+                    )}
                     {community.lifecycle !== 'deletion_pending' && (
                       <HostCommunityLimits communityId={community.id} name={community.name} />
                     )}

@@ -20,6 +20,8 @@ let respond: (args: string[]) => Answer = () => ({ stdout: '' });
 const calls: string[][] = [];
 /** The environment each call ran with, index-aligned with `calls`. */
 const envs: NodeJS.ProcessEnv[] = [];
+/** The `-c` settings each git call led with, `--version` included. */
+const argSettings: string[][] = [];
 /** What `git --version` prints; answered outside `calls`, since it runs once. */
 let gitVersionOutput = 'git version 2.49.1\n';
 /** How many times `git --version` ran. */
@@ -49,6 +51,17 @@ vi.mock('node:child_process', async () => {
     // Git runs through `spawn` (its own process group, so a limit can stop
     // the whole tree); this answers each call from `respond`.
     spawn: vi.fn((_cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv }) => {
+      // The `-c` hardening every call leads with is recorded apart, so the
+      // answers below can go on keying off the subcommand (DOR-2326).
+      const settings: string[] = [];
+      while (
+        args[0] === '-c' &&
+        /^(safe\.bareRepository|core\.fsmonitor|core\.hooksPath)=/.test(args[1]!)
+      ) {
+        settings.push(args[1]!);
+        args = args.slice(2);
+      }
+      argSettings.push(settings);
       if (args[0] === '--version') {
         versionReads += 1;
         return fakeChild(gitVersionOutput, '', 0);
@@ -71,20 +84,15 @@ vi.mock('@dorkos/marketplace/package-size', async (importOriginal) => ({
   measurePackageTree: vi.fn().mockResolvedValue({ entries: 0, bytes: 0 }),
 }));
 
-vi.mock('../../../core/template-downloader.js', async () => {
-  const actual = await vi.importActual<typeof import('../../../core/template-downloader.js')>(
-    '../../../core/template-downloader.js'
-  );
+vi.mock('../../../core/agent-templates/template-downloader.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../../core/agent-templates/template-downloader.js')
+  >('../../../core/agent-templates/template-downloader.js');
   return { ...actual, resolveGitAuth: () => resolveGitAuth() };
 });
 
-import {
-  FETCH_DEADLINE_MS,
-  fetchTree,
-  GitFetchError,
-  lookupRemoteRef,
-  parseGitVersion,
-} from '../git/git-tree.js';
+import { parseGitVersion } from '@dorkos/shared/git-hardening';
+import { FETCH_DEADLINE_MS, fetchTree, GitFetchError, lookupRemoteRef } from '../git/git-tree.js';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -118,6 +126,7 @@ const HEADER = `Authorization: Basic ${Buffer.from('x-access-token:ghp_secret').
 beforeEach(() => {
   calls.length = 0;
   envs.length = 0;
+  argSettings.length = 0;
   gitVersionOutput = 'git version 2.49.1\n';
   resolveGitAuth.mockClear();
   respond = () => ({ stdout: '' });
@@ -129,6 +138,25 @@ const req = (cloneUrl: string) => ({
   refName: 'refs/heads/main',
   subpath: '',
   destDir: '/nonexistent/git-tree-guards',
+});
+
+describe('git settings a fetched folder could abuse (DOR-2326)', () => {
+  it('leads every git call with the hardening as -c, which git before 2.31 still reads', async () => {
+    // Purpose: the environment copy of these settings is ignored by git older
+    // than 2.31, and this repo supports 2.25, so argv is what protects it.
+    respond = gitReporting(A, A);
+    await fetchTree(req('https://example.com/org/pkg.git'));
+    expect(argSettings.length).toBeGreaterThan(3);
+    for (const settings of argSettings) {
+      expect(settings).toEqual(
+        expect.arrayContaining([
+          'safe.bareRepository=explicit',
+          'core.fsmonitor=',
+          expect.stringMatching(/^core\.hooksPath=/),
+        ])
+      );
+    }
+  });
 });
 
 describe('the GitHub token', () => {
@@ -167,6 +195,10 @@ describe('the GitHub token', () => {
     }
     expect(envConfig(envs[0]!)).toEqual({
       'protocol.version': '2',
+      // Every git DorkOS runs refuses a repository's own programs (DOR-2326).
+      'safe.bareRepository': 'explicit',
+      'core.fsmonitor': '',
+      'core.hooksPath': process.platform === 'win32' ? 'NUL' : '/dev/null',
       'http.https://github.com/.extraHeader': HEADER,
     });
   });

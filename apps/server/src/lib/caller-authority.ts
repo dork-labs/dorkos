@@ -63,6 +63,7 @@ import type { RequestUser } from '../services/core/auth/session-gate.js';
 import { configManager } from '../services/core/config-manager.js';
 import { env } from '../env.js';
 import { isLocalRequest } from './trusted-origins.js';
+import { resolveDecisionAuthority } from '../services/core/approvals/decision-authority.js';
 
 /**
  * Build the {@link DecisionAuthorityRequest} for an incoming request.
@@ -250,4 +251,57 @@ export function isLocalCaller(req: Request): boolean {
     hostHeader: req.headers.host,
     allowInsecureBind: env.DORKOS_ALLOW_INSECURE_BIND,
   });
+}
+
+/**
+ * Whether this caller is a person, and so trusted to do what only a person may:
+ * arm a scheduled task itself (skipping its approval, un-clamping its power,
+ * writing the operator-only task fields), or change an agent's runtime, model or
+ * effort without a card (DOR-2328).
+ * It composes the SAME two bars the approval, config, and extension-approval
+ * routes do, and for the same reason: trust here must be POSITIVE, never the mere
+ * ABSENCE of an agent marker.
+ *
+ * ## Two bars, checked together (DOR-1569)
+ *
+ * - **The cookie bar, under login-on only** ({@link requireOperatorCookieUnderLogin}).
+ *   When login is on, `sessionGate` accepts a per-user API key as the same
+ *   identity a browser cookie proves (DOR-474). An agent with shell access can
+ *   read the operator's key off `~/.dork` and present it while dropping its
+ *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
+ *   session cookie is. This bar refuses every credential but a cookie while login
+ *   is on, and — being the `...UnderLogin` half, not the full
+ *   `requireOperatorCookie` — it ALLOWS with login off, so the shipped default
+ *   posture is unchanged and the residual there stays the documented DOR-505 one.
+ * - **The agent bar, in every posture** ({@link resolveDecisionAuthority}). A
+ *   caller that names itself an agent, or holds an approval token, is refused.
+ *
+ * ## Why this replaced trust-by-absence, and what it costs
+ *
+ * It used to read `resolveDecisionAuthority(...).allowed` alone. Under login-on
+ * that clears any valid credential, so an agent that read the operator's API key
+ * off disk and dropped its header was trusted to un-clamp `bypassPermissions` and
+ * arm a live cron with no approval — the DOR-1569 exploit, observed on a live
+ * server. The one signal a header-stripping caller on loopback cannot fake is a
+ * session cookie, so under login-on the cookie is now required, exactly as it is
+ * to DECIDE an approval (whoever may decide may act without one).
+ *
+ * The cost is borne by the operator's own login-on CLI: `dorkos task create`
+ * presents an API key and no cookie, so under login-on it now PROPOSES a task
+ * (parked at `pending_approval`, clamped) for the operator to approve in the
+ * cockpit, rather than arming it directly, and `dorkos task update` can no longer
+ * set an operator-only field. That is the deliberate, conservative trade of a
+ * security fix — an occasional extra approval, never a live full-power cron
+ * nobody looked at. This is the DOR-553 question ("should an agent holding the
+ * operator's key schedule unattended work?"), answered for tasks: no.
+ *
+ * @param req - The incoming request.
+ * @param res - The response, for `sessionGate`'s resolved user.
+ * @returns True only when a person is positively established — a session cookie
+ *   under login-on, or the operator on the login-off local machine — with neither
+ *   an agent identity nor an approval token presented.
+ */
+export function clearsTheAgentBar(req: Request, res: Response): boolean {
+  if (requireOperatorCookieUnderLogin(res, 'this') !== undefined) return false;
+  return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
 }

@@ -156,7 +156,7 @@ import type {
 import type {
   AgentManifest,
   AgentManifestUpdate,
-  CreateAgentOptions,
+  CreateAgentRequestBody,
   DiscoveryCandidate,
   DenialRecord,
   AgentHealth,
@@ -186,12 +186,17 @@ import type {
   InstallOptions,
   InstallResult,
   UninstallOptions,
+  ListInstalledOptions,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
   InstalledPackage,
-  MarketplaceSource,
   AddSourceInput,
+  AddedMarketplaceSource,
+  ListedMarketplaceSource,
+  RefreshedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
   ForkShapeResult,
@@ -897,7 +902,7 @@ export const serverOnlyStubs = {
     };
   },
 
-  async createAgent(_opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }> {
+  async createAgent(_opts: CreateAgentRequestBody): Promise<AgentManifest & { _path: string }> {
     throw new Error('Agent creation is not supported in Obsidian plugin mode.');
   },
 
@@ -955,19 +960,30 @@ export const marketplaceStubs = {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 
-  async listInstalledPackages(_projectPath?: string): Promise<InstalledPackage[]> {
+  async listInstalledPackages(
+    _projectPath?: string,
+    _opts?: ListInstalledOptions
+  ): Promise<InstalledPackage[]> {
     return [];
+  },
+
+  async checkPackageFiles(_name: string, _opts?: CheckFilesOptions): Promise<CheckFilesResult> {
+    throw new Error('Marketplace is not supported in embedded mode');
   },
 
   async listPackageInstallations(_name: string): Promise<InstalledPackage[]> {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 
-  async listMarketplaceSources(): Promise<MarketplaceSource[]> {
+  async listMarketplaceSources(): Promise<ListedMarketplaceSource[]> {
     return [];
   },
 
-  async addMarketplaceSource(_input: AddSourceInput): Promise<MarketplaceSource> {
+  async addMarketplaceSource(_input: AddSourceInput): Promise<AddedMarketplaceSource> {
+    throw new Error('Marketplace is not supported in embedded mode');
+  },
+
+  async refreshMarketplaceSource(_name: string): Promise<RefreshedMarketplaceSource> {
     throw new Error('Marketplace is not supported in embedded mode');
   },
 

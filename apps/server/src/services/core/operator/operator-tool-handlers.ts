@@ -28,7 +28,16 @@ import type { DisplayNameWriter } from '../../identity/display-name-provenance.j
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { configManager } from '../config-manager.js';
+import { readManifest } from '@dorkos/shared/manifest';
 import { updateAgentManifest, AgentUpdateError } from './agent-updater.js';
+import {
+  describeExecutionChange,
+  EXECUTION_NEEDS_APPROVAL_CODE,
+  EXECUTION_NEEDS_APPROVAL_MESSAGE,
+  requestNamesExecutionField,
+  type AgentExecutionChange,
+} from './agent-execution.js';
+import { CapabilityToolError } from '../capabilities/mcp-envelope.js';
 import { sanitizedConfigSnapshot } from './config-patch.js';
 import {
   applyGuardedConfigWrite,
@@ -144,6 +153,10 @@ export interface UpdateAgentArgs {
   tierCeiling?: CapabilityTier | null;
   /** Present only so the handler can refuse it — see the guard in the handler. */
   nopeContent?: unknown;
+  /** Present only so the handler can refuse them (DOR-2328) — see `agent-execution.ts`. */
+  runtime?: unknown;
+  model?: unknown;
+  effort?: unknown;
 }
 
 /**
@@ -207,6 +220,16 @@ export function createUpdateAgentHandler(deps: McpToolDeps) {
       // test: naming either at all — a string, `null`, a number — is a patch
       // about NOPE.md and gets the pointer, never a type error that would send a
       // model off to fix its JSON and try the same door again.
+      // An agent's runtime, model and effort move every schedule that follows it,
+      // so they are changed through the tool that asks a person first (DOR-2328).
+      // Refused whole, whatever they hold, for the reason the NOPE.md guard below
+      // gives.
+      if (requestNamesExecutionField(patch)) {
+        return jsonResult(
+          { error: EXECUTION_NEEDS_APPROVAL_MESSAGE, code: EXECUTION_NEEDS_APPROVAL_CODE },
+          true
+        );
+      }
       if ('nopeContent' in patch) {
         return jsonResult(
           {
@@ -332,6 +355,95 @@ export function createUpdateAgentBoundariesHandler(deps: McpToolDeps) {
       return jsonResult(updated);
     } catch (err) {
       return agentUpdateFailure(err, "Failed to change the agent's safety boundaries");
+    }
+  };
+}
+
+/** The agent selector plus the three execution defaults `update_agent_execution` changes. */
+export interface UpdateAgentExecutionArgs extends AgentExecutionChange {
+  agent_id?: string;
+  cwd?: string;
+}
+
+/** The refusal for a call that would change nothing. */
+const NOTHING_TO_CHANGE =
+  'Nothing to change. Send runtime, model or effort with a value different from what the agent ' +
+  'has now (null returns model or effort to the default).';
+
+/** Resolve and read the target agent, for the card and for the write. */
+async function readTargetAgent(
+  deps: McpToolDeps,
+  args: { agent_id?: string; cwd?: string }
+): Promise<{ agentPath: string; manifest: NonNullable<Awaited<ReturnType<typeof readManifest>>> }> {
+  const agentPath = await validateBoundaryOrDorkHome(resolveAgentPath(deps, args));
+  const manifest = await readManifest(agentPath);
+  if (!manifest) throw new AgentUpdateError('NOT_FOUND', `No agent at ${agentPath}.`);
+  return { agentPath, manifest };
+}
+
+/**
+ * The approval card's "what changes" for `update_agent_execution`: every field
+ * that would change, old → new, read from the agent as it stands (DOR-2328).
+ *
+ * The registry binds this text into the approval, so a grant for one
+ * description does not fit a retry after the agent's defaults moved. A call that
+ * would change nothing is refused here, before any card is raised.
+ *
+ * An agent DorkOS cannot find or read here is left to the handler, which
+ * reports it with the same sentence every agent edit uses: answering it here
+ * would make this the one destructive capability whose gate a bad selector can
+ * skip, and the conformance suite proves every destructive call reaches the
+ * gate. The cost is a card without its lines for a call that then fails, which
+ * is the late-refusal window `update_agent_boundaries` already accepts.
+ *
+ * @param deps - Tool deps (`meshCore` for `agent_id` resolution).
+ * @param args - The call's arguments.
+ * @returns The card's lines, or `undefined` when the agent cannot be read.
+ */
+export async function describeAgentExecutionApproval(
+  deps: McpToolDeps,
+  args: UpdateAgentExecutionArgs
+): Promise<string | undefined> {
+  let manifest: Awaited<ReturnType<typeof readTargetAgent>>['manifest'];
+  try {
+    ({ manifest } = await readTargetAgent(deps, args));
+  } catch {
+    return undefined;
+  }
+  const change = describeExecutionChange(manifest, args);
+  if (change === undefined) {
+    throw new CapabilityToolError({ error: NOTHING_TO_CHANGE, code: 'VALIDATION' });
+  }
+  return change;
+}
+
+/**
+ * `update_agent_execution` — change an agent's runtime, model or effort, as its
+ * own `destructive` capability so a person approves the change first (DOR-2328).
+ * A trusted caller (a person) is never asked; it still gets the same checks.
+ *
+ * @param deps - Tool deps (`meshCore` for `agent_id` resolution + DB sync).
+ * @returns The bound handler.
+ */
+export function createUpdateAgentExecutionHandler(deps: McpToolDeps) {
+  return async (args: UpdateAgentExecutionArgs): Promise<OperatorToolResult> => {
+    try {
+      const { agentPath, manifest } = await readTargetAgent(deps, args);
+      if (describeExecutionChange(manifest, args) === undefined) {
+        return jsonResult({ error: NOTHING_TO_CHANGE, code: 'VALIDATION' }, true);
+      }
+      const updated = await updateAgentManifest({
+        agentPath,
+        body: {
+          ...(args.runtime !== undefined ? { runtime: args.runtime } : {}),
+          ...(args.model !== undefined ? { model: args.model } : {}),
+          ...(args.effort !== undefined ? { effort: args.effort } : {}),
+        },
+        meshCore: deps.meshCore,
+      });
+      return jsonResult(updated);
+    } catch (err) {
+      return agentUpdateFailure(err, "Failed to change the agent's runtime, model or effort");
     }
   };
 }

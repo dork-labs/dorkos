@@ -21,6 +21,9 @@ vi.mock('@/layers/entities/marketplace', () => ({
   useMarketplaceSources: vi.fn(),
   useAddMarketplaceSource: vi.fn(),
   useRemoveMarketplaceSource: vi.fn(),
+  // The listing flows (note, Refresh) run against the real hook and a mock
+  // Transport in MarketplaceSourcesView.listing.test.tsx.
+  useRefreshMarketplaceSource: () => ({ mutate: vi.fn(), isPending: false, variables: undefined }),
 }));
 
 const addMutate = vi.fn();
@@ -304,7 +307,7 @@ describe('MarketplaceSourcesView', () => {
       await user.click(screen.getByRole('button', { name: /^remove dorkos-official$/i }));
 
       expect(removeMutate).toHaveBeenCalledTimes(1);
-      expect(removeMutate).toHaveBeenCalledWith('dorkos-official');
+      expect(removeMutate.mock.calls[0][0]).toBe('dorkos-official');
     });
 
     it('disables all remove buttons while a removal is in flight', () => {

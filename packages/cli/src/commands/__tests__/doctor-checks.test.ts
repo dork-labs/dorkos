@@ -15,6 +15,7 @@ import {
   checkClaudeAuth,
   checkFileDescriptors,
   readFileDescriptorLimit,
+  checkGitProtection,
 } from '../doctor-checks.js';
 
 describe('checkDorkHomeWritable', () => {
@@ -163,5 +164,31 @@ describe('readFileDescriptorLimit', () => {
       expect(typeof limit).toBe('number');
       expect(limit).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('checkGitProtection (DOR-2326)', () => {
+  it('passes on git 2.38 or later', () => {
+    expect(checkGitProtection(() => 'git version 2.38.0\n').status).toBe('pass');
+  });
+
+  it.each(['git version 2.30.0\n', 'git version 2.37.1 (Apple Git-136)\n'])(
+    'warns on %j and names 2.38',
+    (out) => {
+      const check = checkGitProtection(() => out);
+      expect(check.status).toBe('warn');
+      expect(check.fix).toContain('2.38');
+    }
+  );
+
+  it('is info when git is not installed', () => {
+    const check = checkGitProtection(() => {
+      throw Object.assign(new Error('spawn git ENOENT'), { code: 'ENOENT' });
+    });
+    expect(check).toMatchObject({ status: 'info', label: 'Git is not installed' });
+  });
+
+  it('reads the real git on this machine', () => {
+    expect(['pass', 'warn', 'info']).toContain(checkGitProtection().status);
   });
 });

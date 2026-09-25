@@ -1,7 +1,7 @@
 ---
 id: 260924-101531
 title: A schedule's timezone is part of what a person approves
-status: draft
+status: accepted
 created: 2026-09-24
 spec: null
 superseded-by: null
@@ -12,7 +12,7 @@ amends: 260823-200726
 
 ## Status
 
-Draft (DOR-2307).
+Accepted (DOR-2307).
 
 ## Context
 

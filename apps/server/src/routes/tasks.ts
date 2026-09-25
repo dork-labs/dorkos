@@ -42,15 +42,18 @@ import { readActivityActor } from '../services/activity/activity-actor.js';
 import { loadTemplates } from '../services/tasks/task-templates.js';
 import { parseBody } from '../lib/route-utils.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
-import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
-import { readCallerAuthority, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
+import { clearsTheAgentBar, requireOperatorCookieUnderLogin } from '../lib/caller-authority.js';
 import { readCallerPrincipal } from '../lib/caller-principal.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { raiseStanding } from '../services/notifications/standing-events.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withProposerName, withProposerNames } from '../services/tasks/task-provenance.js';
-import { clampSchedulePermissionMode } from '../services/tasks/schedule-permission-clamp.js';
+import {
+  clampSchedulePermissionMode,
+  taskWorkOf,
+} from '../services/tasks/schedule-permission-clamp.js';
+import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -61,62 +64,6 @@ import {
   OPERATOR_ONLY_TRIGGER_REFUSAL,
   refuseUnknownTaskUpdateFields,
 } from '../services/tasks/task-write-policy.js';
-
-/**
- * Whether this caller is trusted to arm a scheduled task itself — that is, to
- * skip the approval gate, un-clamp its power, and write the operator-only fields.
- * It composes the SAME two bars the approval, config, and extension-approval
- * routes do, and for the same reason: trust here must be POSITIVE, never the mere
- * ABSENCE of an agent marker.
- *
- * ## Two bars, checked together (DOR-1569)
- *
- * - **The cookie bar, under login-on only** ({@link requireOperatorCookieUnderLogin}).
- *   When login is on, `sessionGate` accepts a per-user API key as the same
- *   identity a browser cookie proves (DOR-474). An agent with shell access can
- *   read the operator's key off `~/.dork` and present it while dropping its
- *   `X-DorkOS-Agent` header, so an API key is NOT proof of a person. Only a
- *   session cookie is. This bar refuses every credential but a cookie while login
- *   is on, and — being the `...UnderLogin` half, not the full
- *   `requireOperatorCookie` — it ALLOWS with login off, so the shipped default
- *   posture is unchanged and the residual there stays the documented DOR-505 one.
- * - **The agent bar, in every posture** ({@link resolveDecisionAuthority}). A
- *   caller that names itself an agent, or holds an approval token, is refused.
- *
- * ## Why this replaced trust-by-absence, and what it costs
- *
- * It used to read `resolveDecisionAuthority(...).allowed` alone. Under login-on
- * that clears any valid credential, so an agent that read the operator's API key
- * off disk and dropped its header was trusted to un-clamp `bypassPermissions` and
- * arm a live cron with no approval — the DOR-1569 exploit, observed on a live
- * server. The one signal a header-stripping caller on loopback cannot fake is a
- * session cookie, so under login-on the cookie is now required, exactly as it is
- * to DECIDE an approval (whoever may decide may act without one).
- *
- * The cost is borne by the operator's own login-on CLI: `dorkos task create`
- * presents an API key and no cookie, so under login-on it now PROPOSES a task
- * (parked at `pending_approval`, clamped) for the operator to approve in the
- * cockpit, rather than arming it directly, and `dorkos task update` can no longer
- * set an operator-only field. That is the deliberate, conservative trade of a
- * security fix — an occasional extra approval, never a live full-power cron
- * nobody looked at. This is the DOR-553 question ("should an agent holding the
- * operator's key schedule unattended work?"), answered for tasks: no.
- *
- * @param req - The incoming request.
- * @param res - The response, for `sessionGate`'s resolved user.
- * @returns True only when a person is positively established — a session cookie
- *   under login-on, or the operator on the login-off local machine — with neither
- *   an agent identity nor an approval token presented.
- */
-function clearsTheAgentBar(req: Request, res: Response): boolean {
-  // The cookie bar first, mirroring `routes/config.ts`. Under login-off this is a
-  // no-op (undefined); under login-on it refuses everything but a session cookie,
-  // so a stolen API key never reaches the agent bar as "trusted".
-  if (requireOperatorCookieUnderLogin(res, 'how a scheduled task runs') !== undefined) {
-    return false;
-  }
-  return resolveDecisionAuthority(readCallerAuthority(req, res)).allowed;
-}
 
 /**
  * Refuse a task write that reaches for a field only a person may set (DOR-504),
@@ -450,22 +397,10 @@ export function createTasksRouter(
     // file and — `clampApplied` — the row. A package's row-only timing change
     // leaves it out: that change is parked for a person anyway, and the package's
     // permission level is not DorkOS's to write (DOR-2302).
+    // Every field of the approved work counts: the prompt, the timing (the
+    // timezone since DOR-2307), and the settings (DOR-2323).
     let clampTo: PermissionMode | undefined;
-    const promptChangesApprovedWork = data.prompt !== undefined && data.prompt !== existing.prompt;
-    const cronChangesApprovedWork =
-      data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '');
-    // The same cron in another timezone runs at another time, so it is another
-    // piece of work (DOR-2307).
-    const timezoneChangesApprovedWork =
-      data.timezone !== undefined && (data.timezone ?? 'UTC') !== (existing.timezone ?? 'UTC');
-    const nameChangesApprovedWork = data.name !== undefined && data.name !== existing.name;
-    if (
-      !trusted &&
-      (promptChangesApprovedWork ||
-        cronChangesApprovedWork ||
-        timezoneChangesApprovedWork ||
-        nameChangesApprovedWork)
-    ) {
+    if (!trusted && changesApprovedWork(data, existing)) {
       const clamp = clampSchedulePermissionMode(existing.permissionMode);
       if (clamp.clamped) clampTo = clamp.mode;
     }
@@ -490,12 +425,7 @@ export function createTasksRouter(
     const { changesFile, timingLandsOn } = fileOutcome;
     // What would run before this write, as it RUNS, and the status it had: what
     // `settleApprovedWorkChange` below compares against.
-    const before = {
-      prompt: existing.prompt,
-      cron: existing.cron ?? '',
-      timezone: existing.timezone ?? 'UTC',
-      status: existing.status,
-    };
+    const before = { ...taskWorkOf(existing), status: existing.status };
 
     const rowData =
       fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
@@ -547,7 +477,7 @@ export function createTasksRouter(
     // So the grant is re-issued only for a caller that cleared the agent bar. An
     // agent's edit still re-parks, and a person still has to look at it.
     if (trusted && changesFile && existing.status === 'active' && updated.status === 'active') {
-      store.recordApproval(updated.id);
+      store.approvals.recordApproval(updated.id);
       updated = store.getTask(updated.id) ?? updated;
     }
 
@@ -560,7 +490,7 @@ export function createTasksRouter(
     // file-backed edit was re-approved just above. The park is then picked up by
     // the "entered `pending_approval`" edge below like any other.
     if (!trusted || !changesFile) {
-      store.settleApprovedWorkChange(updated.id, before, { trusted });
+      store.approvals.settleApprovedWorkChange(updated.id, before, { trusted });
       updated = store.getTask(updated.id) ?? updated;
     }
 

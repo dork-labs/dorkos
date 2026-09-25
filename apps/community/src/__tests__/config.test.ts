@@ -32,6 +32,33 @@ describe('community startup config', () => {
     expect(() => parseConfig({ ...valid, COMMUNITY_TEXT_BYTES: '0' })).toThrow();
   });
 
+  it('bounds the export settings and keeps their defaults', () => {
+    // Purpose: a segment below 64 MiB or above the 1 GiB blob ceiling, an archive that outlives a
+    // week, or more than 8 jobs a replica must be refused at startup, not discovered mid-export.
+    expect(parseConfig(valid).exports).toEqual({
+      segmentBytes: 256 * 1024 * 1024,
+      ttlHours: 24,
+      maxHours: 24,
+      concurrency: 1,
+    });
+    const mib = 1024 * 1024;
+    expect(
+      parseConfig({ ...valid, COMMUNITY_EXPORT_SEGMENT_BYTES: String(64 * mib) }).exports
+        .segmentBytes
+    ).toBe(64 * mib);
+    for (const [name, value] of [
+      ['COMMUNITY_EXPORT_SEGMENT_BYTES', String(64 * mib - 1)],
+      ['COMMUNITY_EXPORT_SEGMENT_BYTES', String(1024 * mib + 1)],
+      ['COMMUNITY_EXPORT_TTL_HOURS', '0'],
+      ['COMMUNITY_EXPORT_TTL_HOURS', '169'],
+      ['COMMUNITY_EXPORT_MAX_HOURS', '169'],
+      ['COMMUNITY_EXPORT_CONCURRENCY', '9'],
+      ['COMMUNITY_EXPORT_CONCURRENCY', '0'],
+    ] as const) {
+      expect(() => parseConfig({ ...valid, [name]: value }), `${name}=${value}`).toThrow();
+    }
+  });
+
   it('keeps the agents-per-person default at 20 with a maximum of 100', () => {
     // Purpose: a per-member override may go higher (to 1,000); the host-wide setting may not.
     expect(parseConfig(valid).limits.agentsPerOwner).toBe(20);
@@ -39,6 +66,38 @@ describe('community startup config', () => {
       100
     );
     expect(() => parseConfig({ ...valid, COMMUNITY_AGENTS_PER_OWNER: '101' })).toThrow();
+  });
+
+  it('adds a host’s own reserved short names to the built-in list, in the same grammar', () => {
+    // Purpose: fails if a host addition is dropped, or a malformed one is accepted silently.
+    const config = parseConfig({ ...valid, COMMUNITY_RESERVED_SHORT_NAMES: ' Brand, our-team ' });
+    expect(config.reservedShortNames.has('brand')).toBe(true);
+    expect(config.reservedShortNames.has('our-team')).toBe(true);
+    expect(config.reservedShortNames.has('admin')).toBe(true);
+    expect(() => parseConfig({ ...valid, COMMUNITY_RESERVED_SHORT_NAMES: 'ok-name,x!' })).toThrow();
+    expect(parseConfig(valid).limits.shortNameCooloffDays).toBe(90);
+    expect(
+      parseConfig({ ...valid, COMMUNITY_SHORT_NAME_COOLOFF_DAYS: '0' }).limits.shortNameCooloffDays
+    ).toBe(0);
+    expect(() => parseConfig({ ...valid, COMMUNITY_SHORT_NAME_COOLOFF_DAYS: '366' })).toThrow();
+    expect(parseConfig(valid).limits.nameLookupsPerMinute).toBe(60);
+    expect(() => parseConfig({ ...valid, COMMUNITY_NAME_LOOKUPS_PER_MINUTE: '601' })).toThrow();
+  });
+
+  it('trusts no proxy header unless one is named, and only a well-formed header name', () => {
+    // Purpose: fails if a proxy header is trusted by default (callers could choose their own
+    // limit bucket), or a malformed name is accepted silently.
+    expect(parseConfig(valid).trustedProxyHeader).toBeUndefined();
+    expect(parseConfig({ ...valid, COMMUNITY_TRUSTED_PROXY_HEADER: '' }).trustedProxyHeader).toBe(
+      undefined
+    );
+    expect(
+      parseConfig({ ...valid, COMMUNITY_TRUSTED_PROXY_HEADER: ' Fly-Client-IP ' })
+        .trustedProxyHeader
+    ).toBe('fly-client-ip');
+    expect(() =>
+      parseConfig({ ...valid, COMMUNITY_TRUSTED_PROXY_HEADER: 'X-Real-IP: 1.2.3.4' })
+    ).toThrow('COMMUNITY_TRUSTED_PROXY_HEADER');
   });
 
   it('requires at least a week of notice before a host may delete a held community', () => {
@@ -190,5 +249,71 @@ describe('community startup config', () => {
       parseConfig({ ...valid, COMMUNITY_REPORT_ABUSE_URL: 'https://example.com/report?form=1' })
         .hostLinks.reportAbuseUrl
     ).toBe('https://example.com/report?form=1');
+  });
+
+  it('reads OpenID Connect settings all or none, with a default label and scopes', () => {
+    // Purpose: fails if a partial issuer pair starts half-configured, or the defaults drift.
+    expect(parseConfig(valid).oidc).toBeNull();
+    const oidc = {
+      COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com/realms/team/',
+      COMMUNITY_OIDC_CLIENT_ID: 'community',
+      COMMUNITY_OIDC_CLIENT_SECRET: 'secret',
+    };
+    expect(parseConfig({ ...valid, ...oidc }).oidc).toEqual({
+      issuer: 'https://id.example.com/realms/team',
+      clientId: 'community',
+      clientSecret: 'secret',
+      label: 'Single sign-on',
+      scopes: ['openid', 'email', 'profile'],
+    });
+    expect(
+      parseConfig({
+        ...valid,
+        ...oidc,
+        COMMUNITY_OIDC_LABEL: '  Example Workspace  ',
+        COMMUNITY_OIDC_SCOPES: 'openid email',
+      }).oidc
+    ).toMatchObject({ label: 'Example Workspace', scopes: ['openid', 'email'] });
+    // Compose passes unset variables as empty strings.
+    expect(
+      parseConfig({
+        ...valid,
+        COMMUNITY_OIDC_ISSUER_URL: '',
+        COMMUNITY_OIDC_CLIENT_ID: '',
+        COMMUNITY_OIDC_CLIENT_SECRET: '',
+        COMMUNITY_OIDC_LABEL: '',
+        COMMUNITY_OIDC_SCOPES: '',
+      }).oidc
+    ).toBeNull();
+    expect(
+      parseConfig({ ...valid, ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'http://localhost:9000' }).oidc
+        ?.issuer
+    ).toBe('http://localhost:9000');
+  });
+
+  it('refuses an incomplete, non-HTTPS or malformed OpenID Connect setting', () => {
+    // Purpose: fails if the issuer can be plain HTTP off loopback, carry credentials, or if a
+    // missing piece, a label outside 1 to 40 characters, or scopes without openid pass.
+    const oidc = {
+      COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com',
+      COMMUNITY_OIDC_CLIENT_ID: 'community',
+      COMMUNITY_OIDC_CLIENT_SECRET: 'secret',
+    };
+    for (const env of [
+      { COMMUNITY_OIDC_ISSUER_URL: oidc.COMMUNITY_OIDC_ISSUER_URL },
+      { ...oidc, COMMUNITY_OIDC_CLIENT_SECRET: undefined },
+      { COMMUNITY_OIDC_LABEL: 'Orphan label' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'http://id.example.com' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'https://user:pass@id.example.com' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'https://id.example.com/?tenant=1' },
+      { ...oidc, COMMUNITY_OIDC_ISSUER_URL: 'not a url' },
+      { ...oidc, COMMUNITY_OIDC_LABEL: 'x'.repeat(41) },
+      { ...oidc, COMMUNITY_OIDC_LABEL: '   ' },
+      { ...oidc, COMMUNITY_OIDC_SCOPES: 'email profile' },
+      { ...oidc, COMMUNITY_OIDC_SCOPES: 'openid "email"' },
+    ])
+      expect(() => parseConfig({ ...valid, ...env }), JSON.stringify(env)).toThrow(
+        /COMMUNITY_OIDC/u
+      );
   });
 });

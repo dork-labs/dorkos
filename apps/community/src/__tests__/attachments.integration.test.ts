@@ -11,12 +11,13 @@ import { createCommunityApp } from '../app.js';
 import { parseConfig } from '../config.js';
 import { transaction } from '../data.js';
 import { sweepExpiredAttachments } from '../routes/attachments.js';
-import { sweepExpiredExports } from '../routes/exports.js';
+import { sweepExpiredExports } from '../exports/sweep.js';
 import { discardManagedBlob, FileSystemBlobStore } from '../storage/index.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
 import { sweepPendingBlobDeletions } from '../storage/pending-deletions.js';
 import { hashSecret } from '../security.js';
 import { bootstrapFirstHost, seedCredentialAccount } from './bootstrap-test-helper.js';
+import { drainExports, expireReadyExports, openArchive } from './export-test-helpers.js';
 
 const adminUrl = process.env.COMMUNITY_TEST_DATABASE_URL;
 if (!adminUrl) throw new Error('COMMUNITY_TEST_DATABASE_URL is required for attachment HTTP tests');
@@ -995,7 +996,8 @@ describe('attachments over real HTTP and Postgres', () => {
       );
       expect(quotaWrite.rowCount).toBeGreaterThan(0);
       await blocker.query('COMMIT');
-      expect((await blockedExport).status).toBe(201);
+      expect((await blockedExport).status).toBe(202);
+      await drainExports(pool, blobStore);
     } finally {
       await blocker.query('ROLLBACK');
       blocker.release();
@@ -1173,19 +1175,26 @@ describe('attachments over real HTTP and Postgres', () => {
 
   /** Create a personal archive that includes `channelId`, then run `use` on it. */
   async function withPersonalArchive(
-    use: (archive: { id: string; blobKey: string }) => Promise<void>
+    use: (archive: { id: string; firstKey: string; lastKey: string }) => Promise<void>
   ) {
+    await expireReadyExports(pool, ownerId);
     const created = await post('/api/v1/me/export', {}, ownerCookie);
-    expect(created.status).toBe(201);
-    const id = (await created.json()).archiveId;
-    const archive = (
-      await pool.query<{ blob_key: string; channel_ids: string[] }>(
-        `SELECT e.blob_key,array_agg(s.channel_id) AS channel_ids FROM export_archives e
-         JOIN export_archive_channels s ON s.export_archive_id=e.id WHERE e.id=$1 GROUP BY e.blob_key`,
+    expect(created.status).toBe(202);
+    const id = (await created.json()).export.id;
+    await drainExports(pool, blobStore);
+    const channels = (
+      await pool.query<{ channel_id: string }>(
+        'SELECT channel_id FROM export_archive_channels WHERE export_archive_id=$1',
         [id]
       )
-    ).rows[0];
-    expect(archive.channel_ids).toContain(channelId);
+    ).rows.map((row) => row.channel_id);
+    expect(channels).toContain(channelId);
+    const keys = (
+      await pool.query<{ blob_key: string }>(
+        'SELECT blob_key FROM export_segments WHERE export_id=$1 ORDER BY segment_no',
+        [id]
+      )
+    ).rows.map((row) => row.blob_key);
     // The owner reaches the channel directly and through the agent it owns; both have to go.
     const ownedAgents = (
       await pool.query<{ agent_id: string }>(
@@ -1195,7 +1204,7 @@ describe('attachments over real HTTP and Postgres', () => {
       )
     ).rows.map((row) => row.agent_id);
     try {
-      await use({ id, blobKey: archive.blob_key });
+      await use({ id, firstKey: keys[0], lastKey: keys[keys.length - 1] });
     } finally {
       await pool.query(
         'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
@@ -1222,13 +1231,44 @@ describe('attachments over real HTTP and Postgres', () => {
 
   it('ends a fully sent archive download cleanly when access ends after the last byte', async () => {
     await withPersonalArchive(async (archive) => {
-      const last = await readAllThenEndAfterRevocation(
-        archive.blobKey,
-        `/api/v1/exports/${archive.id}`,
-        ownerCookie,
-        revokeOwnerChannelAccess
-      );
-      expect(last).toEqual({ done: true, value: undefined });
+      let releaseEnd!: () => void;
+      const end = new Promise<void>((resolve) => {
+        releaseEnd = resolve;
+      });
+      const originalGet = blobStore.get.bind(blobStore);
+      // The archive's last piece sends its bytes, then holds the stream open.
+      const spy = vi.spyOn(blobStore, 'get').mockImplementation(async (key, options) => {
+        const read = await originalGet(key, options);
+        if (key !== archive.lastKey) return read;
+        const chunks: Buffer[] = [];
+        for await (const chunk of read.body) chunks.push(Buffer.from(chunk));
+        return {
+          byteSize: read.byteSize,
+          body: Readable.from(
+            (async function* () {
+              yield Buffer.concat(chunks);
+              await end;
+            })()
+          ),
+        };
+      });
+      try {
+        const response = await app.request(`/api/v1/exports/${archive.id}/archive`, {
+          headers: { cookie: ownerCookie },
+        });
+        expect(response.status).toBe(200);
+        const size = Number(response.headers.get('content-length'));
+        const reader = response.body!.getReader();
+        let received = 0;
+        while (received < size) received += (await reader.read()).value!.byteLength;
+        expect(received).toBe(size);
+        await revokeOwnerChannelAccess();
+        releaseEnd();
+        expect(await reader.read()).toEqual({ done: true, value: undefined });
+      } finally {
+        releaseEnd();
+        spy.mockRestore();
+      }
     });
   });
 
@@ -1241,7 +1281,7 @@ describe('attachments over real HTTP and Postgres', () => {
       const originalGet = blobStore.get.bind(blobStore);
       const spy = vi.spyOn(blobStore, 'get').mockImplementation(async (key, options) => {
         const read = await originalGet(key, options);
-        if (key !== archive.blobKey) return read;
+        if (key !== archive.firstKey) return read;
         const chunks: Buffer[] = [];
         for await (const chunk of read.body) chunks.push(Buffer.from(chunk));
         const bytes = Buffer.concat(chunks);
@@ -1256,18 +1296,23 @@ describe('attachments over real HTTP and Postgres', () => {
           ),
         };
       });
+      const realNow = Date.now.bind(Date);
+      const clock = vi.spyOn(Date, 'now');
       try {
-        const response = await app.request(`/api/v1/exports/${archive.id}`, {
+        const response = await app.request(`/api/v1/exports/${archive.id}/archive`, {
           headers: { cookie: ownerCookie },
         });
         expect(response.status).toBe(200);
         const reader = response.body!.getReader();
         expect((await reader.read()).value?.byteLength).toBe(1);
         await revokeOwnerChannelAccess();
+        // Access is re-checked every 16 MiB or 10 seconds; this archive is small, so let time pass.
+        clock.mockImplementation(() => realNow() + 11_000);
         releaseRest();
         await expect(reader.read()).rejects.toThrow('Export access has ended.');
       } finally {
         releaseRest();
+        clock.mockRestore();
         spy.mockRestore();
       }
     });
@@ -1275,8 +1320,22 @@ describe('attachments over real HTTP and Postgres', () => {
 });
 
 describe('private archives and recoverable leave', () => {
+  /** Start a fresh personal export (an earlier ready one is expired first), build it, and return its id. */
+  async function personalExport(cookie: string, memberId: string): Promise<string> {
+    await expireReadyExports(pool, memberId);
+    const created = await post('/api/v1/me/export', {}, cookie);
+    expect(created.status).toBe(202);
+    const id = (await created.json()).export.id as string;
+    await drainExports(pool, blobStore);
+    return id;
+  }
+  async function downloadExport(id: string, cookie: string): Promise<Buffer> {
+    const response = await request(`/api/v1/exports/${id}/archive`, { headers: { cookie } });
+    expect(response.status).toBe(200);
+    return Buffer.from(await response.arrayBuffer());
+  }
+
   it('includes owned-agent posts and files in an agent-only channel until its last access ends', async () => {
-    const { unzipSync, strFromU8 } = await import('fflate');
     const created = await post('/api/v1/channels', { name: 'Agent archive room' }, ownerCookie);
     expect(created.status).toBe(201);
     const id = (await created.json()).channel.id;
@@ -1334,44 +1393,38 @@ describe('private archives and recoverable leave', () => {
       }),
     });
     expect(entry.status).toBe(201);
-    const archive = await post('/api/v1/me/export', {}, ownerCookie);
-    expect(archive.status).toBe(201);
-    const archiveId = (await archive.json()).archiveId;
-    const downloaded = await request(`/api/v1/exports/${archiveId}`, {
-      headers: { cookie: ownerCookie },
-    });
-    expect(downloaded.status).toBe(200);
-    const zip = unzipSync(new Uint8Array(await downloaded.arrayBuffer()));
-    const manifest = JSON.parse(strFromU8(zip['manifest.json']));
-    expect(manifest.channels.some((channel: { id: string }) => channel.id === id)).toBe(true);
+    const exported = await personalExport(ownerCookie, ownerId);
+    const archive = await openArchive(await downloadExport(exported, ownerCookie));
+    expect(archive.rows<{ id: string }>('channels').some((channel) => channel.id === id)).toBe(
+      true
+    );
     expect(
-      manifest.entries.some((item: { text: string }) => item.text === 'Owned agent memory')
+      archive.rows<{ text: string }>('entries').some((item) => item.text === 'Owned agent memory')
     ).toBe(true);
-    expect(manifest.attachments.some((item: { id: string }) => item.id === fileId)).toBe(true);
-    expect(strFromU8(zip[`attachments/${fileId}`])).toBe('secret');
+    const file = archive
+      .rows<{ id: string; archivePath: string }>('attachments')
+      .find((item) => item.id === fileId);
+    expect(file?.archivePath).toBe(`files/${fileId}/agent-note.txt`);
+    expect(archive.files.get(file!.archivePath)?.toString()).toBe('secret');
     await pool.query('DELETE FROM agent_channel_members WHERE channel_id=$1 AND agent_id=$2', [
       id,
       agentId,
     ]);
     expect(
-      (await request(`/api/v1/exports/${archiveId}`, { headers: { cookie: ownerCookie } })).status
+      (
+        await request(`/api/v1/exports/${exported}/archive`, {
+          headers: { cookie: ownerCookie },
+        })
+      ).status
     ).toBe(403);
-    const after = await post('/api/v1/me/export', {}, ownerCookie);
-    expect(after.status).toBe(201);
-    const afterZip = unzipSync(
-      new Uint8Array(
-        await (
-          await request(`/api/v1/exports/${(await after.json()).archiveId}`, {
-            headers: { cookie: ownerCookie },
-          })
-        ).arrayBuffer()
-      )
+    const after = await personalExport(ownerCookie, ownerId);
+    const afterArchive = await openArchive(await downloadExport(after, ownerCookie));
+    expect(afterArchive.rows<{ text: string }>('entries').map((item) => item.text)).not.toContain(
+      'Owned agent memory'
     );
-    expect(strFromU8(afterZip['manifest.json'])).not.toContain('Owned agent memory');
   });
 
   it('exports only the requester’s posts and owned file bytes, with owner reauthentication for full archive', async () => {
-    const { unzipSync, strFromU8 } = await import('fflate');
     await pool.query(
       'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
       [communityId, channelId, bobId]
@@ -1382,74 +1435,68 @@ describe('private archives and recoverable leave', () => {
       bobCookie
     );
     expect(bobPost.status).toBe(201);
-    const personal = await post('/api/v1/me/export', {}, ownerCookie);
-    expect(personal.status).toBe(201);
-    const personalId = (await personal.json()).archiveId;
+    const personalId = await personalExport(ownerCookie, ownerId);
+    const personalKeys = (
+      await pool.query<{ blob_key: string }>(
+        'SELECT blob_key FROM export_segments WHERE export_id=$1',
+        [personalId]
+      )
+    ).rows.map((row) => row.blob_key);
     expect(
       (
         await pool.query(
-          `SELECT m.state,m.community_id,m.purpose FROM managed_blobs m
-           JOIN export_archives e ON e.blob_key=m.blob_key WHERE e.id=$1`,
-          [personalId]
+          'SELECT DISTINCT state,community_id,purpose FROM managed_blobs WHERE blob_key=ANY($1::text[])',
+          [personalKeys]
         )
-      ).rows[0]
-    ).toEqual({ state: 'committed', community_id: communityId, purpose: 'export' });
-    const download = await request(`/api/v1/exports/${personalId}`, {
-      headers: { cookie: ownerCookie },
-    });
-    expect(download.status).toBe(200);
-    const zip = unzipSync(new Uint8Array(await download.arrayBuffer()));
-    const manifest = JSON.parse(strFromU8(zip['manifest.json']));
-    expect(manifest.version).toBe(1);
-    expect(manifest.scope).toBe('personal');
-    expect(manifest.members).toHaveLength(1);
-    expect(manifest.members[0].id).toBe(ownerId);
-    expect(
-      manifest.entries.some((entry: { text: string }) => entry.text === 'Bob private sentence')
-    ).toBe(false);
-    expect(manifest.entries.some((entry: { text: string }) => entry.text === 'attached')).toBe(
-      true
+      ).rows
+    ).toEqual([{ state: 'committed', community_id: communityId, purpose: 'export' }]);
+    const archive = await openArchive(await downloadExport(personalId, ownerCookie));
+    expect(archive.manifest.version).toBe(2);
+    expect(archive.manifest.scope).toBe('personal');
+    expect(archive.rows<{ id: string }>('members').map((member) => member.id)).toEqual([ownerId]);
+    const texts = archive.rows<{ text: string }>('entries').map((entry) => entry.text);
+    expect(texts).not.toContain('Bob private sentence');
+    expect(texts).toContain('attached');
+    const attachments = archive.rows<{ name: string; byteSize: number; archivePath: string }>(
+      'attachments'
     );
-    expect(manifest.attachments).toHaveLength(2);
-    const note = manifest.attachments.find(
-      (item: { name: string; byteSize: number }) => item.name === 'notes.txt' && item.byteSize === 5
-    );
-    expect(strFromU8(zip[`attachments/${note.id}`])).toBe('hello');
-    expect(JSON.stringify(manifest)).not.toContain('blob_key');
-    expect(JSON.stringify(manifest)).not.toContain('files-bob@example.test');
-    expect(JSON.stringify(manifest)).not.toContain('token_hash');
+    expect(attachments).toHaveLength(2);
+    const note = attachments.find((item) => item.name === 'notes.txt' && item.byteSize === 5)!;
+    expect(archive.files.get(note.archivePath)?.toString()).toBe('hello');
+    const everything = [...archive.files.values()].map((bytes) => bytes.toString()).join('');
+    expect(everything).not.toContain('blob_key');
+    expect(everything).not.toContain('files-bob@example.test');
+    expect(everything).not.toContain('token_hash');
 
     const unauthorized = await post('/api/v1/owner/export', { password: 'wrong' }, ownerCookie);
     expect(unauthorized.status).toBe(403);
     const full = await post('/api/v1/owner/export', { password: 'password1234' }, ownerCookie);
-    expect(full.status).toBe(201);
-    const fullId = (await full.json()).archiveId;
+    expect(full.status).toBe(202);
+    const fullId = (await full.json()).export.id;
+    await drainExports(pool, blobStore);
     expect(
-      (await request(`/api/v1/exports/${fullId}`, { headers: { cookie: bobCookie } })).status
+      (await request(`/api/v1/exports/${fullId}/archive`, { headers: { cookie: bobCookie } }))
+        .status
     ).toBe(404);
-    const fullDownload = await request(`/api/v1/exports/${fullId}`, {
-      headers: { cookie: ownerCookie },
-    });
-    const fullZip = unzipSync(new Uint8Array(await fullDownload.arrayBuffer()));
-    const fullManifest = JSON.parse(strFromU8(fullZip['manifest.json']));
-    expect(fullManifest.scope).toBe('owner');
-    expect(fullManifest.members).toHaveLength(2);
-    expect(
-      fullManifest.entries.some((entry: { text: string }) => entry.text === 'Bob private sentence')
-    ).toBe(true);
-    expect(JSON.stringify(fullManifest)).not.toContain('token_hash');
-    expect(JSON.stringify(fullManifest)).not.toContain('request_hash');
-    expect(strFromU8(fullZip[`attachments/${note.id}`])).toBe('hello');
+    const fullArchive = await openArchive(await downloadExport(fullId, ownerCookie));
+    expect(fullArchive.manifest.scope).toBe('owner');
+    expect(fullArchive.rows('members')).toHaveLength(2);
+    expect(fullArchive.rows<{ text: string }>('entries').map((entry) => entry.text)).toContain(
+      'Bob private sentence'
+    );
+    const fullText = [...fullArchive.files.values()].map((bytes) => bytes.toString()).join('');
+    expect(fullText).not.toContain('token_hash');
+    expect(fullText).not.toContain('request_hash');
+    expect(fullArchive.files.get(note.archivePath)?.toString()).toBe('hello');
 
-    const bobArchive = await post('/api/v1/me/export', {}, bobCookie);
-    expect(bobArchive.status).toBe(201);
-    const bobArchiveId = (await bobArchive.json()).archiveId;
+    const bobArchiveId = await personalExport(bobCookie, bobId);
     await pool.query('DELETE FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
       channelId,
       bobId,
     ]);
     expect(
-      (await request(`/api/v1/exports/${bobArchiveId}`, { headers: { cookie: bobCookie } })).status
+      (await request(`/api/v1/exports/${bobArchiveId}/archive`, { headers: { cookie: bobCookie } }))
+        .status
     ).toBe(403);
     await pool.query(
       'INSERT INTO channel_members(community_id,channel_id,member_id) VALUES($1,$2,$3)',
@@ -1459,33 +1506,56 @@ describe('private archives and recoverable leave', () => {
       "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE id=$1",
       [personalId]
     );
-    expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
+    await sweepExpiredExports(pool, blobStore);
     expect(
       (
         await pool.query(
-          `SELECT count(*)::int AS count FROM managed_blobs m
-           JOIN export_archives e ON e.blob_key=m.blob_key WHERE e.id=$1`,
-          [personalId]
+          "SELECT count(*)::int AS count FROM managed_blobs WHERE blob_key=ANY($1::text[]) AND state<>'pending_delete'",
+          [personalKeys]
         )
       ).rows[0].count
     ).toBe(0);
     expect(
-      (await request(`/api/v1/exports/${personalId}`, { headers: { cookie: ownerCookie } })).status
+      (
+        await request(`/api/v1/exports/${personalId}/archive`, {
+          headers: { cookie: ownerCookie },
+        })
+      ).status
     ).toBe(404);
+  });
 
-    const retry = await post('/api/v1/me/export', {}, ownerCookie);
-    expect(retry.status).toBe(201);
-    const retryId = (await retry.json()).archiveId;
+  it('retries the deletion of an expired version 1 archive until it succeeds', async () => {
+    // A version 1 archive (one blob, written before background exports) as old code left it.
+    const stored = await blobStore.put({
+      source: (async function* () {
+        yield Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]);
+      })(),
+      displayName: 'community-export.zip',
+      maxBytes: 1024,
+      kind: 'export',
+    });
     await pool.query(
-      "UPDATE export_archives SET expires_at=now()-interval '1 second' WHERE id=$1",
-      [retryId]
+      `INSERT INTO managed_blobs(blob_key,community_id,purpose,community_lifecycle_version,state,
+         byte_size,checksum,stored_at,committed_at)
+       SELECT $1,$2,'export',lifecycle_version,'committed',$3,$4,now(),now() FROM communities WHERE id=$2`,
+      [stored.key, communityId, stored.byteSize, stored.sha256]
     );
+    const retryId = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at)
+         VALUES($1,$2,'personal',$3,$4,now()-interval '1 second') RETURNING id`,
+        [communityId, ownerId, stored.key, stored.byteSize]
+      )
+    ).rows[0].id;
     const originalDelete = blobStore.delete.bind(blobStore);
     const failOnce = vi
       .spyOn(blobStore, 'delete')
       .mockRejectedValueOnce(new Error('disposable archive deletion interruption'))
       .mockImplementation(originalDelete);
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const deletedAt = async () =>
+      (await pool.query('SELECT deleted_at FROM export_archives WHERE id=$1', [retryId])).rows[0]
+        .deleted_at;
     try {
       expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 0, failed: 1 });
       expect(
@@ -1496,12 +1566,17 @@ describe('private archives and recoverable leave', () => {
           )
         ).rows[0]
       ).toEqual({ attempts: 1, delayed: true });
-      expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 0, failed: 0 });
+      await sweepExpiredExports(pool, blobStore);
+      expect(await deletedAt()).toBeNull();
       await pool.query(
         "UPDATE export_archives SET cleanup_next_attempt_at=now()-interval '1 second' WHERE id=$1",
         [retryId]
       );
       expect(await sweepExpiredExports(pool, blobStore)).toEqual({ deleted: 1, failed: 0 });
+      expect(await deletedAt()).not.toBeNull();
+      expect(
+        (await pool.query('SELECT 1 FROM managed_blobs WHERE blob_key=$1', [stored.key])).rowCount
+      ).toBe(0);
     } finally {
       failOnce.mockRestore();
       errorLog.mockRestore();

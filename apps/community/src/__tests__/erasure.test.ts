@@ -1,12 +1,9 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { CommunityWireHandleSchema } from '@dorkos/shared/community-wire';
-import {
-  ERASED_MENTION,
-  randomHuskHandle,
-  rewriteHandleTokens,
-  tombstonePayloadHash,
-} from '../erasure/erasure.js';
+import { tombstonePayloadHash } from '../content-removal.js';
+import { ERASED_ENTRY_TEXT } from '../content/tombstones.js';
+import { ERASED_MENTION, randomHuskHandle, rewriteHandleTokens } from '../erasure/erasure.js';
 import { parseErasureJournal } from '../erasure/reapply.js';
 import { resolveCommunityMentions } from '../mentions.js';
 import { reauthenticationDecision, REAUTH_WINDOW_MS } from '../routes/erasures.js';
@@ -87,8 +84,8 @@ describe('tombstones', () => {
         })
       )
       .digest('hex');
-    expect(tombstonePayloadHash('parent-1')).toBe(expected);
-    expect(tombstonePayloadHash(null)).not.toBe(expected);
+    expect(tombstonePayloadHash(ERASED_ENTRY_TEXT, 'parent-1')).toBe(expected);
+    expect(tombstonePayloadHash(ERASED_ENTRY_TEXT, null)).not.toBe(expected);
   });
 
   // Purpose: the husk handle must be a legal handle (the wire refuses anything else) and

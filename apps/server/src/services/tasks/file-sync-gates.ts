@@ -19,15 +19,20 @@
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { TaskDefinition } from '@dorkos/skills/types';
 import type { pulseSchedules } from '@dorkos/db';
+import { parseDuration } from '@dorkos/skills/duration';
 import {
   CHANGED_REASON,
   resolveFileArmStatus,
   resolveFilePermissionMode,
   scheduleContentKey,
+  scheduleSettingsOf,
   type FileArmVerdict,
+  type IncomingTaskContent,
+  type ScheduleSettings,
 } from './schedule-permission-clamp.js';
 import {
   AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
   AGENT_TIMING_CHANGE_REASON,
   effectiveContentKey,
   effectiveTiming,
@@ -46,6 +51,7 @@ const KEPT_PARK_REASONS: ReadonlySet<string> = new Set([
   CHANGED_REASON,
   AGENT_TIMING_CHANGE_REASON,
   AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
 ]);
 import { logger } from '../../lib/logger.js';
 
@@ -99,6 +105,25 @@ export interface FileSyncVerdict {
 }
 
 /**
+ * The {@link ScheduleSettings} a SKILL.md declares, in the row's terms: the
+ * same values `TaskStore.upsertFromFile` writes into the row, so the key of
+ * what arrives and the key of the row it lands on can be compared.
+ *
+ * @param def - The parsed file.
+ */
+export function fileSettingsOf(def: TaskDefinition): ScheduleSettings {
+  const schedule = def.meta.schedule;
+  return {
+    name: def.name,
+    runtime: schedule.runtime ?? null,
+    model: schedule.model ?? null,
+    effort: schedule.effort ?? null,
+    maxRuntime: schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null,
+    sticky: schedule.sticky,
+  };
+}
+
+/**
  * Asks the content gates, and remembers what it has already complained about.
  *
  * Stateful for exactly one reason: the refusal log needs to know what it said
@@ -138,14 +163,17 @@ export class FileSyncGates {
     // approve. A changed prompt still is. An override this sync drops runs no
     // longer, so it is not part of what arrives.
     const dropsTimingOverride = this.dropsTimingOverride(existing, options);
-    // The timezone is part of what runs, and of the approval, since DOR-2307.
+    // The timezone is part of what runs, and of the approval, since DOR-2307;
+    // the settings since DOR-2323 (`ScheduleSettings`).
     const incoming = {
+      ...fileSettingsOf(def),
       prompt: def.body,
       cron: (dropsTimingOverride ? null : existing?.cronOverride) ?? fileCron,
       timezone:
         (dropsTimingOverride ? null : existing?.timezoneOverride) ?? def.meta.schedule.timezone,
     };
     const approved = existing && {
+      ...scheduleSettingsOf(existing),
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
       prompt: existing.prompt,
@@ -190,7 +218,7 @@ export class FileSyncGates {
    * A park withdraws the grant, so the gate reading the same file afterwards has
    * only "DorkOS found this schedule in a file" to say, which is false for a
    * schedule a person approved before: an agent's own request that parked it
-   * (`TaskStore.settleApprovedWorkChange`), or an earlier sync that saw its
+   * (`TaskApprovals.settleApprovedWorkChange`), or an earlier sync that saw its
    * file change. The earlier sentence ({@link KEPT_PARK_REASONS}) stands while
    * it is still true: the row is parked, the file has nothing wrong with it,
    * and what would run is exactly the work that was parked. Any new change to
@@ -199,7 +227,7 @@ export class FileSyncGates {
   private keepsParkReason(
     verdict: FileArmVerdict,
     existing: typeof pulseSchedules.$inferSelect | undefined,
-    incoming: { prompt: string; cron: string; timezone: string },
+    incoming: IncomingTaskContent,
     options: FileSyncSource
   ): boolean {
     return (
@@ -363,4 +391,46 @@ export class FileSyncGates {
         `DorkOS synced it with the normal prompts instead; you can change that on the task.`
     );
   }
+}
+
+/**
+ * The provenance columns a discovery sync may write to a row that ALREADY
+ * EXISTS — which is usually none of them.
+ *
+ * Discovery re-reads every file every five minutes, and the legacy roots it
+ * reads hold rows that discovery did not create: an agent's proposal, carrying
+ * the case it made for itself and the session it was proposed from, and an
+ * operator's own schedule, carrying nothing. Writing the arm gate's generic
+ * story over either one destroys real provenance — an agent's reason replaced
+ * by "DorkOS found this schedule in a file", an operator's row stamped
+ * `origin: 'file'` in flat contradiction of what that column means (DOR-1485
+ * review, B2).
+ *
+ * So:
+ *
+ * - `origin` is written only when the row was BORN from discovery. A row that
+ *   arrived through a route is never re-labelled by a later sync of its file.
+ * - `reason` is written only when discovery owns the row, or when the row has
+ *   no story of its own to overwrite.
+ * - `reasonSource` rides with any reason we DO write, marking it as DorkOS's
+ *   own words. Without it the drift sentence on an operator's own schedule
+ *   rendered on the approval card as an agent's quoted case — our words in
+ *   somebody else's mouth.
+ *
+ * The arm STATUS is not conditional and is applied by the caller regardless:
+ * that is the security property, and it holds for every row whatever wrote it.
+ *
+ * @param existing - The row being updated.
+ * @param arm - What the arm gate decided.
+ * @returns The provenance columns to include in the update, possibly none.
+ */
+export function fileProvenance(
+  existing: { origin: string | null; reason: string | null },
+  arm: { reason: string | null }
+): { reason?: string | null; origin?: 'file'; reasonSource?: 'dorkos' | null } {
+  const source = arm.reason === null ? null : ('dorkos' as const);
+  if (existing.origin === 'file')
+    return { reason: arm.reason, origin: 'file', reasonSource: source };
+  if (existing.reason === null) return { reason: arm.reason, reasonSource: source };
+  return {};
 }

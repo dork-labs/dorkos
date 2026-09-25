@@ -24,7 +24,10 @@ import { noopLogger } from '@dorkos/shared/logger';
 let protocolVersion = '2';
 const root = mkdtempSync(path.join(tmpdir(), 'pkg-fetcher-git-'));
 
-vi.mock('../../../lib/git-safety.js', () => ({
+vi.mock('../../../lib/git-safety.js', async (importOriginal) => ({
+  // The real `-c` hardening; only the environment is swapped for a local remote.
+  internalGitArgs: (await importOriginal<typeof import('../../../lib/git-safety.js')>())
+    .internalGitArgs,
   hardenedGitEnv: () => ({
     ...process.env,
     GIT_ALLOW_PROTOCOL: 'file',

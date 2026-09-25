@@ -35,6 +35,11 @@ export const marketplaceKeys = {
       ? ([...marketplaceKeys.all, 'installed', { projectPath }] as const)
       : ([...marketplaceKeys.all, 'installed'] as const),
 
+  // Every installation (every scope) with its integrity (DOR-2197). Under the
+  // `installed` prefix on purpose: whatever refreshes the installed list
+  // (install, uninstall, update) refreshes whether its files still match.
+  integrity: () => [...marketplaceKeys.all, 'installed', 'integrity'] as const,
+
   // Every installation of a single package across scopes, enriched with
   // `provides`. Scoped by name only — the cross-scope detail endpoint takes
   // no projectPath — so it caches independently of the installed list.

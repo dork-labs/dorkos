@@ -1,8 +1,12 @@
 import type { Pool } from 'pg';
 import { transaction } from './data.js';
+import { releaseCommunityShortNames, type ShortNameHolds } from './host/short-names.js';
 import { BlobStoreError, reconcileTenantNamespace, type BlobStore } from './storage/index.js';
 
 const DELETE_BATCH = 25;
+// An expired export whose sweep already deleted its object and its managed-blob row keeps its
+// archive row (with `deleted_at`) for the audit trail. It owns no object any more, so it is not
+// missing inventory: counting it would refuse the community's deletion forever.
 const MISSING_DELETION_INVENTORY_SQL = `
   SELECT a.blob_key FROM attachments a
   LEFT JOIN managed_blobs m ON m.blob_key=a.blob_key
@@ -12,7 +16,13 @@ const MISSING_DELETION_INVENTORY_SQL = `
   SELECT e.blob_key FROM export_archives e
   LEFT JOIN managed_blobs m ON m.blob_key=e.blob_key
     AND m.community_id=e.community_id AND m.purpose='export'
-  WHERE e.community_id=$1 AND (m.blob_key IS NULL OR m.state<>'committed')
+  WHERE e.community_id=$1 AND e.deleted_at IS NULL AND e.blob_key IS NOT NULL
+    AND (m.blob_key IS NULL OR m.state<>'committed')
+  UNION ALL
+  SELECT s.blob_key FROM export_segments s
+  LEFT JOIN managed_blobs m ON m.blob_key=s.blob_key
+    AND m.community_id=s.community_id AND m.purpose='export'
+  WHERE s.community_id=$1 AND (m.blob_key IS NULL OR m.state<>'committed')
   UNION ALL
   SELECT c.icon_blob_key FROM communities c
   LEFT JOIN managed_blobs m ON m.blob_key=c.icon_blob_key
@@ -54,11 +64,19 @@ export async function prepareCommunityDeletionInventory(
   return (await countMissingDeletionInventory(pool, communityId)) === 0;
 }
 
-/** Delete one due tenant in bounded, restart-safe object and database phases. */
+/**
+ * Delete one due tenant in bounded, restart-safe object and database phases.
+ *
+ * `shortNameHolds` is how a deleted community's short names are held back from reuse. A
+ * community that has names is not finished without it: the job stays retrying with
+ * `SHORT_NAME_HOLDS_REQUIRED`, so no name is ever freed at once or left behind in clear text.
+ * `now` is the clock a hold's cool-off starts from.
+ */
 export async function sweepCommunityDeletions(
   pool: Pool,
   blobStore: BlobStore,
-  blobBatchSize = DELETE_BATCH
+  blobBatchSize = DELETE_BATCH,
+  options: { shortNameHolds?: ShortNameHolds; now?: () => Date } = {}
 ): Promise<{ claimed: number; deletedBlobs: number; completed: number; failed: number }> {
   if (!Number.isInteger(blobBatchSize) || blobBatchSize < 1 || blobBatchSize > 100)
     throw new Error('Invalid community deletion batch size');
@@ -251,6 +269,19 @@ export async function sweepCommunityDeletions(
       return false;
     }
 
+    const named = await client.query('SELECT 1 FROM community_short_names WHERE community_id=$1', [
+      job.community_id,
+    ]);
+    if (named.rowCount && !options.shortNameHolds) {
+      await client.query(
+        `UPDATE community_deletion_jobs
+         SET state='retrying',next_attempt_at=now()+interval '1 hour',
+             updated_at=now(),last_error_class='SHORT_NAME_HOLDS_REQUIRED'
+         WHERE community_id=$1`,
+        [job.community_id]
+      );
+      return false;
+    }
     await client.query(
       `UPDATE communities SET lifecycle='pending_owner',icon_blob_key=NULL,icon_content_type=NULL,
          suspended_from_state=NULL,suspended_at=NULL,archived_at=NULL,
@@ -263,6 +294,12 @@ export async function sweepCommunityDeletions(
     await client.query('DELETE FROM community_deletion_jobs WHERE community_id=$1', [
       job.community_id,
     ]);
+    if (named.rowCount && options.shortNameHolds)
+      await releaseCommunityShortNames(client, job.community_id, {
+        hold: true,
+        holds: options.shortNameHolds,
+        at: options.now?.() ?? new Date(),
+      });
     for (const table of [
       'member_limit_overrides',
       'community_limits',
@@ -286,6 +323,7 @@ export async function sweepCommunityDeletions(
       'agents',
       'channels',
     ]) {
+      // content-change: tenant-deletion
       await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [job.community_id]);
     }
     await client.query('DELETE FROM community_creation_receipts WHERE community_id=$1', [

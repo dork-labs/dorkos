@@ -52,6 +52,7 @@ import {
 } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
 import { getLocalCockpitPort } from './lib/trusted-origins.js';
+import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
 import { TaskStore } from './services/tasks/task-store.js';
@@ -245,6 +246,14 @@ import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';
 import { PackageResolver } from './services/marketplace/package-resolver.js';
 import { rebuildInstalledFiles } from './services/marketplace/lib/legacy-record.js';
+import {
+  legacySweepDirs,
+  rebuildLegacyRecords,
+  removeRecordTempLeftovers,
+  type LegacySweepSummary,
+} from './services/marketplace/lib/integrity/legacy-record-sweep.js';
+import { withIntegrity } from './services/marketplace/lib/integrity/verify-install.js';
+import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -300,6 +309,7 @@ import {
 import { ensurePersonalMarketplace } from './services/marketplace-mcp/personal-marketplace.js';
 import {
   TokenConfirmationProvider,
+  describeTemplateCreationCapability,
   type ConfirmationProvider,
 } from './services/marketplace-mcp/confirmation-provider.js';
 import type { MarketplaceMcpDeps } from './services/marketplace-mcp/marketplace-mcp-tools.js';
@@ -525,6 +535,16 @@ let claudeRuntime: ClaudeCodeRuntime | null = null;
 let relayAgentRuntime: (AgentRuntimeLike & { readonly type: string }) | null = null;
 let schedulerService: TaskSchedulerService | null = null;
 let relayCore: RelayCore | undefined;
+/**
+ * The marketplace's confirmation provider, once composed: the agents router
+ * reads it for an agent's template creation card (DOR-2325).
+ */
+let templateConfirmationProvider: ConfirmationProvider | undefined;
+/**
+ * The marketplace installer and data directory, once composed: the agents
+ * router creates an agent from a marketplace package through it (DOR-2325).
+ */
+let agentPackageInstaller: { installer: MarketplaceInstaller; dorkHome: string } | undefined;
 let adapterRegistry: AdapterRegistry | undefined;
 let adapterManager: AdapterManager | undefined;
 let traceStore: TraceStore | undefined;
@@ -624,6 +644,29 @@ function registerRestoredAgents(roots: readonly string[]): void {
 /** Register the agents {@link registerRestoredAgents} held until Mesh started. */
 function flushRestoredAgents(): void {
   registerRestoredAgents(agentRootsAwaitingMesh.splice(0));
+}
+
+/**
+ * The project install-recovery sweep, and the projects it read. The legacy
+ * record sweep (DOR-2197) waits for it, so a root is settled before its record
+ * is rebuilt, and reads the same projects.
+ */
+let projectInstallRecovery: Promise<unknown> = Promise.resolve();
+/** Aborted on shutdown, so the legacy record sweep stops between installs. */
+const legacyRecordSweep = new AbortController();
+let sweptProjects: string[] = [];
+
+/**
+ * Log what the legacy record sweep did, when it did anything.
+ *
+ * @param summary - The sweep's outcome lists.
+ */
+function logLegacySweep(summary: LegacySweepSummary): void {
+  const { rebuilt, mismatch, noSource, fetchFailed } = summary;
+  if (rebuilt.length + mismatch.length + noSource.length + fetchFailed.length === 0) return;
+  logger.info(
+    `[Marketplace] Records for packages an older DorkOS installed: ${rebuilt.length} rebuilt, ${mismatch.length} changed since install, ${noSource.length} installed from a local folder, ${fetchFailed.length} to retry`
+  );
 }
 
 let taskFileWatcher: TaskFileWatcher | undefined;
@@ -1052,6 +1095,9 @@ async function start() {
   watchRuntimeSigninFailures();
   // Nothing tells the server it was updated, so it compares versions on boot.
   void announceInstalledVersion(dorkHome);
+  // Git older than 2.38 cannot refuse a folder set up to look like a git
+  // repository; say so once, in plain words (DOR-2326).
+  void warnAboutGitProtection();
   // "While you were away" — composed once the day's first activity arrives.
   watchShiftReport(notificationStore);
 
@@ -1509,6 +1555,7 @@ async function start() {
       getRemoteCommunityAdapter(communityRef, ownerAuthorId),
     resolveConnectionAccess: async (communityRef, ownerAuthorId) =>
       (await getRemotePairingService().status(communityRef, ownerAuthorId)).access,
+    readOnlyConnections: () => getRemoteConnectionStore().readOnlyConnections(),
     resolveLocalAgentAuthor: (localAgentId) =>
       resolveRemoteLocalAgent(localAgentId)?.authorId ?? null,
     isReady: () => meshStartupReconciled && meshCore !== undefined,
@@ -2068,7 +2115,11 @@ async function start() {
     flushRestoredAgents();
     try {
       const projects = projectsOfAgents(meshCore.listWithPaths().map((a) => a.projectPath));
-      recoverInterruptedInstalls(projects.flatMap(projectSweepDirs), logger)
+      sweptProjects = projects;
+      projectInstallRecovery = recoverInterruptedInstalls(
+        projects.flatMap(projectSweepDirs),
+        logger
+      )
         .then((summary) => logInstallSweep('project installs', summary))
         .catch((err: unknown) => {
           logger.warn('[Marketplace] Project install recovery failed', logError(err));
@@ -2570,7 +2621,8 @@ async function start() {
       // would show the raw id.
       return (
         describeHookProjectionCapability(capabilityId) ??
-        describeGlobalActivationCapability(capabilityId)
+        describeGlobalActivationCapability(capabilityId) ??
+        describeTemplateCreationCapability(capabilityId)
       );
     },
   });
@@ -3401,18 +3453,19 @@ async function start() {
     // column existed have none — so without this pass the first sync would park
     // every schedule an alpha user already approved. Runs BEFORE any watcher
     // starts, and matches nothing on the second boot.
-    // Approvals recorded before the key carried a timezone move onto today's
-    // key, extended with the timezone each schedule already runs in (DOR-2307).
-    // Before the backfill and before any watcher, for the same reason as both:
-    // a sync that found a stale-shaped key would park an approved schedule.
-    const upgraded = taskStore.upgradeLegacyApprovalKeys();
+    // Approvals recorded in an older key format move onto today's key, extended
+    // with the timezone (DOR-2307) and the settings (DOR-2323) each schedule
+    // already runs with. Before the backfill and before any watcher, for the
+    // same reason as both: a sync that found a stale-shaped key would park an
+    // approved schedule.
+    const upgraded = taskStore.approvals.upgradeLegacyApprovalKeys();
     if (upgraded > 0) {
       logger.info(
-        `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone`
+        `[Tasks] Carried ${upgraded} approval(s) over to include each schedule's timezone and settings`
       );
     }
 
-    const backfilled = taskStore.backfillApprovalGrants();
+    const backfilled = taskStore.approvals.backfillApprovalGrants();
     if (backfilled > 0) {
       logger.info(`[Tasks] Kept ${backfilled} already-approved schedule(s) approved`);
     }
@@ -3733,6 +3786,21 @@ async function start() {
     relayFailedToStart: relayEnabled && !relayCore,
     adaptersFailedToStart: relayEnabled && Boolean(relayCore) && !adapterManager,
     meshFailedToStart: !meshCore,
+    // Every installation, verified against what was installed (DOR-2197): the
+    // same one-entry-per-installation scan the Installed view lists.
+    installedPackages: {
+      listIntegrity: async () => {
+        const scopes = (meshCore?.listWithPaths() ?? []).map((a) => ({
+          projectPath: a.projectPath,
+          id: a.id,
+          name: a.displayName ?? a.name,
+        }));
+        const verified = await withIntegrity(await scanInstallationsAcrossScopes(dorkHome, scopes));
+        return verified.map(({ name, integrity }) => ({ name, integrity }));
+      },
+    },
+    // The same once-per-process read the startup warning logged (DOR-2326).
+    gitProtection: installedGitProtection,
   } satisfies DeepHealthDeps;
 
   // The same live reads, for `GET /api/debug/*`. A separate bag from the one
@@ -3908,7 +3976,16 @@ async function start() {
 
   // Always mounted — not behind any feature flag.
   // ADR-0043: pass meshCore (when available) so writes sync to Mesh DB cache.
-  app.use('/api/agents', createAgentsRouter(meshCore));
+  // The confirmation provider is composed further down this boot, inside the
+  // marketplace block; read lazily so an agent's template creation raises a card
+  // once it exists and fails closed until then (DOR-2325).
+  app.use(
+    '/api/agents',
+    createAgentsRouter(meshCore, {
+      confirmationProvider: () => templateConfirmationProvider,
+      marketplace: () => agentPackageInstaller,
+    })
+  );
 
   // The team roster — one READ of every identity on this install (ADR
   // 260806-222535). Always mounted, and mounted even when the mesh did not
@@ -4181,6 +4258,23 @@ async function start() {
       });
     }
     const marketplaceFetcher = new PackageFetcher(marketplaceCache, gitTreeSource, logger);
+    // Give packages an older DorkOS installed an exact installed-files record,
+    // in the background once interrupted installs are settled (DOR-2197). It
+    // never blocks startup and writes nothing it cannot prove; what it cannot
+    // rebuild waits for the next boot or the "Check files" action.
+    void projectInstallRecovery
+      .then(() => removeRecordTempLeftovers())
+      .then(() =>
+        rebuildLegacyRecords(
+          legacySweepDirs(dorkHome, sweptProjects),
+          { fetcher: marketplaceFetcher, logger },
+          { signal: legacyRecordSweep.signal }
+        )
+      )
+      .then(logLegacySweep)
+      .catch((err: unknown) => {
+        logger.warn('[Marketplace] Rebuilding records for older installs failed', logError(err));
+      });
     const marketplaceResolver = new PackageResolver(marketplaceSourceManager, marketplaceCache);
     const marketplaceConflictDetector = new ConflictDetector(dorkHome, adapterManager);
     const marketplacePreviewBuilder = new PermissionPreviewBuilder(
@@ -4369,6 +4463,8 @@ async function start() {
     const confirmationProvider: ConfirmationProvider = new TokenConfirmationProvider(
       approvalService
     );
+    templateConfirmationProvider = confirmationProvider;
+    agentPackageInstaller = { installer: marketplaceInstaller, dorkHome };
 
     app.use(
       '/api/marketplace',
@@ -5051,6 +5147,7 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
   remoteCommunitySubscriptions = undefined;
   setRemoteCommunitySubscriptionProbe(undefined);

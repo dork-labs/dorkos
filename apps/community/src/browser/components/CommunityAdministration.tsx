@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { Download, ImagePlus, Trash2 } from 'lucide-react';
-import { describeError, download, RequestError, request, tenantApiPath } from '../api.js';
+import { ImagePlus, Trash2 } from 'lucide-react';
+import { describeError, RequestError, request, tenantApiPath } from '../api.js';
+import { ExportPanel } from './ExportPanel.js';
 import { describeReauthenticationError } from '../account-controls.js';
 import type { Member } from '../types.js';
 
@@ -332,19 +333,6 @@ export function CommunityAdministration({
       false
     );
   }
-  async function exportCommunity() {
-    await perform(
-      async () => {
-        const body = await request<{ archiveId: string }>('/api/v1/owner/export', 'POST', {
-          password,
-        });
-        await download(`/api/v1/exports/${body.archiveId}`, 'community-export.zip');
-      },
-      'Your community export is ready.',
-      false
-    );
-    setPassword('');
-  }
   async function submitLifecycle() {
     if (!settings || (dialog !== 'archive' && dialog !== 'restore')) return;
     const action = dialog;
@@ -634,25 +622,9 @@ export function CommunityAdministration({
         <section className="panel">
           <h3>Export</h3>
           <p className="muted">
-            Download a fresh snapshot before a lifecycle change. An export is not a server backup.
+            Download a fresh copy before a lifecycle change. An export is not a server backup.
           </p>
-          <label className="field" htmlFor="export-password">
-            Password
-            <input
-              id="export-password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-          <button
-            className="button"
-            disabled={busy || !password}
-            onClick={() => void exportCommunity()}
-          >
-            <Download size={16} /> Export community
-          </button>
+          <ExportPanel scope="owner" idPrefix="settings-export" />
         </section>
       )}
       {owner && (

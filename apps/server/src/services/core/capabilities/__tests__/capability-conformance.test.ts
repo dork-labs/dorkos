@@ -134,6 +134,7 @@ const emptyPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -655,39 +656,22 @@ describe('capability conformance wiring', () => {
     expect(ids).toContain('rooms.post');
   });
 
-  it('keeps runtime, model and effort out of what an agent may edit on ITS OWN manifest', () => {
-    // Not a spend guard, and saying so would be false: the machine-wide
-    // defaults (`runtimes.*.defaultModel` / `.defaultEffort`) are deliberately
-    // `agent-writable` through `config_patch`, on the operator's own call —
-    // "set yourself to the cheapest model for this batch" is a reasonable thing
-    // to ask an agent to do (see `config-write-policy.ts`).
-    //
-    // The asymmetry is about durability and visibility, not cost. A config
-    // write is one value, in one file the Settings screen shows, that a person
-    // can see and reverse in one place. A manifest write is per agent, scattered
-    // across as many `agent.json` files as there are agents, and it silently
-    // outranks the server default from then on — so an agent quietly pinning
-    // itself would be invisible exactly where somebody would look to explain the
-    // behavior. `update_agent` is the AGENT-facing surface; the operator's HTTP
-    // PATCH carries all three, because a person is driving it.
-    //
-    // A caller that sends one anyway has it dropped, not rejected: the schema
-    // strips unknown keys, so an over-eager agent gets its personality edit
-    // applied and its execution edit ignored.
+  it('keeps runtime, model and effort out of what update_agent may write, and says where they go', () => {
+    // An agent's runtime, model and effort move every schedule that follows the
+    // agent (DOR-2328), so they live on `operator.update_agent_execution`, which
+    // is destructive and asks a person. `update_agent` DECLARES them only so its
+    // handler can refuse them with a pointer: undeclared, the schema would strip
+    // them and an agent would report a model change that never happened (the
+    // DOR-1253 shape). They are `unknown` so the refusal is the answer whatever
+    // they hold; the refusal itself is pinned in `agent-execution-gate.test.ts`.
     const updateAgent = registry.capabilities.find((c) => c.id === 'operator.update_agent');
     const shape = (updateAgent!.input as z.ZodObject<z.ZodRawShape>).shape;
-    expect(Object.keys(shape)).not.toContain('runtime');
-    expect(Object.keys(shape)).not.toContain('model');
-    expect(Object.keys(shape)).not.toContain('effort');
-
-    const parsed = updateAgent!.input.parse({
-      cwd: SANDBOX_CWD,
-      displayName: 'Still fine',
-      model: 'opus',
-      effort: 'xhigh',
-      runtime: 'codex',
-    });
-    expect(parsed).toEqual({ cwd: SANDBOX_CWD, displayName: 'Still fine' });
+    for (const field of ['runtime', 'model', 'effort']) {
+      expect(String((shape[field] as z.ZodType).description)).toContain('update_agent_execution');
+    }
+    const gated = registry.capabilities.find((c) => c.id === 'operator.update_agent_execution');
+    expect(gated?.tier).toBe('destructive');
+    expect(gated?.describeApprovalChange).toBeTypeOf('function');
   });
 });
 

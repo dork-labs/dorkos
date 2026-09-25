@@ -29,6 +29,7 @@ const PREVIEW_BODY = {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -154,6 +155,7 @@ describe('runInstall', () => {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     };
     const fetchMock = vi
       .fn()

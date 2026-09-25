@@ -5,6 +5,7 @@
  *
  * @module services/marketplace/types
  */
+import type { CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
 import type {
   MarketplacePackageManifest,
   PackageType,
@@ -83,6 +84,30 @@ export interface PreviewSkillTools {
   skill: string;
   /** Each allowed-tools entry, verbatim. */
   tools: string[];
+}
+
+/**
+ * A shell command a skill's, command's, agent's or output style's TEXT runs
+ * when it is used (DOR-2327):
+ * `` !`cmd` `` or a fenced block whose info string is `!`. Claude Code runs it
+ * while it renders the skill, before the model sees it; OpenCode runs the
+ * inline form in the command wrappers Harness Sync writes for it.
+ */
+export interface PreviewSkillCommand {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name, from its frontmatter or its location. */
+  skill: string;
+  /** `inline` for `` !`cmd` ``, `block` for a ```` ```! ```` block. */
+  form: 'inline' | 'block';
+  /** The command exactly as written. */
+  command: string;
+  /**
+   * Whether it names a placeholder (`$ARGUMENTS`, `$1`, a named `$name`) that
+   * Claude Code and OpenCode fill with the text typed after the command BEFORE
+   * running it, so what it runs depends on that text.
+   */
+  usesArguments: boolean;
 }
 
 /**
@@ -192,7 +217,38 @@ export interface InstallRequest {
    * existed. Server-internal: set by `MarketplaceInstaller.install()` only.
    */
   ownership?: InstallOwnershipContext;
+  /**
+   * The content hash of the package as its preview fetched it
+   * (`lib/content-hash.ts`, DOR-2306). `install()` refuses a staged copy that
+   * hashes differently, for every package type, before writing anything
+   * (DOR-2325): the preview and the install are two fetches, and a source that
+   * served something else to the second is not what was shown or decided on.
+   * Server-internal: the agents route sets it from what the app sent back, and
+   * an untrusted caller's install (`POST /packages/:name/install`,
+   * `marketplace_install`) from its own preview.
+   */
+  approvedContentHash?: string;
+  /**
+   * The package type the preview fetched (DOR-2325). `install()` refuses a
+   * staged package of another type before writing anything: the type decides
+   * where it lands and whether a card was needed, so a source that previews as
+   * a plugin and installs as an agent package is refused. Server-internal, set
+   * beside {@link approvedContentHash}.
+   */
+  approvedPackageType?: PackageType;
+  /**
+   * Agent packages only (DOR-2325): the identity a person chose for the agent
+   * in the app's creation flow, applied as the agent is created in the
+   * package's install folder. Server-internal, set by the agents route.
+   */
+  agentIdentity?: AgentInstallIdentity;
 }
+
+/** See {@link InstallRequest.agentIdentity}. */
+export type AgentInstallIdentity = Pick<
+  CreateAgentOptions,
+  'displayName' | 'icon' | 'color' | 'persona' | 'runtime' | 'capabilities' | 'model' | 'effort'
+>;
 
 /** See {@link InstallRequest.ownership}. */
 export interface InstallOwnershipContext {
@@ -232,6 +288,8 @@ export interface PermissionPreview {
   executables: string[];
   /** Tools each skill or command lets the agent use without asking */
   skillTools: PreviewSkillTools[];
+  /** Shell commands each skill's or command's text runs when it is used */
+  skillCommands: PreviewSkillCommand[];
   /** Program declarations (MCP, LSP, monitors) that could not be read */
   unreadableDeclarations: UnreadableDeclaration[];
   /**

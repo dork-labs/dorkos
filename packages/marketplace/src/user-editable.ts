@@ -169,3 +169,73 @@ export function matchesUserEditable(posixPath: string, patterns: readonly string
     return prefix === undefined ? posixPath === pattern : posixPath.startsWith(`${prefix}/`);
   });
 }
+
+/**
+ * The `userEditable` entries the schema accepts, from a list read loosely off
+ * a manifest that may predate the rules (DOR-2197): a record rebuilt from an
+ * older package never trusts an entry the schema now refuses.
+ *
+ * @param entries - The manifest's `userEditable`, as read.
+ * @returns The entries that parse, in order.
+ */
+export function validUserEditable(entries: readonly unknown[]): string[] {
+  return entries.filter(
+    (e): e is string => typeof e === 'string' && UserEditablePathSchema.safeParse(e).success
+  );
+}
+
+/** plugin.json fields whose string values name files or folders a package runs from. */
+const DECLARED_EFFECT_FIELDS = [
+  'hooks',
+  'mcpServers',
+  'lspServers',
+  'monitors',
+  'skills',
+  'commands',
+  'agents',
+  'outputStyles',
+] as const;
+
+/** A POSIX path normalized inside the package root, or `undefined` when it leaves it. */
+function insidePackage(raw: string): string | undefined {
+  if (raw.startsWith('/') || /^[A-Za-z]:/.test(raw)) return undefined;
+  const out: string[] = [];
+  for (const segment of raw.split('\\').join('/').split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (out.length === 0) return undefined;
+      out.pop();
+      continue;
+    }
+    out.push(segment);
+  }
+  return out.length > 0 ? out.join('/') : undefined;
+}
+
+/**
+ * Every package-relative location a plugin.json declares something runnable
+ * at: hooks, servers, monitors, skills, commands, agents and output styles
+ * (string values only; an inline object declares no path). Normalized, and
+ * never one that leaves the package. The validator refuses a `userEditable`
+ * entry reaching one; verification counts a file added under one.
+ *
+ * @param pluginJson - The parsed plugin.json, or anything else (ignored).
+ */
+export function declaredEffectPaths(pluginJson: unknown): string[] {
+  if (typeof pluginJson !== 'object' || pluginJson === null) return [];
+  const json = pluginJson as Record<string, unknown>;
+  const experimental =
+    typeof json.experimental === 'object' && json.experimental !== null
+      ? (json.experimental as Record<string, unknown>)
+      : {};
+  const values = [...DECLARED_EFFECT_FIELDS.map((f) => json[f]), experimental.monitors];
+  const paths = new Set<string>();
+  for (const value of values) {
+    for (const entry of Array.isArray(value) ? value : [value]) {
+      if (typeof entry !== 'string') continue;
+      const p = insidePackage(entry);
+      if (p !== undefined) paths.add(p);
+    }
+  }
+  return [...paths];
+}

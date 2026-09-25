@@ -146,12 +146,12 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
     // and the row is derived from reading it back, so this is what a create
     // normally goes through. `createTask` above is only the fallback for a file
     // that will not parse.
-    upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
+    fileSync: { upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }) },
     recordProposal: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     updateTask: vi.fn().mockReturnValue(null),
     // A row-only update (no file written) is settled against the approval
     // (DOR-2302); these cases never change a package's timing, so nothing moves.
-    settleApprovedWorkChange: vi.fn().mockReturnValue('unchanged'),
+    approvals: { settleApprovedWorkChange: vi.fn().mockReturnValue('unchanged') },
     deleteTask: vi.fn().mockReturnValue(false),
     listRuns: vi.fn().mockReturnValue([]),
     ...overrides,
@@ -719,7 +719,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 47 tools (32 legacy + 10 operator + list_capabilities + memory_write + read_canvas_document + 2 permission verbs)', () => {
+    it('registers 48 tools (32 legacy + 11 operator + list_capabilities + memory_write + read_canvas_document + 2 permission verbs)', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -754,8 +754,12 @@ describe('MCP Tool Handlers', () => {
       //
       // 45 -> 47 for `request_permission` and `list_my_permissions` (spec
       // `agent-permissions` D8, D9), which every agent carries.
+      //
+      // 47 -> 48 for `update_agent_execution` (DOR-2328), the runtime, model and
+      // effort write split out of `update_agent`. Operator capabilities go from
+      // 10 to 11.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(47);
+      expect(server.tools).toHaveLength(48);
     });
 
     it('registers tools with correct names', () => {

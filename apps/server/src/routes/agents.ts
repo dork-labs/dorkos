@@ -21,7 +21,8 @@
  *
  * @module routes/agents
  */
-import { Router } from 'express';
+import { Router, type Request, type Response } from 'express';
+import fs from 'fs/promises';
 import { z } from 'zod';
 import path from 'path';
 import { ulid } from 'ulidx';
@@ -41,12 +42,37 @@ import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
+import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
+import { trustedCaller } from '../services/core/capabilities/index.js';
+import { readCallerAuthority } from '../lib/caller-authority.js';
+import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { resolveAgentsDirectory } from '../lib/agents-home.js';
+import { configManager } from '../services/core/config-manager.js';
+import {
+  cardTemplateGate,
+  personTemplateGate,
+  TemplateApprovalPendingError,
+  TemplateDeclinedError,
+  TemplateNeedsReviewError,
+  type TemplateGate,
+  type TemplateInspection,
+} from '../services/core/agent-templates/template-gate.js';
+import type { ConfirmationProvider } from '../services/marketplace-mcp/confirmation-provider.js';
+import { DisclosedEffectsSchema } from '../services/marketplace/disclosed-effects.js';
+import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
+import {
+  DisclosureChangedError,
+  InvalidPackageError,
+  type MarketplaceInstaller,
+} from '../services/marketplace/marketplace-installer.js';
+import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
+import { PackageNameSchema } from '@dorkos/marketplace';
 
 /** Minimal MeshCore interface for sync-on-write. */
 interface MeshCoreLike {
@@ -54,12 +80,102 @@ interface MeshCoreLike {
 }
 
 /**
+ * What agent creation reads from services composed later in boot (DOR-2325).
+ * Read lazily, per request: the marketplace's confirmation provider is built
+ * after this router is mounted.
+ */
+export interface AgentCreationDeps {
+  /** The provider that raises a card when an agent creates from a template. */
+  confirmationProvider?: () => ConfirmationProvider | undefined;
+  /**
+   * The marketplace installer and data directory, for creating an agent from a
+   * marketplace package (DOR-2325). Absent while the marketplace is off.
+   */
+  marketplace?: () =>
+    { installer: Pick<MarketplaceInstaller, 'install'>; dorkHome: string } | undefined;
+}
+
+/**
+ * A marketplace agent package to create the agent from, with exactly what the
+ * person was shown (DOR-2325): the installer stages it once, validates it,
+ * holds it to this disclosure and these files, and creates the agent from the
+ * staged copy.
+ */
+const PackageCreationSchema = z
+  .object({
+    // A listed package's name, never a path or an address: it also names the
+    // folder the agent lands in, checked for a collision before the install.
+    name: PackageNameSchema,
+    marketplace: z.string().min(1).optional(),
+    approvedDisclosure: DisclosedEffectsSchema,
+    approvedContentHash: z.string().min(1),
+  })
+  .strict();
+
+/** The identity a person chose in the creation flow, applied to a package's agent. */
+const PackageAgentIdentitySchema = CreateAgentOptionsSchema.pick({
+  displayName: true,
+  icon: true,
+  color: true,
+  persona: true,
+  runtime: true,
+  capabilities: true,
+  model: true,
+  effort: true,
+});
+
+/** Body fields `/create` reads itself, never passed to the creator. */
+const TemplateDecisionSchema = z.object({
+  /** The content hash a person was shown on a `template_needs_review` answer. */
+  approvedTemplateHash: z.string().min(1).optional(),
+  /** The token from an agent's earlier `requires_confirmation` answer. */
+  confirmationToken: z.string().min(1).optional(),
+});
+
+/**
+ * What a template brings, as a response carries it: every harness file with
+ * its reason, and what its skills run and may do without asking.
+ */
+function templateOf(inspection: TemplateInspection) {
+  return {
+    source: inspection.source,
+    contentHash: inspection.contentHash,
+    findings: inspection.findings,
+    settings: inspection.settings,
+    disclosed: inspection.disclosed,
+  };
+}
+
+/** Whether anything exists at `p`. */
+async function pathExists(p: string): Promise<boolean> {
+  return fs.lstat(p).then(
+    () => true,
+    () => false
+  );
+}
+
+/**
+ * Where `createAgentWorkspace` will put an agent, worked out the same way, so a
+ * card names the folder the agent really lands in.
+ */
+function landingDirectory(body: { name?: unknown; directory?: unknown }): string {
+  if (typeof body.directory === 'string' && body.directory.length > 0) {
+    return path.resolve(body.directory);
+  }
+  return path.resolve(
+    resolveAgentsDirectory(configManager.get('agents').defaultDirectory),
+    typeof body.name === 'string' ? body.name : ''
+  );
+}
+
+/**
  * Create the agents router for agent identity CRUD.
  *
  * @param meshCore - Optional MeshCore instance for DB sync after writes
+ * @param deps - Services agent creation reads lazily (DOR-2325)
  * @returns Express Router with agent identity endpoints
  */
-export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
+export function createAgentsRouter(meshCore?: MeshCoreLike, deps: AgentCreationDeps = {}): Router {
   const router = Router();
 
   // GET /api/agents/current?path=/path/to/project
@@ -249,9 +365,114 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
   // POST /api/agents/create
   // Full creation pipeline: mkdir + scaffold + optional template + register
+  /**
+   * Create the agent a marketplace package brings (DOR-2325), through the
+   * installer: one staged copy, validated, held to what the person was shown,
+   * and installed where marketplace agents live so updates find it. A person
+   * only: an agent installs a marketplace agent with `marketplace_install`,
+   * which asks a person.
+   */
+  const createFromPackage = async (req: Request, res: Response): Promise<Response> => {
+    if (req.body.template !== undefined) {
+      return res
+        .status(400)
+        .json({ error: 'Send a template or a package to create the agent from, not both.' });
+    }
+    if (!trustedCaller(readCallerAuthority(req, res))) {
+      return res.status(403).json({
+        code: 'operator_only',
+        error:
+          'Only a person creates an agent from a marketplace package here. An agent installs it ' +
+          'with marketplace_install, which asks a person first.',
+      });
+    }
+    const marketplace = deps.marketplace?.();
+    if (!marketplace) {
+      return res.status(503).json({ error: 'The marketplace is not running on this server.' });
+    }
+    const pkg = PackageCreationSchema.safeParse(req.body.package);
+    const identity = PackageAgentIdentitySchema.safeParse(req.body);
+    if (!pkg.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(pkg.error) });
+    }
+    if (!identity.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(identity.error) });
+    }
+    // One agent per package: it lives where marketplace agents live, so a
+    // second one would replace the first.
+    const target = computeTargetDir(
+      marketplace.dorkHome,
+      { type: 'agent', name: pkg.data.name },
+      undefined
+    );
+    if (await pathExists(target)) {
+      return res.status(409).json({
+        code: 'COLLISION',
+        error: 'This agent is already on your team. Find it there, or remove it first.',
+      });
+    }
+    try {
+      const result = await marketplace.installer.install({
+        name: pkg.data.name,
+        ...(pkg.data.marketplace !== undefined && { marketplace: pkg.data.marketplace }),
+        approvedDisclosure: pkg.data.approvedDisclosure,
+        approvedContentHash: pkg.data.approvedContentHash,
+        agentIdentity: identity.data,
+      });
+      const manifest = await readManifest(result.installPath);
+      if (!manifest) throw new Error('The agent was installed, but its manifest could not be read');
+      return res.status(201).json({ ...manifest, _path: result.installPath });
+    } catch (err) {
+      if (err instanceof DisclosureChangedError) {
+        return res.status(409).json({ code: 'disclosure_changed', error: err.message });
+      }
+      if (err instanceof InvalidPackageError) {
+        return res.status(400).json({ error: err.message, errors: err.errors });
+      }
+      throw err;
+    }
+  };
+
   router.post('/create', async (req, res) => {
     try {
-      const result = await createAgentWorkspace(req.body, meshCore);
+      if (req.body?.package !== undefined) return await createFromPackage(req, res);
+      const decision = TemplateDecisionSchema.safeParse(req.body ?? {});
+      if (!decision.success) {
+        return res
+          .status(400)
+          .json({ error: 'Validation failed', details: z.flattenError(decision.error) });
+      }
+      // A template is cloned into a staging folder and shown before it lands
+      // (DOR-2325): a person is disclosed what it brings; anyone else gets a
+      // card. There is no ungated way to create from a template.
+      let templateGate: TemplateGate | undefined;
+      if (req.body?.template !== undefined) {
+        const identity = getRequestAgentIdentity(res);
+        templateGate = trustedCaller(readCallerAuthority(req, res))
+          ? personTemplateGate(decision.data.approvedTemplateHash)
+          : cardTemplateGate({
+              provider: deps.confirmationProvider?.(),
+              agentName: typeof req.body.name === 'string' ? req.body.name : '',
+              directory: landingDirectory(req.body),
+              ...(decision.data.confirmationToken && {
+                confirmationToken: decision.data.confirmationToken,
+              }),
+              ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+            });
+      }
+      // `skipTemplateDownload` is the marketplace install's own switch: it skips
+      // the existing-folder check and the template gate, which only the
+      // installer's staged copy may do. Never taken from a request.
+      const { skipTemplateDownload: _internalOnly, ...options } = req.body ?? {};
+      const result = await createAgentWorkspace(
+        options,
+        meshCore,
+        templateGate ? { templateGate } : {}
+      );
 
       // Fire-and-forget activity event for agent registration
       const activityService = req.app.locals.activityService as ActivityService | undefined;
@@ -278,6 +499,23 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         ...(result.meta ? { _meta: result.meta } : {}),
       });
     } catch (err) {
+      if (err instanceof TemplateNeedsReviewError) {
+        return res
+          .status(409)
+          .json({ error: err.message, code: err.code, template: templateOf(err.inspection) });
+      }
+      if (err instanceof TemplateApprovalPendingError) {
+        return res.status(202).json({
+          status: err.status,
+          confirmationToken: err.token,
+          message: err.message,
+          template: templateOf(err.inspection),
+          ...(err.reason ? { reason: err.reason } : {}),
+        });
+      }
+      if (err instanceof TemplateDeclinedError) {
+        return res.status(403).json({ status: 'declined', error: err.message });
+      }
       if (err instanceof AgentCreationError) {
         if (err.code === 'VALIDATION') {
           return res.status(400).json({ error: 'Validation failed', details: err.message });
@@ -294,7 +532,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
   // PATCH /api/agents/current?path=/path/to/project
   // Update agent fields by path
-  router.patch('/current', async (req, res) => {
+  // An agent's runtime, model and effort move every schedule that follows it,
+  // so an agent changing them is sent to the tool that asks a person (DOR-2328).
+  router.patch('/current', refuseAgentExecutionWrites, async (req, res) => {
     try {
       const rawPath = req.query.path as string;
       if (!rawPath) {

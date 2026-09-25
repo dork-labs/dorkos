@@ -39,6 +39,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  access,
   mkdir,
   mkdtemp,
   readFile,
@@ -51,7 +52,8 @@ import {
 } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
-import { assertContainedIn } from './lib/package-paths.js';
+import { withFileLock } from '@dorkos/shared/atomic-write';
+import { assertContainedIn, PathEscapeError } from './lib/package-paths.js';
 import { isFullCommitSha } from './lib/git/git-tree.js';
 import { directorySize } from './lib/directory-size.js';
 
@@ -63,6 +65,14 @@ const MARKETPLACE_FILENAME = 'marketplace.json';
 
 /** Filename for the last-fetched timestamp stamp. */
 const LAST_FETCHED_FILENAME = '.last-fetched';
+
+/**
+ * The outcome of the last attempt to fetch a marketplace's listing, beside the
+ * listing itself (DOR-2324). `.last-fetched` says when the cached copy was
+ * fetched; this says how the most recent try went, which can be later and can
+ * have failed.
+ */
+const LAST_CHECK_FILENAME = '.last-check.json';
 
 /** Directory of verified package trees, under the cache root. */
 const TREES_DIRNAME = 'trees';
@@ -149,6 +159,45 @@ export interface MaterializedPackage {
 }
 
 /**
+ * The outcome of the last attempt to fetch a marketplace's listing, whichever
+ * door asked (adding a source, a refresh, a browse, an update check). Kept on
+ * disk beside the listing, so it survives a reload and every window reads the
+ * same answer (DOR-2324).
+ */
+export interface MarketplaceFetchStatus {
+  /**
+   * When the attempt started, as an ISO timestamp. Attempts finish out of
+   * order, so this — not when it finished — decides which record is newer.
+   */
+  startedAt: string;
+  /** When the attempt finished, as an ISO timestamp. */
+  checkedAt: string;
+  /** Whether the listing was fetched. */
+  ok: boolean;
+  /** Why not, in the fetcher's plain words. Present only when `ok` is false. */
+  reason?: string;
+  /**
+   * How many packages the cached listing names: the one just fetched, or,
+   * after a failure, the older copy still listed. Stored so reporting never
+   * has to parse the listing to count it.
+   */
+  packageCount?: number;
+}
+
+/** True when a parsed `.last-check.json` has the {@link MarketplaceFetchStatus} shape. */
+function isFetchStatus(value: unknown): value is MarketplaceFetchStatus {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.startedAt === 'string' &&
+    typeof v.checkedAt === 'string' &&
+    typeof v.ok === 'boolean' &&
+    (v.reason === undefined || typeof v.reason === 'string') &&
+    (v.packageCount === undefined || typeof v.packageCount === 'number')
+  );
+}
+
+/**
  * Manages the on-disk marketplace cache. Pure file I/O — performs no
  * network requests of its own. Callers (source manager, package fetcher)
  * fetch upstream content and hand it to
@@ -219,7 +268,16 @@ export class MarketplaceCache {
    * @param marketplaceName - The configured marketplace identifier (e.g. `dorkos-community`).
    */
   async readMarketplace(marketplaceName: string): Promise<CachedMarketplace | null> {
-    const dir = this.marketplaceDir(marketplaceName);
+    let dir: string;
+    try {
+      dir = this.marketplaceDir(marketplaceName);
+    } catch (err) {
+      // A name that cannot be a cache key was never cached. Sources saved
+      // before names were checked (DOR-2304) can still hold one, and every
+      // read that walks the configured sources must survive it.
+      if (err instanceof PathEscapeError) return null;
+      throw err;
+    }
     const jsonPath = join(dir, MARKETPLACE_FILENAME);
     const stampPath = join(dir, LAST_FETCHED_FILENAME);
 
@@ -264,6 +322,95 @@ export class MarketplaceCache {
 
     await writeFile(join(dir, MARKETPLACE_FILENAME), `${JSON.stringify(json, null, 2)}\n`);
     await writeFile(join(dir, LAST_FETCHED_FILENAME), new Date().toISOString());
+  }
+
+  /**
+   * Record how an attempt to fetch a marketplace's listing went.
+   *
+   * Written atomically under a per-file lock, as a read-modify-write:
+   *
+   * - A record for an attempt that STARTED earlier than the one on disk is
+   *   dropped. Attempts finish out of order, and a slow failure that began
+   *   first must not overwrite the answer of a later attempt that worked.
+   * - A failure without a count keeps the count already recorded: the older
+   *   copy is still what is listed.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @param status - The attempt's outcome.
+   * @throws {PathEscapeError} When the name would place the file outside the
+   *   cache. Callers treat recording as best effort.
+   */
+  async writeFetchStatus(marketplaceName: string, status: MarketplaceFetchStatus): Promise<void> {
+    const file = join(this.marketplaceDir(marketplaceName), LAST_CHECK_FILENAME);
+    await withFileLock(file, async (write) => {
+      const current = await this.readFetchStatus(marketplaceName);
+      if (current && current.startedAt > status.startedAt) return;
+      const next =
+        !status.ok && status.packageCount === undefined && current?.packageCount !== undefined
+          ? { ...status, packageCount: current.packageCount }
+          : status;
+      await write(`${JSON.stringify(next)}\n`);
+    });
+  }
+
+  /**
+   * When the cached copy of a marketplace's listing was fetched, without
+   * reading the listing itself.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @returns The copy's fetch time, or `null` when there is no readable copy.
+   */
+  async readMarketplaceFetchedAt(marketplaceName: string): Promise<Date | null> {
+    try {
+      const dir = this.marketplaceDir(marketplaceName);
+      const [stamp] = await Promise.all([
+        readFile(join(dir, LAST_FETCHED_FILENAME), 'utf-8'),
+        access(join(dir, MARKETPLACE_FILENAME)),
+      ]);
+      const at = new Date(stamp.trim());
+      return Number.isNaN(at.getTime()) ? null : at;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Read how the latest attempt to fetch a marketplace's listing went.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @returns The recorded outcome, or `null` when none was recorded, the file
+   *   cannot be read or parsed, or the name cannot be a cache key.
+   */
+  async readFetchStatus(marketplaceName: string): Promise<MarketplaceFetchStatus | null> {
+    try {
+      const raw = await readFile(
+        join(this.marketplaceDir(marketplaceName), LAST_CHECK_FILENAME),
+        'utf-8'
+      );
+      const parsed: unknown = JSON.parse(raw);
+      return isFetchStatus(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Forget one marketplace's cached `marketplace.json`, and the record of its
+   * last fetch with it. No-op when nothing is cached under that name.
+   *
+   * A listing is keyed by the source's NAME, not its address, so a listing
+   * that outlives its source is inherited by the next source given that name:
+   * its old packages would be listed, resolved and installed from a source
+   * that never published them (DOR-2304). Removing a source calls this, and
+   * adding one calls it again before the first fetch, to clear what removals
+   * made before this method existed left on disk.
+   *
+   * @param marketplaceName - The configured marketplace identifier.
+   * @throws {PathEscapeError} When the name would place the directory outside
+   *   the cache.
+   */
+  async removeMarketplace(marketplaceName: string): Promise<void> {
+    await rm(this.marketplaceDir(marketplaceName), { recursive: true, force: true });
   }
 
   /**

@@ -36,6 +36,7 @@ import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { carrySwitchIntoReleasedFile } from '../task-file-update.js';
+import { taskWorkOf } from '../schedule-permission-clamp.js';
 import { readTaskRootFile } from '../skills-root-discovery.js';
 import {
   computeInstalledFiles,
@@ -129,7 +130,7 @@ const meshCore = { getProjectPath: () => agentDir };
 /** Discover what is on disk, the way the five-minute pass does. */
 async function sweep(filePath: string): Promise<Task> {
   await reconciler.reconcile();
-  const task = store.getByFilePath(filePath);
+  const task = store.fileSync.getByFilePath(filePath);
   expect(task).not.toBeNull();
   return task!;
 }
@@ -330,7 +331,7 @@ describe('a package schedule the record stops listing', () => {
     const own = await sweep(ownFile);
     db.run(sql`UPDATE pulse_schedules SET package_owned = 'unknown' WHERE id = ${own.id}`);
     // `unknown` is the sync's bookkeeping; the app is never told about it.
-    expect(store.getByFilePath(ownFile)!.packageOwned).toBeNull();
+    expect(store.fileSync.getByFilePath(ownFile)!.packageOwned).toBeNull();
     const before = await fs.readFile(ownFile, 'utf-8');
 
     await sweep(ownFile);
@@ -396,7 +397,7 @@ describe('a package schedule the record stops listing', () => {
     );
     if (parsed.kind !== 'schedule') throw new Error('expected a schedule');
     const syncOnce = () =>
-      store.upsertFromFile(parsed.discovered.def, AGENT_ID, {
+      store.fileSync.upsertFromFile(parsed.discovered.def, AGENT_ID, {
         source: 'discovery',
         problem: parsed.discovered.problem,
         packageOwned: null,
@@ -450,12 +451,7 @@ describe('a package schedule the record stops listing', () => {
     // release drops the agent's row-only timing, so what would run is new work;
     // it must stay parked, and nothing may switch it on.
     const approved = await approvedShipped();
-    const before = {
-      prompt: approved.prompt,
-      cron: approved.cron ?? '',
-      timezone: approved.timezone ?? 'UTC',
-      status: approved.status,
-    };
+    const before = { ...taskWorkOf(approved), status: approved.status };
     const outcome = await applyTaskFileUpdate({ dorkHome, meshCore } as never, {
       existing: approved,
       data: { cron: '*/5 * * * *' } as never,
@@ -466,7 +462,9 @@ describe('a package schedule the record stops listing', () => {
       { cron: '*/5 * * * *' },
       { timingLandsOn: outcome.timingLandsOn }
     );
-    expect(store.settleApprovedWorkChange(approved.id, before, { trusted: false })).toBe('parked');
+    expect(store.approvals.settleApprovedWorkChange(approved.id, before, { trusted: false })).toBe(
+      'parked'
+    );
     const parked = store.getTask(approved.id)!;
 
     await releaseShippedFile();

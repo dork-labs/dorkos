@@ -85,7 +85,7 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   reasonSource: text('reason_source', { enum: ['dorkos'] }),
   /**
    * The schedule content a person has actually approved, as a content key
-   * (prompt + cron + timezone since DOR-2307; `scheduleContentKey` in `schedule-permission-clamp.ts`).
+   * (prompt, timing and settings since DOR-2323; `scheduleContentKey` in `schedule-permission-clamp.ts`).
    *
    * This is the arm grant, and it is POSITIVE on purpose. It used to be inferred
    * from `status`, and that inference sprang a leak every time some other writer
@@ -99,6 +99,15 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * moment its content drifts.
    */
   approvedContentKey: text('approved_content_key'),
+  /**
+   * The approval a park last withdrew, kept so the approval card can say what
+   * changed since (DOR-2323): old and new model, runtime, timing and so on.
+   *
+   * Written only when a park takes `approved_content_key` away, and cleared
+   * whenever an approval is recorded. Never read by any gate: it is a record of
+   * what was approved, not an approval.
+   */
+  previousApprovalKey: text('previous_approval_key'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /**
    * Whether every fire of this schedule RESUMES one persistent session instead

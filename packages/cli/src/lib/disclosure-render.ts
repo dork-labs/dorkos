@@ -1,6 +1,7 @@
 /**
  * Terminal lines for what a package's new version runs on its own, as an
- * update check discloses it (DOR-2306): each command and when it runs, each
+ * update check discloses it (DOR-2306): each command and when it runs (a hook,
+ * or a skill's text, DOR-2327), each
  * program and where it starts, each skill allowed to use tools without asking,
  * and each scheduled job. Values are written out whole, with hidden characters
  * shown, the same way `dorkos install` prints a preview, because the person
@@ -15,16 +16,22 @@ import {
   describeScheduleArrival,
   describeSchedulePermissionMode,
   revealHiddenCharacters,
+  skillCommandKind,
   type DisclosedEffects,
 } from '@dorkos/shared/marketplace-schemas';
 
-/** Where an installation is, which decides whether its own programs start. */
-export type DisclosureScope = 'global' | 'project';
+/**
+ * Where an installation is, which decides whether its own programs start.
+ * `agent` is a new agent's own folder, created from a template (DOR-2325):
+ * what it brings runs in that agent's sessions only.
+ */
+export type DisclosureScope = 'global' | 'project' | 'agent';
 
 /** When a package's own programs start, by where it is installed. */
 const PROGRAMS_START: Record<DisclosureScope, string> = {
   global: 'starts in every session',
   project: 'declared, not started for a project install',
+  agent: "starts in the new agent's sessions",
 };
 
 /**
@@ -47,6 +54,15 @@ export function renderDisclosureLines(
         (hook.source ? `, while ${revealHiddenCharacters(hook.source)} is in use` : '') +
         ':',
       `      ${revealHiddenCharacters(hook.command)}`,
+    ]),
+    // Written into a skill's or command's text: run as it loads (DOR-2327).
+    // `?? []`: a server older than DOR-2327 sends none.
+    ...(effects.skillCommands ?? []).flatMap((entry) => [
+      `    runs when the ${skillCommandKind(entry.source)} ${quoted(entry.skill)} is used` +
+        (entry.usesArguments ? ', using the text typed after it:' : ':'),
+      ...revealHiddenCharacters(entry.command)
+        .split('\n')
+        .map((line) => `      ${line}`),
     ]),
     ...effects.mcpServers.map((server) =>
       server.command !== null

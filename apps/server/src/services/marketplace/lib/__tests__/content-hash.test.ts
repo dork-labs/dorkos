@@ -31,6 +31,16 @@ afterEach(async () => {
 });
 
 describe('hashTree', () => {
+  // Purpose (DOR-2197): an approval binds this hash (DOR-2306), so it must not
+  // change when the per-file digest is shared with the installed-files record's
+  // hashFile. Pinned for the fixture tree above; a different value here means
+  // every recorded approval would stop matching.
+  it('keeps the exact hash of a known tree', async () => {
+    expect(await hashTree(root)).toBe(
+      'sha256:40937766ce57782f21b212e574d747878ec991f8a45060cf809da1e79364ace6'
+    );
+  });
+
   it('changes when one file changes, even to the same size (the exploit)', async () => {
     // Purpose: approval binds bytes. A hostile script of the same length, or
     // any length, must not hash like the approved one.
@@ -97,6 +107,34 @@ describe('packageContentHash', () => {
     await symlink('fmt.sh', path.join(root, 'hooks', 'alias'));
 
     expect(await packageContentHash(root)).toBe(staged);
+  });
+
+  it('leaves out every .git, which the install strips (DOR-2326)', async () => {
+    // Purpose: the hash is of what lands, and an installed folder a person
+    // made their own repository must still match its record.
+    const staged = await packageContentHash(root);
+    await mkdir(path.join(root, '.git', 'hooks'), { recursive: true });
+    await writeFile(path.join(root, '.git', 'config'), '[core]\n\tfsmonitor = x\n');
+    await mkdir(path.join(root, 'hooks', 'vendored'), { recursive: true });
+    await writeFile(path.join(root, 'hooks', 'vendored', '.git'), 'gitdir: ../../x\n');
+    const withGit = await packageContentHash(root);
+    await rm(path.join(root, 'hooks', 'vendored'), { recursive: true });
+    expect(withGit).toBe(staged);
+  });
+
+  it('leaves out .GIT in any case', async () => {
+    const staged = await packageContentHash(root);
+    await mkdir(path.join(root, 'hooks', '.GIT'), { recursive: true });
+    await writeFile(path.join(root, 'hooks', '.GIT', 'config'), 'x');
+    const withGit = await packageContentHash(root);
+    await rm(path.join(root, 'hooks', '.GIT'), { recursive: true });
+    expect(withGit).toBe(staged);
+  });
+
+  it('covers a file whose name only contains .git', async () => {
+    const staged = await packageContentHash(root);
+    await writeFile(path.join(root, '.gitignore'), 'x');
+    expect(await packageContentHash(root)).not.toBe(staged);
   });
 
   it('covers a shipped node_modules: two trees differing only there hash differently (the PoC)', async () => {

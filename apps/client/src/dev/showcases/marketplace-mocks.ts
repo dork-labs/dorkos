@@ -175,6 +175,7 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -192,12 +193,66 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   conflicts: [],
 };
 
-/** Full preview with all sections populated. */
+/**
+ * An agent package whose skills live where its sessions load them: its folder
+ * is the agent's working directory, so `.claude/skills` and `.agents/skills`
+ * are on the card (DOR-2314).
+ */
+export const MOCK_PERMISSION_PREVIEW_AGENT_WORKSPACE: PermissionPreview = {
+  ...MOCK_PERMISSION_PREVIEW_MINIMAL,
+  fileChanges: [
+    { path: `${MOCK_DORK_HOME}/agents/release-bot/CLAUDE.md`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/agents/release-bot/.claude/skills/ship/SKILL.md`, action: 'create' },
+    {
+      path: `${MOCK_DORK_HOME}/agents/release-bot/.agents/skills/notes/SKILL.md`,
+      action: 'create',
+    },
+  ],
+  extensions: [],
+  hooks: [
+    {
+      event: 'PreToolUse',
+      matcher: 'Bash',
+      command: './scripts/check-branch.sh',
+      source: '.claude/skills/ship/SKILL.md',
+    },
+  ],
+  skillTools: [
+    {
+      source: '.claude/skills/ship/SKILL.md',
+      skill: 'ship',
+      tools: ['Bash(git push:*)', 'Bash(gh:*)'],
+    },
+    { source: '.agents/skills/notes/SKILL.md', skill: 'notes', tools: ['Read', 'Write'] },
+  ],
+  schedules: [],
+  requires: [],
+};
+
+/**
+ * The error a refused preview carries: the server's reasons ride on `body`
+ * exactly as `http-client.ts` attaches them (DOR-2314).
+ */
+export const MOCK_PREVIEW_REFUSED_ERROR = Object.assign(new Error('Package failed validation'), {
+  status: 400,
+  body: {
+    error: 'Package failed validation',
+    errors: [
+      "An agent package can't ship .claude/settings.json: its folder is the agent's working directory, so Claude Code would load it into every session the agent runs, without it being shown to you. Leave it out; hooks, servers and permissions are added after install through DorkOS, where a person approves each one.",
+      "An agent package can't ship opencode.json: its folder is the agent's working directory, so OpenCode would load it into every session the agent runs, without it being shown to you. Leave it out; hooks, servers and permissions are added after install through DorkOS, where a person approves each one.",
+    ],
+  },
+});
+
+/**
+ * Full preview with all sections populated. A plugin: an agent package may not
+ * ship servers or programs of its own (DOR-2314).
+ */
 export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   fileChanges: [
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/agent.json`, action: 'create' },
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/config.json`, action: 'modify' },
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/legacy-hooks.json`, action: 'delete' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/.claude-plugin/plugin.json`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/config.json`, action: 'modify' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/legacy-hooks.json`, action: 'delete' },
   ],
   extensions: [{ id: 'deploy-bot-ext', slots: ['dashboard-panel', 'task-runner'] }],
   hooks: [
@@ -229,6 +284,22 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   executables: ['deploy'],
   skillTools: [
     { source: 'skills/deploy/SKILL.md', skill: 'deploy', tools: ['Bash(kubectl:*)', 'Read'] },
+  ],
+  skillCommands: [
+    {
+      source: 'skills/deploy/SKILL.md',
+      skill: 'deploy',
+      form: 'inline',
+      command: 'kubectl config current-context',
+      usesArguments: false,
+    },
+    {
+      source: 'commands/release.md',
+      skill: 'release',
+      form: 'block',
+      command: 'git fetch --tags\ngit describe --tags --abbrev=0',
+      usesArguments: false,
+    },
   ],
   skippedLinks: [],
   unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'legacy' }],
@@ -285,6 +356,7 @@ export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -410,6 +482,7 @@ const FLOW_NEXT_RUNS: DisclosedEffects = {
   monitors: [],
   executables: [],
   skillTools: [{ source: 'skills/triage/SKILL.md', skill: 'triage', tools: ['Bash(gh:*)'] }],
+  skillCommands: [],
 };
 
 /** What the Flow plugin installed now runs: one hook fewer, an older server. */
@@ -428,6 +501,7 @@ const RUNS_NOTHING: DisclosedEffects = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
 };
 
 /** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
@@ -576,6 +650,7 @@ export const MOCK_PERMISSION_PREVIEW_MANY_FILES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -601,6 +676,7 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
   skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
@@ -610,3 +686,56 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   requires: [],
   conflicts: [],
 };
+
+/**
+ * What verification says about {@link MOCK_INSTALLED_FOR_UPDATES} (DOR-2197):
+ * Release Bot's flow has files edited, added and removed with an update
+ * waiting; python-skills was installed by an older DorkOS and can be checked;
+ * the global flow was checked and found to differ; obsidian-sync is a linked
+ * working copy; the rest are as installed.
+ */
+export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UPDATES.map((pkg) => {
+  if (pkg.installPath === '/Users/kai/work/release-bot/.dork/plugins/flow') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'modified' as const,
+        changed: ['skills/triage/SKILL.md', 'commands/ship.md'],
+        missing: ['README.md'],
+        added: ['skills/my-notes/SKILL.md'],
+        customized: [],
+      },
+    };
+  }
+  if (pkg.installPath === '/Users/kai/.dork/plugins/flow') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'unknown' as const,
+        reason: 'no-record' as const,
+        check: {
+          source: 'fetchable' as const,
+          last: {
+            outcome: 'mismatch' as const,
+            message:
+              "Some of flow's files differ from the version you installed, so DorkOS can't tell your edits from the package's files. Its next update still keeps your copies.",
+          },
+        },
+      },
+    };
+  }
+  if (pkg.name === 'python-skills') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'unknown' as const,
+        reason: 'no-record' as const,
+        check: { source: 'fetchable' as const },
+      },
+    };
+  }
+  if (pkg.name === 'obsidian-sync') {
+    return { ...pkg, integrity: { status: 'unknown' as const, reason: 'linked' as const } };
+  }
+  return { ...pkg, integrity: { status: 'clean' as const, customized: [] } };
+});

@@ -22,7 +22,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 /** Protocol version the fetching side asks for; `'0'` plays an old server. */
 let protocolVersion = '2';
 
-vi.mock('../../../../lib/git-safety.js', () => ({
+vi.mock('../../../../lib/git-safety.js', async (importOriginal) => ({
+  // The real `-c` hardening; only the environment is swapped for a local remote.
+  internalGitArgs: (await importOriginal<typeof import('../../../../lib/git-safety.js')>())
+    .internalGitArgs,
   hardenedGitEnv: () => ({
     ...process.env,
     GIT_ALLOW_PROTOCOL: 'file',

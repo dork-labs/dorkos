@@ -17,8 +17,10 @@ export { describePreviewSchedule, runsUnattended } from './lib/describe-schedule
 export { useMarketplacePackages } from './model/use-marketplace-packages';
 export { useMarketplacePackage } from './model/use-marketplace-package';
 export { usePermissionPreview } from './model/use-permission-preview';
+export { PreviewRefusedNotice, isPreviewRefusal } from './ui/PreviewRefusedNotice';
 export { useInstalledPackages } from './model/use-installed-packages';
 export { usePackageInstallations } from './model/use-package-installations';
+export { useInstalledIntegrity } from './model/use-installed-integrity';
 export { useInstalledUpdates, UPDATE_CHECK_STALE_MS } from './model/use-installed-updates';
 export type { UseInstalledUpdatesOptions } from './model/use-installed-updates';
 export { useMarketplaceSources } from './model/use-marketplace-sources';
@@ -29,6 +31,9 @@ export type { InstallPackageArgs } from './model/use-install-package';
 
 export { useUninstallPackage } from './model/use-uninstall-package';
 export type { UninstallPackageArgs } from './model/use-uninstall-package';
+
+export { useCheckPackageFiles } from './model/use-check-package-files';
+export type { CheckPackageFilesArgs } from './model/use-check-package-files';
 
 export {
   settleAppliedCheck,
@@ -41,6 +46,8 @@ export { useReviewHeldBackPackage } from './model/use-review-held-back';
 export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 
 export { useRemoveMarketplaceSource } from './model/use-remove-marketplace-source';
+
+export { useRefreshMarketplaceSource } from './model/use-refresh-marketplace-source';
 
 // No UI. `SkillPacksList` drew the profile's Skills page until the harness
 // status arrived: it listed installed skill-packs and told a person with

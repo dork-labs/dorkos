@@ -45,6 +45,7 @@ import {
   type TaskDefinition,
 } from '@dorkos/skills';
 import { parseSkillFile, readRawFrontmatter } from '@dorkos/skills/parser';
+import { parseDuration } from '@dorkos/skills/duration';
 import { writeSkillFile } from '@dorkos/skills/writer';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { PACKAGE_MANIFEST_PATH } from '@dorkos/marketplace/constants';
@@ -165,6 +166,58 @@ export function fileBackedChanges(
 }
 
 /**
+ * Whether an update request changes the work a person approved: the prompt,
+ * the timing, or any of the settings in the approval key
+ * (`ScheduleSettings`, DOR-2323).
+ *
+ * Compared against the task as it stands, so a field re-sent at its current
+ * value is not a change. `maxRuntime` arrives as a duration string and is
+ * compared in milliseconds, the way the row holds it.
+ *
+ * @param data - The update request's fields.
+ * @param existing - The task as it stands.
+ */
+export function changesApprovedWork(
+  data: {
+    prompt?: string;
+    cron?: string | null;
+    timezone?: string | null;
+    name?: string;
+    runtime?: string | null;
+    model?: string | null;
+    effort?: string | null;
+    maxRuntime?: string | null;
+    sticky?: boolean;
+  },
+  existing: {
+    prompt: string;
+    cron: string | null;
+    timezone: string | null;
+    name: string;
+    runtime: string | null;
+    model: string | null;
+    effort: string | null;
+    maxRuntime: number | null;
+    sticky: boolean;
+  }
+): boolean {
+  const differs = <T>(sent: T | undefined, current: T) => sent !== undefined && sent !== current;
+  return (
+    differs(data.prompt, existing.prompt) ||
+    (data.cron !== undefined && (data.cron ?? '') !== (existing.cron ?? '')) ||
+    (data.timezone !== undefined && (data.timezone ?? 'UTC') !== (existing.timezone ?? 'UTC')) ||
+    differs(data.name, existing.name) ||
+    differs(data.runtime, existing.runtime ?? null) ||
+    differs(data.model, existing.model ?? null) ||
+    differs(data.effort, existing.effort ?? null) ||
+    (data.maxRuntime !== undefined &&
+      (data.maxRuntime === null ? null : parseDuration(data.maxRuntime)) !==
+        (existing.maxRuntime ?? null)) ||
+    differs(data.sticky, existing.sticky)
+  );
+}
+
+/**
  * The file-backed fields a PACKAGE-OWNED schedule may still change, because
  * they can be applied to the row alone.
  *
@@ -180,7 +233,7 @@ export function fileBackedChanges(
  *   file's timing stays the default the sync keeps writing, and the person's
  *   wins (`timing/effective-timing.ts`). A change to either is still a change
  *   to when the approved work runs, which the caller settles
- *   (`TaskStore.settleApprovedWorkChange`).
+ *   (`TaskApprovals.settleApprovedWorkChange`).
  *
  * Everything else in {@link FILE_BACKED_COLUMN} describes what the schedule
  * DOES, which is the package's to say and stays refused.

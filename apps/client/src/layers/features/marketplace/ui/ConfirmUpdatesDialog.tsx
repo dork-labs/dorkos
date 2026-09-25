@@ -30,6 +30,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
+import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
 import { humanizePackageName } from '@/layers/shared/lib';
 import { formatDisclosureChanges, type DisclosureRow } from '../lib/format-permissions';
 import {
@@ -38,6 +39,7 @@ import {
   type StaleInstallation,
 } from '../lib/installed-updates';
 import { PermissionItem, withBreakPoints } from './PermissionPreviewSection';
+import { updateConsequence } from './InstallationIntegrityNote';
 
 interface ConfirmUpdatesDialogProps {
   /** The installations to confirm; `null` keeps the dialog closed. */
@@ -46,6 +48,8 @@ interface ConfirmUpdatesDialogProps {
   onCancel: () => void;
   /** Update exactly the listed installations. */
   onConfirm: (stale: StaleInstallation[]) => void;
+  /** Each installation's integrity, when verification has answered (DOR-2197). */
+  integrityByPath?: ReadonlyMap<string, InstallIntegrity>;
 }
 
 /** What the title and the confirm button call the list: one package by name, else a count. */
@@ -184,7 +188,7 @@ function Disclosure(item: StaleInstallation) {
  * One installation in the list: its name, place and version change, and under
  * them what its new version runs.
  */
-function StaleItem(item: StaleInstallation) {
+function StaleItem({ integrity, ...item }: StaleInstallation & { integrity?: InstallIntegrity }) {
   const { installation, check } = item;
   const place = installationPlace(installation);
   const from = formatCheckVersion(check.installedVersion, check.installedVersionSource);
@@ -207,6 +211,9 @@ function StaleItem(item: StaleInstallation) {
           <span className="sr-only">to</span> {to}
         </div>
       </div>
+      {integrity?.status === 'modified' && updateConsequence(integrity) && (
+        <p className="text-muted-foreground text-xs">{updateConsequence(integrity)}</p>
+      )}
       <Disclosure {...item} />
     </li>
   );
@@ -216,7 +223,12 @@ function StaleItem(item: StaleInstallation) {
  * Confirm updating a list of installations. Opens when `stale` is set; a
  * desktop dialog, a drawer on phones.
  */
-export function ConfirmUpdatesDialog({ stale, onCancel, onConfirm }: ConfirmUpdatesDialogProps) {
+export function ConfirmUpdatesDialog({
+  stale,
+  onCancel,
+  onConfirm,
+  integrityByPath,
+}: ConfirmUpdatesDialogProps) {
   return (
     <ResponsiveDialog open={stale !== null} onOpenChange={(open) => !open && onCancel()}>
       <ResponsiveDialogContent className="max-h-[85vh] !min-h-0 sm:max-w-xl">
@@ -242,7 +254,11 @@ export function ConfirmUpdatesDialog({ stale, onCancel, onConfirm }: ConfirmUpda
             <ResponsiveDialogBody>
               <ul aria-label="Packages to update" className="space-y-2">
                 {stale.map((item) => (
-                  <StaleItem key={item.check.installPath} {...item} />
+                  <StaleItem
+                    key={item.check.installPath}
+                    {...item}
+                    integrity={integrityByPath?.get(item.installation.installPath)}
+                  />
                 ))}
               </ul>
             </ResponsiveDialogBody>

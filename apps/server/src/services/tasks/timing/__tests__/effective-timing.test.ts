@@ -17,6 +17,16 @@ import {
 } from '../effective-timing.js';
 import { scheduleContentKey } from '../../schedule-permission-clamp.js';
 
+/** Settings every key carries (DOR-2323); held constant in these cases. */
+const SETTINGS = {
+  name: 'drain',
+  runtime: null,
+  model: null,
+  effort: null,
+  maxRuntime: null,
+  sticky: false,
+};
+
 /** A package's schedule on its own timing: hourly, UTC, nothing overridden. */
 const PACKAGE_TIMING: TimingColumns = {
   cron: '0 * * * *',
@@ -62,18 +72,42 @@ describe('effectiveContentKey', () => {
     // Purpose: a grant recorded against the package's cron while the person's
     // runs would cover work nobody approved.
     expect(
-      effectiveContentKey({ ...PACKAGE_TIMING, cronOverride: '0 9 * * *', prompt: 'Drain.' })
-    ).toBe(scheduleContentKey({ prompt: 'Drain.', cron: '0 9 * * *', timezone: 'UTC' }));
+      effectiveContentKey({
+        ...SETTINGS,
+        ...PACKAGE_TIMING,
+        cronOverride: '0 9 * * *',
+        prompt: 'Drain.',
+      })
+    ).toBe(
+      scheduleContentKey({ ...SETTINGS, prompt: 'Drain.', cron: '0 9 * * *', timezone: 'UTC' })
+    );
   });
 
   it('keys the grant on the timezone that runs too (DOR-2307)', () => {
     // Purpose: the same cron in another zone runs at another time — up to a
     // day away — so a timezone-only change is new work to approve.
     expect(
-      effectiveContentKey({ ...PACKAGE_TIMING, timezoneOverride: 'Asia/Tokyo', prompt: 'Drain.' })
-    ).toBe(scheduleContentKey({ prompt: 'Drain.', cron: '0 * * * *', timezone: 'Asia/Tokyo' }));
-    expect(effectiveContentKey({ ...PACKAGE_TIMING, prompt: 'Drain.' })).not.toBe(
-      effectiveContentKey({ ...PACKAGE_TIMING, timezoneOverride: 'Asia/Tokyo', prompt: 'Drain.' })
+      effectiveContentKey({
+        ...SETTINGS,
+        ...PACKAGE_TIMING,
+        timezoneOverride: 'Asia/Tokyo',
+        prompt: 'Drain.',
+      })
+    ).toBe(
+      scheduleContentKey({
+        ...SETTINGS,
+        prompt: 'Drain.',
+        cron: '0 * * * *',
+        timezone: 'Asia/Tokyo',
+      })
+    );
+    expect(effectiveContentKey({ ...SETTINGS, ...PACKAGE_TIMING, prompt: 'Drain.' })).not.toBe(
+      effectiveContentKey({
+        ...SETTINGS,
+        ...PACKAGE_TIMING,
+        timezoneOverride: 'Asia/Tokyo',
+        prompt: 'Drain.',
+      })
     );
   });
 });

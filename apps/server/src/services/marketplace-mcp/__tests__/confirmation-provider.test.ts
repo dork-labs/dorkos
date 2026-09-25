@@ -22,6 +22,7 @@ function buildPreview(): PermissionPreview {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -538,6 +539,7 @@ describe('TokenConfirmationProvider — updates', () => {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
   };
 
   /** One reinstall, as the door hands it to the gate. */

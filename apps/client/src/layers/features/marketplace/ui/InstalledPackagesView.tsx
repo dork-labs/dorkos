@@ -7,11 +7,17 @@ import {
   Shapes,
   AlertTriangle,
   ShieldAlert,
+  FileCheck2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { disclosesAnything, type InstalledPackage } from '@dorkos/shared/marketplace-schemas';
+import {
+  disclosesAnything,
+  type InstallIntegrity,
+  type InstalledPackage,
+} from '@dorkos/shared/marketplace-schemas';
 import {
   useApplyingInstallPaths,
+  useInstalledIntegrity,
   useInstalledPackages,
   useReviewHeldBackPackage,
 } from '@/layers/entities/marketplace';
@@ -21,6 +27,7 @@ import { humanizePackageName } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
+import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
 import { useInstalledUpdatesView } from '../model/use-installed-updates-view';
 import { useFocusRescue, type FocusRescue } from '../model/use-focus-rescue';
 import {
@@ -37,6 +44,7 @@ import { PackageErrorState } from './PackageErrorState';
 import { InstalledUpdatesSummary } from './InstalledUpdatesSummary';
 import { InstallationUpdateStatus } from './InstallationUpdateStatus';
 import { ConfirmUpdatesDialog } from './ConfirmUpdatesDialog';
+import { canCheckFiles, InstallationIntegrityNote } from './InstallationIntegrityNote';
 
 // ---------------------------------------------------------------------------
 // Package row sub-component
@@ -50,6 +58,12 @@ interface PackageRowProps {
   isUninstalling: boolean;
   /** Where this installation stands with respect to updates. */
   updateState: RowUpdateState;
+  /** Whether its files still match what was installed, once verification answers. */
+  integrity?: InstallIntegrity;
+  /** This installation's files are being checked (DOR-2320). */
+  isCheckingFiles: boolean;
+  /** Check the files of an installation an older DorkOS made against the version installed. */
+  onCheckFilesClick: () => void;
   /** Open the Shape switcher to apply this Shape (Shapes only). */
   onApplyClick: () => void;
   /** Update this installation (offered only when an update is available). */
@@ -152,6 +166,9 @@ function PackageRow({
   isConfirmingUninstall,
   isUninstalling,
   updateState,
+  integrity,
+  isCheckingFiles,
+  onCheckFilesClick,
   onApplyClick,
   onUpdateClick,
   onUninstallClick,
@@ -240,6 +257,15 @@ function PackageRow({
             isRaisingReview={isRaisingReview}
           />
         )}
+        <InstallationIntegrityNote
+          integrity={integrity}
+          updateAvailable={
+            updateState.kind === 'update-available' || updateState.kind === 'applying'
+          }
+          label={label}
+          onCheckFiles={onCheckFilesClick}
+          isCheckingFiles={isCheckingFiles}
+        />
         {/* A package whose npm libraries did not install is on disk and usable
             but incomplete, and that outlives the toast the person dismissed at
             install time. The note carries its own remedy, so it is shown in
@@ -273,6 +299,25 @@ function PackageRow({
           >
             <Shapes className="mr-1 size-3" aria-hidden />
             Apply…
+          </Button>
+        )}
+
+        {/* An install an older DorkOS made has no record of its files until
+            they are checked against the version installed (DOR-2320). Offered
+            only when that can help: not for a package installed from a folder,
+            and not once its files were found to differ (the note says why). */}
+        {canCheckFiles(integrity) && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCheckFilesClick}
+            disabled={isCheckingFiles}
+            aria-label={
+              isCheckingFiles ? `Checking the files of ${label}` : `Check the files of ${label}`
+            }
+          >
+            <FileCheck2 className="mr-1 size-3" aria-hidden />
+            {isCheckingFiles ? 'Checking…' : 'Check files'}
           </Button>
         )}
 
@@ -345,6 +390,10 @@ export function InstalledPackagesView() {
   const applying = useApplyingInstallPaths();
   const { apply } = useApplyUpdatesWithToast();
   const review = useReviewHeldBackPackage();
+  // Whether each installation's files still match what was installed
+  // (DOR-2197): one verified request beside the list, never one per row.
+  const { data: integrityByPath } = useInstalledIntegrity();
+  const checkFiles = useCheckFilesWithToast();
 
   // Track which installation (by installPath — unique per scope, unlike the
   // package name) is in the confirm-uninstall window.
@@ -416,6 +465,26 @@ export function InstalledPackagesView() {
     apply(stale);
   }
 
+  function handleCheckFilesClick(pkg: InstalledPackage) {
+    checkFiles.mutate({
+      name: pkg.name,
+      options: {
+        installRoot: pkg.installPath,
+        ...(pkg.agentPath && { projectPath: pkg.agentPath }),
+      },
+      where: installationPlace(pkg) ?? undefined,
+    });
+  }
+
+  /** Whether the in-flight file check targets this exact installation. */
+  function isCheckingFiles(pkg: InstalledPackage): boolean {
+    return (
+      checkFiles.isPending &&
+      checkFiles.variables?.name === pkg.name &&
+      (checkFiles.variables?.options?.installRoot ?? pkg.installPath) === pkg.installPath
+    );
+  }
+
   /** Whether the in-flight uninstall targets this exact installation. */
   function isUninstalling(pkg: InstalledPackage): boolean {
     const variables = uninstall.variables;
@@ -454,6 +523,9 @@ export function InstalledPackagesView() {
                 isConfirmingUninstall={confirmingPath === pkg.installPath}
                 isUninstalling={isUninstalling(pkg)}
                 updateState={updateState}
+                integrity={integrityByPath?.get(pkg.installPath)}
+                isCheckingFiles={isCheckingFiles(pkg)}
+                onCheckFilesClick={() => handleCheckFilesClick(pkg)}
                 onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
                 onUpdateClick={() => {
                   if (updateState.kind !== 'update-available') return;
@@ -478,6 +550,7 @@ export function InstalledPackagesView() {
 
       <ConfirmUpdatesDialog
         stale={confirmingUpdate}
+        integrityByPath={integrityByPath}
         onCancel={() => setConfirmingUpdate(null)}
         onConfirm={handleConfirmUpdate}
       />

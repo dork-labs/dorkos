@@ -1,13 +1,21 @@
 /**
  * Host hold and host-started deletion (spec `community-host-operator-api`, "Host hold and
- * host-started deletion"). A hold must stop growth without cutting the owner off from their
- * data, and a host may delete a community only after a hold with a published notice date.
+ * host-started deletion", amended by `community-hold-keeps-access`). A hold must stop growth
+ * without revoking anything: members, agents, and invitations wait and work again on release.
+ * A host may delete a community only after a hold with a published notice date.
  *
  * Tests run in order on one host with an injected clock. A is held and deleted; B, another
  * tenant, must stay untouched by all of it.
  */
+import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import {
+  CommunityConnectionAccessSchema,
+  CommunityWireConnectionAccessResponseSchema,
+  CommunityWireInvitePreviewResponseSchema,
+} from '@dorkos/shared/community-wire';
 import { sweepCommunityDeletions } from '../deletion-worker.js';
+import { hashSecret } from '../security.js';
 import {
   TENANCY_PASSWORD,
   admit,
@@ -20,6 +28,7 @@ import {
   type TenancyHarness,
   type TenancyMember,
 } from './tenancy-test-harness.js';
+import { drainExports } from './export-test-helpers.js';
 import { responseCookies } from './bootstrap-test-helper.js';
 
 const DAY = 24 * 60 * 60_000;
@@ -34,6 +43,15 @@ let b = '';
 let channelA = '';
 let memberGrant = '';
 let agentId = '';
+let agentToken = '';
+let secondAgentId = '';
+let attachmentId = '';
+let joiner = '';
+let inviteToken = '';
+let revocableInviteId = '';
+let heldEraGrant = '';
+let pendingPairing: { pairingId: string; verifier: string };
+let streamBeforeHold: ReadableStreamDefaultReader<Uint8Array>;
 
 const tenant = (communityId: string) => `/api/v1/communities/${communityId}`;
 
@@ -68,6 +86,124 @@ async function hostDelete(communityId = a) {
       confirmIdSuffix: communityId.slice(-8),
     },
   });
+}
+
+async function expectHeld(response: Response, label: string) {
+  expect(response.status, label).toBe(423);
+  expect((await response.json()).code, label).toBe('COMMUNITY_HELD');
+}
+
+/** Every revocation column a hold used to touch, for community A. */
+async function accessRows() {
+  const [grants, credentials, agents, invites, pairings, admissions] = await Promise.all([
+    h.pool.query('SELECT id,revoked_at FROM connection_grants WHERE community_id=$1 ORDER BY id', [
+      a,
+    ]),
+    h.pool.query('SELECT id,revoked_at FROM agent_credentials WHERE community_id=$1 ORDER BY id', [
+      a,
+    ]),
+    h.pool.query('SELECT id,active,revoked_at FROM agents WHERE community_id=$1 ORDER BY id', [a]),
+    h.pool.query('SELECT id,revoked_at FROM invites WHERE community_id=$1 ORDER BY id', [a]),
+    h.pool.query(
+      'SELECT id,cancelled_at FROM connection_pairings WHERE community_id=$1 ORDER BY id',
+      [a]
+    ),
+    h.pool.query('SELECT count(*)::int AS n FROM pending_admissions WHERE community_id=$1', [a]),
+  ]);
+  return {
+    grants: grants.rows,
+    liveGrants: grants.rows.filter((row) => !row.revoked_at).length,
+    credentials: credentials.rows,
+    agents: agents.rows,
+    invites: invites.rows,
+    pairings: pairings.rows,
+    pendingAdmissions: admissions.rows[0].n as number,
+  };
+}
+
+/** How many grants, agent credentials, active agents, and invitations are still live in A. */
+async function liveAccess() {
+  return (
+    await h.pool.query(
+      `SELECT (SELECT count(*)::int FROM connection_grants WHERE community_id=$1 AND revoked_at IS NULL) AS grants,
+              (SELECT count(*)::int FROM agent_credentials WHERE community_id=$1 AND revoked_at IS NULL) AS credentials,
+              (SELECT count(*)::int FROM agents WHERE community_id=$1 AND active) AS agents,
+              (SELECT count(*)::int FROM invites WHERE community_id=$1 AND revoked_at IS NULL) AS invites`,
+      [a]
+    )
+  ).rows[0];
+}
+
+/** Start a pairing from a local install and leave it waiting for approval. */
+async function startPairing(scopes: string[]) {
+  const verifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const started = await expectStatus(
+    await h.call(`${tenant(a)}/pairings/start`, {
+      headers: { origin: '' },
+      body: { installName: 'Waiting install', challenge, scopes },
+    }),
+    201,
+    'pairing start'
+  );
+  return { pairingId: (await started.json()).pairingId as string, verifier };
+}
+
+/** Approve a waiting pairing in the browser and exchange it for the install's bearer. */
+async function completePairing(
+  pairing: { pairingId: string; verifier: string },
+  approverCookie: string
+) {
+  const { pairingId, verifier } = pairing;
+  await expectStatus(
+    await h.call(`${tenant(a)}/pairings/approve`, { cookie: approverCookie, body: { pairingId } }),
+    200,
+    'pairing approve'
+  );
+  const polled = await expectStatus(
+    await h.call(`${tenant(a)}/pairings/poll`, {
+      headers: { origin: '' },
+      body: { pairingId, verifier },
+    }),
+    200,
+    'pairing poll'
+  );
+  const exchanged = await expectStatus(
+    await h.call(`${tenant(a)}/pairings/exchange`, {
+      headers: { origin: '' },
+      body: { pairingId, code: (await polled.json()).code, verifier },
+    }),
+    200,
+    'pairing exchange'
+  );
+  return (await exchanged.json()).token as string;
+}
+
+const sseBuffers = new WeakMap<ReadableStreamDefaultReader<Uint8Array>, string>();
+
+/** Read the next SSE event's data, failing after five seconds without one. */
+async function nextSse(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<{ type: string }> {
+  let buffer = sseBuffers.get(reader) ?? '';
+  for (;;) {
+    const boundary = buffer.indexOf('\n\n');
+    if (boundary >= 0) {
+      const frame = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      sseBuffers.set(reader, buffer);
+      const data = frame.split('\n').find((line) => line.startsWith('data: '));
+      if (data) return JSON.parse(data.slice(6));
+      continue;
+    }
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const chunk = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('SSE timed out')), 5_000);
+      }),
+    ]).finally(() => clearTimeout(timeout));
+    if (chunk.done) throw new Error('SSE closed before an event');
+    buffer += new TextDecoder().decode(chunk.value);
+  }
 }
 
 const inDays = (days: number) => new Date(clock().getTime() + days * DAY).toISOString();
@@ -129,7 +265,50 @@ beforeAll(async () => {
     201,
     'enroll agent'
   );
-  agentId = (await enrolled.json()).agent.memberId;
+  const enrollment = await enrolled.json();
+  agentId = enrollment.agent.memberId;
+  agentToken = enrollment.token;
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/agents`, {
+      bearer: memberGrant,
+      body: { agentId },
+    }),
+    200,
+    'agent joins the channel'
+  );
+  const second = await expectStatus(
+    await h.call(`${tenant(a)}/agents`, {
+      bearer: memberGrant,
+      body: { localAgentId: 'agent-y', displayName: 'Agent Y' },
+    }),
+    201,
+    'enroll a second agent'
+  );
+  secondAgentId = (await second.json()).agent.memberId;
+  const uploaded = await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/attachments`, {
+      method: 'POST',
+      cookie: operator.cookie,
+      headers: {
+        'content-type': 'text/plain',
+        'x-file-name': 'kept.txt',
+        'x-file-size': '4',
+        'idempotency-key': 'kept-file',
+      },
+      raw: 'kept',
+    }),
+    201,
+    'upload before hold'
+  );
+  attachmentId = (await uploaded.json()).attachment.id;
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
+      cookie: operator.cookie,
+      body: { text: 'A file', idempotencyKey: 'file-entry', attachmentIds: [attachmentId] },
+    }),
+    201,
+    'post the file before hold'
+  );
   const pending = await createPendingCommunity(h, operator.cookie, 'Tenant B');
   b = pending.communityId;
   await claimAsNewAccount(h, pending.token, 'B Owner', 'b-owner@hold.test');
@@ -150,8 +329,9 @@ it('refuses a notice shorter than the minimum, and a notice outside a hold', asy
   expect((await lifecycle()).lifecycle).toBe('active');
 });
 
-it('holds A: revokes live credentials, and refuses every growing action with 423 COMMUNITY_HELD', async () => {
-  // Purpose: fails if a hold reuses suspension (everything refused) or lets anything grow.
+it('holds A without revoking any grant, agent, invitation, admission, or pairing (AC-1)', async () => {
+  // Purpose: fails if the hold still revokes (spec `community-hold-keeps-access`). Everything a
+  // member, agent owner, or invited person had before the hold must still exist after it.
   // Someone half-way through joining when the hold lands: invited, signed up, and bound.
   const issued = await expectStatus(
     await h.call(`${tenant(a)}/invites`, { cookie: operator.cookie, body: { seats: 1 } }),
@@ -174,26 +354,49 @@ it('holds A: revokes live credentials, and refuses every growing action with 423
     200,
     'sign up before hold'
   );
-  const joiner = `${admission}; ${responseCookies(signedUp)}`;
+  joiner = `${admission}; ${responseCookies(signedUp)}`;
   await expectStatus(
     await h.call(`${tenant(a)}/invites/bind`, { cookie: joiner, body: {} }),
     200,
     'bind before hold'
   );
+  const waiting = await expectStatus(
+    await h.call(`${tenant(a)}/invites`, { cookie: operator.cookie, body: { seats: 1 } }),
+    201,
+    'invitation I'
+  );
+  const waitingBody = await waiting.json();
+  inviteToken = waitingBody.token;
+  const revocable = await expectStatus(
+    await h.call(`${tenant(a)}/invites`, { cookie: operator.cookie, body: { seats: 1 } }),
+    201,
+    'second invitation'
+  );
+  revocableInviteId = (await revocable.json()).invite.id;
+  pendingPairing = await startPairing(['read']);
+  // A live stream opened before the hold; the hold must close it honestly (AC-3).
+  const stream = await h.call(`${tenant(a)}/channels/${channelA}/events`, { bearer: memberGrant });
+  expect(stream.status).toBe(200);
+  streamBeforeHold = stream.body!.getReader();
+  expect((await nextSse(streamBeforeHold)).type).toBe('snapshot');
+  expect((await nextSse(streamBeforeHold)).type).toBe('replay_complete');
+
+  const before = await accessRows();
+  expect(before.pendingAdmissions).toBeGreaterThan(1);
   await expectStatus(await host('hold', { deletionNoticeAt: null }), 200, 'hold');
   expect(await lifecycle()).toMatchObject({ lifecycle: 'held', held_from_state: 'active' });
-  const live = await h.pool.query(
-    `SELECT (SELECT count(*)::int FROM connection_grants WHERE community_id=$1 AND revoked_at IS NULL) AS grants,
-            (SELECT count(*)::int FROM agent_credentials WHERE community_id=$1 AND revoked_at IS NULL) AS credentials,
-            (SELECT count(*)::int FROM agents WHERE community_id=$1 AND active) AS agents`,
-    [a]
-  );
-  expect(live.rows[0]).toEqual({ grants: 0, credentials: 0, agents: 0 });
+  expect(await accessRows()).toEqual(before);
+});
 
-  const expectHeld = async (response: Response, label: string) => {
-    expect(response.status, label).toBe(423);
-    expect((await response.json()).code, label).toBe('COMMUNITY_HELD');
-  };
+it('closes a live stream opened before the hold with reason archived, not removed (AC-3)', async () => {
+  // Purpose: fails if a held community's stream reads as a lost membership.
+  const closed = (await nextSse(streamBeforeHold)) as { type: string; reason?: string };
+  expect(closed).toMatchObject({ type: 'closed', reason: 'archived' });
+  await streamBeforeHold.cancel();
+});
+
+it('refuses every growing action with 423 COMMUNITY_HELD while kept credentials stay live', async () => {
+  // Purpose: fails if a hold reuses suspension (everything refused) or lets anything grow.
   await expectHeld(
     await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
       cookie: member.cookie,
@@ -218,10 +421,6 @@ it('holds A: revokes live credentials, and refuses every growing action with 423
   await expectHeld(
     await h.call(`${tenant(a)}/invites`, { cookie: operator.cookie, body: { seats: 1 } }),
     'invitation'
-  );
-  await expectHeld(
-    await h.call(`${tenant(a)}/invites/redeem`, { cookie: joiner, body: {} }),
-    'join with a live join attempt'
   );
   await expectHeld(
     await h.call(`${tenant(a)}/channels/${channelA}`, {
@@ -293,8 +492,7 @@ it('holds A: revokes live credentials, and refuses every growing action with 423
     body: { installName: 'Writer', challenge: 'x'.repeat(43), scopes: ['read', 'post'] },
   });
   await expectHeld(writePairing, 'write pairing');
-  // Defence in depth: a grant that somehow survived the hold still cannot enroll an agent.
-  await h.pool.query('UPDATE connection_grants SET revoked_at=NULL WHERE community_id=$1', [a]);
+  // The kept grant G is live, yet it cannot enroll, rotate, or recover an agent.
   await expectHeld(
     await h.call(`${tenant(a)}/agents`, {
       bearer: memberGrant,
@@ -313,10 +511,104 @@ it('holds A: revokes live credentials, and refuses every growing action with 423
     }),
     'agent recover'
   );
-  await h.pool.query(
-    'UPDATE connection_grants SET revoked_at=now() WHERE community_id=$1 AND revoked_at IS NULL',
-    [a]
+});
+
+it('lets a kept grant and a kept agent read history and files, and nothing else (AC-2)', async () => {
+  // Purpose: fails if reads still need a history-only grant or a read-only scope set during a
+  // hold, if an agent is refused every read while held, or if capabilities ignore the hold.
+  const history = await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, { bearer: memberGrant }),
+    200,
+    'G reads history'
   );
+  const page = await history.json();
+  expect(JSON.stringify(page)).toContain('Before the hold');
+  // Reading is not growth: the read position still saves, and the grant still lists agents.
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/read-cursor`, {
+      method: 'PUT',
+      bearer: memberGrant,
+      body: { cursor: page.entries.at(-1).cursor },
+    }),
+    200,
+    'G saves its read position'
+  );
+  const agents = await expectStatus(
+    await h.call(`${tenant(a)}/agents`, { bearer: memberGrant }),
+    200,
+    'G lists its agents'
+  );
+  expect((await agents.json()).agents).toEqual(
+    expect.arrayContaining([expect.objectContaining({ memberId: agentId })])
+  );
+  const file = await expectStatus(
+    await h.call(`${tenant(a)}/attachments/${attachmentId}`, { bearer: memberGrant }),
+    200,
+    'G downloads a file'
+  );
+  expect(await file.text()).toBe('kept');
+  await expectHeld(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
+      bearer: memberGrant,
+      body: { text: 'G during the hold', idempotencyKey: 'g-during' },
+    }),
+    'G posts'
+  );
+  const agentHistory = await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, { bearer: agentToken }),
+    200,
+    'X reads history'
+  );
+  expect(JSON.stringify(await agentHistory.json())).toContain('Before the hold');
+  const agentFile = await expectStatus(
+    await h.call(`${tenant(a)}/attachments/${attachmentId}`, { bearer: agentToken }),
+    200,
+    'X downloads a file'
+  );
+  expect(await agentFile.text()).toBe('kept');
+  await expectHeld(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
+      bearer: agentToken,
+      body: { text: 'X during the hold', idempotencyKey: 'x-during' },
+    }),
+    'X posts'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/channels/${channelA}/events`, { bearer: memberGrant }),
+    'G opens a stream'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/channels/${channelA}/events`, { bearer: agentToken }),
+    'X opens a stream'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/channels/${channelA}/events`, { cookie: member.cookie }),
+    'the browser opens a stream'
+  );
+  const access = await expectStatus(
+    await h.call(`${tenant(a)}/me/connection-access`, { bearer: memberGrant }),
+    200,
+    'connection access'
+  );
+  const body = CommunityWireConnectionAccessResponseSchema.parse(await access.json());
+  expect(CommunityConnectionAccessSchema.safeParse(body.access).success).toBe(true);
+  expect(body.access.lastKnown).toMatchObject({
+    lifecycle: 'archived',
+    capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+  });
+  // The grant list keeps the grant's real scopes, so a member sees it will post again.
+  const grants = await expectStatus(
+    await h.call(`${tenant(a)}/me/grants`, { cookie: member.cookie }),
+    200,
+    'grant list'
+  );
+  expect((await grants.json()).grants).toEqual([
+    expect.objectContaining({
+      scopes: ['read', 'post', 'enroll-agent'],
+      lifecycle: 'archived',
+      capabilities: { read: true, post: false, enrollAgent: false, stream: false },
+    }),
+  ]);
 });
 
 it('still serves history, read-only pairing, and the owner’s export while held', async () => {
@@ -333,21 +625,20 @@ it('still serves history, read-only pairing, and the owner’s export while held
     200,
     'history through a read-only installation'
   );
-  // Installations know only the archived word for a read-only community.
-  const access = await expectStatus(
-    await h.call(`${tenant(a)}/me/connection-access`, { bearer: readOnly }),
-    200,
-    'connection access'
-  );
-  expect((await access.json()).access.lastKnown.lifecycle).toBe('archived');
-  await expectStatus(
+  const exported = await expectStatus(
     await h.call(`${tenant(a)}/owner/export`, {
       cookie: operator.cookie,
       body: { password: TENANCY_PASSWORD },
     }),
-    201,
+    202,
     'owner export while held'
   );
+  // The background job finishes while the community is held.
+  const exportId = (await exported.json()).export.id;
+  await drainExports(h.pool, h.blobStore);
+  expect(
+    (await h.pool.query('SELECT state FROM export_archives WHERE id=$1', [exportId])).rows[0]
+  ).toEqual({ state: 'ready' });
   const memberships = await expectStatus(
     await h.call('/api/v1/memberships', { cookie: member.cookie }),
     200,
@@ -358,28 +649,184 @@ it('still serves history, read-only pairing, and the owner’s export while held
   ]);
 });
 
-it('suspends from the hold and resumes back to it, and releases to where it began reviving nothing', async () => {
-  // Purpose: fails if a suspension forgets the hold, or if release restores a revoked credential.
+it('keeps invitations waiting: preview says held, joining answers 423 and writes nothing (AC-4, AC-2c)', async () => {
+  // Purpose: fails if the hold revokes an invitation or lets anyone join while it lasts.
+  const preview = await expectStatus(
+    await h.call(`${tenant(a)}/invites/preview`, { body: { token: inviteToken } }),
+    200,
+    'preview'
+  );
+  expect(CommunityWireInvitePreviewResponseSchema.parse(await preview.json())).toMatchObject({
+    communityName: 'Operator Community',
+    held: true,
+  });
+  // A made-up link learns nothing, not even that the community is on hold.
+  const forged = await h.call(`${tenant(a)}/invites/preflight`, {
+    body: { token: `${inviteToken.slice(0, -4)}AAAA` },
+  });
+  expect(forged.status).toBe(403);
+  const growth = async () =>
+    (
+      await h.pool.query(
+        `SELECT (SELECT count(*)::int FROM members WHERE community_id=$1) AS members,
+                (SELECT count(*)::int FROM invite_uses WHERE community_id=$1) AS uses,
+                (SELECT count(*)::int FROM community_handles WHERE community_id=$1) AS handles,
+                (SELECT count(*)::int FROM pending_admissions WHERE community_id=$1) AS admissions`,
+        [a]
+      )
+    ).rows[0];
+  const before = await growth();
+  await expectHeld(
+    await h.call(`${tenant(a)}/invites/preflight`, { body: { token: inviteToken } }),
+    'preflight'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/invites/bind`, { cookie: joiner, body: {} }),
+    'bind a live join attempt'
+  );
+  await expectHeld(
+    await h.call(`${tenant(a)}/invites/redeem`, { cookie: joiner, body: {} }),
+    'redeem a live join attempt'
+  );
+  await expectHeld(await h.call(`${tenant(a)}/invites/pending`, { cookie: joiner }), 'pending');
+  expect(await growth()).toEqual(before);
+  // Removing an agent is not growth: its owner can still remove it through a kept grant.
+  await expectStatus(
+    await h.call(`${tenant(a)}/agents/${secondAgentId}`, {
+      method: 'DELETE',
+      bearer: memberGrant,
+    }),
+    204,
+    'remove an agent while held'
+  );
+  // Removing an invitation is not growth.
+  await expectStatus(
+    await h.call(`${tenant(a)}/invites/${revocableInviteId}`, {
+      method: 'DELETE',
+      cookie: operator.cookie,
+    }),
+    204,
+    'revoke an invitation while held'
+  );
+});
+
+it('approves a pairing started before the hold as read-only history access (AC-6)', async () => {
+  // Purpose: fails if a pairing approved while held could gain write scopes.
+  heldEraGrant = await completePairing(pendingPairing, member.cookie);
+  const row = await h.pool.query<{ scopes: string[]; history_only: boolean }>(
+    'SELECT scopes,history_only FROM connection_grants WHERE token_hash=$1',
+    [hashSecret(heldEraGrant)]
+  );
+  expect(row.rows[0]).toEqual({ scopes: ['read'], history_only: true });
+});
+
+it('releases A and everything works again with nobody reconnecting (AC-2)', async () => {
+  // Purpose: fails if anything was revoked by the hold or needs a new pairing or enrollment.
+  await expectStatus(await host('release'), 200, 'release');
+  expect(await lifecycle()).toMatchObject({ lifecycle: 'active', held_from_state: null });
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
+      bearer: memberGrant,
+      body: { text: 'G after release', idempotencyKey: 'g-after' },
+    }),
+    201,
+    'G posts'
+  );
+  await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
+      bearer: agentToken,
+      body: { text: 'X after release', idempotencyKey: 'x-after' },
+    }),
+    201,
+    'X posts'
+  );
+  const stream = await expectStatus(
+    await h.call(`${tenant(a)}/channels/${channelA}/events`, { bearer: memberGrant }),
+    200,
+    'G opens a stream'
+  );
+  const reader = stream.body!.getReader();
+  expect((await nextSse(reader)).type).toBe('snapshot');
+  await reader.cancel();
+  const access = await expectStatus(
+    await h.call(`${tenant(a)}/me/connection-access`, { bearer: memberGrant }),
+    200,
+    'connection access'
+  );
+  const body = CommunityWireConnectionAccessResponseSchema.parse(await access.json());
+  expect(body.access.lastKnown).toMatchObject({
+    lifecycle: 'active',
+    capabilities: { read: true, post: true, enrollAgent: true, stream: true },
+  });
+  // The join attempt that waited through the hold completes, and so does invitation I.
+  await expectStatus(
+    await h.call(`${tenant(a)}/invites/redeem`, { cookie: joiner, body: {} }),
+    200,
+    'the waiting join attempt completes'
+  );
+  const preview = await expectStatus(
+    await h.call(`${tenant(a)}/invites/preview`, { body: { token: inviteToken } }),
+    200,
+    'preview after release'
+  );
+  expect((await preview.json()).held).toBe(false);
+  const preflight = await expectStatus(
+    await h.call(`${tenant(a)}/invites/preflight`, { body: { token: inviteToken } }),
+    200,
+    'preflight after release'
+  );
+  const admission = responseCookies(preflight);
+  const signedUp = await expectStatus(
+    await h.call('/api/auth/sign-up/email', {
+      cookie: admission,
+      body: { name: 'Later', email: 'later@hold.test', password: TENANCY_PASSWORD },
+    }),
+    200,
+    'sign up after release'
+  );
+  const later = `${admission}; ${responseCookies(signedUp)}`;
+  await expectStatus(
+    await h.call(`${tenant(a)}/invites/bind`, { cookie: later, body: {} }),
+    200,
+    'bind'
+  );
+  await expectStatus(
+    await h.call(`${tenant(a)}/invites/redeem`, { cookie: later, body: {} }),
+    200,
+    'invitation I redeems'
+  );
+  // A pairing approved while held stays read-only after release.
+  expect(
+    (
+      await h.call(`${tenant(a)}/channels/${channelA}/entries`, {
+        bearer: heldEraGrant,
+        body: { text: 'held-era grant', idempotencyKey: 'held-era' },
+      })
+    ).status
+  ).toBe(403);
+});
+
+it('suspends from a hold revoking everything, and resumes back to the hold still revoked (AC-5)', async () => {
+  // Purpose: fails if the kept-credential change leaked into suspension.
+  await expectStatus(await host('hold', { deletionNoticeAt: null }), 200, 'hold again');
+  expect((await accessRows()).liveGrants).toBeGreaterThan(0);
   await expectStatus(await host('suspend'), 200, 'suspend held');
   expect(await lifecycle()).toMatchObject({
     lifecycle: 'suspended',
     suspended_from_state: 'held',
     held_from_state: 'active',
   });
+  expect(await liveAccess()).toEqual({ grants: 0, credentials: 0, agents: 0, invites: 0 });
   await expectStatus(await host('resume'), 200, 'resume to held');
   expect(await lifecycle()).toMatchObject({ lifecycle: 'held', held_from_state: 'active' });
+  expect(await liveAccess()).toEqual({ grants: 0, credentials: 0, agents: 0, invites: 0 });
   await expectStatus(await host('release'), 200, 'release');
   expect(await lifecycle()).toMatchObject({ lifecycle: 'active', held_from_state: null });
   expect(
-    (
-      await h.pool.query(
-        'SELECT count(*)::int AS n FROM connection_grants WHERE community_id=$1 AND revoked_at IS NULL',
-        [a]
-      )
-    ).rows[0].n
-  ).toBe(0);
-  expect(
     (await h.call(`${tenant(a)}/channels/${channelA}/entries`, { bearer: memberGrant })).status
+  ).toBe(401);
+  expect(
+    (await h.call(`${tenant(a)}/channels/${channelA}/entries`, { bearer: agentToken })).status
   ).toBe(401);
 });
 
@@ -390,6 +837,9 @@ it('refuses host deletion from active, archived, suspended, held without notice,
     expect(response.status, label).toBe(409);
   };
   await refused('active');
+  // Owner archive still revokes (AC-5): a grant made just before it does not survive.
+  await pairInstall(h, a, member.cookie);
+  expect((await liveAccess()).grants).toBe(1);
   await expectStatus(
     await h.call(`${tenant(a)}/owner/lifecycle`, {
       cookie: operator.cookie,
@@ -403,6 +853,7 @@ it('refuses host deletion from active, archived, suspended, held without notice,
     200,
     'owner archives'
   );
+  expect((await liveAccess()).grants).toBe(0);
   await refused('archived');
   await expectStatus(await host('suspend'), 200, 'suspend archived');
   await refused('suspended');
@@ -437,8 +888,11 @@ it('refuses host deletion from active, archived, suspended, held without notice,
 
 it('deletes A after the notice date with a host requester, which only the host can cancel, back to the hold', async () => {
   // Purpose: fails if host deletion skips the seven days, lets the owner cancel it, or a cancel
-  // lifts the hold.
+  // lifts the hold. Host deletion from a hold still revokes (AC-5).
+  await pairInstall(h, a, member.cookie, ['read']);
+  expect((await liveAccess()).grants).toBe(1);
   const started = await expectStatus(await hostDelete(), 200, 'host deletion');
+  expect((await liveAccess()).grants).toBe(0);
   expect(await started.json()).toMatchObject({
     lifecycle: 'deletion_pending',
     deletionRequestedBy: 'host',
@@ -483,7 +937,9 @@ it('deletes A after the notice date with a host requester, which only the host c
 
 it('lets the owner delete a held community, cancels that back to the hold, and keeps the host out of it', async () => {
   // Purpose: fails if the hold traps an owner, if the owner's cancel lifts the hold, or if the
-  // host can cancel an owner's deletion.
+  // host can cancel an owner's deletion. The owner's deletion from a hold still revokes (AC-5).
+  await pairInstall(h, a, member.cookie, ['read']);
+  expect((await liveAccess()).grants).toBe(1);
   await expectStatus(
     await h.call(`${tenant(a)}/owner/deletion`, {
       cookie: operator.cookie,
@@ -497,6 +953,7 @@ it('lets the owner delete a held community, cancels that back to the hold, and k
     200,
     'owner deletes while held'
   );
+  expect((await liveAccess()).grants).toBe(0);
   expect(
     (
       await h.call(`/api/v1/host/communities/${a}/deletion`, {

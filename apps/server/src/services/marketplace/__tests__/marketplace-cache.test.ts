@@ -97,6 +97,132 @@ describe('MarketplaceCache', () => {
     });
   });
 
+  describe('fetch status (DOR-2324)', () => {
+    it('keeps the last fetch attempt beside the listing, and reads it back', async () => {
+      // Purpose: the outcome of the last fetch survives a reload and is the
+      // same for every window, so it lives on disk, not in a page.
+      await cache.writeFetchStatus('mp', {
+        startedAt: '2026-09-24T09:59:59.000Z',
+        checkedAt: '2026-09-24T10:00:00.000Z',
+        ok: false,
+        reason: "couldn't find a server at that address",
+      });
+
+      expect(await cache.readFetchStatus('mp')).toEqual({
+        startedAt: '2026-09-24T09:59:59.000Z',
+        checkedAt: '2026-09-24T10:00:00.000Z',
+        ok: false,
+        reason: "couldn't find a server at that address",
+      });
+    });
+
+    it('reads a missing, unreadable or unkeyable status as none', async () => {
+      expect(await cache.readFetchStatus('never')).toBeNull();
+      expect(await cache.readFetchStatus('x/..')).toBeNull();
+      await cache.writeFetchStatus('mp', { startedAt: 'x', checkedAt: 'x', ok: true });
+      await writeFile(join(cache.cacheRoot, 'marketplaces', 'mp', '.last-check.json'), '{nope');
+      expect(await cache.readFetchStatus('mp')).toBeNull();
+      await writeFile(
+        join(cache.cacheRoot, 'marketplaces', 'mp', '.last-check.json'),
+        JSON.stringify({ startedAt: 'x', checkedAt: 7, ok: 'yes' })
+      );
+      expect(await cache.readFetchStatus('mp')).toBeNull();
+    });
+
+    it('drops a record for an attempt that started before the one on disk', async () => {
+      // Purpose: attempts finish out of order; the later START wins.
+      await cache.writeFetchStatus('mp', { startedAt: '2026-01-02', checkedAt: 'b', ok: true });
+      await cache.writeFetchStatus('mp', {
+        startedAt: '2026-01-01',
+        checkedAt: 'c',
+        ok: false,
+        reason: 'slow',
+      });
+      expect(await cache.readFetchStatus('mp')).toMatchObject({ ok: true, checkedAt: 'b' });
+    });
+
+    it('keeps the listed count when a failure is recorded without one', async () => {
+      await cache.writeFetchStatus('mp', {
+        startedAt: '1',
+        checkedAt: '1',
+        ok: true,
+        packageCount: 5,
+      });
+      await cache.writeFetchStatus('mp', {
+        startedAt: '2',
+        checkedAt: '2',
+        ok: false,
+        reason: 'x',
+      });
+      expect(await cache.readFetchStatus('mp')).toMatchObject({ ok: false, packageCount: 5 });
+    });
+
+    it('reads when the cached copy was fetched without reading the copy', async () => {
+      expect(await cache.readMarketplaceFetchedAt('mp')).toBeNull();
+      await cache.writeMarketplace('mp', buildMarketplaceJson());
+      expect(await cache.readMarketplaceFetchedAt('mp')).toEqual(
+        (await cache.readMarketplace('mp'))!.fetchedAt
+      );
+    });
+
+    it('forgets the status together with the listing', async () => {
+      // Purpose: a removed source's last failure must not greet the next
+      // source given its name.
+      await cache.writeMarketplace('mp', buildMarketplaceJson());
+      await cache.writeFetchStatus('mp', {
+        startedAt: 'x',
+        checkedAt: 'x',
+        ok: false,
+        reason: 'down',
+      });
+
+      await cache.removeMarketplace('mp');
+
+      expect(await cache.readFetchStatus('mp')).toBeNull();
+    });
+  });
+
+  describe('removeMarketplace', () => {
+    it("forgets one marketplace's listing and leaves the others", async () => {
+      // Purpose: a removed source's listing must not outlive it, or a new
+      // source added under the same name inherits the old packages (DOR-2304).
+      await cache.writeMarketplace('gone', buildMarketplaceJson());
+      await cache.writeMarketplace('kept', buildMarketplaceJson());
+
+      await cache.removeMarketplace('gone');
+
+      expect(await cache.readMarketplace('gone')).toBeNull();
+      expect(await cache.readMarketplace('kept')).not.toBeNull();
+    });
+
+    it('is a no-op for a marketplace with nothing cached', async () => {
+      await expect(cache.removeMarketplace('never-cached')).resolves.toBeUndefined();
+    });
+
+    it('refuses a name that would reach outside the cache', async () => {
+      // Purpose: this is an rm(recursive) on a caller-supplied name.
+      await expect(cache.removeMarketplace('../../escape')).rejects.toThrow(PathEscapeError);
+    });
+
+    it.each(['x/..', '.'])(
+      'refuses %j, which names the cache root, and deletes nothing',
+      async (name) => {
+        // Purpose: a name that resolves to the root itself would take every
+        // source's listing with it.
+        await cache.writeMarketplace('kept', buildMarketplaceJson());
+
+        await expect(cache.removeMarketplace(name)).rejects.toThrow(PathEscapeError);
+        expect(await cache.readMarketplace('kept')).not.toBeNull();
+      }
+    );
+
+    it('reads a name it cannot key as a cache miss rather than throwing', async () => {
+      // Purpose: a source saved under such a name before names were checked
+      // must not break every read that walks the configured sources.
+      await expect(cache.readMarketplace('x/..')).resolves.toBeNull();
+    });
+  });
+
   describe('TTL', () => {
     it('returns stale=true once Date.now() advances beyond ttlMs', async () => {
       vi.useFakeTimers();
@@ -231,7 +357,9 @@ describe('MarketplaceCache', () => {
     });
 
     it('refuses to derive a marketplace directory that climbs out of the cache', async () => {
-      await expect(cache.readMarketplace('../../escape')).rejects.toThrow(PathEscapeError);
+      // A read never looks outside: it answers "not cached" (DOR-2304). A write
+      // or a removal is refused outright.
+      await expect(cache.readMarketplace('../../escape')).resolves.toBeNull();
       await expect(cache.writeMarketplace('../../escape', buildMarketplaceJson())).rejects.toThrow(
         PathEscapeError
       );

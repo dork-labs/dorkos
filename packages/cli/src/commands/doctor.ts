@@ -39,6 +39,7 @@ import {
   checkDorkHomeWritable,
   checkPortFree,
   checkClaudeCli,
+  checkGitProtection,
   checkClaudeAuth,
   checkRuntimeAuth,
   checkExtensions,
@@ -59,7 +60,8 @@ Reads your config and probes the environment; changes nothing.
 Options:
       --json   Print the results as JSON instead of a report
       --deep   Also ask a running DorkOS about rooms, messaging, integrations,
-               and agents. Skipped with a note when DorkOS is not running.
+               agents, and installed packages. Skipped with a note when
+               DorkOS is not running.
 
 Examples:
   dorkos doctor
@@ -266,6 +268,7 @@ async function gatherResults(dorkHome: string, store: ConfigStore | null): Promi
     checkFileDescriptors(readFileDescriptorLimit()),
     checkClaudeCli(),
     checkClaudeAuth(homeDir),
+    checkGitProtection(),
     ...checkUnreadableSettings(store),
     ...checkRuntimeAuth({
       codexEnabled: readBool(store, 'runtimes.codex.enabled', true),
@@ -327,7 +330,7 @@ function reasonDeepWasSkipped(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (message.startsWith('Cannot reach DorkOS server')) {
     return (
-      'DorkOS is not running, so rooms, messaging, integrations, and agents were not checked. ' +
+      'DorkOS is not running, so rooms, messaging, integrations, agents, and installed packages were not checked. ' +
       'Start it with `dorkos` and run this again.'
     );
   }

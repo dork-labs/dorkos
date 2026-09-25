@@ -38,12 +38,14 @@ function buildCacheMock(overrides?: {
   materializePackage?: ReturnType<typeof vi.fn>;
   readMarketplace?: ReturnType<typeof vi.fn>;
   writeMarketplace?: ReturnType<typeof vi.fn>;
+  writeFetchStatus?: ReturnType<typeof vi.fn>;
 }): MarketplaceCache {
   return {
     getPackage: overrides?.getPackage ?? vi.fn().mockResolvedValue(null),
     materializePackage: overrides?.materializePackage ?? vi.fn(),
     readMarketplace: overrides?.readMarketplace ?? vi.fn().mockResolvedValue(null),
     writeMarketplace: overrides?.writeMarketplace ?? vi.fn().mockResolvedValue(undefined),
+    writeFetchStatus: overrides?.writeFetchStatus ?? vi.fn().mockResolvedValue(undefined),
   } as unknown as MarketplaceCache;
 }
 
@@ -100,6 +102,12 @@ function buildSource(overrides?: Partial<MarketplaceSource>): MarketplaceSource 
     ...overrides,
   };
 }
+
+let workDirForStatus: string | undefined;
+afterEach(async () => {
+  if (workDirForStatus) await rm(workDirForStatus, { recursive: true, force: true });
+  workDirForStatus = undefined;
+});
 
 describe('PackageFetcher', () => {
   afterEach(() => {
@@ -374,6 +382,146 @@ describe('PackageFetcher', () => {
       timeout.mockRestore();
     });
 
+    it('with staleFallback off, rethrows instead of serving the cached copy (DOR-2304)', async () => {
+      // Purpose: "fetched" must mean fetched now. Adding a source asks for a
+      // fresh fetch, and an old copy on disk is not an answer to that.
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+      const cache = buildCacheMock({
+        readMarketplace: vi.fn().mockResolvedValue({
+          json: buildMarketplaceJson('dorkos-community'),
+          fetchedAt: new Date(),
+          stale: false,
+        } satisfies CachedMarketplace),
+      });
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+      await expect(
+        fetcher.fetchMarketplaceJson(buildSource(), { staleFallback: false })
+      ).rejects.toThrow(/network down/);
+      expect(cache.readMarketplace).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [404, 'Not Found', "there's no marketplace listing at that address"],
+      [
+        500,
+        'Internal Server Error',
+        'the marketplace server answered with an error (500 Internal Server Error)',
+      ],
+    ])('says what an HTTP %i means in plain words', async (status, statusText, reason) => {
+      // Purpose: the reason reaches a person (the add response, the CLI,
+      // refresh), so it reads as a sentence rather than a status line.
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status, statusText }));
+      const cache = buildCacheMock({ readMarketplace: vi.fn().mockResolvedValue(null) });
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+      await expect(fetcher.fetchMarketplaceJson(buildSource())).rejects.toThrow(reason);
+    });
+
+    it.each([
+      ['ENOTFOUND', "couldn't find a server at that address"],
+      ['EAI_AGAIN', "couldn't find a server at that address"],
+      ['ECONNREFUSED', 'the server at that address refused the connection'],
+      ['ECONNRESET', 'the connection to the marketplace server was cut off'],
+      ['EFOOBAR', "couldn't reach the marketplace server (EFOOBAR)"],
+    ])('unwraps a network failure coded %s into plain words', async (code, reason) => {
+      // Purpose: undici's bare "fetch failed" hides the one useful fact, which
+      // sits on `cause.code`.
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockRejectedValue(
+            new TypeError('fetch failed', { cause: Object.assign(new Error(code), { code }) })
+          )
+      );
+      const cache = buildCacheMock({ readMarketplace: vi.fn().mockResolvedValue(null) });
+      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+      const failure = fetcher.fetchMarketplaceJson(buildSource());
+      await expect(failure).rejects.toThrow(reason);
+      await expect(failure).rejects.not.toThrow(/fetch failed/);
+    });
+
+    describe('records how each fetch went (DOR-2324)', () => {
+      // Purpose: every door that fetches a listing (add, refresh, browse, the
+      // update check) comes through here, so this is where the last outcome is
+      // written down for GET /sources to report.
+      it('records a fetched listing', async () => {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(JSON.stringify(buildMarketplaceJson())))
+        );
+        const cache = buildCacheMock();
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await fetcher.fetchMarketplaceJson(buildSource());
+
+        expect(cache.writeFetchStatus).toHaveBeenCalledWith('dorkos-community', {
+          startedAt: expect.any(String),
+          checkedAt: expect.any(String),
+          ok: true,
+          packageCount: buildMarketplaceJson().plugins.length,
+        });
+      });
+
+      it('records a failure with its reason, even when an old copy is served', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })));
+        const cache = buildCacheMock({
+          readMarketplace: vi.fn().mockResolvedValue({
+            json: buildMarketplaceJson(),
+            fetchedAt: new Date(),
+            stale: false,
+          }),
+        });
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await fetcher.fetchMarketplaceJson(buildSource());
+
+        expect(cache.writeFetchStatus).toHaveBeenCalledWith('dorkos-community', {
+          startedAt: expect.any(String),
+          checkedAt: expect.any(String),
+          ok: false,
+          reason: "there's no marketplace listing at that address",
+        });
+      });
+
+      it('records a local folder that has no listing', async () => {
+        workDirForStatus = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-status-'));
+        const cache = buildCacheMock();
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await expect(
+          fetcher.fetchMarketplaceJson(
+            buildSource({ name: 'local', source: pathToFileURL(workDirForStatus).href })
+          )
+        ).rejects.toThrow();
+
+        expect(cache.writeFetchStatus).toHaveBeenCalledWith('local', {
+          startedAt: expect.any(String),
+          checkedAt: expect.any(String),
+          ok: false,
+          reason: "there's no marketplace listing in that folder",
+        });
+      });
+
+      it('still answers when the record cannot be written', async () => {
+        // Purpose: the record is bookkeeping; it must never cost a listing.
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(new Response(JSON.stringify(buildMarketplaceJson())))
+        );
+        const cache = buildCacheMock({
+          writeFetchStatus: vi.fn().mockRejectedValue(new Error('disk full')),
+        });
+        const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+
+        await expect(fetcher.fetchMarketplaceJson(buildSource())).resolves.toMatchObject({
+          name: 'dorkos-community',
+        });
+      });
+    });
+
     it('rethrows when both network fetch and stale cache fail', async () => {
       const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
       vi.stubGlobal('fetch', fetchMock);
@@ -578,20 +726,25 @@ describe('PackageFetcher', () => {
       expect(cache.writeMarketplace).toHaveBeenCalledWith('root-wins', expect.any(Object));
     });
 
-    it('fetchMarketplaceJson throws a clear error naming both paths when neither layout exists', async () => {
+    it('says in plain words that a folder has no listing, and logs both paths it tried', async () => {
+      // Purpose: this reason reaches a person (the add note, refresh). Two
+      // absolute paths and an ENOENT dump filled a phone screen (DOR-2304);
+      // the paths belong in the log, where a support question is answered.
       workDir = await mkdtemp(path.join(tmpdir(), 'pkg-fetcher-file-'));
       // Note: do not seed marketplace.json at either the root or .claude-plugin/ on purpose.
 
       const cache = buildCacheMock();
-      const fetcher = new PackageFetcher(cache, buildGitMock(), buildLogger());
+      const logger = buildLogger();
+      const fetcher = new PackageFetcher(cache, buildGitMock(), logger);
 
       const sourceUrl = pathToFileURL(workDir).href;
       await expect(
         fetcher.fetchMarketplaceJson(buildSource({ name: 'personal', source: sourceUrl }))
-      ).rejects.toThrow(
-        /Failed to read local marketplace at .*marketplace\.json or .*\.claude-plugin[/\\]marketplace\.json:/
-      );
+      ).rejects.toThrow(/^there's no marketplace listing in that folder$/);
       expect(cache.writeMarketplace).not.toHaveBeenCalled();
+      const logged = JSON.stringify(logger.calls.filter((c) => c.level === 'warn'));
+      expect(logged).toMatch(/marketplace\.json/);
+      expect(logged).toMatch(/\.claude-plugin/);
     });
 
     it('fetchMarketplaceJson throws when the local marketplace.json is invalid JSON', async () => {

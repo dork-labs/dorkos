@@ -225,6 +225,46 @@ describe('stagePackageContents', () => {
     expect(await exists(path.join(dest, '.dork', 'Data'))).toBe(false);
     expect(await exists(path.join(dest, 'a.md.DORK-OLD'))).toBe(false);
   });
+
+  it('drops every .git, folder or file, at any depth, and logs it (DOR-2326)', async () => {
+    // Purpose: git obeys the settings and hooks in a .git; a package is its
+    // files, so a local agent that is its author's own repository installs
+    // without them, and nothing else is lost.
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+    await mkdir(path.join(src, '.git', 'hooks'), { recursive: true });
+    await writeFile(path.join(src, '.git', 'config'), '[core]\n\tfsmonitor = x\n');
+    await mkdir(path.join(src, 'vendor', 'lib'), { recursive: true });
+    await writeFile(path.join(src, 'vendor', 'lib', '.git'), 'gitdir: ../../../x\n');
+    await writeFile(path.join(src, 'vendor', 'lib', 'index.js'), 'ok');
+    await writeFile(path.join(src, '.gitignore'), 'node_modules\n');
+    const logger = buildLogger();
+
+    await stagePackageContents(src, dest, logger);
+
+    expect(await exists(path.join(dest, '.git'))).toBe(false);
+    expect(await exists(path.join(dest, 'vendor', 'lib', '.git'))).toBe(false);
+    expect(await readFile(path.join(dest, 'vendor', 'lib', 'index.js'), 'utf-8')).toBe('ok');
+    expect(await exists(path.join(dest, '.gitignore'))).toBe(true);
+    const warned = vi.mocked(logger.warn).mock.calls.map((c) => String(c[0]));
+    expect(warned.some((m) => m.includes('Stripped .git '))).toBe(true);
+    expect(warned.some((m) => m.includes('Stripped vendor/lib/.git '))).toBe(true);
+  });
+
+  it('drops .GIT in any case, the same folder on macOS and Windows', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    cleanupDirs.push(src, dest);
+    await rm(dest, { recursive: true, force: true });
+    await mkdir(path.join(src, 'sub', '.GIT'), { recursive: true });
+    await writeFile(path.join(src, 'sub', '.GIT', 'config'), 'x');
+    await writeFile(path.join(src, 'sub', 'keep.txt'), 'k');
+    await stagePackageContents(src, dest, buildLogger());
+    expect(await exists(path.join(dest, 'sub', '.GIT'))).toBe(false);
+    expect(await exists(path.join(dest, 'sub', 'keep.txt'))).toBe(true);
+  });
 });
 
 describe('stagePackageContents size limits (DOR-2321)', () => {

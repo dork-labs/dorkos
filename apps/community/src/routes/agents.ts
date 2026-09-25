@@ -120,8 +120,9 @@ export function registerAgentRoutes(
   });
 
   app.get('/agents', async (c) => {
+    // Listing is read-only, so a kept grant can still see its agents while the host holds.
     const grant = c.req.header('authorization')
-      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent', { allowHeld: true })
       : undefined;
     const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const rows = await pool.query<AgentRow>(
@@ -207,9 +208,10 @@ export function registerAgentRoutes(
     return out;
   });
 
+  // Removing an agent is not growth, so it works while the host holds the community.
   app.delete('/agents/:id', async (c) => {
     const grant = c.req.header('authorization')
-      ? await requireConnectionGrant(c, pool, 'enroll-agent')
+      ? await requireConnectionGrant(c, pool, 'enroll-agent', { allowHeld: true })
       : undefined;
     const actor = grant?.member ?? (await requireMember(c, auth, pool));
     const id = uuid.parse(c.req.param('id'));
@@ -241,9 +243,12 @@ export function registerAgentRoutes(
           actor.id,
           grant.tokenHash,
           actor.community_id,
-          'enroll-agent'
+          'enroll-agent',
+          { allowHeld: true }
         );
-      const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member']);
+      const role = await requireLiveRole(client, actor, ['owner', 'admin', 'member'], {
+        allowHeld: true,
+      });
       const candidate = await client.query<{ owner_member_id: string; owner_role: Member['role'] }>(
         'SELECT a.owner_member_id,m.role AS owner_role FROM agents a JOIN members m ON m.id=a.owner_member_id WHERE a.id=$1 AND a.community_id=$2 AND a.active AND m.active',
         [id, actor.community_id]

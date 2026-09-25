@@ -1,0 +1,131 @@
+{
+  "spec": "specs/marketplace-install-verification/02-specification.md",
+  "slug": "marketplace-install-verification",
+  "generatedAt": "2026-09-24T17:55:20+00:00",
+  "mode": "full",
+  "lastDecomposeDate": "2026-09-24",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "P1 \u2014 Engine",
+      "subject": "[marketplace-install-verification] [P1] Hash cache and verifyInstall",
+      "description": "\u00a73 cache (lstat size/mtime/ctime/ino key, LRU 20k, hashFile only) and \u00a74 verifyInstall with clean/modified/unknown, customized, added under EFFECT_BEARING_PATHS, truncation. Tests first per \u00a79; mutation-check the cache key and the added rule.",
+      "activeForm": "Building verification",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "P1 \u2014 Engine",
+      "subject": "[marketplace-install-verification] [P1] Strict rebuild rebuildRecordStrict",
+      "description": "\u00a75: lock, re-check inside the lock, metadata, fetchAtCommit, staged + skillRef injection via a helper shared with rebuildInstalledFiles, exact match with the userEditable exemption, atomic write, write nothing otherwise. Tests per \u00a79; mutation-check the match rule, exemption, lock, re-check and no-write.",
+      "activeForm": "Building the strict rebuild",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "phaseName": "P1 \u2014 Engine",
+      "subject": "[marketplace-install-verification] [P1] Background sweep after boot",
+      "description": "\u00a76 rebuildLegacyRecords over install roots, sequential, logged; chained after the project install-recovery sweep in index.ts.",
+      "activeForm": "Wiring the sweep",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "P2 \u2014 Surfaces",
+      "subject": "[marketplace-install-verification] [P2] Shared schema, installed?verify, MCP verify flag",
+      "description": "\u00a77: InstallIntegrity in shared, InstalledPackage.integrity, GET /installed and /installed/:name ?verify=true (concurrency 4), marketplace_list_installed verify. Tests.",
+      "activeForm": "Surfacing verification",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "P2 \u2014 Surfaces",
+      "subject": "[marketplace-install-verification] [P2] Prepare route, transport, CLI",
+      "description": "\u00a78: POST /packages/:name/prepare (name guard, marketplace.install gate, locateInstallRoot, five messages), prepareMarketplacePackage in Http/Direct transports and mock factory, dorkos marketplace prepare, installed --verify Files column.",
+      "activeForm": "Adding prepare",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "P2 \u2014 Surfaces",
+      "subject": "[marketplace-install-verification] [P2] Doctor deep check",
+      "description": "\u00a77 checkInstalledPackages in deep-health checks + run.ts source.",
+      "activeForm": "Adding the doctor check",
+      "size": "small",
+      "priority": "high",
+      "dependencies": [
+        "2.1"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "P2 \u2014 Surfaces",
+      "subject": "[marketplace-install-verification] [P2] Installed view and update confirm",
+      "description": "\u00a77 client: one verify query, changed row note with tooltip, legacy row + Prepare button, confirm-dialog sentence. Tests and screenshots.",
+      "activeForm": "Updating the Installed view",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2"
+      ],
+      "parallelWith": [],
+      "issue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "P3 \u2014 Proof and docs",
+      "subject": "[marketplace-install-verification] [P3] Proof, docs, changelog",
+      "description": "\u00a710 proof on a copy of blintz's flow; contributing/marketplace-installs.md, docs/marketplace, CLI help, one changelog fragment; 04-implementation.md.",
+      "activeForm": "Proving and documenting",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.3",
+        "2.4",
+        "2.3"
+      ],
+      "parallelWith": [],
+      "issue": null
+    }
+  ]
+}

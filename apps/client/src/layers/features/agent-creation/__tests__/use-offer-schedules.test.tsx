@@ -44,6 +44,7 @@ const PREVIEW_WITH_SCHEDULE = {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     schedules: [
@@ -148,6 +149,37 @@ describe('useOfferSchedules while the query cannot run yet', () => {
     await waitFor(() => expect(result.current.failed).toBe(true));
     expect(result.current.isChecking).toBe(false);
     expect(result.current.schedules).toEqual([]);
+  });
+
+  it('reports a server refusal as refused, carrying the reasons (DOR-2314)', async () => {
+    // Purpose: a package the server will not preview is one it will not
+    // install, so the creation flow must know it was refused, not just failed.
+    const { persister, release } = heldPersister();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewMarketplacePackage).mockRejectedValue(
+      Object.assign(new Error('Package failed validation'), {
+        status: 400,
+        body: { errors: ["An agent package can't ship .mcp.json"] },
+      })
+    );
+
+    const { result } = renderOfferSchedules(transport, persister);
+    release();
+
+    await waitFor(() => expect(result.current.refusal).toBeDefined());
+    expect(result.current.failed).toBe(true);
+  });
+
+  it('does not report an unreachable server as a refusal', async () => {
+    const { persister, release } = heldPersister();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewMarketplacePackage).mockRejectedValue(new Error('unreachable'));
+
+    const { result } = renderOfferSchedules(transport, persister);
+    release();
+
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.refusal).toBeUndefined();
   });
 
   it('survives a 200 whose body carries no preview', async () => {

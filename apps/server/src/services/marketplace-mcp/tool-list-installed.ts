@@ -16,6 +16,9 @@
  * call. With it, the list and the check come from ONE scan, the same records the
  * all-packages update door (`flows/update-installed.ts`) checks.
  *
+ * With `verify: true` each entry also says whether its files still match what
+ * was installed (DOR-2197), read from its installed-files record.
+ *
  * @module services/marketplace-mcp/tool-list-installed
  */
 import { z } from 'zod';
@@ -23,6 +26,7 @@ import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
 import type { InstalledPackage } from '../marketplace/installed-scanner.js';
 import { scanUpdateView } from '../marketplace/flows/update-installed.js';
 import type { InstallationUpdateCheck } from '../marketplace/flows/update-types.js';
+import { withIntegrity } from '../marketplace/lib/integrity/verify-install.js';
 
 /**
  * Zod input schema for `marketplace_list_installed`. The schema is exported
@@ -47,12 +51,25 @@ export const ListInstalledInputSchema = {
       'Also say, for each package, whether a newer version exists (slower: checks each ' +
         "package's marketplace). Use marketplace_update to install it."
     ),
+  /**
+   * Also say whether each package's files still match what was installed
+   * (DOR-2197). Off by default: it reads every shipped file.
+   */
+  verify: z
+    .boolean()
+    .optional()
+    .describe(
+      "Also say, for each package, whether its files still match what was installed: 'clean', " +
+        "'modified' (with the changed, missing or added files) or 'unknown' (installed by an " +
+        'older DorkOS, or a linked working copy). Slower: reads every shipped file.'
+    ),
 };
 
 /** Inferred TypeScript type for the tool's input arguments. */
 export type ListInstalledInput = {
   type?: 'agent' | 'plugin' | 'skill-pack' | 'adapter';
   checkUpdates?: boolean;
+  verify?: boolean;
 };
 
 /** What `checkUpdates` adds to one listed installation. */
@@ -117,6 +134,8 @@ export function createListInstalledHandler(deps: MarketplaceMcpDeps) {
         return check ? { ...r.package, update: summaryOf(check) } : r.package;
       });
     }
+
+    if (args.verify) installed = await withIntegrity(installed);
 
     return {
       content: [

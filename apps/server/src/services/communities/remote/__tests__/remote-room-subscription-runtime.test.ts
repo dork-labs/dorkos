@@ -414,6 +414,76 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     expect(mirrors.localRoomIdForOwner(REF, ROOM_ID, harness.human)).toBeNull();
   });
 
+  it('re-checks only member-only read-only connections every five minutes, and stops once released (AC-8)', async () => {
+    // Purpose: fails if a member-only connection never learns a hold ended, if it is checked
+    // before five minutes, or if the new timer double-polls a connection with an enrolled agent
+    // (the reconcile already re-checks those) or polls one that is not read-only.
+    vi.useFakeTimers();
+    try {
+      const harness = createRoomHarness({ agents: agentLookupFor({}) });
+      const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+      const memberOnly = 'remote_member_only' as CommunityRef;
+      const withAgent = 'remote_with_agent' as CommunityRef;
+      const stillActive = 'remote_still_active' as CommunityRef;
+      enrollments.activate({
+        communityRef: withAgent,
+        localAgentId: 'agent-local',
+        remoteMemberId: 'remote-agent',
+        ownerAuthorId: 'owner',
+      });
+      // What this install last stored for each connection, and what the fake Community says now.
+      const stored = new Map<CommunityRef, 'active' | 'archived'>([
+        [memberOnly, 'archived'],
+        [withAgent, 'archived'],
+        [stillActive, 'active'],
+      ]);
+      let heldRemotely = true;
+      const resolveConnectionAccess = vi.fn(async (ref: CommunityRef) => {
+        stored.set(ref, heldRemotely ? 'archived' : 'active');
+        return null;
+      });
+      const runtime = new RemoteRoomSubscriptionRuntime({
+        bridge: {} as never,
+        enrollments,
+        adapters: vi.fn(),
+        resolveConnectionAccess,
+        readOnlyConnections: async () =>
+          [...stored]
+            .filter(([, lifecycle]) => lifecycle === 'archived')
+            .map(([communityRef]) => ({ communityRef, ownerAuthorId: 'owner' })),
+        resolveLocalAgentAuthor: () => null,
+        // Keep the enrolled-agent reconcile out of the way so every call below is the timer's.
+        isReady: () => false,
+      });
+      const checked = (ref: CommunityRef) =>
+        resolveConnectionAccess.mock.calls.filter(([called]) => called === ref).length;
+      runtime.start();
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
+      expect(resolveConnectionAccess).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(checked(memberOnly)).toBe(1);
+      expect(stored.get(memberOnly)).toBe('archived');
+
+      // The host releases the hold; the next check stores active access.
+      heldRemotely = false;
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(checked(memberOnly)).toBe(2);
+      expect(stored.get(memberOnly)).toBe('active');
+
+      // Active again, so it is not polled any more.
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(checked(memberOnly)).toBe(2);
+      expect(checked(withAgent)).toBe(0);
+      expect(checked(stillActive)).toBe(0);
+      runtime.stop();
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      expect(resolveConnectionAccess).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not reopen enrolled-agent remote work after restart while owner access is unavailable', async () => {
     const harness = createRoomHarness({
       agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),

@@ -213,7 +213,7 @@ export class ShapeScheduleService implements ShapeScheduleServiceLike {
       : null;
 
     const schedule = discovered
-      ? this.deps.taskStore.upsertFromFile(discovered.def, agentId ?? undefined, {
+      ? this.deps.taskStore.fileSync.upsertFromFile(discovered.def, agentId ?? undefined, {
           source: 'discovery',
           problem: discovered.problem,
         })

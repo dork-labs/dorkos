@@ -270,8 +270,33 @@ export interface OperatingSkill {
  *   now prints what each new version runs and waits on an approval card, then
  *   takes `--approval <token>`. An agent seeded at 26 would run the old command
  *   and read the card as a failure.
+ * - 28: the marketplace and scheduling pages catch up with the package
+ *   programme (DOR-2305). `using-the-marketplace` teaches `dorkos marketplace
+ *   installed|outdated` (and outdated's exit codes), what an update keeps
+ *   (`.dork-old` / `.dork-new`, and what `userEditable` may not cover), and
+ *   global packages held back until a person approves them, which an agent
+ *   cannot do itself. `scheduling-tasks` says the timezone is part of what a
+ *   person approves (DOR-2307), that an agent's edit stops an approved schedule
+ *   at once (DOR-2313), that a package's schedule takes only on/off and a new
+ *   timing, with `resetTiming` to undo it (DOR-2302), and that schedules under a
+ *   marketplace agent now work, with Make my own copy for a package's own
+ *   (DOR-2272). `using-the-marketplace` also says adding a source fetches its
+ *   list at once and a refresh that can't reach it says so (DOR-2304). An agent
+ *   seeded at 27 would retime a package schedule believing it stays live, tell
+ *   a person a package agent can't have schedules, or try to approve a
+ *   held-back package it installed.
+ * - 29: older installs point at Check files (DOR-2197). `scheduling-tasks`
+ *   said a schedule under a package an older DorkOS installed works after the
+ *   package's next update, and that Make my own copy isn't offered for one yet;
+ *   `using-the-marketplace` gains `verify` and Check files. An agent
+ *   seeded at 28 would tell a person to wait for an update that may never ship.
+ * - 30: an agent's runtime, model and effort moved off \`update_agent\` to
+ *   \`update_agent_execution\` at tier \`destructive\` (DOR-2328), because every
+ *   schedule that follows the agent moves with them. \`managing-agents\` teaches
+ *   it. An agent seeded at 29 has no page naming the capability, so a refused
+ *   \`update_agent\` or \`NEEDS_APPROVAL\` from the HTTP API would read as broken.
  */
-export const OPERATING_SKILLS_VERSION = 27;
+export const OPERATING_SKILLS_VERSION = 30;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

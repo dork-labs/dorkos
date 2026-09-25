@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,6 +12,7 @@ import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
 import { hashSecret } from '../src/security.js';
+import { registerShortNamePages } from '../src/short-names/pages.js';
 
 // COMMUNITY_HOST_PAGE_SCREENSHOTS optionally names a directory for reviewable screenshots.
 const { COMMUNITY_TEST_DATABASE_URL: adminUrl, COMMUNITY_HOST_PAGE_SCREENSHOTS: shots } =
@@ -76,6 +77,10 @@ test.beforeAll(async () => {
       path,
       serveStatic({ path: fileURLToPath(new URL('../dist/index.html', import.meta.url)) })
     );
+  registerShortNamePages(app, {
+    indexPath: fileURLToPath(new URL('../dist/index.html', import.meta.url)),
+    reservedNames: config.reservedShortNames,
+  });
   server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
   await new Promise<void>((resolve) => server.once('listening', resolve));
 
@@ -320,7 +325,7 @@ test('a host holds a community with a notice members can see, then deletes it af
     await expect(
       page.getByText(/Archive, restore, and ownership transfer are unavailable/u)
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Export community' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export this community' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Archive community' })).toHaveCount(0);
     await shot(page, 'held-owner-settings');
 
@@ -346,6 +351,130 @@ test('a host holds a community with a notice members can see, then deletes it af
     await expect(record).toContainText('On hold.');
     await record.getByRole('button', { name: 'Release hold' }).click();
     await expect(record.getByRole('button', { name: 'Hold', exact: true })).toBeVisible();
+  } finally {
+    await context.close();
+  }
+});
+
+test('a hold turns an open channel read-only without a retry loop, and a release brings live updates back', async ({
+  browser,
+}) => {
+  // Purpose (spec `community-hold-keeps-access`, AC-2b): fails if a hold leaves the page retrying
+  // its live stream in a loop, or if the page never resumes live updates after the release.
+  const communityId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await context.newPage();
+  const streamOpens: number[] = [];
+  page.on('response', (response) => {
+    if (/\/channels\/[^/]+\/events$/u.test(new URL(response.url()).pathname))
+      streamOpens.push(response.status());
+  });
+  const lifecycle = async (action: 'hold' | 'release') => {
+    const version = (
+      await pool.query<{ lifecycle_version: number }>(
+        'SELECT lifecycle_version FROM communities WHERE id=$1',
+        [communityId]
+      )
+    ).rows[0].lifecycle_version;
+    const response = await context.request.patch(
+      `${baseUrl}/api/v1/host/communities/${communityId}/lifecycle`,
+      {
+        headers: { origin: baseUrl },
+        data:
+          action === 'hold'
+            ? { action, lifecycleVersion: version, deletionNoticeAt: null }
+            : { action, lifecycleVersion: version },
+      }
+    );
+    expect(response.status(), action).toBe(200);
+  };
+  try {
+    await page.clock.install();
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    await page.goto(`${baseUrl}/c/${communityId}`);
+    await expect(page.getByLabel('Message #general')).toBeVisible();
+    await expect.poll(() => streamOpens).toEqual([200]);
+
+    // The hold closes the open stream as read-only: the banner shows, no error does.
+    await lifecycle('hold');
+    const banner = page.getByRole('status').filter({ hasText: 'You can read it but not post.' });
+    await expect(banner).toBeVisible();
+    await expect(page.getByText('Your access to this channel has changed.')).toHaveCount(0);
+    await expect(page.getByText(/Live updates paused/u)).toHaveCount(0);
+
+    // Approving an installation while held says the connection will only read.
+    const challenge = createHash('sha256')
+      .update(randomBytes(32).toString('base64url'))
+      .digest('base64url');
+    const started = await context.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/pairings/start`,
+      { data: { installName: 'Held laptop', challenge, scopes: ['read'] } }
+    );
+    expect(started.status()).toBe(201);
+    const approval = await context.newPage();
+    await approval.goto((await started.json()).approvalUrl);
+    await expect(
+      approval.getByText(
+        'The community is on hold, so this connection can only read. Connect again after the hold ends to post.'
+      )
+    ).toBeVisible();
+    await approval.close();
+
+    // A page that still believes the community is active opens the stream, which the hold
+    // refuses. It must try again at most once a minute, never in a loop.
+    await page.route('**/api/v1/memberships', async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      for (const membership of body.memberships) membership.lifecycle = 'active';
+      await route.fulfill({ response, json: body });
+    });
+    await page.clock.runFor(5_000);
+    await expect.poll(() => streamOpens).toEqual([200, 423]);
+    // Two minutes in five-second steps, letting each step's requests finish in real time, so a
+    // retry scheduled after a refused request would show up as another open.
+    const advance = async (ms: number) => {
+      for (let passed = 0; passed < ms; passed += 5_000) {
+        await page.clock.runFor(5_000);
+        await new Promise((resolve) => setTimeout(resolve, 75));
+      }
+    };
+    await advance(120_000);
+    expect(streamOpens.length).toBeLessThanOrEqual(4);
+    expect(streamOpens.slice(1).every((status) => status === 423)).toBe(true);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await page.clock.runFor(5_000);
+    await expect(banner).toBeVisible();
+    const refused = streamOpens.length;
+    await advance(120_000);
+    expect(streamOpens.length).toBe(refused);
+
+    // The release is noticed on the next lifecycle check; the stream reopens and a new
+    // message arrives live, with nobody signing in or reconnecting.
+    await lifecycle('release');
+    await page.clock.runFor(5_000);
+    await expect(banner).toHaveCount(0);
+    await expect.poll(() => streamOpens.at(-1)).toBe(200);
+    const channelId = (
+      await pool.query<{ id: string }>(
+        "SELECT id FROM channels WHERE community_id=$1 AND name='general'",
+        [communityId]
+      )
+    ).rows[0].id;
+    const posted = await context.request.post(
+      `${baseUrl}/api/v1/communities/${communityId}/channels/${channelId}/entries`,
+      {
+        headers: { origin: baseUrl },
+        data: { text: 'Back after the hold', idempotencyKey: 'after-hold' },
+      }
+    );
+    expect(posted.status()).toBe(201);
+    await expect(page.getByText('Back after the hold')).toBeVisible();
   } finally {
     await context.close();
   }
@@ -389,5 +518,222 @@ test('saving limits leaves a file-space limit set through the API exactly as it 
   } finally {
     await pool.query('DELETE FROM community_limits');
     await context.close();
+  }
+});
+
+/** Set up a second community the operator owns, with its own channel, off-screen. */
+async function secondCommunity(operatorCookie: string) {
+  const client = await pool.connect();
+  let communityId: string;
+  try {
+    await client.query('BEGIN');
+    communityId = (
+      await client.query<{ id: string }>(
+        "INSERT INTO communities(name,lifecycle) VALUES('Second Place','pending_owner') RETURNING id"
+      )
+    ).rows[0].id;
+    const owner = await client.query<{ id: string }>(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       SELECT $1,id,'Host Operator','host-operator','owner' FROM "user" WHERE email=$2
+       RETURNING id`,
+      [communityId, operator.email]
+    );
+    await client.query(
+      'INSERT INTO community_handles(community_id,handle,member_id) VALUES($1,$2,$3)',
+      [communityId, 'host-operator', owner.rows[0].id]
+    );
+    await client.query("UPDATE communities SET lifecycle='active' WHERE id=$1", [communityId]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  const channel = await fetch(`${baseUrl}/api/v1/communities/${communityId}/channels`, {
+    method: 'POST',
+    headers: { origin: baseUrl, 'content-type': 'application/json', cookie: operatorCookie },
+    body: JSON.stringify({ name: 'lobby', visibility: 'public' }),
+  });
+  expect(channel.status).toBe(201);
+  return communityId;
+}
+
+test('a community opens at its short address, and an old address moves to the new one', async ({
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  const firstId = (
+    await pool.query<{ id: string }>("SELECT id FROM communities WHERE name='First Place'")
+  ).rows[0].id;
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseUrl });
+  const page = await context.newPage();
+  const outsider = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  try {
+    const signedIn = await context.request.post(`${baseUrl}/api/auth/sign-in/email`, {
+      headers: { origin: baseUrl },
+      data: operator,
+    });
+    expect(signedIn.ok()).toBe(true);
+    const operatorCookie = (await context.cookies(baseUrl))
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join('; ');
+    const secondId = await secondCommunity(operatorCookie);
+    const named = await context.request.put(
+      `${baseUrl}/api/v1/host/communities/${secondId}/short-name`,
+      { headers: { origin: baseUrl }, data: { shortName: 'second-home' } }
+    );
+    expect(named.status()).toBe(200);
+
+    // The host names the first community from its record.
+    await page.goto(`${baseUrl}/host`);
+    const record = page.getByRole('article', { name: 'First Place community' });
+    await record.getByText('Web address', { exact: true }).click();
+    const form = record.getByRole('form', { name: 'First Place web address' });
+    await form.getByLabel('Short name').fill('First-Place');
+    await form.getByRole('button', { name: 'Save address' }).click();
+    await expect(form).toContainText('Web address saved.');
+    await expect(record).toContainText('/first-place ·');
+    await shot(page, 'host-web-address');
+
+    // Each name opens its own community, and the address bar keeps the name.
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/first-place');
+    await page.goto(`${baseUrl}/second-home`);
+    await expect(page.getByRole('heading', { name: '# lobby' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '# general' })).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe('/second-home');
+
+    // Settings under the name offer the community's address to copy, never an invitation.
+    await page.goto(`${baseUrl}/first-place/settings`);
+    await expect(page.getByRole('heading', { name: 'Your space' })).toBeVisible();
+    const address = page.getByLabel('Address', { exact: true });
+    await expect(address).toHaveValue(`${baseUrl}/first-place`);
+    await page.getByRole('button', { name: 'Copy link' }).first().click();
+    await expect(page.getByText('Link copied.')).toBeVisible();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      `${baseUrl}/first-place`
+    );
+    await shot(page, 'community-address');
+
+    // Another spelling of a name moves to its one spelling, on the server and in the browser.
+    await page.goto(`${baseUrl}/First-Place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/first-place');
+    await page.goto(`${baseUrl}/%66irst-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/first-place');
+
+    // After a rename, the old address still opens the community and shows the new one.
+    await page.goto(`${baseUrl}/host`);
+    await record.getByText('Web address', { exact: true }).click();
+    await form.getByLabel('Short name').fill('first-place-two');
+    await form.getByRole('button', { name: 'Save address' }).click();
+    await expect(form).toContainText('Web address saved.');
+    const retired = form.getByRole('list', { name: 'Old addresses that still lead here' });
+    await expect(retired.getByRole('listitem')).toHaveCount(1);
+    await expect(retired.locator('.font-mono')).toHaveText(['/first-place']);
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    await expect.poll(() => new URL(page.url()).pathname).toBe('/first-place-two');
+
+    // Releasing an old address asks first; cancelling keeps it.
+    await page.goto(`${baseUrl}/host`);
+    await record.getByText('Web address', { exact: true }).click();
+    await retired.getByRole('button', { name: 'Release' }).click();
+    const confirm = page.getByRole('dialog', { name: 'Release /first-place?' });
+    await expect(confirm).toBeVisible();
+    await shot(page, 'host-release-address');
+    await confirm.getByRole('button', { name: 'Cancel' }).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(retired.getByRole('listitem')).toHaveCount(1);
+    await retired.getByRole('button', { name: 'Release' }).click();
+    await confirm.getByRole('button', { name: 'Release address' }).click();
+    await expect(form).toContainText('Released /first-place.');
+    await expect(retired).toHaveCount(0);
+    await page.goto(`${baseUrl}/first-place`);
+    await expect(page.getByText('No community at this address.')).toBeVisible();
+
+    // A lookup that fails for a reason other than "no such name" offers a retry, not the chooser.
+    let failed = false;
+    await page.route('**/api/v1/community-names/*', async (route) => {
+      if (failed) return route.fallback();
+      failed = true;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'UNAVAILABLE', message: 'Try again shortly.' }),
+      });
+    });
+    await page.goto(`${baseUrl}/first-place-two`);
+    await expect(page.getByRole('alert')).toContainText('Couldn’t open this community.');
+    await expect(page.getByText('No community at this address.')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Try again' }).click();
+    await expect(page.getByRole('heading', { name: '# general' })).toBeVisible();
+    await page.unroute('**/api/v1/community-names/*');
+
+    // An address that leads nowhere says only that.
+    await page.goto(`${baseUrl}/nobody-here`);
+    await expect(page.getByText('No community at this address.')).toBeVisible();
+
+    // A signed-in person who is not a member goes back to the chooser, as at /c/<uuid>.
+    const invite = await context.request.post(`${baseUrl}/api/v1/communities/${secondId}/invites`, {
+      headers: { origin: baseUrl },
+      data: { seats: 1 },
+    });
+    expect(invite.status()).toBe(201);
+    const { token } = (await invite.json()) as { token: string };
+    const tenant = `${baseUrl}/api/v1/communities/${secondId}`;
+    const headers = { origin: baseUrl };
+    expect(
+      (
+        await outsider.request.post(`${tenant}/invites/preflight`, { headers, data: { token } })
+      ).ok()
+    ).toBe(true);
+    expect(
+      (
+        await outsider.request.post(`${baseUrl}/api/auth/sign-up/email`, {
+          headers,
+          data: { name: 'Rin', email: 'rin@names.test', password: 'password1234' },
+        })
+      ).ok()
+    ).toBe(true);
+    expect(
+      (await outsider.request.post(`${tenant}/invites/bind`, { headers, data: {} })).ok()
+    ).toBe(true);
+    expect(
+      (await outsider.request.post(`${tenant}/invites/redeem`, { headers, data: {} })).ok()
+    ).toBe(true);
+    const outsiderPage = await outsider.newPage();
+    await outsiderPage.goto(`${baseUrl}/first-place-two`);
+    await expect(outsiderPage).toHaveURL(`${baseUrl}/`);
+    await expect(outsiderPage.getByRole('status')).toHaveText(
+      'That community is not available to this account.'
+    );
+
+    // A community suspended while someone has it open by its name sends them to the chooser.
+    await page.goto(`${baseUrl}/second-home`);
+    await expect(page.getByRole('heading', { name: '# lobby' })).toBeVisible();
+    await pool.query(
+      "UPDATE communities SET lifecycle='suspended',suspended_from_state='active',suspended_at=now() WHERE id=$1",
+      [secondId]
+    );
+    await expect(page).toHaveURL(`${baseUrl}/`, { timeout: 15_000 });
+    await expect(page.getByRole('status')).toHaveText(
+      'That community is not available to this account.'
+    );
+
+    // Server-minted links keep the UUID, never the name.
+    const firstInvite = await context.request.post(
+      `${baseUrl}/api/v1/communities/${firstId}/invites`,
+      { headers: { origin: baseUrl }, data: { seats: 1 } }
+    );
+    expect(firstInvite.status()).toBe(201);
+  } finally {
+    await pool.query('DELETE FROM community_short_names');
+    await context.close();
+    await outsider.close();
   }
 });

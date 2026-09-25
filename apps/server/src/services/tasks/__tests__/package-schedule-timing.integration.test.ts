@@ -26,7 +26,7 @@ import type { TaskRegistrar } from '../task-registrar.js';
 import { agentSkillsRoot } from '../skills-roots.js';
 import { skillsRoot } from './task-root-fixtures.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
-import { scheduleContentKey } from '../schedule-permission-clamp.js';
+import { scheduleContentKey, taskWorkOf } from '../schedule-permission-clamp.js';
 
 const AGENT_ID = 'agent-1';
 
@@ -89,7 +89,7 @@ const meshCore = { getProjectPath: () => projectPath };
 /** Discover what is on disk, the way the five-minute pass does. */
 async function sweep(): Promise<Task> {
   await reconciler.reconcile();
-  return store.getByFilePath(packagedFile)!;
+  return store.fileSync.getByFilePath(packagedFile)!;
 }
 
 /**
@@ -106,14 +106,9 @@ async function patch(
   if (!outcome.ok) return { ok: false, code: outcome.code };
   store.updateTask(existing.id, data, { timingLandsOn: outcome.timingLandsOn });
   if (!outcome.changesFile) {
-    store.settleApprovedWorkChange(
+    store.approvals.settleApprovedWorkChange(
       existing.id,
-      {
-        prompt: existing.prompt,
-        cron: existing.cron ?? '',
-        timezone: existing.timezone ?? 'UTC',
-        status: 'active',
-      },
+      { ...taskWorkOf(existing), status: 'active' },
       { trusted }
     );
   }

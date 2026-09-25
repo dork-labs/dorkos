@@ -1,7 +1,7 @@
 ---
 id: 260923-163515
 title: ${CLAUDE_PLUGIN_DATA} resolves to the install root's .dork/data/, one directory per install
-status: draft
+status: accepted
 created: 2026-09-23
 spec: marketplace-package-file-ownership
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: marketplace-package-file-ownership)
+Accepted (extracted from spec: marketplace-package-file-ownership)
 
 ## Context
 

@@ -24,7 +24,7 @@
  *
  * @module services/tasks/schedule-permission-clamp
  */
-import type { PermissionMode } from '@dorkos/shared/schemas';
+import { EffortLevelSchema, type PermissionMode } from '@dorkos/shared/schemas';
 
 /**
  * The mode a clamped schedule falls back to — the same value both content
@@ -71,7 +71,7 @@ export function clampSchedulePermissionMode(declared: PermissionMode): {
  * bypass that row already carries. Structural on purpose — the store passes the
  * four columns it read, and nothing here needs a Drizzle type.
  */
-export interface ApprovedSchedule {
+export interface ApprovedSchedule extends ScheduleSettings {
   /** The mode the row holds. */
   permissionMode: PermissionMode;
   /** The row's lifecycle status. Only `active` is a live approval. */
@@ -89,8 +89,74 @@ export interface ApprovedSchedule {
   approvedContentKey: string | null;
 }
 
+/**
+ * The settings of a schedule that are part of what a person approves
+ * (DOR-2323), beside its prompt and timing.
+ *
+ * Each one changes what an unattended run does, what it may cost, or what it
+ * carries with it, so a person who approved one value did not approve another:
+ *
+ * - `name` is what the run is told it is doing (`Job: <name>`, `task-append.ts`);
+ * - `runtime`, `model` and `effort` decide which agent does the work, how
+ *   capable it is, and what it costs;
+ * - `maxRuntime` is the ceiling on how long, and so how much, one unattended
+ *   run may spend;
+ * - `sticky` decides whether every run resumes one session and carries
+ *   everything earlier runs saw, which changes what a run knows and can repeat.
+ *
+ * `enabled` and `permissionMode` are deliberately not here: the switch is the
+ * person's own control, and the permission level has its own grant rule.
+ */
+export interface ScheduleSettings {
+  /** The schedule's name (its folder name). */
+  name: string;
+  /** The runtime its runs execute on, `null` to follow the agent. */
+  runtime: string | null;
+  /** The model, in that runtime's ids, `null` to follow the agent. */
+  model: string | null;
+  /** The reasoning-effort rung, `null` to follow the agent. */
+  effort: string | null;
+  /** The longest one run may take, in milliseconds, `null` for the default. */
+  maxRuntime: number | null;
+  /** Whether every run resumes one persistent session. */
+  sticky: boolean;
+}
+
+/**
+ * The approved work a task describes: its prompt, its settings, and the timing
+ * the API reports (which is the timing that runs).
+ *
+ * @param task - A task as the store hands it out.
+ */
+export function taskWorkOf(
+  task: ScheduleSettings & { prompt: string; cron: string | null; timezone: string | null }
+): IncomingTaskContent {
+  return {
+    ...scheduleSettingsOf(task),
+    prompt: task.prompt,
+    cron: task.cron ?? '',
+    timezone: task.timezone ?? 'UTC',
+  };
+}
+
+/** The {@link ScheduleSettings} of a row or task, and nothing else of it. */
+export function scheduleSettingsOf(source: ScheduleSettings): ScheduleSettings {
+  return {
+    name: source.name,
+    runtime: source.runtime ?? null,
+    model: source.model ?? null,
+    // Read the way the task reports it (`task-row-mappers.ts`): an effort the
+    // schema does not know is no effort, so the key of a row and the key of
+    // the task it maps to always agree.
+    effort: EffortLevelSchema.safeParse(source.effort).success ? source.effort : null,
+    maxRuntime: source.maxRuntime ?? null,
+    // Absent means off, as it does to the store and the runner.
+    sticky: source.sticky === true,
+  };
+}
+
 /** The material content of the SKILL.md being synced into that row. */
-export interface IncomingTaskContent {
+export interface IncomingTaskContent extends ScheduleSettings {
   /** The file's body, which becomes the row's prompt. */
   prompt: string;
   /** The file's `cron:` frontmatter, `''` when absent. */
@@ -104,8 +170,9 @@ export interface IncomingTaskContent {
 }
 
 /**
- * The identity of a piece of approved work: what it does, and when — the
- * prompt, the cron, and the timezone the cron is read in (DOR-2307).
+ * The identity of a piece of approved work: what it does, when, and how — the
+ * prompt, the cron, the timezone the cron is read in (DOR-2307), and the
+ * {@link ScheduleSettings} (DOR-2323).
  *
  * **One helper, two gates.** The bypass keep-grant below and the arm gate
  * further down both answer "is this the same schedule a person already looked
@@ -123,36 +190,83 @@ export interface IncomingTaskContent {
  * @returns A string that is equal exactly when the content is.
  */
 export function scheduleContentKey(content: IncomingTaskContent): string {
-  return JSON.stringify([content.prompt, content.cron, content.timezone]);
+  const settings = scheduleSettingsOf(content);
+  return JSON.stringify([
+    content.prompt,
+    content.cron,
+    content.timezone,
+    settings.name,
+    settings.runtime,
+    settings.model,
+    settings.effort,
+    settings.maxRuntime,
+    settings.sticky,
+  ]);
 }
 
+/** How many parts a key this build writes has ({@link scheduleContentKey}). */
+const CONTENT_KEY_PARTS = 9;
+
 /**
- * Move a grant recorded before the key carried a timezone onto today's key
- * (DOR-2307), or return `null` when it needs no moving.
+ * The approved work a key records, read back, or `null` for a key this build
+ * did not write in the current format.
  *
- * A legacy key is `[prompt, cron]`. It never said which timezone was approved,
- * and the only timezone it has ever been checked against is the one the row
- * runs in now — a timezone change never withdrew it. So the grant is extended
- * with exactly that timezone: what was running approved keeps running
- * approved, and nothing else is approved by the upgrade. A legacy key that no
- * longer matches the row's prompt and cron still does not match after it, so a
- * grant that was about to be withdrawn is withdrawn just the same.
+ * Used to say what changed when a schedule waits again (`approvalChanges`), so
+ * it is strict: anything else reads as nothing.
  *
- * @param key - The stored grant.
- * @param timezone - The timezone the row runs in now.
- * @returns The upgraded key, or `null` for a key that is already current or
- *   is not one this build wrote.
+ * @param key - A stored content key.
  */
-export function upgradeLegacyContentKey(key: string, timezone: string): string | null {
+export function parseContentKey(key: string): IncomingTaskContent | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(key);
   } catch {
     return null;
   }
-  if (!Array.isArray(parsed) || parsed.length !== 2) return null;
+  if (!Array.isArray(parsed) || parsed.length !== CONTENT_KEY_PARTS) return null;
+  const [prompt, cron, timezone, name, runtime, model, effort, maxRuntime, sticky] = parsed;
+  const text = (v: unknown) => typeof v === 'string';
+  const nullableText = (v: unknown) => v === null || typeof v === 'string';
+  if (![prompt, cron, timezone, name].every(text)) return null;
+  if (![runtime, model, effort].every(nullableText)) return null;
+  if (!(maxRuntime === null || typeof maxRuntime === 'number')) return null;
+  if (typeof sticky !== 'boolean') return null;
+  return { prompt, cron, timezone, name, runtime, model, effort, maxRuntime, sticky };
+}
+
+/**
+ * Move a grant recorded in an older key format onto today's key, or return
+ * `null` when it needs no moving.
+ *
+ * Two older formats exist. `[prompt, cron]` (before DOR-2307) never said which
+ * timezone was approved; `[prompt, cron, timezone]` (before DOR-2323) never
+ * said which {@link ScheduleSettings}. Each was only ever checked against the
+ * values the row runs with now, since a change to any of them never withdrew
+ * it. So the grant is extended with exactly those values: what was running
+ * approved keeps running approved, and nothing else is approved by the
+ * upgrade. A legacy key that no longer matches the row's prompt and timing
+ * still does not match after it, so a grant that was about to be withdrawn is
+ * withdrawn just the same.
+ *
+ * @param key - The stored grant.
+ * @param current - The timezone and settings the row runs with now.
+ * @returns The upgraded key, or `null` for a key that is already current or
+ *   is not one this build wrote.
+ */
+export function upgradeLegacyContentKey(
+  key: string,
+  current: { timezone: string } & ScheduleSettings
+): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(key);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || (parsed.length !== 2 && parsed.length !== 3)) return null;
   if (!parsed.every((part) => typeof part === 'string')) return null;
-  return JSON.stringify([parsed[0], parsed[1], timezone]);
+  const [prompt, cron, timezone = current.timezone] = parsed as string[];
+  return scheduleContentKey({ ...scheduleSettingsOf(current), prompt, cron, timezone });
 }
 
 /**
@@ -181,13 +295,7 @@ function keepsApprovedBypass(
   if (!existing) return false;
   if (existing.permissionMode !== 'bypassPermissions') return false;
   if (existing.status !== 'active') return false;
-  return (
-    scheduleContentKey({
-      prompt: existing.prompt,
-      cron: existing.cron,
-      timezone: existing.timezone,
-    }) === scheduleContentKey(incoming)
-  );
+  return scheduleContentKey(existing) === scheduleContentKey(incoming);
 }
 
 /**

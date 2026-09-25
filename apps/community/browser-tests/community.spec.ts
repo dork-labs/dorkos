@@ -13,6 +13,8 @@ import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { createCommunityApp } from '../src/app.js';
 import { parseConfig } from '../src/config.js';
 import { migrate } from '../src/migrate.js';
+import { startExportWorker } from '../src/exports/worker.js';
+import { createBlobStore } from '../src/storage/index.js';
 
 declare global {
   interface Window {
@@ -35,6 +37,7 @@ let pool: Pool;
 let server: ReturnType<typeof serve>;
 let baseUrl: string;
 let blobDir: string;
+let exportWorker: ReturnType<typeof setInterval> | undefined;
 async function freePort() {
   const socket = createServer();
   await new Promise<void>((resolve) => socket.listen(0, '127.0.0.1', resolve));
@@ -59,7 +62,16 @@ test.beforeAll(async () => {
     COMMUNITY_PUBLIC_URL: baseUrl,
     COMMUNITY_STORAGE_PATH: blobDir,
   });
-  const app = createCommunityApp({ config, pool });
+  const blobStore = createBlobStore(config);
+  const app = createCommunityApp({ config, pool, blobStore });
+  // Exports are built in the background, as main.ts runs them.
+  exportWorker = startExportWorker({
+    pool,
+    blobStore,
+    settings: config.exports,
+    concurrency: 1,
+    pollMs: 1_500,
+  });
   const staticRoot = fileURLToPath(new URL('../dist/', import.meta.url));
   app.use('/assets/*', serveStatic({ root: staticRoot }));
   for (const path of [
@@ -82,6 +94,7 @@ test.beforeAll(async () => {
   await new Promise<void>((resolve) => server.once('listening', resolve));
 });
 test.afterAll(async () => {
+  clearInterval(exportWorker);
   if (server) {
     if ('closeAllConnections' in server) server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -287,9 +300,51 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await expect(ownerPage.getByLabel('Admission policy')).toHaveValue('closed');
     const exportPanel = ownerPage.getByRole('heading', { name: 'Export' }).locator('..');
     await exportPanel.getByLabel('Password').fill('password1234');
+    await exportPanel.getByRole('button', { name: 'Export this community' }).click();
+    // Prepared in the background: the panel says so and shows progress, then polls until ready.
+    await expect(exportPanel.getByRole('status')).toContainText("We're preparing your export.");
+    await expect(exportPanel.getByLabel('Export progress')).toBeVisible();
+    const settingsDownload = exportPanel.getByRole('link', { name: /^Download \(/ });
+    await expect(settingsDownload).toBeVisible({ timeout: 20_000 });
+    await expect(exportPanel.getByText(/^Available until /)).toBeVisible();
+    for (const width of [390, 768, 1280]) {
+      await ownerPage.setViewportSize({ width, height: 900 });
+      await settingsDownload.scrollIntoViewIfNeeded();
+      await expect(settingsDownload).toBeInViewport();
+      // The button stays inside its panel's padding, and the panel keeps the page's gutter.
+      const fit = await settingsDownload.evaluate((link) => {
+        const panel = link.closest('.panel')!;
+        const style = getComputedStyle(panel);
+        const outer = panel.getBoundingClientRect();
+        const box = link.getBoundingClientRect();
+        return {
+          overflow: box.right - (outer.right - parseFloat(style.paddingRight)),
+          gutter: document.documentElement.clientWidth - outer.right,
+        };
+      });
+      expect(fit.overflow, `download button stays in its panel at ${width}px`).toBeLessThanOrEqual(
+        0
+      );
+      expect(fit.gutter, `the panel keeps its gutter at ${width}px`).toBeGreaterThanOrEqual(16);
+      expect(
+        await ownerPage.evaluate(
+          () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+        ),
+        `no sideways scroll at ${width}px`
+      ).toBe(true);
+    }
     const settingsExport = ownerPage.waitForEvent('download');
-    await exportPanel.getByRole('button', { name: 'Export community' }).click();
+    await settingsDownload.click();
     expect((await settingsExport).suggestedFilename()).toBe('community-export.zip');
+    // An erasure deletes ready exports; the panel checks before downloading and says why.
+    await pool.query(
+      "DELETE FROM export_archives WHERE scope='owner' AND state='ready' AND community_id IN (SELECT community_id FROM members)"
+    );
+    await settingsDownload.click();
+    await expect(exportPanel.getByRole('status')).toContainText(
+      'deleted because someone in this community erased their data'
+    );
+    await expect(exportPanel.getByRole('button', { name: 'Export this community' })).toBeVisible();
     await ownerPage.setViewportSize({ width: 390, height: 844 });
     await ownerPage.getByRole('button', { name: 'Schedule deletion' }).click();
     const deletionDialog = ownerPage.getByRole('dialog', {
@@ -359,7 +414,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     await memberPage.getByLabel('Message #general').fill('Here are the notes');
     await memberPage.getByRole('button', { name: 'Send' }).click();
     await expect(ownerPage.getByText('Here are the notes')).toBeVisible();
-    const file = ownerPage.getByRole('button', { name: 'notes.txt' });
+    const file = ownerPage.getByRole('button', { name: 'notes.txt', exact: true });
     await expect(file).toBeVisible();
     await expect
       .poll(async () =>
@@ -685,8 +740,11 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
         .getByRole('navigation', { name: 'Settings sections' })
         .getByRole('button', { name: 'Account' })
     ).toHaveClass(/primary/);
+    await memberPage.getByRole('button', { name: 'Download my data' }).click();
+    const personalDownload = memberPage.getByRole('link', { name: /^Download \(/ });
+    await expect(personalDownload).toBeVisible({ timeout: 20_000 });
     const exportDownload = memberPage.waitForEvent('download');
-    await memberPage.getByRole('button', { name: 'Export my data' }).click();
+    await personalDownload.click();
     expect((await exportDownload).suggestedFilename()).toBe('my-community-data.zip');
     await memberPage.getByLabel('Enter Gathering Place').fill('Gathering Place');
     await memberPage.getByLabel('Confirm password').fill('password1234');
@@ -805,7 +863,7 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     try {
       const oauthPage = await oauth.newPage();
       await oauthPage.route('**/auth-options', (route) =>
-        route.fulfill({ json: { google: true, github: false } })
+        route.fulfill({ json: { google: true, github: false, oidc: null } })
       );
       let callbackUrl = '';
       await oauthPage.route('**/api/auth/sign-in/social', async (route) => {

@@ -1,9 +1,17 @@
 import { z } from 'zod';
+import {
+  COMMUNITY_RESERVED_SHORT_NAMES,
+  COMMUNITY_SHORT_NAME_PATTERN,
+} from '@dorkos/shared/community-admin-wire';
 import { isAbsolute } from 'node:path';
 import { parseCommunityReportMailto } from '@dorkos/shared/community-wire';
 
 const integer = (name: string, fallback: number, ceiling: number) =>
   z.coerce.number().int().min(1, `${name} must be positive`).max(ceiling).default(fallback);
+const between = (floor: number, fallback: number, ceiling: number) =>
+  z.coerce.number().int().min(floor).max(ceiling).default(fallback);
+
+const MIB = 1024 * 1024;
 
 /** An optional setting that Compose may pass through as an empty string. */
 const optionalText = z.preprocess(
@@ -33,6 +41,83 @@ function hostLink(name: string, value: string | undefined, allowMailto = false):
   }
   if (url.protocol === 'https:' && url.hostname && !url.username && !url.password) return url.href;
   throw new Error(`${name} must be ${allowed}`);
+}
+
+/** One configured OpenID Connect issuer: the host's own single sign-on, beside passwords. */
+export type CommunityOidcConfig = {
+  /** The issuer, without a trailing slash; discovery is `<issuer>/.well-known/openid-configuration`. */
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  /** Sign-in button text. */
+  label: string;
+  scopes: string[];
+};
+
+// RFC 6749 section 3.3 scope-token characters.
+const SCOPE_TOKEN = /^[\x21\x23-\x5B\x5D-\x7E]+$/u;
+
+/**
+ * Read the OpenID Connect settings: all of issuer, client ID and client secret, or none of them.
+ * The label and scopes are optional and only allowed alongside an issuer.
+ */
+function parseOidc(value: {
+  COMMUNITY_OIDC_ISSUER_URL?: string;
+  COMMUNITY_OIDC_CLIENT_ID?: string;
+  COMMUNITY_OIDC_CLIENT_SECRET?: string;
+  COMMUNITY_OIDC_LABEL?: string;
+  COMMUNITY_OIDC_SCOPES?: string;
+}): CommunityOidcConfig | null {
+  const {
+    COMMUNITY_OIDC_ISSUER_URL: issuerUrl,
+    COMMUNITY_OIDC_CLIENT_ID: clientId,
+    COMMUNITY_OIDC_CLIENT_SECRET: clientSecret,
+    COMMUNITY_OIDC_LABEL: label,
+    COMMUNITY_OIDC_SCOPES: scopes,
+  } = value;
+  if (!issuerUrl && !clientId && !clientSecret) {
+    if (label || scopes)
+      throw new Error(
+        'COMMUNITY_OIDC_LABEL and COMMUNITY_OIDC_SCOPES need COMMUNITY_OIDC_ISSUER_URL, COMMUNITY_OIDC_CLIENT_ID and COMMUNITY_OIDC_CLIENT_SECRET'
+      );
+    return null;
+  }
+  if (!issuerUrl || !clientId || !clientSecret)
+    throw new Error(
+      'COMMUNITY_OIDC_ISSUER_URL, COMMUNITY_OIDC_CLIENT_ID and COMMUNITY_OIDC_CLIENT_SECRET must be set together'
+    );
+  let issuer: URL;
+  try {
+    issuer = new URL(issuerUrl);
+  } catch (cause) {
+    throw new Error('COMMUNITY_OIDC_ISSUER_URL must be an https:// address', { cause });
+  }
+  if (
+    issuer.protocol !== 'https:' &&
+    !(issuer.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(issuer.hostname))
+  )
+    throw new Error('COMMUNITY_OIDC_ISSUER_URL must use HTTPS, or HTTP on localhost');
+  if (issuer.username || issuer.password || issuer.search || issuer.hash)
+    throw new Error(
+      'COMMUNITY_OIDC_ISSUER_URL must not contain credentials, a query or a fragment'
+    );
+  const buttonLabel = label?.trim() ?? 'Single sign-on';
+  if (buttonLabel.length < 1 || buttonLabel.length > 40)
+    throw new Error('COMMUNITY_OIDC_LABEL must be 1 to 40 characters');
+  const scopeList = (scopes ?? 'openid email profile').split(/\s+/u).filter(Boolean);
+  if (
+    !scopeList.includes('openid') ||
+    scopeList.length > 16 ||
+    scopeList.some((scope) => !SCOPE_TOKEN.test(scope))
+  )
+    throw new Error('COMMUNITY_OIDC_SCOPES must be space-separated scopes that include openid');
+  return {
+    issuer: issuer.href.replace(/\/+$/u, ''),
+    clientId,
+    clientSecret,
+    label: buttonLabel,
+    scopes: [...new Set(scopeList)],
+  };
 }
 
 const schema = z.object({
@@ -99,6 +184,34 @@ const schema = z.object({
   COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE: integer('COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE', 5, 20),
   // A notice shorter than a week would not give an owner a fair chance to export.
   COMMUNITY_HOST_DELETION_NOTICE_DAYS: z.coerce.number().int().min(7).max(365).default(14),
+  COMMUNITY_SHORT_NAME_COOLOFF_DAYS: z.coerce.number().int().min(0).max(365).default(90),
+  COMMUNITY_NAME_LOOKUPS_PER_MINUTE: integer('COMMUNITY_NAME_LOOKUPS_PER_MINUTE', 60, 600),
+  // The header a trusted reverse proxy sets to the caller's address. Off unless named.
+  COMMUNITY_TRUSTED_PROXY_HEADER: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined),
+    z
+      .string()
+      .regex(/^[A-Za-z0-9-]{1,64}$/)
+      .optional()
+  ),
+  // Comma-separated short names this host keeps for itself, beside the built-in list.
+  COMMUNITY_RESERVED_SHORT_NAMES: z.preprocess(
+    (value) => (typeof value === 'string' && value.trim() !== '' ? value : undefined),
+    z
+      .string()
+      .transform((value) =>
+        value
+          .split(',')
+          .map((name) => name.trim().toLowerCase())
+          .filter(Boolean)
+      )
+      .pipe(z.array(z.string().regex(COMMUNITY_SHORT_NAME_PATTERN)))
+      .optional()
+  ),
+  COMMUNITY_EXPORT_SEGMENT_BYTES: between(64 * MIB, 256 * MIB, 1024 * MIB),
+  COMMUNITY_EXPORT_TTL_HOURS: between(1, 24, 168),
+  COMMUNITY_EXPORT_MAX_HOURS: between(1, 24, 168),
+  COMMUNITY_EXPORT_CONCURRENCY: between(1, 1, 8),
   COMMUNITY_ERASURE_JOURNAL: z.preprocess(
     (value) => (value === '' ? undefined : value),
     z.string().min(1).optional()
@@ -107,6 +220,11 @@ const schema = z.object({
   COMMUNITY_GOOGLE_CLIENT_SECRET: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_ID: z.string().optional(),
   COMMUNITY_GITHUB_CLIENT_SECRET: z.string().optional(),
+  COMMUNITY_OIDC_ISSUER_URL: optionalText,
+  COMMUNITY_OIDC_CLIENT_ID: optionalText,
+  COMMUNITY_OIDC_CLIENT_SECRET: optionalText,
+  COMMUNITY_OIDC_LABEL: optionalText,
+  COMMUNITY_OIDC_SCOPES: optionalText,
   COMMUNITY_TERMS_URL: optionalText,
   COMMUNITY_PRIVACY_URL: optionalText,
   COMMUNITY_REPORT_ABUSE_URL: optionalText,
@@ -200,6 +318,7 @@ export function parseConfig(env: Record<string, unknown>) {
       secretAccessKey: value.COMMUNITY_S3_SECRET_ACCESS_KEY,
     };
   })();
+  const oidc = parseOidc(value);
   const hostLinks = {
     termsUrl: hostLink('COMMUNITY_TERMS_URL', value.COMMUNITY_TERMS_URL),
     privacyUrl: hostLink('COMMUNITY_PRIVACY_URL', value.COMMUNITY_PRIVACY_URL),
@@ -217,9 +336,23 @@ export function parseConfig(env: Record<string, unknown>) {
     storage,
     port: value.COMMUNITY_PORT,
     testRuntime: value.COMMUNITY_TEST_RUNTIME === 'true',
+    /** Background exports: segment size, archive lifetime, per-job deadline, jobs per replica. */
+    exports: {
+      segmentBytes: value.COMMUNITY_EXPORT_SEGMENT_BYTES,
+      ttlHours: value.COMMUNITY_EXPORT_TTL_HOURS,
+      maxHours: value.COMMUNITY_EXPORT_MAX_HOURS,
+      concurrency: value.COMMUNITY_EXPORT_CONCURRENCY,
+    },
     /** Where each completed erasure's id-only line is also appended, outside the database. */
     erasureJournal: value.COMMUNITY_ERASURE_JOURNAL,
     hostLinks,
+    /** The header a trusted proxy puts the caller's address in; per-caller limits read it. */
+    trustedProxyHeader: value.COMMUNITY_TRUSTED_PROXY_HEADER?.toLowerCase(),
+    /** Every short name no community may take: the built-in paths and this host's additions. */
+    reservedShortNames: new Set([
+      ...COMMUNITY_RESERVED_SHORT_NAMES,
+      ...(value.COMMUNITY_RESERVED_SHORT_NAMES ?? []),
+    ]),
     oauth: {
       google:
         value.COMMUNITY_GOOGLE_CLIENT_ID && value.COMMUNITY_GOOGLE_CLIENT_SECRET
@@ -236,6 +369,7 @@ export function parseConfig(env: Record<string, unknown>) {
             }
           : undefined,
     },
+    oidc,
     limits: {
       postsPerTenMinutes: value.COMMUNITY_POSTS_PER_TEN_MINUTES,
       agentsPerOwner: value.COMMUNITY_AGENTS_PER_OWNER,
@@ -250,6 +384,8 @@ export function parseConfig(env: Record<string, unknown>) {
       hostKeyAttemptsPerMinute: value.COMMUNITY_HOST_KEY_ATTEMPTS_PER_MINUTE,
       reauthAttemptsPerMinute: value.COMMUNITY_REAUTH_ATTEMPTS_PER_MINUTE,
       hostDeletionNoticeDays: value.COMMUNITY_HOST_DELETION_NOTICE_DAYS,
+      shortNameCooloffDays: value.COMMUNITY_SHORT_NAME_COOLOFF_DAYS,
+      nameLookupsPerMinute: value.COMMUNITY_NAME_LOOKUPS_PER_MINUTE,
     },
   };
 }

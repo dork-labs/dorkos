@@ -173,6 +173,8 @@ The browse surface has three sections:
 
 The install confirmation dialog always shows you exactly what the package wants to do (which files it will write, which network hosts it needs to reach, which permissions it will request) before any state changes. You can deny at any point and DorkOS leaves your installation untouched.
 
+That includes commands written into a skill or command's text. A skill can ask Claude Code to run a shell command the moment it is used, before the agent reads it, so each of those commands is listed with the skill it comes from. A new version that adds or changes one asks you again.
+
 ## Keeping packages up to date
 
 The **Installed** tab of Marketplace lists every package you've installed, in every place it's installed. When you open Marketplace, DorkOS checks all of them for a newer version at once. The **Installed** tab shows how many have an update waiting, so you can see it from Browse too.
@@ -186,6 +188,10 @@ Each package says where it stands:
 While the check runs, each package says **Checking for updates…**. It can take a moment when many packages are installed.
 
 **Update all…** opens a list of every package it will update, where each one is installed (all agents, or a named agent), and which version it moves to. Under each package it lists what the new version runs on its own: each command and when it runs, each server or program and whether it starts in every session. What is new or changed since the version you have is marked and comes first; what is the same is folded under a count you can open. A line at the top says how many of the packages run things on their own and how many add something. Nothing changes until you confirm, and then only those packages are updated, exactly as listed. If a package changes what it runs after you opened the list, DorkOS updates nothing and asks you to review it again. If one fails, the others still update, and the failed one shows why. **Check again** runs the check again whenever you like.
+
+A package whose files you or an agent changed since it was installed says how many, for example **3 files changed since install (2 edited, 1 added)**. Open it to see which ones, grouped as edited, added and removed. When an update is waiting, it also says what the update will do: it replaces files you edited and keeps your copies beside them, keeps files you added, and puts back files you removed. **Update all…** says the same for each package it affects.
+
+A package installed by an older version of DorkOS says **Installed by an older DorkOS**, because that version didn't record which files were the package's. DorkOS checks them for you in the background after it starts: it compares the package with the exact version you installed, and records its files only when every file still matches. If that couldn't happen, for example because you were offline, press **Check files** to try again. It compares this package with the version you installed, so updates keep your edits. If the files differ, the package says so, with **Try again** for when you've put things back; its next update still keeps your copies either way. A package installed from a folder on your computer has no version to compare with, so reinstall it to start tracking its files.
 
 ## Managing installed packages
 
@@ -303,6 +309,22 @@ dorkos marketplace list
 # Remove a source
 dorkos marketplace remove my-team
 ```
+
+Adding a source also fetches its listing, so you can install from it straight away. If DorkOS can't
+reach it right then, the source is still added: `dorkos marketplace add` tells you why the listing
+isn't there yet, and `dorkos marketplace refresh my-team` tries again. On the sources page in the
+app, the same reason shows on the source's row, with a **Try again** button beside it.
+
+A refresh always checks the source again. If DorkOS can't reach it but has an earlier copy of its
+listing, it says so and tells you when that copy is from, rather than calling it refreshed.
+
+DorkOS remembers how each source's last check went, whether it came from adding the source, a
+refresh or browsing. `dorkos marketplace list` shows how many packages each source has, or that
+they didn't load and why. The sources page in the app shows the same, even after you reload it or
+open it in another window.
+
+A source's name can use letters, numbers, dots, dashes and underscores, and starts with a letter or
+number.
 
 A source address is either an `https://` link to a git repository, or a folder on this machine
 written as `file:///path/to/folder`. Nothing else works: DorkOS reads a marketplace's listing over

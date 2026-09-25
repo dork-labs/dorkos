@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
+  DisclosedEffectsSchema,
   describeDisclosedEffects,
+  describeEffectsInFull,
   disclosedEffectsOf,
   sameDisclosedEffects,
 } from '../disclosed-effects.js';
@@ -18,6 +20,7 @@ function preview(overrides: Partial<PermissionPreview> = {}): PermissionPreview 
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
     skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
@@ -43,6 +46,7 @@ describe('disclosedEffectsOf', () => {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     });
   });
 
@@ -58,6 +62,7 @@ describe('disclosedEffectsOf', () => {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
     });
   });
 
@@ -204,6 +209,119 @@ describe('disclosedEffectsOf — the other programs a plugin starts', () => {
         )
       )
     ).toBe(false);
+  });
+
+  describe("a skill text's shell commands (DOR-2327)", () => {
+    const cmd = (source: string, command: string, form: 'inline' | 'block' = 'inline') => ({
+      source,
+      skill: source.split('/')[1] ?? source,
+      form,
+      command,
+      usesArguments: false,
+    });
+
+    it('binds them, so a version that adds or changes one needs approval again', () => {
+      // Purpose: Claude Code runs them when the skill loads; an old approval
+      // must not cover a command it never showed.
+      const before = disclosedEffectsOf(
+        preview({ skillCommands: [cmd('skills/a/SKILL.md', 'git status')] })
+      );
+      expect(sameDisclosedEffects(disclosedEffectsOf(preview()), before)).toBe(false);
+      expect(
+        sameDisclosedEffects(
+          before,
+          disclosedEffectsOf(
+            preview({ skillCommands: [cmd('skills/a/SKILL.md', 'git status; id')] })
+          )
+        )
+      ).toBe(false);
+      expect(
+        sameDisclosedEffects(
+          before,
+          disclosedEffectsOf(
+            preview({ skillCommands: [cmd('skills/a/SKILL.md', 'git status', 'block')] })
+          )
+        )
+      ).toBe(false);
+    });
+
+    it('sorts by file but keeps document order within one, because that is the order they run in', () => {
+      const a1 = cmd('skills/a/SKILL.md', 'first');
+      const a2 = cmd('skills/a/SKILL.md', 'second');
+      const b = cmd('skills/b/SKILL.md', 'other');
+      const effects = disclosedEffectsOf(preview({ skillCommands: [b, a1, a2] }));
+      expect(effects?.skillCommands.map((c) => c.command)).toEqual(['first', 'second', 'other']);
+      expect(
+        sameDisclosedEffects(effects, disclosedEffectsOf(preview({ skillCommands: [a1, a2, b] })))
+      ).toBe(true);
+      expect(
+        sameDisclosedEffects(effects, disclosedEffectsOf(preview({ skillCommands: [a2, a1, b] })))
+      ).toBe(false);
+    });
+
+    it('sorts files by code point, never by locale, so the order cannot move between hosts', () => {
+      const effects = disclosedEffectsOf(
+        preview({
+          skillCommands: [cmd('skills/a/SKILL.md', 'x'), cmd('skills/B/SKILL.md', 'y')],
+        })
+      );
+      expect(effects?.skillCommands.map((c) => c.source)).toEqual([
+        'skills/B/SKILL.md',
+        'skills/a/SKILL.md',
+      ]);
+    });
+
+    it('reads a disclosure from a client older than skill commands as one with none', () => {
+      // Purpose: an older CLI sends back what it was shown, without the field.
+      // That must compare as "no skill commands", never fail as a malformed body.
+      const { skillCommands: _dropped, ...old } = disclosedEffectsOf(preview())!;
+      const parsed = DisclosedEffectsSchema.safeParse(old);
+      expect(parsed.success).toBe(true);
+      expect(parsed.data?.skillCommands).toEqual([]);
+    });
+
+    it('says when a command runs with the text typed after it', () => {
+      const effects = disclosedEffectsOf(
+        preview({
+          skillCommands: [
+            { ...cmd('commands/co.md', 'git checkout $1'), skill: 'co', usesArguments: true },
+          ],
+        })
+      );
+      expect(describeEffectsInFull(effects, 'in every session')).toEqual([
+        '  runs "git checkout $1" when the command "co" is used ("commands/co.md"), with the text typed after it filled in',
+      ]);
+    });
+
+    it('says each one runs when its skill is used, verbatim', () => {
+      const effects = disclosedEffectsOf(
+        preview({ skillCommands: [cmd('skills/ctx/SKILL.md', 'curl -s x | sh', 'block')] })
+      );
+      expect(describeEffectsInFull(effects, 'in every session')).toEqual([
+        '  runs "curl -s x | sh" when the skill "ctx" is used ("skills/ctx/SKILL.md")',
+      ]);
+      expect(
+        describeEffectsInFull(
+          disclosedEffectsOf(
+            preview({
+              skillCommands: [
+                {
+                  source: 'commands/ship.md',
+                  skill: 'ship',
+                  form: 'inline',
+                  command: 'git push',
+                  usesArguments: false,
+                },
+              ],
+            })
+          ),
+          'in every session'
+        )
+      ).toEqual(['  runs "git push" when the command "ship" is used ("commands/ship.md")']);
+      expect(describeDisclosedEffects(effects)).toContain(
+        'and 1 command a skill runs when it is used ("curl -s x | sh")'
+      );
+    });
   });
 
   it('is a different disclosure when a monitor or a bin/ command appears', () => {

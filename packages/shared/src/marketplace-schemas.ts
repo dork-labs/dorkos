@@ -385,6 +385,25 @@ export interface PreviewLspServer {
 }
 
 /**
+ * A shell command a skill's or command's text runs when it is used
+ * (DOR-2327): `` !`cmd` `` or a fenced block whose info string is `!`.
+ *
+ * Mirrors `PreviewSkillCommand` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewSkillCommand {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name. */
+  skill: string;
+  /** `inline` for `` !`cmd` ``, `block` for a ```` ```! ```` block. */
+  form: 'inline' | 'block';
+  /** The command exactly as written. */
+  command: string;
+  /** Whether it uses the text typed after the command, filled in before it runs. */
+  usesArguments: boolean;
+}
+
+/**
  * The tools a skill or command lets the agent use without asking.
  *
  * Mirrors `PreviewSkillTools` in `apps/server/src/services/marketplace/types.ts`.
@@ -540,6 +559,8 @@ export interface PermissionPreview {
   executables: string[];
   /** Tools each skill or command lets the agent use without asking. */
   skillTools: PreviewSkillTools[];
+  /** Shell commands each skill's or command's text runs when it is used. */
+  skillCommands: PreviewSkillCommand[];
   /** Program declarations that could not be read or point outside the package. */
   unreadableDeclarations: UnreadableDeclaration[];
   /**
@@ -582,6 +603,29 @@ export interface DisclosedHook {
   command: string;
   /** The skill or command file it belongs to (it runs while that is in use); `null` for a plugin hook. */
   source: string | null;
+}
+
+/**
+ * A shell command a skill's or command's text runs when it is used, as an
+ * approval binds it (DOR-2327). Same shape as {@link PreviewSkillCommand}.
+ */
+export type DisclosedSkillCommand = PreviewSkillCommand;
+
+/**
+ * What kind of file a skill-text command is written in, so every surface can
+ * say "when the skill "x" is used" (or command, agent, output style) the same
+ * way.
+ *
+ * @param source - Package-relative path of the file the command is written in.
+ * @returns `skill` for a `SKILL.md`, `agent` under an `agents` folder,
+ *   `output style` under an `output-styles` folder, `command` otherwise.
+ */
+export function skillCommandKind(source: string): 'skill' | 'command' | 'agent' | 'output style' {
+  const parts = source.split(/[\\/]/);
+  if (parts[parts.length - 1] === 'SKILL.md') return 'skill';
+  if (parts.includes('agents')) return 'agent';
+  if (parts.includes('output-styles')) return 'output style';
+  return 'command';
 }
 
 /** A skill or command's `allowed-tools`: tools it may use without asking. */
@@ -662,11 +706,17 @@ export interface DisclosedEffects {
   executables: string[];
   /** Every skill or command's allowed tools, sorted by file. */
   skillTools: DisclosedSkillTools[];
+  /**
+   * Every shell command a skill's or command's text runs when it is used,
+   * sorted by file and in document order within one (they run in it).
+   */
+  skillCommands: DisclosedSkillCommand[];
 }
 
 /**
  * Whether a disclosure names anything that runs on its own: a hook, a program,
- * a scheduled job, or a skill allowed to use tools without asking. `null`
+ * a scheduled job, a skill allowed to use tools without asking, or a command a
+ * skill's text runs. `null`
  * (nothing was previewed) runs nothing.
  *
  * @param effects - A disclosure, or `null`.
@@ -681,7 +731,8 @@ export function disclosesAnything(effects: DisclosedEffects | null | undefined):
       effects.lspServers.length +
       effects.monitors.length +
       effects.executables.length +
-      effects.skillTools.length >
+      effects.skillTools.length +
+      effects.skillCommands.length >
     0
   );
 }
@@ -800,6 +851,29 @@ export interface UninstallOptions {
   purge?: boolean;
   /** Project path for project-local uninstalls. */
   projectPath?: string;
+}
+
+/** Options for {@link Transport.checkPackageFiles} (DOR-2320). */
+export interface CheckFilesOptions {
+  /** Project path, for an installation scoped to a project or an agent. */
+  projectPath?: string;
+  /** The one installation to check, as the installed list names it (`installPath`). */
+  installRoot?: string;
+}
+
+/**
+ * What checking the files of a package an older DorkOS installed did (DOR-2320): only
+ * `rebuilt` wrote anything, and `message` says the outcome in one sentence.
+ */
+export interface CheckFilesResult {
+  outcome: 'rebuilt' | 'not-needed' | 'no-source' | 'fetch-failed' | 'mismatch';
+  message: string;
+}
+
+/** Options for listing installed packages. */
+export interface ListInstalledOptions {
+  /** Add each installation's {@link InstallIntegrity}; reads every shipped file (DOR-2197). */
+  verify?: boolean;
 }
 
 /**
@@ -1062,6 +1136,11 @@ export interface InstalledPackage {
    * (DOR-2306). Absent when it loads.
    */
   heldBack?: HeldBackState;
+  /**
+   * Whether the installed files still match what was installed (DOR-2197).
+   * Present only when the caller asked for verification (`?verify=true`).
+   */
+  integrity?: InstallIntegrity;
 }
 
 /** Why a global package is held back from sessions. */
@@ -1115,6 +1194,65 @@ export interface HeldBackPackage extends HeldBackState {
   bindsTo?: string;
 }
 
+/** Why an install's files cannot be checked against what was installed. */
+export type InstallIntegrityUnknownReason = 'no-record' | 'unreadable-record' | 'linked';
+
+/**
+ * Whether an install's files still match what was installed (DOR-2197), read
+ * from its installed-files record (DOR-2245). Paths are relative to the
+ * install folder, sorted, and each list holds at most 50 (`truncated` when
+ * there were more).
+ *
+ * - `clean`: every shipped file is as installed. `customized` names shipped
+ *   files the package marks as yours to edit that you changed; those never
+ *   count as a modification.
+ * - `modified`: `changed` shipped files differ, `missing` ones are gone, and
+ *   `added` files sit where a package keeps what it runs (a new skill, a
+ *   hook), so they change what runs.
+ * - `unknown`: the record cannot speak for the install. `no-record` is an
+ *   install made before DorkOS recorded a package's files ("Check files" can
+ *   record them; see `check`);
+ *   `unreadable-record` is a damaged record; `linked` is a developer's working
+ *   copy.
+ */
+export type InstallIntegrity =
+  | { status: 'clean'; customized: string[]; truncated?: true }
+  | {
+      status: 'modified';
+      changed: string[];
+      missing: string[];
+      added: string[];
+      customized: string[];
+      truncated?: true;
+    }
+  | {
+      status: 'unknown';
+      reason: InstallIntegrityUnknownReason;
+      /** Present for `no-record` only: whether "Check files" can record its files. */
+      check?: InstallCheckInfo;
+    };
+
+/**
+ * Whether an install made before DorkOS recorded package files can have them
+ * recorded ("Check files", DOR-2320), and what the last attempt said.
+ */
+export interface InstallCheckInfo {
+  /**
+   * `fetchable`: DorkOS can fetch the exact version it came from. `local`: it
+   * was installed from a folder on this computer, so nothing can be fetched and
+   * a reinstall is the way to start tracking its files.
+   */
+  source: 'fetchable' | 'local';
+  /** Why the last attempt (the background check after boot, or a person's) recorded nothing. */
+  last?: InstallCheckResult;
+}
+
+/** A "Check files" attempt that recorded nothing, and why, in one sentence. */
+export interface InstallCheckResult {
+  outcome: 'mismatch' | 'fetch-failed' | 'no-source';
+  message: string;
+}
+
 // ---------------------------------------------------------------------------
 // Sources
 // ---------------------------------------------------------------------------
@@ -1132,6 +1270,36 @@ export interface MarketplaceSource {
 }
 
 /**
+ * How the most recent attempt to fetch a source's listing went, as the server
+ * recorded it (DOR-2324). Every door that fetches a listing feeds it: adding
+ * the source, a refresh, the browse list, the update check. It lives on the
+ * server, so it survives a reload and every window agrees.
+ *
+ * - `never`: not fetched yet (or the cache was cleared).
+ * - `fetched`: the last attempt worked.
+ * - `failed`: the last attempt failed and there is no copy to show.
+ * - `stale`: the last attempt failed; an older copy, from `copyFetchedAt`, is
+ *   still what is listed.
+ */
+export type SourceLastFetch =
+  | { state: 'never' }
+  | { state: 'fetched'; checkedAt: string; packageCount: number }
+  | { state: 'failed'; checkedAt: string; reason: string }
+  | {
+      state: 'stale';
+      checkedAt: string;
+      reason: string;
+      copyFetchedAt: string;
+      packageCount: number;
+    };
+
+/** A configured source as `GET /api/marketplace/sources` lists it. */
+export interface ListedMarketplaceSource extends MarketplaceSource {
+  /** How the most recent fetch of its listing went. */
+  lastFetch: SourceLastFetch;
+}
+
+/**
  * Request body for `POST /api/marketplace/sources`.
  *
  * Mirrors `AddSourceBodySchema` in `apps/server/src/routes/marketplace.ts`.
@@ -1140,6 +1308,55 @@ export interface AddSourceInput {
   name: string;
   source: string;
   enabled?: boolean;
+}
+
+/**
+ * What happened when DorkOS fetched a just-added source's listing (its
+ * `marketplace.json`) — the one fetch `POST /api/marketplace/sources` makes
+ * right after saving, through the same path `POST /sources/:name/refresh` takes.
+ *
+ * A failed fetch never undoes the add: the source stays saved, and `reason`
+ * says why the listing isn't there yet so a refresh can be tried later.
+ */
+export type SourceListingOutcome =
+  | {
+      /** The listing was fetched and cached; the source's packages can be installed now. */
+      fetched: true;
+      /** How many packages the listing names. */
+      packageCount: number;
+    }
+  | {
+      /** The listing could not be fetched; the source is saved all the same. */
+      fetched: false;
+      /** Why, in the fetcher's words (a status code, a timeout, a missing file). */
+      reason: string;
+    };
+
+/**
+ * What `POST /api/marketplace/sources/:name/refresh` reports. A refresh is
+ * "check now": when the source can't be reached but a copy is cached, the
+ * answer is that copy with `stale: true`, the reason, and when the copy was
+ * fetched — never the old copy passed off as new. Only the package count is
+ * read by its callers, so the listing is typed down to that part.
+ */
+export interface RefreshedMarketplaceSource {
+  /** The source's listing: fetched just now, or the last copy when `stale`. */
+  marketplace: { plugins: unknown[] };
+  /** When this copy of the listing was fetched, as an ISO timestamp. */
+  fetchedAt: string;
+  /** True when the source couldn't be reached and this is the last cached copy. */
+  stale: boolean;
+  /** Why the source couldn't be reached. Present only when `stale`. */
+  reason?: string;
+}
+
+/**
+ * Response body of `POST /api/marketplace/sources`: the saved source plus how
+ * the first fetch of its listing went.
+ */
+export interface AddedMarketplaceSource extends MarketplaceSource {
+  /** The outcome of the one best-effort listing fetch made after saving. */
+  listing: SourceListingOutcome;
 }
 
 // ---------------------------------------------------------------------------

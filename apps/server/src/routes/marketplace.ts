@@ -18,6 +18,7 @@ import {
   mergeMarketplace,
   primaryCategory,
   type MergedMarketplaceEntry,
+  type PackageType,
   type PluginSource,
 } from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -28,7 +29,10 @@ import {
   type PackageCacheRetention,
 } from '../services/marketplace/package-cache-retention.js';
 import { directorySize } from '../services/marketplace/lib/directory-size.js';
-import type { MarketplaceSourceManager } from '../services/marketplace/marketplace-source-manager.js';
+import {
+  InvalidSourceNameError,
+  type MarketplaceSourceManager,
+} from '../services/marketplace/marketplace-source-manager.js';
 import type { PackageFetcher } from '../services/marketplace/package-fetcher.js';
 import type { InstallerLike } from '../services/marketplace/marketplace-installer.js';
 import {
@@ -76,12 +80,18 @@ import {
 } from '../services/marketplace/flows/uninstall.js';
 import { UnsupportedSourceUrlError } from '../services/marketplace/source-url-policy.js';
 import {
+  describeLastFetch,
+  fetchNewSourceListing,
+  refreshSourceListing,
+} from '../services/marketplace/source-listing.js';
+import {
   GitCommitNotFoundError,
   GitFetchError,
   GitRefNotFoundError,
   GitRemoteUnreachableError,
 } from '../services/marketplace/lib/git/git-tree.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
+import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
 import {
   installationUpdateName,
   PackageNotInstalledForUpdateError,
@@ -102,6 +112,7 @@ import {
   MarketplacePathError,
   PathEscapeError,
 } from '../services/marketplace/lib/package-paths.js';
+import { locateInstallRoot } from '../services/marketplace/lib/locate-install.js';
 import {
   installCountsProvider,
   enrichWithInstallCounts,
@@ -131,6 +142,11 @@ import {
   marketplaceSourceRefusalError,
   type MarketplaceSourceAction,
 } from '../services/marketplace/source-write-policy.js';
+import { withIntegrity } from '../services/marketplace/lib/integrity/verify-install.js';
+import {
+  describeStrictRebuild,
+  rebuildRecordStrict,
+} from '../services/marketplace/lib/integrity/strict-record.js';
 
 /**
  * Re-export the canonical {@link InstalledPackage} type from this route module
@@ -245,6 +261,16 @@ const UninstallRequestBodySchema = z.object({
 });
 
 /**
+ * Body schema for `POST /api/marketplace/packages/:name/check-files` (DOR-2320).
+ * `installRoot` narrows the lookup to one installation the caller already
+ * sees; it can never widen it past what the name and scope would find.
+ */
+const CheckFilesRequestBodySchema = z.object({
+  projectPath: z.string().optional(),
+  installRoot: z.string().optional(),
+});
+
+/**
  * Body schema for `POST /api/marketplace/packages/:name/update`: an advisory
  * check, nothing else. Strict, so the retired `apply` is refused with a 400
  * rather than silently read as a check: an update is applied only through
@@ -318,6 +344,16 @@ const PruneCacheBodySchema = z.object({}).strict();
 const GetPackageQuerySchema = z.object({
   marketplace: z.string().optional(),
 });
+
+/**
+ * Whether a list request asked for each install's integrity (`?verify=true`,
+ * DOR-2197). Opt-in, because verifying hashes every shipped file.
+ *
+ * @param req - The request.
+ */
+function wantsVerify(req: Request): boolean {
+  return req.query.verify === 'true';
+}
 
 /**
  * Centralized error → HTTP status mapping. Shared by every install-related
@@ -484,7 +520,7 @@ function updateRefusalResponse(res: Response, refusal: UpdateRefusal): Response 
  * (typically `/api/marketplace`):
  *
  * - `GET /sources` — list configured marketplace sources
- * - `POST /sources` — add a new source (operator-only; agents are refused)
+ * - `POST /sources` — add a new source and fetch its listing once (operator-only; agents are refused)
  * - `DELETE /sources/:name` — remove a source (operator-only; agents are refused)
  * - `POST /sources/:name/refresh` — force refetch of a source's marketplace.json
  * - `GET /installed` — list installed packages across scopes (or one project via `?projectPath`)
@@ -738,7 +774,15 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   router.get('/sources', async (_req, res) => {
     try {
       const sources = await sourceManager.list();
-      res.json({ sources });
+      // How each source's last fetch went, from the record the fetcher keeps
+      // (DOR-2324), so a failed listing is still shown after a reload.
+      const listed = await Promise.all(
+        sources.map(async (source) => ({
+          ...source,
+          lastFetch: await describeLastFetch(cache, source.name),
+        }))
+      );
+      res.json({ sources: listed });
     } catch (err) {
       logger.error('[Marketplace] Failed to list sources', err);
       res.status(500).json({ error: 'Failed to list marketplace sources' });
@@ -769,15 +813,18 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
     }
 
+    let created: MarketplaceSource;
     try {
-      const created = await sourceManager.add(parsed.data);
-      return res.status(201).json(created);
+      created = await sourceManager.add(parsed.data);
     } catch (err) {
       // An address DorkOS will not fetch from. Answered here rather than left
       // to the 500 below: this is the caller's input, and the message names the
       // forms that do work. The address itself is logged rather than echoed —
       // the operator knows what they typed, and the log is where a support
       // question gets answered.
+      if (err instanceof InvalidSourceNameError) {
+        return res.status(400).json({ error: err.message });
+      }
       if (err instanceof UnsupportedSourceUrlError) {
         logger.warn('[Marketplace] Refused an unsupported source address', {
           name: parsed.data.name,
@@ -792,6 +839,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       logger.error('[Marketplace] Failed to add source', err);
       return res.status(500).json({ error: 'Failed to add marketplace source' });
     }
+
+    // One best-effort fetch of the new listing, the way refresh fetches it, so
+    // the first install does not need a refresh first (DOR-2304). It never
+    // throws: a failure is reported in `listing`, and the source stays saved.
+    const listing = await fetchNewSourceListing({ fetcher, cache }, created);
+    return res.status(201).json({ ...created, listing });
   });
 
   // DELETE /sources/:name -- remove a marketplace source (operator-only, DOR-502)
@@ -801,11 +854,21 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
 
     try {
       await sourceManager.remove(req.params.name);
-      res.status(204).send();
     } catch (err) {
       logger.error(`[Marketplace] Failed to remove source ${req.params.name}`, err);
-      res.status(500).json({ error: 'Failed to remove marketplace source' });
+      return res.status(500).json({ error: 'Failed to remove marketplace source' });
     }
+    // Its listing goes with it: listings are cached by name, and one left
+    // behind would pass for the listing of the next source given that name
+    // (DOR-2304). The source is already gone, so a failure here is logged
+    // rather than answered — adding a source clears the name again anyway.
+    updateFlow.clearMemos();
+    try {
+      await cache.removeMarketplace(req.params.name);
+    } catch (err) {
+      logger.warn(`[Marketplace] Removed source ${req.params.name} but kept its listing`, err);
+    }
+    return res.status(204).send();
   });
 
   // POST /sources/:name/refresh -- force refetch of a source's marketplace.json
@@ -816,11 +879,13 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         return res.status(404).json({ error: `Marketplace source '${req.params.name}' not found` });
       }
 
-      const marketplace = await fetcher.fetchMarketplaceJson(source);
+      // "Check now": an unreachable source answers with its last copy marked
+      // `stale`, never the old copy passed off as new (DOR-2304).
+      const refreshed = await refreshSourceListing({ fetcher, cache }, source);
       // "I just pushed; check again": the update check shares commit lookups
       // for a minute, and a refresh is how the operator asks it to look now.
       updateFlow.clearMemos();
-      return res.json({ marketplace, fetchedAt: new Date().toISOString() });
+      return res.json(refreshed);
     } catch (err) {
       logger.error(`[Marketplace] Failed to refresh source ${req.params.name}`, err);
       const message = err instanceof Error ? err.message : 'Failed to refresh marketplace source';
@@ -863,13 +928,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           },
         ])
       );
-      return res.json({
-        packages: records.map((r) => {
-          const held =
-            r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
-          return held ? { ...r.package, heldBack: held } : r.package;
-        }),
+      const packages = records.map((r) => {
+        const held = r.package.scope === 'global' ? heldBack.get(r.package.installPath) : undefined;
+        return held ? { ...r.package, heldBack: held } : r.package;
       });
+      // Verification hashes every shipped file, so it is asked for (DOR-2197).
+      return res.json({ packages: wantsVerify(req) ? await withIntegrity(packages) : packages });
     } catch (err) {
       logger.error('[Marketplace] Failed to list installed packages', err);
       return res.status(500).json({ error: 'Failed to list installed packages' });
@@ -894,7 +958,9 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           provides: await computeProvides(match.installPath),
         }))
       );
-      return res.json({ installations });
+      return res.json({
+        installations: wantsVerify(req) ? await withIntegrity(installations) : installations,
+      });
     } catch (err) {
       logger.error(`[Marketplace] Failed to get installed package ${req.params.name}`, err);
       return res.status(500).json({ error: 'Failed to get installed package' });
@@ -1092,6 +1158,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const global = confined.projectPath === undefined;
       let approved: ApprovedPackage | undefined;
       let heldTo = approvedDisclosure;
+      let heldToFiles: string | undefined;
+      let heldToType: PackageType | undefined;
       if (trustedCaller(readCallerAuthority(req, res))) {
         // The person saw what it runs and which files: the installer holds the
         // install to the disclosure, and consent records it only when the
@@ -1099,21 +1167,39 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         if (approvedDisclosure && approvedContentHash) {
           approved = { disclosed: approvedDisclosure, contentHash: approvedContentHash };
         }
-      } else if (global) {
-        // An agent's global install can load into every session, so one that
-        // runs anything, or that replaces a global package, waits on the same
-        // card an agent's update does (DOR-2306).
-        const asked = await askAboutAgentInstall(req, res, request, confirmationToken);
+      } else {
+        // An agent's global install can load into every session, and an agent
+        // package lands in a folder whose sessions run its skills, wherever
+        // the call was scoped: both wait on a card (DOR-2306, DOR-2325).
+        const asked = await askAboutAgentInstall(
+          req,
+          res,
+          {
+            ...request,
+            ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+          },
+          confirmationToken,
+          global
+        );
         if ('refused' in asked) return asked.refused;
-        approved = asked.approved;
-        // Held to what was previewed either way: a source that changes what
-        // it runs before the install lands is refused, card or not.
-        heldTo = asked.previewed;
+        // Held to the files and the type the preview fetched, card or not: the
+        // install is a second fetch, and a source that serves something else
+        // to it is refused before anything lands (DOR-2325).
+        heldToFiles = asked.contentHash;
+        heldToType = asked.packageType;
+        if (!('unasked' in asked)) {
+          approved = asked.approved;
+          // Held to what was previewed either way: a source that changes what
+          // it runs before the install lands is refused, card or not.
+          heldTo = asked.previewed;
+        }
       }
       const result = await installer.install({
         name: req.params.name,
         ...request,
         ...(heldTo !== undefined && { approvedDisclosure: heldTo }),
+        ...(heldToFiles !== undefined && { approvedContentHash: heldToFiles }),
+        ...(heldToType !== undefined && { approvedPackageType: heldToType }),
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // After the install landed, never before: a failed install records nothing.
@@ -1139,6 +1225,49 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   });
 
   // POST /packages/:name/uninstall -- remove an installed package
+  // POST /packages/:name/check-files -- give an install an older DorkOS made its
+  // installed-files record, from the exact commit it was installed at, or say
+  // why not (DOR-2320). Not tier-gated, on purpose: it writes only a record
+  // that must match the live files byte for byte, so it cannot change what
+  // runs or claim any file that is not the package's; like refreshing a
+  // source, it only brings DorkOS's own bookkeeping up to date.
+  router.post('/packages/:name/check-files', async (req, res) => {
+    const parsed = CheckFilesRequestBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: 'Validation failed', details: z.flattenError(parsed.error) });
+    }
+    try {
+      assertPackageName(req.params.name);
+    } catch (err) {
+      const mapped = mapErrorToStatus(err);
+      return res.status(mapped.status).json(mapped.body);
+    }
+    try {
+      const confined = await confineProjectPath(res, parsed.data.projectPath);
+      if (confined.refused) return confined.refused;
+      const root = await locateInstallRoot({
+        dorkHome,
+        name: req.params.name,
+        ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+        ...(parsed.data.installRoot !== undefined && { installRoot: parsed.data.installRoot }),
+      });
+      if (root === null) throw new PackageNotInstalledError(req.params.name);
+      const result = await rebuildRecordStrict(root, { fetcher, logger });
+      return res.json({
+        outcome: result.outcome,
+        message: describeStrictRebuild(req.params.name, result),
+      });
+    } catch (err) {
+      const mapped = mapErrorToStatus(err);
+      if (mapped.status >= 500) {
+        logger.error(`[Marketplace] Failed to check the files of ${req.params.name}`, err);
+      }
+      return res.status(mapped.status).json(mapped.body);
+    }
+  });
+
   router.post('/packages/:name/uninstall', async (req, res) => {
     const parsed = UninstallRequestBodySchema.safeParse(req.body);
     if (!parsed.success) {
@@ -1358,31 +1487,52 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   });
 
   /**
-   * Preview an agent's global install and, when it runs anything on its own or
-   * replaces a global package, ask a person with the card `marketplace_install`
-   * raises: bound to the package, what it runs and its staged files, and
-   * saying who asked, the version and where it comes from (DOR-2306).
+   * Preview an agent's install and ask a person with the card
+   * `marketplace_install` raises, bound to the package, what it runs and its
+   * staged files, and saying who asked, the version and where it comes from:
    *
-   * @returns What the install is held to, and the person's approval when a
-   *   card was granted; or the response that ends the request unrun.
+   * - an agent package, always, wherever the call was scoped: it lands in
+   *   `agents/<name>/`, whose sessions run its skills (DOR-2325); the card
+   *   names that folder and binds it, and the install is held to the files
+   *   the card showed;
+   * - a global install that runs anything on its own or replaces a global
+   *   package (DOR-2306).
+   *
+   * A project install of any other type is not asked about here: its hooks
+   * are gated when projected.
+   *
+   * @returns What the install is held to (always the previewed content hash
+   *   and type, DOR-2325), and the person's approval when a card was granted;
+   *   `unasked` for a project install no card covers; or the response that
+   *   ends the request unrun.
    */
   const askAboutAgentInstall = async (
     req: Request,
     res: Response,
     request: z.infer<typeof InstallRequestBodySchema>,
-    token: string | undefined
+    token: string | undefined,
+    global: boolean
   ): Promise<
-    { refused: Response } | { previewed: DisclosedEffects | undefined; approved?: ApprovedPackage }
+    | { refused: Response }
+    | ({ contentHash: string; packageType: PackageType } & (
+        { unasked: true } | { previewed: DisclosedEffects | undefined; approved?: ApprovedPackage }
+      ))
   > => {
     const name = String(req.params.name);
     const staged = await installer.preview({ name, ...request });
     const previewed = disclosedEffectsOf(staged.preview) ?? undefined;
-    const activated = GLOBALLY_ACTIVATED_TYPES.has(staged.manifest.type);
-    const replaces = await globalPackageExists(dorkHome, staged.manifest.name);
-    const runs = disclosesAnything(activationEffectsOf(previewed ?? null));
-    if (!activated || (!replaces && !runs)) return { previewed };
-
+    // What the install is held to, asked about or not (DOR-2325).
     const contentHash = await packageContentHash(staged.packagePath);
+    const packageType = staged.manifest.type;
+    const agentPackage = packageType === 'agent';
+    if (!agentPackage) {
+      if (!global) return { unasked: true, contentHash, packageType };
+      const activated = GLOBALLY_ACTIVATED_TYPES.has(staged.manifest.type);
+      const replaces = await globalPackageExists(dorkHome, staged.manifest.name);
+      const runs = disclosesAnything(activationEffectsOf(previewed ?? null));
+      if (!activated || (!replaces && !runs)) return { previewed, contentHash, packageType };
+    }
+
     const identity = getRequestAgentIdentity(res);
     const confirmation: ConfirmationRequest = {
       packageName: name,
@@ -1390,6 +1540,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       operation: 'install',
       preview: staged.preview,
       contentHash,
+      // Where an agent package lands is bound, not only shown: its folder is
+      // where the new agent's sessions run.
+      ...(agentPackage && {
+        packageType: 'agent',
+        projectPath: computeTargetDir(dorkHome, staged.manifest, request.projectPath),
+      }),
       origin: {
         version: staged.manifest.version,
         ...((request.source ?? request.marketplace) !== undefined && {
@@ -1409,8 +1565,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           preview: staged.preview,
           message:
             `${answer.reason ? `${answer.reason} ` : ''}A person must approve this install in ` +
-            'DorkOS first: it runs things on its own in every session, or replaces a package ' +
-            'that does. Send the same request again with this confirmationToken once they have.',
+            'DorkOS first: ' +
+            (agentPackage
+              ? 'it adds an agent whose sessions run what the package brings. '
+              : 'it runs things on its own in every session, or replaces a package that does. ') +
+            'Send the same request again with this confirmationToken once they have.',
         }),
       };
     }
@@ -1421,7 +1580,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           .json({ status: 'declined', reason: answer.reason ?? 'The install was not approved.' }),
       };
     }
-    return { previewed, approved: { disclosed: previewed ?? null, contentHash } };
+    return {
+      previewed,
+      approved: { disclosed: previewed ?? null, contentHash },
+      contentHash,
+      packageType,
+    };
   };
 
   /**

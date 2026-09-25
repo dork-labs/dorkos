@@ -63,7 +63,7 @@ import type {
   AgentManifest,
   AgentManifestUpdate,
   AgentPathEntry,
-  CreateAgentOptions,
+  CreateAgentRequestBody,
   DiscoveryCandidate,
   DenialRecord,
   AgentHealth,
@@ -158,12 +158,17 @@ import type {
   InstallOptions,
   InstallResult,
   UninstallOptions,
+  ListInstalledOptions,
+  CheckFilesOptions,
+  CheckFilesResult,
   UninstallResult,
   ApplyUpdatesOptions,
   InstallationUpdatesResult,
   InstalledPackage,
-  MarketplaceSource,
   AddSourceInput,
+  AddedMarketplaceSource,
+  ListedMarketplaceSource,
+  RefreshedMarketplaceSource,
   InstalledShapeSummary,
   ApplyShapeResult,
   ForkShapeResult,
@@ -2005,7 +2010,7 @@ export interface Transport
   /** Update an agent's fields by path. Returns the updated manifest. */
   updateAgentByPath(path: string, updates: AgentManifestUpdate): Promise<AgentManifest>;
   /** Create a new agent: mkdir + scaffold files + register. Returns the created manifest and resolved path. */
-  createAgent(opts: CreateAgentOptions): Promise<AgentManifest & { _path: string }>;
+  createAgent(opts: CreateAgentRequestBody): Promise<AgentManifest & { _path: string }>;
 
   // --- Discovery ---
 
@@ -2364,8 +2369,22 @@ export interface Transport
    * reinstall detection in the install dialog.
    *
    * @param projectPath - Optional agent project path for the merged view.
+   * @param opts - `verify` adds each installation's `integrity` (DOR-2197).
    */
-  listInstalledPackages(projectPath?: string): Promise<InstalledPackage[]>;
+  listInstalledPackages(
+    projectPath?: string,
+    opts?: ListInstalledOptions
+  ): Promise<InstalledPackage[]>;
+
+  /**
+   * Give an installation an older DorkOS made its installed-files record, from
+   * the exact commit it was installed at, or say why not (DOR-2320). Writes
+   * only when that commit matches the installed files byte for byte.
+   *
+   * @param name - Installed package name. Will be URL-encoded.
+   * @param opts - The installation to check (`installRoot`) and its scope.
+   */
+  checkPackageFiles(name: string, opts?: CheckFilesOptions): Promise<CheckFilesResult>;
 
   /**
    * List every installation of a single package across all scopes (global +
@@ -2378,15 +2397,24 @@ export interface Transport
    */
   listPackageInstallations(name: string): Promise<InstalledPackage[]>;
 
-  /** List all configured marketplace sources. */
-  listMarketplaceSources(): Promise<MarketplaceSource[]>;
+  /** List all configured marketplace sources, with how each one's last listing fetch went. */
+  listMarketplaceSources(): Promise<ListedMarketplaceSource[]>;
 
   /**
-   * Add a new marketplace source.
+   * Add a new marketplace source. The server fetches the new source's listing
+   * once after saving it; `listing` says whether that worked, and a failed
+   * fetch never undoes the add.
    *
    * @param input - Source name, URL, and optional enabled flag.
    */
-  addMarketplaceSource(input: AddSourceInput): Promise<MarketplaceSource>;
+  addMarketplaceSource(input: AddSourceInput): Promise<AddedMarketplaceSource>;
+
+  /**
+   * Fetch a source's listing again, the way `dorkos marketplace refresh` does.
+   *
+   * @param name - Source name. Will be URL-encoded.
+   */
+  refreshMarketplaceSource(name: string): Promise<RefreshedMarketplaceSource>;
 
   /**
    * Remove a configured marketplace source by name.

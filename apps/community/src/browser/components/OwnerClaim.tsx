@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { createAuthClient } from 'better-auth/react';
 import { ArrowRight, Crown, KeyRound, ShieldCheck } from 'lucide-react';
-import type { CommunityWireMembershipSummary } from '@dorkos/shared/community-wire';
+import {
+  COMMUNITY_PASSWORD_MIN_LENGTH,
+  type CommunityWireMembershipSummary,
+} from '@dorkos/shared/community-wire';
 import { describeError, hostRequest, RequestError, request } from '../api.js';
 import { rememberCommunity } from '../remembered-community.js';
 import {
@@ -14,6 +17,7 @@ import {
   rememberPendingOwnerClaim,
 } from '../owner-claim.js';
 import { HostPolicyLinks } from './HostLinks.js';
+import { takeSignInError, useSignInOptions } from '../sign-in-options.js';
 
 type Stage =
   'loading' | 'enter' | 'found' | 'account' | 'confirm' | 'claimed' | 'unavailable' | 'taken';
@@ -61,16 +65,14 @@ export function OwnerClaim() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [providers, setProviders] = useState({ google: false, github: false });
+  // A provider round trip that failed returns here with `?error=`; say why once.
+  const [error, setError] = useState(() => takeSignInError() ?? '');
+  const providers = useSignInOptions();
   const heading = useRef<HTMLHeadingElement>(null);
   const focusedStage = useRef(stage);
   const resumeOnMount = useRef(stage === 'loading');
 
   useEffect(() => {
-    void request<{ google: boolean; github: boolean }>('/api/v1/auth-options')
-      .then(setProviders)
-      .catch(() => {});
     // The secret must never outlive this page, even if the person navigates away mid-claim.
     return () => clearOwnerClaimFragment();
   }, []);
@@ -233,13 +235,15 @@ export function OwnerClaim() {
     setBusy(false);
   }
 
-  async function social(provider: 'google' | 'github') {
+  async function social(provider: 'google' | 'github' | 'oidc') {
     setBusy(true);
     setError('');
     try {
+      const here = window.location.origin + OWNER_CLAIM_PATH;
       const result = await authClient.signIn.social({
         provider,
-        callbackURL: window.location.origin + OWNER_CLAIM_PATH,
+        callbackURL: here,
+        errorCallbackURL: here,
       });
       if (result.error) throw new Error(result.error.message ?? 'Sign in could not start.');
     } catch (cause) {
@@ -384,15 +388,18 @@ export function OwnerClaim() {
                   id="owner-claim-password"
                   type="password"
                   autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  minLength={8}
+                  // Only a new password must meet today's length; an older one still signs in.
+                  minLength={mode === 'signup' ? COMMUNITY_PASSWORD_MIN_LENGTH : undefined}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   required
                 />
-                {mode === 'signin' && (
+                {mode === 'signin' ? (
                   <span className="hint">
                     Forgot your password? Ask the person running this host for help.
                   </span>
+                ) : (
+                  <span className="hint">At least {COMMUNITY_PASSWORD_MIN_LENGTH} characters.</span>
                 )}
               </div>
               <button className="button primary w-full" disabled={busy}>
@@ -404,7 +411,7 @@ export function OwnerClaim() {
                 <KeyRound size={16} aria-hidden="true" />
               </button>
             </form>
-            {(providers.google || providers.github) && (
+            {(providers.google || providers.github || providers.oidc) && (
               <div className="row mt-4">
                 {providers.google && (
                   <button
@@ -424,6 +431,16 @@ export function OwnerClaim() {
                     onClick={() => void social('github')}
                   >
                     Continue with GitHub
+                  </button>
+                )}
+                {providers.oidc && (
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void social('oidc')}
+                  >
+                    Continue with {providers.oidc.label}
                   </button>
                 )}
               </div>

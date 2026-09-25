@@ -6,6 +6,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { collectAgentManifests, listAgentHomeDirectories } from '../collect.js';
 import { runDeepHealthChecks, type DeepHealthDeps } from '../run.js';
+import { gitProtectionCheck } from '@dorkos/shared/git-hardening';
 
 /** A throwaway DORK_HOME-shaped tree, built per test so the real one is never touched. */
 let tmpHome: string;
@@ -106,6 +107,12 @@ describe('runDeepHealthChecks', () => {
         getBindingStore: () => ({ getAll: () => [{ adapterId: 'slack', agentId: 'agent-a' }] }),
       },
       mesh: { listWithPaths: () => [{ id: 'agent-a', projectPath: agentDir }] },
+      installedPackages: {
+        listIntegrity: async () => [
+          { name: 'flow', integrity: { status: 'clean', customized: [] } },
+        ],
+      },
+      gitProtection: () => Promise.resolve(gitProtectionCheck('git version 2.49.1\n')),
     };
   }
 
@@ -114,7 +121,7 @@ describe('runDeepHealthChecks', () => {
 
     const results = await runDeepHealthChecks(healthyDeps(agentDir));
 
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(7);
     expect(results.every((r) => r.status === 'pass')).toBe(true);
   });
 
@@ -134,12 +141,20 @@ describe('runDeepHealthChecks', () => {
         listAdapters: () => [],
         getBindingStore: () => ({ getAll: () => [{ adapterId: 'slack', agentId: 'ghost' }] }),
       },
+      installedPackages: {
+        listIntegrity: async () => [
+          { name: 'old', integrity: { status: 'unknown', reason: 'no-record' } },
+        ],
+      },
+      // Git too old to refuse a git-shaped folder (DOR-2326).
+      gitProtection: () => Promise.resolve(gitProtectionCheck('git version 2.30.0\n')),
     };
 
     const results = await runDeepHealthChecks(deps);
     const statuses = results.map((r) => r.status);
 
-    expect(statuses).toEqual(['warn', 'fail', 'warn', 'warn', 'warn']);
+    expect(statuses).toEqual(['warn', 'fail', 'warn', 'warn', 'warn', 'warn', 'warn']);
+    expect(results[6]?.fix).toContain('2.38');
   });
 
   it('leaves out a binding whose author is not an agent this install knows', async () => {
@@ -161,7 +176,7 @@ describe('runDeepHealthChecks', () => {
   it('reports info, not failure, for subsystems that were never turned on', async () => {
     const results = await runDeepHealthChecks({ dorkHome: tmpHome });
 
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(7);
     expect(results.every((r) => r.status === 'info')).toBe(true);
     expect(results.every((r) => r.detail?.startsWith('Skipped'))).toBe(true);
   });
@@ -174,9 +189,11 @@ describe('runDeepHealthChecks', () => {
       meshFailedToStart: true,
     });
 
-    // Room transcripts still just "not available" — no flag says otherwise.
+    // Room transcripts and installed packages are still just "not available":
+    // no flag says otherwise.
     expect(results[0]?.status).toBe('info');
-    for (const result of results.slice(1)) {
+    expect(results[5]?.status).toBe('info');
+    for (const result of results.slice(1, 5)) {
       expect(result.status).toBe('warn');
       expect(result.detail).toContain('failed to start');
     }
@@ -198,13 +215,13 @@ describe('runDeepHealthChecks', () => {
       },
     });
 
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(7);
     expect(results[1]?.status).toBe('warn');
     expect(results[1]?.label).toContain('Could not run the check');
     // Content-free: the thrown error's path must not ride along.
     expect(JSON.stringify(results[1])).not.toContain('/Users/someone');
-    // The other four are untouched.
-    for (const index of [0, 2, 3, 4]) {
+    // The others are untouched.
+    for (const index of [0, 2, 3, 4, 5, 6]) {
       expect(results[index]?.status).toBe('pass');
     }
   });
