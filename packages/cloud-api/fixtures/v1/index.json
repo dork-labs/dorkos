@@ -25,6 +25,7 @@
     "billing/balance-owed.json": "BalanceSchema",
     "billing/balance-holds.json": "BalanceSchema",
     "billing/usage-by-model.json": "UsageResponseSchema",
+    "billing/usage-with-storage.json": "UsageResponseSchema",
     "billing/price-list.json": "PriceListResponseSchema",
     "billing/nudge.json": "NudgeSchema",
     "billing/hosted-page.json": "HostedPageResponseSchema",

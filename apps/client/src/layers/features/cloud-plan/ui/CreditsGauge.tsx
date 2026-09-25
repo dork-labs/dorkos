@@ -2,6 +2,7 @@ import { FieldCard, FieldCardContent, Progress } from '@/layers/shared/ui';
 import { formatMicro, remainingFraction } from '../lib/micro';
 import { useCloudPlan, useCloudUsage } from '../model/use-cloud-plan';
 import { useLocalSpend } from '../model/use-local-spend';
+import { OtherCharges } from './OtherCharges';
 
 /**
  * The credits gauge — what is left, where it went, and what this machine spent
@@ -13,6 +14,8 @@ import { useLocalSpend } from '../model/use-local-spend';
  *    against.
  * 2. The per-agent breakdown, straight from the grouped usage rows. Each row's
  *    label is the service's `displayName`; its key is opaque and never rendered.
+ *    Charges that are not inference (storage, say) follow as their own list
+ *    with their own figures, never added to the credits total.
  * 3. The local spend view, which is the runtimes' own reporting and NOT the
  *    bill. On credits the DorkOS figure is the authoritative one, so the two are
  *    never added together and the local one says what it is.
@@ -33,6 +36,7 @@ export function CreditsGauge() {
       : remainingFraction(balance.allowance.remainingMicro, balance.allowance.grantedMicro);
   const rows = usage?.available ? usage.usage.rows : [];
   const total = usage?.available ? formatMicro(usage.usage.totals.dorkosPriceMicro) : null;
+  const storage = usage?.available ? usage.usage.storage : undefined;
 
   return (
     <FieldCard>
@@ -67,6 +71,8 @@ export function CreditsGauge() {
             )}
           </div>
         )}
+
+        <OtherCharges storage={storage} />
 
         {local.hasAnything && (
           <div className="space-y-1 border-t pt-3">

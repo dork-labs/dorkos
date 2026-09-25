@@ -10,7 +10,7 @@
  * catalog value existing in this repository to render.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -18,6 +18,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance.json' with { type: 'json' };
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-free.json' with { type: 'json' };
 import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-by-model.json' with { type: 'json' };
+import usageWithStorageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-with-storage.json' with { type: 'json' };
 import nudgeFixture from '@dork-labs/cloud-api/fixtures/v1/billing/nudge.json' with { type: 'json' };
 import orgFixture from '@dork-labs/cloud-api/fixtures/v1/seats/org.json' with { type: 'json' };
 import seatFixture from '@dork-labs/cloud-api/fixtures/v1/seats/seat.json' with { type: 'json' };
@@ -136,6 +137,62 @@ describe('the plan-aware surfaces', () => {
     renderPanel(linkedTransport());
     expect(await screen.findByText(usageFixture.rows[0].displayName)).toBeInTheDocument();
     expect(screen.queryByText(usageFixture.rows[0].key)).not.toBeInTheDocument();
+  });
+
+  it('lists a charge that is not inference in the service`s own words', async () => {
+    renderPanel(
+      linkedTransport({ getCloudUsage: { available: true, usage: usageWithStorageFixture } })
+    );
+    const heading = await screen.findByText('Other charges');
+    const list = within(heading.parentElement!);
+    // The name and the unit are rendered exactly as sent; nothing here knows
+    // what either one is.
+    expect(list.getByText('Extra storage')).toBeInTheDocument();
+    expect(list.getByText('2.5 GB-month · Sep 15 – Oct 15')).toBeInTheDocument();
+    expect(list.getByText('3.40')).toBeInTheDocument();
+    // Kept apart from the credits breakdown, whose total stays inference only.
+    expect(screen.getByText('Total for the last 30 days: 0.00')).toBeInTheDocument();
+  });
+
+  it('renders a name and unit it has never seen, verbatim', async () => {
+    const [row] = usageWithStorageFixture.storage.rows;
+    renderPanel(
+      linkedTransport({
+        getCloudUsage: {
+          available: true,
+          usage: {
+            ...usageWithStorageFixture,
+            storage: {
+              ...usageWithStorageFixture.storage,
+              rows: [{ ...row, displayName: 'Archive space', unit: 'widget-days', units: 1234.5 }],
+            },
+          },
+        },
+      })
+    );
+    expect(await screen.findByText('Archive space')).toBeInTheDocument();
+    expect(screen.getByText('1,234.5 widget-days · Sep 15 – Oct 15')).toBeInTheDocument();
+  });
+
+  it('adds nothing when the service sends no such charges', async () => {
+    renderPanel(linkedTransport());
+    expect(await screen.findByText(usageFixture.rows[0].displayName)).toBeInTheDocument();
+    expect(screen.queryByText('Other charges')).not.toBeInTheDocument();
+  });
+
+  it('adds nothing when the service sends the block with no rows', async () => {
+    renderPanel(
+      linkedTransport({
+        getCloudUsage: {
+          available: true,
+          usage: { ...usageWithStorageFixture, storage: { rows: [], dorkosPriceMicro: '0' } },
+        },
+      })
+    );
+    expect(
+      await screen.findByText(usageWithStorageFixture.rows[0].displayName)
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Other charges')).not.toBeInTheDocument();
   });
 
   it('hides the nudge when the service offers none', async () => {

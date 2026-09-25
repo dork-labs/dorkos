@@ -1,0 +1,35 @@
+{
+  "from": "2026-09-15T12:00:00.000Z",
+  "to": "2026-10-15T12:00:00.000Z",
+  "groupBy": "seat",
+  "state": "active",
+  "rows": [
+    {
+      "key": "seat_opaque_0001",
+      "displayName": "the agent shown in your usage page",
+      "units": 64000,
+      "unit": "tokens",
+      "listPriceMicro": "2100",
+      "dorkosPriceMicro": "2310",
+      "costBasis": "published_price"
+    }
+  ],
+  "totals": {
+    "listPriceMicro": "2100",
+    "dorkosPriceMicro": "2310"
+  },
+  "storage": {
+    "rows": [
+      {
+        "periodStart": "2026-09-15T12:00:00.000Z",
+        "periodEnd": "2026-10-15T12:00:00.000Z",
+        "units": 2.5,
+        "unit": "GB-month",
+        "displayName": "Extra storage",
+        "dorkosPriceMicro": "3400000",
+        "costBasis": "published_price"
+      }
+    ],
+    "dorkosPriceMicro": "3400000"
+  }
+}
