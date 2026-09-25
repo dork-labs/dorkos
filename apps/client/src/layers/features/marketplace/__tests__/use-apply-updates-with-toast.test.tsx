@@ -195,6 +195,54 @@ describe('useApplyUpdatesWithToast', () => {
     });
   });
 
+  // Purpose (DOR-2322): an update that kept files it could not prove says so
+  // right away, in the server's words, under the success line. Fails if the
+  // warning is dropped (it was, before: the toast showed only the version).
+  it('shows what an update had to say under its success line', async () => {
+    const said =
+      "DorkOS couldn't download the version of reviewer you had, so it couldn't tell whether 1 file was yours or left over from that version. It kept it: old.md.";
+    await runApply([ALPHA], {
+      result: {
+        checks: [
+          {
+            ...ALPHA,
+            applied: {
+              version: '1.3.0',
+              packageName: ALPHA.packageName,
+              warnings: [said],
+              fileNotices: [{ path: 'old.md', outcome: 'kept-unproven' }],
+            } as InstallResult,
+          },
+        ],
+      },
+    });
+
+    expect(toastMock.success).toHaveBeenCalledWith('Updated Reviewer on Alpha to v1.3.0', {
+      id: 'toast-id',
+      description: said,
+    });
+  });
+
+  // Purpose (DOR-2322): several updates collapse to a count, so the toast
+  // points at the rows when any of them kept files it could not sort.
+  it('points at the rows when one of several kept files it could not sort', async () => {
+    const kept = {
+      ...applied(FLOW),
+      applied: {
+        version: '0.7.3',
+        packageName: 'flow',
+        warnings: ['…'],
+        fileNotices: [{ path: 'old.md', outcome: 'kept-unproven' }],
+      } as InstallResult,
+    };
+    await runApply([makeCheck(), FLOW], { result: { checks: [applied(makeCheck()), kept] } });
+
+    expect(toastMock.success).toHaveBeenCalledWith(
+      'Updated 2 packages. One or more kept files DorkOS couldn’t sort; their rows say which.',
+      { id: 'toast-id' }
+    );
+  });
+
   it('reports one failed reinstall with the reason', async () => {
     await runApply([makeCheck()], { result: { checks: [makeCheck({ applyError: 'disk full' })] } });
 

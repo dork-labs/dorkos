@@ -47,6 +47,15 @@ function toastSubject(args: UninstallWithToastArgs): string {
 }
 
 /**
+ * What the uninstall had to say, such as files it kept because nothing proved
+ * whose they were (DOR-2322), as the toast's description.
+ */
+function said(result: UninstallResult | undefined): { description?: string } {
+  const warnings = result?.warnings ?? [];
+  return warnings.length > 0 ? { description: warnings.join(' ') } : {};
+}
+
+/**
  * Wraps `useUninstallPackage` with automatic sonner toast notifications.
  *
  * Returns the same mutation object as `useUninstallPackage` with `mutate` and
@@ -66,8 +75,11 @@ export function useUninstallWithToast() {
     ({ where, ...args }: UninstallWithToastArgs) => {
       const toastId = toast.loading(`Uninstalling ${toastSubject({ ...args, where })}…`);
       baseMutate(args, {
-        onSuccess: () => {
-          toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, { id: toastId });
+        onSuccess: (result) => {
+          toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, {
+            id: toastId,
+            ...said(result),
+          });
         },
         onError: (err) => {
           toast.error(formatUninstallError(err), { id: toastId });
@@ -82,7 +94,10 @@ export function useUninstallWithToast() {
       const toastId = toast.loading(`Uninstalling ${toastSubject({ ...args, where })}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, { id: toastId });
+        toast.success(`Uninstalled ${toastSubject({ ...args, where })}`, {
+          id: toastId,
+          ...said(result),
+        });
         return result;
       } catch (err) {
         toast.error(formatUninstallError(err), { id: toastId });

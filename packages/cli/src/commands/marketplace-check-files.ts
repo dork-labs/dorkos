@@ -70,7 +70,7 @@ export function parseMarketplaceCheckFilesArgs(rawArgs: string[]): MarketplaceCh
  * Implements `dorkos marketplace check-files`.
  *
  * @param args - Parsed arguments.
- * @returns `0` when its files are recorded (now or already), `1` when they could not be.
+ * @returns `0` when its files are recorded (now or already) or its kept files sorted, `1` when not.
  */
 export async function runMarketplaceCheckFiles(args: MarketplaceCheckFilesArgs): Promise<number> {
   let result: CheckFilesResult;
@@ -86,5 +86,9 @@ export async function runMarketplaceCheckFiles(args: MarketplaceCheckFilesArgs):
   }
   if (args.json) printJson(result);
   else console.log(result.message);
-  return result.outcome === 'rebuilt' || result.outcome === 'not-needed' ? 0 : 1;
+  return result.outcome === 'rebuilt' ||
+    result.outcome === 'sorted' ||
+    result.outcome === 'not-needed'
+    ? 0
+    : 1;
 }

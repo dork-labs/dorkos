@@ -368,6 +368,47 @@ describe('runUpdate', () => {
       expect(out).not.toContain('Run again with --apply');
     });
 
+    it('--apply prints what each update had to say (DOR-2322)', async () => {
+      // Purpose: an update that kept files it could not prove says so in the
+      // terminal, under its Applied line. Fails if applied warnings are dropped.
+      const alpha = installation({
+        installPath: '/home/.dork/plugins/flow',
+        disclosed: runs('echo hi'),
+        contentHash: 'sha256:staged',
+      });
+      const said =
+        "DorkOS couldn't download the version of flow you had, so it couldn't tell whether 1 file was yours or left over from that version. It kept it: old.md.";
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(mockResponse(200, { checks: [alpha] }))
+          .mockResolvedValueOnce(
+            mockResponse(200, {
+              checks: [
+                {
+                  ...alpha,
+                  applied: {
+                    ok: true,
+                    packageName: 'flow',
+                    version: '0.7.3',
+                    installPath: '/home/.dork/plugins/flow',
+                    warnings: [said],
+                  },
+                },
+              ],
+            })
+          )
+      );
+
+      expect(await runUpdate({ apply: true, yes: true })).toBe(0);
+
+      const out = printed(logSpy);
+      expect(out).toMatch(
+        /flow@0\.7\.3 → \/home\/\.dork\/plugins\/flow\n {4}DorkOS couldn't download/
+      );
+    });
+
     it('--apply without --yes asks first, and a no (or no terminal) updates nothing', async () => {
       // Purpose: printing is not approving. Without a yes nothing is sent, and
       // a run with no terminal to answer from declines rather than applies.

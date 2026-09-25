@@ -82,6 +82,32 @@ describe('runUninstall', () => {
     expect(allLogs).toContain('/home/user/.dork/plugins/demo-pkg/.dork/data');
   });
 
+  // Purpose (DOR-2322): when some kept files could not be proven the
+  // person's, the heading does not claim they added them all, and the
+  // sentence saying why is printed. Fails if the old heading stays.
+  it('does not call unproven files yours, and says why they were kept', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(
+        mockResponse(200, {
+          ok: true,
+          packageName: 'demo-pkg',
+          removedFiles: 2,
+          preservedData: ['/home/user/.dork/plugins/demo-pkg/a.md'],
+          unproven: ['/home/user/.dork/plugins/demo-pkg/a.md'],
+          warnings: ["DorkOS couldn't download the version of demo-pkg you had… It kept it: a.md."],
+        })
+      )
+    );
+
+    expect(await runUninstall({ name: 'demo-pkg' })).toBe(0);
+
+    const allLogs = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allLogs).not.toContain('Kept the files you and your agents added or changed:');
+    expect(allLogs).toContain('Kept these files:');
+    expect(allLogs).toContain("DorkOS couldn't download the version of demo-pkg you had");
+  });
+
   it('--purge sends `purge: true` and skips the preserved-data block', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       mockResponse(200, {

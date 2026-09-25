@@ -28,6 +28,13 @@ import {
 interface ApplyOutcomeToast {
   kind: 'success' | 'warning' | 'error';
   message: string;
+  /** What the update had to say, such as files it kept (DOR-2322), under the message. */
+  description?: string;
+}
+
+/** Whether an applied update kept files it could not prove were the person's (DOR-2322). */
+function keptUnproven(check: InstallationUpdateCheck): boolean {
+  return check.applied?.fileNotices?.some((n) => n.outcome === 'kept-unproven') ?? false;
 }
 
 /** "Reviewer", or "Reviewer on Alpha" for an agent's installation, by its listed name. */
@@ -42,7 +49,12 @@ function describeOne(label: string, check: InstallationUpdateCheck | undefined):
   if (check?.applied) {
     const settled = settleAppliedCheck(check);
     const version = formatCheckVersion(settled.installedVersion, settled.installedVersionSource);
-    return { kind: 'success', message: `Updated ${label} to ${version}` };
+    const said = check.applied.warnings ?? [];
+    return {
+      kind: 'success',
+      message: `Updated ${label} to ${version}`,
+      ...(said.length > 0 && { description: said.join(' ') }),
+    };
   }
   if (check?.applyError) {
     return { kind: 'error', message: `Couldn’t update ${label}: ${check.applyError}` };
@@ -62,7 +74,12 @@ function describeMany(checks: readonly InstallationUpdateCheck[]): ApplyOutcomeT
   const total = checks.length;
   const applied = checks.filter((c) => c.applied).length;
   const failed = checks.filter((c) => c.applyError).length;
-  if (applied === total) return { kind: 'success', message: `Updated ${total} packages` };
+  if (applied === total) {
+    const message = checks.some(keptUnproven)
+      ? `Updated ${total} packages. One or more kept files DorkOS couldn’t sort; their rows say which.`
+      : `Updated ${total} packages`;
+    return { kind: 'success', message };
+  }
   if (applied > 0) {
     return {
       kind: 'warning',
@@ -97,7 +114,10 @@ function describeOutcome(
 
 /** Show a finished apply's toast in place of the loading one. */
 function showOutcome(outcome: ApplyOutcomeToast, toastId: string | number): void {
-  toast[outcome.kind](outcome.message, { id: toastId });
+  toast[outcome.kind](outcome.message, {
+    id: toastId,
+    ...(outcome.description && { description: outcome.description }),
+  });
 }
 
 /** The server's code for a batch that would need a person to approve each install. */

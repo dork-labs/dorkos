@@ -36,6 +36,8 @@ interface UninstallResultBody {
   packageName: string;
   removedFiles: number;
   preservedData: string[];
+  /** Files kept because nothing proved whose they were (DOR-2322). */
+  unproven?: string[];
   /** Set when an agent package's agent was removed from the team (DOR-2245). */
   agentRemoved?: { id: string; directoryDenied: boolean; removed: string[] };
   warnings?: string[];
@@ -153,7 +155,13 @@ export async function runUninstall(args: UninstallArgs): Promise<number> {
 
     console.log(`Uninstalled ${result.packageName} (${result.removedFiles} entries removed)`);
     if (!args.purge && result.preservedData.length > 0) {
-      console.log('Kept the files you and your agents added or changed:');
+      // Some kept files may not be the person's at all: DorkOS could not tell
+      // (DOR-2322), so the heading does not claim they added them.
+      console.log(
+        result.unproven && result.unproven.length > 0
+          ? 'Kept these files:'
+          : 'Kept the files you and your agents added or changed:'
+      );
       for (const path of result.preservedData) {
         console.log(`  ${path}`);
       }
