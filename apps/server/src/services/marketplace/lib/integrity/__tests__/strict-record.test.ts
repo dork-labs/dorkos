@@ -506,9 +506,22 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
   // then dropped. Fails if a person's file is removed, a leftover survives, or
   // the list stays.
   it('removes proven leftovers, keeps the rest as yours, and drops the list', async () => {
-    const old = await tree({ 'old.md': 'old v1', 'a.md': 'a v1', 'skills/b/SKILL.md': 'b v1' });
+    const old = await tree({
+      'old.md': 'old v1',
+      'a.md': 'a v1',
+      'skills/b/SKILL.md': 'b v1',
+      'settings.json': 'same default',
+    });
+    // settings.json: the current version ships it too, with the same bytes as
+    // the earlier one (an editable file the update kept in place). It is the
+    // package's own file now, so it is never removed.
     const root = await recordedWithUnproven(
-      { '.dork/manifest.json': MANIFEST, 'a.md': 'a v2', 'skills/b/SKILL.md': 'b v2' },
+      {
+        '.dork/manifest.json': MANIFEST,
+        'a.md': 'a v2',
+        'skills/b/SKILL.md': 'b v2',
+        'settings.json': 'same default',
+      },
       {
         'old.md': 'old v1',
         'a.md.dork-old': 'a v1',
@@ -521,6 +534,7 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
         'mine.txt': 'mine.txt',
         'skills/b/SKILL.md.dork-old': 'skills/b/SKILL.md',
         'a.md': 'a.md',
+        'settings.json': 'settings.json',
       }
     );
 
@@ -533,8 +547,9 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
     expect(result).toEqual({
       outcome: 'sorted',
       removed: ['a.md.dork-old', 'old.md'],
-      kept: ['a.md', 'mine.txt', 'skills/b/SKILL.md.dork-old'],
+      kept: ['a.md', 'mine.txt', 'settings.json', 'skills/b/SKILL.md.dork-old'],
     });
+    expect(await readFile(path.join(root, 'settings.json'), 'utf8')).toBe('same default');
     const after = await snapshot(root);
     expect(after['old.md']).toBeUndefined();
     expect(after['a.md.dork-old']).toBeUndefined();
@@ -542,6 +557,36 @@ describe('Check files after a rebuild that could not prove everything (DOR-2322)
     expect(after['a.md']).toBe('a v2');
     expect(after['skills/b/SKILL.md.dork-old']).toBe('b edited');
     expect((await readInstalledFiles(root))?.unproven).toBeUndefined();
+  });
+
+  // Purpose: the list is re-read under the install lock. If an update wrote a
+  // new record while the earlier version was being fetched, nothing is
+  // removed on the strength of the old list. Fails without the re-check.
+  it('removes nothing when the record changed while the earlier version was fetched', async () => {
+    const root = await recordedWithUnproven(
+      { '.dork/manifest.json': MANIFEST },
+      { 'old.md': 'old v1' },
+      { 'old.md': 'old.md' }
+    );
+    const earlier = await tree({ 'old.md': 'old v1' });
+    const fetcher = {
+      fetchAtCommit: vi.fn(async () => {
+        // An update lands meanwhile and records the file as the package's.
+        const now = await readInstalledFiles(root);
+        const { unproven: _gone, ...rest } = now!;
+        await writeInstalledFiles(root, rest);
+        return { path: earlier, commitSha: SHA, fromCache: false };
+      }),
+    };
+
+    const result = await rebuildRecordStrict(
+      root,
+      { fetcher, logger: noopLogger },
+      { sortUnproven: true }
+    );
+
+    expect(result).toEqual({ outcome: 'not-needed', why: 'has-record' });
+    expect(await readFile(path.join(root, 'old.md'), 'utf8')).toBe('old v1');
   });
 
   // Purpose: sorting removes files, so only a person's Check files does it.

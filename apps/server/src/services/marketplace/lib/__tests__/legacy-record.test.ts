@@ -322,6 +322,32 @@ describe('what the fallback could not prove (DOR-2322)', () => {
     expect(record.unproven).toBeUndefined();
   });
 
+  // Purpose: strict first is not just a label. Files the package marks as the
+  // person's to edit may differ under the strict rule but count against the
+  // 10% tolerance, so a package whose settings were all edited used to fall
+  // to guessing. Fails if the strict rule is not consulted before the tolerance.
+  it('trusts the exact commit when only editable files differ, however many', async () => {
+    const files = {
+      '.dork/manifest.json': JSON.stringify({ userEditable: ['config/**'] }),
+      'config/a.json': 'a',
+      'config/b.json': 'b',
+      'config/c.json': 'c',
+      'skills/x/SKILL.md': 'x',
+    };
+    const root = await legacyInstall(files);
+    await put(root, 'config/a.json', 'mine');
+    await put(root, 'config/b.json', 'mine');
+    await put(root, 'config/c.json', 'mine');
+
+    const record = await rebuildInstalledFiles(root, {
+      fetcher: fetcherFor(await tree(files)),
+      logger: noopLogger,
+    });
+
+    expect(record.inferred).toBeUndefined();
+    expect(record.unproven).toBeUndefined();
+  });
+
   // Purpose: the strict rule is tried first and shared with Check files, so the
   // two cannot drift. An exact match logs that it held; a tolerated one says so.
   it('tries the strict rebuild first and logs which proof held', async () => {

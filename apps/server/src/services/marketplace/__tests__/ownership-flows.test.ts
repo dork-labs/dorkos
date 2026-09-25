@@ -338,6 +338,9 @@ describe('an install made before records existed (DOR-2245 §9)', () => {
     expect(await readFile(path.join(root, 'config', 'config.json'), 'utf8')).toBe('{"team":"DOR"}');
     expect(result.fileNotices).toEqual([{ path: 'config/config.json', outcome: 'kept-unproven' }]);
     const said = result.warnings.join(' ');
+    // One sentence names the kept file; no notice adds a second (or an empty) one.
+    expect(result.warnings.filter((w) => w.trim() === '')).toEqual([]);
+    expect(result.warnings.filter((w) => w.includes('config/config.json'))).toHaveLength(1);
     expect(said).toMatch(/installed from a folder on this computer/);
     expect(said).toMatch(/It kept it: config\/config\.json\. Delete any you don't need\./);
     const record = await readInstalledFiles(root);
