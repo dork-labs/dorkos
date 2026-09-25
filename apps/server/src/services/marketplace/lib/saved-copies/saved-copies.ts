@@ -15,30 +15,51 @@
  *   folders go under {@link SAVED_COPIES_DIR} instead, flattened to one level
  *   (`.dork/saved/skills__mine.dork-old/`), where no loader looks and no nested
  *   `.claude/` can form. A saved FILE stays beside its original: no loader
- *   reads `SKILL.md.dork-old` or `x.md.dork-old`.
+ *   reads `SKILL.md.dork-old` or `x.md.dork-old`. The exception is a file in
+ *   `bin/`, which goes under `.dork/saved` too: Git Bash on Windows runs a
+ *   `#!` or `MZ` file whatever its mode ({@link savedFileCandidates}).
  *
  * @module services/marketplace/lib/saved-copies/saved-copies
  */
 import { chmod, lstat, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { SAVED_COPIES_DIR } from '@dorkos/marketplace';
+import { EFFECT_BEARING_PATHS, KEPT_COPY_BASENAME, SAVED_COPIES_DIR } from '@dorkos/marketplace';
 
 export { SAVED_COPIES_DIR };
 
 /** Any of the owner, group or other execute bits. */
 const EXECUTE_BITS = 0o111;
 
-/** A basename that is already a kept copy's (`x.dork-old`, `x.dork-new.2`), any case. */
-const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/i;
-
 /** Join a root and a POSIX path. */
 function fsPath(root: string, posixPath: string): string {
   return path.join(root, ...posixPath.split('/'));
 }
 
+/** The folder whose files are on the agent's `PATH`. */
+const BIN_DIR = EFFECT_BEARING_PATHS.executables;
+
+/** Whether `p` is in `bin/` (at any depth). */
+function inBin(p: string): boolean {
+  return p.startsWith(`${BIN_DIR}/`);
+}
+
 /**
- * Candidate names for a FILE saved beside `p`: `p.dork-old`, then
- * `p.dork-old.2`, `.3`, …
+ * `p` flattened one level under {@link SAVED_COPIES_DIR} with `suffix`, unless
+ * its own name is already a kept copy's; then numbered.
+ */
+function* flattenedCandidates(p: string, suffix: string): Generator<string> {
+  const flat = p.split('/').join('__');
+  const base = `${SAVED_COPIES_DIR}/${KEPT_COPY_BASENAME.test(flat) ? flat : `${flat}${suffix}`}`;
+  yield base;
+  for (let n = 2; ; n++) yield `${base}.${n}`;
+}
+
+/**
+ * Candidate names for a FILE saved aside from `p`: beside itself
+ * (`p.dork-old`, then `p.dork-old.2`, …), except a file in `bin/`, which goes
+ * under {@link SAVED_COPIES_DIR} like a folder (`.dork/saved/bin__tool.dork-old`).
+ * Everything in `bin/` is on the agent's `PATH`, and Git Bash on Windows runs a
+ * file there that starts with `#!` or `MZ` whatever its mode says.
  *
  * @param p - The file's root-relative POSIX path.
  * @param suffix - `.dork-old` for the person's copy, `.dork-new` for a new default.
@@ -47,6 +68,10 @@ export function* savedFileCandidates(
   p: string,
   suffix: '.dork-old' | '.dork-new' = '.dork-old'
 ): Generator<string> {
+  if (inBin(p)) {
+    yield* flattenedCandidates(p, suffix);
+    return;
+  }
   yield `${p}${suffix}`;
   for (let n = 2; ; n++) yield `${p}${suffix}.${n}`;
 }
@@ -60,10 +85,7 @@ export function* savedFileCandidates(
  * @param relDir - The folder's root-relative POSIX path.
  */
 export function* savedFolderCandidates(relDir: string): Generator<string> {
-  const flat = relDir.split('/').join('__');
-  const base = `${SAVED_COPIES_DIR}/${KEPT_COPY_BASENAME.test(flat) ? flat : `${flat}.dork-old`}`;
-  yield base;
-  for (let n = 2; ; n++) yield `${base}.${n}`;
+  yield* flattenedCandidates(relDir, '.dork-old');
 }
 
 /** The first candidate nothing occupies in `root`, by `lstat`. */
@@ -131,4 +153,15 @@ export async function makeInert(absPath: string): Promise<void> {
   if (stats.isFile() && (stats.mode & EXECUTE_BITS) !== 0) {
     await chmod(absPath, stats.mode & ~EXECUTE_BITS & 0o7777);
   }
+}
+
+/**
+ * Whether a saved copy at `p` must leave where it is: a folder always does, a
+ * file only when it is in `bin/`.
+ *
+ * @param p - The saved copy's root-relative POSIX path.
+ * @param isDir - Whether it is a folder.
+ */
+export function savedCopyMustMove(p: string, isDir: boolean): boolean {
+  return isDir || inBin(p);
 }

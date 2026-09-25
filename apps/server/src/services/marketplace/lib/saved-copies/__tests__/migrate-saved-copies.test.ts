@@ -1,7 +1,9 @@
 /**
- * Copies an earlier version saved aside are made inert once per boot
- * (DOR-2340): a saved folder moves under `.dork/saved`, where nothing loads it,
- * and every saved file loses its execute bits.
+ * Copies an earlier version saved aside are made inert once per install
+ * (DOR-2340), without ever moving a person's own folders: a saved folder
+ * moves under `.dork/saved` only inside a location the package runs from and
+ * only when the folder it was saved from is the package's; a saved `bin/`
+ * file moves off the PATH; other saved files there lose their execute bits.
  *
  * @vitest-environment node
  */
@@ -9,15 +11,36 @@ import { chmod, lstat, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'nod
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { migrateSavedCopies } from '../migrate-saved-copies.js';
+import {
+  readInstalledFiles,
+  writeInstalledFiles,
+  type InstalledFiles,
+} from '../../installed-files.js';
+import { migrateSavedCopies, SAVED_COPIES_MARKER } from '../migrate-saved-copies.js';
 
 let root: string;
+
+const H = `sha256:${'0'.repeat(64)}`;
 
 async function put(rel: string, content: string, mode = 0o644): Promise<void> {
   const abs = path.join(root, ...rel.split('/'));
   await mkdir(path.dirname(abs), { recursive: true });
   await writeFile(abs, content);
   await chmod(abs, mode);
+}
+
+/** Record `files` as the package's, with an optional kept-file list. */
+async function recordFiles(files: string[], unproven?: Record<string, string>): Promise<void> {
+  const record: InstalledFiles = {
+    version: 1,
+    package: { name: 'pkg', type: 'plugin' },
+    files: Object.fromEntries(files.map((f) => [f, H])),
+    pendingDefaults: {},
+    userEditable: [],
+    ownedPaths: [],
+    ...(unproven && { unproven: { why: 'fetch-failed' as const, files: unproven } }),
+  };
+  await writeInstalledFiles(root, record);
 }
 
 const exists = (rel: string) =>
@@ -39,30 +62,85 @@ afterEach(async () => {
 });
 
 describe.skipIf(process.platform === 'win32')('migrateSavedCopies', () => {
-  it('moves a saved skill folder where nothing loads it, and makes saved files inert', async () => {
+  it("moves the package's saved skill folder and bin/ copies, and makes saved files inert", async () => {
+    await recordFiles(['skills/mine/SKILL.md', 'commands/sub/c.md', 'bin/tool']);
     await put('skills/mine.dork-old/SKILL.md', 'mine');
     await put('skills/mine.dork-old/run.sh', 'x', 0o755);
-    await put('.claude/commands/sub.dork-old/c.md', 'cmd');
+    await put('commands/sub.dork-old/c.md', 'cmd');
     await put('bin/tool.dork-old', '#!/bin/sh\n', 0o755);
     await put('bin/tool', '#!/bin/sh\n', 0o755);
-    await put('.dork/saved/a.dork-old/x.sh', 'x', 0o755);
+    await put('hooks/run.sh.dork-old', 'x', 0o755);
 
     const result = await migrateSavedCopies([root], passThrough, logger);
 
-    expect(result).toEqual({ moved: 2, failed: 0 });
+    expect(result).toEqual({ moved: 3, migrated: 1, failed: 0 });
     expect(await exists('skills/mine.dork-old')).toBe(false);
     expect(
       await readFile(path.join(root, '.dork/saved/skills__mine.dork-old/SKILL.md'), 'utf-8')
     ).toBe('mine');
     expect(await runnable('.dork/saved/skills__mine.dork-old/run.sh')).toBe(false);
-    expect(await exists('.dork/saved/.claude__commands__sub.dork-old/c.md')).toBe(true);
-    expect(await runnable('bin/tool.dork-old')).toBe(false);
-    expect(await runnable('.dork/saved/a.dork-old/x.sh')).toBe(false);
+    expect(await exists('.dork/saved/commands__sub.dork-old/c.md')).toBe(true);
+    expect(await exists('bin/tool.dork-old')).toBe(false);
+    expect(await runnable('.dork/saved/bin__tool.dork-old')).toBe(false);
+    expect(await runnable('hooks/run.sh.dork-old')).toBe(false);
     // The package's own program is left alone.
     expect(await runnable('bin/tool')).toBe(true);
   });
 
-  it('is idempotent and never takes a name already used', async () => {
+  it("never moves a person's own folder: not the package's, or outside where it runs from", async () => {
+    await recordFiles(['skills/shipped/SKILL.md', 'notes/a.md']);
+    // Named like a saved copy, but no such folder was ever the package's.
+    await put('skills/drafts.dork-old/SKILL.md', 'mine');
+    // The package's folder, but outside every place it runs from.
+    await put('notes.dork-old/a.md', 'mine', 0o755);
+    await put('docs/x.dork-old', 'mine', 0o755);
+    expect(await migrateSavedCopies([root], passThrough, logger)).toEqual({
+      moved: 0,
+      migrated: 1,
+      failed: 0,
+    });
+    expect(await exists('skills/drafts.dork-old/SKILL.md')).toBe(true);
+    expect(await exists('notes.dork-old/a.md')).toBe(true);
+    // Execute bits are only cleared inside the places a package runs from.
+    expect(await runnable('notes.dork-old/a.md')).toBe(true);
+    expect(await runnable('docs/x.dork-old')).toBe(true);
+  });
+
+  it('follows a location the plugin.json declares', async () => {
+    await put('.claude-plugin/plugin.json', JSON.stringify({ name: 'pkg', skills: './my-skills' }));
+    await recordFiles(['my-skills/s/SKILL.md', '.claude-plugin/plugin.json']);
+    await put('my-skills/s.dork-old/SKILL.md', 'old');
+    await migrateSavedCopies([root], passThrough, logger);
+    expect(await exists('.dork/saved/my-skills__s.dork-old/SKILL.md')).toBe(true);
+  });
+
+  it('leaves a root with no record alone', async () => {
+    await put('skills/x.dork-old/SKILL.md', 'x');
+    expect(await migrateSavedCopies([root], passThrough, logger)).toEqual({
+      moved: 0,
+      migrated: 0,
+      failed: 0,
+    });
+    expect(await exists('skills/x.dork-old/SKILL.md')).toBe(true);
+    expect(await exists(SAVED_COPIES_MARKER)).toBe(false);
+  });
+
+  it('marks a root done, so a later boot does not walk it again', async () => {
+    await recordFiles(['skills/x/SKILL.md']);
+    await migrateSavedCopies([root], passThrough, logger);
+    expect(await exists(SAVED_COPIES_MARKER)).toBe(true);
+    // Something that would move is ignored once the root is marked.
+    await put('skills/x.dork-old/SKILL.md', 'later');
+    expect(await migrateSavedCopies([root], passThrough, logger)).toEqual({
+      moved: 0,
+      migrated: 0,
+      failed: 0,
+    });
+    expect(await exists('skills/x.dork-old/SKILL.md')).toBe(true);
+  });
+
+  it('never takes a name already used', async () => {
+    await recordFiles(['skills/x/SKILL.md']);
     await put('skills/x.dork-old/SKILL.md', 'one');
     await put('.dork/saved/skills__x.dork-old/SKILL.md', 'earlier');
     await migrateSavedCopies([root], passThrough, logger);
@@ -72,20 +150,28 @@ describe.skipIf(process.platform === 'win32')('migrateSavedCopies', () => {
     expect(
       await readFile(path.join(root, '.dork/saved/skills__x.dork-old.2/SKILL.md'), 'utf-8')
     ).toBe('one');
-    expect(await migrateSavedCopies([root], passThrough, logger)).toEqual({ moved: 0, failed: 0 });
   });
 
-  it('leaves dependencies, git and the package data alone', async () => {
-    await put('node_modules/p.dork-old/x', 'x', 0o755);
-    await put('.dork/data/cache.dork-old/x', 'x', 0o755);
+  it('keeps the kept-file list pointing at where each file now sits (DOR-2322)', async () => {
+    await recordFiles(['skills/x/SKILL.md', 'bin/t'], {
+      'skills/x.dork-old/SKILL.md': 'skills/x/SKILL.md',
+      'bin/t.dork-old': 'bin/t',
+      'README.md': 'README.md',
+    });
+    await put('skills/x.dork-old/SKILL.md', 'k');
+    await put('bin/t.dork-old', 't');
     await migrateSavedCopies([root], passThrough, logger);
-    expect(await exists('node_modules/p.dork-old/x')).toBe(true);
-    expect(await runnable('.dork/data/cache.dork-old/x')).toBe(true);
+    expect((await readInstalledFiles(root))?.unproven?.files).toEqual({
+      '.dork/saved/skills__x.dork-old/SKILL.md': 'skills/x/SKILL.md',
+      '.dork/saved/bin__t.dork-old': 'bin/t',
+      'README.md': 'README.md',
+    });
   });
 
-  it('runs each root under its install lock, and a failing root does not stop the rest', async () => {
+  it('runs each root under its install lock, with hooks around it, and a failing root does not stop the rest', async () => {
     const other = await mkdtemp(path.join(tmpdir(), 'migrate-saved-'));
     try {
+      await recordFiles(['skills/y/SKILL.md']);
       await put('skills/y.dork-old/SKILL.md', 'y');
       const locked: string[] = [];
       const lock = async <T>(r: string, fn: () => Promise<T>): Promise<T> => {
@@ -93,11 +179,23 @@ describe.skipIf(process.platform === 'win32')('migrateSavedCopies', () => {
         if (r === other) throw new Error('busy');
         return fn();
       };
-      expect(await migrateSavedCopies([other, root], lock, logger)).toEqual({
+      const seen: string[] = [];
+      const hooks = {
+        before: async (r: string) => {
+          seen.push(`before ${r === root}`);
+          return 'token';
+        },
+        after: async (_r: string, t: string) => {
+          seen.push(`after ${t}`);
+        },
+      };
+      expect(await migrateSavedCopies([other, root], lock, logger, hooks)).toEqual({
         moved: 1,
+        migrated: 1,
         failed: 1,
       });
       expect(locked).toEqual([other, root]);
+      expect(seen).toEqual(['before true', 'after token']);
     } finally {
       await rm(other, { recursive: true, force: true });
     }

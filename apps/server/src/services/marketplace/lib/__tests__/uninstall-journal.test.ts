@@ -95,11 +95,24 @@ describe.skipIf(process.platform === 'win32')('a rollback that saves an entry as
 
   it('saves a file beside itself with its execute bits cleared', async () => {
     const { root, sibling } = await setup();
+    await put(sibling, 'hooks/run.sh', '#!/bin/sh\n');
+    await chmod(path.join(sibling, 'hooks', 'run.sh'), 0o755);
+    await put(root, 'hooks/run.sh', 'meanwhile');
+    await rollBackUninstall(sibling, journal(root, ['hooks/run.sh']));
+    expect((await lstat(path.join(root, 'hooks', 'run.sh.dork-old'))).mode & 0o111).toBe(0);
+  });
+
+  it('saves a program from bin/ under .dork/saved, off the PATH', async () => {
+    const { root, sibling } = await setup();
     await put(sibling, 'bin/tool', '#!/bin/sh\n');
-    await chmod(path.join(sibling, 'bin', 'tool'), 0o755);
     await put(root, 'bin/tool', 'meanwhile');
     await rollBackUninstall(sibling, journal(root, ['bin/tool']));
-    expect((await lstat(path.join(root, 'bin', 'tool.dork-old'))).mode & 0o111).toBe(0);
+    expect(
+      await lstat(path.join(root, 'bin', 'tool.dork-old')).catch(() => undefined)
+    ).toBeUndefined();
+    expect(await readFile(path.join(root, '.dork', 'saved', 'bin__tool.dork-old'), 'utf8')).toBe(
+      '#!/bin/sh\n'
+    );
   });
 });
 

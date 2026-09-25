@@ -1,33 +1,78 @@
 /**
  * Make the copies earlier versions saved aside inert (DOR-2340).
  *
- * Before DOR-2340 an update kept a saved copy's execute bits, and saved a
- * folder beside its original, where it still loaded as a skill or command.
- * Once per boot, for every install root: a folder under a kept-copy name
- * (`skills/mine.dork-old/`) moves under `.dork/saved`, and every saved file
- * loses its execute bits. Idempotent: a second pass finds nothing to do.
- * Each root is handled under its install lock, so no install races it.
+ * Before DOR-2340 an update kept a saved copy's execute bits, saved a program
+ * from `bin/` beside itself on the agent's `PATH`, and saved a folder beside
+ * its original, where it still loaded as a skill or command. This pass fixes
+ * what those versions left, once per install root, and never touches a
+ * person's own folders:
+ *
+ * - A folder under a kept-copy name (`X.dork-old`) is moved under
+ *   `.dork/saved` only when BOTH hold: it sits inside a location a package
+ *   runs from (the defaults and every location its plugin.json declares), and
+ *   `X` is the package's (the record lists `X` or something under it). A
+ *   folder a person named that way themselves stays where it is.
+ * - A saved file in `bin/` moves under `.dork/saved`.
+ * - Every other saved file inside those locations loses its execute bits.
+ *
+ * A root with no record is left alone (nothing says what is the package's).
+ * The kept-file list (DOR-2322) follows every move. A marker in `.dork/saved`
+ * records that a root was done, so later boots do not walk it again. Each root
+ * is handled under its install lock, so no install races it.
  *
  * @module services/marketplace/lib/saved-copies/migrate-saved-copies
  */
-import { lstat, mkdir, readdir, rename } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { PACKAGE_DATA_DIR } from '@dorkos/marketplace';
+import { EFFECT_BEARING_PATHS, KEPT_COPY_BASENAME } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
-import { freeSavedFolderName, makeInert, SAVED_COPIES_DIR } from './saved-copies.js';
+import {
+  readInstalledFiles,
+  writeInstalledFiles,
+  type InstalledFiles,
+} from '../installed-files.js';
+import { declaredLocationsOf } from '../integrity/strict-differences.js';
+import {
+  freeSavedFileName,
+  freeSavedFolderName,
+  makeInert,
+  SAVED_COPIES_DIR,
+  savedCopyMustMove,
+} from './saved-copies.js';
 
-/** A basename that is a kept copy's (`x.dork-old`, `x.dork-new.2`), any case. */
-const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/i;
+/** The file whose presence says a root was already migrated. */
+export const SAVED_COPIES_MARKER = `${SAVED_COPIES_DIR}/.inert-v1`;
 
-/** Folders never walked: dependencies, git's own, and the package's data. */
+/** Folders never walked: dependencies and git's own. */
 const NOT_WALKED = new Set(['node_modules', '.git']);
 
-/** What one pass changed. */
-export interface SavedCopiesMigration {
-  /** Saved folders moved under `.dork/saved`. */
+/** What one root's pass did. */
+export interface RootMigration {
+  /** Saved folders and `bin/` files moved under `.dork/saved`. */
   moved: number;
-  /** Install roots that could not be fully checked; retried next boot. */
+  /** Why nothing was done, when nothing was. */
+  skipped?: 'no-record' | 'already-done';
+}
+
+/** What one pass over many roots changed. */
+export interface SavedCopiesMigration {
+  /** Entries moved under `.dork/saved`. */
+  moved: number;
+  /** Roots migrated on this pass. */
+  migrated: number;
+  /** Install roots that could not be checked; retried next boot. */
   failed: number;
+}
+
+/**
+ * Hooks around one root's pass, for consent that must follow it: `before`
+ * runs first under the lock and its answer is handed to `after`.
+ */
+export interface MigrationHooks<T> {
+  /** Read what must be carried over, before anything moves. */
+  before(root: string): Promise<T>;
+  /** Carry it over, after the root was migrated. */
+  after(root: string, carried: T): Promise<void>;
 }
 
 /** Join a root and a POSIX path. */
@@ -35,76 +80,145 @@ function fsPath(root: string, posixPath: string): string {
   return path.join(root, ...posixPath.split('/'));
 }
 
+/** Whether `p` is `prefix` or under it. */
+function isAtOrUnder(p: string, prefix: string): boolean {
+  return p === prefix || p.startsWith(`${prefix}/`);
+}
+
+/** Whether every segment of `rel` under `root` is a real folder, not a link. */
+async function isRealDir(root: string, rel: string): Promise<boolean> {
+  const segments = rel.split('/');
+  for (let i = 1; i <= segments.length; i++) {
+    const stats = await lstat(fsPath(root, segments.slice(0, i).join('/'))).catch(() => undefined);
+    if (stats === undefined || stats.isSymbolicLink() || !stats.isDirectory()) return false;
+  }
+  return true;
+}
+
+/** `X` for a kept-copy name `X.dork-old[.n]` / `X.dork-new[.n]`. */
+function originalName(name: string): string {
+  return name.replace(KEPT_COPY_BASENAME, '');
+}
+
+/** Whether the record lists `p` or anything under it. */
+function recorded(record: InstalledFiles, p: string): boolean {
+  return Object.keys(record.files).some((f) => isAtOrUnder(f, p));
+}
+
 /**
- * Move one root's saved folders under `.dork/saved` and clear every saved
- * copy's execute bits.
+ * Migrate one install root. See the module doc for the rules.
  *
  * @param root - An install root.
- * @returns How many folders moved.
+ * @returns What moved, or why nothing was done.
  */
-export async function migrateRoot(root: string): Promise<number> {
-  const savedFolders: string[] = [];
+export async function migrateRoot(root: string): Promise<RootMigration> {
+  if ((await lstat(fsPath(root, SAVED_COPIES_MARKER)).catch(() => undefined)) !== undefined) {
+    return { moved: 0, skipped: 'already-done' };
+  }
+  const record = await readInstalledFiles(root);
+  if (record === null) return { moved: 0, skipped: 'no-record' };
+
+  const locations = [
+    ...new Set([...Object.values(EFFECT_BEARING_PATHS), ...(await declaredLocationsOf(root))]),
+  ].filter((l) => !isAtOrUnder(l, SAVED_COPIES_DIR));
+  const toMove: { from: string; isDir: boolean }[] = [];
+  const walked = new Set<string>();
   const walk = async (rel: string): Promise<void> => {
+    if (walked.has(rel)) return;
+    walked.add(rel);
     let entries;
     try {
-      entries = await readdir(rel === '' ? root : fsPath(root, rel), { withFileTypes: true });
+      entries = await readdir(fsPath(root, rel), { withFileTypes: true });
     } catch {
       return;
     }
     for (const entry of entries) {
-      const child = rel === '' ? entry.name : `${rel}/${entry.name}`;
+      const child = `${rel}/${entry.name}`;
       if (entry.isSymbolicLink()) continue;
+      const kept = KEPT_COPY_BASENAME.test(entry.name);
       if (entry.isDirectory()) {
         if (NOT_WALKED.has(entry.name)) continue;
-        if (child === PACKAGE_DATA_DIR) continue;
-        if (child === SAVED_COPIES_DIR) {
-          await makeInert(fsPath(root, child));
-          continue;
-        }
-        if (KEPT_COPY_BASENAME.test(entry.name)) {
-          savedFolders.push(child);
+        if (kept) {
+          // Only the package's own folder, saved aside by an update, moves.
+          if (recorded(record, `${rel}/${originalName(entry.name)}`)) {
+            toMove.push({ from: child, isDir: true });
+          }
           continue;
         }
         await walk(child);
-      } else if (entry.isFile() && KEPT_COPY_BASENAME.test(entry.name)) {
-        await makeInert(fsPath(root, child));
+      } else if (entry.isFile() && kept) {
+        if (savedCopyMustMove(child, false)) toMove.push({ from: child, isDir: false });
+        else await makeInert(fsPath(root, child));
       }
     }
   };
-  await walk('');
-  for (const folder of savedFolders) {
-    const to = await freeSavedFolderName(root, folder);
-    await mkdir(path.dirname(fsPath(root, to)), { recursive: true });
-    await rename(fsPath(root, folder), fsPath(root, to));
-    await makeInert(fsPath(root, to));
+  for (const location of locations) {
+    if (await isRealDir(root, location)) await walk(location);
   }
-  return savedFolders.length;
+
+  let unproven = record.unproven ? { ...record.unproven.files } : undefined;
+  for (const { from, isDir } of toMove) {
+    const to = isDir ? await freeSavedFolderName(root, from) : await freeSavedFileName(root, from);
+    await mkdir(path.dirname(fsPath(root, to)), { recursive: true });
+    await rename(fsPath(root, from), fsPath(root, to));
+    await makeInert(fsPath(root, to));
+    if (unproven) {
+      // The kept-file list (DOR-2322) names where each file sits now.
+      const next: Record<string, string> = {};
+      for (const [at, was] of Object.entries(unproven)) {
+        next[isAtOrUnder(at, from) ? `${to}${at.slice(from.length)}` : at] = was;
+      }
+      unproven = next;
+    }
+  }
+  if (unproven && record.unproven && toMove.length > 0) {
+    await writeInstalledFiles(root, {
+      ...record,
+      unproven: { ...record.unproven, files: unproven },
+    });
+  }
+  await mkdir(fsPath(root, SAVED_COPIES_DIR), { recursive: true });
+  await writeFile(fsPath(root, SAVED_COPIES_MARKER), '');
+  return { moved: toMove.length };
 }
 
 /**
- * Run {@link migrateRoot} over every install root, each under `lock`.
- * Best-effort: a root that fails is logged, counted and retried next boot.
+ * Run {@link migrateRoot} over every install root, each under `lock`, with
+ * `hooks` around each root that is actually migrated. Best-effort: a root that
+ * fails is logged, counted and retried next boot.
  *
  * @param roots - Install roots (the installed list's `installPath`s).
  * @param lock - Runs a step under the root's install lock.
  * @param logger - Where moves and failures are reported.
+ * @param hooks - Consent to carry across a root's pass.
  */
-export async function migrateSavedCopies(
+export async function migrateSavedCopies<T>(
   roots: readonly string[],
-  lock: <T>(root: string, fn: () => Promise<T>) => Promise<T>,
-  logger: Pick<Logger, 'info' | 'warn'>
+  lock: <R>(root: string, fn: () => Promise<R>) => Promise<R>,
+  logger: Pick<Logger, 'info' | 'warn'>,
+  hooks?: MigrationHooks<T>
 ): Promise<SavedCopiesMigration> {
-  const result: SavedCopiesMigration = { moved: 0, failed: 0 };
+  const result: SavedCopiesMigration = { moved: 0, migrated: 0, failed: 0 };
   for (const root of new Set(roots)) {
     if ((await lstat(root).catch(() => undefined))?.isDirectory() !== true) continue;
     try {
-      const moved = await lock(root, () => migrateRoot(root));
-      if (moved > 0) {
+      const done = await lock(root, async () => {
+        if ((await lstat(fsPath(root, SAVED_COPIES_MARKER)).catch(() => undefined)) !== undefined) {
+          return { moved: 0, skipped: 'already-done' } as RootMigration;
+        }
+        const carried = hooks ? await hooks.before(root) : undefined;
+        const migration = await migrateRoot(root);
+        if (hooks && migration.skipped === undefined) await hooks.after(root, carried as T);
+        return migration;
+      });
+      if (done.skipped !== undefined) continue;
+      result.migrated++;
+      result.moved += done.moved;
+      if (done.moved > 0) {
         logger.info(
-          `[marketplace/saved-copies] moved ${moved} saved folder(s) in ${root} under ${SAVED_COPIES_DIR}, where nothing loads them`
+          `[marketplace/saved-copies] moved ${done.moved} saved cop${done.moved === 1 ? 'y' : 'ies'} in ${root} under ${SAVED_COPIES_DIR}, where nothing runs or loads them`
         );
       }
-      result.moved += moved;
     } catch (err) {
       result.failed++;
       logger.warn(

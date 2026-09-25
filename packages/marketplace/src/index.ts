@@ -146,4 +146,5 @@ export {
   UserEditablePathSchema,
   validUserEditable,
   declaredEffectPaths,
+  KEPT_COPY_BASENAME,
 } from './user-editable.js';

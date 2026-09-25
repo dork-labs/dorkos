@@ -38,7 +38,7 @@ const RESERVED_FILES: readonly string[] = [
 ];
 
 /** A basename ending `.dork-old` or `.dork-new`, optionally numbered (`.dork-old.2`), any case. */
-const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/i;
+export const KEPT_COPY_BASENAME = /\.dork-(?:old|new)(?:\.\d+)?$/i;
 
 /**
  * A path folded the way a case-insensitive volume compares names. APFS and

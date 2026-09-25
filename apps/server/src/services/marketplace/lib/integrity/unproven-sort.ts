@@ -5,7 +5,7 @@
  *
  * @module services/marketplace/lib/integrity/unproven-sort
  */
-import { mkdtemp, rename, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { isReservedPackagePath } from '@dorkos/marketplace';
@@ -21,7 +21,7 @@ import {
 import { stageInstalledCommit } from '../legacy-record.js';
 import { STRICT_RECORD_TEMP_PREFIX } from './strict-differences.js';
 import type { StrictRebuildResult } from './strict-record.js';
-import { freeSavedFileName, makeInert } from '../saved-copies/saved-copies.js';
+import { freeSavedFileName, makeInert, savedCopyMustMove } from '../saved-copies/saved-copies.js';
 
 /** Join a root and a POSIX path. */
 function fsPath(root: string, posixPath: string): string {
@@ -39,7 +39,11 @@ function fsPath(root: string, posixPath: string): string {
  */
 async function setAside(root: string, p: string): Promise<string> {
   const basename = p.slice(p.lastIndexOf('/') + 1);
-  const savedAs = isReservedPackagePath(basename) ? p : await freeSavedFileName(root, p);
+  // A file already under a kept-copy name stays put, unless it is in `bin/`,
+  // where anything is on the PATH (DOR-2340).
+  const stays = isReservedPackagePath(basename) && !savedCopyMustMove(p, false);
+  const savedAs = stays ? p : await freeSavedFileName(root, p);
+  if (savedAs !== p) await mkdir(path.dirname(fsPath(root, savedAs)), { recursive: true });
   if (savedAs !== p) await rename(fsPath(root, p), fsPath(root, savedAs));
   await makeInert(fsPath(root, savedAs));
   return savedAs;

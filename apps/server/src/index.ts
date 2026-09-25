@@ -282,6 +282,7 @@ import { withIntegrity } from './services/marketplace/lib/integrity/verify-insta
 import { scanInstallationsAcrossScopes } from './services/marketplace/installed-scanner.js';
 import { migrateSavedCopies } from './services/marketplace/lib/saved-copies/migrate-saved-copies.js';
 import { withInstallTargetLock } from './services/marketplace/transaction.js';
+import { globalApprovalCarryOver } from './services/marketplace/lib/saved-copies/saved-copies-consent.js';
 import { PackageFetcher } from './services/marketplace/package-fetcher.js';
 import { ConflictDetector } from './services/marketplace/conflict-detector.js';
 import { PermissionPreviewBuilder } from './services/marketplace/permission-preview.js';
@@ -1344,6 +1345,20 @@ async function start() {
     );
   } catch (err) {
     logger.warn('[Marketplace] Startup install recovery failed', logError(err));
+  }
+  // Copies an earlier version saved aside in a global install stop running
+  // and loading (DOR-2340), before anything loads the global packages. Once
+  // per install (a marker), and an approved package stays approved.
+  try {
+    const globalInstalls = await scanInstallationsAcrossScopes(dorkHome, []);
+    await migrateSavedCopies(
+      globalInstalls.map((i) => i.installPath),
+      withInstallTargetLock,
+      logger,
+      globalApprovalCarryOver(dorkHome)
+    );
+  } catch (err) {
+    logger.warn('[Marketplace] Could not check saved copies in global installs', logError(err));
   }
 
   // Initialize directory boundary (must happen before app creation)
@@ -2422,9 +2437,10 @@ async function start() {
         .catch((err: unknown) => {
           logger.warn('[Marketplace] Project install recovery failed', logError(err));
         })
-        // Once installs are settled: copies an earlier version saved aside
-        // stop being runnable, and saved folders move where nothing loads
-        // them (DOR-2340). Idempotent, so every boot re-checks.
+        // Once installs are settled: copies an earlier version saved aside in
+        // a project install stop running and loading (DOR-2340). Global
+        // installs were done at boot; a done root is skipped by its marker.
+        // Before the legacy-record sweep below, which chains on this promise.
         .then(async () => {
           const scopes = (meshCore?.listWithPaths() ?? []).map((a) => ({
             projectPath: a.projectPath,

@@ -64,37 +64,52 @@ async function update(
 
 // POSIX modes; Windows has no execute bits to clear.
 describe.skipIf(process.platform === 'win32')('saved copies are not runnable', () => {
-  it('clears the execute bits of an edited program saved aside from bin/', async () => {
+  it('moves an edited program saved aside from bin/ off the PATH, not runnable', async () => {
     const { plan } = await update(
       { 'bin/tool+x': '#!/bin/sh\necho v1\n' },
       { 'bin/tool+x': '#!/bin/sh\necho mine\n' },
       { 'bin/tool+x': '#!/bin/sh\necho v2\n' }
     );
+    // Git Bash on Windows runs a #! file in bin/ whatever its mode, so a saved
+    // program leaves bin/ altogether.
     expect(plan.actions).toContainEqual({
       kind: 'carry-as',
       path: 'bin/tool',
-      savedAs: 'bin/tool.dork-old',
+      savedAs: '.dork/saved/bin__tool.dork-old',
     });
-    expect(await runnable(staged, 'bin/tool.dork-old')).toBe(false);
+    expect(await runnable(staged, '.dork/saved/bin__tool.dork-old')).toBe(false);
     // The new version's own program is untouched.
     expect(await runnable(staged, 'bin/tool')).toBe(true);
   });
 
   it('clears the execute bits of a new default saved as .dork-new', async () => {
     const { plan } = await update(
-      { 'bin/tool+x': 'v1' },
-      { 'bin/tool+x': 'mine' },
-      { 'bin/tool+x': 'v2' },
-      ['bin/**']
+      { 'tools/tool+x': 'v1' },
+      { 'tools/tool+x': 'mine' },
+      { 'tools/tool+x': 'v2' },
+      ['tools/**']
     );
     expect(plan.actions).toContainEqual({
       kind: 'save-new-as',
-      path: 'bin/tool',
-      savedAs: 'bin/tool.dork-new',
+      path: 'tools/tool',
+      savedAs: 'tools/tool.dork-new',
     });
-    expect(await runnable(staged, 'bin/tool.dork-new')).toBe(false);
+    expect(await runnable(staged, 'tools/tool.dork-new')).toBe(false);
     // The person's kept program still runs: it is theirs, not a saved copy.
-    expect(await runnable(staged, 'bin/tool')).toBe(true);
+    expect(await runnable(staged, 'tools/tool')).toBe(true);
+  });
+
+  it('saves any other file beside itself', async () => {
+    const { plan } = await update(
+      { 'skills/a/SKILL.md': 'v1' },
+      { 'skills/a/SKILL.md': 'mine' },
+      { 'skills/a/SKILL.md': 'v2' }
+    );
+    expect(plan.actions).toContainEqual({
+      kind: 'carry-as',
+      path: 'skills/a/SKILL.md',
+      savedAs: 'skills/a/SKILL.md.dork-old',
+    });
   });
 
   it('saves a folder under .dork/saved, where no loader looks, with nothing runnable', async () => {
