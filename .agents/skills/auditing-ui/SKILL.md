@@ -70,11 +70,12 @@ after its findings are recorded; a lens that did not run keeps its old entry unt
 order (`cva`), since nothing has run yet and the first one is therefore the one due.
 
 **Bootstrap rule: a lens with no stamp has no diff base, and the audit refuses to invent one.**
-`diff` scoping and `/ui-audit:pulse` require an existing `stamps.json`. With no stamps file, or
-for a lens missing from it, they **stop and say so**, naming the fix: run `full` (or a scoped run
-covering those lenses) to establish the baseline. The alternative — silently widening to the
-whole tree — turns a cheap pulse into a ten-million-token run nobody consented to, which §2's
-cost gate exists to prevent. `run` therefore takes an **explicit scope** and has no default.
+`diff` scoping and `/ui-audit:pulse` require an existing `stamps.json`. With no stamps file, both
+**stop and say so**, naming the fix: run `full` (or a scoped run covering those lenses) to
+establish the baseline. A lens missing from the file stops a `diff` run the same way; the pulse
+instead **skips that lens and names it in its report**, with the same fix, and runs the lenses
+that do have a stamp. Neither ever widens a lens to the whole tree: that turns a cheap pulse into
+a ten-million-token run nobody consented to, which §2's cost gate exists to prevent. `run` therefore takes an **explicit scope** and has no default.
 
 ## 2. Scope the run
 

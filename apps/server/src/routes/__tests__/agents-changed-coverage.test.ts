@@ -78,12 +78,14 @@ import { RelayCore } from '@dorkos/relay';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { readManifest, writeManifest } from '@dorkos/shared/manifest';
+import { AGENT_MANIFEST_PATH, UNINSTALLED_AGENT_PATH } from '@dorkos/marketplace';
 import { createMeshRouter } from '../mesh.js';
 import { createAgentsRouter } from '../agents.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { wireLiveChangeBroadcasts } from '../../services/core/streams/live-change-broadcasts.js';
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
+import { createMeshAgentRegistry } from '../../services/marketplace/flows/mesh-agent-registry.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 
 /** One bound listener for the file; the app behind it is swapped per case. */
@@ -294,6 +296,30 @@ describe('every agent mutation entry point broadcasts agents_changed exactly onc
     // past, on every pass.
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(broadcasts).toHaveLength(1);
+  });
+
+  it('a marketplace agent uninstall — the registry surface index.ts hands UninstallFlow', async () => {
+    const { id, dir } = await registerAndReset('uninstalled-package');
+    // `UninstallFlow.removeAgent` parks the manifest BEFORE it unregisters, so
+    // no live agent.json is left for a scan to adopt again. Do the same here, so
+    // the case proves the removal still reaches the wire with the manifest gone.
+    await fs.rename(
+      path.join(dir, ...AGENT_MANIFEST_PATH.split('/')),
+      path.join(dir, ...UNINSTALLED_AGENT_PATH.split('/'))
+    );
+
+    const removed = await createMeshAgentRegistry(() => mesh).unregisterAtPath(dir);
+
+    expect(removed).toEqual({ id, directoryDenied: false });
+    expect(broadcasts).toHaveLength(1);
+    expect(broadcasts[0]).toMatchObject({
+      kind: 'removed',
+      agentId: id,
+      name: 'uninstalled-package',
+    });
+    // Gone now, not after the reconciler's grace sweep (DOR-2066).
+    expect(mesh.get(id)).toBeUndefined();
+    expect(mesh.getByPath(dir)).toBeUndefined();
   });
 
   it('the in-session mesh_register MCP tool', async () => {

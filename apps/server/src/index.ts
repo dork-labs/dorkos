@@ -285,6 +285,7 @@ import {
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
@@ -4306,17 +4307,7 @@ async function start() {
     // One agent-registry surface for the flows that take an agent off the team
     // (DOR-2245): an uninstalled agent package, and an agent a different
     // package with the same name replaces.
-    const marketplaceAgentRegistry = {
-      unregisterAtPath: async (projectPath: string) => {
-        const agent = meshCore?.getByPath(projectPath);
-        if (!meshCore || !agent) return null;
-        const { manifestKept } = await meshCore.unregister(agent.id);
-        return { id: agent.id, directoryDenied: manifestKept };
-      },
-      restoreAtPath: async (projectPath: string) => {
-        await meshCore?.syncFromDisk(projectPath);
-      },
-    };
+    const marketplaceAgentRegistry = createMeshAgentRegistry(() => meshCore);
     const marketplaceAgentFlow = new AgentInstallFlow({
       dorkHome,
       agentCreator: { createAgentWorkspace },
