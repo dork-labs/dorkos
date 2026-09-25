@@ -14,6 +14,8 @@ type Props = {
   readOnly?: boolean;
   /** Read-only because the host holds the community, not because its owner archived it. */
   held?: boolean;
+  /** When this community's history was imported; channels from before it say so at the top. */
+  importedAt?: string | null;
 };
 function mergeEntries(previous: Entry[], incoming: Entry[]) {
   const byId = new Map(previous.map((entry) => [entry.id, entry]));
@@ -76,6 +78,7 @@ export function ChannelView({
   onChanged,
   readOnly = false,
   held = false,
+  importedAt = null,
 }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [thread, setThread] = useState<Entry | null>(null);
@@ -365,6 +368,11 @@ export function ChannelView({
                   Load older messages
                 </button>
               </div>
+            )}
+            {!nextCursor && importedAt && channel.createdAt <= importedAt && (
+              <p className="small muted text-center" role="note">
+                History imported from another host on {new Date(importedAt).toLocaleDateString()}.
+              </p>
             )}
             {entries.length === 0 && (
               <div className="pt-12 text-center">

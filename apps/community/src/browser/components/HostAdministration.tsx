@@ -6,6 +6,7 @@ import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
 import { HostHoldControls } from './HostHoldControls.js';
 import { HostShortNames } from './HostShortNames.js';
+import { HostImportForm, HostImportStatus } from './HostImports.js';
 
 type Lifecycle =
   'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
@@ -21,6 +22,8 @@ type Community = {
   deletionNoticeAt: string | null;
   deletionRequestedBy: 'owner' | 'host' | null;
   shortName: string | null;
+  importId: string | null;
+  importState: string | null;
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };
@@ -262,7 +265,10 @@ export function HostAdministration() {
           ) : (
             <div className="stack">
               {communities.map((community) => {
-                const pending = community.lifecycle === 'pending_owner';
+                // An unfinished import owns its community until it is ready.
+                const importing =
+                  community.importState !== null && community.importState !== 'ready';
+                const pending = community.lifecycle === 'pending_owner' && !importing;
                 const suspendable =
                   community.lifecycle === 'active' ||
                   community.lifecycle === 'archived' ||
@@ -334,6 +340,12 @@ export function HostAdministration() {
                         </button>
                       )}
                     </div>
+                    {community.importId && community.lifecycle === 'pending_owner' && (
+                      <HostImportStatus
+                        importId={community.importId}
+                        onChanged={() => void refresh()}
+                      />
+                    )}
                     <div className="mt-3">
                       <HostHoldControls
                         community={community}
@@ -401,6 +413,7 @@ export function HostAdministration() {
           )}
         </section>
       </div>
+      <HostImportForm onStarted={() => void refresh()} />
       <HostApiKeys />
       {confirmation && (
         <FocusDialog

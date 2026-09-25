@@ -61,7 +61,7 @@ async function settleImports(): Promise<void> {
       "UPDATE pending_blob_deletions SET next_attempt_at=now()-interval '1 second'"
     );
     await sweepPendingBlobDeletions(h.pool, h.blobStore, 100);
-    const result = await sweepImports(h.pool, h.blobStore, clock);
+    const result = await sweepImports(h.pool, h.blobStore, h.config.limits, clock);
     if (!result.claimed) return;
   }
   throw new Error('Import work did not settle');

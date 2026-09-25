@@ -171,7 +171,7 @@ const imports = setInterval(() => {
   void (async () => {
     // One import at a time on this replica, a bounded number per tick.
     for (let claimed = 0; claimed < 10; claimed++) {
-      const result = await sweepImports(pool, blobStore);
+      const result = await sweepImports(pool, blobStore, config.limits);
       if (!result.claimed) break;
     }
   })()

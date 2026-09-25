@@ -113,7 +113,7 @@ function repeatedUpload(row: ImportRow, sha256: string) {
 }
 
 /**
- * Register the host's import routes: create, read, upload, and cancel.
+ * Register the host's import routes: create, read, upload, commit, and cancel.
  *
  * An import writes an owner export's content into a brand-new, unclaimed community the host
  * cannot read back through any host route. No route here returns content: a read carries
@@ -258,6 +258,33 @@ export function registerImportRoutes(
         changedFields: ['state'],
       });
       return cancelled.rows[0];
+    });
+    return json(c, CommunityAdminImportSchema, projectImport(row));
+  });
+
+  app.post('/host/imports/:id/commit', async (c) => {
+    const actor = await authority.require(c, 'communities:import');
+    await readJson(c, CommunityAdminImportMutationRequestSchema);
+    const importId = parseImportId(c.req.param('id'));
+    const row = await transaction(pool, async (client) => {
+      const current = await loadImport(client, importId, 'FOR UPDATE');
+      await assertHostActor(client, actor, now());
+      if (!current) throw new ApiError(404, 'NOT_FOUND', 'Import not found.');
+      if (current.state !== 'validated')
+        throw new ApiError(409, 'STATE_CONFLICT', 'Only a checked import can be committed.');
+      const committed = await client.query<ImportRow>(
+        `UPDATE community_imports SET state='restoring',attempts=0,next_attempt_at=now(),
+           updated_at=now() WHERE id=$1 RETURNING *`,
+        [importId]
+      );
+      await recordHostAudit(client, actor, {
+        action: 'import.commit',
+        communityId: current.community_id,
+        priorState: 'validated',
+        nextState: 'restoring',
+        changedFields: ['state'],
+      });
+      return committed.rows[0];
     });
     return json(c, CommunityAdminImportSchema, projectImport(row));
   });

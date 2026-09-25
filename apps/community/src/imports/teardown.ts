@@ -1,15 +1,58 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
 import { releaseCommunityShortNames } from '../host/short-names.js';
 import type { BlobStore } from '../storage/index.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
 import { MANAGED_BLOB_RESERVATION_TTL_MS } from '../storage/managed-blobs.js';
 
+/** Every table an import writes into, in an order that deletes children before parents. */
+const IMPORTED_TABLES = [
+  'entry_mentions',
+  'attachments',
+  'entries',
+  'channel_members',
+  'community_handles',
+  'agents',
+  'audit_events',
+  'channels',
+  'members',
+] as const;
+
+/**
+ * Lock an import that needs tearing down and its community, community first, the same order
+ * every host route takes them in. Returns the community, or null when there is nothing to do.
+ */
+async function lockTarget(
+  client: PoolClient,
+  importId: string,
+  skipLocked: boolean
+): Promise<string | null> {
+  const target = await client.query<{ community_id: string | null }>(
+    'SELECT community_id FROM community_imports WHERE id=$1',
+    [importId]
+  );
+  const communityId = target.rows[0]?.community_id;
+  if (!communityId) return null;
+  const skip = skipLocked ? ' SKIP LOCKED' : '';
+  const community = await client.query(`SELECT 1 FROM communities WHERE id=$1 FOR UPDATE${skip}`, [
+    communityId,
+  ]);
+  if (!community.rowCount) return null;
+  const job = await client.query(
+    `SELECT 1 FROM community_imports
+     WHERE id=$1 AND community_id=$2 AND state IN ('cancelled','failed') AND settled_at IS NULL
+     FOR UPDATE${skip}`,
+    [importId, communityId]
+  );
+  return job.rowCount ? communityId : null;
+}
+
 /** What one teardown pass did. */
 export type TeardownOutcome = 'settled' | 'waiting' | 'skipped';
 
 /**
- * Remove what a cancelled or failed import left behind, then its unclaimed community.
+ * Remove what a cancelled or failed import left behind, then its unclaimed community: the
+ * rows of an abandoned ready import, every file, and finally the community itself.
  *
  * Each pass queues every stored or committed file of the community for deletion and deletes
  * it, keeping failures as cleanup work the pending-deletion sweep retries. A reservation whose
@@ -23,17 +66,31 @@ export async function teardownImport(
   importId: string
 ): Promise<TeardownOutcome> {
   const queued = await transaction(pool, async (client) => {
-    const job = await client.query<{ community_id: string | null }>(
-      `SELECT community_id FROM community_imports
-       WHERE id=$1 AND state IN ('cancelled','failed') AND settled_at IS NULL
-       FOR UPDATE SKIP LOCKED`,
+    const communityId = await lockTarget(client, importId, true);
+    if (!communityId) return null;
+    const community = await client.query<{ lifecycle: string }>(
+      'SELECT lifecycle FROM communities WHERE id=$1',
+      [communityId]
+    );
+    // Only an unclaimed community is torn down; nobody has ever been able to read it. If it
+    // somehow moved on, only the import's own files go, and the community stays.
+    const unclaimed = community.rows[0]?.lifecycle === 'pending_owner';
+    const own = await client.query<{ blob_key: string }>(
+      `SELECT blob_key FROM community_import_files WHERE import_id=$1
+       UNION ALL SELECT staging_blob_key FROM community_imports
+       WHERE id=$1 AND staging_blob_key IS NOT NULL`,
       [importId]
     );
-    const communityId = job.rows[0]?.community_id;
-    if (!communityId) return null;
-    await client.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
+    if (unclaimed) {
+      // A ready import that the host abandoned has restored rows. They go first, children
+      // before parents, so every file below is unreferenced.
+      for (const table of IMPORTED_TABLES) {
+        // content-change: import-teardown
+        await client.query(`DELETE FROM ${table} WHERE community_id=$1`, [communityId]);
+      }
+    }
     // Progress rows and the staging reference are what keep these files from the cleanup
-    // sweeps; they go first so every file below is unreferenced.
+    // sweeps; they go too.
     await client.query('DELETE FROM community_import_files WHERE import_id=$1', [importId]);
     await client.query('UPDATE community_imports SET staging_blob_key=NULL WHERE id=$1', [
       importId,
@@ -41,9 +98,17 @@ export async function teardownImport(
     const settled = await client.query<{ blob_key: string }>(
       `UPDATE managed_blobs SET state='pending_delete'
        WHERE community_id=$1 AND state IN ('stored','committed')
+         AND ($2 OR blob_key=ANY($3::text[]))
        RETURNING blob_key`,
-      [communityId]
+      [communityId, unclaimed, own.rows.map((row) => row.blob_key)]
     );
+    if (!unclaimed) {
+      await client.query(
+        `UPDATE community_imports SET settled_at=now(),lease_token=NULL,updated_at=now()
+         WHERE id=$1`,
+        [importId]
+      );
+    }
     // Every one of these writers finished (stored or committed), so a delete settles it: the
     // error timestamp marks the outcome as known for the sweep that retries a failure.
     await client.query(
@@ -52,7 +117,7 @@ export async function teardownImport(
        ON CONFLICT(blob_key) DO NOTHING`,
       [settled.rows.map((row) => row.blob_key)]
     );
-    return { communityId, keys: settled.rows.map((row) => row.blob_key) };
+    return { communityId, keys: settled.rows.map((row) => row.blob_key), unclaimed };
   });
   if (!queued) return 'skipped';
 
@@ -81,15 +146,10 @@ export async function teardownImport(
     });
   }
 
+  if (!queued.unclaimed) return 'settled';
   return transaction(pool, async (client) => {
-    const job = await client.query<{ community_id: string | null }>(
-      `SELECT community_id FROM community_imports
-       WHERE id=$1 AND state IN ('cancelled','failed') AND settled_at IS NULL FOR UPDATE`,
-      [importId]
-    );
-    const communityId = job.rows[0]?.community_id;
+    const communityId = await lockTarget(client, importId, false);
     if (!communityId) return 'skipped';
-    await client.query('SELECT 1 FROM communities WHERE id=$1 FOR UPDATE', [communityId]);
     // A stale reservation (its writer's lease is over) is moved to cleanup here, as the pending
     // deletion sweep would; a fresh one still has a writer, so this pass waits for it.
     await client.query(

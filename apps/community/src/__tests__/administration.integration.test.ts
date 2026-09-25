@@ -1080,6 +1080,7 @@ it('rejects foreign objects on every id-taking community route, even for an owne
     'PUT /settings/icon': 'edits the URL community only',
     'DELETE /settings/icon': 'edits the URL community only',
     'GET /icon': 'reads the URL community only',
+    'GET /history-origin': 'reads the URL community only',
     'POST /owner/lifecycle': 'changes the URL community only',
     'GET /owner/deletion': 'reads the URL community only',
     'POST /owner/deletion': 'changes the URL community only',

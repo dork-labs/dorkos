@@ -898,6 +898,15 @@ export const CommunityExportManifestV1Schema = z.strictObject({
 export type CommunityExportManifestV1 = z.infer<typeof CommunityExportManifestV1Schema>;
 
 /**
+ * When this community's history was imported from another host, or null when it was not. A
+ * channel created before this time starts with imported history. Only the same-origin browser
+ * bundle reads it.
+ */
+export const CommunityWireHistoryOriginSchema = z.strictObject({
+  importedAt: timestamp.nullable(),
+});
+
+/**
  * One request to erase a person from one community (`membership`) or from the
  * whole host (`account`). It waits 72 hours in `scheduled`, when the person can
  * still cancel it. Only the same-origin browser bundle parses this object.

@@ -357,6 +357,8 @@ export async function sweepCommunityDeletions(
         locked.rows[0].requested_by_host_actor,
       ]
     );
+    // An import that made this community clears its community_id here (ON DELETE SET NULL) and
+    // keeps its finished history; the brief `pending_owner` reset above never commits alone.
     await client.query('DELETE FROM communities WHERE id=$1', [job.community_id]);
     return true;
   });
