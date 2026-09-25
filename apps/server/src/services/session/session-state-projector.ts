@@ -1809,8 +1809,8 @@ export class SessionStateProjector {
       queuedMessages: this.readQueue(),
       // Empty here, and filled by whoever DELIVERS the snapshot (spec
       // `canvas-agent-seat` §1.4). The canvas is the server's, not a runtime's,
-      // so it is decorated once in `deliverSessionStream` — and once in
-      // `DirectTransport` — rather than reached for from inside a projector that
+      // so it is decorated in `deliverSessionStream` rather than reached for
+      // from inside a projector that
       // has no business importing a service.
       canvas: [],
       cursor: this.counter,
@@ -2180,7 +2180,7 @@ function forgetProjectorRedirects(canonicalId: string): void {
 
 /**
  * Durable session-event store for LOG-BACKED runtimes (DOR-189), injected once
- * at boot. `undefined` until wired — and in unit tests / embedded hosts without
+ * at boot. `undefined` until wired — and in unit tests without
  * a Db — in which case persistence is a no-op and history degrades to the
  * in-memory EventLog (the pre-DOR-189 behavior).
  */

@@ -34,7 +34,7 @@ import { createPipSlice } from './app-store-pip';
 import type { AppState } from './app-store-types';
 
 export type { AppState } from './app-store-types';
-export type { ContextFile, RecentCwd } from './app-store-helpers';
+export type { RecentCwd } from './app-store-helpers';
 
 // ---------------------------------------------------------------------------
 // Store
@@ -89,25 +89,6 @@ export const useAppStore = create<AppState>()(
         setSidebarOpen: (open) => {
           writeBool(BOOL_KEYS.sidebarOpen, open);
           set({ sidebarOpen: open });
-        },
-
-        // Persisted target of the embedded `switch_sidebar_tab` UI command (a
-        // Shape's pinned `sidebarTab` and `control_ui` drive it) and mirror for
-        // the embedded `get_ui_state` snapshot. No surface renders from it today
-        // — the legacy embed tab strip that once did (`SessionSidebar`) was
-        // retired for the roster + right-panel Inspector (DOR-401) — so it is
-        // write-and-report state kept for those command/snapshot channels.
-        sidebarActiveTab: (() => {
-          try {
-            return localStorage.getItem('dorkos-sidebar-active-tab') ?? 'overview';
-          } catch {}
-          return 'overview';
-        })(),
-        setSidebarActiveTab: (tab) => {
-          try {
-            localStorage.setItem('dorkos-sidebar-active-tab', tab);
-          } catch {}
-          set({ sidebarActiveTab: tab });
         },
 
         // ── Session & navigation ───────────────────────────────────────────
@@ -192,15 +173,6 @@ export const useAppStore = create<AppState>()(
         setTasksBadgeCount: (v) => set({ tasksBadgeCount: v }),
 
         // ── Context files ──────────────────────────────────────────────────
-        contextFiles: [],
-        addContextFile: (file) =>
-          set((s) => {
-            if (s.contextFiles.some((f) => f.path === file.path)) return s;
-            return { contextFiles: [...s.contextFiles, { ...file, id: crypto.randomUUID() }] };
-          }),
-        removeContextFile: (id) =>
-          set((s) => ({ contextFiles: s.contextFiles.filter((f) => f.id !== id) })),
-        clearContextFiles: () => set({ contextFiles: [] }),
 
         // ── Resets (cross-slice — they live here where set is fully typed) ──
         //
@@ -240,7 +212,6 @@ export const useAppStore = create<AppState>()(
             ...restoreDefaultTypography(),
             devtoolsOpen: false,
             routerDevtoolsOpen: false,
-            sidebarActiveTab: 'overview' as const,
             rightPanelOpen: false,
             activeRightPanelTab: null,
             rightPanelLayoutKey: null,

@@ -1,7 +1,6 @@
 node_modules
 dist
 dist-server
-dist-obsidian
 .turbo
 coverage
 .scratch

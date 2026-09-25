@@ -8,7 +8,7 @@
  * (`store.readAll(sessionId)`), so it survives a server restart and needs NO
  * live projector — the fix for the original bug (`getMessageHistory` →
  * `peekProjector` → `[]` after a restart). When no store is wired (unit tests,
- * embedded hosts without a Db) it falls back to the live projector's in-memory
+ * unit tests without a Db) it falls back to the live projector's in-memory
  * log, the pre-DOR-189 behavior.
  *
  * The live in-progress turn is NOT included here — it is delivered separately

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CheckFilesResult } from '@dorkos/shared/marketplace-schemas';
 
 import { createMarketplaceMethods } from '../marketplace-methods';
-import { marketplaceStubs } from '../../embedded-mode-stubs';
 
 const originalFetch = globalThis.fetch;
 
@@ -57,12 +56,5 @@ describe('createMarketplaceMethods().checkPackageFiles (DOR-2320)', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
       installRoot: '/home/.dork/plugins/flow',
     });
-  });
-
-  // Purpose: embedded mode has no marketplace, so preparing is refused plainly.
-  it('is refused in embedded mode', async () => {
-    await expect(marketplaceStubs.checkPackageFiles('flow')).rejects.toThrow(
-      /not supported in embedded mode/
-    );
   });
 });

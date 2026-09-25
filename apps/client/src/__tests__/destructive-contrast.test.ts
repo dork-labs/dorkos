@@ -144,7 +144,7 @@ describe('destructive contrast', () => {
     section(tokens, ':root,', '@media')
   );
   const dark = resolveSharedTokens(
-    section(css, '.dark {', '.copilot-view-content'),
+    section(css, '.dark {', '@layer border-defaults'),
     section(tokens, '\n.dark {', '\n}')
   );
 
@@ -250,28 +250,6 @@ describe('destructive contrast', () => {
       pairs[`text-destructive-foreground over ${ground}`] = contrast(label, fill);
     }
     expectAll(pairs);
-  });
-
-  // --- The Obsidian embed's flat literals ---
-
-  it('Obsidian: the light red holds text and a white label; the dark-vault red holds text', () => {
-    const obsidian = section(css, '.copilot-view-content {', '\n}');
-    const lightPin = obsidian.match(/--color-destructive:\s*(#[0-9a-fA-F]{6})/);
-    const darkPin = css.match(
-      /\.theme-dark \.copilot-view-content\s*\{[^}]*--color-destructive:\s*(#[0-9a-fA-F]{6})/
-    );
-    expect(lightPin, 'Obsidian --color-destructive pin not found').not.toBeNull();
-    expect(darkPin, 'Obsidian .theme-dark --color-destructive pin not found').not.toBeNull();
-    const lightRed = hexToRgb(lightPin![1]!);
-    const darkRed = hexToRgb(darkPin![1]!);
-    // Obsidian's default theme surfaces: #ffffff / #f6f6f6 light, #1e1e1e / #262626 dark.
-    expectAll({
-      'light red on #ffffff': contrast(lightRed, hexToRgb('#ffffff')),
-      'light red on #f6f6f6': contrast(lightRed, hexToRgb('#f6f6f6')),
-      'white on light red': contrast(WHITE, lightRed),
-      'dark red on #1e1e1e': contrast(darkRed, hexToRgb('#1e1e1e')),
-      'dark red on #262626': contrast(darkRed, hexToRgb('#262626')),
-    });
   });
 });
 

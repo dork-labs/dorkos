@@ -275,7 +275,7 @@ Key details:
 
 **Session sidebar usage**: The `SessionItem` component uses `layoutId="active-session-bg"` for the active session background. The `SidebarContent` ancestor carries the `layout` prop to enable correct position measurement during list scroll. The spring preset for this indicator is `{ type: 'spring', stiffness: 280, damping: 32 }` (smooth slide, not the snappier button preset).
 
-- Respects `prefers-reduced-motion` via the existing `<MotionConfig reducedMotion="user">` wrapper in `App.tsx`
+- Respects `prefers-reduced-motion` via the existing `<MotionConfig reducedMotion="user">` wrapper in `AppShell.tsx`
 
 ### Stagger on Open (Not on Every Keystroke)
 
@@ -621,7 +621,7 @@ const fadeIn = {
 
 ```typescript
 // ✅ Transform and layout animations are handled globally — no per-component
-// work required for THOSE. App.tsx wraps everything in:
+// work required for THOSE. AppShell.tsx wraps everything in:
 // <MotionConfig reducedMotion="user">
 // This disables transform/layout animations when the user has
 // prefers-reduced-motion: reduce set in their OS settings.
@@ -772,7 +772,7 @@ Add `will-change` to elements that animate frequently:
 
 ### 3. Reduce Motion for Accessibility
 
-`<MotionConfig reducedMotion="user">` in `App.tsx` suppresses **transform and layout** Motion animations globally. `index.css` collapses all CSS `animation-duration` and `transition-duration` to `0.01ms` under `@media (prefers-reduced-motion: reduce)`, covering any non-Motion CSS animations. Most components need nothing beyond this.
+`<MotionConfig reducedMotion="user">` in `AppShell.tsx` suppresses **transform and layout** Motion animations globally. `index.css` collapses all CSS `animation-duration` and `transition-duration` to `0.01ms` under `@media (prefers-reduced-motion: reduce)`, covering any non-Motion CSS animations. Most components need nothing beyond this.
 
 **Neither reset reaches opacity or colour, including any `repeat: Infinity` loop over them** — `MotionConfig` doesn't suppress those, since they're written as inline styles from JS regardless of the setting. (A `repeat: Infinity` loop over a _transform_ — `x`, `y`, `scale`, `rotate` — is a different case: those are exactly what `MotionConfig` already suppresses, so they need no separate gate.) A `motion.*` component animating opacity or colour must call `useReducedMotion()` itself and branch off; putting the branch in a pure function that also reports itself as a `data-` attribute, so the attribute can't drift from the behavior, is one way to do it (the `shouldAnimateRoster()` shape in `features/team-roster/lib/roster-layout.ts`). The session row's colour pulse gates this way too, and it puts the branch **inside the hook** (`shouldPulse` in `entities/session/model/status/use-pulse-motion.ts`) rather than at each call site: `usePulseMotion` is public API on the entity barrel, so a gate that lived at the call sites would be a rule the next caller had to already know. The rows report the hook's answer as `data-pulsing`.
 

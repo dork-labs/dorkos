@@ -19,13 +19,6 @@
  * "another tab" and "another window" are different requests, and the tab strip
  * must not quietly eat the only way to ask for the second one.
  *
- * **Who owns a tab depends on the surface** (DOR-568), and this module is what
- * decides. In the desktop app the cockpit owns its own strip and `tab` opens one
- * of those ({@link registerTabOpener}). In a browser the browser owns tabs, so
- * `tab` opens a real browser tab — bookmarkable, restored by session restore,
- * draggable into its own window, none of which ours could be. The Obsidian embed
- * is one pane, so a tab request lands in place.
- *
  * - **Internal** — relative, hash-only, query-only, or absolute at the app's own
  *   origin *and* landing on a route the cockpit actually serves
  *   ({@link APP_ROUTE_PATHS}). Dispatched through TanStack Router, never as a
@@ -42,15 +35,10 @@
  *   because untrusted surfaces (gen-ui widgets, MCP App iframes, MCP
  *   elicitation, and every link an agent writes in chat) ask us to open links.
  *
- * The router is registered once from the app entry ({@link registerLinkNavigator}).
- * The Obsidian embed deliberately mounts no router, so internal dispatch there
- * warns and does nothing rather than crashing or forcing a document load that
- * would tear the embed pane down.
- *
  * @module shared/lib/link-navigation
  */
 import { toast } from 'sonner';
-import { getPlatform, isDesktopShell } from './platform';
+import { isDesktopShell } from './platform';
 
 /**
  * One toast slot for every refusal anywhere in the app. A second refused click
@@ -310,12 +298,6 @@ export function registerLinkNavigator(navigate: LinkNavigator): () => void {
  * Register the in-window tab strip that `target: 'tab'` links open into. Called
  * once from the app entry, alongside {@link registerLinkNavigator}.
  *
- * Registered only where a tab strip actually exists — **the desktop shell**
- * (DOR-568). In a browser nothing registers, and {@link openLink} opens a real
- * browser tab instead, which is the better tab in every way that matters. The
- * Obsidian embed is one pane inside someone else's app, so a tab request there
- * lands in place.
- *
  * Registering is not what makes a tab an in-window one — {@link openLink} asks
  * {@link isDesktopShell} as well, so an opener left in scope on the wrong
  * surface is ignored rather than obeyed. The app entry's own gate is a
@@ -333,14 +315,9 @@ export function registerTabOpener(open: TabOpener): () => void {
 
 /**
  * Whether this surface can show the cockpit somewhere other than in place.
- *
- * False in the Obsidian embed, which is one pane inside someone else's app —
- * and true everywhere else, which is what it has always meant. "A new tab" is
- * meaningful on the desktop and in a browser alike; only the owner of the tab
- * differs (see {@link registerTabOpener}).
  */
 export function supportsNewTab(): boolean {
-  return typeof window !== 'undefined' && !getPlatform().isEmbedded;
+  return typeof window !== 'undefined';
 }
 
 /**
@@ -355,12 +332,6 @@ export function supportsNewTab(): boolean {
  * features-string popup — no address bar, no reload, no bookmark, worse than
  * the tab a person can drag out themselves in one gesture. Two menu items that
  * do the same thing is a lie told in the UI, so the browser is offered one.
- *
- * Composed of both halves on purpose. The embed has no bridge, so
- * {@link isDesktopShell} alone would already answer `false` there — naming
- * {@link supportsNewTab} as well is what records that "one pane inside someone
- * else's app" and "the browser owns windows here" are two different reasons for
- * the same answer, and that losing either one is not a simplification.
  */
 export function supportsSeparateWindow(): boolean {
   return supportsNewTab() && isDesktopShell();
@@ -368,12 +339,6 @@ export function supportsSeparateWindow(): boolean {
 
 /**
  * The scheme an href names **for itself**, or `null` if it names none.
- *
- * Parsed with no base on purpose. A relative href (`/tasks`) inherits the
- * page's scheme when resolved, and in the Obsidian embed that is `app:` — so
- * resolving here would answer a refusal with "DorkOS doesn't open app: links",
- * naming a scheme the person never saw and cannot act on. Unresolved, the same
- * href simply has no scheme to name and gets the generic sentence instead.
  *
  * It is also **clamped**: a refused href is attacker- or agent-authored, and
  * `new URL` will happily parse a scheme hundreds of characters long out of one
@@ -680,25 +645,6 @@ function openInBrowser(url: string): boolean {
 
 /**
  * Where an internal link should land.
- *
- * - `here` (default) — navigate the current view through the router.
- * - `tab` — another tab, opened by whoever owns tabs on this surface: the
- *   cockpit's own strip in the desktop app ({@link registerTabOpener}), a real
- *   browser tab in a browser. Falls back to `here` in the Obsidian embed, the
- *   one surface with no second place to put anything.
- * - `window` — a second cockpit window. Deliberately kept distinct from `tab`:
- *   "put this on my other monitor" is a different request from "give me another
- *   tab", and collapsing the two would delete the only way to ask for it. Only
- *   worth offering where it is a distinct destination — see
- *   {@link supportsSeparateWindow}, which is the gate the UI asks.
- *
- * **Neither degrades to `here` except in the embed.** Where a surface cannot
- * honour `window` — a browser — the request becomes a browser tab, not an
- * in-place navigation. Both answers are wrong in the same direction, but only
- * one of them takes something away: someone who asked for a second view and got
- * a tab still has the view they started from, and someone who got an in-place
- * navigation has lost it. The embed is the exception because one pane has
- * nowhere else to put anything, and opening in place beats doing nothing.
  */
 export type LinkTarget = 'here' | 'tab' | 'window';
 
@@ -786,14 +732,9 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
       window.open(link.url, '_blank');
       return true;
     }
-    // Only the embed reaches here: one pane inside someone else's app, with
-    // nowhere else to put anything. Fall through and open in place.
   }
 
   if (!linkNavigator) {
-    // The embed has no router by design; anywhere else this means the app entry
-    // never registered one. Falling back to a document load would reintroduce
-    // the SPA remount this seam exists to prevent.
     console.warn('[dorkos:link] no router registered — ignoring internal link:', href);
     return false;
   }
@@ -804,16 +745,6 @@ export function openLink(href: string, options: OpenLinkOptions = {}): boolean {
 
 /**
  * Open a link outside the app, whatever it points at.
- *
- * The right call for any action that promises to leave. Its callers range from
- * first-party buttons to agent-fed surfaces (gen-UI widget `url` actions, the
- * MCP App iframe, elicitation prompts, touch chips in the embed); the full
- * surface list lives in `contributing/link-dispatch-policy.md` rather than
- * here, where a count would drift. Where a {@link LinkSafetyModal} confirms
- * first, that modal's contract is "this leaves what you are looking at", so a
- * target that happens to be one of our own routes must still leave, not
- * navigate the view out from under the reader. Works with no router registered, so it behaves
- * identically in the router-less Obsidian embed.
  *
  * **Markdown links come through here too** (DOR-547). `MarkdownLink` — the
  * anchor every Streamdown instance in the app renders, in chat and in static

@@ -32,7 +32,7 @@ function makeGitStatus(overrides: Partial<GitStatusResponse> = {}): GitStatusRes
 
 const SAMPLE_UI_STATE: UiState = {
   panels: { settings: false, tasks: true, relay: false, picker: false },
-  sidebar: { open: true, activeTab: 'sessions' },
+  sidebar: { open: true },
   agent: { id: 'agent-1', cwd: '/proj' },
 };
 
@@ -187,10 +187,8 @@ describe('assembleAdditionalContext', () => {
     });
 
     it('bounds an over-length seed HERE, not only at the HTTP route', async () => {
-      // The route's `400` is a bound on one of two doors. The embedded
-      // (Obsidian / DirectTransport) path never meets `SendMessageRequestSchema`,
-      // so before this the same 10 MB seed that a `fetch` could not get past the
-      // route went straight into the prompt in-process. This is the choke point
+      // Direct service callers do not pass through the route's schema, so the
+      // assembler must bound the seed itself. This is the choke point
       // both doors share.
       mockedGetGitStatus.mockResolvedValue(makeGitStatus());
       const huge = 'x'.repeat(SEED_CONTEXT_MAX_LENGTH * 3);

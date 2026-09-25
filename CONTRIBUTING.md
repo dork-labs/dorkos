@@ -42,7 +42,6 @@ This is a Turborepo monorepo with six apps and seventeen shared packages:
 | `apps/server`                | `@dorkos/server`            | Express 5 API server                                 |
 | `apps/site`                  | `@dorkos/site`              | Marketing site & docs (Next.js 16, Fumadocs)         |
 | `apps/desktop`               | `@dorkos/desktop`           | Electron shell (macOS, Windows alpha)                |
-| `apps/obsidian-plugin`       | `@dorkos/obsidian-plugin`   | Obsidian sidebar plugin                              |
 | `apps/e2e`                   | `@dorkos/e2e`               | Playwright browser tests                             |
 | `packages/cli`               | `dorkos`                    | Publishable npm CLI                                  |
 | `packages/shared`            | `@dorkos/shared`            | Zod schemas, shared types, port interfaces           |
@@ -84,7 +83,6 @@ To work on a single package:
 ```bash
 pnpm exec dotenv -- turbo dev --filter=@dorkos/server   # Server only
 pnpm exec dotenv -- turbo dev --filter=@dorkos/client   # Client only
-pnpm exec dotenv -- turbo build --filter=@dorkos/obsidian-plugin  # Build plugin only
 ```
 
 `dotenv` loads the root `.env` and lives in `node_modules/.bin`, so it needs the `pnpm exec` prefix.
@@ -97,10 +95,9 @@ pnpm vitest run apps/server/src/services/session/__tests__/aggregate-session-lis
 
 ## Architecture
 
-DorkOS uses a **hexagonal architecture** with a `Transport` interface that decouples the React client from its backend. Two adapters exist:
+DorkOS uses a **hexagonal architecture** with a `Transport` interface that decouples the React client from its backend. The shipping implementation is:
 
-- **`HttpTransport`** — Standalone web (HTTP/SSE to Express)
-- **`DirectTransport`** — Obsidian plugin (in-process services)
+- **`HttpTransport`** — Browser, phone web app, and desktop renderer (HTTP and streams to Express)
 
 Transport is injected via React Context (`TransportContext`). For deeper details, see [contributing/architecture.md](contributing/architecture.md).
 

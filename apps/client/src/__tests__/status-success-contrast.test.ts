@@ -128,7 +128,7 @@ describe('status-success contrast', () => {
   // `.dark { ... }`. Slicing by the block openers keeps the two `--status-success`
   // values apart — reading the wrong block would compare a value against itself.
   const light = section(css, ':root,', '.dark {');
-  const dark = section(css, '.dark {', '.copilot-view-content');
+  const dark = section(css, '.dark {', '@layer border-defaults');
   // Portable surfaces now bridge to @dork-labs/ui; measure the exact package
   // triplet selected by each client block instead of assuming it is inlined.
   const uiTokens = readFileSync(UI_TOKENS_CSS, 'utf8');
@@ -205,12 +205,5 @@ describe('status-success contrast', () => {
     const green = darkHsl('--status-success');
     expect(contrast(green, darkHsl('--background'))).toBeGreaterThanOrEqual(7);
     expect(contrast(green, darkHsl('--card'))).toBeGreaterThanOrEqual(7);
-  });
-
-  it('the Obsidian flat green pin clears AA on the Obsidian light theme (white)', () => {
-    const obsidian = section(css, '.copilot-view-content {', '\n}');
-    const m = obsidian.match(/--color-status-success:\s*(#[0-9a-fA-F]{6})/);
-    expect(m, 'Obsidian --color-status-success pin not found').not.toBeNull();
-    expect(contrast(hexToRgb(m![1]), [255, 255, 255])).toBeGreaterThanOrEqual(AA);
   });
 });

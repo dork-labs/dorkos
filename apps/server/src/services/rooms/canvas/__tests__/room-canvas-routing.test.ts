@@ -230,7 +230,7 @@ describe('the `ui.control` handler, inside a room turn', () => {
     // to make true (spec `canvas-agent-seat` §1.7).
     const uiState: UiState = {
       panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: null },
+      sidebar: { open: true },
       agent: { id: null, cwd: null },
     };
     uiTurnFacts.bindTurn('sess-own-direct', { uiState });
@@ -244,7 +244,7 @@ describe('the `ui.control` handler, inside a room turn', () => {
   });
 });
 
-describe('the sixteen window actions', () => {
+describe('the fifteen window actions', () => {
   /** Everything `control_ui` accepts that a room does not. */
   const WINDOW_ACTIONS: UiCommand[] = [
     { action: 'show_toast', message: 'hi', level: 'info' },
@@ -253,7 +253,6 @@ describe('the sixteen window actions', () => {
     { action: 'toggle_panel', panel: 'tasks' },
     { action: 'open_sidebar' },
     { action: 'close_sidebar' },
-    { action: 'switch_sidebar_tab', tab: 'overview' },
     { action: 'set_theme', theme: 'dark' },
     { action: 'scroll_to_message', messageId: 'm1' },
     { action: 'switch_agent', cwd: '/projects/x' },
@@ -286,7 +285,7 @@ describe('the sixteen window actions', () => {
    * `canvas-agent-seat` §5).
    *
    * There used to be a second mechanism here — a codex-only `isUiActionRefusedInRoom`
-   * the event-mapper consulted — and keeping two lists of the same sixteen
+   * the event-mapper consulted — and keeping two lists of the same fifteen
    * actions in step was its own standing cost. The writer's own allow-list is
    * the single enforcement point now, so this reads the answer the model would
    * really get.
@@ -419,7 +418,7 @@ describe('the marker clears', () => {
     uiTurnFacts.bindTurn('s', {
       uiState: {
         panels: { settings: false, tasks: false, relay: false, picker: false },
-        sidebar: { open: true, activeTab: null },
+        sidebar: { open: true },
         agent: { id: null, cwd: null },
       },
       roomTurn: { roomId: 'r', authorId: 'a', turnId: 't' },

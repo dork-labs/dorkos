@@ -1,9 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, cleanup } from '@testing-library/react';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import { useGlobalPalette } from '../use-global-palette';
 
 // Mock app store state — only the global palette fields are read directly.
@@ -72,17 +72,8 @@ describe('useGlobalPalette', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockState.globalPaletteOpen = false;
-    // The real deep-link hooks read route state, and there is no RouterProvider
-    // here. The embedded adapter is the supported router-less mode: `useSafeSearch`
-    // returns an empty search and `useSafeNavigate` returns null, so `close()`
-    // takes its store-only branch — which is exactly the half this file asserts on.
-    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
     // Ensure all previous hooks are unmounted so their event listeners are removed
     cleanup();
-  });
-
-  afterEach(() => {
-    setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
   });
 
   it('returns globalPaletteOpen, setGlobalPaletteOpen, and toggleGlobalPalette', () => {

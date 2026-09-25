@@ -155,14 +155,6 @@ export interface SectionHeaderProps {
    * difference is draggability itself rather than an inconsistency laid on top
    * of it. The alternative was a second Tab stop per header for a grip nobody
    * would find, which is the tax the roving focus exists to refuse.
-   *
-   * **Say "built-in", and not the synonym meaning "held in place".** This module
-   * is one of the sources the Obsidian plugin's stylesheet is generated from,
-   * and Tailwind's scanner reads prose exactly as candidly as it reads code — so
-   * that synonym is also a `position` utility's name, and writing it in a
-   * sentence here emitted a viewport-anchored positioning rule into a build
-   * whose entire guard is that nothing in it can escape the leaf pane and paint
-   * over the reader's vault. `plugin-styles.test.ts` is what catches it.
    */
   dragActivator?: SidebarDragActivatorProps;
 }

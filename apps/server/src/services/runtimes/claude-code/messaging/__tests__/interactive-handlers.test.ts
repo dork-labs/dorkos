@@ -352,10 +352,10 @@ describe('createCanUseTool — approval gate', () => {
  * `mcp__dorkos__control_ui` sits in {@link DORKOS_AGENT_TOOLS}, which
  * `createCanUseTool` short-circuits on BEFORE `resolveModeDecision` runs, so the
  * session's permission mode never gets a vote. It was put there under the comment
- * "pure client-side UI mutations, no system access", and for 21 of its 22 actions
+ * "pure client-side UI mutations, no system access", and for 20 of its 21 actions
  * that is true.
  *
- * `apply_layout` is the twenty-second. The client answers it by POSTing
+ * `apply_layout` is the exception. The client answers it by POSTing
  * `/api/shapes/:name/apply`, and applying a Shape writes a `SKILL.md` into the
  * person's own skills root for every schedule the Shape declares, records a
  * receipt naming what it wrote, rewrites `ui.shapes.active` in

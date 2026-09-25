@@ -437,7 +437,7 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     // nobody can see it or take it back — until some LATER turn's boundary
     // pumped it into work it has nothing to do with.
     //
-    // Driven with no queue store, which is every embedded host: with one wired
+    // Driven with no queue store: with one wired
     // the store's own rear-view drops the message anyway, so this is the
     // configuration where the rule itself is what decides.
     setMessageQueueStore(undefined);

@@ -650,9 +650,7 @@ jobs:
       #
       # `--shard`, `--retry`, `--passWithNoTests` and the reporter flags are
       # vitest flags, not turbo flags — they ride the same `--` passthrough as
-      # `--run`, so every package's suite (including the five bare-`vitest`
-      # scripts and obsidian-plugin's chained script, where pnpm appends to the
-      # final command) receives them. The json reporter writes each package's
+      # `--run`, so every package's suite receives them. The json reporter writes each package's
       # collected-file record to <package>/vitest-shard-report.json (cwd of
       # that package's vitest); the default reporter is re-stated because
       # naming any --reporter replaces the default set.

@@ -1,10 +1,9 @@
 import { useEffect } from 'react';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
-import { useSessionId } from './use-session-id';
 import { resolveSessionForCwd, notifySessionLookupFailed } from '../../lib/resolve-session-for-cwd';
 import { reportClientError } from '@/layers/shared/lib';
 import { beginSessionNavigation } from '../../lib/session-navigation-intent';
@@ -36,20 +35,12 @@ export interface SetDirOptions {
  *   correct CWD. When no `?dir=` is present the getter falls back to Zustand,
  *   which holds the server default CWD set by {@link useDefaultCwd}.
  *
- * That fallback answers "where would NEW work happen", which is the right
- * question for the composer, the directory picker and the agent switcher — and
- * the wrong one for a conversation that already exists somewhere else. A
- * session's own reads ask `useSessionScopedCwd` instead, which returns null
- * rather than substituting the default (DOR-1444).
- * - **Embedded (Obsidian):** Zustand is the sole store; URL is unused.
- *
  * Both stores are subscribed unconditionally to satisfy React's rules of hooks.
  */
 export function useDirectoryState(): [
   string | null,
   (dir: string | null, opts?: SetDirOptions) => void,
 ] {
-  const platform = getPlatform();
   const storeDir = useAppStore((s) => s.selectedCwd);
   const setStoreDir = useAppStore((s) => s.setSelectedCwd);
   const search = useSessionSearch();
@@ -57,30 +48,16 @@ export function useDirectoryState(): [
   const router = useRouter();
   const queryClient = useQueryClient();
   const transport = useTransport();
-  const [, setSessionId] = useSessionId();
 
   const urlDir = search.dir ?? null;
 
   // Sync URL → Zustand on initial load (standalone only)
   useEffect(() => {
-    if (!platform.isEmbedded && urlDir && urlDir !== storeDir) {
+    if (urlDir && urlDir !== storeDir) {
       setStoreDir(urlDir);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Intentional: one-way sync URL → store on URL change only
   }, [urlDir]);
-
-  if (platform.isEmbedded) {
-    return [
-      storeDir,
-      (dir, opts) => {
-        if (dir) {
-          setStoreDir(dir);
-          if (!opts?.preserveSession) setSessionId(null);
-          opts?.onOpened?.();
-        }
-      },
-    ];
-  }
 
   return [
     urlDir ?? storeDir,

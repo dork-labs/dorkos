@@ -4958,15 +4958,10 @@ export type CreateTaskInput = z.input<typeof CreateTaskRequestSchema>;
 
 /**
  * The shape of a sidebar tab id: starts alphanumeric, then alphanumerics, `_`,
- * `.`, `:`, and `-`. Bounds the widened string so an agent-issued command or a
- * Shape manifest can't carry arbitrary garbage into localStorage or
- * `.dork/manifest.json`. The `:` (a legacy `extId:tabId` namespace separator)
- * stays accepted so existing Shape manifests that pinned a contributed tab keep
- * validating, even though no host renders contributed sidebar tabs anymore.
- *
- * Declared here rather than beside its main consumer ({@link UiSidebarTabSchema},
- * further down) because {@link ShapeLiveLayoutCaptureSchema} below is evaluated
- * first and shares it.
+ * `.`, `:`, and `-`. Bounds stored Shape metadata so a manifest cannot carry
+ * arbitrary garbage into `.dork/manifest.json`. The `:` (a legacy
+ * `extId:tabId` namespace separator) stays accepted so existing Shape
+ * manifests that pinned a contributed tab keep validating.
  *
  * Keep in sync with the mirrors in `@dorkos/marketplace` `manifest-schema.ts`
  * (`sidebarTab`) and the server's `openapi-registry.ts` `LocalShapeLayoutSchema`.
@@ -5414,31 +5409,6 @@ export const UiPanelIdSchema = z
 
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
 
-/**
- * Identifies a tab in the sidebar navigation.
- *
- * The sidebar tab strip is a legacy surface that now exists ONLY in the embedded
- * (Obsidian) shell, where it carries the four built-ins (`overview`, `sessions`,
- * `schedules`, `connections`). The standalone web cockpit retired the strip for
- * the roster-plus-inspector layout, so a `switch_sidebar_tab` command is a no-op
- * there. The type stays a bounded string (not a closed enum) so existing Shape
- * manifests that pinned a tab — including old namespaced ids — keep validating.
- */
-export const UiSidebarTabSchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .regex(SIDEBAR_TAB_ID_PATTERN, 'Not a valid sidebar tab id')
-  .describe(
-    "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
-      "'connections'). The sidebar tab strip exists only in the embedded " +
-      '(Obsidian) app; in the web app there is no strip, so switching a ' +
-      'sidebar tab is a no-op there.'
-  )
-  .openapi('UiSidebarTab');
-
-export type UiSidebarTab = z.infer<typeof UiSidebarTabSchema>;
-
 /** Severity level for agent-emitted toast notifications. */
 export const UiToastLevelSchema = z
   .enum(['success', 'error', 'info', 'warning'])
@@ -5510,7 +5480,7 @@ export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
  * member of it: a room it is not in answers the same "no such room" a room that
  * does not exist answers, so a room id is never something to probe with.
  *
- * It rides the six CANVAS verbs and nothing else. The other sixteen actions are
+ * It rides the six CANVAS verbs and nothing else. The other fifteen actions are
  * imperatives to one window — a toast, a panel, the command palette — and a
  * room has no window to push them to.
  */
@@ -5525,7 +5495,7 @@ export type UiCommandTarget = z.infer<typeof UiCommandTargetSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 22 variants covering panels, sidebar, canvas,
+ * Discriminated on `action` — 21 variants covering panels, sidebar, canvas,
  * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
  * switching, shape switching, command palette, and celebration.
  *
@@ -5542,7 +5512,6 @@ export const UiCommandSchema = z
     // Sidebar commands
     z.object({ action: z.literal('open_sidebar') }),
     z.object({ action: z.literal('close_sidebar') }),
-    z.object({ action: z.literal('switch_sidebar_tab'), tab: UiSidebarTabSchema }),
 
     // Canvas commands
     z.object({
@@ -5737,7 +5706,7 @@ export type UiCommandReach = 'client-only' | 'reaches-the-machine';
  * ask is the writing, rewiring and deleting — which is plenty.
  *
  * The table lives HERE, in the same file as the union, because the failure mode
- * is a twenty-third action added without anyone thinking about the gate. Being a
+ * is a new action added without anyone thinking about the gate. Being a
  * `Record` over `UiCommand['action']` makes that a `tsc` error in the file you are
  * already editing: you cannot add a variant above without classifying it below.
  * That is the same closed-end trick `resolveModeDecision` uses with its `never`
@@ -5755,7 +5724,6 @@ export const UI_COMMAND_REACH: Record<UiCommand['action'], UiCommandReach> = {
   toggle_panel: 'client-only',
   open_sidebar: 'client-only',
   close_sidebar: 'client-only',
-  switch_sidebar_tab: 'client-only',
   open_canvas: 'client-only',
   update_canvas: 'client-only',
   close_canvas: 'client-only',
@@ -5847,7 +5815,6 @@ export const UiStateSchema = z
     }),
     sidebar: z.object({
       open: z.boolean(),
-      activeTab: UiSidebarTabSchema.nullable(),
     }),
     agent: z.object({
       id: z.string().nullable(),

@@ -36,7 +36,7 @@ export interface SessionWeekActivity {
  * line counts sessions while the feed lists what subsystems did.
  *
  * @returns The counted week, or `null` while there is no answer — the first
- *   load, a failed request, or an embedded transport with no agent roster.
+ *   load or a failed request.
  *   `null` is not zero: it means the question is unanswered, and the caller
  *   must render nothing rather than claim a quiet week.
  */

@@ -93,11 +93,6 @@ const DEV_PIP_TITLE = 'Demo panel';
  * cannot do anything — there is no shipped URL that opens a demo panel. The
  * browser suite runs against the Vite dev server, which is where it is live.
  *
- * Read straight off `window.location` rather than through the router's search
- * schema: this is a development seam, not a product deep link, and it must work
- * identically in the router-less Obsidian embed shell, which mounts the same
- * host.
- *
  * @param open - The store's `openPip`.
  */
 function useDevPipDeepLink(open: (content: PipContent) => void): void {

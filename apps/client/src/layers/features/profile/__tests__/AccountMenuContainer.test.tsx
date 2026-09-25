@@ -2,13 +2,6 @@
  * @vitest-environment jsdom
  *
  * The half of the account menu that decides who you are.
- *
- * Two things are pinned here that the presentational test cannot see. **Where
- * `canSignOut` comes from**: the auth session, not a config flag and not the
- * roster — the roster has a person on it whether or not there is a login, so
- * deriving it from the row would put a sign-out on every accountless install.
- * And **that nothing is drawn without a self row**, which is what keeps a disc
- * with no menu behind it out of the Obsidian embed's sidebar.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
@@ -91,8 +84,6 @@ describe('AccountMenuContainer', () => {
 
   it('draws nothing at all when the roster names nobody', async () => {
     renderContainer([]);
-    // The Obsidian embed's roster is empty by construction, and a disc with no
-    // identity behind it is a control that cannot do its job.
     await waitFor(() => expect(screen.queryByRole('button')).not.toBeInTheDocument());
   });
 

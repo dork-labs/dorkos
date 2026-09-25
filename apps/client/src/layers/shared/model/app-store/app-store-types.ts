@@ -23,7 +23,7 @@ import type { CanvasSlice } from './app-store-canvas';
 import type { RoomCanvasSlice } from './app-store-room-canvas';
 import type { RightPanelSlice } from './app-store-right-panel';
 import type { PipSlice } from './app-store-pip';
-import type { ContextFile, RecentCwd } from './app-store-helpers';
+import type { RecentCwd } from './app-store-helpers';
 
 // ---------------------------------------------------------------------------
 // Core slice interface (defined here so slice files can use it via AppState)
@@ -60,16 +60,6 @@ export interface CoreSlice {
   sidebarOpen: boolean;
   toggleSidebar: () => void;
   setSidebarOpen: (open: boolean) => void;
-
-  /**
-   * Target of the embedded `switch_sidebar_tab` UI command — set by a Shape's
-   * pinned `sidebarTab` and `control_ui`, and reported in the embedded
-   * `get_ui_state` snapshot. No surface renders from it since the legacy embed
-   * tab strip (`SessionSidebar`) was retired for the roster + right-panel
-   * Inspector (DOR-401); kept as write-and-report state for those channels.
-   */
-  sidebarActiveTab: string;
-  setSidebarActiveTab: (tab: string) => void;
 
   sessionId: string | null;
   setSessionId: (id: string | null) => void;
@@ -178,11 +168,6 @@ export interface CoreSlice {
   setActiveForm: (v: string | null) => void;
   tasksBadgeCount: number;
   setTasksBadgeCount: (v: number) => void;
-
-  contextFiles: ContextFile[];
-  addContextFile: (file: Omit<ContextFile, 'id'>) => void;
-  removeContextFile: (id: string) => void;
-  clearContextFiles: () => void;
 
   /**
    * Put typography back to its shipped defaults — font size and font family,

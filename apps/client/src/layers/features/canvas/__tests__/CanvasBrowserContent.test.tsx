@@ -356,8 +356,6 @@ describe('CanvasBrowserContent — a dev server on this machine', () => {
   });
 
   it('falls back to the dev server’s own address when there is no server to mint from', async () => {
-    // The in-process Obsidian transport: no preview origin exists, so the only
-    // remaining option is the address the user typed.
     probeLoopbackPort.mockResolvedValue(null);
     createProxyUrl.mockResolvedValue(null as never);
     render(<CanvasBrowserContent documentId="doc" content={{ type: 'browser', url: DEV_URL }} />);

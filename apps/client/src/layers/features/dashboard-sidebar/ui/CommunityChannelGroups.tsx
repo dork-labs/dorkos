@@ -5,16 +5,14 @@ import {
   useCommunityConnections,
   useRemoteCommunityRooms,
 } from '@/layers/entities/community';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { Button } from '@/layers/shared/ui';
 import { useSafeSearch } from '@/layers/shared/model';
 
 /** Remote channels are grouped by community on the shared desktop and mobile library surface. */
 export function CommunityChannelGroups() {
-  const embedded = getPlatform().isEmbedded;
-  const connections = useCommunityConnections(!embedded);
+  const connections = useCommunityConnections(true);
   const search = useSafeSearch() as { community?: string };
-  if (embedded) return null;
   if (!search.community) return null;
   if (connections.isPending)
     return (

@@ -69,7 +69,7 @@ The **platform** — Engine and Console — is the foundation: a runtime for AI 
 
 Engine is the foundation. It connects your AI agents via the `AgentRuntime` interface, exposes a REST + SSE API that binds to localhost by default, manages sessions, and composes the modules (Pulse, Relay, Mesh) into a unified server.
 
-Engine runs locally on your machine. Sessions are stored as JSONL transcript files — the same format Claude Code uses natively. This means every session is visible regardless of how it was started: from DorkOS, from the CLI, from an Obsidian plugin. One source of truth.
+Engine runs locally on your machine. Sessions are stored as JSONL transcript files — the same format Claude Code uses natively. This means every session is visible regardless of how it was started: from DorkOS or from the CLI. One source of truth.
 
 Remote access is available via an optional Remote module (ngrok-based). Engine can serve the Console UI and accept API calls from any device, anywhere.
 
@@ -87,7 +87,7 @@ Remote access is available via an optional Remote module (ngrok-based). Engine c
 
 Console is a browser-based command center built with React 19, Tailwind CSS 4, and shadcn/ui. It's where humans interact with the system — chatting with agents, approving tool calls, browsing sessions, managing schedules, and monitoring the system.
 
-Console connects to Engine via a Transport interface that decouples the UI from its backend. Two adapters exist: `HttpTransport` for standalone web use, and `DirectTransport` for embedded use in Obsidian. This means Console works as a standalone web app, as a plugin inside your knowledge management tool, or as a bundled CLI — same interface, different delivery mechanisms.
+Console connects to Engine via a Transport interface that decouples the UI from its backend. `HttpTransport` connects the browser, phone web app, and desktop renderer to the normal DorkOS server. The CLI serves the same app. Tests can inject mock transports without starting a server.
 
 Each agent is a first-class citizen in Console. Agents have names, colors, icons, and personas. The sidebar shows every agent across your projects. Agent settings expose identity, persona, and connections, all configurable per-agent. Permission tiers are not: a tier belongs to the action, so the same action is gated the same way whichever agent asks. Two per-agent levers exist. A standing permission, which a person grants from an approval card for one agent doing one named action, on a clock; and a tool-group grant, which a person turns on in an agent's own settings and which the server refuses the call without. That grant is keyed to that agent's path, so two agents can hit the same gate and get different answers.
 
@@ -172,7 +172,7 @@ See the [Mesh Litepaper](./modules/mesh-litepaper.md) for the full vision.
 
 Remote is how you reach your agents when you're away from your desk. It creates a secure ngrok tunnel so Console and the Engine API are accessible from any device — your phone, a browser on another machine, a tablet.
 
-Open Console on your phone to check a session in progress. Scan a QR code to share access instantly. Multiple clients stay in sync in real time — a session you start from the browser appears in Obsidian, and vice versa.
+Open Console on your phone to check a session in progress. Scan a QR code to share access instantly. Multiple clients stay in sync in real time — a session you start from the browser appears in the desktop app, and vice versa.
 
 - ngrok-based secure tunnel with optional auth
 - QR code for instant mobile access

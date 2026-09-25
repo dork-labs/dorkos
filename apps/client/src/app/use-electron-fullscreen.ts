@@ -8,9 +8,6 @@
  * long as fullscreen holds, in the one mode where screen space is the entire
  * point.
  *
- * In the browser and Obsidian `window.electronAPI` is absent, so this always
- * answers `false` there.
- *
  * **Mounted once**, by {@link AppShell} — pass the result down to
  * {@link TitlebarDragStrip} rather than calling this a second time. Each call
  * opens its own IPC subscription and fires its own replay `invoke`, so two

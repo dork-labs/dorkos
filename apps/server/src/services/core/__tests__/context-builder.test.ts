@@ -483,7 +483,7 @@ describe('renderContextEntry', () => {
     // production never emits.
     const uiState = {
       panels: { settings: false, tasks: false, relay: false, picker: false },
-      sidebar: { open: true, activeTab: 'sessions' as const },
+      sidebar: { open: true },
       agent: { id: null, cwd: null },
     };
     const result = renderContextEntry({ kind: 'ui_state', scope: 'per-turn', data: uiState });

@@ -57,10 +57,6 @@ export function useUnattendedAutonomy(): UnattendedAutonomyState | undefined {
  *   switched-off integration makes every binding behind it inert, so the answer
  *   changes without a single binding row being touched.
  *
- * All three ride the unified `/api/events` stream; in the router-less embed the
- * transport source yields no generic events and these subscriptions are inert,
- * which is correct there — the embed has neither bindings nor tasks.
- *
  * Mount once near the app root, beside the other `*Sync` hooks.
  */
 export function useUnattendedAutonomySync(): void {

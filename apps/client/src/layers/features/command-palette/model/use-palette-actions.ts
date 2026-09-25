@@ -126,9 +126,6 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     [recordAgentOpened, setDir, closePalette]
   );
 
-  // Shared with the sidebar and the chat header's agent chip; carries the
-  // router-less embed branch. See `useStartNewSession` for why it is not
-  // `setDir`.
   const startNewSession = useStartNewSession();
 
   /**

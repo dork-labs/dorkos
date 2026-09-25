@@ -32,10 +32,8 @@ import {
   type PostToRoomRequest,
   type PostToRoomResponse,
   type RoomAttachment,
-  type RoomEntry,
   type RoomEntryListResponse,
   type RoomEvent,
-  type RoomMember,
   type RoomRosterEntry,
   type RoomSessionsResponse,
   type RoomSummary,
@@ -88,10 +86,6 @@ const SNAPSHOT_CANVAS = z.object({ canvas: z.array(CanvasDocumentSchema).optiona
  * a rejected promise, and only the status tells them apart — a distinction the
  * loop needs because it now retries forever, and forever is the wrong answer to
  * a room that has been deleted or access that has been revoked.
- *
- * The in-process adapter (`DirectTransport`, Obsidian) never throws one, and
- * that is correct: it has no HTTP status to report, so everything it throws is
- * treated as retryable — which it is.
  */
 export class RoomStreamHttpError extends Error {
   /** The HTTP status the room's event route answered with. */

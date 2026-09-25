@@ -11,7 +11,6 @@ import {
   Users,
 } from 'lucide-react';
 import { useExtensionRegistry } from '@/layers/shared/model';
-import { getPlatform } from '@/layers/shared/lib';
 
 /** The extension registry's `register` action (idempotent per slot + id). */
 type RegisterFn = ReturnType<typeof useExtensionRegistry.getState>['register'];
@@ -33,35 +32,11 @@ import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
 export function initializeExtensions(): void {
   const { register } = useExtensionRegistry.getState();
 
-  // Command palette items (priority 1-10 for built-ins). Some built-ins depend
-  // on AppShell chrome the Obsidian embed never renders, so acting on them there
-  // is a dead-end: Create agent / "Bring in existing projects" open dialogs
-  // (CreateAgentDialog / ImportProjectsDialog) that mount only in AppShell;
-  // Profile and Canvas open the right panel the embed never renders; and
-  // Dashboard / Agents call navigate(), which throws with no RouterProvider (the
-  // pattern documented in features/status/model/use-runtime-chip.ts). Skip them
-  // under the embed.
-  //
-  // NOTE: this is a DEFENSIVE gate, not a live fix — the embed does not currently
-  // call initializeExtensions at all (only the web entry, apps/client/src/main.tsx,
-  // does), so no built-in palette action is registered there today. The gate keeps
-  // these dead-ends out of the embed's palette if/when it ever registers built-ins.
-  const embedded = getPlatform().isEmbedded;
-  const embeddedDeadEndActions = new Set([
-    'createAgent',
-    'discoverAgents',
-    'openAgentProfile',
-    'toggleCanvas',
-    'navigateDashboard',
-    'openMesh',
-  ]);
-  const skipUnderEmbed = (action: string) => embedded && embeddedDeadEndActions.has(action);
+  // Register the built-in command palette items.
   for (const feature of PALETTE_FEATURES) {
-    if (skipUnderEmbed(feature.action)) continue;
     register('command-palette.items', feature);
   }
   for (const action of PALETTE_QUICK_ACTIONS) {
-    if (skipUnderEmbed(action.action)) continue;
     register('command-palette.items', action);
   }
 
@@ -129,17 +104,11 @@ export function initializeExtensions(): void {
     group: 'Add-ons',
   });
 
-  // Right-panel inspector tabs — shared by every shell (the routed cockpit and
-  // the Obsidian embed), so the Inspector is one architecture everywhere.
   registerRightPanelTabs(register);
 }
 
 /**
- * Register the built-in right-panel (Inspector) tabs into the extension
- * registry. Called from both the web entry ({@link initializeExtensions}) and
- * the Obsidian embed so the Inspector is identical across shells — route- and
- * transport-gating (not a divergent tab list) decides what shows where. The
- * registry dedupes by id, so calling this more than once is safe.
+ * Register the app’s route-aware Inspector tabs.
  *
  * @param register - The extension registry's `register` action.
  */
@@ -197,26 +166,6 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 8,
   });
 
-  // The profile's docked home as a right-panel contribution (lazy-loaded) — the
-  // same profile the Team page opens in a sheet, beside the session it is about
-  // (spec `profile-unification` §1.6).
-  //
-  // Visibility is selection-honest, so the Profile never shows an agent the
-  // operator did not choose:
-  //   • /marketplace* → hidden. There is no agent context to profile there.
-  //   • /session       → shown. The panel profiles the session's own agent.
-  //   • anywhere else  → shown ONLY once the operator has explicitly opened an
-  //                      agent this session (openProfileDocked sets
-  //                      `explicitAgentPath`).
-  // Without the last rule the tab would surface the ambient startup agent — the
-  // server's default cwd, which nobody picked — and often render a misleading
-  // "Agent not found" (see AGENTS.md, the "describe what happens for the user"
-  // filter). `explicitAgentPath` is the click-driven signal; `cwd`/`agentId` are
-  // ambient and deliberately not used to gate this tab. In the embed the constant
-  // `/session` pathname keeps the panel on the session's own agent.
-  //
-  // The icon stays a Lucide `User`: the registry takes a `LucideIcon`, not a
-  // node, so the identity's own face cannot be the tab icon yet (§8).
   register('right-panel', {
     id: PROFILE_PANEL_ID,
     title: 'Profile',
@@ -232,16 +181,6 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 10,
   });
 
-  // Session readout as right-panel contribution (lazy-loaded).
-  //
-  // The status line's `⋯` panel and this tab answer the same question at two
-  // different commitments: the panel is a two-second peek that closes the moment
-  // focus returns to the composer, this stays open while you work. Someone
-  // watching a stuck stream needs the second one, so both exist — and both read
-  // one `useSessionDiagnostics`, which is what keeps them from ever disagreeing.
-  //
-  // Session-scoped like Files and Canvas: there is nothing to report without a
-  // session, so it is gated to /session (a constant in the Obsidian embed).
   register('right-panel', {
     id: 'session',
     title: 'Session',
@@ -253,11 +192,6 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 12,
   });
 
-  // File explorer as right-panel contribution (lazy-loaded — the tree + CRUD UI
-  // lands in its own async chunk). Session-scoped like the canvas: the tree is
-  // rooted at the session's working directory. Works under both transports
-  // (DirectTransport implements the file-service methods), so it is NOT gated on
-  // a web-only capability — only on the /session route.
   register('right-panel', {
     id: 'files',
     title: 'Files',
@@ -275,7 +209,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
   });
 
   // Canvas as right-panel contribution (lazy-loaded). It holds every document the
-  // embedded browser does NOT render; pages live one tab along, in Browser
+  // false browser does NOT render; pages live one tab along, in Browser
   // (ADR 260911-200304).
   //
   // On `/session` it is that session's own canvas, private to this browser. On a
@@ -298,18 +232,6 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 20,
   });
 
-  // Browser as right-panel contribution (lazy-loaded) — the same document
-  // surface over the two content types the embedded browser renders, with its
-  // own active document, so a page and a diff stop competing for one tab strip.
-  // On a room route it shows that room's pages, and its address bar puts one on
-  // the room's table as the person who typed it.
-  //
-  // Priority 22 sits it between Canvas (20) and Terminal (25): documents, then
-  // pages, then a shell.
-  //
-  // Web-only, gated the way Terminal is: framing a page needs the serve and
-  // preview routes, which the in-process Obsidian transport has none of, so the
-  // tab is absent there rather than present and broken.
   register('right-panel', {
     id: 'browser',
     title: 'Browser',
@@ -323,11 +245,6 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     priority: 22,
   });
 
-  // Terminal as right-panel contribution (lazy-loaded — @xterm/* lands in its
-  // own async chunk). Web-only: shown on /session AND only when the active
-  // transport supports a server-side PTY (hidden under the in-process Obsidian
-  // transport, D3). This is the capability gate the embed relies on to drop the
-  // terminal tab automatically — the tab list is identical across shells.
   register('right-panel', {
     id: 'terminal',
     title: 'Terminal',

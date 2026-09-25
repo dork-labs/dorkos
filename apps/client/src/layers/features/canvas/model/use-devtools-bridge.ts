@@ -9,30 +9,6 @@
  * them to `POST /sessions/:id/devtools/ingest` through the transport — the only
  * same-origin, authenticated party allowed to reach the API.
  *
- * Three guarantees are load-bearing:
- * - **Source identity.** A capture message is accepted only when
- *   `event.source === iframe.contentWindow`, which rejects a nested frame or any
- *   foreign window. Origin cannot do this job: an opaque frame's `event.origin`
- *   is the literal string `"null"`, shared by every opaque frame there is.
- * - **Known origin.** The frame must ALSO report an origin DorkOS instrumented:
- *   `"null"` for a local file served on the DorkOS origin (which renders
- *   opaque), or the exact preview-listener origin minted for THIS document.
- *   Everything else is rejected — including a dev server framed by its own
- *   address, which carries no shim and so cannot drive the bridge by posting
- *   messages that look like the shim's.
- * - **Attached session only.** Captures relay to the session they were CAPTURED
- *   under and no other, so one session's preview can never feed another
- *   session's buffer — including across the 300ms coalescing window, which is
- *   long enough for the operator to switch conversations mid-batch (see
- *   `pendingSessionId`; reading the current session at send time is a bleed, not
- *   a guarantee).
- *   Which session that is comes from {@link useSessionId}, the dual-mode hook —
- *   the URL's `?session=` in the browser and desktop app, the store in the
- *   Obsidian embed. Reading `app-store.sessionId` directly instead is what left
- *   this relay dead everywhere but Obsidian (DOR-1305): only the embedded branch
- *   ever writes that field, so in a browser the gate below never opened and an
- *   agent's `browser_read_console` saw nothing.
- *
  * It also drives both server→client round trips: `devtools_capture_request`
  * (`browser_screenshot`, DOR-213 Phase 3) and `devtools_action_request` (the six
  * driving verbs, spec `canvas-agent-seat`). Each is forwarded into the frame —
@@ -233,8 +209,7 @@ function cap<T>(arr: T[], max: number): void {
 }
 
 /**
- * Relay the embedded preview's console/network captures to the server's
- * per-session buffer. See the module doc for the security guarantees.
+ * Relay preview events through the session’s DevTools bridge.
  *
  * @param params - The preview iframe ref plus the document id and logical URL.
  * @returns What the canvas can show about this preview — see {@link DevtoolsBridge}.
@@ -247,9 +222,6 @@ export function useDevtoolsBridge({
   previewOrigin,
 }: UseDevtoolsBridgeParams): DevtoolsBridge {
   const transport = useTransport();
-  // The attached conversation, asked the way every other surface asks: the URL in
-  // the browser and desktop app, the store in the Obsidian embed. Never the store
-  // alone — see the module doc's third guarantee.
   const [sessionId] = useSessionId();
 
   // Failed resources for the CURRENT document only. Reset during render rather

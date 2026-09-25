@@ -12,7 +12,6 @@ dorkos/
 │   ├── client/           # @dorkos/client — React 19 SPA with FSD layers
 │   ├── server/           # @dorkos/server — Express API (flat services)
 │   ├── site/             # @dorkos/site — Marketing site & docs (Next.js 16, Fumadocs)
-│   ├── obsidian-plugin/  # @dorkos/obsidian-plugin — Obsidian plugin
 │   └── e2e/              # @dorkos/e2e — Playwright browser tests
 ├── packages/
 │   ├── cli/              # dorkos — Publishable npm CLI
@@ -36,7 +35,6 @@ dorkos/
 
 ```
 src/
-├── App.tsx              # App entry — embedded vs standalone mode switch
 ├── AppShell.tsx         # Standalone shell (sidebar, header, Outlet) — layout route component
 ├── router.tsx           # TanStack Router route tree (/, /session, _shell layout)
 ├── main.tsx             # Vite entry point — RouterProvider
@@ -84,7 +82,7 @@ src/
 │   │   │   └── ui/field/ # The two fields behind one ComposerFieldProps (DOR-948) — see below
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
-│   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views
+│   │   ├── session-list/ # SessionsView and session lists
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
 │   │   ├── dashboard-attention/ # Attention rows + detail sheets — what the triage header composes
 │   │   ├── dashboard-activity/ # useDashboardActivity — time-grouped recent activity, read by Pulse
@@ -152,13 +150,13 @@ Unidirectional dependencies from top to bottom:
 app → widgets → features → entities → shared
 ```
 
-| Layer       | Purpose                                                         | Can Import From            |
-| ----------- | --------------------------------------------------------------- | -------------------------- |
-| `app/`      | App.tsx, AppShell.tsx, router.tsx, main.tsx, init-extensions.ts | All lower layers           |
-| `widgets/`  | Large compositions (layout, workspace)                          | features, entities, shared |
-| `features/` | Complete user functionality (chat, commands)                    | entities, shared           |
-| `entities/` | Business domain objects (Session, Command)                      | shared only                |
-| `shared/`   | UI primitives, utilities, Transport                             | Nothing (base layer)       |
+| Layer       | Purpose                                                | Can Import From            |
+| ----------- | ------------------------------------------------------ | -------------------------- |
+| `app/`      | AppShell.tsx, router.tsx, main.tsx, init-extensions.ts | All lower layers           |
+| `widgets/`  | Large compositions (layout, workspace)                 | features, entities, shared |
+| `features/` | Complete user functionality (chat, commands)           | entities, shared           |
+| `entities/` | Business domain objects (Session, Command)             | shared only                |
+| `shared/`   | UI primitives, utilities, Transport                    | Nothing (base layer)       |
 
 **Critical rules:**
 
@@ -456,7 +454,7 @@ The hexagonal Transport interface bridges FSD and the monorepo:
 
 ```
 packages/shared/transport.ts    → Transport interface (port)
-layers/shared/lib/              → HttpTransport, DirectTransport (adapters)
+layers/shared/lib/              → HttpTransport (HTTP implementation)
 layers/shared/model/            → TransportContext (React DI), app-store, hooks
 layers/entities/*/api/          → Transport consumption (queries/mutations)
 layers/features/*/model/        → Hooks composing entity data

@@ -5,11 +5,10 @@
  */
 import { useState } from 'react';
 import { Check, ChevronDown, Minus } from 'lucide-react';
-import { cn, getPlatform } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import {
   SEARCH_SCOPE_COVERED,
-  SEARCH_SCOPE_EMBED_GAP,
   SEARCH_SCOPE_GAPS,
   SEARCH_SCOPE_SUMMARY,
 } from '../model/message-search-scope';
@@ -52,12 +51,7 @@ export function MessageSearchScope({ detailOpen = false, className }: MessageSea
   const [chosen, setChosen] = useState<boolean | null>(null);
   const open = chosen ?? detailOpen;
 
-  // The embed reads an index it does not keep current, and says so. Appended to
-  // the gaps rather than branching the whole list: every other line is equally
-  // true in both windows.
-  const gaps = getPlatform().isEmbedded
-    ? [...SEARCH_SCOPE_GAPS, SEARCH_SCOPE_EMBED_GAP]
-    : SEARCH_SCOPE_GAPS;
+  const gaps = SEARCH_SCOPE_GAPS;
 
   return (
     <Collapsible open={open} onOpenChange={setChosen} className={cn('px-3 py-2', className)}>

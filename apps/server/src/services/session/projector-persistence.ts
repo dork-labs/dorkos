@@ -130,8 +130,8 @@ export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
  * Present only when the owning runtime opted the session in
  * (`getOrCreateProjector(…, { persist: … })`) AND a store was injected at boot.
  * Every turn-starting caller now opts in (see {@link persistenceModeFor}), so in
- * practice this is absent only when no store is wired — an embedded host with no
- * database, or a projector minted by a subscribe before any turn.
+ * practice this is absent only when no store is wired — such as a unit test
+ * without a database — or a projector minted by a subscribe before any turn.
  *
  * Durable rows are always keyed by the LIVE {@link SessionStateProjector.sessionId}
  * (read at flush time, never captured at enable time), so a

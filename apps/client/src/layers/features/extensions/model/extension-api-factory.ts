@@ -25,10 +25,6 @@ const FALLBACK_ICON = 'puzzle';
 /**
  * Construct a per-extension API object wrapping host primitives.
  *
- * Every `register*` call is tracked in the returned cleanups array.
- * On deactivation, the caller runs all cleanups automatically —
- * matching the Obsidian plugin cleanup model.
- *
  * @param extId - Extension ID from the manifest
  * @param deps - Host primitives injected by the loader
  * @param declaredEvents - The manifest's `capabilities.events` entries. Gates

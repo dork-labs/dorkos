@@ -908,7 +908,7 @@ Built-in manifests are registered automatically on server startup. Plugin manife
 
 The `AdapterManager.updateConfig(id, newConfig)` method merges a partial config patch into an existing adapter's stored configuration. Password fields (`type: 'password'`) that arrive with the value `'***'` are silently discarded, preserving the real secret on disk. After merging, the adapter is stopped and restarted in-place.
 
-The `Transport` interface exposes `updateConfig(patch)` to allow client code (including the Obsidian plugin's `DirectTransport`) to persist user config changes without needing direct filesystem access:
+The `Transport` interface exposes `updateConfig(patch)` to allow client code to persist user config changes without needing direct filesystem access:
 
 ```typescript
 interface Transport {

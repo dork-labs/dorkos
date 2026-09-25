@@ -10,12 +10,10 @@
  * the ledger.
  *
  * **The two session listeners are wired HERE, at module scope**, the way
- * `message-dispatcher.ts` wires its own. `index.ts` is the composition root for
- * the server and the Obsidian shell never runs it, so a listener registered
- * there would exist in one shell and not the other — and the half that would go
- * missing is the one that carries a canvas across a session rename. There is
- * nothing to configure and nothing to tear down, so there is nothing for a root
- * to decide.
+ * `message-dispatcher.ts` wires its own. A listener registered only at boot
+ * could be absent from a test or direct service caller, losing the session
+ * rename that carries the canvas. There is nothing to configure or tear down,
+ * so there is nothing for a root to decide.
  *
  * @module server/services/canvas
  */

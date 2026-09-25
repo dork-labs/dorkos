@@ -30,18 +30,6 @@ export interface AutonomyAcknowledgement {
   clear: () => void;
   /**
    * Whether this install can keep a standing acknowledgement at all.
-   *
-   * False in Obsidian. `DirectTransport` serves the cockpit from an in-process
-   * embedded runtime with no config file behind it: its `updateConfig` is a
-   * documented no-op (`embedded-mode-stubs.ts`) and its `getConfig` builds no
-   * `ui` block at all. So "don't show this again" there would tick, save
-   * nothing, raise no error, and ask again forever — the worst shape a setting
-   * can take, because the person is told it worked.
-   *
-   * The absent `ui` block IS the signal, rather than a transport-kind check:
-   * whether config round-trips is a property of the backend answering, and a
-   * capability read from the answer stays true if embedded mode ever grows real
-   * config. Surfaces that offer the choice must hide it when this is false.
    */
   canRemember: boolean;
   /** Whether a write is in flight. */

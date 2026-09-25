@@ -25,7 +25,6 @@ function seedNonDefaultState() {
   s.setExpandToolCalls(true);
   s.setAutoHideToolCalls(false);
   s.setPromoEnabled(false);
-  s.setSidebarActiveTab('connections');
   s.setPipGeometry({ x: 1, y: 2, width: 300, height: 200 });
   s.openPip({ kind: 'demo', title: 'Demo panel' });
   localStorage.setItem('dorkos-canvas-sessions', JSON.stringify(CANVAS_SESSIONS));
@@ -90,10 +89,8 @@ describe('AppearanceResetAction', () => {
     clickReset();
 
     const s = useAppStore.getState();
-    expect(s.sidebarActiveTab).toBe('connections');
     expect(s.pipGeometry).toEqual({ x: 1, y: 2, width: 300, height: 200 });
     expect(s.pipContent).toEqual({ kind: 'demo', title: 'Demo panel' });
-    expect(localStorage.getItem('dorkos-sidebar-active-tab')).toBe('connections');
     expect(JSON.parse(localStorage.getItem('dorkos-canvas-sessions')!)).toEqual(CANVAS_SESSIONS);
     expect(JSON.parse(localStorage.getItem('dorkos-right-panel-layouts')!)).toEqual(
       RIGHT_PANEL_LAYOUTS

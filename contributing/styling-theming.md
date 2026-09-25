@@ -79,7 +79,7 @@ export function FeatureCard({ title, description }: FeatureCardProps) {
 
 ### Dark Mode with Class Strategy
 
-Dark mode uses the `useTheme` hook. The `dark` class is toggled on `<html>` by `ThemeProvider` in `App.tsx`. This is a Vite SPA — no `suppressHydrationWarning` or Next.js layout file needed.
+Dark mode uses the `useTheme` hook. The singleton theme store in `layers/shared/model/use-theme.ts` toggles the `dark` class on `<html>`. This is a Vite SPA — no `suppressHydrationWarning` or Next.js layout file needed.
 
 ```tsx
 import { useTheme } from '@/layers/shared/model';
@@ -464,9 +464,9 @@ This is already present for `streamdown`. Add additional entries if you integrat
 
 ### "Dark mode not working"
 
-**Cause**: `ThemeProvider` not wrapping the app, or `dark` class not being toggled on `<html>`.
+**Cause**: The theme store has not been initialized, or another style overrides the root scheme.
 
-**Fix**: `ThemeProvider` is mounted in `App.tsx` wrapping all content. The `.dark` class is set on `<html>` by the provider. Verify with browser devtools that `<html class="dark">` toggles correctly.
+**Fix**: `layers/shared/model/use-theme.ts` initializes the singleton store and subscribes its resolved theme to the root classes. Verify with browser devtools that `<html class="dark">` toggles correctly.
 
 No `suppressHydrationWarning` needed — this is a Vite SPA, not Next.js.
 

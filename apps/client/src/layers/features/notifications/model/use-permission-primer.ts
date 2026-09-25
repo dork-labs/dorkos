@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useConfig, useNotificationPrefs } from '@/layers/entities/config';
-import { getPlatform, isDesktopShell } from '@/layers/shared/lib';
+import { isDesktopShell } from '@/layers/shared/lib';
 import { useBrowserNotificationPermission } from '@/layers/shared/model';
 import { armPermissionPrimer, usePermissionPrimerArmed, LONG_TURN_MS } from './primer-trigger';
 
@@ -58,10 +58,6 @@ export interface PermissionPrimerOffer {
  *
  * ## Where it is never eligible
  *
- * The desktop app (its own native notifications are better and already
- * permitted) and the Obsidian embed (one pane inside someone else's app has no
- * business raising OS banners). Both are checked before the question is armed.
- *
  * @param streaming - Whether a turn is running right now. A turn that runs for
  *   {@link LONG_TURN_MS} arms the question; see `primer-trigger` for the other
  *   trigger, which the app-wide notification center owns.
@@ -86,13 +82,9 @@ export function usePermissionPrimer(streaming: boolean): PermissionPrimerOffer {
   const { data: config } = useConfig();
   const answerKnown = config !== undefined;
 
-  // Held for this session as well as written to config, the same union
-  // `usePromoDismissals` uses: `updateConfig` is a no-op on the Obsidian
-  // transport and any transport can answer 200 without the value coming back, and
-  // a card that reappeared the moment it was answered reads as a broken button.
   const [answered, setAnswered] = useState(false);
 
-  const unavailable = isDesktopShell() || getPlatform().isEmbedded || permission === 'unsupported';
+  const unavailable = isDesktopShell() || permission === 'unsupported';
 
   // A turn that runs long enough is the trigger this hook owns. The other —
   // something arriving that is blocked on a person — is watched app-wide by

@@ -51,7 +51,7 @@ Use the Agent tool with `subagent_type: "code-reviewer"`. Supply the following c
 **DorkOS-specific review concerns to include:**
 
 - FSD layer violations (shared <- entities <- features <- widgets)
-- Transport interface compliance (HttpTransport / DirectTransport)
+- Transport interface compliance (HttpTransport and mock transports)
 - SDK import confinement — each runtime SDK stays in its adapter directory: `@anthropic-ai/claude-agent-sdk` → `services/runtimes/claude-code/`, `@openai/codex-sdk` → `services/runtimes/codex/`, `@opencode-ai/sdk` → `services/runtimes/opencode/`
 - `os.homedir()` ban (must use `lib/dork-home.ts`)
 - TSDoc on exports

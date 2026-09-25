@@ -9,15 +9,14 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import { AccountsList } from '../ui/AccountsList';
 import { ConnectionDetailSheet } from '../ui/ConnectionDetailSheet';
 import { ServiceGrid } from '../ui/ServiceGrid';
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn(), useRouter: () => ({}) }));
 afterEach(() => {
   cleanup();
-  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 
 function renderWith(transport: Transport, ui: ReactNode) {
@@ -139,22 +138,6 @@ describe('ServiceGrid', () => {
 });
 
 describe('AccountsList', () => {
-  it('explains embedded unavailability without claiming there are no accounts', async () => {
-    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-    const transport = createMockTransport({
-      getConnectorConnections: vi
-        .fn()
-        .mockRejectedValue(new Error('Connections can only be managed in DorkOS itself.')),
-    });
-
-    renderWith(transport, <AccountsList onOpenDetail={() => undefined} />);
-
-    expect(await screen.findByText('Connected accounts are unavailable here')).toBeInTheDocument();
-    expect(screen.getByText(/Open DorkOS in your browser to connect services/)).toBeInTheDocument();
-    expect(screen.queryByText('No accounts connected')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
-  });
-
   it('shows several stable accounts as concise rows and opens the exact detail id', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

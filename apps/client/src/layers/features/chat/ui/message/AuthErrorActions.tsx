@@ -65,11 +65,6 @@ function SettingsFallbackLink({ label }: { label: string }) {
  * it — `SessionSigninActions` routes those to {@link RemoteSigninGuidance}
  * before the runtime is even resolved (DOR-1655), because the endpoint is
  * loopback-only and this button could only 403 there.
- *
- * The ways the endpoint can still refuse from here — the Obsidian embed
- * declines it outright, a vendor CLI can fail or time out — arrive as this
- * card's error state with a real message and a retry, so the button is never
- * dead even where it cannot work.
  */
 function InlineSigninActions({
   runtime,

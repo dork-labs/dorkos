@@ -779,14 +779,11 @@
    of them — DOR-1750). The editor's own borders remain scoped and excluded
    from this fallback.
 
-   Two exclusions, both about somebody else owning border colour inside their
-   own container. `.copilot-view-content` is Obsidian's: inside the plugin, the
-   host app's theme owns it (see the twin rule further down). `.milkdown` is the
-   canvas editor's: this layer sits above `blintz`, so without the exclusion the
+   `.milkdown` is the canvas editor's: this layer sits above `blintz`, so without the exclusion the
    app's neutral line would flatten the editor's own blockquote and table
    borders — the exact thing the `blintz` slot exists to prevent. */
 @layer border-defaults {
-  *:where(:not(.copilot-view-content *):not(.milkdown *)) {
+  *:where(:not(.milkdown *)) {
     border-color: hsl(var(--border));
   }
 }
@@ -843,20 +840,6 @@ body {
 @supports not (height: 100dvh) {
   body {
     height: -webkit-fill-available;
-  }
-}
-
-/* When embedded in Obsidian, the neutral border comes from the vault's theme
-   instead. Same layer as the `*` default above, and AFTER it in document order,
-   so this carve-out keeps winning inside the plugin's container — it also
-   out-specifies it, so neither half of that depends on the other.
-
-   It carries the `.milkdown` exclusion for the same reason the rule above does,
-   and it needs its own copy: this selector out-specifies that one, so the
-   exclusion up there does not reach the elements this one matches. */
-@layer border-defaults {
-  .copilot-view-content *:where(:not(.milkdown *)) {
-    border-color: var(--color-border);
   }
 }
 
@@ -1996,90 +1979,4 @@ body {
   .room-panel-footer {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
-}
-
-/*
- * Obsidian theme bridge
- * Obsidian uses raw color values (not HSL triplets), so we override the
- * Tailwind color-* tokens directly instead of the HSL variable layer.
- */
-.copilot-view-content {
-  --color-background: var(--background-secondary);
-  --color-foreground: var(--text-normal);
-  --color-card: var(--background-secondary-alt);
-  --color-card-foreground: var(--text-normal);
-  --color-popover: var(--background-primary);
-  --color-popover-foreground: var(--text-normal);
-  --color-primary: var(--interactive-accent);
-  --color-primary-foreground: var(--text-on-accent);
-  --color-secondary: var(--background-secondary-alt);
-  --color-secondary-foreground: var(--text-normal);
-  --color-muted: var(--background-secondary-alt);
-  --color-muted-foreground: var(--text-muted);
-  --color-accent: var(--interactive-accent);
-  --color-accent-foreground: var(--text-on-accent);
-  --color-destructive: #ca1c27;
-  --color-destructive-foreground: #fff;
-  --color-border: var(--background-modifier-border);
-  --color-input: var(--background-modifier-form-field);
-  --color-ring: var(--interactive-accent);
-
-  /* Green-700 (`#15803d`), 5.02:1 on the Obsidian light theme's near-white
-     surface — the former green-600 was 3.30:1, under WCAG AA. Kept in sync with
-     the duplicate in apps/obsidian-plugin/src/styles/plugin.css (DOR-1080);
-     plugin-styles.test.ts guards the two against drift. */
-  --color-status-success: #15803d;
-  --color-status-success-bg: rgba(21, 128, 61, 0.1);
-  --color-status-success-border: rgba(21, 128, 61, 0.2);
-  --color-status-success-fg: #15803d;
-  --color-status-error: #dc2626;
-  --color-status-error-bg: rgba(220, 38, 38, 0.1);
-  --color-status-error-border: rgba(220, 38, 38, 0.2);
-  --color-status-error-fg: #dc2626;
-  --color-status-warning: #f59e0b;
-  --color-status-warning-bg: rgba(245, 158, 11, 0.1);
-  --color-status-warning-border: rgba(245, 158, 11, 0.2);
-  --color-status-warning-fg: #f59e0b;
-  --color-status-info: #3b82f6;
-  --color-status-info-bg: rgba(59, 130, 246, 0.1);
-  --color-status-info-border: rgba(59, 130, 246, 0.2);
-  --color-status-info-fg: #3b82f6;
-  --color-status-pending: #737373;
-  --color-status-pending-bg: rgba(115, 115, 115, 0.1);
-  --color-status-pending-fg: #737373;
-
-  /* Package hues get the same translucent-bg / solid-fg treatment as the
-     status tokens above, for the same reason: Obsidian's `.dark` never
-     matches here (it uses `.theme-dark`), so the `:root`/`.dark` package
-     tokens never reach this surface and the light values would otherwise
-     paint through as near-white chips on a dark Obsidian theme. A translucent
-     background survives either of Obsidian's themes; an opaque ~96%-lightness
-     fill does not. */
-  --color-package-agent-bg: rgba(59, 130, 246, 0.1);
-  --color-package-agent-border: rgba(59, 130, 246, 0.2);
-  --color-package-agent-fg: #3b82f6;
-  --color-package-plugin-bg: rgba(139, 92, 246, 0.1);
-  --color-package-plugin-border: rgba(139, 92, 246, 0.2);
-  --color-package-plugin-fg: #8b5cf6;
-  --color-package-skill-bg: rgba(5, 150, 105, 0.1);
-  --color-package-skill-border: rgba(5, 150, 105, 0.2);
-  --color-package-skill-fg: #059669;
-  --color-package-adapter-bg: rgba(245, 158, 11, 0.1);
-  --color-package-adapter-border: rgba(245, 158, 11, 0.2);
-  --color-package-adapter-fg: #f59e0b;
-  --color-package-shape-bg: rgba(244, 63, 94, 0.1);
-  --color-package-shape-border: rgba(244, 63, 94, 0.2);
-  --color-package-shape-fg: #f43f5e;
-  --color-package-connector-bg: rgba(6, 182, 212, 0.1);
-  --color-package-connector-border: rgba(6, 182, 212, 0.2);
-  --color-package-connector-fg: #06b6d4;
-
-  color: var(--text-normal);
-  background-color: var(--background-secondary);
-  font-family: var(--font-interface);
-}
-
-/* Match the independent embedded stylesheet when the vault uses dark mode. */
-.theme-dark .copilot-view-content {
-  --color-destructive: #ff554b;
 }

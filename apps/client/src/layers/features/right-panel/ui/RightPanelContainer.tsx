@@ -53,45 +53,17 @@ const CONTENT_SIZED_MOBILE_TABS = new Set(['pulse', 'files']);
 
 /** How the container presents itself within its host shell. */
 export interface RightPanelContainerProps {
-  /**
-   * The current route pathname, threaded into every tab's `visibleWhen`
-   * predicate. The routed web/desktop shell (AppShell) supplies the live
-   * TanStack Router pathname; the router-less Obsidian embed passes a constant
-   * (`'/session'`) — the container never reaches for the router itself, so it
-   * mounts safely in a shell with no `RouterProvider`.
-   */
   pathname: string;
   /** Whether the open channel is addressed through a connected community. */
   isRemoteCommunityRoom?: boolean;
-  /**
-   * Presentation mode.
-   *
-   * - `'resizable'` (default): the desktop inset — a collapsible
-   *   `react-resizable-panels` `Panel` that must live inside a `PanelGroup`;
-   *   windows under 1024px (`useIsBelowDesktop`) still fall back to the
-   *   overlay Sheet.
-   * - `'overlay'`: always the slide-over Sheet, regardless of width. The
-   *   embed uses this — its pane is narrow and has no `PanelGroup`, so a
-   *   side-by-side split would crowd the chat; an overlay degrades gracefully.
-   */
-  variant?: 'resizable' | 'overlay';
 }
 
 /**
  * Shell-level right panel container.
- *
- * In the routed shell (`variant='resizable'`) the panel is always present in
- * the DOM when contributions exist — collapsed to zero width when closed,
- * expanded with a CSS flex-grow transition (300ms) when opened. Transitions are
- * disabled during manual resize drag and on initial mount to avoid layout
- * flash. Below 1024px (`useIsBelowDesktop`) — and always under
- * `variant='overlay'` (the Obsidian embed) — it renders as a Sheet with
- * built-in slide animation instead.
  */
 export function RightPanelContainer({
   pathname,
   isRemoteCommunityRoom = false,
-  variant = 'resizable',
 }: RightPanelContainerProps) {
   const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
@@ -244,39 +216,15 @@ export function RightPanelContainer({
     </>
   );
 
-  // Overlay: render as a slide-over Sheet instead of an inset split — always
-  // under `variant='overlay'` (the narrow Obsidian embed, which has no
-  // PanelGroup) and on any window too narrow for three panes at once.
-  //
-  // The cutoff is 1024px, not the 768px phone line. A tablet is the case that
-  // proved 768 wrong: sidebar docked, panel docked, and the page between them
-  // measured 236px — a tab strip collapsed to 16px, card grids at 78px columns.
-  // Two panes fit there; three do not, so the panel comes over the page.
-  if (variant === 'overlay' || overlayOnly) {
+  if (overlayOnly) {
     if (!shouldShow) return null;
     return (
       <ResponsiveSheet open onOpenChange={(open) => !open && setRightPanelOpen(false)}>
         <ResponsiveSheetContent
           showCloseButton={false}
-          // Full width where there is nothing to sit beside: a phone, and the
-          // embed's narrow pane, which is narrow at any window size — this
-          // className lands after ResponsiveSheetContent's own computed width,
-          // so it wins the tailwind-merge regardless of what useIsMobile()
-          // reports. A tablet is the case that is NOT that: there is a page
-          // worth keeping in view behind the panel, so the sheet keeps the
-          // reading width the primitive gives it.
           className={cn(
             'bg-sidebar text-sidebar-foreground flex w-full flex-col gap-0 p-0',
-            (variant === 'overlay' || isPhone) && 'sm:max-w-full',
-            // `isPhone` is required, not redundant with the branch guard above:
-            // that guard is `variant === 'overlay' || overlayOnly`, so two
-            // surfaces reach this Sheet without being a phone — the overlay
-            // variant (the Obsidian embed, narrow-paned even on a desktop-width
-            // viewport) and a tablet. The 390×844 measurement this set is named
-            // for was taken on neither, so without this term their default
-            // Pulse/Files panel silently swaps from a full-height slide-over to
-            // a content-height box on a surface nobody measured (DOR-1753,
-            // adversarial review finding I3).
+            isPhone && 'sm:max-w-full',
             isPhone &&
               activeTab &&
               CONTENT_SIZED_MOBILE_TABS.has(activeTab) &&

@@ -13,15 +13,6 @@
  * transport at all. Only the module graph shows that, so only the module graph
  * is asserted here.
  *
- * **The mechanism.** Every file under `transport/`, `direct/` and
- * `direct-transport.ts` is enumerated from disk and given a `vi.doMock` factory
- * that records the module and answers with an inert namespace. A factory runs
- * when — and only when — something actually imports the module, so after a
- * fresh `import('../index')` the recorded list IS the barrel's reach into
- * transport land. Nothing is hard-coded: a method factory added tomorrow is
- * enumerated tomorrow, and it is recorded whether it is reached through
- * `transport/index.ts` or deep-imported past it.
- *
  * The second test is the control. It imports two modules that DO hold a
  * transport, one from each enumerated root, and fails if the detector records
  * nothing — so a broken walk, or a mock spelling vitest no longer resolves,
@@ -68,16 +59,8 @@ function transportModules(dir: string): string[] {
 
 /**
  * The transport surface, spelled the way an import inside `lib/` spells it.
- *
- * Both implementations, not just the HTTP one: `DirectTransport` was on the
- * barrel too, and its `direct/` factories are the same shape of cost for a
- * surface that will never be embedded in Obsidian.
  */
-const TRANSPORT_MODULES = [
-  ...transportModules(join(LIB_DIR, 'transport')),
-  ...transportModules(join(LIB_DIR, 'direct')),
-  '../direct-transport.ts',
-];
+const TRANSPORT_MODULES = [...transportModules(join(LIB_DIR, 'transport'))];
 
 /**
  * What a recorded transport module answers with.
@@ -134,7 +117,6 @@ describe('shared/lib barrel ↔ transport isolation', () => {
     expect(TRANSPORT_MODULES.length).toBeGreaterThan(30);
     expect(TRANSPORT_MODULES).toContain('../transport/http-transport.ts');
     expect(TRANSPORT_MODULES).toContain('../transport/ws-connection.ts');
-    expect(TRANSPORT_MODULES).toContain('../direct-transport.ts');
   });
 
   it('loads no transport module when the barrel is imported', async () => {
@@ -160,16 +142,8 @@ describe('shared/lib barrel ↔ transport isolation', () => {
   });
 
   it('records both Transports when something really does load one', async () => {
-    // The control, and the reason to trust the emptiness above. These two
-    // modules DO hold a transport — `query-persister` refuses to persist for
-    // anything but `HttpTransport`, and `direct-transport` is the Obsidian one
-    // — so both must be recorded. One entry from each enumerated root, because
-    // a mock spelling that stopped resolving would otherwise leave half the
-    // guard passing green having watched nothing.
     await import('../query-persister');
-    await import('../direct-transport');
 
     expect(loaded).toContain('../transport/index.ts');
-    expect(loaded).toContain('../direct-transport.ts');
   });
 });

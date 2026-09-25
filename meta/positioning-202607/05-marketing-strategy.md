@@ -1,5 +1,7 @@
 # Marketing Strategy: Bootstrapped, Solo, Launching From Zero
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). The strategy layer; the tactical checklist lives in `06-marketing-tactics.md`, and the dated, operational end-to-end plan (alpha stabilization, Linear-audit build list, instrumentation, 14-week calendar, runbooks) is `09-gtm-plan.md`, which supersedes this doc's phase sketch where they differ. Note added 2026-07-06: the product is treated as an **alpha**; a stabilization-and-instrumentation phase now precedes everything below, and no untested pillar gets marketed (demo-claim gate, `09` §2.2). Constraint set: one founder, no budget, no audience (5 GitHub stars, ~1k LinkedIn, unverified X following), unlimited access to frontier models and a product that dogfoods itself. Goal: durable traction while staying independent.
 
 ## 0. The strategic read

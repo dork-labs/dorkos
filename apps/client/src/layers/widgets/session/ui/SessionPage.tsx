@@ -32,14 +32,6 @@ import { useMessageLanding } from '../model/use-message-landing';
  * nothing and instead hands the first turn a hidden preamble (BC-48). This page
  * owns the other half of all three contracts: dropping the params from the URL
  * once they are spent.
- *
- * `?message=` is a message-search hit asking the transcript to open ON the
- * message it matched (DOR-1579). It is read HERE rather than inside the
- * transcript because the transcript is also what the router-less Obsidian embed
- * renders; a route param belongs to the route. Unlike the launch params it is
- * not dropped from the URL once spent — it is an address, so a refresh or a
- * shared link lands in the same place — and `useMessageLanding` is what keeps it
- * from re-answering on every remount.
  */
 export function SessionPage() {
   const [activeSessionId] = useSessionId();

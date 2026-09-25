@@ -2042,7 +2042,7 @@ describe('what a drained runtime window is reported as (DOR-1314)', () => {
 
     // The CLI speaks between turns and then names a message nobody sent. Those
     // words open a runtime turn, and with NOTHING SUBSCRIBED to project it —
-    // which is this suite, and an embedded host — the fallback drains it. That
+    // which is this suite — the fallback drains it. That
     // drop is what gets reported, because dropping words a person might have
     // been owed is not a debug-level event. In production the composition root
     // subscribes, the turn is projected, and this path is never taken (spec

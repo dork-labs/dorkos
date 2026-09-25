@@ -50,10 +50,7 @@ export interface AppTabActions {
   create: () => void;
 }
 
-/**
- * Tab actions bound to the router. Must be called inside the router (the
- * standalone cockpit's shell); the Obsidian embed mounts no strip.
- */
+/** Bind tab creation, selection and closing to the current router. */
 export function useAppTabActions(): AppTabActions {
   const router = useRouter();
 

@@ -39,15 +39,15 @@ export const MOCK_PKG_FEATURED_AGENT: AggregatedPackage = {
 
 /** Plain plugin package — no featured indicator. */
 export const MOCK_PKG_PLUGIN: AggregatedPackage = {
-  name: 'obsidian-sync',
-  source: 'https://github.com/dorkos-marketplace/obsidian-sync',
+  name: 'notes-sync',
+  source: 'https://github.com/dorkos-marketplace/notes-sync',
   marketplace: 'dorkos-community',
-  description: 'Bidirectional sync between DorkOS agent sessions and your Obsidian vault.',
+  description: 'Keep project notes in sync across your workspaces.',
   version: '0.8.1',
   type: 'plugin',
   icon: '🗒️',
   category: 'integration',
-  tags: ['obsidian', 'notes', 'sync'],
+  tags: ['markdown', 'notes', 'sync'],
 };
 
 /** Skill pack — no description to exercise the no-description branch. */
@@ -423,11 +423,11 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     installedAt: '2026-09-20T10:00:00Z',
   },
   {
-    name: 'obsidian-sync',
+    name: 'notes-sync',
     version: '0.8.1',
     type: 'plugin',
     scope: 'global',
-    installPath: '/Users/kai/.dork/plugins/obsidian-sync',
+    installPath: '/Users/kai/.dork/plugins/notes-sync',
     installedAt: '2026-03-01T14:30:00Z',
     linked: true,
     // A linked install nobody approved yet: held back from every session, and
@@ -435,10 +435,10 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     heldBack: {
       reason: 'unasked',
       reviewable: true,
-      linkedPath: '/Users/kai/src/obsidian-sync',
+      linkedPath: '/Users/kai/src/notes-sync',
       note:
         'Held back: you have not approved it as it is now. Linked: it runs whatever is in ' +
-        '/Users/kai/src/obsidian-sync. Review it to decide.',
+        '/Users/kai/src/notes-sync. Review it to decide.',
     },
   },
   {
@@ -558,13 +558,13 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     installedDisclosed: FLOW_NEXT_RUNS,
   },
   {
-    packageName: 'obsidian-sync',
+    packageName: 'notes-sync',
     installedVersion: '0.8.1',
     latestVersion: '',
     hasUpdate: false,
     marketplace: '',
     status: 'unknown',
-    installPath: '/Users/kai/.dork/plugins/obsidian-sync',
+    installPath: '/Users/kai/.dork/plugins/notes-sync',
     type: 'plugin',
     scope: 'global',
     note: 'linked install — update its source instead',
@@ -687,15 +687,6 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   conflicts: [],
 };
 
-/**
- * What verification says about {@link MOCK_INSTALLED_FOR_UPDATES} (DOR-2197):
- * Release Bot's flow has files edited, added and removed with an update
- * waiting; python-skills was installed by an older DorkOS and can be checked;
- * the global flow was checked and found to differ; code-reviewer kept three
- * files after an offline update, one of which still runs, that Check files
- * can sort (DOR-2322);
- * obsidian-sync is a linked working copy; the rest are as installed.
- */
 export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UPDATES.map((pkg) => {
   if (pkg.installPath === '/Users/kai/work/release-bot/.dork/plugins/flow') {
     return {
@@ -750,7 +741,7 @@ export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UP
       },
     };
   }
-  if (pkg.name === 'obsidian-sync') {
+  if (pkg.name === 'notes-sync') {
     return { ...pkg, integrity: { status: 'unknown' as const, reason: 'linked' as const } };
   }
   return { ...pkg, integrity: { status: 'clean' as const, customized: [] } };

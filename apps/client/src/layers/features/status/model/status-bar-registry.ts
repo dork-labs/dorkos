@@ -437,10 +437,6 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     label: 'Plan',
     description: 'Work out a plan first, and change nothing until you approve it',
     cluster: 'right',
-    // A Session row, and pinnable, because the line's width budget can drop this
-    // item on a narrow bar (a phone, the Obsidian panel) — and an item you can
-    // only reach in the line is an item a narrow bar can take away. The row
-    // carries the same switch, so planning stays reachable at every width.
     group: 'session',
     icon: ClipboardList,
     // Offered whenever the runtime has one, on or off — a switch nobody can find
@@ -505,11 +501,6 @@ export function isPinnable(item: StatusBarItemConfig): boolean {
 /**
  * Bridge to the server-persisted pin list (`ui.statusBar.pins`, DOR-431 →
  * DOR-452): the pinned keys plus the two actions that change them.
- *
- * Pins are config, not `localStorage`, so the same items follow you between the
- * desktop app, the browser, and Obsidian, and an agent can set them via
- * `config_patch`. Both actions write the whole list — the config schema treats
- * `pins` as one array and a PATCH replaces arrays wholesale.
  *
  * A pin whose key is no longer pinnable is ignored downstream rather than
  * rejected, so removing an item from the registry cannot strand the line.

@@ -42,7 +42,7 @@ Like what you see? Install DorkOS for good with one of the methods below, and sk
 
 Most people should use the one-liner: it's one command and it checks your setup for you. Already comfortable with npm? Use the npm tab. On a Mac and want a real app in your dock, no terminal at all? Use the Desktop App (there is a new Windows version too, still in early testing). Running on a server, or don't want Node.js on your machine? Use Docker. Contributing to DorkOS itself? Use Self-Hosted.
 
-<Tabs items={['One-liner (Recommended)', 'npm', 'Desktop App', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner (Recommended)', 'npm', 'Desktop App', 'Docker', 'Self-Hosted']}>
 
 <Tab value="One-liner (Recommended)">
 
@@ -249,55 +249,6 @@ Navigate to [http://localhost:4242](http://localhost:4242) in your browser. You'
 
 </Tab>
 
-<Tab value="Obsidian Plugin">
-
-<Callout type="warn">
-  The Obsidian plugin (built as **DorkOS Copilot**) is early. It's not yet listed in Obsidian's
-  community plugin directory, and it's under active development, so expect rough edges. If you want
-  a dependable daily driver today, use the web app above; come back here once it's further along.
-</Callout>
-
-DorkOS Copilot embeds a chat sidebar for your agents directly inside [Obsidian](https://obsidian.md/), so you can talk to them without leaving your notes. Because it isn't published yet, the only way to try it is to build it from source, alongside the DorkOS repo:
-
-<Steps>
-<Step>
-
-### Build the plugin
-
-Follow the Self-Hosted tab below to clone and install DorkOS, then build the plugin package from `apps/obsidian-plugin`.
-
-</Step>
-<Step>
-
-### Copy it into your vault
-
-Copy the built `manifest.json`, `main.js`, and `styles.css` into a new folder at `<your-vault>/.obsidian/plugins/dorkos-copilot/`.
-
-</Step>
-<Step>
-
-### Enable it
-
-In Obsidian, go to **Settings** → **Community Plugins**, make sure community plugins are enabled, then find and toggle on **DorkOS Copilot**.
-
-</Step>
-<Step>
-
-### Configure your API key
-
-Open the DorkOS Copilot settings and enter your Anthropic API key.
-
-</Step>
-</Steps>
-
-<Callout type="info">
-  For the curious: the plugin runs the same agent engine as the CLI, but in-process inside Obsidian
-  instead of talking to a separate server. In practice that means it's fast and nothing leaves your
-  machine, though it also means the plugin needs Node.js 22.22.3 or later installed on your system.
-</Callout>
-
-</Tab>
-
 <Tab value="Self-Hosted">
 
 For contributors and anyone customizing DorkOS: clone the repository and run the full development stack.
@@ -367,7 +318,7 @@ This starts the Express API server and Vite dev server together, with hot reload
 
 DorkOS checks for a newer version every time it starts. Here's how to update on each install method.
 
-<Tabs items={['One-liner / npm', 'Desktop App', 'Docker', 'Obsidian Plugin', 'Self-Hosted']}>
+<Tabs items={['One-liner / npm', 'Desktop App', 'Docker', 'Self-Hosted']}>
 
 <Tab value="One-liner / npm">
 
@@ -428,12 +379,6 @@ Data in the `dorkos-data` volume persists across updates.
   `/home/node/.dork`, and existing files need an ownership fix first. See [Upgrading from an older
   image](/docs/self-hosting/docker#upgrading-from-an-older-image) in the Docker guide.
 </Callout>
-
-</Tab>
-
-<Tab value="Obsidian Plugin">
-
-Rebuild the plugin from an updated copy of the repository, then copy the new files over the ones in `<your-vault>/.obsidian/plugins/dorkos-copilot/` and reload Obsidian.
 
 </Tab>
 

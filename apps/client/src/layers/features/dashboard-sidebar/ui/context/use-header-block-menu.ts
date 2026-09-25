@@ -23,14 +23,6 @@ import { buildHeaderBlockMenuNodes } from '../header-block-menu';
 /**
  * What this installation is called.
  *
- * Named after the operator, because on a single-player install the team IS the
- * operator plus their agents. "Your team" is the honest fallback in three
- * cases, and the third is the one a browser found: the roster has not landed
- * yet, the roster is empty (the Obsidian embed, by construction), or the person
- * has not told DorkOS their name — in which case the roster answers with the
- * literal `'You'`, and possessing that reads "You's team". Settings › Profile
- * already recognises the same literal for the same reason (DOR-979).
- *
  * @param displayName - The operator's own profile display name, if known.
  */
 export function teamNameFor(displayName: string | null): string {

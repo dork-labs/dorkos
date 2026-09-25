@@ -4,7 +4,6 @@ import { Button, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared
 import { isMac } from '@/layers/shared/lib';
 
 interface ComposerToolbarProps {
-  /** Show the picture tools at all. Off under the in-process (Obsidian) transport, which cannot send a picture. */
   showPictureTools: boolean;
   /** True while an image is being captured, cropped or compressed. Holds the picture tools. */
   isPreparing: boolean;

@@ -207,20 +207,6 @@ function claimStorageSlot(
 
 /**
  * Build the sidebar's local memory, or decide this surface has none.
- *
- * @param options.transport - How this surface talks to its server. Only
- *   {@link HttpTransport} persists: the Obsidian embed runs the server in the
- *   same process, so its reads are already local and writing them into the
- *   vault's browser storage would buy nothing and leak a person's rooms into a
- *   store the plugin never clears.
- * @param options.apiBaseUrl - The base URL the transport was built with; keys
- *   the entry to one install.
- * @param options.buster - The build's version. A new build may have changed what
- *   a payload looks like, so it starts from an empty memory rather than
- *   hydrating yesterday's shape into today's components.
- * @param options.storage - Where to keep it. Defaults to `localStorage`.
- * @returns The cache, or `null` when this surface must not persist — or cannot,
- *   see {@link claimStorageSlot}. Never throws: the caller runs at module scope.
  */
 export function createBootCache(options: {
   transport: Transport;

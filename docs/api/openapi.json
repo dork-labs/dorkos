@@ -58,8 +58,7 @@
             "enum": [
               "ready",
               "not-set-up",
-              "unreadable",
-              "unavailable"
+              "unreadable"
             ]
           },
           "detail": {
@@ -3900,24 +3899,6 @@
               "action": {
                 "type": "string",
                 "enum": [
-                  "switch_sidebar_tab"
-                ]
-              },
-              "tab": {
-                "$ref": "#/components/schemas/UiSidebarTab"
-              }
-            },
-            "required": [
-              "action",
-              "tab"
-            ]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "action": {
-                "type": "string",
-                "enum": [
                   "open_canvas"
                 ]
               },
@@ -4243,13 +4224,6 @@
           "relay",
           "picker"
         ]
-      },
-      "UiSidebarTab": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 200,
-        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
-        "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; in the web app there is no strip, so switching a sidebar tab is a no-op there."
       },
       "UiCanvasContent": {
         "oneOf": [
@@ -5257,24 +5231,10 @@
             "properties": {
               "open": {
                 "type": "boolean"
-              },
-              "activeTab": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/UiSidebarTab"
-                  },
-                  {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                ]
               }
             },
             "required": [
-              "open",
-              "activeTab"
+              "open"
             ]
           },
           "agent": {
@@ -7611,7 +7571,7 @@
                     "minLength": 1,
                     "maxLength": 200,
                     "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$",
-                    "description": "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', 'connections'). The sidebar tab strip exists only in the embedded (Obsidian) app; in the web app switching a sidebar tab is a no-op."
+                    "description": "Legacy sidebar tab id retained for stored Shape manifests."
                   },
                   "openPanels": {
                     "type": "array",
@@ -60463,7 +60423,7 @@
           "Harness"
         ],
         "summary": "What every agent tool does with every agent file in one project",
-        "description": "One row per agent file, one cell per agent tool the project has turned on, and the projection plan’s own sentence under each — never a paraphrase, so the terminal and the screen say the same thing about the same file. **It writes nothing**: no manifest is scaffolded, nothing is turned on, and no settings store is opened. That is DOR-678’s rule, learned when `dorkos harness sync --check` scaffolded a manifest into whatever folder a person happened to be standing in. **`state` answers for the project as a whole**, and has four values. `ready` — the manifest parsed and everything below is populated. `not-set-up` — there is no `.agents/harness.manifest.json`, answered `200` rather than `404`, because a project with no manifest is a state the app is built to draw and a `404` would say the route is not there. `unreadable` — there is one and it will not parse, with `detail` saying why in words a person can act on. `unavailable` — a build with no harness service at all; it belongs to the in-process (Obsidian) transport and is never produced here. On anything but `ready` every list is empty and every count is zero. **No file bytes**: the response carries artifact names, repo-relative paths and reasons, and a withheld package’s hook commands are deliberately left out of it. `projectPath` must be absolute — a relative one is refused rather than resolved against wherever the server was started — and inside the configured directory boundary or under `{dorkHome}/agents`, the subtree every DorkOS-managed agent lives in.",
+        "description": "One row per agent file, one cell per agent tool the project has turned on, and the projection plan’s own sentence under each — never a paraphrase, so the terminal and the screen say the same thing about the same file. **It writes nothing**: no manifest is scaffolded, nothing is turned on, and no settings store is opened. That is DOR-678’s rule, learned when `dorkos harness sync --check` scaffolded a manifest into whatever folder a person happened to be standing in. **`state` answers for the project as a whole**, and has three values. `ready` — the manifest parsed and everything below is populated. `not-set-up` — there is no `.agents/harness.manifest.json`, answered `200` rather than `404`, because a project with no manifest is a state the app is built to draw and a `404` would say the route is not there. `unreadable` — there is one and it will not parse, with `detail` saying why in words a person can act on. On anything but `ready` every list is empty and every count is zero. **No file bytes**: the response carries artifact names, repo-relative paths and reasons, and a withheld package’s hook commands are deliberately left out of it. `projectPath` must be absolute — a relative one is refused rather than resolved against wherever the server was started — and inside the configured directory boundary or under `{dorkHome}/agents`, the subtree every DorkOS-managed agent lives in.",
         "parameters": [
           {
             "schema": {
@@ -60573,8 +60533,7 @@
                           "enum": [
                             "ready",
                             "not-set-up",
-                            "unreadable",
-                            "unavailable"
+                            "unreadable"
                           ]
                         },
                         "detail": {
@@ -61394,8 +61353,7 @@
                           "enum": [
                             "ready",
                             "not-set-up",
-                            "unreadable",
-                            "unavailable"
+                            "unreadable"
                           ]
                         },
                         "detail": {

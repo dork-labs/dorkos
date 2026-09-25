@@ -36,12 +36,6 @@ let legacyImportAttempted = false;
 /**
  * Ids dismissed during THIS page's life, whether or not the write persisted.
  *
- * The server list alone is not enough to hide a card. `updateConfig` is a no-op
- * on the Obsidian `DirectTransport` (`embedded-mode-stubs.ts`), and any
- * transport can answer 200 without the value coming back on the next read. In
- * both cases the optimistic cache write is undone by the refetch and the card
- * the person just dismissed returns — which reads as a broken button.
- *
  * So a dismissal is remembered here too, and {@link usePromoDismissals} reports
  * the union. Module-level rather than component state because several surfaces
  * read this at once (the sidebar's bottom slot and the quiet state on home) and

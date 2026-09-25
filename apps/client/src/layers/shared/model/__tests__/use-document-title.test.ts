@@ -152,7 +152,7 @@ describe('status prefixes', () => {
     expect(document.title).not.toContain('🏁');
   });
 
-  it('no prefix when cwd is null (embedded mode)', () => {
+  it('no prefix when cwd is null', () => {
     renderHook(() =>
       useDocumentTitle({
         cwd: null,

@@ -839,11 +839,6 @@ router.patch('/:id', async (req, res) => {
     //   the whole set by
     //   `services/runtimes/__tests__/permission-semantics.test.ts`. This door
     //   would be the wrong place for it: there is no request to refuse.
-    // - **Obsidian.** `DirectTransport` calls `runtime.updateSession` in-process
-    //   and bypasses this route entirely, so the embedded cockpit's dial is
-    //   gated by its dialog alone. Pre-existing property of that seam, widened
-    //   by nothing here; the checkbox is withheld there for a related reason
-    //   (see `AutonomyConfirmDialog`).
     const descriptor = declaredMode(runtime, requestedMode);
     if (descriptor && needsConsentRitual(descriptor) && !acknowledgedAutonomy) {
       if (!hasStandingAutonomyAck()) {

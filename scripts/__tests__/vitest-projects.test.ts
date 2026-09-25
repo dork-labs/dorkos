@@ -91,10 +91,8 @@ describe('root vitest project list', () => {
 
 /**
  * The config filenames Vitest resolves for a project, in the order it tries
- * them. `apps/obsidian-plugin` is the reason the order is written down rather
- * than assumed: it has both, and only the `vitest.config.ts` is its test config
- * (the `vite.config.ts` is a `lib` build). `apps/client` is the reason the
- * fallback exists at all — its test config lives inside `vite.config.ts`.
+ * them. A dedicated test config takes precedence over a Vite build config.
+ * `apps/client` uses the fallback: its tests live inside `vite.config.ts`.
  */
 const CONFIG_FILENAMES = ['vitest.config.ts', 'vite.config.ts'] as const;
 

@@ -915,11 +915,11 @@ export default defineConfig({
       // claude-code-typed TestModeRuntime alias
       // (`DORKOS_TEST_RUNTIME_CLAUDE_ALIAS`), so the same seat answers for free.
       //
-      // A separate project rather than a chat-mock suite because it shares none
-      // of chat-mock's scenario/reset choreography: it drives room turns, whose
-      // replies do not depend on the scenario the store happens to hold. It is
-      // internally serial (the file configures it) because one of its tests
-      // archives the shared #team, which changes what `/` renders for every
+      // Room turns use the scenario store too: the default simple-text scenario
+      // posts through rooms.post. Other projects must scope their specialized
+      // scenarios to a session or restore the default before this project runs.
+      // This project is internally serial (the file configures it) because one
+      // test archives the shared #team, which changes what `/` renders for every
       // page on this server until it is restored.
       name: 'chromium-team-room',
       use: {

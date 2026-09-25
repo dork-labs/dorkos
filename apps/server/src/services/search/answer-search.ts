@@ -2,18 +2,11 @@
  * The whole of "answer a search", above the caller and below the wire
  * (message-search spec §6.1, §7; DOR-691).
  *
- * `GET /api/search` used to hold this itself, and that was fine while HTTP was
- * the only way in. It is not any more: the Obsidian embed reaches the same index
- * in-process through `DirectTransport`, with no route between it and the service.
- * So everything the route decided ONCE THE CALLER WAS KNOWN — what a malformed
- * query is refused with, what an unregistered source is refused with, what a
- * missing `limit` defaults to — lives here, where both surfaces call it.
+ * The route delegates its search decision here after resolving the caller:
+ * malformed queries, unknown sources, and default limits are handled together.
  *
  * **It never resolves a caller and never widens one.** The scope arrives as data
- * from whoever knows who is asking: the route from `resolveCaller` plus the rooms
- * domain, the embed from the operator it is by construction. This module cannot
- * tell the two apart, which is exactly why the embed cannot be the laxer of the
- * two.
+ * from the route after `resolveCaller` and the rooms domain determine access.
  *
  * @module server/services/search/answer-search
  */
@@ -33,9 +26,7 @@ import { searchForCaller, type SearchScope } from './search-service.js';
  * @param db - The database holding the index.
  * @param scope - What this caller may see, resolved by whoever knows who they
  *   are. Never derived here.
- * @param raw - The request as it arrived: an Express query object, or the
- *   `SearchQuery` an in-process caller handed the Transport. Parsed rather than
- *   trusted in both cases — a typed caller can still be a stale build.
+ * @param raw - The Express query object, parsed rather than trusted.
  * @returns The envelope, or the refusal the HTTP route would have sent.
  */
 export function answerSearch(db: Db, scope: SearchScope, raw: unknown): SearchAnswer {

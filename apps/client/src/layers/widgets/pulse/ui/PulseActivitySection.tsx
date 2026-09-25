@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { getPlatform } from '@/layers/shared/lib';
+
 import { useIsMobile, useSafePathname } from '@/layers/shared/model';
 import { Button, Table, TableBody } from '@/layers/shared/ui';
 import { useDashboardActivity } from '@/layers/features/dashboard-activity';
@@ -28,12 +28,7 @@ const PULSE_ACTIVITY_CAP = 5;
  */
 export function PulseActivitySection() {
   const navigate = useNavigate();
-  // "Open activity" navigates to /activity. Omitted in the router-less Obsidian
-  // embed, where there is no activity route to reach — an honest omission, not a
-  // dead-end button. On /activity the whole section is gone, so the link has no
-  // second way to be a no-op.
   const pathname = useSafePathname();
-  const showOpenActivity = !getPlatform().isEmbedded;
   // The de-dup below only holds when the panel is actually DOCKED beside the
   // feed it is de-duping — on a narrow viewport it is a slide-over Sheet that
   // covers /activity instead (`RightPanelContainer`).
@@ -57,16 +52,14 @@ export function PulseActivitySection() {
       empty={!isLoading && items.length === 0}
       allClear="No recent activity."
       action={
-        showOpenActivity ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs"
-            onClick={() => navigate({ to: '/activity' })}
-          >
-            Open activity →
-          </Button>
-        ) : undefined
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 text-xs"
+          onClick={() => navigate({ to: '/activity' })}
+        >
+          Open activity →
+        </Button>
       }
     >
       <Table>

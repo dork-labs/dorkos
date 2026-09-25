@@ -1,5 +1,7 @@
 # Market Landscape: Where the Agent-Tools Market Is, and Where It's Headed
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). Distilled from deep web research (sources and unverified-number flags in the full research pass), the repo's own customer-voice corpus, and first-party product announcements. Numbers marked (~) conflicted across sources; treat as directional.
 
 ## 1. The arc so far

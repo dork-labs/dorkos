@@ -1,10 +1,6 @@
 /**
  * What every attachment upload promises, whichever transport carries it.
  *
- * A leaf module on purpose: the in-process (Obsidian) transport reads these too,
- * and importing them through the HTTP transport's barrel would pull the whole
- * web stack into that bundle.
- *
  * @module shared/lib/transport/upload-contract
  */
 

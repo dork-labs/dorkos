@@ -19,9 +19,7 @@
  * **Mostly superseded — one caller left.** The server now resolves a session's
  * own directory when a request omits `?cwd=` (DOR-1322, DOR-1444), so for the
  * session-scoped reads a null directory became an answerable question rather
- * than an incomplete one; they moved to `isSessionScopeReady` +
- * `useSessionScopedCwd`, which waits only on a directory that is genuinely
- * still arriving. This predicate survives for `useSessionDetail` alone, which
+ * than an incomplete one; they use `useSessionScopedCwd` and wait only for a session id. This predicate survives for `useSessionDetail` alone, which
  * is keyed into a shared cache other writers patch BY DIRECTORY
  * (`syncSessionDetailCache`), so a null key there would silently stop
  * receiving those patches rather than merely fetching differently. Do not add

@@ -1,14 +1,6 @@
 /**
  * Canvas slice — per-session multi-document canvas state for the app store.
  *
- * ONE document list, TWO views (ADR 260911-200304). `openDocuments` holds every
- * open document; the right panel shows them through two tabs, and
- * {@link canvasViewForContent} says which tab a document belongs to — the
- * Browser tab renders exactly what the embedded browser renders (`url` and
- * `browser`), the Canvas tab renders the other twelve types. Each view keeps its
- * own active document id, so switching tabs returns you to the document you left
- * there.
- *
  * Agent `open_*` commands append-and-activate in the document's own view
  * (deduping by source), while `update_canvas` mutates the active document of the
  * view its content belongs to. Edit-protection is per-document: while one

@@ -41,13 +41,6 @@ export interface WelcomeBackSetting {
   setOffersEnabled: (offersEnabled: boolean) => void;
   /**
    * Whether this install has the setting at all.
-   *
-   * False while the config is still loading, on an older server that does not
-   * report the block, and in Obsidian, whose `DirectTransport` builds no such
-   * block and whose `updateConfig` is a documented no-op. A surface must hide
-   * the switch when this is false rather than show one that saves nothing —
-   * the same rule {@link useAutonomyAcknowledgement} follows, and for the same
-   * reason: a switch that ticks and forgets is worse than no switch.
    */
   isAvailable: boolean;
   /** Whether a write is in flight. */

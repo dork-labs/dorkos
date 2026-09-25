@@ -463,10 +463,7 @@ describe('SessionSnapshotSchema', () => {
   });
 
   it('REQUIRES canvas, so a transport cannot forget to decorate its snapshot', () => {
-    // Purpose: two transports build this snapshot — `deliverSessionStream` and
-    // `DirectTransport`'s own session-stream methods. An optional field would
-    // let one of them answer with an empty canvas that looks exactly like a
-    // session with nothing on it.
+    // A missing field would look exactly like an empty session canvas.
     const withoutCanvas = {
       messages: [],
       inProgressTurn: null,

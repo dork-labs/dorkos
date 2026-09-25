@@ -3,9 +3,8 @@
  *
  * Buffers curated product-usage events (from the shared registry in
  * `@dorkos/shared/telemetry-events`) and flushes them in small batches to the
- * owned ingest at https://dorkos.ai/api/telemetry/events — the single pipe all
- * four client surfaces ride (Transport → server → owned ingest), so no vendor
- * SDK is ever embedded in the cockpit, desktop, or Obsidian.
+ * owned ingest at https://dorkos.ai/api/telemetry/events — the shared path
+ * supported clients use (Transport → server → owned ingest).
  *
  * Consent, exactly like the heartbeat and install channels:
  *   - `config.telemetry.usage` must be on (defaults `true`, Tier 1), AND

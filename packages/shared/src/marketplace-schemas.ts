@@ -1477,18 +1477,16 @@ export function isInstallSiblingName(name: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The workspace chrome a Shape restores on apply (`ShapeLayoutSchema`). The
- * literal unions mirror `UiSidebarTab` / `UiPanelId` (`./types`) — redeclared
- * here to keep this module import-free and browser-safe.
+ * The workspace chrome a Shape restores on apply (`ShapeLayoutSchema`). Panel
+ * ids mirror `UiPanelId` (`./types`) and are redeclared here to keep this module
+ * import-free and browser-safe.
  */
 export interface ShapeLayout {
   /** Sidebar open on arrival. */
   sidebarOpen: boolean;
   /**
-   * Sidebar tab to select on arrival, when the Shape pins one. Any registered
-   * tab id — a built-in (`overview` | `sessions` | `schedules` | `connections`)
-   * or an extension-contributed tab (e.g. `linear-issues:linear-loop-sidebar`),
-   * mirroring `UiSidebarTab` (`./types`).
+   * Legacy tab metadata retained for installed Shapes. Applying a Shape ignores
+   * this value because the current app has no sidebar tab strip.
    */
   sidebarTab?: string;
   /** Panels to open on arrival. */

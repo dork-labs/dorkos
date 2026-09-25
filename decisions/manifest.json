@@ -2,6 +2,18 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260925-191411",
+      "slug": "retire-the-obsidian-plugin",
+      "title": "Retire the Obsidian plugin",
+      "status": "accepted",
+      "created": "2026-09-25",
+      "extractedFrom": "obsidian-retirement",
+      "specSlug": "obsidian-retirement",
+      "amends": "0001",
+      "supersedes": "260825-194924",
+      "affects": ["apps/client/", "apps/server/", "docs/guides/obsidian-plugin.mdx"]
+    },
+    {
       "id": "260920-200112",
       "slug": "community-self-hosting-starts-with-a-local-guided-launcher",
       "title": "Community self-hosting starts with a local guided launcher",
@@ -461,7 +473,7 @@
       "id": "260825-194924",
       "slug": "obsidian-carries-a-prebuilt-sqlite-and-never-migrates",
       "title": "The Obsidian embed carries a prebuilt SQLite and reads the database without ever writing it",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-08-25",
       "extractedFrom": null,
       "specSlug": "message-search",
@@ -473,7 +485,8 @@
         "apps/server/src/services/rooms/operator-author.ts",
         "packages/db/src/index.ts",
         "packages/db/src/migrations-folder.ts"
-      ]
+      ],
+      "supersededBy": "260925-191411"
     },
     {
       "id": "260823-200729",

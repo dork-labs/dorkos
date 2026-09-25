@@ -165,11 +165,7 @@ export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) 
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="w-56">
-        {/* Who you are, first — the same rows the operator's face opens from its
-            own disc (spec `identity-consistency` §W3.1). It draws nothing until
-            the roster names somebody, so the embed gets no dead block. BC-43
-            gives the face a home of its own in the header block; this fold is
-            what keeps its items reachable until then. */}
+        {}
         {/* Both of the account block's doors yield to the header block, which
             BC-43 gives "Workspace settings" and "Account". Two menus offering
             one dialog under two different names is the same defect as one menu

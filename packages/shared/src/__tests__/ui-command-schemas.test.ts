@@ -7,7 +7,6 @@ import {
   UiStateReportSchema,
   UiStateReportDocumentSchema,
   UiPanelIdSchema,
-  UiSidebarTabSchema,
   UiCommandEventSchema,
 } from '../schemas.js';
 
@@ -35,11 +34,6 @@ describe('UiCommandSchema', () => {
     expect(UiCommandSchema.parse({ action: 'close_sidebar' })).toEqual({
       action: 'close_sidebar',
     });
-  });
-
-  it('parses switch_sidebar_tab command', () => {
-    const result = UiCommandSchema.parse({ action: 'switch_sidebar_tab', tab: 'connections' });
-    expect(result).toEqual({ action: 'switch_sidebar_tab', tab: 'connections' });
   });
 
   it('parses open_canvas with URL content', () => {
@@ -211,10 +205,10 @@ describe('UiCommandSchema', () => {
   });
 
   it('has a doc-comment variant count that matches the actual member count', () => {
-    // The union's TSDoc claims "22 variants". Guard the count so the comment
+    // The union's TSDoc claims "21 variants". Guard the count so the comment
     // and the schema never silently drift (the stale "20" this change fixed).
     const memberCount = UiCommandSchema.options.length;
-    expect(memberCount).toBe(22);
+    expect(memberCount).toBe(21);
   });
 
   it('rejects invalid panel id', () => {
@@ -399,7 +393,7 @@ describe('UiCanvasContentSchema', () => {
 describe('UiStateSchema — what the client SENDS', () => {
   const state = {
     panels: { settings: false, tasks: false, relay: false, picker: false },
-    sidebar: { open: true, activeTab: 'sessions' },
+    sidebar: { open: true },
     agent: { id: null, cwd: '/home/user/project' },
   };
 
@@ -418,6 +412,14 @@ describe('UiStateSchema — what the client SENDS', () => {
     // context bag. Without the strip, every older client's first turn breaks.
     expect(UiStateSchema.shape).not.toHaveProperty('canvas');
     const fromAnOlderClient = { ...state, canvas: { open: true, contentType: 'markdown' } };
+    expect(UiStateSchema.parse(fromAnOlderClient)).toEqual(state);
+  });
+
+  it('strips an older client’s sidebar tab without dropping its UI state', () => {
+    const fromAnOlderClient = {
+      ...state,
+      sidebar: { ...state.sidebar, activeTab: 'sessions' },
+    };
     expect(UiStateSchema.parse(fromAnOlderClient)).toEqual(state);
   });
 });
@@ -440,7 +442,7 @@ describe('UiStateReportSchema — what get_ui_state ANSWERS with', () => {
       count: 1,
     },
     panels: { settings: false, tasks: false, relay: false, picker: false },
-    sidebar: { open: true, activeTab: 'sessions' },
+    sidebar: { open: true },
     agent: { id: null, cwd: '/home/user/project' },
   };
 
@@ -498,38 +500,5 @@ describe('UiPanelIdSchema', () => {
 
   it('rejects unknown panel id', () => {
     expect(() => UiPanelIdSchema.parse('unknown')).toThrow();
-  });
-});
-
-describe('UiSidebarTabSchema', () => {
-  it('accepts the built-in sidebar tabs', () => {
-    expect(UiSidebarTabSchema.parse('overview')).toBe('overview');
-    expect(UiSidebarTabSchema.parse('sessions')).toBe('sessions');
-    expect(UiSidebarTabSchema.parse('schedules')).toBe('schedules');
-    expect(UiSidebarTabSchema.parse('connections')).toBe('connections');
-  });
-
-  it('accepts and round-trips an extension-contributed tab id', () => {
-    // Contributed tabs register under a namespaced `extId:tabId` id — the
-    // schema is a bounded string, not a closed enum, so these must parse.
-    const id = 'linear-issues:linear-loop-sidebar';
-    expect(UiSidebarTabSchema.parse(id)).toBe(id);
-  });
-
-  it('rejects an empty id', () => {
-    expect(() => UiSidebarTabSchema.parse('')).toThrow();
-  });
-
-  it('rejects ids outside the contribution-id alphabet', () => {
-    expect(() => UiSidebarTabSchema.parse('has space')).toThrow();
-    expect(() => UiSidebarTabSchema.parse('<script>alert(1)</script>')).toThrow();
-    // First character must be alphanumeric.
-    expect(() => UiSidebarTabSchema.parse(':leading-colon')).toThrow();
-    expect(() => UiSidebarTabSchema.parse('-leading-dash')).toThrow();
-  });
-
-  it('caps the id length at 200 characters', () => {
-    expect(UiSidebarTabSchema.parse('a'.repeat(200))).toBe('a'.repeat(200));
-    expect(() => UiSidebarTabSchema.parse('a'.repeat(201))).toThrow();
   });
 });

@@ -6,7 +6,6 @@ import { cachedSessionForCwd } from '@/layers/entities/session';
 import {
   cn,
   getAgentDisplayName,
-  platformCanSearchMessages,
   openLink,
   supportsNewTab,
   supportsSeparateWindow,
@@ -217,11 +216,6 @@ export function CommandPaletteDialog() {
     [queryClient]
   );
 
-  // "Open in a new tab" — this agent in another tab (DOR-540). The seam picks
-  // whose tab: the cockpit's own strip in the desktop app, a real browser tab in
-  // a browser, so the label is honest on both. Where there is no second view at
-  // all (the Obsidian embed), open the agent here rather than dropping the
-  // action.
   const openAgentInNewTab = useCallback(
     (agent: AgentPathEntry) => {
       if (!supportsNewTab()) {
@@ -281,20 +275,7 @@ export function CommandPaletteDialog() {
 
   const isRoomMode = prefix === '#';
 
-  // The one row that leaves ⌘K, and only when there is something to hand
-  // across. `term` rather than the raw search string: `#` and `@` are how a
-  // person narrowed this list, not part of what they want looked for.
-  //
-  // It opens a sibling dialog rather than navigating: the message-search box is
-  // a surface, not a page, so there is no href to follow and nothing for the
-  // Obsidian embed's router-less shell to trip over.
-  //
-  // **Only where `MessageSearchDialog` mounts**, and asked the same way it asks
-  // (DOR-1563): a row offering to search messages in a window with no index is a
-  // door onto an empty room, which is the exact dead end this row was built to
-  // avoid pointing at. The two gates read one function so they cannot drift into
-  // a palette that advertises a box that never opens.
-  const handoffTerm = platformCanSearchMessages() ? searchHandoffTerm(term) : null;
+  const handoffTerm = searchHandoffTerm(term);
   const searchHandoff = handoffTerm
     ? {
         term: handoffTerm,

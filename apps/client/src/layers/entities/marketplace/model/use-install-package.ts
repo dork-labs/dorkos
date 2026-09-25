@@ -41,10 +41,6 @@ export function useInstallPackage() {
       }
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packages() });
       void queryClient.invalidateQueries({ queryKey: marketplaceKeys.packageDetail(name) });
-      // Installing a plugin can register new slash commands (e.g. `/flow:*`).
-      // The server hot-reloads them and broadcasts `commands_changed`, but
-      // invalidate here too so the palette catches up even when the SSE event
-      // is missed or the in-process (Obsidian) transport yields no events (UX-12).
       void queryClient.invalidateQueries({ queryKey: ['commands'] });
       // The new installation has no update check yet. Mark the check stale
       // without re-running it: the next view that mounts asks again, and an

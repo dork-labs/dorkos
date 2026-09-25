@@ -655,10 +655,6 @@ describe('ErrorMessageBlock', () => {
     });
 
     it('surfaces an endpoint refusal instead of leaving a dead button', async () => {
-      // Purpose: the login route is loopback-only, and the Obsidian embed
-      // declines it outright. Reaching sign-in from a phone or tunnel is
-      // DOR-1655 — until then the card must say why nothing happened rather
-      // than swallow the refusal.
       const user = userEvent.setup();
       sessionRows.current = [sessionRow('claude-code')];
       renderBlock(

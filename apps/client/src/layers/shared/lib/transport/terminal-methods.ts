@@ -1,7 +1,4 @@
 /**
- * Terminal Transport methods factory — the HTTP implementation of the embedded
- * terminal (spec right-panel-workbench, Chunk E; ADR 260708-185521).
- *
  * `openTerminal` creates a server-side PTY over `POST /api/terminal`, then opens
  * the bidirectional WebSocket byte channel at `GET /api/terminal/:id/socket`.
  * `attachTerminal` skips the create and re-attaches to an existing PTY by id (the

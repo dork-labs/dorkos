@@ -98,15 +98,6 @@ function buildTitle({
  * the session — and, while it is backgrounded, how many things are waiting.
  * Tasks and unread rooms share that one `(N)`: they are both "something wants
  * you", and two separate counters in a browser tab is noise, not information.
- *
- * One knock-on worth stating, because it is the only behaviour change outside
- * the cockpit: with no `cwd` the title used to be an unconditional `'DorkOS'`,
- * and is now `'(N) DorkOS'` when something is waiting and the surface is
- * hidden. That path is the Obsidian embed (`App.tsx`, which always passes
- * `cwd: null`), so a minimised Obsidian window now counts pending tasks in its
- * title where it previously said nothing. That is the badge doing its job on a
- * surface that never had one, not a regression — but it was not asked for, so
- * it is written down rather than left to be discovered.
  */
 export function useDocumentTitle({
   cwd,

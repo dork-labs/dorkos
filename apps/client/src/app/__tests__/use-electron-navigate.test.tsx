@@ -21,7 +21,7 @@ describe('useElectronNavigate', () => {
     mockNavigate.mockClear();
   });
 
-  it('does nothing when window.electronAPI is absent (browser/Obsidian)', () => {
+  it('does nothing when window.electronAPI is absent (browser)', () => {
     renderHook(() => useElectronNavigate());
     expect(mockNavigate).not.toHaveBeenCalled();
   });

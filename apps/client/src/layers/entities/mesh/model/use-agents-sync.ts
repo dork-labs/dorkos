@@ -71,10 +71,6 @@ const COALESCE_MS = 400;
  * looking at simply was not there, and DorkBot took to telling people to
  * refresh the page (DOR-2052).
  *
- * Mount once near the app root, beside the other `*Sync` hooks. In embedded
- * mode (Obsidian) the in-process transport yields no generic events, so the
- * subscription is an inert no-op there.
- *
  * @param coalesceMs - Debounce window in milliseconds (default
  *   {@link COALESCE_MS}); parameterised for deterministic testing.
  */

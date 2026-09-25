@@ -137,22 +137,6 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
   const interrupted = queryClient.isFetching({ queryKey: roomKeys.lists() }) > 0;
   void queryClient.cancelQueries({ queryKey: roomKeys.lists() });
 
-  // `null` means "not a member here", which is not a number to overwrite.
-  //
-  // **Only ever downwards**, which is the same monotonic rule the cursor itself
-  // keeps. Reading can only reduce what is unread, so a count that would RAISE
-  // the badge is this event arriving out of order with a fresher one — the case
-  // is a `room_activity` refetch in flight when the cursor lands, whose response
-  // was computed before the cursor moved and resolves after this patch. Taking
-  // the lower of the two means whichever of them arrives last is still right.
-  //
-  // **The guard is not defensive noise.** This writes by PREFIX, so it reaches
-  // every cache entry under `lists()` — including any future key somebody nests
-  // there whose data is not a list of rooms. One such key already existed (the
-  // well-known lookup, whose data is a single room or `null`), and mapping over
-  // it threw a `TypeError` out of an event handler: on the in-process transport
-  // that takes the whole global stream down with it. That key was moved out
-  // (`roomKeys.wellKnown`), and this stays so the next one is merely ignored.
   queryClient.setQueriesData<RoomSummary[]>({ queryKey: roomKeys.lists() }, (rooms) =>
     Array.isArray(rooms)
       ? rooms.map((room) =>

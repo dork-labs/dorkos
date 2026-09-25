@@ -135,7 +135,7 @@ It has its own chord rather than sharing `Cmd+Shift+A` with the Profile. Sharing
 
 **With the card focused, `A` allows it and `D` refuses it.** `AskCardRoot`'s own `onKeyDown` (`features/ask/ui/AskCard.tsx`) — a component-level listener, not a document one, and deliberately so: a plain letter as a global hotkey would fire while someone is typing "a" or "d" into the composer, which `typingInto(event.target)` also guards against directly. Neither key does anything unless the card already has focus, which only `Cmd+Shift+Y` (or a click) ever gives it.
 
-`Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `profile` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from both `App.tsx` and `AppShell.tsx`.
+`Cmd+Shift+A` toggles rather than opens: with the right panel already showing the `profile` tab it closes the panel; anything else switches to that tab and opens it. Same document-level listener pattern as `useRightPanelShortcut`, mounted from `AppShell.tsx`.
 
 **It does not land on the profile everywhere, and the handler is not what decides.** The store write always happens, but `profile`'s `visibleWhen` (`app/init-extensions.ts`) admits it only on `/session` or an explicit agent path, and never under `/marketplace`. When the requested tab is not visible, `RightPanelContainer`'s reconciler re-selects the first visible contextual contribution, falling back to the always-present global one — so on Tasks, Activity, Marketplace and Home the chord opens the right panel on **Pulse**. Fix that by changing `visibleWhen`, not the shortcut.
 
@@ -227,8 +227,7 @@ you were already reading.
 `window.open(url, '_blank')` — a real browser tab — in a browser, whatever adapters happen to be in
 scope. The label is honest on both. `main.tsx` gates its `registerTabOpener` call on the same
 predicate, but that is a clarification, not the enforcement: deleting it changes nothing a person can
-see. The Obsidian embed (`supportsNewTab() === false`) has neither strip nor browser tab, so a tab
-request opens in place rather than being dropped.
+see.
 
 **A `window` request the surface cannot honour degrades to a tab, never to `here`.** `openLink` takes
 the real-second-window branch on `supportsSeparateWindow()` and otherwise lets `window` fall into the

@@ -18,7 +18,7 @@ Two more systems are separate but related, each with its own section below:
 
 ## Architecture
 
-The interactive tools pattern connects three layers: the SDK callback, the streaming generator, and the client UI. The key challenge is that `canUseTool` is a synchronous callback that must return a `Promise<PermissionResult>`, while the user response arrives later over HTTP or in-process transport.
+The interactive tools pattern connects three layers: the SDK callback, the streaming generator, and the client UI. The key challenge is that `canUseTool` is a synchronous callback that must return a `Promise<PermissionResult>`, while the user response arrives later over HTTP.
 
 **A prompt waits in two stages** (spec `ask-parks-on-timeout`). It counts down for `SESSIONS.INTERACTION_TIMEOUT_MS`, and past that it PARKS: the promise stays unresolved, the tool call stays held, and the person is told the agent is waiting. Only at `SESSIONS.INTERACTION_PARK_CEILING_MS` is the model handed a refusal. The whole wait — the entry shapes, both timers, the sentences and the log lines — lives in `messaging/interaction-wait.ts`; the handlers below just arm it. An unattended session (a scheduled task run) is the one exception and refuses at the countdown, because nobody is coming back to it.
 
@@ -47,7 +47,6 @@ sendMessage() generator loop (Promise.race)
 StreamEvent yielded to client
   |
   |  HttpTransport: SSE event -> onEvent callback
-  |  DirectTransport: AsyncGenerator iteration -> onEvent callback
   |
   v
 useChatSession processes event
@@ -66,7 +65,6 @@ User responds (clicks button / selects option)
 Transport method called (submitAnswers / approveTool / denyTool)
   |
   |  HttpTransport: POST to /api/sessions/:id/submit-answers (or /approve, /deny)
-  |  DirectTransport: calls runtime method directly
   |
   v
 Runtime resolves the deferred Promise
@@ -668,7 +666,7 @@ return { behavior: 'allow', updatedInput: input };
 
 ### Step 3: Add transport method
 
-Add a method to the `Transport` interface and implement it in both transports:
+Add a method to the `Transport` interface and implement it in HttpTransport and update the test mocks:
 
 ```typescript
 // packages/shared/src/transport.ts
@@ -695,7 +693,7 @@ submitMyNewResult(sessionId: string, toolCallId: string, result: MyResult): bool
 }
 ```
 
-Implement in `HttpTransport` (POST to a new route) and `DirectTransport` (call the runtime directly).
+Implement in `HttpTransport` (POST to a new route) and update the test mocks.
 
 **Important:** Handle 409 responses in your transport method. The server returns 409 with `{ code: 'INTERACTION_ALREADY_RESOLVED' }` when the SDK resolves the interaction before the HTTP request arrives. Treat this as success in the client.
 
@@ -773,7 +771,6 @@ The `control_ui` tool is exposed on the external MCP server (`/mcp`) and availab
 | `toggle_panel`         | `panel`: (same as above)                                         | Toggle a named panel                                                                                                                                                                                                                                                                                  |
 | `open_sidebar`         | (none)                                                           | Open the sidebar                                                                                                                                                                                                                                                                                      |
 | `close_sidebar`        | (none)                                                           | Close the sidebar                                                                                                                                                                                                                                                                                     |
-| `switch_sidebar_tab`   | `tab`: `overview` / `sessions` / `schedules` / `connections`     | Switch the sidebar tab — embedded (Obsidian) app only; a no-op on the web cockpit                                                                                                                                                                                                                     |
 | `open_canvas`          | `content?`: `UiCanvasContent`, `preferredWidth?`: 20--80         | Open canvas panel with content                                                                                                                                                                                                                                                                        |
 | `update_canvas`        | `content`: `UiCanvasContent`                                     | Update canvas content without reopening                                                                                                                                                                                                                                                               |
 | `close_canvas`         | (none)                                                           | Close the canvas panel                                                                                                                                                                                                                                                                                |
@@ -1008,10 +1005,9 @@ The snapshot reads the selector `listPendingInteractions(entries, Date.now())` (
 
 ### Transport Abstraction
 
-Both `HttpTransport` and `DirectTransport` implement the same `Transport` interface, so interactive tool components work identically in both environments:
+`HttpTransport` implements the `Transport` interface, so interactive tool components share one contract across the browser, phone web app, and desktop renderer:
 
 - **HttpTransport** (standalone web): Makes POST requests to Express routes (`/approve`, `/deny`, `/submit-answers`). The route handler calls the runtime methods.
-- **DirectTransport** (Obsidian plugin): Calls runtime methods directly in-process.
 
 Components use `useTransport()` to get the current transport and never know which adapter is active.
 

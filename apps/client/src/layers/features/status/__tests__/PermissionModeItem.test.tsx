@@ -737,13 +737,6 @@ describe('PermissionModeItem', () => {
     });
 
     it('says "Send a message first" when disabled, never the loading placeholder', () => {
-      // PROBE A (DOR-2103 re-review), and it is deterministic rather than a
-      // race: the status line passes `disabled={!sessionId}`, the embed's
-      // session store starts null and resets on every directory switch, and
-      // `permissionModeKnown` is false whenever nothing has answered — so both
-      // props are set at once and the ORDER of the two branches decides what a
-      // person sees. Loading won, and a control nobody can use pulsed
-      // "Permissions: still loading" forever for a read nobody had issued.
       mockCapabilitiesForRuntime.mockReturnValue(CLAUDE_CAPABILITIES);
       render(
         <PermissionModeItem

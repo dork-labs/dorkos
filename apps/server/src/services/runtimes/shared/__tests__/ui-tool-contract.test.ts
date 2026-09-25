@@ -83,8 +83,8 @@ describe('the schemas are what the catalogs are derived from', () => {
     );
   });
 
-  it('reads all 22 UI actions off UiCommandSchema', () => {
-    expect(ACTIONS).toHaveLength(22);
+  it('reads all 21 UI actions off UiCommandSchema', () => {
+    expect(ACTIONS).toHaveLength(21);
     expect(ACTIONS).toContain('apply_layout');
   });
 });
@@ -215,13 +215,13 @@ describe('a variant the schema accepts and no table teaches cannot ship', () => 
     );
   });
 
-  it('refuses to render a 23rd action that has no sentence', () => {
-    const twentyThree = z.discriminatedUnion('action', [
+  it('refuses to render a 22nd action that has no sentence', () => {
+    const twentyTwo = z.discriminatedUnion('action', [
       ...UiCommandSchema.options,
       z.object({ action: z.literal('open_inbox') }),
     ]);
 
-    expect(() => buildUiActionCatalog({ names: uiActionNames(twentyThree) })).toThrow(
+    expect(() => buildUiActionCatalog({ names: uiActionNames(twentyTwo) })).toThrow(
       /open_inbox.*UI_ACTION_CATALOG/s
     );
   });

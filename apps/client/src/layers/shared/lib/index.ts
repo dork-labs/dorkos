@@ -1,10 +1,6 @@
 /**
  * Shared lib — domain-agnostic utilities and helpers.
  *
- * NOT the Transports. `HttpTransport` and `DirectTransport` live one subpath
- * away, at `./transport` and `./direct-transport`, and nothing reachable from
- * here loads either (DOR-1809; see the note where they used to be re-exported).
- *
  * @module shared/lib
  */
 export { cn } from './utils';
@@ -54,16 +50,7 @@ export {
   type CommunityAuthoritySnapshot,
   type ConfirmedCommunityAuthority,
 } from './community-authority-state';
-export {
-  getPlatform,
-  platformCanSearchMessages,
-  setPlatformAdapter,
-  isMac,
-  isDesktopDarwin,
-  isDesktopShell,
-  localDeviceNoun,
-  type PlatformAdapter,
-} from './platform';
+export { isMac, isDesktopDarwin, isDesktopShell, localDeviceNoun } from './platform';
 export {
   TEAM_VIEWS,
   DEFAULT_TEAM_VIEW,
@@ -143,26 +130,6 @@ export { isSessionRequestReady } from './session-request-scope';
 export { rankMatch, type MatchTier, type RankMatchResult } from './rank-match';
 export { buildClientReport } from './build-issue-report';
 export { captureClientEnvironment, type ClientEnvironment } from './client-environment';
-// The two Transport implementations are deliberately NOT on this barrel, and
-// neither is anything that has to load one (DOR-1809).
-//
-// `HttpTransport` alone is ~35 modules — a method factory per domain, the SSE
-// parser, the durable stream socket — and `DirectTransport` is another dozen.
-// Re-exported here, they were in the module graph of `import { cn } from
-// '@/layers/shared/lib'`: every consumer paid for the whole client-server seam
-// to merge two class names, and every test that touched a barrel symbol
-// evaluated a websocket client it never called.
-//
-// Withdrawing them is what makes that a structural fact rather than a
-// convention. There is no importable path from this barrel to `transport/` or
-// `direct-transport`, and `__tests__/barrel-transport-isolation.test.ts` fails
-// if one appears. The dedicated subpaths are the way in, and they are the same
-// ones the package's `exports` map already publishes to embedding hosts:
-//
-//   `@/layers/shared/lib/transport`         — HttpTransport, streamManager,
-//                                             the stream sockets, the upload
-//                                             contract, the room-stream errors
-//   `@/layers/shared/lib/direct-transport`  — DirectTransport (Obsidian)
 export { reportClientError, installClientErrorHandlers } from './client-error-reporter';
 export { getBreadcrumbs, installBreadcrumbHandlers, redactBreadcrumb } from './breadcrumbs';
 export {

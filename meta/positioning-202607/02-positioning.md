@@ -1,5 +1,7 @@
 # Positioning: If We Started From Scratch Today
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). Builds on `01-market-landscape.md`. This is the recommendation layer: what to claim, for whom, against what, and the few product moves that multiply everything else.
 
 ## 1. What changed since the Q1 positioning was written

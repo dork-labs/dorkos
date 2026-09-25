@@ -27,9 +27,6 @@ const SESSION_ROUTE = '/session';
  * would otherwise profile a stranger. That is the same rule the tab's
  * `visibleWhen` gate applies, and the two must agree or the tab appears with
  * nothing behind it.
- *
- * In the Obsidian embed the pathname is the constant `/session`, so the panel
- * profiles the session's own agent there exactly as it does on the web.
  */
 export function useDockedAgentPath(): string | null {
   const explicitAgentPath = useAppStore((s) => s.explicitAgentPath);

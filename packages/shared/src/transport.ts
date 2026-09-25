@@ -1,7 +1,6 @@
 /**
  * Transport interface — the hexagonal architecture port that decouples the React client
- * from its backend. Two adapters exist: `HttpTransport` (standalone web, HTTP/SSE to Express)
- * and `DirectTransport` (Obsidian plugin, in-process services).
+ * from its backend. The supported `HttpTransport` uses HTTP/SSE to Express.
  *
  * Injected via React Context (`TransportProvider`).
  *
@@ -639,16 +638,13 @@ export interface Transport
   readonly clientId?: string;
   /**
    * Whether this transport can attach an embedded terminal (a server-side PTY
-   * over a WebSocket byte channel). `true` for the HTTP transport, `false` for
-   * the in-process Obsidian transport — the terminal is a web-only surface, so
-   * the terminal tab is gated on this flag rather than attempted-and-failed.
+   * over a WebSocket byte channel). The terminal tab is gated on this flag.
    */
   readonly supportsTerminal: boolean;
   /**
    * Whether this transport can hand the embedded browser a page to frame —
    * {@link createServeUrl} for a local file and {@link createProxyUrl} for a dev
-   * server. `true` for the HTTP transport, `false` for the in-process Obsidian
-   * transport, whose host has neither route nor preview listener.
+   * server. The HTTP transport can offer both routes.
    *
    * The Browser right-panel tab is gated on this flag, the same posture as
    * {@link Transport.supportsTerminal}: a tab that could only ever show an error
@@ -757,8 +753,7 @@ export interface Transport
   /**
    * Subscribe to a session's normalized, monotonically-seq'd event stream.
    *
-   * HTTP maps this to `GET /api/sessions/:id/events` (SSE); Direct/Obsidian maps
-   * it to in-process async iteration. Pass `sinceCursor` to resume after a gap,
+   * HTTP maps this to `GET /api/sessions/:id/events` (SSE). Pass `sinceCursor` to resume after a gap,
    * receiving only events with `seq` greater than the cursor.
    *
    * @param sessionId - Target session ID
@@ -779,8 +774,7 @@ export interface Transport
    * Subscribe to the global session-list stream — discovery + liveness across
    * all observable sessions, feeding the sidebar and fleet-wide status view.
    *
-   * HTTP maps this to `GET /api/events` (SSE); Direct/Obsidian maps it to
-   * in-process async iteration.
+   * HTTP maps this to `GET /api/events` (SSE).
    */
   subscribeSessionList(): AsyncIterable<SessionListEvent>;
   /**
@@ -855,9 +849,9 @@ export interface Transport
    * Trigger a RUNTIME-fulfilled command intent (currently `compact`) for a
    * session and resolve to the canonical session id.
    *
-   * The single client path all four surfaces share to fulfill a runtime intent:
+   * The client path to fulfill a runtime intent:
    * `HttpTransport` POSTs `/sessions/:id/command-intents/:intent` (trigger-only,
-   * `202`), `DirectTransport` calls the same server service in-process. The
+   * `202`). The
    * outcome — a compaction — is delivered out-of-band over the durable `/events`
    * stream (e.g. a `compact_boundary`), NOT in this response, exactly like
    * {@link postMessage}. Callers must first gate on the active runtime's
@@ -1052,8 +1046,8 @@ export interface Transport
    * a session's working directory, for use as an `<img>`/`<object>` source in the
    * canvas. The path is resolved within and confined to `cwd` server-side, and
    * only image and PDF content types are served. Returns `null` when the
-   * transport cannot serve local files over a URL (e.g. the in-process Obsidian
-   * transport) so callers fall back to an "unavailable here" state.
+   * transport cannot serve local files over a URL, so callers fall back to an
+   * "unavailable here" state.
    *
    * @param cwd - Session working directory the path is resolved within.
    * @param filePath - File path, absolute or relative to `cwd`.
@@ -1157,8 +1151,8 @@ export interface Transport
    * page, yet the page can never call `/api/*` as the user. The path is confined
    * to `cwd` server-side; a `..`/symlink escape is rejected.
    *
-   * Returns `null` when the transport cannot serve local files over a URL (the
-   * in-process Obsidian transport), so the browser falls back to an
+   * Returns `null` when the transport cannot serve local files over a URL,
+   * so the browser falls back to an
    * "unavailable here" state.
    *
    * @param cwd - Session working directory the served files are confined to.
@@ -1177,7 +1171,7 @@ export interface Transport
    *
    * The response's `url` is `null` when no origin can be offered, with
    * `unavailable` saying why, so the browser can explain it. The whole response
-   * is `null` on the in-process Obsidian transport (web-only surface).
+   * is `null` when no preview service is available.
    *
    * @param port - Localhost port of the dev server to preview (1–65535).
    */
@@ -1192,8 +1186,8 @@ export interface Transport
    * input (the host is pinned to loopback server-side, so there is no way to
    * point this at another machine).
    *
-   * Returns `null` when the transport has no server to ask (the in-process
-   * Obsidian transport); the caller treats that as "unknown" and carries on.
+   * Returns `null` when the transport has no server to ask; the caller treats
+   * that as "unknown" and carries on.
    *
    * @param port - Loopback port to check (1–65535).
    */
@@ -1205,8 +1199,7 @@ export interface Transport
    * The injected in-page shim posts captures to the client (`window.parent`),
    * never to `/api/*`; this client — same-origin and authenticated — is the
    * credentialed party that forwards them here. Best-effort and fire-and-forget:
-   * a preview that can't be reached simply produces no capture. `DirectTransport`
-   * no-ops (the embedded browser is web-only already).
+   * a preview that can't be reached simply produces no capture.
    *
    * @param sessionId - The session whose preview produced the batch.
    * @param batch - The validated console/network (and navigation) capture batch.
@@ -1232,8 +1225,7 @@ export interface Transport
    * Separate from {@link Transport.ingestDevtoolsCapture} because it is posted
    * the moment it exists: an agent's tool call is awaiting this `requestId`
    * server-side, and a result folded into the 300ms capture debounce is a
-   * result that can arrive after the tool gave up. `DirectTransport` no-ops
-   * (the embedded browser is web-only already).
+   * result that can arrive after the tool gave up.
    *
    * @param sessionId - The session whose preview was driven.
    * @param result - The validated result relayed from the in-page shim.
@@ -1251,7 +1243,7 @@ export interface Transport
    *
    * Unlike the two calls above this one is NOT fire-and-forget: a tool call is
    * blocked on it, and a failure here has to become the sentence that tool
-   * answers with. `DirectTransport` rejects (the embedded browser is web-only).
+   * answers with.
    *
    * @param sessionId - The session whose preview was recorded.
    * @param upload - The round trip id, the frame count, the length, and the two
@@ -1301,9 +1293,7 @@ export interface Transport
    *
    * The returned `currentHash` is the optimistic-concurrency token a later reject
    * write (`writeFile` with `expectedHash`) passes, so a file that changed under
-   * the diff yields a conflict rather than a blind clobber. Under the in-process
-   * transport this works from the in-process baseline store (git via
-   * `child_process`), so text diff is available in Obsidian.
+   * the diff yields a conflict rather than a blind clobber.
    *
    * @param cwd - Session working directory the path is resolved within.
    * @param filePath - File path, absolute or relative to `cwd`.
@@ -1335,9 +1325,8 @@ export interface Transport
    * served (the raw-file allowlist); the URL 404s when no baseline exists,
    * which the viewer reads as "this image is new".
    *
-   * Returns `null` when the transport cannot serve bytes over a URL (the
-   * in-process Obsidian transport) — image diff is a web-only surface,
-   * mirroring the shipped {@link mediaUrl} gap.
+   * Returns `null` when the transport cannot serve bytes over a URL,
+   * mirroring the {@link mediaUrl} availability check.
    *
    * @param cwd - Session working directory the path is resolved within.
    * @param filePath - File path, absolute or relative to `cwd`.
@@ -1416,10 +1405,8 @@ export interface Transport
    */
   copyEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse>;
   /**
-   * Whether {@link revealEntry} can actually open a file manager. False for the
-   * in-process Obsidian transport, which has no way to drive the desktop shell
-   * — surfaces hide the "Reveal in Finder" action rather than offering one that
-   * fails, the same posture as {@link Transport.supportsTerminal}.
+   * Whether {@link revealEntry} can actually open a file manager. Surfaces hide
+   * the action when unavailable, as with {@link Transport.supportsTerminal}.
    */
   readonly supportsReveal: boolean;
   /**
@@ -1451,8 +1438,7 @@ export interface Transport
    * abort `signal` to tear the attachment down deterministically (the server
    * kills the PTY on idle/exit regardless).
    *
-   * `DirectTransport` throws `'unsupported'` — gate calls on
-   * {@link Transport.supportsTerminal}.
+   * Gate calls on {@link Transport.supportsTerminal}.
    *
    * @param cwd - Working directory to spawn the shell in (boundary-confined).
    * @param signal - Aborts the attachment and closes the underlying socket.
@@ -1470,8 +1456,7 @@ export interface Transport
    * treat a rejection as "gone" and fall back to {@link openTerminal} to spawn a
    * fresh shell, seamlessly and with no user-visible error.
    *
-   * `DirectTransport` throws `'unsupported'` — gate calls on
-   * {@link Transport.supportsTerminal}.
+   * Gate calls on {@link Transport.supportsTerminal}.
    *
    * @param id - A terminal id returned by a prior {@link openTerminal}.
    * @param signal - Aborts the attachment and closes the underlying socket.
@@ -1484,8 +1469,7 @@ export interface Transport
    * stays re-attachable across a reload (DOR-225). Idempotent and best-effort:
    * a closed/already-gone PTY resolves cleanly.
    *
-   * `DirectTransport` throws `'unsupported'` — gate calls on
-   * {@link Transport.supportsTerminal}.
+   * Gate calls on {@link Transport.supportsTerminal}.
    *
    * @param id - A terminal id returned by a prior {@link openTerminal}.
    */
@@ -1541,8 +1525,7 @@ export interface Transport
    * (DOR-318). Fire-and-forget and best-effort: it must never throw or surface
    * to the user. The server rebuilds and scrubs the report and only sends it
    * onward when error reporting is opted in — the client neither scrubs nor
-   * gates. `DirectTransport` (Obsidian, in-process) no-ops: crash reporting is a
-   * web-cockpit surface.
+   * gates.
    *
    * @param report - The untrusted `{ name, message, stack }` from the caught error.
    */
@@ -2234,9 +2217,8 @@ export interface Transport
    * - `HttpTransport` cannot synchronously resolve capabilities, so it always
    *   returns a concrete handle. Invocations against non-Claude runtimes are
    *   rejected by the server route (501).
-   * - `DirectTransport` has synchronous access to the embedded runtime's
-   *   capabilities and returns `null` as a secondary guard when plugins are
-   *   unsupported. This null-return is a defense-in-depth optimization, NOT
+   * A `null` result is a secondary guard when plugins are unsupported. It is a
+   * defense-in-depth optimization, NOT
    *   the primary capability gate.
    *
    * Either way: callers must check `supportsPlugins` at the UI layer first.
@@ -2984,7 +2966,7 @@ export interface Transport
    * for the reasoning). It still rides the one owned ingest.
    *
    * `HttpTransport` POSTs `/feedback` (the server fills surface/version/id and
-   * forwards to the ingest); `DirectTransport` forwards in-process. The result is
+   * forwards to the ingest). The result is
    * an honest `{ ok }` so the UI can toast truthfully — a network failure resolves
    * `{ ok: false }` rather than throwing, since best-effort delivery is not an
    * error the user must handle.
@@ -3000,10 +2982,7 @@ export interface Transport
    * pseudonymous `instanceId` so no login is required.
    *
    * `HttpTransport` calls the local server's `GET /api/feedback/mine` proxy,
-   * which forwards to the site (never a cross-origin request from the
-   * client). `DirectTransport` (Obsidian) has no site-backed tracking store
-   * to read — it resolves `[]`, matching the empty state the view already
-   * has to handle.
+   * which forwards to the site (never a cross-origin request from the client).
    *
    * Unlike {@link sendFeedback}'s honest `{ ok }` posture, this **rejects**
    * on failure — it is a read the tracking view's own loading/error UI
@@ -3263,21 +3242,10 @@ export interface Transport
   /**
    * Find messages by what was said in them (spec `message-search` §8).
    *
-   * **A port method rather than a `fetch`**, because a surface that reached the
-   * route directly would work on the web and answer nothing in the Obsidian
-   * embed — and an empty result list is indistinguishable from "no matches",
-   * which is the silent failure this feature refuses everywhere else.
-   *
-   * **One contract, two adapters** (DOR-691). `HttpTransport` calls
-   * `GET /api/search`. `DirectTransport` reads an index a host wired into it, in
-   * that host's own process, under the same operator scope the route resolves —
-   * so where a host provides one, the two answer identically for the same query.
-   * No shipped host does yet, and the embed's search surfaces are gated off for
-   * exactly that reason.
-   *
-   * Neither adapter ever answers `[]` for a search it could not run: a request it
-   * cannot honour REJECTS, carrying the same `message`, `code` and `status` on
-   * either transport.
+   * A port method keeps search behind the client transport. `HttpTransport`
+   * calls `GET /api/search` under the scope the server resolves.
+   * A request that cannot run rejects with `message`, `code` and `status`
+   * rather than returning an empty result.
    *
    * The response is the route's envelope untouched, `warnings` included: a
    * source that could not be indexed contributes zero hits and one warning

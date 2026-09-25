@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstallationUpdatesResult } from '@dorkos/shared/marketplace-schemas';
 
 import { createMarketplaceMethods } from '../marketplace-methods';
-import { marketplaceStubs } from '../../embedded-mode-stubs';
 
 const originalFetch = globalThis.fetch;
 
@@ -140,19 +139,5 @@ describe('createMarketplaceMethods().applyMarketplaceUpdates', () => {
         targets: [{ ...TARGET, installPath: '/nope' }],
       })
     ).rejects.toThrow(/not installed/);
-  });
-});
-
-describe('embedded mode', () => {
-  it('answers the check with no checks, matching its empty installed list', async () => {
-    // Purpose: Obsidian has no marketplace; an empty answer keeps any surface
-    // that asks calm instead of throwing on mount.
-    await expect(marketplaceStubs.checkMarketplaceUpdates()).resolves.toEqual({ checks: [] });
-  });
-
-  it('refuses to apply', async () => {
-    await expect(marketplaceStubs.applyMarketplaceUpdates({ targets: [TARGET] })).rejects.toThrow(
-      /not supported in embedded mode/
-    );
   });
 });

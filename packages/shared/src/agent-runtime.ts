@@ -356,7 +356,7 @@ export interface RuntimeReadiness {
  * Per-runtime requirements entry: the raw checks plus the derived Ready/Connect
  * projection. `state`/`connect` are optional on the type only for backward-compat
  * during the T0 client rollout (setup fixtures predate the projection); the
- * server and DirectTransport always populate `state`.
+ * server always populates `state`.
  */
 export interface RuntimeRequirements extends Partial<RuntimeReadiness> {
   /** Raw dependency results — consumed by the client's Advanced disclosure. */
@@ -456,8 +456,7 @@ export function runtimeSupportsLogin(type: string): boolean {
  * - satisfied binary + missing auth → `login` (or, for OpenCode's
  *   provider-agnostic auth, `provider-picker`)
  *
- * Pure and runtime-agnostic so the HTTP route and the in-process
- * DirectTransport project identically.
+ * Pure and runtime-agnostic so the HTTP route projects consistently.
  *
  * @param type - Runtime type identifier (drives the label and the OpenCode
  *   provider-picker special case).

@@ -472,9 +472,6 @@ export type {
   SidebarRowProps,
 } from './sidebar-row';
 export { SectionHeader, SECTION_HEADER_INSET, SIDEBAR_HOVER_REVEAL } from './section-header';
-// The one pinned card at the bottom of a sidebar. The arbiter is here rather
-// than in the panel because its candidates come from three different features
-// and, in the Obsidian embed, from a fourth surface entirely.
 export { BottomSlot } from './bottom-slot';
 export type { BottomSlotCandidate, BottomSlotProps } from './bottom-slot';
 // Three small rows the transcript and the Ask card both draw. They lived inside

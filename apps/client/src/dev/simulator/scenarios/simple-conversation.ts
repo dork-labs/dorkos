@@ -23,27 +23,14 @@ interface Transport {
 }
 \`\`\`
 
-There are two concrete adapters:
+**HttpTransport** connects the web, desktop and phone app to the server. Components call the same methods regardless of where the app runs.
 
-1. **HttpTransport** — Used by the standalone web client. Makes HTTP requests to the Express server. This adapter handles SSE streaming for real-time message delivery, manages authentication headers, and provides automatic reconnection when the connection drops.
-
-2. **DirectTransport** — Used by the Obsidian plugin. Calls services in-process without HTTP. This is significantly faster since there's no serialization overhead, but it requires the agent runtime to be bundled alongside the plugin.
-
-This hexagonal architecture means the UI components never know or care whether they're running in a browser or inside Obsidian. They just call Transport methods and receive the same shaped data.
-
-### Why This Matters
-
-The Transport pattern enables several important workflows:
-
-- **Testing** — You can create a \`MockTransport\` that returns canned responses, making component tests fast and deterministic without any network calls.
-- **Plugin development** — The Obsidian plugin reuses the exact same React components, just wired to a different Transport implementation.
-- **Future adapters** — Adding a new deployment target (VS Code extension, Electron app, etc.) only requires implementing the Transport interface.
-
-The interface is intentionally minimal — it defines the contract without prescribing implementation details. Each adapter can optimize for its specific environment.`;
+Tests use a mock Transport to return known responses without making network requests. The interface keeps the UI independent of the server's implementation.
+`;
 
 const USER_FOLLOWUP = createUserMessage({
   id: 'sim-user-2',
-  content: 'That makes sense. How does error handling work across the two transports?',
+  content: 'That makes sense. How does error handling work in HttpTransport?',
 });
 
 const FOLLOWUP_MSG = createAssistantMessage({
@@ -52,7 +39,7 @@ const FOLLOWUP_MSG = createAssistantMessage({
   parts: [{ type: 'text', text: '' }],
 });
 
-const FOLLOWUP_TEXT = `Error handling follows a consistent pattern across both transports. Each adapter normalizes errors into a standard \`TransportError\` shape:
+const FOLLOWUP_TEXT = `This example groups request failures into a \`TransportError\` shape:
 
 \`\`\`typescript
 interface TransportError {
@@ -64,7 +51,6 @@ interface TransportError {
 
 **HttpTransport** catches fetch errors and HTTP status codes, mapping them to the appropriate error code. Network failures and 5xx responses are marked \`retryable: true\`, while 4xx errors are not.
 
-**DirectTransport** wraps service-layer exceptions in the same shape. Since there's no network involved, it never produces \`network\` or \`timeout\` errors — those codes are exclusive to HttpTransport.
 
 The UI layer handles these errors uniformly via the \`ErrorMessageBlock\` component, which shows retry buttons only when \`retryable\` is true.`;
 

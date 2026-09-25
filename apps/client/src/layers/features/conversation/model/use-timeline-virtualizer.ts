@@ -56,17 +56,6 @@ export function useTimelineVirtualizer(
     // height; and `elementsCache` is keyed the same way, so a row that merely
     // changed position would stop being re-observed and never measure again.
     getItemKey,
-    // Live measurement with a zero-guard cache fallback. Rows measure their
-    // real DOM height (the ResizeObserver entry when present, else the rect) —
-    // EXCEPT when the measurement comes back 0: a hidden scroll container
-    // (`display: none`, e.g. an Obsidian sidebar tab switched away) measures
-    // every row at 0, and letting those zeros poison the size cache collapses
-    // the total height and loses the scroll position. Answering with the last
-    // cached real height instead keeps the layout intact while hidden; live
-    // measurement resumes naturally on re-show. (Do NOT replace this with
-    // `useCachedMeasurements: true`: that flag makes the default measurer
-    // *always* answer from the cache, and since nothing ever seeds the cache,
-    // every row would freeze at the estimate.)
     measureElement: (element, entry, instance) => {
       const box = entry?.borderBoxSize?.[0];
       const size = box ? Math.round(box.blockSize) : element.getBoundingClientRect().height;
