@@ -47,12 +47,14 @@ const MAX_DEPTH = 4;
  * @param packagePath - Absolute path to the staged package.
  * @param dir - The package-relative directory.
  * @param keep - Which file names to collect.
+ * @param skipLinks - Leave links out instead of listing them as unreadable.
  * @returns Package-relative file paths, sorted.
  */
 async function filesUnder(
   packagePath: string,
   dir: string,
-  keep: (name: string) => boolean
+  keep: (name: string) => boolean,
+  skipLinks = false
 ): Promise<string[]> {
   const found: string[] = [];
   async function visit(rel: string, depth: number): Promise<void> {
@@ -67,6 +69,7 @@ async function filesUnder(
     }
     for (const entry of entries) {
       const child = posix.join(rel, entry.name);
+      if (skipLinks && entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) await visit(child, depth + 1);
       // A link is listed so reading it reports it unreadable rather than
       // following it somewhere else.
@@ -86,7 +89,8 @@ async function filesUnder(
  */
 async function skillFilesOf(
   packagePath: string,
-  pluginJson: Record<string, unknown> | undefined
+  pluginJson: Record<string, unknown> | undefined,
+  agentWorkspace: boolean
 ): Promise<string[]> {
   const listOf = (value: unknown): string[] =>
     (Array.isArray(value) ? value : value === undefined ? [] : [value]).filter(
@@ -114,8 +118,28 @@ async function skillFilesOf(
       : [EFFECT_BEARING_PATHS.commands];
   for (const path of commandPaths) await fromPath(path, isMarkdown);
 
+  if (agentWorkspace) {
+    for (const { dir, kind } of AGENT_WORKSPACE_SKILL_DIRS) {
+      add(await filesUnder(packagePath, dir, kind === 'skill' ? isSkill : isMarkdown, true));
+    }
+  }
+
   return [...files];
 }
+
+/**
+ * Where an agent's own sessions load skills and commands from its working
+ * directory (DOR-2314): Claude Code's project folders, and the Harness Sync
+ * source DorkOS projects into them. Read only for an agent package, whose
+ * folder IS that working directory. Links there are skipped: staging strips a
+ * package's links, and in an installed agent they are DorkOS's own projections
+ * of `.agents/skills`, which is read directly.
+ */
+const AGENT_WORKSPACE_SKILL_DIRS = [
+  { dir: '.claude/skills', kind: 'skill' },
+  { dir: '.claude/commands', kind: 'command' },
+  { dir: '.agents/skills', kind: 'skill' },
+] as const;
 
 /** A skill's name: its frontmatter `name`, else its folder (or file) name. */
 function skillNameOf(path: string, data: Record<string, unknown>): string {
@@ -141,15 +165,18 @@ function toolsOf(value: unknown): string[] {
  *
  * @param packagePath - Absolute path to the staged package.
  * @param pluginJson - The package's plugin.json, when it has a readable one.
+ * @param agentWorkspace - The package is an agent, whose folder is its
+ *   working directory: also read the skills its sessions load from there.
  * @returns Hooks (each with its `source`), allowed tools, and every file whose
  *   frontmatter could not be read.
  */
 export async function readPackageSkills(
   packagePath: string,
-  pluginJson: Record<string, unknown> | undefined
+  pluginJson: Record<string, unknown> | undefined,
+  agentWorkspace = false
 ): Promise<PackageSkills> {
   const out: PackageSkills = { hooks: [], unreadable: [], skillTools: [] };
-  for (const path of await skillFilesOf(packagePath, pluginJson)) {
+  for (const path of await skillFilesOf(packagePath, pluginJson, agentWorkspace)) {
     const read = await readPackageText(packagePath, path);
     if (read.kind === 'absent') continue;
     if (read.kind === 'unreadable') {

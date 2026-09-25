@@ -44,6 +44,7 @@ import {
   isReservedPackagePath,
   userEditableReaches,
 } from './user-editable.js';
+import { findAgentWorkspaceConfig } from './agent-workspace-config.js';
 
 /**
  * A single validation finding produced by {@link validatePackage}. Errors
@@ -480,6 +481,20 @@ async function validatePackageFiles(
   //     servers, monitors, skills or commands at (DOR-2245). The defaults are
   //     refused by the manifest schema; these locations only plugin.json knows.
   await checkUserEditableDeclaredPaths(packagePath, manifest.userEditable ?? [], issues);
+
+  // 11. An agent package's folder is its working directory, so harness
+  //     configuration there would run in every session unseen (DOR-2314).
+  //     Skipped on an installed tree, where DorkOS writes some of it itself.
+  if (manifest.type === 'agent' && (options.tree ?? 'package') === 'package') {
+    for (const finding of await findAgentWorkspaceConfig(packagePath)) {
+      issues.push({
+        level: 'error',
+        code: 'AGENT_WORKSPACE_CONFIG_FORBIDDEN',
+        message: finding.message,
+        path: finding.path,
+      });
+    }
+  }
 
   const hasErrors = issues.some((i) => i.level === 'error');
   return { ok: !hasErrors, issues, manifest, declaredVersion };

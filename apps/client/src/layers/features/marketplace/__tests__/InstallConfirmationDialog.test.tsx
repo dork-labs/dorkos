@@ -26,7 +26,11 @@ import { InstallConfirmationDialog } from '../ui/InstallConfirmationDialog';
 // the scope-aware reinstall detection.
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/marketplace', () => ({
+vi.mock('@/layers/entities/marketplace', async () => ({
+  // The real notice: what a refused preview says is part of what is tested.
+  ...(await vi.importActual<typeof import('@/layers/entities/marketplace/ui/PreviewRefusedNotice')>(
+    '@/layers/entities/marketplace/ui/PreviewRefusedNotice'
+  )),
   usePermissionPreview: vi.fn(),
   useInstallPackage: vi.fn(),
   useInstalledPackages: vi.fn(),
@@ -148,13 +152,13 @@ function makeDetail(preview?: Partial<PermissionPreview>): MarketplacePackageDet
 // Hook return-value helpers
 // ---------------------------------------------------------------------------
 
-type PreviewHookState = { data?: MarketplacePackageDetail; isLoading?: boolean };
+type PreviewHookState = { data?: MarketplacePackageDetail; isLoading?: boolean; error?: unknown };
 
 function setPreviewState(state: PreviewHookState = {}) {
   vi.mocked(usePermissionPreview).mockReturnValue({
     data: state.data,
     isLoading: state.isLoading ?? false,
-    error: null,
+    error: state.error ?? null,
     refetch: vi.fn(),
   } as unknown as ReturnType<typeof usePermissionPreview>);
 }
@@ -284,6 +288,27 @@ describe('InstallConfirmationDialog', () => {
     expect(screen.getByText(/loading preview/i)).toBeInTheDocument();
     // Permission section should not be rendered yet.
     expect(screen.queryByText('Secrets required')).not.toBeInTheDocument();
+  });
+
+  it('says why and offers no install when the server refused the preview (DOR-2314)', () => {
+    // Purpose: a package the server will not preview is one it will not
+    // install; the dialog must never offer Install over an empty preview.
+    useMarketplaceStore.getState().openInstallConfirm(makePackage());
+    const refused = Object.assign(new Error('Package failed validation'), {
+      status: 400,
+      body: {
+        errors: [
+          "An agent package can't ship .claude/settings.json: its folder is the agent's working directory.",
+        ],
+      },
+    });
+    setPreviewState({ error: refused });
+
+    render(<InstallConfirmationDialog />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('DorkOS won’t install this package');
+    expect(screen.getByRole('alert')).toHaveTextContent("can't ship .claude/settings.json");
+    expect(screen.getByRole('button', { name: /^install/i })).toBeDisabled();
   });
 
   it('renders the PermissionPreviewSection once the preview resolves', async () => {

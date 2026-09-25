@@ -17,6 +17,7 @@ export { describePreviewSchedule, runsUnattended } from './lib/describe-schedule
 export { useMarketplacePackages } from './model/use-marketplace-packages';
 export { useMarketplacePackage } from './model/use-marketplace-package';
 export { usePermissionPreview } from './model/use-permission-preview';
+export { PreviewRefusedNotice, isPreviewRefusal } from './ui/PreviewRefusedNotice';
 export { useInstalledPackages } from './model/use-installed-packages';
 export { usePackageInstallations } from './model/use-package-installations';
 export { useInstalledIntegrity } from './model/use-installed-integrity';

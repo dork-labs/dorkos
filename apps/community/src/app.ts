@@ -24,6 +24,7 @@ import { registerEventRoutes } from './routes/events.js';
 import { registerInviteRoutes } from './routes/invites.js';
 import { registerMemberRoutes } from './routes/members.js';
 import { registerPairingRoutes } from './routes/pairings.js';
+import { registerRemovalRoutes } from './routes/removals.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
@@ -391,6 +392,7 @@ export function createCommunityApp({
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
   registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
+  registerRemovalRoutes(communityApi, { pool, auth, config });
   registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerOwnerErasureRoutes(communityApi, { pool, auth });

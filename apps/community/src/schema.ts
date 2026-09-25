@@ -776,8 +776,14 @@ export const entries = pgTable(
     payloadHash: text('payload_hash').notNull(),
     createdAt: time('created_at'),
     erasedAt: timestamp('erased_at', { withTimezone: true }),
+    /** When the entry was removed in place (0016); its text is then a tombstone sentence. */
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    /** The kind of remover: `author`, `moderator`, or `host`; set exactly when removedAt is. */
+    removedBy: text('removed_by'),
   },
   (table) => [
+    check('entries_removed_by', sql`${table.removedBy} IN ('author','moderator','host')`),
+    check('entries_removed_pair', sql`(${table.removedAt} IS NULL) = (${table.removedBy} IS NULL)`),
     uniqueIndex('entries_community_id_unique').on(table.communityId, table.id),
     uniqueIndex('entries_channel_seq_unique').on(table.channelId, table.seq),
     // Partial, so erasure's rewrite of idempotency_key is not a row-key update (0013).

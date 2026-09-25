@@ -875,6 +875,11 @@ it('rejects foreign objects on every id-taking community route, even for an owne
   const probes: Probe[] = [
     { route: 'GET /attachments/:id', call: (x) => ({ path: `/attachments/${x.attachment}` }) },
     {
+      route: 'DELETE /attachments/:attachmentId',
+      call: (x) => ({ path: `/attachments/${x.attachment}` }),
+    },
+    { route: 'DELETE /entries/:entryId', call: (x) => ({ path: `/entries/${x.entry}` }) },
+    {
       route: 'POST /channels/:id/attachments',
       call: (x) => ({ path: `/channels/${x.channel}/attachments`, upload: 'proof' }),
     },
