@@ -15,6 +15,7 @@ import { uuidv5 } from '../imports/derived-id.js';
 import { renumberedSequences } from '../imports/manifest.js';
 import type { ImportWorkerHooks } from '../imports/process.js';
 import { sweepImports } from '../imports/worker.js';
+import { sweepCommunityDeletions } from '../deletion-worker.js';
 import { responseCookies } from './bootstrap-test-helper.js';
 import { drainCleanup, person, post, seedCanaries, upload } from './member-erasure-fixture.js';
 import {
@@ -1265,4 +1266,63 @@ it('retries a storage provider error that carries no error code', async () => {
   expect(row.rows[0]).toEqual({ state: 'validating', attempts: 1 });
   await runImports();
   expect((await readImport(h, created.importId, key)).state).toBe('ready');
+});
+
+// Purpose: a failed import frees its web address like a cancelled one: once its removal
+// finishes, with no cool-off, so the host can try the move again under the same name.
+it('frees the short name of a failed import', async () => {
+  const { importId, communityId } = await importArchive(
+    tampered((manifest) => {
+      manifest.scope = 'personal';
+    }),
+    { autoCommit: true, shortName: 'failed-move' }
+  );
+  expect(await readImport(h, importId, key)).toMatchObject({ state: 'failed' });
+  await expectNothingLeft(communityId);
+  expect(await count("SELECT 1 FROM community_short_names WHERE short_name='failed-move'")).toBe(0);
+  expect(await count('SELECT 1 FROM released_short_names')).toBe(0);
+  const retried = await createImport(h, { bearer: key }, { shortName: 'failed-move' });
+  expect(retried.importId).toEqual(expect.any(String));
+});
+
+// Purpose: when the owner of a claimed imported community deletes it, the deletion job removes
+// the community row itself in the same step that clears its state, so the import can never be
+// left pointing at an unclaimed community: it keeps its `ready` history with no community.
+it('leaves a finished import with no community after its owner deletes the community', async () => {
+  const { importId, communityId } = await importArchive(archive, { autoCommit: true });
+  const owner = await claim(communityId, 'Deleting Owner', `deleting-${randomUUID()}@e.test`);
+  const row = await h.pool.query<{ name: string; lifecycle_version: number }>(
+    'SELECT name,lifecycle_version FROM communities WHERE id=$1',
+    [communityId]
+  );
+  await expectStatus(
+    await h.call(`/api/v1/communities/${communityId}/owner/deletion`, {
+      cookie: owner.cookie,
+      body: {
+        lifecycleVersion: row.rows[0].lifecycle_version,
+        password: TENANCY_PASSWORD,
+        confirmName: row.rows[0].name,
+        confirmIdSuffix: communityId.slice(-8),
+      },
+    }),
+    200,
+    'request deletion'
+  );
+  await h.pool.query(
+    "UPDATE community_deletion_jobs SET delete_after=now()-interval '1 second',next_attempt_at=now()-interval '1 second' WHERE community_id=$1",
+    [communityId]
+  );
+  for (let round = 0; round < 10; round++) {
+    await drainCleanup(h).catch(() => undefined);
+    const swept = await sweepCommunityDeletions(h.pool, h.blobStore, 100);
+    if (swept.completed) break;
+    await h.pool.query(
+      "UPDATE community_deletion_jobs SET next_attempt_at=now()-interval '1 second' WHERE community_id=$1",
+      [communityId]
+    );
+  }
+  expect(await count('SELECT 1 FROM communities WHERE id=$1', [communityId])).toBe(0);
+  expect(await readImport(h, importId, key)).toMatchObject({ state: 'ready', communityId: null });
+  const list = await (await h.call('/api/v1/host/communities', { bearer: key })).json();
+  expect(list.communities.some((c: { id: string }) => c.id === communityId)).toBe(false);
 });
