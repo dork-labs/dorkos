@@ -165,6 +165,7 @@ describe('creating a marketplace agent in the app', () => {
           monitors: [],
           executables: [],
           skillTools: [],
+          skillCommands: [],
         }),
         approvedContentHash: 'sha256:' + '0'.repeat(64),
       },

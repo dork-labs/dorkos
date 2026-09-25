@@ -65,6 +65,15 @@ const HOOKED_TEMPLATE: TemplateBrings = {
         tools: ['Bash(kubectl:*)', 'Read'],
       },
     ],
+    skillCommands: [
+      {
+        source: '.claude/skills/deploy/SKILL.md',
+        skill: 'deploy',
+        form: 'block',
+        command: 'kubectl config current-context\nkubectl get pods',
+        usesArguments: false,
+      },
+    ],
   },
 };
 

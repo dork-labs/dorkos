@@ -2,6 +2,7 @@
 covers:
   - 'fix(agents): check what a template or marketplace agent brings before it lands (DOR-2325)'
   - "fix(agents): card an agent's install of an agent package, and write out a template's settings (DOR-2325)"
+  - "fix(agents): show the commands a template's skills run, and make hidden characters visible on the review (DOR-2325)"
 ---
 
 ### Security

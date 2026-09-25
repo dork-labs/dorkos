@@ -11,7 +11,11 @@
  * @module features/agent-creation/ui/TemplateReviewNotice
  */
 import { ShieldAlert } from 'lucide-react';
-import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
+import {
+  describeProgramLine,
+  revealHiddenCharacters as shown,
+  type DisclosedEffects,
+} from '@dorkos/shared/marketplace-schemas';
 import { Button } from '@/layers/shared/ui';
 
 /** What the server says a template brings. */
@@ -43,7 +47,7 @@ export function templateReviewOf(error: unknown): TemplateBrings | undefined {
 }
 
 /** One settings file a template carries, as the server wrote it out. */
-export interface TemplateSettingsFile {
+interface TemplateSettingsFile {
   /** Its path in the template. */
   path: string;
   /** Its size. */
@@ -87,18 +91,26 @@ function linesOf(template: TemplateBrings): ReviewLine[] {
     })),
     ...disclosed.hooks.map((h, i) => ({
       key: `hook:${i}`,
-      label: h.command,
-      detail: `Runs on ${h.event}${h.source ? `, while ${h.source} is in use` : ''}.`,
+      label: shown(h.command),
+      detail: `Runs on ${h.event}${h.source ? `, while ${shown(h.source)} is in use` : ''}.`,
+    })),
+    // Commands written into a skill's text run as it loads (DOR-2327).
+    ...(disclosed.skillCommands ?? []).map((c, i) => ({
+      key: `command:${c.source}:${i}`,
+      label: shown(c.command),
+      detail:
+        `Runs when the skill "${shown(c.skill)}" is used (${shown(c.source)})` +
+        (c.usesArguments ? '. It uses the text typed after the command.' : '.'),
     })),
     ...disclosed.mcpServers.map((s) => ({
       key: `mcp:${s.name}`,
-      label: s.command ? [s.command, ...s.args].join(' ') : (s.url ?? s.name),
-      detail: `Starts the MCP server "${s.name}".`,
+      label: s.command ? describeProgramLine(s.command, s.args) : shown(s.url ?? s.name),
+      detail: `Starts the MCP server "${shown(s.name)}".`,
     })),
     ...disclosed.skillTools.map((t) => ({
       key: `tools:${t.source}`,
-      label: t.tools.join(', '),
-      detail: `Skill "${t.skill}" may use these without asking you.`,
+      label: t.tools.map(shown).join(', '),
+      detail: `Skill "${shown(t.skill)}" may use these without asking you.`,
     })),
   ];
 }
@@ -141,7 +153,7 @@ export function TemplateReviewNotice({
       <ul className="space-y-2">
         {linesOf(template).map((line) => (
           <li key={line.key} className="text-xs">
-            <code className="bg-muted text-foreground block rounded px-1.5 py-1 font-mono [overflow-wrap:anywhere]">
+            <code className="bg-muted text-foreground block rounded px-1.5 py-1 font-mono [overflow-wrap:anywhere] whitespace-pre-wrap">
               {line.label}
             </code>
             <span className="text-muted-foreground">{line.detail}</span>

@@ -43,7 +43,7 @@ The app created a marketplace agent by cloning the package's `source` as a templ
 - **Template gate.** `createAgentWorkspace` refuses a template unless it is given a `templateGate` (`services/core/agent-templates/template-gate.ts`). The template is cloned into a staging folder, the clone's `.git` is removed, and `inspectTemplate` reads:
   - its content hash;
   - `findAgentWorkspaceConfig`, the DOR-2314 rule, which gains DOR-2326's git-directory refusal when that lands;
-  - `readRunnableDeclarations(dir, { agentWorkspace: true })`, which gains DOR-2327's skill-text commands when that lands.
+  - `readRunnableDeclarations(dir, { agentWorkspace: true })`: hooks, allowed tools, and the commands a skill's text runs (DOR-2327, which reached this path with no change here).
 
   Only after the gate lets it through is the clone copied (links stripped) into the agent's folder.
 
@@ -56,5 +56,4 @@ The app created a marketplace agent by cloning the package's `source` as a templ
 
 ## Non-goals
 
-- A skill's `` !`cmd` `` text is disclosed once DOR-2327 lands; this path picks it up with no change.
 - Project-scope marketplace agents: the app creates marketplace agents globally, as `dorkos marketplace install` does by default.

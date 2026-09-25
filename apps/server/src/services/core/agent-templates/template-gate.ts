@@ -14,11 +14,11 @@
  * A template is cloned ONCE, into a staging folder outside the agent's folder,
  * and {@link inspectTemplate} reads it there: its content hash, the harness
  * configuration an agent package may not ship (`findAgentWorkspaceConfig`, the
- * DOR-2314 rule, which gains the git-directory refusal when DOR-2326 lands),
- * and what its skills run (`readRunnableDeclarations`, which gains skill-text
- * commands when DOR-2327 lands, so this path picks both up with no change
- * here). Only after a {@link TemplateGate} lets it through is the staged copy
- * moved into place, so nothing it carries runs before someone saw it.
+ * DOR-2314 rule, which gains the git-directory refusal when DOR-2326 lands,
+ * with no change here), and what its skills run (`readRunnableDeclarations`:
+ * hooks, allowed tools, and the commands a skill's text runs, DOR-2327). Only
+ * after a {@link TemplateGate} lets it through is the staged copy moved into
+ * place, so nothing it carries runs before someone saw it.
  *
  * Who decides depends on who asked:
  *
@@ -66,7 +66,7 @@ export interface TemplateFinding {
  * One settings file a template carries, written out for the person deciding.
  * The content hash binds these bytes, so what is shown is what lands.
  */
-export type TemplateSettingsFile = TemplateSettingsFileShown;
+type TemplateSettingsFile = TemplateSettingsFileShown;
 
 /** What a staged template brings, read before it lands anywhere. */
 export interface TemplateInspection {
