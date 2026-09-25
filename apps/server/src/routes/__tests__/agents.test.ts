@@ -64,7 +64,9 @@ vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
   renderTraits: vi.fn(() => 'rendered-traits'),
 }));
 
-vi.mock('ulidx', () => ({
+vi.mock('ulidx', async (importOriginal) => ({
+  // The real factory: the agents route now reaches modules that mint ids with it.
+  monotonicFactory: (await importOriginal<typeof import('ulidx')>()).monotonicFactory,
   ulid: vi.fn(() => 'MOCK_ULID_001'),
 }));
 

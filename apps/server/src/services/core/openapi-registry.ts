@@ -24,6 +24,7 @@
  *
  * @module services/openapi-registry
  */
+import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
@@ -4443,6 +4444,87 @@ registry.registerPath({
     200: {
       description: 'Permission changes',
       content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
+    },
+  },
+});
+
+const TemplateBringsSchema = z.object({
+  source: z.string(),
+  contentHash: z.string(),
+  findings: z.array(z.object({ path: z.string(), message: z.string() })),
+  settings: z
+    .array(
+      z.object({
+        path: z.string(),
+        bytes: z.number().int(),
+        content: z.string().optional(),
+        omitted: z.enum(['too-long', 'not-text', 'link']).optional(),
+      })
+    )
+    .describe(
+      'Each file under `findings`, its text verbatim with hidden and control characters shown ' +
+        'as <U+XXXX>, or why it is not shown.'
+    ),
+  disclosed: DisclosedEffectsSchema,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/agents/create',
+  tags: ['Agents'],
+  summary: 'Create an agent',
+  description:
+    'Makes the folder, scaffolds the agent and registers it. Two sources need more than that ' +
+    '(DOR-2325). `template` is cloned into a staging folder and read before it lands: a person ' +
+    'whose template brings settings or programs gets 409 `template_needs_review` with what it ' +
+    'brings, and creates it by sending back `approvedTemplateHash`; anyone else (an agent) gets ' +
+    '202 `requires_confirmation` and an approval card, and retries with `confirmationToken`. ' +
+    '`package` creates the agent a marketplace package brings, through the marketplace installer, ' +
+    'held to `approvedDisclosure` and `approvedContentHash` (the preview’s `disclosed` and ' +
+    '`contentHash`); a person only.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: CreateAgentOptionsSchema.omit({ skipTemplateDownload: true }).extend({
+            approvedTemplateHash: z.string().optional(),
+            confirmationToken: z.string().optional(),
+            package: z
+              .object({
+                name: z.string(),
+                marketplace: z.string().optional(),
+                approvedDisclosure: DisclosedEffectsSchema,
+                approvedContentHash: z.string(),
+              })
+              .optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: { description: 'Created: the agent manifest, with `_path`' },
+    202: {
+      description: 'A template waits on a person’s approval card',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            message: z.string(),
+            template: TemplateBringsSchema,
+          }),
+        },
+      },
+    },
+    403: {
+      description: 'Turned down, nobody can be asked, or a package requested by an agent',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        '`template_needs_review` (with `template`), `disclosure_changed`, or a collision',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });

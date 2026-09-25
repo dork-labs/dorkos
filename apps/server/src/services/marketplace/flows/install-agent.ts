@@ -19,6 +19,7 @@ import {
   AGENT_IDENTITY_FILES,
   UNINSTALLED_AGENT_PATH,
   type AgentPackageManifest,
+  type MarketplacePackageManifest,
 } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { isSingleEmoji } from '@dorkos/shared/agent-face';
@@ -30,7 +31,7 @@ import { stagePackageContents } from '../lib/stage-package.js';
 import { flowOwnership } from '../lib/flow-ownership.js';
 import { readInstalledFiles, sameSource } from '../lib/installed-files.js';
 import { runTransaction } from '../transaction.js';
-import type { InstallRequest, InstallResult } from '../types.js';
+import type { AgentInstallIdentity, InstallRequest, InstallResult } from '../types.js';
 import type { UninstallAgentRegistry } from './uninstall.js';
 
 /**
@@ -118,7 +119,14 @@ export class AgentInstallFlow {
       stage: (staging) =>
         stageAgentPackage(packagePath, staging.path, targetDir, warnings, this.deps.logger),
       activate: (staging) =>
-        this.activate(staging.path, targetDir, manifest, differentPackage, warnings),
+        this.activate(
+          staging.path,
+          targetDir,
+          manifest,
+          differentPackage,
+          warnings,
+          opts.agentIdentity
+        ),
       ownership,
     });
 
@@ -149,7 +157,8 @@ export class AgentInstallFlow {
     targetDir: string,
     manifest: AgentPackageManifest,
     differentPackage: boolean,
-    warnings: string[]
+    warnings: string[],
+    identity: AgentInstallIdentity | undefined
   ): Promise<{ installPath: string }> {
     await activateAgentPackage(stagingDir, targetDir);
 
@@ -184,6 +193,10 @@ export class AgentInstallFlow {
         // face, and leaving the key off lets the creator seed one instead
         // (DOR-949).
         ...(manifest.icon && isSingleEmoji(manifest.icon) ? { icon: manifest.icon } : {}),
+        // What a person chose in the app's creation flow (DOR-2325) wins over
+        // the package's defaults: their name for it, its face and voice, the
+        // runtime it runs on.
+        ...identity,
         skipTemplateDownload: true,
       },
       this.deps.getMeshCore?.(),
@@ -220,11 +233,17 @@ export class AgentInstallFlow {
  * `permission-preview.ts` has always shown this path, so the disclosure and the
  * behavior now agree.
  *
- * @internal
+ * Exported so an approval card names, and binds, the folder the install will
+ * really write (DOR-2325).
+ *
+ * @param dorkHome - The DorkOS data directory.
+ * @param manifest - The package's manifest; its `type` and `name` pick the folder.
+ * @param projectPath - The project a scoped install lands under, if any.
+ * @returns The folder the agent package installs into.
  */
-function computeTargetDir(
+export function computeTargetDir(
   dorkHome: string,
-  manifest: AgentPackageManifest,
+  manifest: Pick<MarketplacePackageManifest, 'type' | 'name'>,
   projectPath: string | undefined
 ): string {
   if (projectPath) {

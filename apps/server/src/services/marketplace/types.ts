@@ -5,6 +5,7 @@
  *
  * @module services/marketplace/types
  */
+import type { CreateAgentOptions } from '@dorkos/shared/mesh-schemas';
 import type {
   MarketplacePackageManifest,
   PackageType,
@@ -216,7 +217,38 @@ export interface InstallRequest {
    * existed. Server-internal: set by `MarketplaceInstaller.install()` only.
    */
   ownership?: InstallOwnershipContext;
+  /**
+   * The content hash of the package as its preview fetched it
+   * (`lib/content-hash.ts`, DOR-2306). `install()` refuses a staged copy that
+   * hashes differently, for every package type, before writing anything
+   * (DOR-2325): the preview and the install are two fetches, and a source that
+   * served something else to the second is not what was shown or decided on.
+   * Server-internal: the agents route sets it from what the app sent back, and
+   * an untrusted caller's install (`POST /packages/:name/install`,
+   * `marketplace_install`) from its own preview.
+   */
+  approvedContentHash?: string;
+  /**
+   * The package type the preview fetched (DOR-2325). `install()` refuses a
+   * staged package of another type before writing anything: the type decides
+   * where it lands and whether a card was needed, so a source that previews as
+   * a plugin and installs as an agent package is refused. Server-internal, set
+   * beside {@link approvedContentHash}.
+   */
+  approvedPackageType?: PackageType;
+  /**
+   * Agent packages only (DOR-2325): the identity a person chose for the agent
+   * in the app's creation flow, applied as the agent is created in the
+   * package's install folder. Server-internal, set by the agents route.
+   */
+  agentIdentity?: AgentInstallIdentity;
 }
+
+/** See {@link InstallRequest.agentIdentity}. */
+export type AgentInstallIdentity = Pick<
+  CreateAgentOptions,
+  'displayName' | 'icon' | 'color' | 'persona' | 'runtime' | 'capabilities' | 'model' | 'effort'
+>;
 
 /** See {@link InstallRequest.ownership}. */
 export interface InstallOwnershipContext {

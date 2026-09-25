@@ -32,16 +32,16 @@
  *   tarball URL that, for every source but the `github:` shorthand, the remote
  *   gets to choose.
  *
- * @module services/core/template-downloader
+ * @module services/core/agent-templates/template-downloader
  */
 import { spawn, execSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { rm } from 'node:fs/promises';
 import path from 'node:path';
 import { isSafeGitUrl } from '@dorkos/marketplace';
-import { logger } from '../../lib/logger.js';
-import { hardenedGitEnv } from '../../lib/git-safety.js';
-import { env } from '../../env.js';
+import { logger } from '../../../lib/logger.js';
+import { hardenedGitEnv } from '../../../lib/git-safety.js';
+import { env } from '../../../env.js';
 
 /** Progress callback invoked during git clone. */
 export type ProgressCallback = (percent: number, phase: string) => void;

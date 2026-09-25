@@ -29,6 +29,7 @@ export function agentPackageToCreationSeed(pkg: AggregatedPackage): CreationSeed
   return {
     origin: 'marketplace-agent',
     packageName: pkg.name,
+    ...(pkg.marketplace ? { marketplace: pkg.marketplace } : {}),
     ...(pkg.marketplace ? { sourceLabel: pkg.marketplace } : {}),
     template: {
       source: pkg.source,

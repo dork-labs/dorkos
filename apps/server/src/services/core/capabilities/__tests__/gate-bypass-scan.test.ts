@@ -445,6 +445,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     call: 'trustedCaller(',
     allowed: {
       'routes/marketplace.ts': 'a person clicking Install or Uninstall in their own cockpit',
+      'routes/agents.ts':
+        'a person creating an agent from a template or a marketplace package in their own app (DOR-2325). It does not skip a gate: a person is SHOWN what a template brings (409 `template_needs_review`) and creates it with the hash they saw, and a package is held to the preview they saw. Everyone else gets an approval card for a template and is refused a package',
       'routes/config.ts': 'a person changing their own settings in their own cockpit',
       'routes/shapes.ts':
         'a person clicking a Shape in their own cockpit — applying one writes files, rewrites config and creates and deletes scheduled work, so an agent is asked first (DOR-625)',

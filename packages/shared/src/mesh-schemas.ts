@@ -1058,6 +1058,34 @@ export const CreateAgentOptionsSchema = z
 
 export type CreateAgentOptions = z.infer<typeof CreateAgentOptionsSchema>;
 
+/**
+ * What `POST /api/agents/create` accepts on top of {@link CreateAgentOptions}
+ * (DOR-2325): the route reads these itself and never passes them to the
+ * creator.
+ *
+ * - `package`: create the agent a marketplace package brings, through the
+ *   marketplace installer, held to the disclosure and content hash the person
+ *   was shown (the preview's `disclosed` and `contentHash`). A person only.
+ * - `approvedTemplateHash`: the template content hash a person was shown on a
+ *   `template_needs_review` answer, to create from that template knowingly.
+ * - `confirmationToken`: an agent's retry after a person approved the card a
+ *   template raised.
+ *
+ * `skipTemplateDownload` is not part of it: the route drops it.
+ */
+export interface CreateAgentRequestBody extends Omit<CreateAgentOptions, 'skipTemplateDownload'> {
+  package?: {
+    name: string;
+    marketplace?: string;
+    /** The preview's `disclosed`, sent back untouched. */
+    approvedDisclosure: unknown;
+    /** The preview's `contentHash`, sent back untouched. */
+    approvedContentHash: string;
+  };
+  approvedTemplateHash?: string;
+  confirmationToken?: string;
+}
+
 /** Request body for POST /api/mesh/agents/create */
 export const CreateAgentRequestSchema = z
   .object({

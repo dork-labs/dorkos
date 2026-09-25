@@ -18,6 +18,7 @@ import {
   mergeMarketplace,
   primaryCategory,
   type MergedMarketplaceEntry,
+  type PackageType,
   type PluginSource,
 } from '@dorkos/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
@@ -90,6 +91,7 @@ import {
   GitRemoteUnreachableError,
 } from '../services/marketplace/lib/git-tree.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
+import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
 import {
   installationUpdateName,
   PackageNotInstalledForUpdateError,
@@ -1156,6 +1158,8 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       const global = confined.projectPath === undefined;
       let approved: ApprovedPackage | undefined;
       let heldTo = approvedDisclosure;
+      let heldToFiles: string | undefined;
+      let heldToType: PackageType | undefined;
       if (trustedCaller(readCallerAuthority(req, res))) {
         // The person saw what it runs and which files: the installer holds the
         // install to the disclosure, and consent records it only when the
@@ -1163,21 +1167,39 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
         if (approvedDisclosure && approvedContentHash) {
           approved = { disclosed: approvedDisclosure, contentHash: approvedContentHash };
         }
-      } else if (global) {
-        // An agent's global install can load into every session, so one that
-        // runs anything, or that replaces a global package, waits on the same
-        // card an agent's update does (DOR-2306).
-        const asked = await askAboutAgentInstall(req, res, request, confirmationToken);
+      } else {
+        // An agent's global install can load into every session, and an agent
+        // package lands in a folder whose sessions run its skills, wherever
+        // the call was scoped: both wait on a card (DOR-2306, DOR-2325).
+        const asked = await askAboutAgentInstall(
+          req,
+          res,
+          {
+            ...request,
+            ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+          },
+          confirmationToken,
+          global
+        );
         if ('refused' in asked) return asked.refused;
-        approved = asked.approved;
-        // Held to what was previewed either way: a source that changes what
-        // it runs before the install lands is refused, card or not.
-        heldTo = asked.previewed;
+        // Held to the files and the type the preview fetched, card or not: the
+        // install is a second fetch, and a source that serves something else
+        // to it is refused before anything lands (DOR-2325).
+        heldToFiles = asked.contentHash;
+        heldToType = asked.packageType;
+        if (!('unasked' in asked)) {
+          approved = asked.approved;
+          // Held to what was previewed either way: a source that changes what
+          // it runs before the install lands is refused, card or not.
+          heldTo = asked.previewed;
+        }
       }
       const result = await installer.install({
         name: req.params.name,
         ...request,
         ...(heldTo !== undefined && { approvedDisclosure: heldTo }),
+        ...(heldToFiles !== undefined && { approvedContentHash: heldToFiles }),
+        ...(heldToType !== undefined && { approvedPackageType: heldToType }),
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
       });
       // After the install landed, never before: a failed install records nothing.
@@ -1465,31 +1487,52 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
   });
 
   /**
-   * Preview an agent's global install and, when it runs anything on its own or
-   * replaces a global package, ask a person with the card `marketplace_install`
-   * raises: bound to the package, what it runs and its staged files, and
-   * saying who asked, the version and where it comes from (DOR-2306).
+   * Preview an agent's install and ask a person with the card
+   * `marketplace_install` raises, bound to the package, what it runs and its
+   * staged files, and saying who asked, the version and where it comes from:
    *
-   * @returns What the install is held to, and the person's approval when a
-   *   card was granted; or the response that ends the request unrun.
+   * - an agent package, always, wherever the call was scoped: it lands in
+   *   `agents/<name>/`, whose sessions run its skills (DOR-2325); the card
+   *   names that folder and binds it, and the install is held to the files
+   *   the card showed;
+   * - a global install that runs anything on its own or replaces a global
+   *   package (DOR-2306).
+   *
+   * A project install of any other type is not asked about here: its hooks
+   * are gated when projected.
+   *
+   * @returns What the install is held to (always the previewed content hash
+   *   and type, DOR-2325), and the person's approval when a card was granted;
+   *   `unasked` for a project install no card covers; or the response that
+   *   ends the request unrun.
    */
   const askAboutAgentInstall = async (
     req: Request,
     res: Response,
     request: z.infer<typeof InstallRequestBodySchema>,
-    token: string | undefined
+    token: string | undefined,
+    global: boolean
   ): Promise<
-    { refused: Response } | { previewed: DisclosedEffects | undefined; approved?: ApprovedPackage }
+    | { refused: Response }
+    | ({ contentHash: string; packageType: PackageType } & (
+        { unasked: true } | { previewed: DisclosedEffects | undefined; approved?: ApprovedPackage }
+      ))
   > => {
     const name = String(req.params.name);
     const staged = await installer.preview({ name, ...request });
     const previewed = disclosedEffectsOf(staged.preview) ?? undefined;
-    const activated = GLOBALLY_ACTIVATED_TYPES.has(staged.manifest.type);
-    const replaces = await globalPackageExists(dorkHome, staged.manifest.name);
-    const runs = disclosesAnything(activationEffectsOf(previewed ?? null));
-    if (!activated || (!replaces && !runs)) return { previewed };
-
+    // What the install is held to, asked about or not (DOR-2325).
     const contentHash = await packageContentHash(staged.packagePath);
+    const packageType = staged.manifest.type;
+    const agentPackage = packageType === 'agent';
+    if (!agentPackage) {
+      if (!global) return { unasked: true, contentHash, packageType };
+      const activated = GLOBALLY_ACTIVATED_TYPES.has(staged.manifest.type);
+      const replaces = await globalPackageExists(dorkHome, staged.manifest.name);
+      const runs = disclosesAnything(activationEffectsOf(previewed ?? null));
+      if (!activated || (!replaces && !runs)) return { previewed, contentHash, packageType };
+    }
+
     const identity = getRequestAgentIdentity(res);
     const confirmation: ConfirmationRequest = {
       packageName: name,
@@ -1497,6 +1540,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
       operation: 'install',
       preview: staged.preview,
       contentHash,
+      // Where an agent package lands is bound, not only shown: its folder is
+      // where the new agent's sessions run.
+      ...(agentPackage && {
+        packageType: 'agent',
+        projectPath: computeTargetDir(dorkHome, staged.manifest, request.projectPath),
+      }),
       origin: {
         version: staged.manifest.version,
         ...((request.source ?? request.marketplace) !== undefined && {
@@ -1516,8 +1565,11 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           preview: staged.preview,
           message:
             `${answer.reason ? `${answer.reason} ` : ''}A person must approve this install in ` +
-            'DorkOS first: it runs things on its own in every session, or replaces a package ' +
-            'that does. Send the same request again with this confirmationToken once they have.',
+            'DorkOS first: ' +
+            (agentPackage
+              ? 'it adds an agent whose sessions run what the package brings. '
+              : 'it runs things on its own in every session, or replaces a package that does. ') +
+            'Send the same request again with this confirmationToken once they have.',
         }),
       };
     }
@@ -1528,7 +1580,12 @@ export function createMarketplaceRouter(deps: MarketplaceRouteDeps): Router {
           .json({ status: 'declined', reason: answer.reason ?? 'The install was not approved.' }),
       };
     }
-    return { previewed, approved: { disclosed: previewed ?? null, contentHash } };
+    return {
+      previewed,
+      approved: { disclosed: previewed ?? null, contentHash },
+      contentHash,
+      packageType,
+    };
   };
 
   /**

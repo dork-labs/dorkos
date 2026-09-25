@@ -58,7 +58,7 @@ import {
   redactAuthTokens,
   resolveGitAuth,
   withGitHubToken,
-} from '../../core/template-downloader.js';
+} from '../../core/agent-templates/template-downloader.js';
 
 const execFileAsync = promisify(execFile);
 

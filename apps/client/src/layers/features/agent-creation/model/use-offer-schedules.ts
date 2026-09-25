@@ -5,7 +5,7 @@
  */
 import { isPreviewRefusal, usePermissionPreview } from '@/layers/entities/marketplace';
 import type { CreationSeed } from '@/layers/shared/model';
-import type { PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
+import type { DisclosedEffects, PreviewSchedule } from '@dorkos/shared/marketplace-schemas';
 
 /** What {@link useOfferSchedules} found out about an offer's scheduled work. */
 export interface OfferSchedules {
@@ -31,7 +31,21 @@ export interface OfferSchedules {
    * `failed` alone is a check that could not be made, which does not block.
    */
   refusal?: unknown;
+  /**
+   * What the person was shown, for creating the agent through the marketplace
+   * installer (DOR-2325): the install is held to this disclosure and these
+   * files. Present once the preview answered.
+   */
+  approval?: { approvedDisclosure: DisclosedEffects; approvedContentHash: string };
+  /**
+   * The package's own name, which is the folder a marketplace agent lives in
+   * (`agents/<name>`), so the card can say where it lands.
+   */
+  packageAgentName?: string;
 }
+
+/** The marketplace package an offer is, when it is one. */
+export type OfferPackage = Pick<CreationSeed, 'packageName' | 'marketplace'>;
 
 /**
  * Ask what scheduled work a marketplace agent offer brings with it (DOR-644).
@@ -50,9 +64,12 @@ export interface OfferSchedules {
  * @param seed - The offer the creation dialog is showing, or `null` when closed.
  * @returns The offer's scheduled jobs, and whether the answer is known yet.
  */
-export function useOfferSchedules(seed: CreationSeed | null): OfferSchedules {
+export function useOfferSchedules(seed: OfferPackage | null): OfferSchedules {
   const packageName = seed?.packageName ?? null;
-  const { data, isError, error } = usePermissionPreview(packageName);
+  const { data, isError, error } = usePermissionPreview(
+    packageName,
+    seed?.marketplace ? { marketplace: seed.marketplace } : undefined
+  );
 
   return {
     // Optional through `preview` as well as `data`: a 200 whose body is missing
@@ -71,5 +88,11 @@ export function useOfferSchedules(seed: CreationSeed | null): OfferSchedules {
     isChecking: packageName !== null && data === undefined && !isError,
     failed: packageName !== null && isError,
     ...(packageName !== null && isError && isPreviewRefusal(error) && { refusal: error }),
+    ...(data?.disclosed && data.contentHash
+      ? {
+          approval: { approvedDisclosure: data.disclosed, approvedContentHash: data.contentHash },
+          packageAgentName: data.manifest.name,
+        }
+      : {}),
   };
 }

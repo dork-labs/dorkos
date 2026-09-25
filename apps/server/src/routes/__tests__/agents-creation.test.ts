@@ -59,7 +59,9 @@ vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
   renderTraits: vi.fn(() => 'rendered-traits'),
 }));
 
-vi.mock('ulidx', () => ({
+vi.mock('ulidx', async (importOriginal) => ({
+  // The real factory: the agents route now reaches modules that mint ids with it.
+  monotonicFactory: (await importOriginal<typeof import('ulidx')>()).monotonicFactory,
   ulid: vi.fn(() => 'MOCK_ULID_001'),
 }));
 
@@ -110,13 +112,6 @@ vi.mock('fs/promises', async () => {
     },
   };
 });
-
-// Mock template-downloader (dynamic import)
-const mockDownloadTemplate = vi.fn().mockResolvedValue(undefined);
-
-vi.mock('../../services/core/template-downloader.js', () => ({
-  downloadTemplate: (...args: unknown[]) => mockDownloadTemplate(...args),
-}));
 
 import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
@@ -390,143 +385,8 @@ describe('POST /api/agents/create', () => {
     });
   });
 
-  // --- Template download integration ---
-
-  describe('template download', () => {
-    it('calls downloadTemplate when template option is provided', async () => {
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(201);
-      expect(mockDownloadTemplate).toHaveBeenCalledWith('github:org/repo', '/mock/agents/my-agent');
-    });
-
-    it('does not call downloadTemplate when no template option', async () => {
-      const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
-
-      expect(res.status).toBe(201);
-      expect(mockDownloadTemplate).not.toHaveBeenCalled();
-    });
-
-    it('rolls back directory on download failure', async () => {
-      mockDownloadTemplate.mockRejectedValueOnce(new Error('clone failed'));
-
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(500);
-      expect(res.body.error).toContain('Template download failed');
-      expect(res.body.error).toContain('clone failed');
-      expect(mockRm).toHaveBeenCalledWith('/mock/agents/my-agent', {
-        recursive: true,
-        force: true,
-      });
-    });
-
-    it('answers 400, not 500, when the template ADDRESS is the thing that was refused', async () => {
-      // The shape `downloadTemplate` really throws for an address DorkOS will
-      // not download from (DOR-1825) — an error carrying `code`, built here
-      // rather than imported because the stub above exports only the function,
-      // which is exactly why the status decision reads the code and not the
-      // class. A person who typed a bad address has a request to fix; a 500
-      // would tell them DorkOS broke.
-      mockDownloadTemplate.mockRejectedValueOnce(
-        Object.assign(new Error("That template address isn't one DorkOS can download from."), {
-          code: 'UNSUPPORTED_SOURCE',
-        })
-      );
-
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'ext::sh -c id' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Template download failed');
-      // The refusal still rolls back the directory this run created.
-      expect(mockRm).toHaveBeenCalledWith('/mock/agents/my-agent', {
-        recursive: true,
-        force: true,
-      });
-    });
-
-    it('detects postinstall hook in package.json → _meta.hasPostInstall: true', async () => {
-      mockFsReadFile.mockResolvedValueOnce(
-        JSON.stringify({ scripts: { postinstall: 'node setup.js' } })
-      );
-
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(201);
-      expect(res.body._meta).toEqual({ hasPostInstall: true, templateMethod: 'git' });
-    });
-
-    it('detects setup script in package.json → _meta.hasPostInstall: true', async () => {
-      mockFsReadFile.mockResolvedValueOnce(JSON.stringify({ scripts: { setup: 'bash init.sh' } }));
-
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(201);
-      expect(res.body._meta.hasPostInstall).toBe(true);
-    });
-
-    it('detects prepare script in package.json → _meta.hasPostInstall: true', async () => {
-      mockFsReadFile.mockResolvedValueOnce(
-        JSON.stringify({ scripts: { prepare: 'husky install' } })
-      );
-
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(201);
-      expect(res.body._meta.hasPostInstall).toBe(true);
-    });
-
-    it('no package.json → _meta.hasPostInstall: false', async () => {
-      // mockFsReadFile defaults to ENOENT rejection
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(201);
-      expect(res.body._meta).toEqual({ hasPostInstall: false, templateMethod: 'git' });
-    });
-
-    it('package.json without hooks → _meta.hasPostInstall: false', async () => {
-      mockFsReadFile.mockResolvedValueOnce(
-        JSON.stringify({ scripts: { build: 'tsc', test: 'vitest' } })
-      );
-
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(201);
-      expect(res.body._meta).toEqual({ hasPostInstall: false, templateMethod: 'git' });
-    });
-
-    it('_meta.templateMethod reflects method used', async () => {
-      const res = await request(testServer)
-        .post('/api/agents/create')
-        .send({ name: 'my-agent', template: 'github:org/repo' });
-
-      expect(res.status).toBe(201);
-      expect(res.body._meta.templateMethod).toBe('git');
-    });
-
-    it('no template option → _meta absent from response', async () => {
-      const res = await request(testServer).post('/api/agents/create').send({ name: 'my-agent' });
-
-      expect(res.status).toBe(201);
-      expect(res.body._meta).toBeUndefined();
-    });
-  });
+  // Template creation is covered on a real filesystem, through the gate that
+  // shows what a template brings (DOR-2325): agents-template-gate.test.ts.
 
   it('validates boundary and returns 403 for out-of-bounds path', async () => {
     vi.mocked(validateBoundaryOrDorkHome).mockRejectedValueOnce(
