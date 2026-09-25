@@ -20,6 +20,10 @@ import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { pulseSchedules, type Db } from '@dorkos/db';
 import { fileProvenance } from '../file-sync-gates.js';
 import {
+  AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
+  mergeFollowedAgentChanges,
+  parseFollowedAgentChanges,
+  type FollowedAgentChange,
   scheduleContentKey,
   scheduleSettingsOf,
   upgradeLegacyContentKey,
@@ -81,9 +85,88 @@ export class TaskApprovals {
     // an approval of work nobody looked at.
     this.db
       .update(pulseSchedules)
-      .set({ approvedContentKey: effectiveContentKey(row), previousApprovalKey: null })
+      .set({
+        approvedContentKey: effectiveContentKey(row),
+        previousApprovalKey: null,
+        followedAgentChanges: null,
+      })
       .where(eq(pulseSchedules.id, id))
       .run();
+  }
+
+  /**
+   * Re-ask for the approved schedules that follow an agent, after its runtime,
+   * model or effort changed outside DorkOS (DOR-2337).
+   *
+   * A schedule follows its agent for each of those it leaves unset, and its
+   * approval records "follow the agent" rather than the agent's value, so this
+   * is the only place the change can meet the approval.
+   *
+   * - An `active` schedule that follows a changed field is parked, whatever
+   *   `enabled` says: a switched-off schedule that kept its approval would run
+   *   the changed agent the moment somebody switched it on. Its approval is kept
+   *   for the card (`previous_approval_key`), and the change is recorded
+   *   (`followed_agent_changes`) so the card can say old → new.
+   * - A schedule already waiting since an approval (or since an earlier change
+   *   like this) has the change folded into what it records, with no status
+   *   change: the first value is kept, the latest wins, and a field changed
+   *   back drops out. It stays waiting; only a person switches anything on.
+   * - Anything else is left alone: a paused schedule holds no approval to move,
+   *   and a proposal nobody approved has no approved value to measure from.
+   *
+   * One transaction, so a read never sees half of an agent's schedules parked.
+   * Never touches `enabled`.
+   *
+   * @param agentId - The agent whose defaults changed.
+   * @param changes - What changed, old → new, as seen.
+   * @returns The ids it parked, and the ids whose record it only updated.
+   */
+  parkAgentFollowers(
+    agentId: string,
+    changes: readonly FollowedAgentChange[]
+  ): { parked: string[]; updated: string[] } {
+    return this.db.transaction((tx) => {
+      const parked: string[] = [];
+      const updated: string[] = [];
+      const rows = tx
+        .select()
+        .from(pulseSchedules)
+        .where(eq(pulseSchedules.agentId, agentId))
+        .all();
+      for (const row of rows) {
+        // The fields this schedule takes from its agent.
+        const followed = changes.filter((change) => row[change.field] === null);
+        if (followed.length === 0) continue;
+        const recorded = parseFollowedAgentChanges(row.followedAgentChanges);
+        const merged = JSON.stringify(mergeFollowedAgentChanges(recorded, followed));
+        const now = new Date().toISOString();
+        if (row.status === 'active') {
+          tx.update(pulseSchedules)
+            .set({
+              status: 'pending_approval',
+              approvedContentKey: null,
+              previousApprovalKey: row.approvedContentKey ?? row.previousApprovalKey,
+              followedAgentChanges: merged,
+              reason: AGENT_DEFAULTS_CHANGED_OUTSIDE_REASON,
+              reasonSource: 'dorkos',
+              updatedAt: now,
+            })
+            .where(eq(pulseSchedules.id, row.id))
+            .run();
+          parked.push(row.id);
+        } else if (
+          row.status === 'pending_approval' &&
+          (row.previousApprovalKey !== null || row.followedAgentChanges !== null)
+        ) {
+          tx.update(pulseSchedules)
+            .set({ followedAgentChanges: merged, updatedAt: now })
+            .where(eq(pulseSchedules.id, row.id))
+            .run();
+          updated.push(row.id);
+        }
+      }
+      return { parked, updated };
+    });
   }
 
   /**
