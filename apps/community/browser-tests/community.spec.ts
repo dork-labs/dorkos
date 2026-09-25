@@ -310,8 +310,13 @@ test('owner and invited member join, chat, thread, upload, export and leave in s
     for (const width of [390, 768, 1280]) {
       await ownerPage.setViewportSize({ width, height: 900 });
       await settingsDownload.scrollIntoViewIfNeeded();
-      // Wholly visible: the button and its size fit the width, with no sideways scroll.
-      await expect(settingsDownload).toBeInViewport({ ratio: 1 });
+      await expect(settingsDownload).toBeInViewport();
+      // The button and its size fit the width. Measured on the box, not with an intersection
+      // ratio: a vertical scroll can leave a fraction of a pixel off screen, which a ratio of 1
+      // reads as clipped.
+      const box = (await settingsDownload.boundingBox())!;
+      expect(box.x, `download button starts on screen at ${width}px`).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, `download button fits at ${width}px`).toBeLessThanOrEqual(width);
       expect(
         await ownerPage.evaluate(
           () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
