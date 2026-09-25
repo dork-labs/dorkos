@@ -531,6 +531,28 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         'the agent swap in `rebridge`, operator-gated at the top of that method — the old agent leaves so exactly one agent is ever bound to a chat (D-6 Q3)',
     },
   },
+  {
+    // Watched from DOR-2328. A schedule that leaves its runtime, model or effort
+    // unset follows its agent, so a write of those three moves work a person
+    // approved. Every door below refuses them from an agent or asks a person.
+    what: "writes an agent's manifest, including the runtime, model and effort its schedules follow",
+    call: 'updateAgentManifest(',
+    allowed: {
+      'routes/agents.ts':
+        '`PATCH /api/agents/current`, mounted behind `refuseAgentExecutionWrites`, which refuses the three from a caller that has not cleared the agent bar',
+      'services/core/operator/operator-tool-handlers.ts':
+        '`update_agent` refuses the three outright; `update_agent_boundaries` writes only the NOPE fields; `update_agent_execution` is tier `destructive`, so a person approved the call before it gets here',
+      'services/core/operator/agent-updater.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "writes any agent's manifest by id, runtime, model and effort included",
+    call: 'meshCore.update(',
+    allowed: {
+      'routes/mesh.ts':
+        '`PATCH /api/mesh/agents/:id`, mounted behind `refuseAgentExecutionWrites` (DOR-2328), and refusing permission fields by name (spec `agent-permissions` D10)',
+    },
+  },
 ];
 
 /** Every `.ts` file under `apps/server/src`, excluding tests and declaration files. */

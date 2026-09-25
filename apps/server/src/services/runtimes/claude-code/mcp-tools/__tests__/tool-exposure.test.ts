@@ -427,8 +427,13 @@ describe('in-session tool exposure', () => {
     // 107 -> 108 for `marketplace_update` (DOR-2195), DEFERRED like every other
     // marketplace tool: the turn that wants it is a person asking what is out of
     // date, which can afford a search. Both counts move by the same one.
-    expect(tools).toHaveLength(108);
-    expect(deferred).toHaveLength(98);
+    //
+    // 108 -> 109 for `update_agent_execution` (DOR-2328), DEFERRED like
+    // `update_agent_boundaries`: the turn that wants it is a person asking to
+    // move an agent to another model, which can afford a search. Both counts
+    // move by the same one.
+    expect(tools).toHaveLength(109);
+    expect(deferred).toHaveLength(99);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

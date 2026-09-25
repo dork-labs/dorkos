@@ -66,6 +66,9 @@ vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
 
 vi.mock('ulidx', () => ({
   ulid: vi.fn(() => 'MOCK_ULID_001'),
+  // The route's caller check (lib/caller-authority) reaches the capability
+  // registry, whose relay imports build a monotonic ULID factory at load.
+  monotonicFactory: vi.fn(() => vi.fn(() => 'MOCK_ULID_001')),
 }));
 
 vi.mock('@dorkos/shared/dorkbot-templates', () => ({
@@ -444,6 +447,43 @@ describe('Agents Routes', () => {
         '/home/user/project',
         expect.objectContaining({ model: 'sonnet', effort: 'low' })
       );
+    });
+
+    it.each([
+      ['runtime', 'codex'],
+      ['model', 'opus'],
+      ['effort', 'max'],
+      ['model', null],
+    ])(
+      'refuses an AGENT changing %s (%s), pointing at the tool that asks a person (DOR-2328)',
+      async (field, value) => {
+        // Purpose: every schedule that follows the agent would run differently,
+        // so an agent's own request must go past a person first.
+        mockReadManifest.mockResolvedValue(mockManifest);
+
+        const res = await request(testServer)
+          .patch('/api/agents/current')
+          .query({ path: '/home/user/project' })
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({ displayName: 'Also this', [field]: value });
+
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('NEEDS_APPROVAL');
+        expect(res.body.error).toContain('update_agent_execution');
+        expect(mockWriteManifest).not.toHaveBeenCalled();
+      }
+    );
+
+    it('still lets an agent change fields that are not execution defaults', async () => {
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(testServer)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ displayName: 'Renamed by itself' });
+
+      expect(res.status).toBe(200);
     });
 
     it('drops them back to inherited when sent as null', async () => {

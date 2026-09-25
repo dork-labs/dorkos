@@ -195,6 +195,32 @@ export interface CapabilityDefinition<
    */
   approvalSubject?: ApprovalSubjectDeclaration;
   /**
+   * Describe the change this call would make, from the state it would change,
+   * for the approval card (DOR-2328): one line per value, old → new, e.g.
+   * `Model: claude-sonnet-4 → claude-opus-4`.
+   *
+   * {@link approvalDetailField} can only show what the caller SENT. When the
+   * decision is "is this change all right?", the person also needs what is
+   * there now, and only the server can read that. The description is computed
+   * before the gate on every call that reaches it, and it does two jobs:
+   *
+   * - it is the card's detail, shown whole beside the summary;
+   * - it is BOUND into the approval with the input, so a token granted for one
+   *   description does not fit a retry whose description differs. If the state
+   *   moved between the card and the retry, the old approval is refused and a
+   *   fresh card says what would change now. A person never approves one
+   *   change and has another applied.
+   *
+   * Return `undefined` when the call would change nothing; the handler then
+   * refuses it. Rules, checked by the conformance suite: only a `destructive`
+   * capability may declare it, and not together with {@link approvalDetailField}
+   * (one detail per card).
+   */
+  describeApprovalChange?: (
+    deps: CapabilityDeps,
+    input: z.infer<In>
+  ) => Promise<string | undefined>;
+  /**
    * Draw an inline CARD in the conversation this capability was called from
    * (DOR-1004) — a surface the person acts on, in the chat, instead of a link
    * pasted into the agent's reply.

@@ -41,6 +41,7 @@ import { renderTraits, DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { validateBoundaryOrDorkHome, BoundaryError } from '../lib/boundary.js';
 import { createAgentWorkspace, AgentCreationError } from '../services/core/agent-creator.js';
 import { updateAgentManifest, AgentUpdateError } from '../services/core/operator/agent-updater.js';
+import { refuseAgentExecutionWrites } from '../middleware/agent-execution-gate.js';
 import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import { resolveNamedAgentIdentity } from '../services/mesh/normalize-agent-identity.js';
 import { logger } from '../lib/logger.js';
@@ -294,7 +295,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
 
   // PATCH /api/agents/current?path=/path/to/project
   // Update agent fields by path
-  router.patch('/current', async (req, res) => {
+  // An agent's runtime, model and effort move every schedule that follows it,
+  // so an agent changing them is sent to the tool that asks a person (DOR-2328).
+  router.patch('/current', refuseAgentExecutionWrites, async (req, res) => {
     try {
       const rawPath = req.query.path as string;
       if (!rawPath) {

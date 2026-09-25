@@ -503,6 +503,13 @@ export interface TierEnforcementRequest {
   /** Authenticated connector scope bound to any approval request or retry. */
   connectorAuthority?: ApprovalConnectorAuthority;
   /**
+   * What this call would change, described from the state it would change
+   * (`CapabilityDefinition.describeApprovalChange`, DOR-2328). Shown as the
+   * card's detail, and bound into the approval with the input, so a grant for
+   * one description does not fit a retry whose description differs.
+   */
+  change?: string;
+  /**
    * Set only by `permissions.request_access` (`request_permission`): the agent is
    * deliberately asking past a Blocked permission, and this is the reason it
    * gave (spec `agent-permissions` D8). With it, a Blocked permission mints a
@@ -986,6 +993,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     retryChannel,
     interactive = false,
     connectorAuthority,
+    change,
     blockedRequest,
     subject,
     origin,
@@ -1115,7 +1123,9 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   try {
     binding = {
       capabilityId: action.id,
-      inputHash: hashApprovalInput(input),
+      // A described change is part of what is approved: the same input against
+      // different state is a different change, and must not spend this token.
+      inputHash: hashApprovalInput(change === undefined ? input : { input, change }),
       ...(connectorAuthority ? { authorityBindingDigest: connectorAuthority.digest } : {}),
     };
   } catch (err) {
@@ -1187,7 +1197,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     }
     let ticket: ApprovalTicket;
     try {
-      const detail = detailFor(action, input);
+      const detail = change ?? detailFor(action, input);
       const remaining = subject ? describeRemainingArguments(action, input) : undefined;
       ticket = gate!.approvals.request({
         ...binding,

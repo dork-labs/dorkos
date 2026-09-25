@@ -59,6 +59,9 @@ vi.mock('@dorkos/shared/trait-renderer', async (importOriginal) => ({
 
 vi.mock('ulidx', () => ({
   ulid: vi.fn(() => 'MOCK_ULID_001'),
+  // The PATCH route's caller check (lib/caller-authority) reaches the capability
+  // registry, whose relay imports build a monotonic ULID factory at load.
+  monotonicFactory: vi.fn(() => vi.fn(() => 'MOCK_ULID_001')),
 }));
 
 vi.mock('@dorkos/shared/dorkbot-templates', () => ({
