@@ -84,7 +84,7 @@ describe('tasks_update and a package’s schedule’s timing', () => {
   function approvedSchedule(): Task {
     const parsed = parseSkillFile(filePath, SKILL, SkillFrontmatterSchema);
     if (!parsed.ok || !hasSchedule(parsed.definition.meta)) throw new Error('fixture unreadable');
-    return store.upsertFromFile({
+    return store.fileSync.upsertFromFile({
       ...parsed.definition,
       meta: parsed.definition.meta,
       scope: 'global',

@@ -105,8 +105,8 @@ import { DurationSchema } from '@dorkos/skills/duration';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { readRawFrontmatter } from '@dorkos/skills/parser';
 import { writeSkillFile } from '@dorkos/skills/writer';
-import type { TaskStore } from './task-store.js';
 import type { TaskApprovals } from './approvals/task-approvals.js';
+import type { TaskFileSync } from './sync/task-file-sync.js';
 import { agentSkillsRoot, globalSkillsRoot, resolveRootPath } from './skills-roots.js';
 import { TASK_TEMPLATES_DIRNAME, resolveTemplatesDir } from './task-templates.js';
 import { logger } from '../../lib/logger.js';
@@ -287,8 +287,9 @@ export interface LegacyMigrationDeps {
   /** Every registered agent, so its project's legacy root is covered too. */
   agents: readonly { agentId: string; projectPath: string }[];
   /** The row half of the migration. */
-  store: Pick<TaskStore, 'upsertFromFile'> & {
+  store: {
     approvals: Pick<TaskApprovals, 'rekeyMigratedFile'>;
+    fileSync: Pick<TaskFileSync, 'upsertFromFile'>;
   };
 }
 
@@ -793,7 +794,7 @@ function parkUnreadable(
     schedule: { ...ScheduleBlockSchema.parse({}), enabled: false },
   };
 
-  deps.store.upsertFromFile(
+  deps.store.fileSync.upsertFromFile(
     {
       name: dirName,
       body: '',

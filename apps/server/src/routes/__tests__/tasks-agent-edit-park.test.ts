@@ -90,7 +90,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
 
   /** Sync the file the way the watcher and the reconciler do. */
   async function resync(): Promise<Task> {
-    return store.upsertFromFile(parseFile(), undefined, {
+    return store.fileSync.upsertFromFile(parseFile(), undefined, {
       source: 'discovery',
       packageOwned: null,
     });
@@ -301,7 +301,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
     await agentEdit(task.id, { prompt: 'Delete the queue.' });
     const PROBLEM = 'The schedule block has a setting DorkOS cannot read.';
 
-    const synced = store.upsertFromFile(parseFile(), undefined, {
+    const synced = store.fileSync.upsertFromFile(parseFile(), undefined, {
       source: 'discovery',
       packageOwned: null,
       problem: PROBLEM,
@@ -351,7 +351,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
     vi.spyOn(store, 'updateTask').mockImplementation((...args) => {
       if (!raced) {
         raced = true;
-        const midway = store.upsertFromFile(parseFile(), undefined, {
+        const midway = store.fileSync.upsertFromFile(parseFile(), undefined, {
           source: 'discovery',
           packageOwned: null,
         });

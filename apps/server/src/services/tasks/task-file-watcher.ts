@@ -586,7 +586,7 @@ export class TaskFileWatcher implements TaskWatchHealth {
     const { discovered } = outcome;
     if (!this.identities.claim(discovered.def.filePath, root.dir, outcome.filePath)) return;
     const packageOwned = await packageOwnershipInRoot(discovered.def.filePath, root);
-    const task = this.store.upsertFromFile(discovered.def, root.agentId, {
+    const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, {
       source: 'discovery',
       problem: discovered.problem,
       // A schedule an installed package owns keeps the switch a person set on
@@ -618,8 +618,8 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // one of them on every arm rather than only for a file an event named. The
     // read is indexed and the write is not free — the same trade the
     // reconciler's own `retireIfPresent` makes, for the same reason.
-    if (this.store.getByFilePath(filePath) === null) return;
-    if (this.store.markRemovedByFilePath(filePath) === 0) return;
+    if (this.store.fileSync.getByFilePath(filePath) === null) return;
+    if (this.store.fileSync.markRemovedByFilePath(filePath) === 0) return;
     this.registrar.syncTaskByFilePath(filePath);
     logger.info(`[TaskFileWatcher] Schedule block removed from ${filePath} — paused`);
   }
@@ -641,7 +641,7 @@ export class TaskFileWatcher implements TaskWatchHealth {
       // for a file this process never saw arrive.
       const identity = this.identities.resolvedFor(filePath) ?? filePath;
       this.identities.releasePath(filePath);
-      this.store.markRemovedByFilePath(identity);
+      this.store.fileSync.markRemovedByFilePath(identity);
       // Paused in the DB is not paused on the clock. Without this the job keeps
       // firing a task whose file — the source of truth for what it even does —
       // is gone. Keyed on the same identity the pause used, or it looks up a row

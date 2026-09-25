@@ -672,7 +672,7 @@ describe('schedules discovered in skills roots', () => {
       // An install writes the same path again, as an operator action.
       await writeFile(filePath, scheduledSkill('shaped', { cron: '0 6 * * *' }), 'utf-8');
       const resolved = await realPath(filePath);
-      store.upsertFromFile(
+      store.fileSync.upsertFromFile(
         {
           name: 'shaped',
           body: 'Do the thing.',

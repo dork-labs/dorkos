@@ -88,7 +88,7 @@ describe('an agent cannot keep an approved bypass by rewriting the work', () => 
     const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
     if (!parsed.ok) throw new Error(`fixture parse failed: ${parsed.error}`);
     if (!hasSchedule(parsed.definition.meta)) throw new Error('fixture carries no schedule block');
-    return store.upsertFromFile({
+    return store.fileSync.upsertFromFile({
       ...parsed.definition,
       meta: parsed.definition.meta,
       scope: 'global',

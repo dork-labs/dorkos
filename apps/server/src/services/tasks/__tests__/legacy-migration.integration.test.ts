@@ -842,16 +842,21 @@ describe('the boot migration off the legacy task directories', () => {
       const grantBefore = grantFor(seeded.id);
 
       const faulty = {
-        rekeyMigratedFile: vi.fn(() => {
-          throw new Error('the disk went away mid-transaction');
-        }),
-        upsertFromFile: store.upsertFromFile.bind(store),
+        approvals: {
+          rekeyMigratedFile: vi.fn(() => {
+            throw new Error('the disk went away mid-transaction');
+          }),
+        },
+        fileSync: { upsertFromFile: store.fileSync.upsertFromFile.bind(store.fileSync) },
       };
       await migrateLegacySchedules({
         dorkHome,
         store: faulty as unknown as TaskStore,
         agents: [],
       });
+      // The injected fault is what stopped the move, not a stub missing the
+      // method the migration calls.
+      expect(faulty.approvals.rekeyMigratedFile).toHaveBeenCalledTimes(1);
 
       // The row is exactly as it was — same path, same approval.
       const after = store.getTask(seeded.id)!;

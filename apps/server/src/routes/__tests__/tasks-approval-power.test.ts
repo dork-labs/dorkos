@@ -75,6 +75,7 @@ import { writeManifest } from '@dorkos/mesh';
 import { createTasksRouter } from '../tasks.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
+import type { TaskFileSync } from '../../services/tasks/sync/task-file-sync.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 
@@ -215,7 +216,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     // The arm grant is what `resolveFileArmStatus` and `keepsApprovedBypass`
     // both read. Without it the schedule re-parks — and loses its bypass — on
     // the reconciler's next pass over unchanged content.
-    const synced = store.upsertFromFile(
+    const synced = store.fileSync.upsertFromFile(
       {
         name: 'mailroom-triage',
         filePath: store.getTask(task.id)!.filePath,
@@ -230,7 +231,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
             permissions: 'bypassPermissions',
           },
         },
-      } as Parameters<TaskStore['upsertFromFile']>[0],
+      } as Parameters<TaskFileSync['upsertFromFile']>[0],
       undefined,
       { source: 'discovery' }
     );
@@ -240,7 +241,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     // The control that makes the assertion above mean something: the grant is
     // bound to the work a person read, not to the path. Rewrite the body and
     // the same sync clamps and re-parks.
-    const rewritten = store.upsertFromFile(
+    const rewritten = store.fileSync.upsertFromFile(
       {
         filePath: store.getTask(task.id)!.filePath,
         body: 'Read the mailroom and then email everyone in it.',
@@ -254,7 +255,7 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
             permissions: 'bypassPermissions',
           },
         },
-      } as Parameters<TaskStore['upsertFromFile']>[0],
+      } as Parameters<TaskFileSync['upsertFromFile']>[0],
       undefined,
       { source: 'discovery' }
     );

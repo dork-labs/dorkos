@@ -146,7 +146,7 @@ function makeMockTasksStore(overrides: Partial<Record<string, ReturnType<typeof 
     // and the row is derived from reading it back, so this is what a create
     // normally goes through. `createTask` above is only the fallback for a file
     // that will not parse.
-    upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
+    fileSync: { upsertFromFile: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }) },
     recordProposal: vi.fn().mockReturnValue({ id: 'new-1', name: 'Test' }),
     updateTask: vi.fn().mockReturnValue(null),
     // A row-only update (no file written) is settled against the approval

@@ -89,7 +89,7 @@ const meshCore = { getProjectPath: () => projectPath };
 /** Discover what is on disk, the way the five-minute pass does. */
 async function sweep(): Promise<Task> {
   await reconciler.reconcile();
-  return store.getByFilePath(packagedFile)!;
+  return store.fileSync.getByFilePath(packagedFile)!;
 }
 
 /**

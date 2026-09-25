@@ -15,6 +15,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { TaskStore } from '../task-store.js';
+import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
 
 const FILE_PATH = `/home/u/.dork/tasks/sweeper/${SKILL_FILENAME}`;
 
@@ -35,7 +36,7 @@ function definition(block: Record<string, unknown>) {
     filePath: FILE_PATH,
     dirPath: FILE_PATH.replace(`/${SKILL_FILENAME}`, ''),
     scope: 'global',
-  } as Parameters<TaskStore['upsertFromFile']>[0];
+  } as Parameters<TaskFileSync['upsertFromFile']>[0];
 }
 
 describe('the execution trio, file → row', () => {
@@ -48,7 +49,7 @@ describe('the execution trio, file → row', () => {
   });
 
   it('carries all three off the block on INSERT', () => {
-    const task = store.upsertFromFile(
+    const task = store.fileSync.upsertFromFile(
       definition({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' })
     );
     expect(task).toMatchObject({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' });
@@ -57,13 +58,15 @@ describe('the execution trio, file → row', () => {
   it('leaves all three null for a block that names none', () => {
     // Null is "whatever this task's agent runs on" — the answer every schedule
     // had before these fields, and the one a task keeps by saying nothing.
-    const task = store.upsertFromFile(definition({}));
+    const task = store.fileSync.upsertFromFile(definition({}));
     expect(task).toMatchObject({ runtime: null, model: null, effort: null });
   });
 
   it('carries a CHANGED block onto an existing row', () => {
-    store.upsertFromFile(definition({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' }));
-    const updated = store.upsertFromFile(
+    store.fileSync.upsertFromFile(
+      definition({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' })
+    );
+    const updated = store.fileSync.upsertFromFile(
       definition({ runtime: 'opencode', model: 'anthropic/claude-sonnet-4-5' })
     );
     expect(updated).toMatchObject({ runtime: 'opencode', model: 'anthropic/claude-sonnet-4-5' });
@@ -73,8 +76,10 @@ describe('the execution trio, file → row', () => {
     // The discriminating case for "the file is the source of truth": an update
     // branch that only wrote fields it found would leave the old runtime behind,
     // and a person who deleted the line would keep running on Codex forever.
-    store.upsertFromFile(definition({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' }));
-    const cleared = store.upsertFromFile(definition({}));
+    store.fileSync.upsertFromFile(
+      definition({ runtime: 'codex', model: 'gpt-5.5', effort: 'high' })
+    );
+    const cleared = store.fileSync.upsertFromFile(definition({}));
     expect(cleared).toMatchObject({ runtime: null, model: null, effort: null });
   });
 
@@ -82,7 +87,7 @@ describe('the execution trio, file → row', () => {
     // The column is free-form TEXT filled from a SKILL.md, so it can hold a rung
     // a later release removed. "No preference" is what null already means, and
     // it is a better answer than an `EffortLevel` an adapter silently ignores.
-    store.upsertFromFile(definition({ effort: 'high' }));
+    store.fileSync.upsertFromFile(definition({ effort: 'high' }));
     db.$client.prepare(`UPDATE pulse_schedules SET effort = 'ludicrous'`).run();
     expect(store.getTasks()[0]!.effort).toBeNull();
     // …and the neighbouring free-form columns are still read verbatim, so this
@@ -102,7 +107,7 @@ describe('what a run records about what it ran on', () => {
   });
 
   it('stamps the resolved runtime and model onto an open run', () => {
-    const task = store.upsertFromFile(definition({}));
+    const task = store.fileSync.upsertFromFile(definition({}));
     const run = store.createRun(task.id, 'manual');
 
     store.recordRunExecution(run.id, { runtime: 'codex', model: 'gpt-5.5' });
@@ -114,7 +119,7 @@ describe('what a run records about what it ran on', () => {
   });
 
   it('records "no model was chosen" as a real answer', () => {
-    const task = store.upsertFromFile(definition({}));
+    const task = store.fileSync.upsertFromFile(definition({}));
     const run = store.createRun(task.id, 'manual');
 
     store.recordRunExecution(run.id, { runtime: 'claude-code' });
@@ -130,7 +135,7 @@ describe('what a run records about what it ran on', () => {
     // deliberately ignores a write to a finished run, and in-process relay
     // delivery runs an ENTIRE turn inside `publish()` — so a stamp on that path
     // would be silently dropped if it went through the lifecycle door.
-    const task = store.upsertFromFile(definition({}));
+    const task = store.fileSync.upsertFromFile(definition({}));
     const run = store.createRun(task.id, 'manual');
     store.updateRun(run.id, { status: 'completed', finishedAt: new Date().toISOString() });
 
@@ -144,7 +149,7 @@ describe('what a run records about what it ran on', () => {
   });
 
   it('reads null on a run recorded before the columns existed', () => {
-    const task = store.upsertFromFile(definition({ runtime: 'codex' }));
+    const task = store.fileSync.upsertFromFile(definition({ runtime: 'codex' }));
     const run = store.createRun(task.id, 'manual');
     expect(store.getRun(run.id)).toMatchObject({ resolvedRuntime: null, resolvedModel: null });
   });
