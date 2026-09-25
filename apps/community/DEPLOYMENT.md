@@ -47,6 +47,15 @@ Most people can keep the default limits. Restart the service after changing one.
 
 Limits marked "per IP" count by the address that connected to the server. Behind a reverse proxy, set `COMMUNITY_TRUSTED_PROXY_HEADER` to the header your proxy puts the caller's address in (for example `Fly-Client-IP`). It is off unless you set it; see [operations](OPERATIONS.md) before turning it on.
 
+Exports are prepared in the background. These settings shape that work; the [operations guide](OPERATIONS.md#exports) explains the disk they need.
+
+| Setting                          |  Default |           Range |
+| -------------------------------- | -------: | --------------: |
+| `COMMUNITY_EXPORT_SEGMENT_BYTES` |  256 MiB | 64 MiB to 1 GiB |
+| `COMMUNITY_EXPORT_TTL_HOURS`     | 24 hours |        1 to 168 |
+| `COMMUNITY_EXPORT_MAX_HOURS`     | 24 hours |        1 to 168 |
+| `COMMUNITY_EXPORT_CONCURRENCY`   |        1 |          1 to 8 |
+
 ## Optional Google and GitHub sign-in
 
 Password sign-in is always available. To offer Google sign-in, set both `COMMUNITY_GOOGLE_CLIENT_ID` and `COMMUNITY_GOOGLE_CLIENT_SECRET`. To offer GitHub sign-in, set both `COMMUNITY_GITHUB_CLIENT_ID` and `COMMUNITY_GITHUB_CLIENT_SECRET`. The service refuses to start if either pair is incomplete.

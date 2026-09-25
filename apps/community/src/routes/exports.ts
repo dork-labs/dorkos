@@ -1,9 +1,7 @@
-import { once } from 'node:events';
-import { PassThrough } from 'node:stream';
-import { Zip, ZipPassThrough } from 'fflate';
-import type { Hono } from 'hono';
+import type { Context, Hono } from 'hono';
 import type { Pool, PoolClient } from 'pg';
 import {
+  CommunityWireExportListSchema,
   CommunityWireExportResponseSchema,
   CommunityWireOwnerExportRequestSchema,
 } from '@dorkos/shared/community-wire';
@@ -11,73 +9,66 @@ import type { CommunityAuth } from '../auth.js';
 import { lockActiveCommunity, requireMember, transaction, type Member } from '../data.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
+import { downloadHeaders, type BlobStore } from '../storage/index.js';
+import { SegmentedBlobSource, type ArchiveBlob } from '../archive/segmented-source.js';
 import {
-  BlobStoreError,
-  completeManagedBlobCommit,
-  discardManagedBlob,
-  downloadHeaders,
-  managedBlobWriteSignal,
-  prepareManagedBlobCommit,
-  reserveManagedBlob,
-  type BlobStore,
-} from '../storage/index.js';
-import { cleanupBackoffSql } from '../storage/pending-deletions.js';
+  hasExportAuthority,
+  OWNER_EXPORT_LIFECYCLES,
+  type ExportRequester,
+  type ExportScope,
+} from '../exports/authority.js';
+import { endExportJob, EXPORT_COLUMNS, toWireExport, type ExportRow } from '../exports/store.js';
 
-const MAX_EXPORT_BYTES = 1024 * 1024 * 1024;
-const MAX_MANIFEST_BYTES = 16 * 1024 * 1024;
-const MAX_ROWS = 10_000;
+/** A download re-checks its authority after at most this many bytes... */
+export const DOWNLOAD_RECHECK_BYTES = 16 * 1024 * 1024;
+/** ...or this much time, whichever comes first. */
+export const DOWNLOAD_RECHECK_MS = 10_000;
 
-interface AttachmentRecord {
-  id: string;
-  channel_id: string;
-  entry_id: string;
-  uploader_member_id: string | null;
-  uploader_agent_id: string | null;
-  blob_key: string;
-  display_name: string;
-  content_type: string;
-  byte_size: number;
-  checksum: string;
-  uploaded_at: Date;
+/** Exports still open, or ended within the last week, are listed. */
+const LISTED = `(state IN ('queued','building')
+  OR (state='ready' AND COALESCE(deleted_at,expires_at)>now()-interval '7 days')
+  OR (state IN ('failed','cancelled') AND ended_at>now()-interval '7 days'))`;
+
+/**
+ * Parse one `Range: bytes=...` header against a representation of `size` bytes (RFC 9110
+ * §14.1.2). Returns the inclusive range, `'unsatisfiable'` (answer 416), or null to serve the
+ * whole representation: no header, a syntax this server does not serve (several ranges, another
+ * unit), or an invalid one.
+ */
+export function parseByteRange(
+  header: string | undefined,
+  size: number
+): { start: number; end: number } | 'unsatisfiable' | null {
+  if (!header) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match || (match[1] === '' && match[2] === '')) return null;
+  if (match[1] === '') {
+    const suffix = Number(match[2]);
+    if (!Number.isSafeInteger(suffix)) return null;
+    if (suffix === 0 || size === 0) return 'unsatisfiable';
+    return { start: Math.max(0, size - suffix), end: size - 1 };
+  }
+  const start = Number(match[1]);
+  const last = match[2] === '' ? Number.MAX_SAFE_INTEGER : Number(match[2]);
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(last) || last < start) return null;
+  if (start >= size) return 'unsatisfiable';
+  return { start, end: Math.min(last, size - 1) };
 }
 
-interface ExportArchiveRow {
-  id: string;
-  requester_member_id: string;
-  scope: 'personal' | 'owner';
-  channel_ids: string[];
-  blob_key: string;
-  byte_size: string;
-  created_at: Date;
-  expires_at: Date;
-}
-
-interface ExportCommunity {
-  id: string;
-  lifecycle: 'active' | 'archived';
-  lifecycleVersion: number;
-  settingsVersion: number;
-}
-
-// Lock lifecycle before membership, matching administration mutations. Archived
-// authority is specific to owner exports; ordinary mutations remain active-only.
+// Lock lifecycle before membership, matching administration mutations. Archived authority is
+// specific to owner exports; ordinary mutations remain active-only.
 async function lockExportAuthority(
   client: PoolClient,
   member: Member,
-  scope: 'personal' | 'owner'
-): Promise<ExportCommunity> {
+  scope: ExportScope
+): Promise<void> {
   if (scope === 'personal') await lockActiveCommunity(client, member.community_id);
-  // An owner keeps export through a host's hold; the archive records it as archived, the one
-  // read-only word the version 1 manifest has.
-  const community = await client.query<ExportCommunity & { raw_lifecycle: string }>(
-    `SELECT id,CASE WHEN lifecycle='held' THEN 'archived' ELSE lifecycle END AS lifecycle,
-            lifecycle AS raw_lifecycle,
-            lifecycle_version AS "lifecycleVersion",settings_version AS "settingsVersion"
-     FROM communities WHERE id=$1 FOR SHARE`,
+  const community = await client.query<{ lifecycle: string }>(
+    'SELECT lifecycle FROM communities WHERE id=$1 FOR SHARE',
     [member.community_id]
   );
-  const current = community.rows[0];
-  if (!current || !['active', 'archived', 'held'].includes(current.raw_lifecycle))
+  const lifecycle = community.rows[0]?.lifecycle ?? '';
+  if (!(OWNER_EXPORT_LIFECYCLES as readonly string[]).includes(lifecycle))
     throw new ApiError(409, 'COMMUNITY_UNAVAILABLE', 'This community cannot be exported now.');
   const live = await client.query<{ role: Member['role'] }>(
     'SELECT role FROM members WHERE id=$1 AND community_id=$2 AND active FOR SHARE',
@@ -85,268 +76,26 @@ async function lockExportAuthority(
   );
   if (!live.rows[0] || (scope === 'owner' && live.rows[0].role !== 'owner'))
     throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
+}
+
+async function requesterOf(pool: Pool, row: ExportRow): Promise<ExportRequester> {
+  const channels =
+    row.scope === 'personal'
+      ? await pool.query<{ channel_id: string }>(
+          `SELECT channel_id FROM export_archive_channels
+           WHERE export_archive_id=$1 AND community_id=$2 ORDER BY position`,
+          [row.id, row.community_id]
+        )
+      : { rows: [] };
   return {
-    id: current.id,
-    lifecycle: current.lifecycle,
-    lifecycleVersion: current.lifecycleVersion,
-    settingsVersion: current.settingsVersion,
+    communityId: row.community_id,
+    memberId: row.requester_member_id,
+    scope: row.scope,
+    channelIds: channels.rows.map((channel) => channel.channel_id),
   };
 }
 
-async function snapshot(pool: PoolClient, member: Member, scope: 'personal' | 'owner') {
-  const community = await lockExportAuthority(pool, member, scope);
-  const owner = scope === 'owner';
-  const channels = await pool.query(
-    owner
-      ? 'SELECT id,name,description,visibility,archived,created_at FROM channels WHERE community_id=$1 ORDER BY id LIMIT $2'
-      : `SELECT c.id,c.name,c.description,c.visibility,c.archived,c.created_at FROM channels c
-         WHERE c.community_id=$3 AND (
-           EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.member_id=$1)
-           OR EXISTS (
-             SELECT 1 FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
-             JOIN members owner ON owner.id=a.owner_member_id
-             WHERE acm.channel_id=c.id AND a.owner_member_id=$1 AND a.active AND owner.active
-           )
-         ) ORDER BY c.id LIMIT $2`,
-    owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, member.community_id]
-  );
-  const accessibleChannelIds = channels.rows.map((channel: { id: string }) => channel.id);
-  // LEFT JOIN: an erased member keeps their husk row, with no account and so no email.
-  const members = await pool.query(
-    owner
-      ? `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email
-         FROM members m LEFT JOIN "user" u ON u.id=m.user_id WHERE m.community_id=$1 ORDER BY m.id LIMIT $2`
-      : `SELECT m.id,m.display_name,m.handle,m.role,m.active,m.created_at,m.removed_at,u.email
-         FROM members m JOIN "user" u ON u.id=m.user_id WHERE m.id=$1 LIMIT $2`,
-    [owner ? member.community_id : member.id, MAX_ROWS + 1]
-  );
-  const agents = await pool.query(
-    `SELECT id,owner_member_id,display_name,handle,active,created_at,revoked_at
-     FROM agents WHERE ${owner ? 'community_id' : 'owner_member_id'}=$1 ORDER BY id LIMIT $2`,
-    [owner ? member.community_id : member.id, MAX_ROWS + 1]
-  );
-  const entries = await pool.query(
-    owner
-      ? `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
-         FROM entries e JOIN channels c ON c.id=e.channel_id WHERE c.community_id=$1 ORDER BY e.channel_id,e.seq LIMIT $2`
-      : `SELECT e.id,e.channel_id,e.seq,e.author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at
-         FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
-         WHERE e.channel_id=ANY($3::uuid[]) AND (e.author_member_id=$1 OR a.owner_member_id=$1)
-         ORDER BY e.channel_id,e.seq LIMIT $2`,
-    owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, accessibleChannelIds]
-  );
-  const attachments = await pool.query<AttachmentRecord>(
-    owner
-      ? `SELECT att.* FROM attachments att JOIN channels c ON c.id=att.channel_id
-         WHERE c.community_id=$1 AND att.entry_id IS NOT NULL ORDER BY att.id LIMIT $2`
-      : `SELECT att.* FROM attachments att JOIN entries e ON e.id=att.entry_id
-         LEFT JOIN agents a ON a.id=e.author_agent_id
-         WHERE e.channel_id=ANY($3::uuid[]) AND (e.author_member_id=$1 OR a.owner_member_id=$1)
-         ORDER BY att.id LIMIT $2`,
-    owner ? [member.community_id, MAX_ROWS + 1] : [member.id, MAX_ROWS + 1, accessibleChannelIds]
-  );
-  const audit = owner
-    ? await pool.query(
-        `SELECT id,community_id,actor_member_id,actor_kind,action,subject_id,
-                prior_state,next_state,changed_fields,created_at
-         FROM audit_events WHERE community_id=$1 ORDER BY created_at,id LIMIT $2`,
-        [member.community_id, MAX_ROWS + 1]
-      )
-    : { rows: [] };
-  for (const result of [channels, members, agents, entries, attachments, audit]) {
-    if (result.rows.length > MAX_ROWS)
-      throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'This export exceeds the archive limit.');
-  }
-  const totalBytes = attachments.rows.reduce((sum, row) => sum + row.byte_size, 0);
-  if (totalBytes > MAX_EXPORT_BYTES - MAX_MANIFEST_BYTES)
-    throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'This export exceeds the archive limit.');
-  const manifest = {
-    version: 1,
-    scope,
-    requesterMemberId: member.id,
-    community,
-    ...(owner ? { auditEvents: audit.rows } : {}),
-    channels: channels.rows,
-    members: members.rows,
-    agents: agents.rows,
-    entries: entries.rows,
-    attachments: attachments.rows.map((row) => ({
-      id: row.id,
-      channelId: row.channel_id,
-      entryId: row.entry_id,
-      uploaderMemberId: row.uploader_member_id,
-      uploaderAgentId: row.uploader_agent_id,
-      name: row.display_name,
-      contentType: row.content_type,
-      byteSize: row.byte_size,
-      checksum: row.checksum,
-      uploadedAt: row.uploaded_at,
-      archivePath: `attachments/${row.id}`,
-    })),
-  };
-  const manifestBytes = Buffer.from(JSON.stringify(manifest), 'utf8');
-  if (manifestBytes.byteLength > MAX_MANIFEST_BYTES)
-    throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'This export exceeds the archive limit.');
-  return {
-    contentVersion: await readContentVersion(pool, member.community_id, false),
-    manifestBytes,
-    attachments: attachments.rows,
-    channelIds: channels.rows.map((channel: { id: string }) => channel.id),
-  };
-}
-
-/**
- * Read the community's content version. An erasure bumps it in the same transaction as each
- * change, and the export commit reads it for share, so one of the two waits for the other
- * and an export snapshotted before an erasure change can never commit after it.
- */
-async function readContentVersion(
-  client: PoolClient,
-  communityId: string,
-  lock: boolean
-): Promise<number> {
-  const result = await client.query<{ version: string }>(
-    `SELECT version::text AS version FROM community_content_versions WHERE community_id=$1${lock ? ' FOR SHARE' : ''}`,
-    [communityId]
-  );
-  if (!result.rows[0]) throw new ApiError(409, 'STATE_CONFLICT', 'This community is unavailable.');
-  return Number(result.rows[0].version);
-}
-
-async function requireCurrentChannels(
-  pool: Pool | PoolClient,
-  memberId: string,
-  channelIds: string[]
-) {
-  if (!channelIds.length) return;
-  const result = await pool.query<{ count: string }>(
-    `SELECT count(*)::text AS count FROM channels c
-     WHERE c.id=ANY($2::uuid[]) AND (
-       EXISTS (SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.member_id=$1)
-       OR EXISTS (
-         SELECT 1 FROM agent_channel_members acm JOIN agents a ON a.id=acm.agent_id
-         JOIN members owner ON owner.id=a.owner_member_id
-         WHERE acm.channel_id=c.id AND a.owner_member_id=$1 AND a.active AND owner.active
-       )
-     )`,
-    [memberId, channelIds]
-  );
-  if (Number(result.rows[0].count) !== channelIds.length)
-    throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
-}
-
-function zipSource(
-  manifestBytes: Uint8Array,
-  attachments: AttachmentRecord[],
-  blobStore: BlobStore
-): AsyncIterable<Uint8Array> {
-  const output = new PassThrough({ highWaterMark: 64 * 1024 });
-  const zip = new Zip();
-  zip.ondata = (error, chunk, final) => {
-    if (error) output.destroy(error);
-    else if (chunk.length) output.write(chunk);
-    if (final) output.end();
-  };
-  const drain = async () => {
-    if (output.writableNeedDrain) await once(output, 'drain');
-  };
-  void (async () => {
-    try {
-      const manifest = new ZipPassThrough('manifest.json');
-      zip.add(manifest);
-      manifest.push(manifestBytes, true);
-      await drain();
-      for (const attachment of attachments) {
-        const file = new ZipPassThrough(`attachments/${attachment.id}`);
-        zip.add(file);
-        const blob = await blobStore.get(attachment.blob_key);
-        try {
-          for await (const chunk of blob.body) {
-            file.push(chunk, false);
-            await drain();
-          }
-          file.push(new Uint8Array(), true);
-          await drain();
-        } finally {
-          blob.body.destroy();
-        }
-      }
-      zip.end();
-    } catch (error) {
-      output.destroy(error instanceof Error ? error : new Error('Archive creation failed'));
-    }
-  })();
-  return output;
-}
-
-/** Reclaim expired private archives while keeping failures available for retry. */
-export async function sweepExpiredExports(pool: Pool, blobStore: BlobStore, batchSize = 25) {
-  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100)
-    throw new Error('Invalid export sweep batch size');
-  const result = await pool.query<{ id: string }>(
-    'SELECT id FROM export_archives WHERE deleted_at IS NULL AND expires_at<now() AND cleanup_next_attempt_at<=now() ORDER BY cleanup_next_attempt_at,expires_at,id LIMIT $1',
-    [batchSize]
-  );
-  let deleted = 0;
-  let failed = 0;
-  for (const row of result.rows) {
-    const attempt: { outcome: 'deleted' | 'failed' | 'skipped'; error?: unknown } = {
-      outcome: 'skipped',
-    };
-    try {
-      await transaction(pool, async (client) => {
-        const current = await client.query<{ blob_key: string; community_id: string }>(
-          `SELECT e.blob_key,m.community_id FROM export_archives e
-           JOIN members m ON m.id=e.requester_member_id
-           WHERE e.id=$1 AND e.deleted_at IS NULL AND e.expires_at<now() AND e.cleanup_next_attempt_at<=now() FOR UPDATE OF e`,
-          [row.id]
-        );
-        if (!current.rows[0]) return;
-        try {
-          await blobStore.delete(current.rows[0].blob_key);
-        } catch (error) {
-          await client.query(
-            `UPDATE export_archives
-             SET cleanup_attempts=cleanup_attempts+1,cleanup_next_attempt_at=now() + ${cleanupBackoffSql('cleanup_attempts')}
-             WHERE id=$1 AND deleted_at IS NULL AND expires_at<now()`,
-            [row.id]
-          );
-          attempt.outcome = 'failed';
-          attempt.error = error;
-          return;
-        }
-        await client.query('UPDATE export_archives SET deleted_at=now() WHERE id=$1', [row.id]);
-        await client.query('DELETE FROM managed_blobs WHERE blob_key=$1', [
-          current.rows[0].blob_key,
-        ]);
-        await client.query(
-          'INSERT INTO audit_events(community_id,action,subject_id) VALUES($1,$2,$3)',
-          [current.rows[0].community_id, 'export.expire', row.id]
-        );
-        attempt.outcome = 'deleted';
-      });
-    } catch (error) {
-      failed++;
-      console.error('Community export cleanup failed', {
-        archiveId: row.id,
-        error: error instanceof Error ? error.name : 'unknown',
-      });
-      continue;
-    }
-    if (attempt.outcome === 'deleted') {
-      deleted++;
-    } else if (attempt.outcome === 'failed') {
-      failed++;
-      console.error('Community export cleanup failed', {
-        archiveId: row.id,
-        error: attempt.error instanceof Error ? attempt.error.name : 'unknown',
-      });
-    }
-  }
-  return { deleted, failed };
-}
-
-/** Register personal and reauthenticated owner exports and their private downloads. */
+/** Register export jobs, their status and cancellation, and the resumable archive download. */
 export function registerExportRoutes(
   app: Hono,
   {
@@ -354,179 +103,224 @@ export function registerExportRoutes(
     auth,
     blobStore,
     confirmPassword,
-    hooks,
   }: {
     pool: Pool;
     auth: CommunityAuth;
     blobStore: BlobStore;
     confirmPassword: ConfirmPassword;
-    hooks?: { afterExportSnapshot?: () => Promise<void> };
   }
 ) {
-  const create = async (member: Member, scope: 'personal' | 'owner') => {
-    const currentResult = await pool.query<Member>(
+  /**
+   * Queue an export, or return the one already open: a queued or building job, or a ready
+   * archive that has not expired, for the same requester and scope.
+   */
+  const create = async (member: Member, scope: ExportScope) => {
+    const current = await pool.query<Member>(
       'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
       [member.id, member.community_id]
     );
-    const current = currentResult.rows[0];
-    if (!current) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
-    if (scope === 'owner' && current.role !== 'owner')
+    if (!current.rows[0]) throw new ApiError(403, 'FORBIDDEN', 'Your membership has ended.');
+    if (scope === 'owner' && current.rows[0].role !== 'owner')
       throw new ApiError(403, 'FORBIDDEN', 'Only the owner can export the community.');
-    const data = await transaction(pool, async (client) => {
-      // The snapshot also locks lifecycle and membership authority, so this
-      // repeatable-read transaction cannot be declared READ ONLY.
-      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-      return snapshot(client, current, scope);
-    });
-    await hooks?.afterExportSnapshot?.();
-    const reservation = await transaction(pool, (client) =>
-      reserveManagedBlob(client, current.community_id, 'export', {
-        allowArchived: scope === 'owner',
-      })
-    );
-    let stored;
-    try {
-      stored = await blobStore.put({
-        key: reservation.key,
-        source: zipSource(data.manifestBytes, data.attachments, blobStore),
-        displayName: scope === 'owner' ? 'community-export.zip' : 'my-community-data.zip',
-        maxBytes: MAX_EXPORT_BYTES,
-        kind: 'export',
-        signal: managedBlobWriteSignal(),
-      });
-    } catch (error) {
-      await discardManagedBlob(pool, blobStore, reservation).catch(() => undefined);
-      if (error instanceof BlobStoreError && error.code === 'BLOB_TOO_LARGE')
-        throw new ApiError(413, 'ATTACHMENT_TOO_LARGE', 'This export exceeds the archive limit.');
-      throw error;
-    }
-    try {
-      return await transaction(pool, async (client) => {
-        await lockExportAuthority(client, member, scope);
-        if (scope === 'personal') await requireCurrentChannels(client, member.id, data.channelIds);
-        if ((await readContentVersion(client, member.community_id, true)) !== data.contentVersion)
-          throw new ApiError(
-            409,
-            'STATE_CONFLICT',
-            'The community changed while this export was being made. Try again.'
-          );
-        await prepareManagedBlobCommit(client, reservation, stored);
-        const result = await client.query<Omit<ExportArchiveRow, 'channel_ids'>>(
-          `INSERT INTO export_archives(community_id,requester_member_id,scope,blob_key,byte_size,expires_at,content_version)
-           VALUES($1,$2,$3,$4,$5,now()+interval '1 hour',$6) RETURNING *`,
-          [member.community_id, member.id, scope, stored.key, stored.byteSize, data.contentVersion]
-        );
-        await client.query(
-          `INSERT INTO export_archive_channels(export_archive_id,position,community_id,channel_id)
-           SELECT $1,selected.position,$2,selected.channel_id
-           FROM unnest($3::uuid[]) WITH ORDINALITY AS selected(channel_id,position)`,
-          [result.rows[0].id, member.community_id, data.channelIds]
-        );
-        await client.query(
-          'INSERT INTO audit_events(community_id,actor_member_id,action,subject_id) VALUES($1,$2,$3,$4)',
-          [member.community_id, member.id, 'export.create', result.rows[0].id]
-        );
-        await completeManagedBlobCommit(client, reservation);
-        return { ...result.rows[0], channel_ids: data.channelIds };
-      });
-    } catch (error) {
-      await discardManagedBlob(pool, blobStore, reservation, stored).catch(
-        (cleanupError: unknown) => {
-          console.error(
-            'Community blob cleanup could not be queued',
-            cleanupError instanceof Error ? cleanupError.name : 'unknown'
-          );
-        }
+    return transaction(pool, async (client) => {
+      await lockExportAuthority(client, member, scope);
+      // One creator at a time per community (owner) or member (personal).
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+        `community-export:${member.community_id}:${scope}:${scope === 'owner' ? '' : member.id}`,
+      ]);
+      const open = await client.query<ExportRow>(
+        `SELECT ${EXPORT_COLUMNS} FROM export_archives
+         WHERE community_id=$1 AND requester_member_id=$2 AND scope=$3
+           AND (state IN ('queued','building')
+             OR (state='ready' AND deleted_at IS NULL AND expires_at>now()))
+         ORDER BY created_at DESC LIMIT 1`,
+        [member.community_id, member.id, scope]
       );
-      throw error;
-    }
+      if (open.rows[0]) return { row: open.rows[0], created: false };
+      if (scope === 'owner') {
+        // A job a former owner left in progress would fail at its next segment anyway.
+        const stale = await client.query<{ id: string }>(
+          `SELECT id FROM export_archives
+           WHERE community_id=$1 AND scope='owner' AND state IN ('queued','building')
+             AND requester_member_id<>$2 FOR UPDATE`,
+          [member.community_id, member.id]
+        );
+        for (const job of stale.rows)
+          await endExportJob(
+            client,
+            job.id,
+            { state: 'failed', code: 'EXPORT_ACCESS_ENDED' },
+            new Date()
+          );
+      }
+      const inserted = await client.query<ExportRow>(
+        `INSERT INTO export_archives(community_id,requester_member_id,scope,format_version,state)
+         VALUES($1,$2,$3,2,'queued') RETURNING ${EXPORT_COLUMNS}`,
+        [member.community_id, member.id, scope]
+      );
+      return { row: inserted.rows[0], created: true };
+    });
   };
+
+  const answer = (c: Context, row: ExportRow, status = 200) =>
+    json(c, CommunityWireExportResponseSchema, { export: toWireExport(row, new Date()) }, status);
+
   app.post('/me/export', async (c) => {
     const member = await requireMember(c, auth, pool);
-    const archive = await create(member, 'personal');
-    return json(
-      c,
-      CommunityWireExportResponseSchema,
-      {
-        archiveId: archive.id,
-        version: 1,
-        createdAt: archive.created_at.toISOString(),
-      },
-      201
-    );
+    const { row, created } = await create(member, 'personal');
+    return answer(c, row, created ? 202 : 200);
   });
 
   app.post('/owner/export', async (c) => {
     const member = await requireMember(c, auth, pool);
     const body = await readJson(c, CommunityWireOwnerExportRequestSchema);
     await confirmPassword(c, member.user_id, body.password);
-    const archive = await create(member, 'owner');
-    return json(
-      c,
-      CommunityWireExportResponseSchema,
-      {
-        archiveId: archive.id,
-        version: 1,
-        createdAt: archive.created_at.toISOString(),
-      },
-      201
-    );
+    const { row, created } = await create(member, 'owner');
+    return answer(c, row, created ? 202 : 200);
   });
+
+  app.get('/exports', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    const result = await pool.query<ExportRow>(
+      `SELECT ${EXPORT_COLUMNS} FROM export_archives
+       WHERE community_id=$1 AND requester_member_id=$2 AND ${LISTED}
+       ORDER BY created_at DESC,id LIMIT 50`,
+      [member.community_id, member.id]
+    );
+    const now = new Date();
+    return json(c, CommunityWireExportListSchema, {
+      exports: result.rows.map((row) => toWireExport(row, now)),
+    });
+  });
+
+  const own = async (member: Member, id: string, lock?: PoolClient): Promise<ExportRow> => {
+    const result = await (lock ?? pool).query<ExportRow>(
+      `SELECT ${EXPORT_COLUMNS} FROM export_archives
+       WHERE id=$1 AND requester_member_id=$2 AND community_id=$3${lock ? ' FOR UPDATE' : ''}`,
+      [id, member.id, member.community_id]
+    );
+    if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Export not found.');
+    return result.rows[0];
+  };
 
   app.get('/exports/:id', async (c) => {
     const member = await requireMember(c, auth, pool);
-    const result = await pool.query<ExportArchiveRow>(
-      `SELECT archive.*,
-        COALESCE((SELECT array_agg(selected.channel_id ORDER BY selected.position)
-          FROM export_archive_channels selected WHERE selected.export_archive_id=archive.id),'{}'::uuid[]) AS channel_ids
-       FROM export_archives archive
-       WHERE archive.id=$1 AND archive.requester_member_id=$2 AND archive.community_id=$3
-         AND archive.deleted_at IS NULL AND archive.expires_at>now()`,
-      [c.req.param('id'), member.id, member.community_id]
-    );
-    const archive = result.rows[0];
+    return answer(c, await own(member, c.req.param('id')));
+  });
+
+  app.post('/exports/:id/cancel', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    const row = await transaction(pool, async (client) => {
+      const current = await own(member, c.req.param('id'), client);
+      if (current.state === 'ready')
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'This export is ready and can no longer be cancelled.'
+        );
+      if (current.state === 'queued' || current.state === 'building')
+        await endExportJob(client, current.id, { state: 'cancelled' }, new Date());
+      return own(member, current.id, client);
+    });
+    return answer(c, row);
+  });
+
+  app.get('/exports/:id/archive', async (c) => {
+    const member = await requireMember(c, auth, pool);
+    const id = c.req.param('id');
+    const readyRow = async (): Promise<ExportRow | null> => {
+      const result = await pool.query<ExportRow>(
+        `SELECT ${EXPORT_COLUMNS} FROM export_archives
+         WHERE id=$1 AND requester_member_id=$2 AND community_id=$3
+           AND state='ready' AND deleted_at IS NULL AND expires_at>now()`,
+        [id, member.id, member.community_id]
+      );
+      return result.rows[0] ?? null;
+    };
+    const archive = await readyRow();
     if (!archive) throw new ApiError(404, 'NOT_FOUND', 'Archive not found.');
-    const live = await pool.query<Member>(
-      'SELECT id,user_id,display_name,role,community_id FROM members WHERE id=$1 AND community_id=$2 AND active',
-      [member.id, member.community_id]
-    );
-    if (!live.rows[0] || (archive.scope === 'owner' && live.rows[0].role !== 'owner'))
+    const requester = await requesterOf(pool, archive);
+    if (!(await hasExportAuthority(pool, requester)))
       throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
-    if (archive.scope === 'personal')
-      await requireCurrentChannels(pool, member.id, archive.channel_ids);
-    const blob = await blobStore.get(archive.blob_key, { signal: c.req.raw.signal });
-    const iterator = blob.body[Symbol.asyncIterator]();
+    const blobs: ArchiveBlob[] = archive.blob_key
+      ? [{ key: archive.blob_key, byteSize: Number(archive.byte_size) }]
+      : (
+          await pool.query<{ blob_key: string; byte_size: string }>(
+            `SELECT blob_key,byte_size::text FROM export_segments
+             WHERE export_id=$1 AND community_id=$2 ORDER BY segment_no`,
+            [archive.id, archive.community_id]
+          )
+        ).rows.map((row) => ({ key: row.blob_key, byteSize: Number(row.byte_size) }));
+    const source = new SegmentedBlobSource(blobStore, blobs);
+    // Strong: a ready archive never changes, and a rebuilt one is a different export.
+    const etag = `"${archive.id}.${(archive.ready_at ?? archive.created_at).getTime()}"`;
+    const headers: Record<string, string> = {
+      ...downloadHeaders({
+        displayName: archive.scope === 'owner' ? 'community-export.zip' : 'my-community-data.zip',
+        contentType: 'application/zip',
+      }),
+      'accept-ranges': 'bytes',
+      etag,
+      'cache-control': 'private, no-store',
+    };
+    const ifRange = c.req.header('if-range');
+    const range =
+      ifRange === undefined || ifRange === etag
+        ? parseByteRange(c.req.header('range'), source.size)
+        : null;
+    if (range === 'unsatisfiable') {
+      return new Response(null, {
+        status: 416,
+        headers: { ...headers, 'content-range': `bytes */${source.size}` },
+      });
+    }
+    const start = range?.start ?? 0;
+    const end = range?.end ?? source.size - 1;
+    // Re-check the requester and the archive row itself: an erasure or takedown that deletes
+    // the export stops a download already in progress.
+    const stillAllowed = async () => {
+      const current = await requireMember(c, auth, pool).catch(() => null);
+      return (
+        current !== null &&
+        current.id === member.id &&
+        (await readyRow()) !== null &&
+        (await hasExportAuthority(pool, requester))
+      );
+    };
+    const iterator = source.read(start, end, { signal: c.req.raw.signal })[Symbol.asyncIterator]();
+    let sinceCheck = 0;
+    let checkedAt = Date.now();
     const body = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const next = await iterator.next();
-          // See the attachment download: the end of the stream carries no bytes, so it is never
-          // refused, and each chunk is checked after it is read and before it is queued.
           if (next.done) return controller.close();
-          const current = await requireMember(c, auth, pool);
-          if (current.id !== member.id || (archive.scope === 'owner' && current.role !== 'owner'))
-            throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
-          if (archive.scope === 'personal')
-            await requireCurrentChannels(pool, member.id, archive.channel_ids);
+          if (
+            sinceCheck + next.value.length > DOWNLOAD_RECHECK_BYTES ||
+            Date.now() - checkedAt >= DOWNLOAD_RECHECK_MS
+          ) {
+            if (!(await stillAllowed()))
+              throw new ApiError(403, 'FORBIDDEN', 'Export access has ended.');
+            sinceCheck = 0;
+            checkedAt = Date.now();
+          }
+          sinceCheck += next.value.length;
           controller.enqueue(next.value);
         } catch (error) {
-          blob.body.destroy();
+          await iterator.return?.(undefined);
           controller.error(error);
         }
       },
       async cancel() {
-        blob.body.destroy();
-        await iterator.return?.();
+        await iterator.return?.(undefined);
       },
     });
     return new Response(body, {
+      status: range ? 206 : 200,
       headers: {
-        ...downloadHeaders({
-          displayName: archive.scope === 'owner' ? 'community-export.zip' : 'my-community-data.zip',
-          contentType: 'application/zip',
-        }),
-        'content-length': String(blob.byteSize),
-        'cache-control': 'private, no-store',
+        ...headers,
+        'content-length': String(end - start + 1),
+        ...(range ? { 'content-range': `bytes ${start}-${end}/${source.size}` } : {}),
       },
     });
   });

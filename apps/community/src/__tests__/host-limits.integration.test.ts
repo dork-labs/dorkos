@@ -26,6 +26,7 @@ import {
   type TenancyHarness,
   type TenancyMember,
 } from './tenancy-test-harness.js';
+import { drainExports } from './export-test-helpers.js';
 
 const MiB = 1024 * 1024;
 let h: TenancyHarness;
@@ -553,14 +554,20 @@ it('always lets the owner export, refuses a larger icon, and frees space when th
   // over-limit icon slips past either check, or if a same-size replacement is refused.
   const counted = (await usage(a)).storage.countedBytes;
   await setLimits(a, { maxActiveMembers: null, maxStorageBytes: counted });
-  await expectStatus(
+  const exported = await expectStatus(
     await h.call(`${tenant(a)}/owner/export`, {
       cookie: operator.cookie,
       body: { password: TENANCY_PASSWORD },
     }),
-    201,
+    202,
     'export at the limit'
   );
+  // The background job stores every segment although the community is at its limit.
+  await drainExports(h.pool, h.blobStore);
+  const ready = await h.pool.query('SELECT state FROM export_archives WHERE id=$1', [
+    (await exported.json()).export.id,
+  ]);
+  expect(ready.rows[0].state).toBe('ready');
 
   const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(64, 1)]);
   await setLimits(a, { maxActiveMembers: null, maxStorageBytes: counted + png.length });

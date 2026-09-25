@@ -1352,7 +1352,7 @@ const actions: Action<unknown>[] = [
     rule: 'Owner export: owner only, with reauthentication',
     route: 'POST /owner/export',
     allowed: OWNER,
-    status: 201,
+    status: 202,
     reauth: true,
     call: (_prepared, secret) => ({
       method: 'POST',
@@ -1360,16 +1360,16 @@ const actions: Action<unknown>[] = [
       body: { password: secret },
     }),
     effect: async (body) => {
-      const { archiveId } = JSON.parse(body.toString('utf8')) as { archiveId: string };
+      const { export: created } = JSON.parse(body.toString('utf8')) as { export: { id: string } };
       const archive = await pool.query(
-        'SELECT scope,community_id FROM export_archives WHERE id=$1',
-        [archiveId]
+        'SELECT scope,community_id,state FROM export_archives WHERE id=$1',
+        [created.id]
       );
-      expect(archive.rows).toEqual([{ scope: 'owner', community_id: alphaId }]);
+      expect(archive.rows).toEqual([{ scope: 'owner', community_id: alphaId, state: 'queued' }]);
     },
   }),
-  define<{ archiveId: string }>({
-    rule: 'Download an owner export: its owner requester only',
+  define<{ exportId: string }>({
+    rule: 'Read an owner export: its owner requester only',
     route: 'GET /exports/:id',
     allowed: OWNER,
     status: 200,
@@ -1377,22 +1377,20 @@ const actions: Action<unknown>[] = [
     prepare: async () => {
       const existing = await pool.query<{ id: string }>(
         `SELECT id FROM export_archives WHERE community_id=$1 AND scope='owner'
-           AND requester_member_id=$2 AND deleted_at IS NULL AND expires_at>now()
-         ORDER BY created_at LIMIT 1`,
+           AND requester_member_id=$2 ORDER BY created_at LIMIT 1`,
         [alphaId, ownerMemberId]
       );
-      if (existing.rows[0]) return { archiveId: existing.rows[0].id };
+      if (existing.rows[0]) return { exportId: existing.rows[0].id };
       const created = (await ok(
         { method: 'POST', path: scoped('/owner/export'), body: { password } },
         'owner',
-        201
-      )) as { archiveId: string };
-      return { archiveId: created.archiveId };
+        202
+      )) as { export: { id: string } };
+      return { exportId: created.export.id };
     },
-    call: ({ archiveId }) => ({ method: 'GET', path: scoped(`/exports/${archiveId}`) }),
-    effect: async (body) => {
-      // A zip archive starts with the local file header signature.
-      expect(body.subarray(0, 4).toString('hex')).toBe('504b0304');
+    call: ({ exportId }) => ({ method: 'GET', path: scoped(`/exports/${exportId}`) }),
+    effect: async (body, _role, { exportId }) => {
+      expect(JSON.parse(body.toString('utf8')).export.id).toBe(exportId);
     },
   }),
 
@@ -1746,6 +1744,9 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /me': "the caller's own membership",
   'POST /me/leave': 'the caller leaves; no authority over anyone else',
   'POST /me/export': "the caller's personal export",
+  'GET /exports': "lists the caller's own exports only",
+  'GET /exports/:id/archive': "downloads the caller's own export only; its authority is re-checked",
+  'POST /exports/:id/cancel': "cancels the caller's own export only",
   'GET /me/grants': "the caller's own installation grants",
   'DELETE /me/grants': "revokes the caller's own grants",
   'DELETE /me/grants/:id': "revokes one of the caller's own grants",

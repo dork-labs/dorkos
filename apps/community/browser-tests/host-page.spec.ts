@@ -325,7 +325,7 @@ test('a host holds a community with a notice members can see, then deletes it af
     await expect(
       page.getByText(/Archive, restore, and ownership transfer are unavailable/u)
     ).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Export community' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export this community' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Archive community' })).toHaveCount(0);
     await shot(page, 'held-owner-settings');
 

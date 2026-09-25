@@ -192,7 +192,11 @@ async function reconcileWithLock(
             e.byte_size::text,NULL::text AS checksum,c.lifecycle_version
      FROM export_archives e JOIN communities c ON c.id=e.community_id
      -- A swept export keeps its row for the audit trail but no longer owns an object.
-     WHERE e.deleted_at IS NULL`
+     WHERE e.deleted_at IS NULL AND e.blob_key IS NOT NULL
+     UNION ALL
+     SELECT s.blob_key,s.community_id,'export'::text AS purpose,
+            s.byte_size::text,NULL::text AS checksum,c.lifecycle_version
+     FROM export_segments s JOIN communities c ON c.id=s.community_id`
   );
   const managed = await client.query<ManagedRow>(
     `SELECT blob_key,community_id,purpose,state,byte_size::text,checksum,

@@ -63,7 +63,6 @@ export function createCommunityApp({
     beforeBootstrapChannelCreate?: () => Promise<void>;
     /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
     now?: () => Date;
-    afterExportSnapshot?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
@@ -393,7 +392,7 @@ export function createCommunityApp({
   registerAgentRoutes(communityApi, { pool, auth, config });
   registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
   registerRemovalRoutes(communityApi, { pool, auth, config });
-  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
+  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   app.route('/api/v1', communityApi);
