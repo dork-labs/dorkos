@@ -133,6 +133,12 @@ export const WorkspaceSchema = z
     // `null` = unit-of-work, which is what every workspace was before ownership
     // existed — so pre-change rows and sidecar manifests need no backfill.
     owner: WorkspaceOwnerSchema.nullable().default(null),
+    /**
+     * The `before_remove` commands shown and approved when the workspace was
+     * made (DOR-2335): the only ones its removal runs. Absent on a workspace
+     * made before they were recorded, whose removal runs none.
+     */
+    removeHooks: z.array(z.string()).optional(),
     createdAt: z.string(),
     lastUsedAt: z.string(),
   })

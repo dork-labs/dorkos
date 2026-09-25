@@ -11,6 +11,7 @@
  * @module server/services/workspace/workspace-service
  */
 import { promises as fs } from 'node:fs';
+import nodePath from 'node:path';
 import { ulid } from 'ulidx';
 import {
   derivePorts,
@@ -28,7 +29,12 @@ import {
 import { logger } from '../../lib/logger.js';
 import type { WorkspaceStore } from './workspace-store.js';
 import type { PortAllocator } from './port-allocator.js';
-import { loadWorkspaceHookConfig, runHooks } from './hooks.js';
+import { loadWorkspaceHookConfig, runHooks, type WorkspaceHookConfig } from './hooks.js';
+import {
+  inspectWorkspace,
+  type WorkspaceGate,
+  type WorkspaceInspection,
+} from './workspace-gate.js';
 import { writePortEnv } from './port-env.js';
 import { assertSafeWorkspaceSource } from './providers/git.js';
 
@@ -51,17 +57,50 @@ export interface WorkspaceServiceDeps {
 
 const nowIso = (): string => new Date().toISOString();
 
+/** A hook config holding only `commands`, for the one phase `runHooks` is asked to run. */
+function hooksConfigOf(
+  phase: 'after_create' | 'before_remove',
+  commands: readonly string[]
+): WorkspaceHookConfig {
+  return {
+    hooks: {
+      after_create: [],
+      before_run: [],
+      after_run: [],
+      before_remove: [],
+      [phase]: [...commands],
+    },
+  };
+}
+
 /** Concrete WorkspaceManager. */
 export class WorkspaceService implements WorkspaceManager {
   constructor(private readonly deps: WorkspaceServiceDeps) {}
 
-  async ensure(req: EnsureWorkspaceRequest): Promise<Workspace> {
+  /**
+   * Reuse the ready workspace for `(projectKey, key)`, or make it.
+   *
+   * Making one goes through `gate` (DOR-2335): a clone is staged under
+   * `<root>/.staging/` and read there, and the source's `workspace.json` hooks
+   * are read, before anything is recorded, moved into place or run. With no
+   * gate, a new workspace is refused, so no caller makes one unseen by
+   * forgetting it. Reusing a ready workspace needs none.
+   *
+   * @param req - What to reuse or make.
+   * @param gate - Who has to see what a new workspace brings.
+   */
+  async ensure(req: EnsureWorkspaceRequest, gate?: WorkspaceGate): Promise<Workspace> {
     const key = sanitizeWorkspaceKey(req.key);
     const existing = this.deps.store.getByKey(req.projectKey, key);
     if (existing && existing.status === 'ready') {
       const touched = { ...existing, lastUsedAt: nowIso() };
       await this.deps.store.write(touched);
       return touched;
+    }
+    if (!gate) {
+      throw new Error(
+        'A workspace can only be made through a caller that shows what it brings (DOR-2335).'
+      );
     }
 
     // Refused before anything is recorded or run (DOR-2326); each provider
@@ -71,6 +110,30 @@ export class WorkspaceService implements WorkspaceManager {
     const provider = this.deps.providers[providerType];
     const path = this.deps.store.checkoutPath(req.projectKey, key);
     const branch = `dork/${key}`;
+
+    // Read what it brings where no session runs, and ask, before a port is
+    // taken or a record written: a refusal leaves nothing behind.
+    const hookConfig = await loadWorkspaceHookConfig(req.source);
+    const staged =
+      providerType === 'clone'
+        ? await this.stageClone({ projectKey: req.projectKey, key, source: req.source, branch })
+        : undefined;
+    let approvedHooks: WorkspaceInspection['hooks'];
+    try {
+      const inspection = await inspectWorkspace({
+        source: req.source,
+        provider: providerType,
+        destination: path,
+        ...(staged && { staged }),
+        hookConfig,
+      });
+      await gate(inspection);
+      approvedHooks = inspection.hooks;
+    } catch (err) {
+      if (staged) await fs.rm(staged, { recursive: true, force: true });
+      throw err;
+    }
+
     const portBase = this.deps.allocator.allocate();
     const ts = nowIso();
 
@@ -99,20 +162,41 @@ export class WorkspaceService implements WorkspaceManager {
     await this.deps.store.write(ws);
 
     try {
-      await provider.create({ projectKey: req.projectKey, key, path, source: req.source, branch });
-      const hookConfig = await loadWorkspaceHookConfig(req.source);
+      if (staged) {
+        // The clone that was read is the clone that lands.
+        await fs.mkdir(nodePath.dirname(path), { recursive: true });
+        await fs.rename(staged, path);
+      } else {
+        await provider.create({
+          projectKey: req.projectKey,
+          key,
+          path,
+          source: req.source,
+          branch,
+        });
+      }
       const ports = derivePorts(portBase);
       const portEnv = {
         DORKOS_PORT: String(ports.DORKOS_PORT),
         VITE_PORT: String(ports.VITE_PORT),
         SITE_PORT: String(ports.SITE_PORT),
       };
-      await runHooks('after_create', hookConfig, { cwd: path, env: portEnv });
+      // Only the commands that were shown, never a second read of the source.
+      await runHooks('after_create', hooksConfigOf('after_create', approvedHooks.after_create), {
+        cwd: path,
+        env: portEnv,
+      });
       await writePortEnv(path, ports);
-      const ready: Workspace = { ...ws, status: 'ready', lastUsedAt: nowIso() };
+      const ready: Workspace = {
+        ...ws,
+        status: 'ready',
+        lastUsedAt: nowIso(),
+        removeHooks: approvedHooks.before_remove,
+      };
       await this.deps.store.write(ready);
       return ready;
     } catch (err) {
+      if (staged) await fs.rm(staged, { recursive: true, force: true });
       const failed: Workspace = { ...ws, status: 'failed' };
       await this.deps.store.write(failed);
       logger.error(`[workspace] provisioning failed for ${req.projectKey}/${key}:`, err);
@@ -160,8 +244,23 @@ export class WorkspaceService implements WorkspaceManager {
       if (dirty.dirty) return { removed: false, blocked: 'dirty', dirty };
     }
 
-    const hookConfig = await loadWorkspaceHookConfig(ws.source);
-    await runHooks('before_remove', hookConfig, { cwd: ws.path });
+    // Only the before_remove commands shown when it was made, recorded in its
+    // manifest (DOR-2335), never the source's workspace.json as it is now. A
+    // workspace made before that record existed runs none: nobody saw them.
+    const manifest = await this.deps.store.readManifest(ws.projectKey, ws.key);
+    const removeHooks = manifest?.removeHooks;
+    if (removeHooks === undefined) {
+      const current = await loadWorkspaceHookConfig(ws.source);
+      if ((current?.hooks.before_remove.length ?? 0) > 0) {
+        logger.warn(
+          `[workspace] not running before_remove hooks for ${ws.projectKey}/${ws.key}: ` +
+            'nobody reviewed them when it was made'
+        );
+      }
+    }
+    await runHooks('before_remove', hooksConfigOf('before_remove', removeHooks ?? []), {
+      cwd: ws.path,
+    });
     await this.deps.store.write({ ...ws, status: 'removing' });
     await provider.remove(ws, opts);
     await this.deps.store.remove(ws);
@@ -216,6 +315,29 @@ export class WorkspaceService implements WorkspaceManager {
       else if (result.blocked === 'dirty') skipped.push({ id: ws.id, reason: 'dirty' });
     }
     return { removed, skipped };
+  }
+
+  /**
+   * Clone into a staging folder under the workspace root, where no scan lists
+   * it, through the clone provider itself (and so its git protections).
+   *
+   * @returns The staged checkout.
+   */
+  private async stageClone(req: {
+    projectKey: string;
+    key: string;
+    source: string;
+    branch: string;
+  }): Promise<string> {
+    const staging = nodePath.join(this.deps.store.root, '.staging', ulid());
+    await fs.mkdir(nodePath.dirname(staging), { recursive: true });
+    try {
+      await this.deps.providers.clone.create({ ...req, path: staging });
+    } catch (err) {
+      await fs.rm(staging, { recursive: true, force: true });
+      throw err;
+    }
+    return staging;
   }
 
   /** Best-effort: does this checkout dir still exist on disk? (reconciler helper) */
