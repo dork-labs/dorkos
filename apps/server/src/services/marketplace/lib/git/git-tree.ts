@@ -47,31 +47,52 @@
  *
  * @module services/marketplace/lib/git-tree
  */
-import { execFile } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import {
-  parseGitVersion,
-  withGitConfigEnv,
-  type GitConfigEntry,
-} from '@dorkos/shared/git-hardening';
-import { hardenedGitEnv, internalGitArgs } from '../../../lib/git-safety.js';
+  CLONE_SIZE_LIMITS,
+  PackageTooLargeError,
+  measurePackageTree,
+} from '@dorkos/marketplace/package-size';
+import { parseGitVersion } from '@dorkos/shared/git-hardening';
+import { GitDownloadTooLargeError, runGit, type GitConfigEntry } from './git-runner.js';
 import {
   gitHubAuthConfig,
   isGitHubCredentialHost,
   redactAuthTokens,
   resolveGitAuth,
   withGitHubToken,
-} from '../../core/agent-templates/template-downloader.js';
+} from '../../../core/agent-templates/template-downloader.js';
 
-const execFileAsync = promisify(execFile);
+export { GitDownloadTooLargeError } from './git-runner.js';
 
 /** Max time to wait for `git ls-remote`. */
 const LS_REMOTE_TIMEOUT_MS = 15_000;
 
 /** Max time for any one git step of a fetch; matches the clone it replaced. */
 const GIT_FETCH_TIMEOUT_MS = 120_000;
+
+/**
+ * Max time for a whole {@link fetchTree}, every step together (DOR-2321). Each
+ * step gets what is left of it, so a server that answers every step just
+ * inside {@link GIT_FETCH_TIMEOUT_MS} cannot hold an install for hours across
+ * a blobless download's many batches. Ten minutes covers the slowest honest
+ * case with room: the full-history fallback for a large repository on a slow
+ * connection, then its checkout. A normal package takes seconds.
+ */
+export const FETCH_DEADLINE_MS = 10 * 60_000;
+
+/** A fetch that ran out of its whole-fetch time ({@link FETCH_DEADLINE_MS}). */
+class GitDeadlineError extends Error {
+  /** Build the error; the message is the reason a person reads. */
+  constructor() {
+    super(`the download took longer than ${FETCH_DEADLINE_MS / 60_000} minutes`);
+    this.name = 'GitDeadlineError';
+  }
+}
+
+/** How many blob ids one fetch names; well inside Windows' command-line limit. */
+const BLOB_FETCH_BATCH = 500;
 
 /** Everything after it is a value, never a flag (git ≥ 2.24). */
 const END_OF_OPTIONS = '--end-of-options';
@@ -241,29 +262,81 @@ export async function fetchTree(req: TreeRequest): Promise<string> {
   // Every step gets the auth: a sparse checkout fetches the blobs it lacks
   // from the remote, so the checkout needs it as much as the fetch does.
   const auth = await gitAuth(req.cloneUrl);
-  const git: GitRunner = (args) => runGit(args, req.destDir, GIT_FETCH_TIMEOUT_MS, auth.config);
+  const deadline = Date.now() + FETCH_DEADLINE_MS;
+  const git: GitRunner = (args, options = {}) => {
+    // Each step gets what is left of the whole fetch's time (DOR-2321).
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      return Promise.reject(new GitDeadlineError());
+    }
+    return runGit(args, req.destDir, Math.min(GIT_FETCH_TIMEOUT_MS, remaining), auth.config, {
+      // A download is watched on disk while git runs, so a server cannot
+      // stream more than the clone limit however it answers (DOR-2321).
+      ...(options.watchBytes && {
+        watch: {
+          dir: path.join(req.destDir, '.git'),
+          freeSpaceOf: req.destDir,
+          maxBytes: CLONE_SIZE_LIMITS.maxTotalBytes,
+        },
+      }),
+      ...(options.onStdoutLine && { onStdoutLine: options.onStdoutLine }),
+      ...(options.stdin !== undefined && { stdin: options.stdin }),
+      ...(options.env && { env: options.env }),
+    });
+  };
 
   try {
-    if (req.subpath !== '') {
-      // A subpath is first tried as a blob-filtered partial clone, which
-      // downloads only the package's own files. It is an optimisation, so ANY
-      // failure of it starts over once with the full fetch below: a server
-      // that refuses unadvertised objects refuses the lazy blob requests
-      // checkout makes, and git words that differently by version ("could not
-      // fetch … from promisor remote", "bad pack header" on 2.26, a silent
-      // "invalid object" on 2.30–2.36). A real failure fails again, unfiltered,
-      // and is reported from there.
-      try {
-        return await attempt(git, req, auth.url, true);
-      } catch {
-        await emptyDir(req.destDir);
-      }
+    const commit = await fetchCommit(git, req, auth.url);
+    // The checked-out tree, measured before anything reads it (DOR-2321). The
+    // download and the tree listing were bounded before the checkout; this is
+    // what actually landed, which a blobless fetch could not know in advance.
+    try {
+      await measurePackageTree(req.destDir, CLONE_SIZE_LIMITS, { countGit: true });
+    } catch (err) {
+      if (!(err instanceof PackageTooLargeError)) throw err;
+      throw new GitFetchError(req.cloneUrl, err.message);
     }
-    return await attempt(git, req, auth.url, false);
+    return commit;
   } catch (err) {
-    if (err instanceof GitCommitNotFoundError) throw err;
+    // Whatever failed, nothing half-fetched is left for anything to read. A
+    // destination that cannot be emptied (already gone) is no reason to lose
+    // the real error.
+    await emptyDir(req.destDir).catch(() => {});
+    if (err instanceof GitCommitNotFoundError || err instanceof GitFetchError) throw err;
+    if (err instanceof GitDownloadTooLargeError) throw new GitFetchError(req.cloneUrl, err.message);
     throw new GitFetchError(req.cloneUrl, reasonOf(err));
   }
+}
+
+/**
+ * Fetch and check out the commit, with the partial-clone optimisation and its
+ * one fallback. See {@link fetchTree}.
+ *
+ * @param git - Runs git in `req.destDir` with the remote's auth.
+ * @param req - The remote, commit, optional refname, subpath and destination.
+ * @param remoteUrl - The remote URL with any auth applied.
+ * @returns The full commit id of the checkout.
+ */
+async function fetchCommit(git: GitRunner, req: TreeRequest, remoteUrl: string): Promise<string> {
+  if (req.subpath !== '') {
+    // A subpath is first tried as a blob-filtered partial clone, which
+    // downloads only the package's own files. It is an optimisation, so ANY
+    // failure of it starts over once with the full fetch below: a server
+    // that refuses unadvertised objects refuses the lazy blob requests
+    // checkout makes, and git words that differently by version ("could not
+    // fetch … from promisor remote", "bad pack header" on 2.26, a silent
+    // "invalid object" on 2.30–2.36). A real failure fails again, unfiltered,
+    // and is reported from there.
+    try {
+      return await attempt(git, req, remoteUrl, true);
+    } catch (err) {
+      // Too large, or out of time, is the answer, not a reason to try again
+      // without the filter.
+      if (err instanceof GitDownloadTooLargeError || err instanceof GitDeadlineError) throw err;
+      await emptyDir(req.destDir);
+    }
+  }
+  return await attempt(git, req, remoteUrl, false);
 }
 
 /**
@@ -304,18 +377,22 @@ async function attempt(
   // route, anything else is a failure.
   let mayDiffer = false;
   try {
-    await git([
-      'fetch',
-      '--quiet',
-      '--no-tags',
-      '--depth=1',
-      ...(filtered ? ['--filter=blob:none'] : []),
-      END_OF_OPTIONS,
-      REMOTE,
-      req.commitSha,
-    ]);
+    await git(
+      [
+        'fetch',
+        '--quiet',
+        '--no-tags',
+        '--depth=1',
+        ...(filtered ? ['--filter=blob:none'] : []),
+        END_OF_OPTIONS,
+        REMOTE,
+        req.commitSha,
+      ],
+      { watchBytes: true }
+    );
     arrived = await commitOf(git, 'FETCH_HEAD');
   } catch (err) {
+    if (err instanceof GitDownloadTooLargeError) throw err;
     if (filtered || !REFUSAL_RE.test(reasonOf(err))) throw err;
     if (req.refName === undefined) {
       arrived = await fetchPinnedFromAllRefs(git, req.commitSha, req.cloneUrl);
@@ -328,16 +405,17 @@ async function attempt(
     throw new Error(`expected commit ${req.commitSha}, received ${arrived}`);
   }
 
+  // Before a single file is written: the tree must fit the clone limits. A
+  // few kilobytes of trees can name millions of files (DOR-2321).
+  await checkTreeBeforeCheckout(git, arrived, req.subpath, !filtered);
+
   // No `--end-of-options` here: `checkout --detach` rejects it up to git
   // 2.43, and `arrived` is a verified full commit id, never author text.
-  const checkout = await git([
-    '-c',
-    'advice.detachedHead=false',
-    'checkout',
-    '--quiet',
-    '--detach',
-    arrived,
-  ]);
+  // Watched, because a blobless checkout downloads the files it writes.
+  const checkout = await git(
+    ['-c', 'advice.detachedHead=false', 'checkout', '--quiet', '--detach', arrived],
+    { watchBytes: true }
+  );
   // Git 2.30–2.36 (measured) can report a blob it failed to fetch lazily as
   // `error: invalid object … for '<path>'` and still exit 0, leaving HEAD
   // right and the file missing. So an `error:` line fails the checkout, and
@@ -357,6 +435,113 @@ async function attempt(
   return arrived;
 }
 
+/**
+ * Refuse a tree that is larger than the clone limits before checking it out
+ * (DOR-2321), so nothing is ever written past them.
+ *
+ * `git ls-tree -r -t` is streamed and git is stopped the moment the entries
+ * (files and folders; `-t` lists folders) pass the limit. With the file
+ * contents already downloaded (`withSizes`), `-l` sizes every file as it is
+ * listed. A blobless fetch has no sizes yet, so its files are downloaded here
+ * first, in batches and under the byte watch, exactly as the checkout would
+ * have downloaded them, and `git cat-file --batch-check` then sizes them from
+ * the local copies. Every file counts once per place it appears, so one small
+ * download named forty times is sized as forty files.
+ *
+ * @param git - Runs git in the fetch directory.
+ * @param commit - The verified commit to be checked out.
+ * @param subpath - The package's directory, or `''` for the whole tree.
+ * @param withSizes - Whether file contents are already downloaded.
+ * @throws {GitDownloadTooLargeError} Past a limit.
+ */
+async function checkTreeBeforeCheckout(
+  git: GitRunner,
+  commit: string,
+  subpath: string,
+  withSizes: boolean
+): Promise<void> {
+  const { maxEntries, maxTotalBytes, maxFileBytes } = CLONE_SIZE_LIMITS;
+  let entries = 0;
+  let bytes = 0;
+  let over: GitDownloadTooLargeError | null = null;
+  /** Blob id to how many times the tree names it, when sizes are not known yet. */
+  const blobs = new Map<string, number>();
+  const addBytes = (size: number): void => {
+    if (size > maxFileBytes || (bytes += size) > maxTotalBytes) {
+      over ??= new GitDownloadTooLargeError('bytes', maxTotalBytes);
+    }
+  };
+  const count = (line: string): boolean => {
+    if (line === '' || over) return over === null;
+    entries += 1;
+    if (entries > maxEntries) over = new GitDownloadTooLargeError('entries', maxEntries);
+    // "<mode> <type> <object>[ <size>]\t<path>", with "-" for a folder's size.
+    const fields = line.slice(0, line.indexOf('\t')).trim().split(/\s+/);
+    if (fields[1] === 'blob') {
+      if (withSizes) addBytes(Number(fields[3]));
+      else blobs.set(fields[2]!, (blobs.get(fields[2]!) ?? 0) + 1);
+    }
+    return over === null;
+  };
+  await git(
+    [
+      'ls-tree',
+      '-r',
+      '-t',
+      ...(withSizes ? ['-l'] : []),
+      commit,
+      ...(subpath !== '' ? ['--', subpath] : []),
+    ],
+    { onStdoutLine: count }
+  ).catch((err: unknown) => {
+    // Stopping git early is how the limit is enforced; its exit is expected.
+    if (over) return { stdout: '', stderr: '' };
+    throw err;
+  });
+  if (over) throw over;
+  if (withSizes || blobs.size === 0) return;
+
+  const ids = [...blobs.keys()];
+  // The download the checkout would make, made here in batches that fit on a
+  // command line (Windows allows about 32,000 characters), under the byte
+  // watch. Fetching by id, not `--stdin`, keeps git 2.26 working.
+  for (let i = 0; i < ids.length; i += BLOB_FETCH_BATCH) {
+    await git(
+      [
+        '-c',
+        'fetch.negotiationAlgorithm=noop',
+        'fetch',
+        '--quiet',
+        '--no-tags',
+        '--recurse-submodules=no',
+        '--filter=blob:none',
+        END_OF_OPTIONS,
+        REMOTE,
+        ...ids.slice(i, i + BLOB_FETCH_BATCH),
+      ],
+      { watchBytes: true }
+    );
+  }
+  // Sized from the local copies. GIT_NO_LAZY_FETCH exists from git 2.45: there
+  // a blob that somehow did not arrive reads as missing instead of being
+  // fetched one at a time. Older git ignores it and fetches such a blob, still
+  // under the byte watch, so the limit holds either way.
+  const { stdout: sized } = await git(['cat-file', '--batch-check=%(objectname) %(objectsize)'], {
+    stdin: `${ids.join('\n')}\n`,
+    env: { GIT_NO_LAZY_FETCH: '1' },
+    watchBytes: true,
+  });
+  for (const line of sized.split('\n')) {
+    if (line === '') continue;
+    const [id, size] = line.split(' ');
+    if (size === 'missing' || !Number.isFinite(Number(size))) {
+      throw new Error(`the download is missing ${id}`);
+    }
+    for (let n = blobs.get(id!) ?? 0; n > 0 && !over; n -= 1) addBytes(Number(size));
+    if (over) throw over;
+  }
+}
+
 /** Remove everything inside `dir`, keeping `dir` itself. */
 async function emptyDir(dir: string): Promise<void> {
   const entries = await readdir(dir);
@@ -364,7 +549,15 @@ async function emptyDir(dir: string): Promise<void> {
 }
 
 /** Run git in the fetch's directory. */
-type GitRunner = (args: string[]) => Promise<{ stdout: string; stderr: string }>;
+type GitRunner = (
+  args: string[],
+  options?: {
+    watchBytes?: boolean;
+    onStdoutLine?: (line: string) => boolean;
+    stdin?: string;
+    env?: NodeJS.ProcessEnv;
+  }
+) => Promise<{ stdout: string; stderr: string }>;
 
 /**
  * The fallback for a named ref: fetch the exact refname the lookup chose (never
@@ -372,7 +565,9 @@ type GitRunner = (args: string[]) => Promise<{ stdout: string; stderr: string }>
  * commit it points at now.
  */
 async function fetchByRefName(git: GitRunner, refName: string): Promise<string> {
-  await git(['fetch', '--quiet', '--no-tags', '--depth=1', END_OF_OPTIONS, REMOTE, refName]);
+  await git(['fetch', '--quiet', '--no-tags', '--depth=1', END_OF_OPTIONS, REMOTE, refName], {
+    watchBytes: true,
+  });
   return commitOf(git, 'FETCH_HEAD');
 }
 
@@ -386,15 +581,22 @@ async function fetchPinnedFromAllRefs(
   commitSha: string,
   cloneUrl: string
 ): Promise<string> {
-  await git([
-    'fetch',
-    '--quiet',
-    '--no-tags',
-    END_OF_OPTIONS,
-    REMOTE,
-    `+refs/heads/*:refs/remotes/${REMOTE}/*`,
-    '+refs/tags/*:refs/tags/*',
-  ]);
+  // Reached on text the server sends (REFUSAL_RE), so it is untrusted: the
+  // full history it downloads is watched against the same byte limit as any
+  // other fetch (DOR-2321). It stays unfiltered: a server that refuses a
+  // fetch by id also refuses the blob requests a filtered checkout makes.
+  await git(
+    [
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      END_OF_OPTIONS,
+      REMOTE,
+      `+refs/heads/*:refs/remotes/${REMOTE}/*`,
+      '+refs/tags/*:refs/tags/*',
+    ],
+    { watchBytes: true }
+  );
   try {
     return await commitOf(git, commitSha);
   } catch {
@@ -525,27 +727,4 @@ function reasonOf(err: unknown): string {
     );
   }
   return redactAuthTokens(String(err));
-}
-
-/**
- * Run one git command. `cwd` is the fetch directory, or `undefined` for
- * `ls-remote`, which needs no repository.
- */
-async function runGit(
-  args: string[],
-  cwd: string | undefined,
-  timeout: number,
-  config: GitConfigEntry[] = []
-): Promise<{ stdout: string; stderr: string }> {
-  // The hardening as `-c` too: the environment copy is read only by git 2.31
-  // and later, and this repo supports 2.25.
-  return execFileAsync('git', [...internalGitArgs(), ...args], {
-    cwd,
-    timeout,
-    maxBuffer: 16 * 1024 * 1024,
-    // Confine git to safe transports so an author-controlled URL cannot reach
-    // the `ext::`/`file::` helpers, and never prompt for a credential.
-    env: withGitConfigEnv(hardenedGitEnv(), config),
-    encoding: 'utf-8',
-  });
 }

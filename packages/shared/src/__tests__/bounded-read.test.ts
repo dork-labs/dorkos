@@ -13,6 +13,7 @@ import {
   readPackageFileWithin,
   readResponseTextWithin,
   readTextFileWithin,
+  readTextFileWithinSync,
 } from '../bounded-read.js';
 
 let dir: string;
@@ -302,6 +303,26 @@ describe('readPackageFileWithin while the tree changes (DOR-2319)', () => {
     readPackageFileHooks.beforeOpen = async () => {};
     expect(await readPackageFileWithin(pkg, 'skills/a/SKILL.md', 1024, 'The SKILL.md')).toBe(
       'inside'
+    );
+  });
+});
+
+describe('readTextFileWithinSync (DOR-2321)', () => {
+  // Purpose: the synchronous reader matches the asynchronous one: exact text
+  // within the limit, refusal one byte over, and no blocking on a pipe.
+  it('reads within the limit and refuses one byte more', async () => {
+    const file = path.join(dir, 'sync.md');
+    await writeFile(file, '\uFEFFé'.padEnd(100, 'x'));
+    expect(readTextFileWithinSync(file, 1024, 'The file')).toBe('\uFEFFé'.padEnd(100, 'x'));
+    await writeFile(file, 'x'.repeat(101));
+    expect(() => readTextFileWithinSync(file, 100, 'The file')).toThrow(TooLargeError);
+  });
+
+  it.skipIf(process.platform === 'win32')('refuses a named pipe without waiting', () => {
+    const fifo = path.join(dir, 'pipe');
+    execFileSync('mkfifo', [fifo]);
+    expect(() => readTextFileWithinSync(fifo, 1024, 'The file')).toThrow(
+      'The file is not a regular file, so DorkOS will not read it.'
     );
   });
 });

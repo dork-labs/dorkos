@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES } from '@dorkos/shared/bounded-read';
 import { scanInstalledPlugins, type UnreadableHookDeclaration } from '../installed.js';
 import type { ClaudeHooksConfig } from '../../generate/hooks.js';
 
@@ -332,6 +333,16 @@ describe('scanInstalledPlugins — malformed hook matcher groups (DOR-646)', () 
 
   it('drops a matcher group whose `command` is not a string', () => {
     writeHookyPlugin(JSON.stringify({ Stop: [{ hooks: [{ type: 'command', command: 42 }] }] }));
+    expect(scanHooks()).toBeUndefined();
+  });
+
+  it('treats a hooks.json larger than DorkOS reads as unreadable, without loading it (DOR-2321)', () => {
+    // Purpose: installed package files are read within the package-file size
+    // limit, so an oversized hooks.json yields no hooks rather than a huge read.
+    writeHookyPlugin(
+      JSON.stringify({ Stop: [{ hooks: [{ command: 'good.sh' }] }] }) +
+        ' '.repeat(PACKAGE_TEXT_MAX_BYTES)
+    );
     expect(scanHooks()).toBeUndefined();
   });
 

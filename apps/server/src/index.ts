@@ -240,7 +240,7 @@ import { warnRedundantEnabledEntries } from './services/core-extensions/warn-red
 import type { CoreExtensionInfo } from './services/extensions/extension-enable-resolution.js';
 import { createExtensionsRouter } from './routes/extensions.js';
 import { createAgentWorkspace } from './services/core/agent-creator.js';
-import { gitTreeSource } from './services/marketplace/lib/git-tree.js';
+import { gitTreeSource } from './services/marketplace/lib/git/git-tree.js';
 import { MarketplaceSourceManager } from './services/marketplace/marketplace-source-manager.js';
 import { MarketplaceCache } from './services/marketplace/marketplace-cache.js';
 import { PackageCacheRetention } from './services/marketplace/package-cache-retention.js';

@@ -49,6 +49,10 @@
       "types": "./src/package-links.ts",
       "default": "./dist/package-links.js"
     },
+    "./package-size": {
+      "types": "./src/package-size.ts",
+      "default": "./dist/package-size.js"
+    },
     "./package-validator": {
       "types": "./src/package-validator.ts",
       "default": "./dist/package-validator.js"

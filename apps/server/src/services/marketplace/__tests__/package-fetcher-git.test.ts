@@ -54,7 +54,7 @@ vi.mock('../source-url-policy.js', async () => {
 
 import { MarketplaceCache } from '../marketplace-cache.js';
 import { PackageFetcher } from '../package-fetcher.js';
-import { GitCommitNotFoundError, gitTreeSource } from '../lib/git-tree.js';
+import { GitCommitNotFoundError, gitTreeSource } from '../lib/git/git-tree.js';
 
 const FIXTURE_ENV = {
   ...process.env,

@@ -8,10 +8,20 @@
  * as a followable link — and that each stripped link is logged.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  truncate,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
+import { PACKAGE_SIZE_LIMITS, PackageTooLargeError } from '@dorkos/marketplace/package-size';
 import { stagePackageContents } from '../stage-package.js';
 
 /** Construct a logger whose methods are spies. */
@@ -254,5 +264,27 @@ describe('stagePackageContents', () => {
     await stagePackageContents(src, dest, buildLogger());
     expect(await exists(path.join(dest, 'sub', '.GIT'))).toBe(false);
     expect(await exists(path.join(dest, 'sub', 'keep.txt'))).toBe(true);
+  });
+});
+
+describe('stagePackageContents size limits (DOR-2321)', () => {
+  // Purpose: staging is the backstop for paths that skip validation. An
+  // oversized package is refused before a single file is copied.
+  it('refuses a package over a size limit without copying anything', async () => {
+    const src = await mkdtemp(path.join(tmpdir(), 'stage-src-'));
+    const dest = await mkdtemp(path.join(tmpdir(), 'stage-dest-'));
+    try {
+      await writeFile(path.join(src, 'README.md'), 'hello');
+      await writeFile(path.join(src, 'big.bin'), '');
+      await truncate(path.join(src, 'big.bin'), PACKAGE_SIZE_LIMITS.maxFileBytes + 1);
+
+      await expect(stagePackageContents(src, dest, buildLogger())).rejects.toBeInstanceOf(
+        PackageTooLargeError
+      );
+      expect(await exists(path.join(dest, 'README.md'))).toBe(false);
+    } finally {
+      await rm(src, { recursive: true, force: true });
+      await rm(dest, { recursive: true, force: true });
+    }
   });
 });

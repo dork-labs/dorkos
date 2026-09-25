@@ -89,7 +89,7 @@ import {
   GitFetchError,
   GitRefNotFoundError,
   GitRemoteUnreachableError,
-} from '../services/marketplace/lib/git-tree.js';
+} from '../services/marketplace/lib/git/git-tree.js';
 import type { UpdateFlow } from '../services/marketplace/flows/update.js';
 import { computeTargetDir } from '../services/marketplace/flows/install-agent.js';
 import {

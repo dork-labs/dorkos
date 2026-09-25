@@ -44,7 +44,7 @@ import {
   GitFetchError,
   isFullCommitSha,
   lookupRemoteRef,
-} from '../git-tree.js';
+} from '../git/git-tree.js';
 
 const FIXTURE_ENV = {
   ...process.env,

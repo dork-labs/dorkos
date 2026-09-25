@@ -29,48 +29,61 @@ let versionReads = 0;
 
 vi.mock('node:child_process', async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process');
+  const { EventEmitter } = await import('node:events');
+  const { PassThrough } = await import('node:stream');
+  /** A child process that prints `stdout`/`stderr` and exits with `code`. */
+  const fakeChild = (stdout: string, stderr: string, code: number) => {
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      stdin: new PassThrough(),
+      pid: undefined,
+    });
+    setImmediate(() => {
+      child.stdout.end(stdout);
+      child.stderr.end(stderr);
+      setImmediate(() => child.emit('close', code, null));
+    });
+    return child;
+  };
   return {
     ...actual,
-    // Callback-style, so `promisify(execFile)` resolves `{ stdout, stderr }`.
-    execFile: vi.fn(
-      (
-        _cmd: string,
-        args: string[],
-        opts: { env: NodeJS.ProcessEnv },
-        callback: (...a: unknown[]) => void
-      ) => {
-        // The `-c` hardening every call leads with is recorded apart, so the
-        // answers below can go on keying off the subcommand.
-        const settings: string[] = [];
-        while (
-          args[0] === '-c' &&
-          /^(safe\.bareRepository|core\.fsmonitor|core\.hooksPath)=/.test(args[1]!)
-        ) {
-          settings.push(args[1]!);
-          args = args.slice(2);
-        }
-        argSettings.push(settings);
-        if (args[0] === '--version') {
-          versionReads += 1;
-          setImmediate(() => callback(null, { stdout: gitVersionOutput, stderr: '' }));
-          return;
-        }
-        calls.push(args);
-        envs.push(opts.env);
-        const answer = respond(args);
-        setImmediate(() => {
-          if ('fail' in answer) {
-            callback(Object.assign(new Error('Command failed: git'), { stderr: answer.fail }));
-          } else {
-            callback(null, { stdout: answer.stdout, stderr: answer.stderr ?? '' });
-          }
-        });
+    // Git runs through `spawn` (its own process group, so a limit can stop
+    // the whole tree); this answers each call from `respond`.
+    spawn: vi.fn((_cmd: string, args: string[], opts: { env: NodeJS.ProcessEnv }) => {
+      // The `-c` hardening every call leads with is recorded apart, so the
+      // answers below can go on keying off the subcommand (DOR-2326).
+      const settings: string[] = [];
+      while (
+        args[0] === '-c' &&
+        /^(safe\.bareRepository|core\.fsmonitor|core\.hooksPath)=/.test(args[1]!)
+      ) {
+        settings.push(args[1]!);
+        args = args.slice(2);
       }
-    ),
+      argSettings.push(settings);
+      if (args[0] === '--version') {
+        versionReads += 1;
+        return fakeChild(gitVersionOutput, '', 0);
+      }
+      calls.push(args);
+      envs.push(opts.env);
+      const answer = respond(args);
+      return 'fail' in answer
+        ? fakeChild('', answer.fail, 128)
+        : fakeChild(answer.stdout, answer.stderr ?? '', 0);
+    }),
   };
 });
 
 const resolveGitAuth = vi.fn(() => 'ghp_secret');
+// The git steps are faked and never write a tree, so the size check after the
+// fetch has nothing to measure; it has its own test (git-tree-size.test.ts).
+vi.mock('@dorkos/marketplace/package-size', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@dorkos/marketplace/package-size')>()),
+  measurePackageTree: vi.fn().mockResolvedValue({ entries: 0, bytes: 0 }),
+}));
+
 vi.mock('../../../core/agent-templates/template-downloader.js', async () => {
   const actual = await vi.importActual<
     typeof import('../../../core/agent-templates/template-downloader.js')
@@ -79,7 +92,7 @@ vi.mock('../../../core/agent-templates/template-downloader.js', async () => {
 });
 
 import { parseGitVersion } from '@dorkos/shared/git-hardening';
-import { fetchTree, GitFetchError, lookupRemoteRef } from '../git-tree.js';
+import { FETCH_DEADLINE_MS, fetchTree, GitFetchError, lookupRemoteRef } from '../git/git-tree.js';
 
 const A = 'a'.repeat(40);
 const B = 'b'.repeat(40);
@@ -253,7 +266,7 @@ describe('the installed git decides how the token travels', () => {
     vi.resetModules();
     gitVersionOutput = version;
     versionReads = 0;
-    return import('../git-tree.js');
+    return import('../git/git-tree.js');
   }
 
   it.each(['git version 2.30.0\n', 'git version 2.26.2\n', 'unreadable\n'])(
@@ -344,6 +357,35 @@ describe('verification', () => {
     expect(calls.filter((a) => a[0] === 'fetch')).toHaveLength(1);
   });
 
+  it('gives up once the whole fetch passes its deadline, however each step answers', async () => {
+    // Purpose: every step has its own timeout, but a server answering each one
+    // just inside it could hold an install for hours across many steps. The
+    // whole fetch has one deadline, and each step gets what is left of it.
+    // Time is faked: every git step takes four minutes.
+    respond = gitReporting(A, A);
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const step = respond;
+    respond = (args) => {
+      now += 4 * 60_000;
+      return step(args);
+    };
+    try {
+      const error = await fetchTree({
+        ...req('https://gitlab.example.com/o/r.git'),
+        subpath: 'pkg',
+      }).catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(GitFetchError);
+      expect((error as Error).message).toContain(
+        `the download took longer than ${FETCH_DEADLINE_MS / 60_000} minutes`
+      );
+      // Ten minutes of four-minute steps: three steps ran, none after that.
+      expect(calls.length).toBe(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it('runs the exact command sequence the git floor was measured against', async () => {
     // Purpose: scripts/git-floor-probe.sh measured these argvs in Docker on
     // git 2.26–2.49. Two are version traps: `checkout --detach` rejects
@@ -372,6 +414,9 @@ describe('verification', () => {
         A,
       ],
       ['rev-parse', '--verify', '--quiet', 'FETCH_HEAD^{commit}'],
+      // The tree is listed before anything is checked out (DOR-2321); a
+      // blobless fetch has no sizes, so no `-l`.
+      ['ls-tree', '-r', '-t', A, '--', '--stdin'],
       ['-c', 'advice.detachedHead=false', 'checkout', '--quiet', '--detach', A],
       ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
       ['ls-files', '--deleted'],

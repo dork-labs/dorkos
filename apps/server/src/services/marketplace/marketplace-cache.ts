@@ -17,7 +17,7 @@
  *
  * An entry's key is the commit its checkout verifiably holds: the only way in
  * is {@link MarketplaceCache.materializePackage}, which takes the key from the
- * fetch (`lib/git-tree.ts` reads it from `HEAD`) and refuses anything that is
+ * fetch (`lib/git/git-tree.ts` reads it from `HEAD`) and refuses anything that is
  * not a full commit id. A sparse (`git-subdir`) entry holds a different tree
  * from the whole repository at the same commit, so its key carries a digest of
  * the subfolder: `${name}@${sha}~${digest}`. Entries from before that rule
@@ -54,7 +54,7 @@ import { join } from 'node:path';
 import { parseMarketplaceJsonLenient, type MarketplaceJson } from '@dorkos/marketplace';
 import { withFileLock } from '@dorkos/shared/atomic-write';
 import { assertContainedIn, PathEscapeError } from './lib/package-paths.js';
-import { isFullCommitSha } from './lib/git-tree.js';
+import { isFullCommitSha } from './lib/git/git-tree.js';
 import { directorySize } from './lib/directory-size.js';
 
 /** Default TTL for cached `marketplace.json` documents (1 hour). */

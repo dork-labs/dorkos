@@ -1,6 +1,6 @@
 #!/bin/sh
 # Measure which git versions run the marketplace's package fetch
-# (apps/server/src/services/marketplace/lib/git-tree.ts), in Docker (DOR-2248).
+# (apps/server/src/services/marketplace/lib/git/git-tree.ts), in Docker (DOR-2248).
 #
 # The fetch's git floor is a claim about other people's machines, so it is
 # measured rather than assumed: this replays the exact command sequence

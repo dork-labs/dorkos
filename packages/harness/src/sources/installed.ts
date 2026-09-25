@@ -19,8 +19,9 @@
  *
  * @module sources/installed
  */
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithinSync } from '@dorkos/shared/bounded-read';
 import { MarketplacePackageManifestSchema, PackageNameSchema } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { hasSchedule, isInvalidSchedule, readScheduleField } from '@dorkos/skills/schedule-schema';
@@ -342,7 +343,7 @@ function readPluginManifest(pluginDir: string): PluginIdentity | 'unreadable' | 
   if (!existsSync(manifestPath)) return readCcPluginManifest(pluginDir);
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    raw = JSON.parse(readTextFileWithinSync(manifestPath, PACKAGE_TEXT_MAX_BYTES, 'The manifest'));
   } catch {
     return 'unreadable';
   }
@@ -367,7 +368,9 @@ function readCcPluginManifest(pluginDir: string): PluginIdentity | undefined {
   if (!existsSync(ccManifestPath)) return undefined;
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(ccManifestPath, 'utf8'));
+    raw = JSON.parse(
+      readTextFileWithinSync(ccManifestPath, PACKAGE_TEXT_MAX_BYTES, 'The plugin.json')
+    );
   } catch {
     return undefined;
   }
@@ -488,7 +491,7 @@ function readPluginHooks(
   const relPath = `${sourcePrefix}/hooks/hooks.json`;
   let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(hooksPath, 'utf8'));
+    raw = JSON.parse(readTextFileWithinSync(hooksPath, PACKAGE_TEXT_MAX_BYTES, 'The hooks.json'));
   } catch {
     return { unreadable: [{ path: relPath, total: true }] };
   }
@@ -556,7 +559,11 @@ function toInstalledSkill(
 ): InstalledSkill {
   let skillMd = '';
   try {
-    skillMd = readFileSync(join(absSkillsRoot, entry.name, 'SKILL.md'), 'utf8');
+    skillMd = readTextFileWithinSync(
+      join(absSkillsRoot, entry.name, 'SKILL.md'),
+      PACKAGE_TEXT_MAX_BYTES,
+      'The SKILL.md'
+    );
   } catch {
     // No readable SKILL.md — the empty default above stands.
   }
@@ -656,7 +663,11 @@ function collectCommands(pluginDir: string, sourcePrefix: string): InstalledComm
     if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
     let content: string;
     try {
-      content = readFileSync(join(commandsRoot, entry.name), 'utf8');
+      content = readTextFileWithinSync(
+        join(commandsRoot, entry.name),
+        PACKAGE_TEXT_MAX_BYTES,
+        'The command'
+      );
     } catch {
       continue;
     }

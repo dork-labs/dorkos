@@ -64,7 +64,7 @@ import {
   MARKETPLACE_JSON_TIMEOUT_MS,
   PackageFetcher,
 } from '../../services/marketplace/package-fetcher.js';
-import type { GitTreeSource } from '../../services/marketplace/lib/git-tree.js';
+import type { GitTreeSource } from '../../services/marketplace/lib/git/git-tree.js';
 import {
   ConflictError,
   DisclosureChangedError,
@@ -86,7 +86,7 @@ import {
   GitFetchError,
   GitRefNotFoundError,
   GitRemoteUnreachableError,
-} from '../../services/marketplace/lib/git-tree.js';
+} from '../../services/marketplace/lib/git/git-tree.js';
 import type { InstallResult, PermissionPreview } from '../../services/marketplace/types.js';
 import { createMarketplaceRouter } from '../marketplace.js';
 import {

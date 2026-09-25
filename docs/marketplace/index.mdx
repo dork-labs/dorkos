@@ -150,6 +150,12 @@ By default a package installs **globally**, for every agent. To scope it to one 
   private source, or publish your own package.
 </Callout>
 
+## How large a package can be
+
+DorkOS won't install a package larger than 250 MB in total, with more than 20,000 files and folders, or with any single file over 50 MB. It checks this before showing you what the package will do, so you never approve something it then refuses. Real packages are far smaller: the largest we've seen is about 12 MB.
+
+If you install from a folder on your computer, DorkOS copies the folder as it is, including any `node_modules` folder inside it. A project with its libraries installed can pass these limits. The message says how much of it is in `node_modules`, so you can remove that folder or install from the package's repository instead.
+
 ## Browsing in DorkOS
 
 Marketplace is the in-product browse experience. It mirrors the public catalog but adds the install machinery, so you can go from "interesting package" to "running on my machine" without leaving the app.

@@ -1,5 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { CommandEntry, CommandRegistry } from '@dorkos/shared/types';
 import { CommandFrontmatterSchema } from '@dorkos/skills/command-schema';
 import { UnsupportedFrontmatterError, parseFrontmatter } from '@dorkos/skills/frontmatter';
@@ -133,7 +134,8 @@ class CommandRegistryService {
     | null
   > {
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      // Bounded like every read of installed package content (DOR-2321).
+      const content = await readTextFileWithin(filePath, PACKAGE_TEXT_MAX_BYTES, 'The command');
 
       let frontmatter: Record<string, unknown>;
       try {

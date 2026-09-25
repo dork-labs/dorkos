@@ -11,7 +11,7 @@ import { noopLogger } from '@dorkos/shared/logger';
 import type { MarketplaceJson } from '@dorkos/marketplace';
 import { MarketplaceCache } from '../marketplace-cache.js';
 import { PackageFetcher } from '../package-fetcher.js';
-import type { GitTreeSource } from '../lib/git-tree.js';
+import type { GitTreeSource } from '../lib/git/git-tree.js';
 import { describeLastFetch } from '../source-listing.js';
 import type { MarketplaceSource } from '../types.js';
 

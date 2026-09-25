@@ -24,7 +24,7 @@
  *
  * @module shared/bounded-read
  */
-import { constants } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -81,11 +81,19 @@ export class UnsafeFileError extends Error {
   }
 }
 
-/** Open flags: read-only, and never block on a pipe or device. */
-const READ_FLAGS = constants.O_RDONLY | (constants.O_NONBLOCK ?? 0);
+/**
+ * Open flags: read-only, and never block on a pipe or device. Read when a
+ * file is opened rather than when this module loads, so code that replaces
+ * `node:fs` in a test (and never reads a file) can still import it.
+ */
+function readFlags(): number {
+  return constants.O_RDONLY | (constants.O_NONBLOCK ?? 0);
+}
 
-/** {@link READ_FLAGS}, also refusing a symbolic link as the last component. */
-const READ_NOFOLLOW_FLAGS = READ_FLAGS | (constants.O_NOFOLLOW ?? 0);
+/** {@link readFlags}, also refusing a symbolic link as the last component. */
+function readNoFollowFlags(): number {
+  return readFlags() | (constants.O_NOFOLLOW ?? 0);
+}
 
 /**
  * Read an opened file within `maxBytes`, refusing anything but a regular file.
@@ -146,7 +154,7 @@ export async function readTextFileWithin(
   maxBytes: number,
   what: string
 ): Promise<string> {
-  const handle = await open(filePath, READ_FLAGS);
+  const handle = await open(filePath, readFlags());
   try {
     return await readOpenedWithin(handle, maxBytes, what);
   } finally {
@@ -209,7 +217,7 @@ export async function readPackageFileWithin(
   await readPackageFileHooks.beforeOpen?.();
   let handle: FileHandle;
   try {
-    handle = await open(current, READ_NOFOLLOW_FLAGS);
+    handle = await open(current, readNoFollowFlags());
   } catch (err) {
     // A link swapped in for the file after the check above.
     if ((err as NodeJS.ErrnoException).code === 'ELOOP') throw linked();
@@ -245,6 +253,44 @@ export async function readPackageFileWithin(
     return await readOpenedWithin(handle, maxBytes, what);
   } finally {
     await handle.close();
+  }
+}
+
+/**
+ * The synchronous twin of {@link readTextFileWithin}, for code that cannot
+ * await (the harness's installed-package readers). Same limit, same
+ * regular-file check, same non-blocking open, same result.
+ *
+ * @param filePath - The file to read; symbolic links are followed.
+ * @param maxBytes - The largest size read, in bytes.
+ * @param what - What the file is, as the start of a sentence, for the errors.
+ * @returns The file's text.
+ * @throws {TooLargeError} When the file is larger than `maxBytes`.
+ * @throws {UnsafeFileError} When the path is not a regular file.
+ * @throws The underlying error, unchanged, otherwise (for example `ENOENT`).
+ */
+export function readTextFileWithinSync(filePath: string, maxBytes: number, what: string): string {
+  const fd = openSync(filePath, readFlags());
+  try {
+    const stats = fstatSync(fd);
+    if (!stats.isFile()) {
+      throw new UnsafeFileError(`${what} is not a regular file, so DorkOS will not read it.`);
+    }
+    if (stats.size > maxBytes) throw new TooLargeError(what, maxBytes);
+    const chunks: Buffer[] = [];
+    let total = 0;
+    for (;;) {
+      const want = Math.min(maxBytes + 1 - total, Math.max(stats.size + 1 - total, 64 * 1024));
+      const chunk = Buffer.allocUnsafe(want);
+      const bytesRead = readSync(fd, chunk, 0, want, null);
+      if (bytesRead === 0) break;
+      chunks.push(chunk.subarray(0, bytesRead));
+      total += bytesRead;
+      if (total > maxBytes) throw new TooLargeError(what, maxBytes);
+    }
+    return Buffer.concat(chunks, total).toString('utf8');
+  } finally {
+    closeSync(fd);
   }
 }
 
