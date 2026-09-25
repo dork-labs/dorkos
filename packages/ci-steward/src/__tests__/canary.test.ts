@@ -123,6 +123,7 @@ describe('main-green never sees the canary', () => {
         at: '2026-09-19T00:37:00Z',
         done: '2026-09-19T01:05:00Z',
         red: false,
+        workflows: { 'scripts-test.yml': false },
       },
     ]);
   });

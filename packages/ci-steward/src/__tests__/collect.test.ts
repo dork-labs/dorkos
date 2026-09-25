@@ -11,6 +11,8 @@ import { main } from '../cli.ts';
 import * as collectPlan from '../collect.ts';
 import { collect } from '../collect.ts';
 import { LatestSchema, readData, snapshotPath, SnapshotSchema } from '../data.ts';
+import { repeatEjections } from '../ejection-facts.ts';
+import { refreshOlderDays } from '../refresh.ts';
 import { normaliseQuery, replayGh, type Recording } from '../gh.ts';
 import { timelinePageQuery } from '../prs.ts';
 import { loadHandFiles } from '../load.ts';
@@ -82,8 +84,16 @@ describe('collect on a recorded day', () => {
     expect(snap.series.queue_wait_min).toEqual([[45900, 106]]);
     expect(snap.series.queue_build_min).toEqual([]);
     expect(snap.main).toEqual([
-      { sha: 'ccc', at: `${DAY}T13:00:00Z`, done: `${DAY}T13:10:00Z`, red: false },
+      {
+        sha: 'ccc',
+        at: `${DAY}T13:00:00Z`,
+        done: `${DAY}T13:10:00Z`,
+        red: false,
+        workflows: { 'lint.yml': false },
+      },
     ]);
+    // PR #7's one ejection had a new commit after it, so nothing repeated.
+    expect(snap.counts.repeat_ejections).toBe(0);
     // The non-Actions check run (Vercel) is not a gate.
     // Gate samples are kept per event, so the PR leg and the queue leg stay apart.
     expect(snap.gates['wf.lint.lint@pull_request']!.durations.map((d) => d[1])).toEqual([240]);
@@ -345,5 +355,132 @@ describe('collect on a recorded day', () => {
       },
     ]);
     expect(snap.flaky_builds).toEqual([{ sha: 'ccc', runner: 'vitest' }]);
+  });
+});
+
+describe('repeatEjections (tracked.repeat-ejections)', () => {
+  const build = (sha: string, pr: number, at: string, gates: string[]) => ({
+    sha,
+    pr,
+    created_at: at,
+    outcome: 'red' as const,
+    failed_gates: gates,
+  });
+  const pr = (ejections: { at: string; head: number }[]) => ({
+    number: 1,
+    mergedAt: '2026-09-18T20:00:00Z',
+    leadTimeMin: 1,
+    queueWaitMin: 1,
+    queueBuildMin: null,
+    ejections: ejections.map((e) => ({ ...e, newCommit: false })),
+  });
+  const shard = ['wf.browser-test.browser-shard', 'wf.browser-test.browser-test'];
+  const builds = [
+    build('b1', 1, '2026-09-18T10:00:00Z', shard),
+    build('b2', 1, '2026-09-18T11:00:00Z', shard),
+    build('b3', 1, '2026-09-18T12:00:00Z', ['wf.lint.lint']),
+    build('b4', 1, '2026-09-18T13:00:00Z', ['wf.browser-test.browser-shard']),
+  ];
+  const count = (ejections: { at: string; head: number }[]) =>
+    repeatEjections([pr(ejections)], builds);
+
+  it('counts the same check failing a second build of an unchanged head, once each', () => {
+    // b2 repeats b1; b4 repeats b1 and b2 but is ONE repeat.
+    expect(
+      count([
+        { at: '2026-09-18T10:30:00Z', head: 1 },
+        { at: '2026-09-18T11:30:00Z', head: 1 },
+        { at: '2026-09-18T13:30:00Z', head: 1 },
+      ])
+    ).toBe(2);
+  });
+
+  it('does not count a different check, a new push between, or two removals of one build', () => {
+    const first = { at: '2026-09-18T10:30:00Z', head: 1 };
+    expect(count([first, { at: '2026-09-18T12:30:00Z', head: 1 }])).toBe(0);
+    expect(count([first, { at: '2026-09-18T11:30:00Z', head: 2 }])).toBe(0);
+    expect(count([first, { at: '2026-09-18T10:40:00Z', head: 1 }])).toBe(0);
+  });
+});
+
+describe('refreshOlderDays', () => {
+  const PUSH_PATH = `repos/o/r/actions/runs?branch=main&event=push&created=${DAY}T00:00:00Z..${DAY}T23:59:59Z&per_page=100&page=1`;
+  const push = RUNS.filter((r) => r.event === 'push');
+
+  /** Collect DAY, then strip it back to what an engine before this change wrote. */
+  function legacyDay() {
+    const { dataDir } = runCollect(dayRecording());
+    const snap = readData(dataDir, snapshotPath(DAY), SnapshotSchema)!;
+    delete snap.counts.repeat_ejections;
+    snap.main = snap.main.map(({ workflows: _w, ...c }) => c);
+    writeFileSync(path.join(dataDir, snapshotPath(DAY)), JSON.stringify(snap));
+    return dataDir;
+  }
+
+  function refresh(rec: Recording, dataDir: string, budget = 700) {
+    const s = setup();
+    const gh = replayGh(rec, budget, writeArtifact);
+    const days = refreshOlderDays({
+      gh,
+      files: s.files,
+      workflows: s.workflows,
+      dataDir,
+      now: new Date(NOW),
+      tmpDir: temp('ci-steward-tmp-'),
+    });
+    return { days, gh, snap: readData(dataDir, snapshotPath(DAY), SnapshotSchema)! };
+  }
+
+  it('adds per-workflow results and repeat_ejections to a day collected before them', () => {
+    const dataDir = legacyDay();
+    const rec = dayRecording();
+    rec.rest[PUSH_PATH] = { total_count: push.length, workflow_runs: push };
+    const { days, gh, snap } = refresh(rec, dataDir);
+    expect(days).toEqual([DAY]);
+    expect(snap.main).toEqual([
+      {
+        sha: 'ccc',
+        at: `${DAY}T13:00:00Z`,
+        done: `${DAY}T13:10:00Z`,
+        red: false,
+        workflows: { 'lint.yml': false },
+      },
+    ]);
+    expect(snap.counts.repeat_ejections).toBe(0);
+    // One run listing and one merged-PR search: never a re-collection.
+    expect(gh.calls).toBe(2);
+    // Done once: a second pass spends nothing.
+    expect(refresh(rec, dataDir).gh.calls).toBe(0);
+  });
+
+  it('leaves a day untouched when its run listing comes back short', () => {
+    const dataDir = legacyDay();
+    const rec = dayRecording();
+    rec.rest[PUSH_PATH] = { total_count: 5, workflow_runs: push };
+    const { days, snap } = refresh(rec, dataDir);
+    expect(days).toEqual([]);
+    expect(snap.counts.repeat_ejections).toBeUndefined();
+    expect(snap.main[0]!.workflows).toBeUndefined();
+  });
+
+  it('leaves a day untouched when its merged-PR search comes back short', () => {
+    const dataDir = legacyDay();
+    const rec = dayRecording();
+    rec.rest[PUSH_PATH] = { total_count: push.length, workflow_runs: push };
+    const q = Object.keys(rec.graphql!)[0]!;
+    const res = rec.graphql![q] as { data: { search: { issueCount: number } } };
+    res.data.search.issueCount = 2;
+    const { days, snap } = refresh(rec, dataDir);
+    expect(days).toEqual([]);
+    expect(snap.counts.repeat_ejections).toBeUndefined();
+    // Not even the half it could compute: main keeps its old shape too.
+    expect(snap.main[0]!.workflows).toBeUndefined();
+  });
+
+  it('does not start a day with fewer than ten requests left', () => {
+    const dataDir = legacyDay();
+    const rec = dayRecording();
+    rec.rest[PUSH_PATH] = { total_count: push.length, workflow_runs: push };
+    expect(refresh(rec, dataDir, 5).days).toEqual([]);
   });
 });

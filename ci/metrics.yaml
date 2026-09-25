@@ -127,14 +127,18 @@ tracked:
     unit: count
     definition: >-
       Queue ejections, per 7 days, that repeat an earlier one on the same PR
-      head: an ejection whose merge-group commit failed a check that also failed
-      in an earlier ejection since that head was pushed (push time = the
-      earliest check suite on the head commit). Each is a queue build spent
-      re-learning a failure the queue already reported, plus the rebuilds of
-      every PR stacked behind it. Not yet computed by the collector: it needs
-      the failing check names of each REMOVED_FROM_MERGE_QUEUE_EVENT's
-      merge-group commit and the head's first check-suite time, the same two
-      reads merge-tail's repeat rule makes.
+      head: an ejection whose queue build failed a check (a gate, fan-ins
+      included, as merge-tail's rule reads required contexts) that also failed
+      an earlier, DIFFERENT queue build of that PR with no push in between.
+      Computed by the collector (`repeatEjections` in
+      packages/ci-steward/src/ejection-facts.ts) for the PRs merged each day, from the
+      same timeline and queue-build data as real_catches, so a push is a
+      timeline commit or force-push, exactly as `newCommit` reads it — not the
+      head's first check suite, which the hand-measured baseline in
+      ci/ledger/260923-095512 used. Scaled to 7 days over the days that carry
+      the count; a day collected before it existed has none and is left out,
+      never read as 0. PRs closed without merging are not counted, as for every
+      other ejection figure.
   - id: tracked.review-runs-per-merged-pr
     unit: count
     definition: Automated review runs per merged PR.

@@ -26,7 +26,7 @@ import { machineReading } from './machine.ts';
 import type { Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
 import { renderReport } from './report.ts';
-import { computeSlos } from './slo.ts';
+import { computeSlos, sloRuler } from './slo.ts';
 import { addDays, daysBetween, dayStart, isoWeek, weekMonday } from './time.ts';
 import { computeVerdict, hypothesisHash, seriesFrom, type LedgerEntry } from './verdicts.ts';
 import type { WorkflowModel } from './workflows.ts';
@@ -54,6 +54,7 @@ function readSlos(ctx: StewardContext, to: string, days = 7): SloReading[] {
   const from = addDays(to, -(days - 1));
   const floors = readData(dataDir, 'floors.json', FloorsSchema);
   return computeSlos(files.slos, floorValues(files.slos, floors), {
+    ...sloRuler(files.config),
     snapshots: loadSnapshots(dataDir, daysBetween(addDays(to, -27), to)),
     local: loadLocalDays(dataDir, daysBetween(from, to)),
     toolCeilingSeconds: files.config.local.tool_ceiling_seconds,

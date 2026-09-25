@@ -37,7 +37,7 @@ import { floorValues } from './floors.ts';
 import { fill, h, raw, sparkline, type Html } from './html.ts';
 import type { HandFiles } from './load.ts';
 import type { Slos } from './schemas.ts';
-import { computeSlos } from './slo.ts';
+import { computeSlos, sloRuler } from './slo.ts';
 import { addDays, count, dayRange, daysBetween, round } from './time.ts';
 import { ejectionLegs, legName } from './ejections.ts';
 import { openDays, type Trigger, type Triggers } from './triggers.ts';
@@ -275,6 +275,7 @@ export function dailySeries(
   for (const d of daysBetween(addDays(day, -(days - 1)), day)) {
     const from = addDays(d, -6);
     const readings = computeSlos(slos, floors, {
+      ...sloRuler(files.config),
       snapshots: load(daysBetween(addDays(d, -27), d)),
       local: loadLocalDays(dataDir, daysBetween(from, d)),
       toolCeilingSeconds: files.config.local.tool_ceiling_seconds,
