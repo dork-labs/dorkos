@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(server): an agent asks before changing an agent's runtime, model or effort (DOR-2328)"
+  - "fix(server): a value can't draw a line of its own on the runtime/model card (DOR-2328)"
 ---
 
 ### Changed
