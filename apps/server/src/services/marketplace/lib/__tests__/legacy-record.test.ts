@@ -242,3 +242,106 @@ describe('rebuildInstalledFiles', () => {
     expect(Object.keys(record.files)).toEqual(['a.md']);
   });
 });
+
+describe('what the fallback could not prove (DOR-2322)', () => {
+  // Purpose: offline, a file the package changed between versions matches
+  // nothing. It must be listed as unproven (kept as the person's, but named),
+  // with the commit to compare against later, never silently counted as theirs.
+  // Fails if `unproven` is missing, lists a matched file, or loses `from`.
+  it('lists every live file it could not tie to the package, and the commit to check later', async () => {
+    const root = await legacyInstall({
+      '.dork/manifest.json': '{}',
+      'same.md': 's',
+      'changed.md': 'old',
+      'mine.txt': 'mine',
+    });
+    const fetcher = { fetchAtCommit: vi.fn(async () => Promise.reject(new Error('offline'))) };
+    const newTree = await tree({
+      '.dork/manifest.json': '{}',
+      'same.md': 's',
+      'changed.md': 'new',
+    });
+
+    const record = await rebuildInstalledFiles(root, { fetcher, logger: noopLogger }, newTree);
+
+    expect(record.unproven).toEqual({
+      why: 'fetch-failed',
+      from: {
+        name: 'flow',
+        commitSha: SHA,
+        sourceKey: {
+          cloneUrl: 'https://github.com/dork-labs/marketplace',
+          subpath: 'plugins/flow',
+          ref: 'main',
+        },
+      },
+      files: { 'changed.md': 'changed.md', 'mine.txt': 'mine.txt' },
+    });
+    // Written as it was returned, so a later Check files can read it.
+    expect((await readInstalledFiles(root))?.unproven).toEqual(record.unproven);
+  });
+
+  // Purpose: the reason travels with the list, because what the person can do
+  // differs. A local-folder install has nothing to fetch later (no `from`); a
+  // fetched tree rejected by the tolerance keeps `from`.
+  it('says why nothing could be proven: no source, or a rejected tree', async () => {
+    const local = await legacyInstall({ 'a.md': 'a', 'b.md': 'b' }, false);
+    const noSource = await rebuildInstalledFiles(
+      local,
+      { logger: noopLogger },
+      await tree({ 'a.md': 'a' })
+    );
+    expect(noSource.unproven).toEqual({ why: 'no-source', files: { 'b.md': 'b.md' } });
+
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 10; i++) files[`f${i}.md`] = `v${i}`;
+    const root = await legacyInstall(files);
+    const wrongTree = await tree({ ...files, 'f0.md': 'x', 'f1.md': 'x', 'f2.md': 'x' });
+    const rejected = await rebuildInstalledFiles(root, {
+      fetcher: fetcherFor(wrongTree),
+      logger: noopLogger,
+    });
+    expect(rejected.unproven?.why).toBe('mismatch');
+    expect(rejected.unproven?.from?.commitSha).toBe(SHA);
+    expect(Object.keys(rejected.unproven?.files ?? {}).sort()).toEqual(['f0.md', 'f1.md', 'f2.md']);
+  });
+
+  // Purpose: nothing is unproven when the exact commit proved the record, even
+  // with edits inside the tolerance: those files are the package's by path, so
+  // an update saves the person's edit beside the new copy.
+  it('lists nothing when the installed commit proved the record', async () => {
+    const files = { 'a.md': 'a', 'b.md': 'b' };
+    const root = await legacyInstall(files);
+    await put(root, 'a.md', 'edited');
+    await put(root, 'mine.txt', 'mine');
+    const record = await rebuildInstalledFiles(root, {
+      fetcher: fetcherFor(await tree(files)),
+      logger: noopLogger,
+    });
+    expect(record.inferred).toBeUndefined();
+    expect(record.unproven).toBeUndefined();
+  });
+
+  // Purpose: the strict rule is tried first and shared with Check files, so the
+  // two cannot drift. An exact match logs that it held; a tolerated one says so.
+  it('tries the strict rebuild first and logs which proof held', async () => {
+    const files = { 'a.md': 'a', 'b.md': 'b' };
+    const exactRoot = await legacyInstall(files);
+    const info = vi.fn();
+    const logger = { ...noopLogger, info };
+    await rebuildInstalledFiles(exactRoot, { fetcher: fetcherFor(await tree(files)), logger });
+    expect(info).toHaveBeenCalledWith(
+      '[marketplace/legacy-record] rebuilt a record from the installed commit',
+      expect.objectContaining({ proof: 'exact' })
+    );
+
+    info.mockClear();
+    const editedRoot = await legacyInstall(files);
+    await put(editedRoot, 'a.md', 'edited');
+    await rebuildInstalledFiles(editedRoot, { fetcher: fetcherFor(await tree(files)), logger });
+    expect(info).toHaveBeenCalledWith(
+      '[marketplace/legacy-record] rebuilt a record from the installed commit',
+      expect.objectContaining({ proof: 'tolerant', differing: 1 })
+    );
+  });
+});

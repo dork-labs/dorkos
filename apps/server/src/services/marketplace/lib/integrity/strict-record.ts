@@ -23,16 +23,12 @@
 import { lstat, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import {
-  INSTALL_METADATA_POSIX_PATH,
-  INSTALLED_FILES_PATH,
-  matchesUserEditable,
-} from '@dorkos/marketplace';
+import { INSTALL_METADATA_POSIX_PATH, INSTALLED_FILES_PATH } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { readInstallMetadataStrict, type InstallMetadata } from '../../installed-metadata.js';
 import type { PackageFetcher } from '../../package-fetcher.js';
 import { withInstallTargetLock } from '../../transaction.js';
-import { computeInstalledFiles, lstatChain, writeInstalledFiles } from '../installed-files.js';
+import { computeInstalledFiles, writeInstalledFiles } from '../installed-files.js';
 import {
   fetchableSourceOf,
   recordIdentityOf,
@@ -40,9 +36,8 @@ import {
   userEditableOf,
 } from '../legacy-record.js';
 import { hasPackageIdentity } from '../locate-install.js';
-import { cachedHashFile } from './file-hash-cache.js';
 import { rememberCheck } from './check-results.js';
-import { addedEffectFiles } from './verify-install.js';
+import { strictDifferences } from './strict-differences.js';
 
 /** The prefix of every scratch folder a strict rebuild stages into, for leftover cleanup. */
 export const STRICT_RECORD_TEMP_PREFIX = 'dorkos-strict-record-';
@@ -155,18 +150,7 @@ export async function rebuildRecordStrict(
           return { outcome: 'mismatch', differing: [INSTALL_METADATA_POSIX_PATH] };
         }
 
-        const differing: string[] = [];
-        for (const [p, hash] of Object.entries(record.files)) {
-          if (matchesUserEditable(p, userEditable)) continue;
-          const { kind } = await lstatChain(root, p);
-          if (kind !== 'file' || (await cachedHashFile(fsPath(root, p))) !== hash)
-            differing.push(p);
-        }
-        // The live folder must also hold nothing extra where a package keeps
-        // what it runs: an unrecorded skill or hook would otherwise verify
-        // clean while it runs. This also catches a case-only rename, whose
-        // live spelling is unrecorded.
-        differing.push(...(await addedEffectFiles(root, record)));
+        const differing = await strictDifferences(root, record, userEditable);
         if (differing.length > 0) {
           deps.logger.info('[marketplace/strict-record] the installed commit does not match', {
             root,
@@ -174,7 +158,7 @@ export async function rebuildRecordStrict(
           });
           return {
             outcome: 'mismatch',
-            differing: [...new Set(differing)].sort().slice(0, STRICT_MISMATCH_LIST_LIMIT),
+            differing: differing.slice(0, STRICT_MISMATCH_LIST_LIMIT),
           };
         }
 

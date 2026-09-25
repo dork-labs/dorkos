@@ -107,6 +107,39 @@ export const RecordIdentitySchema = z.object({
 /** Who put the recorded files here; see {@link RecordIdentitySchema}. */
 export type RecordIdentity = z.infer<typeof RecordIdentitySchema>;
 
+/**
+ * Why a rebuilt record could not prove which files were the package's
+ * (DOR-2322): the version it came from could not be fetched, it came from a
+ * folder on this computer, or the fetched version did not match what was there.
+ */
+export const UnprovenWhySchema = z.enum(['fetch-failed', 'no-source', 'mismatch']);
+
+/** Why a rebuilt record could not prove ownership; see {@link UnprovenWhySchema}. */
+export type UnprovenWhy = z.infer<typeof UnprovenWhySchema>;
+
+/**
+ * Files kept as the person's only because nothing proved otherwise (DOR-2322),
+ * and what to compare them with once something can.
+ */
+export const UnprovenFilesSchema = z.object({
+  why: UnprovenWhySchema,
+  /** The exact version the files came with: fetched by Check files to sort them. */
+  from: z
+    .object({
+      name: z.string().min(1),
+      sourceKey: z
+        .object({ cloneUrl: z.string().min(1), subpath: z.string(), ref: z.string() })
+        .strict(),
+      commitSha: z.string().regex(/^[0-9a-f]{40}$/),
+    })
+    .optional(),
+  /** Where each kept file sits now → the path it had in that version. */
+  files: z.record(RecordPathSchema, RecordPathSchema),
+});
+
+/** Files kept because nothing proved them the package's; see {@link UnprovenFilesSchema}. */
+export type UnprovenFiles = z.infer<typeof UnprovenFilesSchema>;
+
 /** The installed-files record (`.dork/installed-files.json`). */
 export const InstalledFilesSchema = z.object({
   version: z.literal(INSTALLED_FILES_RECORD_VERSION),
@@ -123,6 +156,8 @@ export const InstalledFilesSchema = z.object({
   uninstalledAt: z.string().optional(),
   /** Set when the record was inferred by byte-matching rather than from the installed tree. */
   inferred: z.literal(true).optional(),
+  /** Files kept as the person's because nothing proved otherwise (DOR-2322). */
+  unproven: UnprovenFilesSchema.optional(),
 });
 
 /** The installed-files record; see {@link InstalledFilesSchema}. */
