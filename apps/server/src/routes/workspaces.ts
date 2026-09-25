@@ -20,7 +20,7 @@ import {
 import { trustedCaller } from '../services/core/capabilities/index.js';
 import { readCallerAuthority } from '../lib/caller-authority.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
-import { validateBoundary, BoundaryError } from '../lib/boundary.js';
+import { BoundaryError } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
