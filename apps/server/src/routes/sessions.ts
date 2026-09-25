@@ -104,7 +104,10 @@ const vaultRoot = DEFAULT_CWD;
  * @param req - The request.
  * @param res - The response, whose locals carry the agent identity.
  */
-function workspaceCallerOf(req: Request, res: Response): { trusted: boolean; requestedBy?: string } {
+function workspaceCallerOf(
+  req: Request,
+  res: Response
+): { trusted: boolean; requestedBy?: string } {
   const identity = getRequestAgentIdentity(res);
   return {
     trusted: trustedCaller(readCallerAuthority(req, res)) !== undefined,

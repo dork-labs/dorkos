@@ -3,6 +3,7 @@ covers:
   - 'fix(workspaces): show a new workspace before anything runs there, and run its hooks only as shown (DOR-2335)'
   - "fix(workspaces): remember a person's worktree hooks, reopen lost cards, and review legacy removal hooks (DOR-2335)"
   - "fix(workspaces): run a source's git hooks only when a person makes the workspace (DOR-2335)"
+  - 'refactor(workspaces): load the clone readers only when a clone is read (DOR-2335)'
 ---
 
 ### Security
