@@ -48,7 +48,8 @@
 # `.agents/skills/`, and an agent repeats what they say to the person it works
 # for. check-vocab-gate.ts cannot judge them (it reads render positions in
 # apps/*/src, and a skill body is none), so they are read here as prose, line by
-# line. That is safe only because the package is prose all the way down: its
+# line, with the same case-insensitive substring match as every other target.
+# That is safe only because the package is prose all the way down: its
 # identifiers are skill names and it keeps no internal "cockpit" vocabulary.
 # Its __tests__ are not scanned. Should a legitimate use ever appear, mark the
 # line with `vocab-allow` rather than dropping the directory.
@@ -85,8 +86,11 @@ set -uo pipefail
 
 ROOT="${ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 
-# Whole-word, case-insensitive. "cockpit" must not fire inside a longer word,
-# matching how check-vocab-gate.ts matches its own terms.
+# Case-insensitive SUBSTRING match, not whole-word: "cockpit" also fires inside
+# a longer word such as "cockpits" or "cockpitView". That is stricter than
+# check-vocab-gate.ts, which matches whole words, and it is deliberate here:
+# every scanned file is prose, so a longer word containing a retired one is
+# almost always the retired word in another form.
 BANNED_RE='mission control|cockpit'
 
 # Prose and user-visible data only — never source files. See the header.
