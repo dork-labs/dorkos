@@ -28,6 +28,7 @@ A workspace is a folder sessions run in. `provider: 'clone'` cloned any reposito
 - **Hooks run only as shown.** `after_create` runs the commands that were inspected, never a second read. The `before_remove` commands that were shown are recorded on the workspace manifest (`removeHooks`), and removal runs only those. For a workspace made before this record existed, a person is shown its source's `before_remove` commands and may run exactly those; anyone else removes it without them, and is told which were skipped.
 - **A person's own worktree hooks are remembered**, in the operator-only hook decision list, keyed by the source's real path, the provider and a digest of both hook lists: unchanged hooks pass, a changed command asks again, and `dorkos harness hooks --revoke <folder>` forgets it. Never a clone, never an agent.
 - **The card's tier follows what the workspace brings:** `act` for one that brings nothing, `destructive` for one with settings, links, skill effects or hooks.
+- **Git's own hooks follow the caller.** When a person asks, git makes the checkout with their repository's hooks, as their own `git` would. For anyone else, `worktree add` and `clone` run with hooks and fsmonitor off (DOR-2326's internal settings), because no detector of every place a hook can come from would be complete.
 - **A remembered card survives a restart**: the next turn reopens the open card of exactly the same request (the approval service rotates a fresh token onto it) instead of raising a second one.
 
 ## Consequences

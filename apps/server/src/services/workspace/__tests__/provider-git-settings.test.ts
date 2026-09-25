@@ -103,8 +103,15 @@ afterEach(() => {
 describe.skipIf(process.platform === 'win32')('workspace creation keeps the person’s hooks', () => {
   it('runs post-checkout for a worktree workspace', async () => {
     installHook(path.join(source, '.git'));
-    await new WorktreeProvider(root).create(request(source, 'wt'));
+    // A person asked: their hooks run (DOR-2335 keeps them off for anyone else).
+    await new WorktreeProvider(root).create({ ...request(source, 'wt'), personGit: true });
     expect(existsSync(marker)).toBe(true);
+  });
+
+  it('runs no hook for a worktree anyone else asked for (DOR-2335)', async () => {
+    installHook(path.join(source, '.git'));
+    await new WorktreeProvider(root).create(request(source, 'wt'));
+    expect(existsSync(marker)).toBe(false);
   });
 
   it('runs post-checkout for a clone workspace', async () => {
@@ -113,7 +120,7 @@ describe.skipIf(process.platform === 'win32')('workspace creation keeps the pers
     installHook(template);
     vi.stubEnv('GIT_TEMPLATE_DIR', template);
     try {
-      await new CloneProvider(root).create(request(source, 'cl'));
+      await new CloneProvider(root).create({ ...request(source, 'cl'), personGit: true });
     } finally {
       vi.unstubAllEnvs();
     }

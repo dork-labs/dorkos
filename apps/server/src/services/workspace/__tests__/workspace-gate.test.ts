@@ -644,3 +644,72 @@ describe('removing a workspace made before its removal commands were recorded (D
     expect(await exists(marker('CLEANUP'))).toBe(false);
   });
 });
+
+describe('git’s own hooks when a checkout is made (DOR-2335 review)', () => {
+  const marker = (name: string) => path.join(base, name);
+
+  /** A hook script that leaves `name` behind when git runs it. */
+  async function hookScript(file: string, name: string): Promise<void> {
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, `#!/bin/sh\ntouch ${marker(name)}\n`, { mode: 0o755 });
+  }
+
+  it('a person’s worktree runs their post-checkout hook, as their own git would', async () => {
+    await hookScript(path.join(source, '.git', 'hooks', 'post-checkout'), 'PERSON_HOOK');
+
+    await sub.service.ensure(worktreeReq(), personWorkspaceGate());
+
+    expect(await exists(marker('PERSON_HOOK'))).toBe(true);
+  });
+
+  it('an agent’s worktree runs none of the source’s hooks in DorkOS’s process (the exploit)', async () => {
+    await hookScript(path.join(source, '.git', 'hooks', 'post-checkout'), 'AGENT_HOOK');
+    await hookScript(path.join(source, '.husky', 'post-checkout'), 'AGENT_HUSKY');
+
+    await sub.service.ensure(worktreeReq('w1'), cardWorkspaceGate({ provider, name: 'p/w1' }));
+    git(['config', 'core.hooksPath', '.husky'], source);
+    await sub.service.ensure(worktreeReq('w2'), cardWorkspaceGate({ provider, name: 'p/w2' }));
+
+    expect(await exists(marker('AGENT_HOOK'))).toBe(false);
+    expect(await exists(marker('AGENT_HUSKY'))).toBe(false);
+  });
+
+  it('an agent’s managed checkout runs none of them either', async () => {
+    await hookScript(path.join(source, '.git', 'hooks', 'post-checkout'), 'MANAGED_HOOK');
+    setWorkspaceManager(sub.service);
+    setWorkspaceApprovals(() => provider);
+    try {
+      await sessionCwdDeps().ensureWorkspace({
+        ...worktreeReq(),
+        owner: { kind: 'agent', ref: '/agents/scout' },
+      });
+    } finally {
+      setWorkspaceApprovals(() => undefined);
+    }
+    expect(await exists(marker('MANAGED_HOOK'))).toBe(false);
+  });
+
+  it('an agent’s approved clone runs no hook from git’s template folder', async () => {
+    const templates = path.join(base, 'git-templates');
+    await hookScript(path.join(templates, 'hooks', 'post-checkout'), 'TEMPLATE_HOOK');
+    const previous = process.env.GIT_TEMPLATE_DIR;
+    process.env.GIT_TEMPLATE_DIR = templates;
+    try {
+      const gate = (token?: string) =>
+        cardWorkspaceGate({ provider, name: 'p/w1', ...(token && { confirmationToken: token }) });
+      const first = (await sub.service
+        .ensure(cloneReq(), gate())
+        .catch((e) => e)) as WorkspaceApprovalPendingError;
+      approvals.grant(approvals.listPending()[0]!.approvalId);
+      await sub.service.ensure(cloneReq(), gate(first.token));
+      expect(await exists(marker('TEMPLATE_HOOK'))).toBe(false);
+
+      // The same template, a person's clone: their git's hooks run.
+      await sub.service.ensure(cloneReq('w2'), personWorkspaceGate());
+      expect(await exists(marker('TEMPLATE_HOOK'))).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.GIT_TEMPLATE_DIR;
+      else process.env.GIT_TEMPLATE_DIR = previous;
+    }
+  });
+});

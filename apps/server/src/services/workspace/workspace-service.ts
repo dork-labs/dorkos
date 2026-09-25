@@ -125,7 +125,13 @@ export class WorkspaceService implements WorkspaceManager {
     const hookConfig = await loadWorkspaceHookConfig(req.source);
     const staged =
       providerType === 'clone'
-        ? await this.stageClone({ projectKey: req.projectKey, key, source: req.source, branch })
+        ? await this.stageClone({
+            projectKey: req.projectKey,
+            key,
+            source: req.source,
+            branch,
+            personGit: gate.person === true,
+          })
         : undefined;
     let approvedHooks: WorkspaceInspection['hooks'];
     try {
@@ -182,6 +188,7 @@ export class WorkspaceService implements WorkspaceManager {
           path,
           source: req.source,
           branch,
+          personGit: gate.person === true,
         });
       }
       const ports = derivePorts(portBase);
@@ -362,6 +369,7 @@ export class WorkspaceService implements WorkspaceManager {
     key: string;
     source: string;
     branch: string;
+    personGit: boolean;
   }): Promise<string> {
     const staging = nodePath.join(this.deps.store.root, '.staging', ulid());
     await fs.mkdir(nodePath.dirname(staging), { recursive: true });

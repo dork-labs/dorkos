@@ -199,8 +199,15 @@ export function workspaceBringsAnything(inspection: WorkspaceInspection): boolea
 /**
  * Decides whether an inspected workspace may be made. Resolves to let it
  * through; throws one of the errors below to stop, having left nothing.
+ *
+ * `person` marks the gate {@link personWorkspaceGate} builds: a person at this
+ * machine asked, so git may run their repository's own hooks when it makes the
+ * checkout. Any other gate leaves it unset, and git runs no hook or fsmonitor
+ * (DOR-2335).
  */
-export type WorkspaceGate = (inspection: WorkspaceInspection) => Promise<void>;
+export type WorkspaceGate = ((inspection: WorkspaceInspection) => Promise<void>) & {
+  readonly person?: true;
+};
 
 /** A person has to see what the workspace brings first (409). */
 export class WorkspaceNeedsReviewError extends Error {
@@ -315,7 +322,7 @@ export function personWorkspaceGate(
   approvedReviewHash?: string,
   memory?: WorktreeHookMemory
 ): WorkspaceGate {
-  return async (inspection) => {
+  const gate = async (inspection: WorkspaceInspection): Promise<void> => {
     if (!workspaceBringsAnything(inspection)) return;
     const entry = worktreeHooksEntry(inspection);
     if (entry !== undefined && memory?.has(entry)) return;
@@ -325,6 +332,7 @@ export function personWorkspaceGate(
     }
     throw new WorkspaceNeedsReviewError(inspection);
   };
+  return Object.assign(gate, { person: true as const });
 }
 
 /** What {@link cardWorkspaceGate} binds its card to, beyond the inspection. */
