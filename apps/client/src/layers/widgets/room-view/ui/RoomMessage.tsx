@@ -355,7 +355,10 @@ export function RoomMessage({
         {answers != null && (
           <p
             data-testid="room-entry-answers"
-            className="text-muted-foreground truncate text-xs italic"
+            // `mb-1` so the quote reads as a caption over the answer rather
+            // than as its first line: flush against the words, the two ran
+            // together (DOR-2120).
+            className="text-muted-foreground mb-1 truncate text-xs italic"
           >
             {`Answering \u201C${answers.excerpt}\u201D`}
           </p>
