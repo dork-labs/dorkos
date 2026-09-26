@@ -33,7 +33,10 @@ describe('vercel.json crons', () => {
     expect(schedule).toMatch(/^\S+( \S+){4}$/);
   });
 
-  it('still applies both migration histories before building', () => {
+  it('applies the public migration history before building, and only that one', () => {
+    // `db:migrate` is the public half alone; `deploy-migrations.test.ts` pins
+    // what it runs. The control-plane half must never be named here.
     expect(config.buildCommand).toContain('pnpm db:migrate');
+    expect(config.buildCommand).not.toMatch(/control-plane/);
   });
 });

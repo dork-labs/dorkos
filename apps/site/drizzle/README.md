@@ -24,5 +24,8 @@ folder to reconstruct pre-migration states, and
 the two new histories adopt a database they did not create — which is exactly
 the production case.
 
-To add a migration, edit the relevant half's barrel and run
-`pnpm --filter @dorkos/site db:generate:public` or `db:generate:control-plane`.
+To add a migration, edit the public barrel and run
+`pnpm --filter @dorkos/site db:generate:public`. No deploy applies the
+control-plane history: the DorkOS Cloud control plane owns those tables' schema
+(see `scripts/control-plane-deploy-guard.ts`). It changes only to mirror a change
+the control plane has already made (`contributing/marketplace-telemetry.md` §5).
