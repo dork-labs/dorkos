@@ -35,6 +35,7 @@ import type {
   RoomEvent,
   RoomKind,
   RoomMember,
+  RoomFileChangeEvent,
   RoomMergeEvent,
   RoomMoment,
   RoomPresencePayload,
@@ -532,6 +533,13 @@ export class RoomService {
     input: { text: string; merge: RoomMergeEvent; subjectAuthorId: string }
   ): RoomEntry {
     return this.parts.systemPosts.postMergeEvent(roomId, input);
+  }
+  /** Announce a person's change to the room's files. See {@link RoomSystemPosts.postFileChangeEvent}. */
+  postFileChangeEvent(
+    roomId: string,
+    input: { text: string; fileChange: RoomFileChangeEvent; subjectAuthorId: string }
+  ): RoomEntry {
+    return this.parts.systemPosts.postFileChangeEvent(roomId, input);
   }
   /** Write a service notice with its private source receipt in the same transaction; no agent dispatch. */
   postServiceNotification(

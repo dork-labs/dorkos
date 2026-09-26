@@ -61,43 +61,33 @@ export async function gotoConnections(page: Page): Promise<void> {
   await new BasePage(page).waitForAppReady();
 }
 
-test('unlinked Accounts opens the existing owner account settings @smoke', async ({
+test('popular apps are listed before anything is set up, and the first connect asks how once @smoke', async ({
   page,
 }, testInfo) => {
   await gotoConnections(page);
-  const link = page.getByTestId('link-dorkos-account');
-  await expect(link).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toHaveAttribute(
-    'aria-expanded',
-    'false'
-  );
-  await link.scrollIntoViewIfNeeded();
-  await page
-    .locator('[aria-labelledby="region-accounts"]')
-    .screenshot({ path: testInfo.outputPath('accounts-desktop.png') });
-  await link.click();
-  await expect(page).toHaveURL(/settings=access/);
-  await expect(page).toHaveURL(/settingsSection=account/);
-  await expect(
-    page
-      .locator('[data-section="account"]')
-      .getByRole('button', { name: 'Link this instance', exact: true })
-  ).toBeVisible();
-  // Opening settings is the handoff, never approval to initiate a cloud link.
-  await expect(page.getByText('This instance is not linked to a DorkOS account.')).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('account-settings.png'), fullPage: true });
-  await page.goto('/connections');
-  await new BasePage(page).waitForAppReady();
+  await page.getByRole('button', { name: 'Connect service' }).click();
+  const catalog = page.getByRole('dialog', { name: 'Connect a service' });
+  await catalog.getByLabel('Search services').fill('Gmail');
+  const gmail = catalog.getByTestId('service-result-gmail');
+  await expect(gmail).toContainText('Read, search and send email.');
+  await expect(catalog.getByText('No app matches', { exact: false })).toHaveCount(0);
+  await gmail.getByRole('button', { name: 'Use a Gmail account' }).click();
+
+  const dialog = page.getByRole('dialog', { name: 'Connect Gmail' });
+  await expect(dialog).toContainText('First, pick how DorkOS reaches your apps.');
+  const step = dialog.getByTestId('first-connect-step');
+  await expect(step.getByRole('button', { name: /Use my Composio key/ })).toBeVisible();
+  // Nango stays folded, and no sign-in can start before a way is set up.
+  await expect(step.getByText(/My own Nango server/)).toBeHidden();
+  await expect(dialog.getByRole('button', { name: 'Continue' })).toHaveCount(0);
+  await dialog.screenshot({ path: testInfo.outputPath('first-connect-desktop.png') });
+
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(link).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toBeVisible();
+  await expect(step).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );
-  await link.scrollIntoViewIfNeeded();
-  await page
-    .locator('[aria-labelledby="region-accounts"]')
-    .screenshot({ path: testInfo.outputPath('accounts-mobile.png') });
+  await page.screenshot({ path: testInfo.outputPath('first-connect-mobile.png') });
 });
 
 test('a revoked community grant gives a direct remove-and-reconnect path', async ({
@@ -330,8 +320,8 @@ test.describe('Connections — save key, connect, multi-account', () => {
   }, testInfo) => {
     await gotoConnections(page);
 
-    // Before any key: the provider card says so, and the service grid is
-    // honestly empty (the raw-MCP baseline has no configured servers).
+    // Before any key: the provider card says so. The list still shows the
+    // popular apps (the first-connect test covers that), but none can sign in.
     await page.getByRole('button', { name: 'Advanced account setup' }).click();
     const card = page.locator(`[data-testid="provider-card-${PROVIDER}"]`);
     await expect(card).toBeVisible();
@@ -354,9 +344,12 @@ test.describe('Connections — save key, connect, multi-account', () => {
     await expect(slack.getByRole('button', { name: 'Use a Slack account' })).toBeVisible();
     await slack.getByRole('button', { name: 'Messages through a Slack bot' }).click();
     await expect(catalog).toBeHidden();
-    await expect(page).toHaveURL(/(?:\?|&)region=messaging/);
-    await expect(page.locator('[aria-labelledby="region-messaging"]')).toBeVisible();
+    // A chat app goes straight to its own setup, never the account sign-in.
+    const slackSetup = page.getByRole('dialog', { name: 'Add Slack' });
+    await expect(slackSetup).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Connect Slack' })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(slackSetup).toBeHidden();
 
     // First account: disclosure-before-URL is asserted inside connectGmail.
     await connectGmail(page, 'work', {

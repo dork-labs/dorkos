@@ -51,9 +51,80 @@ export type ConnectorProviderDisclosure = z.infer<typeof ConnectorProviderDisclo
 export const ConnectorCatalogProviderRouteSchema = ConnectorProviderDisclosureSchema.extend({
   authKind: z.enum(['oauth2', 'api-key', 'none']),
   authenticationSetup: ConnectorAuthenticationSetupSchema.optional(),
+  /**
+   * The connection service an app's own consent page will name when this route
+   * signs in (`'Composio'`, `'Nango'`). Absent when the route signs in directly,
+   * with no service in between.
+   */
+  signInThrough: z.string().min(1).max(100).optional(),
 }).strict();
 /** Public, credential-free route through which an account may be connected. */
 export type ConnectorCatalogProviderRoute = z.infer<typeof ConnectorCatalogProviderRouteSchema>;
+
+/** The shelf a catalog app sits on; `developer` is the "For developers" group. */
+export const ConnectorCatalogCategorySchema = z.enum([
+  'email',
+  'calendar',
+  'chat',
+  'docs',
+  'files',
+  'code',
+  'tasks',
+  'sales',
+  'developer',
+]);
+/** The shelf a catalog app sits on; `developer` is the "For developers" group. */
+export type ConnectorCatalogCategory = z.infer<typeof ConnectorCatalogCategorySchema>;
+
+/**
+ * One way DorkOS can reach apps that the person has set up: their linked DorkOS
+ * account, or their own key for a connection service.
+ */
+export const ConnectorAppWaySchema = z
+  .object({
+    kind: z.enum(['dorkos_account', 'own_key']),
+    /** Route type behind the way, e.g. `composio`, `nango`, `dorkos-managed`. */
+    type: z.string().min(1).max(100),
+    /** `ready` when it answered its last check; `unavailable` when set up but not answering. */
+    status: z.enum(['ready', 'unavailable']),
+    /** The live route, present only while the way is ready. */
+    providerInstanceId: ConnectorProviderInstanceIdSchema.optional(),
+    /** The connection service this way signs in through, when it names one. */
+    signInThrough: z.string().min(1).max(100).optional(),
+  })
+  .strict();
+/** One way DorkOS can reach apps that the person has set up. */
+export type ConnectorAppWay = z.infer<typeof ConnectorAppWaySchema>;
+
+/** Why connecting an app has to start with the one-time setup step. */
+export const ConnectorAppSetupReasonSchema = z.enum([
+  /** No way is set up yet. */
+  'nothing_set_up',
+  /** A DorkOS account is linked, but it cannot connect apps right now. */
+  'dorkos_account_unavailable',
+  /** The person's own key is saved, but it did not answer its last check. */
+  'own_key_unavailable',
+]);
+/** Why connecting an app has to start with the one-time setup step. */
+export type ConnectorAppSetupReason = z.infer<typeof ConnectorAppSetupReasonSchema>;
+
+/**
+ * How DorkOS reaches apps right now: every way set up, and the one new apps use.
+ * Decided in one place on the server, so every surface agrees.
+ */
+export const ConnectorAppConnectionsSchema = z
+  .object({
+    ways: z.array(ConnectorAppWaySchema).max(20),
+    newApps: z.discriminatedUnion('status', [
+      z.object({ status: z.literal('ready'), way: ConnectorAppWaySchema }).strict(),
+      z
+        .object({ status: z.literal('setup_needed'), reason: ConnectorAppSetupReasonSchema })
+        .strict(),
+    ]),
+  })
+  .strict();
+/** How DorkOS reaches apps right now, and which way new apps use. */
+export type ConnectorAppConnections = z.infer<typeof ConnectorAppConnectionsSchema>;
 
 /** One service intent in the unified catalog. */
 export const ConnectorCatalogIntentSchema = z.discriminatedUnion('kind', [
@@ -68,7 +139,12 @@ export const ConnectorCatalogIntentSchema = z.discriminatedUnion('kind', [
     .object({
       kind: z.literal('account'),
       displayName: z.string().min(1).max(200),
-      routes: z.array(ConnectorCatalogProviderRouteSchema).min(1).max(20),
+      /**
+       * Every configured way that can sign in to this app. Empty for a built-in
+       * app no way reaches yet: connecting it starts with the one-time step
+       * that sets up how DorkOS reaches apps.
+       */
+      routes: z.array(ConnectorCatalogProviderRouteSchema).max(20),
     })
     .strict(),
 ]);
@@ -82,6 +158,17 @@ export const ConnectorCatalogServiceSchema = z
     displayName: z.string().min(1).max(200),
     iconKey: z.string().min(1).max(200),
     intents: z.array(ConnectorCatalogIntentSchema).min(1).max(20),
+    /** One plain line saying what agents can do with the app. Built-in apps only. */
+    description: z.string().min(1).max(300).optional(),
+    /** The shelf the app sits on in the list. Built-in apps only. */
+    category: ConnectorCatalogCategorySchema.optional(),
+    /** True for the hand-picked popular apps DorkOS always lists. */
+    popular: z.boolean().optional(),
+    /**
+     * The company whose sign-in page the person meets, when it is not the app's
+     * own name (Gmail signs in with Google).
+     */
+    signInName: z.string().min(1).max(100).optional(),
   })
   .strict();
 /** One account-free service in the unified catalog. */
@@ -93,6 +180,8 @@ export const ConnectorCatalogResourcePageSchema = z
     services: z.array(ConnectorCatalogServiceSchema).max(100),
     nextCursor: z.string().min(1).max(500).optional(),
     warnings: z.array(ConnectorPublicWarningSchema).max(50),
+    /** How DorkOS reaches apps right now, and which way new apps use. */
+    appConnections: ConnectorAppConnectionsSchema.optional(),
   })
   .strict();
 /** Bounded account-free page of unified connector catalog services. */

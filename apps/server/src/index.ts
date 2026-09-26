@@ -1762,6 +1762,16 @@ async function start() {
       queueWaitMs: () => readRoomRepoConfig().mergeQueueWaitMs,
       assertCanWriteFiles: (roomId, authorId) => roomService.assertCanWriteFiles(roomId, authorId),
       operatorGitName: resolveOperatorDisplayName,
+      // A signed-in person's own name (spec `agent-home-desk` §7.1). The owner's
+      // is their profile name, never the registry's 'You'; anybody else's is the
+      // name the registry holds for their account.
+      personName: (authorId) =>
+        roomAuthors.isOwner(authorId, readOwnerAccount()?.id ?? null)
+          ? resolveOperatorDisplayName()
+          : (sanitizeIdentity(roomAuthors.getById(authorId)?.displayName ?? '') ?? null),
+      // One quiet entry per person's change, in the room's own voice (§7.2).
+      announce: (roomId, input) => roomService.postFileChangeEvent(roomId, input),
+      uploadStagingRoot: () => path.join(dorkHome, '.temp', 'room-uploads'),
       files: roomFiles,
     })
   );
@@ -3040,6 +3050,7 @@ async function start() {
     db,
     registry: connectorRegistry,
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
+    appConnections: () => connectorBootstrapper.appConnections(),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),

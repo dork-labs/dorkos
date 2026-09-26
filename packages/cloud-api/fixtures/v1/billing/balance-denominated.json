@@ -1,0 +1,20 @@
+{
+  "allowance": {
+    "grantedMicro": "750000",
+    "remainingMicro": "612345",
+    "resetsAt": "2026-10-15T12:00:00.000Z"
+  },
+  "purchased": {
+    "remainingMicro": "99999"
+  },
+  "heldMicro": "4700",
+  "owedMicro": "0",
+  "autoReload": {
+    "enabled": true,
+    "ceilingMicro": "1005000"
+  },
+  "denomination": {
+    "currency": "XTS",
+    "microPerCredit": "250"
+  }
+}

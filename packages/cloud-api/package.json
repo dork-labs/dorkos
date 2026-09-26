@@ -23,6 +23,10 @@
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
     },
+    "./display": {
+      "types": "./dist/display.d.ts",
+      "default": "./dist/display.js"
+    },
     "./fixtures/v1/*.json": "./fixtures/v1/*.json",
     "./package.json": "./package.json"
   },

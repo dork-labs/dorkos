@@ -57,7 +57,9 @@ const WRITE_TOOLS = ['Edit', 'Write', 'NotebookEdit'] as const;
  * Run live against CLI 2.1.280 (DOR-2408 review): unescaped, a `read` grant on
  * `R [x] (y)` let `Write` through under `bypassPermissions` and `acceptEdits`;
  * with these escaped, `[ ]`, `{ }`, `*` and `!` in a folder name were all
- * refused. Spaces and parentheses need nothing.
+ * refused. Spaces and parentheses need nothing, balanced or not: read grants
+ * named `R)`, `R(`, `R) x`, `(R` and `R))` were all refused under both
+ * modes while a sibling `write` grant stayed writable (DOR-2408 follow-up).
  */
 const GLOB_METACHARACTERS = /[[\]*{}!]/g;
 

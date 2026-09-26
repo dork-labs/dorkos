@@ -347,7 +347,7 @@ object (`:2144`).
 - **Rule paths are globs** (found in T2 review, run live). Claude Code matches the path inside a rule
   as a glob, so an unescaped folder name like `R [x] (y)` named a different folder and the real one
   failed open (`Write` succeeded under `bypassPermissions` and `acceptEdits`). The adapter escapes
-  `[ ] { } * !`; escaped, all of them were refused live. Spaces and parentheses need nothing. Four
+  `[ ] { } * !`; escaped, all of them were refused live. Spaces and parentheses need nothing, balanced or not: read grants named `R)`, `R(`, `R) x`, `(R` and `R))` were refused under both modes, and a sibling `write` grant stayed writable (run live after the T2 review). Four
   shapes no escaping was seen to make safe are refused for `read` grants before launch, in plain
   words telling the person to rename or move the folder: `?` (an escaped `\?` still let a write
   through), a backslash (untestable — the CLI refused the write for its own reason), a control

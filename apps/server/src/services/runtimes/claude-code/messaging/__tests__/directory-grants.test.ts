@@ -73,3 +73,19 @@ describe('read-grant rules and glob characters', () => {
     expect(() => launch([{ path: '/rooms/W ?q', access: 'write' }])).not.toThrow();
   });
 });
+
+describe('read-grant rules and parentheses', () => {
+  // The rule is `Tool(<pattern>)`, so an unbalanced `(` or `)` in a folder name
+  // looked able to close the argument early. Run live (DOR-2408 follow-up):
+  // every one of these was refused under acceptEdits and bypassPermissions with
+  // the parentheses left as they are, and escaping them was never tested. This
+  // pins that the rule text carries them untouched, so a change to it is a
+  // decision someone re-runs the gate for.
+  it.each(['R)', 'R(', 'R) x', '(R', 'R))'])(
+    'passes "%s" through unescaped and accepts it',
+    (name) => {
+      const rules = deny(launch([{ path: `/rooms/${name}`, access: 'read' }]));
+      expect(rules).toContain(`Edit(//rooms/${name}/**)`);
+    }
+  );
+});
