@@ -5,6 +5,7 @@
  */
 import { extractSessionIdFromSubject } from '@dorkos/relay';
 import { TASK_SUBJECT_LABEL, TASK_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
+import { homeOf, resolveAgentHome, type AgentHome } from '../core/agent-identity/agent-home.js';
 
 export interface SubjectLabel {
   label: string;
@@ -13,7 +14,8 @@ export interface SubjectLabel {
 
 interface ResolverDeps {
   getSession?: (sessionId: string) => Promise<{ cwd?: string } | null>;
-  readManifest?: (cwd: string) => Promise<{ name?: string } | null>;
+  /** Reads an agent's manifest from its home — never from a session's cwd. */
+  readManifest?: (home: AgentHome) => Promise<{ name?: string } | null>;
 }
 
 const SESSION_ID_PREVIEW_LENGTH = 7;
@@ -60,8 +62,12 @@ export async function resolveSubjectLabel(
     try {
       const session = await deps.getSession(sessionId);
       if (!session?.cwd || !deps.readManifest) return fallback;
+      // The session's folder resolved to its agent's home first: a worktree's
+      // committed `.dork/` is not the agent's name (spec `agent-home-desk` I2).
+      const home = homeOf(resolveAgentHome(session.cwd));
+      if (!home) return fallback;
 
-      const manifest = await deps.readManifest(session.cwd);
+      const manifest = await deps.readManifest(home);
       if (!manifest?.name) return fallback;
 
       return { label: manifest.name, raw };

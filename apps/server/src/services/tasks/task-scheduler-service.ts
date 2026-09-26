@@ -1123,7 +1123,7 @@ export class TaskSchedulerService {
                 run,
                 execution
               )
-            : await this.executeRunDirect(task, run, execution, placement.cwd);
+            : await this.executeRunDirect(task, run, execution, placement.cwd, placement.agentPath);
           recordDispatchEnd(dispatchId, 'answered');
           return result;
         } catch (err) {
@@ -1231,12 +1231,17 @@ export class TaskSchedulerService {
    * @param effectiveCwd - Where it runs, resolved once by
    *   {@link TaskSchedulerService.resolveRunPlacement}. A broken agent link has
    *   already failed the run there, with the same message it used to raise here.
+   * @param forAgent - The home of the task's agent, when it has one. Sent with
+   *   the turn so the runtime reads identity from that home and refuses a
+   *   folder that resolves to another agent's (spec `agent-home-desk` §3.2
+   *   row 12).
    */
   private async executeRunDirect(
     task: Task,
     run: TaskRun,
     execution: RunExecution,
-    effectiveCwd: string
+    effectiveCwd: string,
+    forAgent: string | undefined
   ): Promise<void> {
     // The manager for the runtime this run RESOLVED to, not one bound at boot.
     // Safe to `get` unconditionally: `resolveRunExecution` has already refused an
@@ -1404,6 +1409,7 @@ export class TaskSchedulerService {
       const stream = agentManager.sendMessage(sessionId, task.prompt, {
         permissionMode,
         cwd: effectiveCwd,
+        ...(forAgent !== undefined ? { forAgent } : {}),
         systemPromptAppend: taskAppend,
         ...execution.settings,
         // The same line as `unattended` above, for approval cards: a timer fire

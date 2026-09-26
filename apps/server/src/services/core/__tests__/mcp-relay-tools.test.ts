@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   createRelaySendHandler,
   createRelayInboxHandler,
@@ -14,6 +14,15 @@ import {
   EXTERNAL_MCP_SENDER,
   type SenderIdentity,
 } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 /** Server-injected identity used in place of the removed self-declared `from`. */
 const SENDER: SenderIdentity = { subject: 'relay.agent.sender', agentId: 'sender' };

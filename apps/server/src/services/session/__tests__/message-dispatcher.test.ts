@@ -247,6 +247,32 @@ describe('dispatchMessage — a busy session queues the message', () => {
     expect(listQueuedMessages(session)).toEqual([]);
   });
 
+  it('hands a queued turn the agent it is dispatched as (DOR-2355)', async () => {
+    // A room or task turn that waited behind a running one is rebuilt from the
+    // queue by NAME; a field missing from that list reaches the runtime as
+    // absent, and the turn's identity would fall back to wherever it stands
+    // (spec `agent-home-desk` §4.1).
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('long turn');
+    await send('room turn for Ana', { forAgent: '/agents/ana' });
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    first.open();
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
+      session,
+      'room turn for Ana',
+      expect.objectContaining({ forAgent: '/agents/ana' })
+    );
+    // And a turn that named nobody carries no `forAgent` key at all.
+    expect(vi.mocked(runtime.sendMessage).mock.calls[0]![2]).not.toHaveProperty('forAgent');
+  });
+
   it('dispatches queued messages in queue order, one at a time', async () => {
     const gates = [gate(), gate(), gate()];
     const order: string[] = [];

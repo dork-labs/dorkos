@@ -87,6 +87,15 @@ import { wireLiveChangeBroadcasts } from '../../services/core/streams/live-chang
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
 import { createMeshAgentRegistry } from '../../services/marketplace/flows/mesh-agent-registry.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../services/core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 /** One bound listener for the file; the app behind it is swapped per case. */
 const fixtureTarget = swappableServer();

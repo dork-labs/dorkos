@@ -30,6 +30,15 @@ import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../task-tools.js';
 import { handRegisteredInSessionTools } from '../index.js';
 import type { Task } from '@dorkos/shared/schemas';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {

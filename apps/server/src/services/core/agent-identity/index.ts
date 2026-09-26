@@ -22,12 +22,18 @@ export {
   AGENT_TOKEN_ENV_VAR,
 } from './agent-token-env.js';
 export {
-  resolveIdentityAnchor,
-  anchorPath,
+  resolveAgentHome,
+  homeOf,
+  turnAgentOf,
+  readHomeManifest,
+  setAgentHomeRegistry,
   setWorkingCopyOwnerPort,
-  type IdentityAnchor,
+  type AgentHome,
+  type AgentHomeRegistry,
+  type HomeResolution,
+  type HomeVia,
   type WorkingCopyOwnerPort,
-} from './identity-anchor.js';
+} from './agent-home.js';
 export { createCapabilityAttributionObserver } from './capability-attribution.js';
 export { createCapabilityGateAuditObserver } from './capability-gate-audit.js';
 export { createAgentIdentityUnregisterCascade } from './unregister-cascade.js';

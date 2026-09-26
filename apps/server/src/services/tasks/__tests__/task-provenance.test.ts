@@ -18,6 +18,16 @@ import {
 } from '../../core/agent-identity/index.js';
 import { TaskStore } from '../task-store.js';
 import { resolveProposerName, withProposerName, withProposerNames } from '../task-provenance.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 const AGENT_PATH = '/tmp/agents/nightly-bot';
 
@@ -56,6 +66,15 @@ describe('who proposed a schedule', () => {
     it('names the agent that holds a live token for the directory', async () => {
       await identity.mint({ agentPath: AGENT_PATH, displayName: 'Nightly Bot' });
       await expect(resolveProposerName(AGENT_PATH)).resolves.toBe('Nightly Bot');
+    });
+
+    it('names the agent for a proposal made from a checkout of its repo (DOR-2355)', async () => {
+      const checkout = '/tmp/workspaces/nightly-bot/fix';
+      registerTestHomes([AGENT_PATH], { managed: { [checkout]: AGENT_PATH } });
+      await identity.mint({ agentPath: AGENT_PATH, displayName: 'Nightly Bot' });
+
+      await expect(resolveProposerName(checkout)).resolves.toBe('Nightly Bot');
+      await expect(resolveProposerName('/tmp/somewhere-else')).resolves.toBeNull();
     });
 
     it('stops naming a revoked agent', async () => {

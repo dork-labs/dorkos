@@ -76,6 +76,13 @@ export interface MeshOptions {
    * but skips the agents home dir.
    */
   agentsHomeDir?: string;
+  /**
+   * A room's files (`${dorkHome}/rooms`). No folder under it is ever an agent's
+   * home: a room repo, its checkout or a worktree of it may carry a committed
+   * `.dork/agent.json`, and registering it would hand that file an identity
+   * (spec `agent-home-desk` §3.3). Optional: absent, nothing is refused.
+   */
+  roomFilesDir?: string;
   /** Optional SignalEmitter for lifecycle event broadcasting (graceful no-op when absent). */
   signalEmitter?: SignalEmitter;
   /** Optional logger for structured output (defaults to console). */
@@ -163,6 +170,7 @@ export class MeshCore {
       // Namespace derivation for managed agents is anchored here, so creation
       // and the reconciler five minutes later give one answer (DOR-1342).
       agentsHomeDir: options.agentsHomeDir,
+      roomFilesDir: options.roomFilesDir,
       logger,
       generateUlid: monotonicFactory(),
       // Per-callback try/catch, so one broken reaction never costs the others

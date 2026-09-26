@@ -28,7 +28,7 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
@@ -59,6 +59,15 @@ import { composeDorkOsCapabilityRegistry } from '../../../../core/self-descripti
 import { noopLogger } from '@dorkos/shared/logger';
 import type { CapabilityRegistry } from '../../../../core/capabilities/index.js';
 import type { ServerPrincipalProof } from '../../../../connectors/principal/server-principal.js';
+import {
+  clearTestHomes,
+  registerEveryFolderAsHome,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+// Every scratch folder counts as a registered home here, so this suite's
+// mocked mesh decides who is an agent, as it did before homes (DOR-2355).
+beforeEach(() => registerEveryFolderAsHome());
+afterEach(() => clearTestHomes());
 
 /** The SDK's private spelling of the two loading controls. */
 const ALWAYS_LOAD_META = 'anthropic/alwaysLoad';
