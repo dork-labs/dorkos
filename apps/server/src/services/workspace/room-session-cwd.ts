@@ -45,9 +45,12 @@ export interface RoomSessionPlacePort {
    * room conversation have to read it from the same place or they name two
    * different directories.
    *
+   * The agent's own directory rides along too, because the ROOM decides which
+   * agent a room-bound session is — a turn's body cannot (DOR-2091).
+   *
    * @param sessionId - The session about to take a turn.
    */
-  roomFor(sessionId: string): { roomId: string; agentName: string } | null;
+  roomFor(sessionId: string): { roomId: string; agentName: string; agentPath: string } | null;
   /** This install's {@link ResolveSessionCwdDeps.ensureRoomWorktree}. */
   ensureRoomWorktree: ResolveSessionCwdDeps['ensureRoomWorktree'];
   /**
@@ -73,8 +76,23 @@ export async function resolveSessionCwdWithRoom(
   req: Omit<ResolveSessionCwdRequest, 'room'> & { sessionId: string },
   place: RoomSessionPlacePort | undefined
 ): Promise<ResolvedCwd> {
-  const room = place ? roomForSession(place, req.sessionId) : null;
-  if (!place || !room) return resolveSessionCwd(req);
+  const bound = place ? roomForSession(place, req.sessionId) : null;
+  if (!place || !bound) return resolveSessionCwd(req);
+  const { agentPath, ...room } = bound;
+  // **The room's binding names the agent, and a body that names another is
+  // IGNORED for the room's purposes** (DOR-2091). The route only checks that a
+  // body `agentPath` is SOME registered agent, so taking it here let a POST to
+  // Ana's room session claim Ben: a worktree was made for Ben in a room he is
+  // not in, and the turn acted as him there. Ignored rather than refused
+  // because it is the same answer this session's first-write-wins runtime
+  // binding already gives a disagreeing `agentPath`, and because refusing
+  // would fail a person's message over client metadata the binding outranks.
+  if (req.agentPath !== undefined && path.resolve(req.agentPath) !== path.resolve(agentPath)) {
+    logger.warn('[cwd] a message named a different agent than its room session; using the room’s', {
+      sessionId: req.sessionId,
+      roomId: room.roomId,
+    });
+  }
   if (req.cwd) {
     // The explicit rung still wins — but a named directory that IS this agent's
     // working copy in the room is vouched for first (DOR-2091). The client
@@ -83,11 +101,11 @@ export async function resolveSessionCwdWithRoom(
     // worktree manager — which only learns whose a tree is when it hands one
     // out — would otherwise refuse the agent its identity until the room's next
     // turn.
-    await vouchForNamedWorktree(req.cwd, req, room, place);
+    await vouchForNamedWorktree(req.cwd, { sessionId: req.sessionId, agentPath }, room, place);
     return resolveSessionCwd(req);
   }
   return resolveSessionCwd(
-    { ...req, room },
+    { ...req, agentPath, room },
     sessionCwdDeps({
       ensureRoomWorktree: (roomId, agentPath, agentName) =>
         place.ensureRoomWorktree(roomId, agentPath, agentName),
@@ -102,25 +120,24 @@ export async function resolveSessionCwdWithRoom(
  * anything else, is not given a worktree as a side effect.
  *
  * @param cwd - The directory the turn named.
- * @param req - The turn, for its agent.
+ * @param turn - The session, and the agent its room binding names.
  * @param room - The room this session answers for.
  * @param place - The rooms domain's port.
  */
 async function vouchForNamedWorktree(
   cwd: string,
-  req: { agentPath?: string; sessionId: string },
+  turn: { agentPath: string; sessionId: string },
   room: { roomId: string; agentName: string },
   place: RoomSessionPlacePort
 ): Promise<void> {
+  const { agentPath } = turn;
   try {
-    const agentPath = req.agentPath ?? (await sessionCwdDeps().sessionAgentPath(req.sessionId));
-    if (!agentPath) return;
     const expected = place.roomWorktreePath(room.roomId, agentPath, room.agentName);
     if (expected === null || path.resolve(expected) !== path.resolve(cwd)) return;
     await place.ensureRoomWorktree(room.roomId, agentPath, room.agentName);
   } catch (err) {
     logger.warn('[cwd] could not vouch for the room worktree this turn names', {
-      sessionId: req.sessionId,
+      sessionId: turn.sessionId,
       error: err instanceof Error ? err.message : String(err),
     });
   }
@@ -139,7 +156,7 @@ async function vouchForNamedWorktree(
 function roomForSession(
   place: RoomSessionPlacePort,
   sessionId: string
-): { roomId: string; agentName: string } | null {
+): ReturnType<RoomSessionPlacePort['roomFor']> {
   try {
     return place.roomFor(sessionId);
   } catch (err) {

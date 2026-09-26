@@ -105,7 +105,13 @@ export function roomSessionPlace(deps: RoomSessionPlaceDeps): RoomSessionPlacePo
       if (!binding) return null;
       const author = deps.authors.getById(binding.authorId);
       if (!author || author.kind !== 'agent') return null;
-      return { roomId: binding.roomId, agentName: author.displayName };
+      return {
+        roomId: binding.roomId,
+        agentName: author.displayName,
+        // An agent author's natural key IS its directory — the same identity
+        // anchor the room-turn path dispatches with (`selectCandidates`).
+        agentPath: author.naturalKey,
+      };
     },
     ensureRoomWorktree: (roomId, agentPath, agentName) =>
       ensureRoomWorktreePath(deps.worktrees(), roomId, agentPath, agentName),

@@ -341,11 +341,11 @@ export class OpenCodeRuntime implements AgentRuntime {
       async (client, ocSessionId, dorkosApplied, connectionsApplied) => {
         // Build the prompt only after the leased MCP reconcile, so the room
         // verbs describe what this exact turn can actually call.
-        const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
-        const model = parseModelSelection(settings.model);
         // The agent this turn acts as — anchored, so a room worktree reads as its
         // agent and a room turn as nobody but the agent it is for (DOR-2091).
         const agentPath = anchorPath(resolveIdentityAnchor(cwd, forAgent));
+        const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied, agentPath);
+        const model = parseModelSelection(settings.model);
         const agent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
         const accessContext =
           connectionsApplied && this.connectorRuntimeTools && agent

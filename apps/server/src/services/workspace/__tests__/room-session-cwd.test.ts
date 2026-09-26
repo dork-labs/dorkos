@@ -17,13 +17,17 @@ vi.mock('../../../lib/boundary.js', () => ({
 
 const AGENT = '/home/agents/api-bot';
 const WORKTREE = '/home/.dork/rooms/room-1/worktrees/api-bot-1a2b3c4d';
+/** Another registered agent, not in the room, and where its worktree WOULD be. */
+const OTHER = '/home/agents/ben';
+const OTHER_WORKTREE = '/home/.dork/rooms/room-1/worktrees/api-bot-9f8e7d6c';
 
 /** A port that answers for one room, with a worktree the test names. */
 function place(overrides: Partial<RoomSessionPlacePort> = {}): RoomSessionPlacePort {
   return {
-    roomFor: () => ({ roomId: 'room-1', agentName: 'API Bot' }),
+    roomFor: () => ({ roomId: 'room-1', agentName: 'API Bot', agentPath: AGENT }),
     ensureRoomWorktree: () => Promise.resolve(WORKTREE),
-    roomWorktreePath: () => WORKTREE,
+    // Each agent's own working copy, computed as the manager does: per agent.
+    roomWorktreePath: (_roomId, agentPath) => (agentPath === AGENT ? WORKTREE : OTHER_WORKTREE),
     ...overrides,
   };
 }
@@ -100,6 +104,37 @@ describe('resolveSessionCwdWithRoom', () => {
       );
 
       expect(resolved).toEqual({ cwd: WORKTREE, rung: 'explicit' });
+    });
+  });
+
+  describe('a message that names a different agent than its room session (DOR-2091)', () => {
+    // The route checks only that a body `agentPath` is SOME registered agent.
+    // The room's binding decides which agent a room session is; a body naming
+    // another is ignored, so it can neither make that agent a worktree in a
+    // room it is not in nor act as it there. Seeded: taking `req.agentPath`
+    // over the binding reddens both.
+    it("vouches for nobody when it names that agent's worktree", async () => {
+      const ensureRoomWorktree = vi.fn(() => Promise.resolve(OTHER_WORKTREE));
+
+      await resolveSessionCwdWithRoom(
+        { cwd: OTHER_WORKTREE, agentPath: OTHER, sessionId: 's1' },
+        place({ ensureRoomWorktree })
+      );
+
+      expect(ensureRoomWorktree).not.toHaveBeenCalled();
+    });
+
+    it("runs the room step for the room's agent, not the named one", async () => {
+      const ensureRoomWorktree = vi.fn(() => Promise.resolve(WORKTREE));
+
+      const resolved = await resolveSessionCwdWithRoom(
+        { agentPath: OTHER, sessionId: 's1' },
+        place({ ensureRoomWorktree })
+      );
+
+      expect(ensureRoomWorktree).toHaveBeenCalledWith('room-1', AGENT, 'API Bot');
+      expect(ensureRoomWorktree).not.toHaveBeenCalledWith('room-1', OTHER, expect.anything());
+      expect(resolved).toMatchObject({ cwd: WORKTREE, rung: 'room-worktree' });
     });
   });
 });
