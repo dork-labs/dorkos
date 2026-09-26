@@ -13,7 +13,8 @@ import { formatAccountsAccess } from '../shared/accounts-access-context.js';
  * @module services/runtimes/codex/turn-input
  */
 import type { ModelReasoningEffort, SandboxMode, ThreadOptions } from '@openai/codex-sdk';
-import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { DirectoryGrant, MessageOpts } from '@dorkos/shared/agent-runtime';
+import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
 import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
@@ -72,10 +73,28 @@ const EFFORT_TO_REASONING: Record<EffortLevel, ModelReasoningEffort> = {
  * directories (e.g. `~/.dork/agents/*`), and the read-only default sandbox
  * already provides the conservative posture that check exists for.
  *
+ * **Folder grants** (spec `agent-home-desk` §4.3). A `write` grant becomes
+ * `additionalDirectories`, which the SDK turns into `--add-dir` on every run, so
+ * a grant is handed per turn on `startThread` and `resumeThread` alike and a
+ * later turn without it does not keep it. A `read` grant hands nothing: the
+ * `read-only` and `workspace-write` sandboxes already read outside the
+ * workspace. Under `danger-full-access` (bypass) nothing is enforced, as for
+ * everything else. Run 2026-09-26 against codex 0.154.0 on the operator's
+ * sign-in: with the grant a shell write inside it succeeded under
+ * `workspace-write`, without it the same write was refused, and a write into a
+ * `read` grant was refused while reading it worked.
+ *
  * @param settings - Effective settings (per-send override → tracked → persisted → default)
  * @param cwd - Working directory for the turn, when known
+ * @param grants - This turn's folder grants; absent means none
+ * @throws DirectoryGrantError when the grant set is invalid — before any thread starts
  */
-export function projectThreadOptions(settings: SessionSettings, cwd?: string): ThreadOptions {
+export function projectThreadOptions(
+  settings: SessionSettings,
+  cwd?: string,
+  grants?: readonly DirectoryGrant[]
+): ThreadOptions {
+  const writable = grantedWritableDirectories(grants, cwd);
   return {
     sandboxMode: MODE_TO_SANDBOX[settings.permissionMode ?? 'default'] ?? 'read-only',
     approvalPolicy: 'never',
@@ -85,7 +104,21 @@ export function projectThreadOptions(settings: SessionSettings, cwd?: string): T
     ...(settings.effort !== undefined
       ? { modelReasoningEffort: EFFORT_TO_REASONING[settings.effort] }
       : {}),
+    ...(writable.length > 0 ? { additionalDirectories: writable } : {}),
   };
+}
+
+/** Validate a turn's grants and keep the folders Codex must be told it may write. */
+function grantedWritableDirectories(
+  grants: readonly DirectoryGrant[] | undefined,
+  cwd: string | undefined
+): string[] {
+  if (!grants || grants.length === 0) return [];
+  if (cwd === undefined) {
+    throw new DirectoryGrantError('Folder grants need the turn’s working directory to check.');
+  }
+  assertValidDirectoryGrants(grants, cwd);
+  return grants.filter((grant) => grant.access === 'write').map((grant) => grant.path);
 }
 
 /**

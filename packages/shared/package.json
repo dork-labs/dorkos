@@ -125,6 +125,10 @@
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
     },
+    "./directory-grants": {
+      "types": "./src/directory-grants.ts",
+      "default": "./dist/directory-grants.js"
+    },
     "./connector-provider": {
       "types": "./src/connector-provider.ts",
       "default": "./dist/connector-provider.js"
