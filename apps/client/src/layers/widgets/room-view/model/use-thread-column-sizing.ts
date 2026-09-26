@@ -1,11 +1,6 @@
 import { useCallback, useState } from 'react';
 
-/**
- * `autoSaveId` of the room/thread split. The library stores the dragged width
- * in this viewer's browser under it, so every room reopens its thread at the
- * width this reader last left one — the same per-viewer memory the right
- * panel's split has.
- */
+/** Id of the room/thread `PanelGroup`, and the prefix of its panes' ids. */
 export const THREAD_SPLIT_ID = 'room-thread-split';
 
 /** Narrowest the thread may get: below this its composer and messages squash. */
@@ -56,7 +51,7 @@ function floorPct(px: number, splitWidthPx: number): number {
  */
 export function threadColumnSizingFor(splitWidthPx: number): ThreadColumnSizing {
   const minPct = floorPct(THREAD_MIN_PX, splitWidthPx);
-  const maxPct = 100 - floorPct(ROOM_MIN_PX, splitWidthPx);
+  const maxPct = Math.round((100 - floorPct(ROOM_MIN_PX, splitWidthPx)) * 10) / 10;
   return {
     minPct,
     maxPct,
@@ -64,20 +59,69 @@ export function threadColumnSizingFor(splitWidthPx: number): ThreadColumnSizing 
   };
 }
 
+/**
+ * Where the thread should sit, as a % of the split: the width this reader
+ * chose, in pixels, held inside today's bounds — or the default when they have
+ * never chosen one.
+ *
+ * **The chosen width is kept in pixels and never overwritten by a clamp.** A
+ * narrower window or the right panel opening squeezes the thread to fit; the
+ * squeeze is applied here, on the way out, and the stored number is untouched,
+ * so the thread grows back to the width the reader set as soon as there is room
+ * for it again.
+ *
+ * @param chosenPx - The thread width this reader last dragged to, or `null`.
+ * @param splitWidthPx - The split's measured width, or `null` before it has one.
+ * @param sizing - The split's current bounds.
+ */
+export function threadPctFor(
+  chosenPx: number | null,
+  splitWidthPx: number | null,
+  sizing: ThreadColumnSizing
+): number {
+  if (chosenPx === null || splitWidthPx === null || splitWidthPx <= 0) return sizing.defaultPct;
+  const pct = (chosenPx / splitWidthPx) * 100;
+  return Math.round(Math.min(Math.max(pct, sizing.minPct), sizing.maxPct) * 10) / 10;
+}
+
+/**
+ * The thread width this reader last chose, from their own browser.
+ *
+ * @param storageKey - Where it is kept.
+ */
+export function readChosenThreadWidth(storageKey: string): number | null {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const px = raw === null ? NaN : Number(raw);
+    return Number.isFinite(px) && px > 0 ? px : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Remember a thread width this reader chose. Losing it is harmless — the
+ * thread opens at the default — so a browser that refuses storage is ignored.
+ *
+ * @param storageKey - Where to keep it.
+ * @param px - The width, in pixels.
+ */
+export function writeChosenThreadWidth(storageKey: string, px: number): void {
+  try {
+    localStorage.setItem(storageKey, String(Math.round(px)));
+  } catch {
+    // Private mode or blocked storage: the width lasts this visit only.
+  }
+}
+
 /** The measured split: a ref for its element, and the bounds it implies. */
 export interface ThreadColumnMeasure {
   /** Attach to the element the split fills. */
   ref: (element: HTMLElement | null) => void | (() => void);
-  /**
-   * True once the split's element exists and has been measured.
-   *
-   * The thread pane waits for this. `react-resizable-panels` writes the
-   * separator's ARIA range when the layout changes, not when the bounds do, so
-   * a pane mounted against the unmeasured fallback would announce a range it
-   * does not have until the first drag. Measuring inside the ref callback puts
-   * the real bounds in place in the same pre-paint pass, so nothing flashes.
-   */
-  measured: boolean;
+  /** The split's element once mounted, for reaching the separator inside it. */
+  element: HTMLElement | null;
+  /** The split's width in pixels, or `null` before it has been measured. */
+  width: number | null;
   /** The thread's current bounds. */
   sizing: ThreadColumnSizing;
 }
@@ -86,24 +130,27 @@ export interface ThreadColumnMeasure {
  * Measure the room + thread split and keep the thread's bounds in pixels.
  *
  * Re-measured on every size change — a window resize, the sidebar collapsing,
- * the right panel opening beside the room — and the library re-validates the
- * layout when the bounds move, so a thread wider than a shrinking room allows
- * is pulled back in on its own.
+ * the right panel opening beside the room. Measured inside the ref callback so
+ * the first real bounds are in place in the same pre-paint pass the split
+ * mounts in.
  */
 export function useThreadColumnSizing(): ThreadColumnMeasure {
+  const [element, setElement] = useState<HTMLElement | null>(null);
   const [width, setWidth] = useState<number | null>(null);
 
-  const ref = useCallback((element: HTMLElement | null) => {
-    if (element === null) return;
-    const update = () => setWidth(element.offsetWidth);
+  const ref = useCallback((node: HTMLElement | null) => {
+    if (node === null) return;
+    setElement(node);
+    const update = () => setWidth(node.offsetWidth);
     update();
     const observer = new ResizeObserver(update);
-    observer.observe(element);
+    observer.observe(node);
     return () => {
       observer.disconnect();
+      setElement(null);
       setWidth(null);
     };
   }, []);
 
-  return { ref, measured: width !== null, sizing: threadColumnSizingFor(width ?? 0) };
+  return { ref, element, width, sizing: threadColumnSizingFor(width ?? 0) };
 }

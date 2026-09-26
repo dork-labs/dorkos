@@ -258,6 +258,7 @@ export function RightPanelContainer({
   return (
     <>
       <PaneResizeHandle
+        aria-label="Resize right panel"
         disabled={!shouldShow}
         onDragging={setIsDragging}
         gripStyle={{

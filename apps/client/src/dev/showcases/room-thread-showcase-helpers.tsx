@@ -175,6 +175,8 @@ export function ThreadPanelDemo({
                     </div>
                   }
                   thread={panel}
+                  // Its own key: dragging the demo must never move a real room.
+                  storageKey="dorkos-dev-playground-room-thread-width"
                 />
               </div>
             ) : (
