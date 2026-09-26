@@ -31,6 +31,15 @@ export interface RoomTurnLimits {
   maxAutomaticTurnsTotalPerHour: number;
 }
 
+/**
+ * A change to any of the settings Settings → Rooms offers: the five limits
+ * above, and how many conversations one agent may work in at once.
+ */
+export type RoomSettingsPatch = Partial<RoomTurnLimits> & {
+  /** How many conversations one agent may work in at the same time. */
+  maxConcurrentTurnsPerAgent?: number;
+};
+
 /** What {@link useRoomTurnLimits} hands its consumers. */
 export interface RoomTurnLimitsState {
   /**
@@ -58,13 +67,25 @@ export interface RoomTurnLimitsState {
   /** Why the settings could not be read, when the read itself failed. */
   loadError: Error | null;
   /**
+   * How many conversations one agent may work in at the same time
+   * (`rooms.maxConcurrentTurnsPerAgent`), or `null` while reading and when the
+   * server does not report it.
+   *
+   * Kept OUT of {@link RoomTurnLimits} on purpose. Those five decide how far
+   * agents talk to each other and all answer to one on/off switch; this one
+   * decides how many turns one agent runs side by side, applies whatever that
+   * switch says, and is its own field on the wire — so a server that predates
+   * it still shows the five.
+   */
+  maxConcurrentTurnsPerAgent: number | null;
+  /**
    * Change one or more of them. Deep-merged server-side.
    *
    * There is deliberately no "saving" flag beside this. The write is optimistic,
    * so the value on screen is already the new one, and the only thing a pending
    * flag could do here is disable the control the reader is still using.
    */
-  setLimits: (patch: Partial<RoomTurnLimits>) => void;
+  setLimits: (patch: RoomSettingsPatch) => void;
 }
 
 /**
@@ -129,7 +150,7 @@ export function useRoomTurnLimits(): RoomTurnLimitsState {
   const mutation = useMutation<
     void,
     Error,
-    Partial<RoomTurnLimits>,
+    RoomSettingsPatch,
     { previous: ServerConfig | undefined }
   >({
     mutationKey: CONFIG_WRITE_MUTATION_KEY,
@@ -156,12 +177,13 @@ export function useRoomTurnLimits(): RoomTurnLimitsState {
   });
 
   const { mutate } = mutation;
-  const setLimits = useCallback((patch: Partial<RoomTurnLimits>) => mutate(patch), [mutate]);
+  const setLimits = useCallback((patch: RoomSettingsPatch) => mutate(patch), [mutate]);
 
   return {
     limits,
     unsupported,
     loadError: readError,
+    maxConcurrentTurnsPerAgent: config?.rooms?.maxConcurrentTurnsPerAgent ?? null,
     setLimits,
   };
 }

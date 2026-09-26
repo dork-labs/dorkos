@@ -306,7 +306,8 @@ router.get('/', async (req, res) => {
     //
     // The five limits ride along because Settings → Rooms offers them, and
     // because a room's own override is shown as "Use default (N)" where N is
-    // whatever is set HERE (DOR-1430). Writing them is still operator-only —
+    // whatever is set HERE (DOR-1430). So does how many conversations one agent
+    // may work in at once, which Settings → Rooms offers too (DOR-2104). Writing them is still operator-only —
     // `config-write-policy.ts` decides that, not this read. The rest of the
     // block (reply waits) is nothing the cockpit says out loud, so it stays off
     // the wire.
@@ -320,6 +321,7 @@ router.get('/', async (req, res) => {
         maxTurnsPerAgentPerCascade: rooms.maxTurnsPerAgentPerCascade,
         maxAutomaticTurnsPerRoomPerHour: rooms.maxAutomaticTurnsPerRoomPerHour,
         maxAutomaticTurnsTotalPerHour: rooms.maxAutomaticTurnsTotalPerHour,
+        maxConcurrentTurnsPerAgent: rooms.maxConcurrentTurnsPerAgent,
       };
     })(),
     // Whether agents may greet you when you come back, whether a greeting may

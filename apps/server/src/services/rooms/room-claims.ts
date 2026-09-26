@@ -30,7 +30,7 @@ import type { EngagementWindow } from './engagement.js';
  * the only live record that an agent is working, so three readers depend on it
  * today, and holding it for the whole turn changed what each of them sees:
  *
- * 1. {@link claimBusyWith} — whether this agent is already working, and where. A
+ * 1. {@link claimBusyWith} — whether this agent is at a ceiling, and where. A
  *    late turn is still running, so a fresh trigger for it is held until this
  *    claim releases rather than started beside it on the same session.
  * 2. {@link RoomTriggerDispatcher.workingIn} — `room_context.working`. A late
@@ -559,15 +559,16 @@ export function claimsWorkingIn(
 /**
  * Every agent workspace with a turn running in it right now, install-wide.
  *
- * `agentPath` is the grain of the SECOND ceiling — one checkout per agent,
- * shared across rooms — so this is the claim map's answer to "whose working
+ * `agentPath` is the grain of the SECOND ceiling — a bounded number of turns
+ * per agent checkout, shared across rooms — so this is the claim map's answer to "whose working
  * directory must nothing touch". Its consumer is the room-worktree reap
  * (`room-worktree-manager.ts`), which will otherwise happily delete the
  * directory a live turn is standing in: a turn that only reads leaves no mark
  * on any timestamp the sweep can see.
  *
- * Deduplicated, and NOT room-scoped. An agent can hold only one claim at a time
- * (`claimBusyWith`'s second ceiling), so the set is small; and answering
+ * Deduplicated, and NOT room-scoped. An agent holds at most
+ * `rooms.maxConcurrentTurnsPerAgent` claims at once (`claimBusyWith`'s second
+ * ceiling, eight at the most), so the set is small; and answering
  * install-wide is the conservative direction, which is the one to be wrong in
  * when the cost of the other is a deleted working directory.
  *
@@ -587,10 +588,21 @@ export function claimedAgentPaths(claims: ReadonlyMap<string, ActiveClaim>): str
  * **Two ceilings, one outcome, and two answers anyway.** The `(room, agent)` key
  * bounds one TRANSCRIPT: a claim under it means the agent is mid-turn HERE, and
  * since RP8 the message is held and becomes its next turn (`room-collect.ts`).
+ * That one is always exactly one — a room is one session, and two turns on one
+ * session is not a thing any setting can buy.
+ *
  * The agent PATH bounds one CHECKOUT, which is shared by every room the agent is
- * in — the contention DOR-500 measured. That one used to be a refusal; it is now
- * held too (spec `room-hold-when-busy`), because a message the room already
- * committed to its log is not made truer by asking the person to type it again.
+ * in — the contention DOR-500 measured (ADR `260726-170125`). It is a COUNT, not
+ * a flag: `limit` live claims on this path is the agent at its ceiling, and
+ * `rooms.maxConcurrentTurnsPerAgent` is how many that is (DOR-2104; `1` is the
+ * behaviour before it existed). It used to be a refusal; it is now held too
+ * (spec `room-hold-when-busy`, ADR `260818-234541`), because a message the room
+ * already committed to its log is not made truer by asking the person to type
+ * it again.
+ *
+ * "At or above", not "at": lowering the limit in Settings while turns are
+ * running stops none of them, so the count can briefly exceed it, and every new
+ * turn waits until enough of those finish to bring it back under.
  *
  * The two are still distinguished for two reasons, and both are visible to a
  * reader. A `'here'` hold marks its messages `arrivedDuringPrevTurn`, which an
@@ -608,21 +620,35 @@ export function claimedAgentPaths(claims: ReadonlyMap<string, ActiveClaim>): str
  * @param authorId - The agent a trigger would run.
  * @param agentPath - That agent's directory, which is what the second ceiling
  *   is really about.
+ * @param limit - How many turns may run in that directory at once —
+ *   `rooms.maxConcurrentTurnsPerAgent`. Anything below one, or not a number at
+ *   all, is read as one, so a bad value can only ever make the ceiling tighter.
  * @returns Which ceiling it is up against and the claim in the way, or `null`
- *   when it is doing nothing.
+ *   when it may start a turn. For the path ceiling the claim in the way is the
+ *   OLDEST on that path — the one that has run longest, and the one a held
+ *   indicator should name.
  */
 export function claimBusyWith(
   claims: ReadonlyMap<string, ActiveClaim>,
   roomId: string,
   authorId: string,
-  agentPath: string
+  agentPath: string,
+  limit: number
 ): ClaimBusy | null {
   const here = claims.get(agentKey(roomId, authorId));
   if (here !== undefined) return { where: 'here', blocking: here };
+  const ceiling = Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1;
+  let oldest: ActiveClaim | undefined;
+  let live = 0;
+  // The map iterates in insertion order and a claim is inserted when it is
+  // taken, so the first match is the oldest.
   for (const claim of claims.values()) {
-    if (claim.agentPath === agentPath) return { where: 'elsewhere', blocking: claim };
+    if (claim.agentPath !== agentPath) continue;
+    oldest ??= claim;
+    live += 1;
   }
-  return null;
+  if (oldest === undefined || live < ceiling) return null;
+  return { where: 'elsewhere', blocking: oldest };
 }
 
 /**

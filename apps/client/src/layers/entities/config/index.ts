@@ -14,7 +14,11 @@ export { useAgentContextConfig } from './model/use-agent-context-config';
 export { useLocalCaller } from './model/use-local-caller';
 export { useEngagedWindow } from './model/use-engaged-window';
 export { useRoomTurnLimits } from './model/use-room-turn-limits';
-export type { RoomTurnLimits, RoomTurnLimitsState } from './model/use-room-turn-limits';
+export type {
+  RoomSettingsPatch,
+  RoomTurnLimits,
+  RoomTurnLimitsState,
+} from './model/use-room-turn-limits';
 export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-default-agent-session';
 export type { DefaultAgentSession } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';

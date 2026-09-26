@@ -201,6 +201,12 @@ export interface RoomServiceDeps {
    */
   holdCeilingMs(): number;
   /**
+   * The live `rooms.maxConcurrentTurnsPerAgent` — how many conversations one
+   * agent may work in at once. Injected for the same reason, and read at every
+   * claim decision so a change in Settings binds the very next message.
+   */
+  maxConcurrentTurnsPerAgent(): number;
+  /**
    * The live `uploads.maxFiles` — how many files one post may carry.
    *
    * Injected in the same style as {@link RoomServiceDeps.limitsFor}, so this

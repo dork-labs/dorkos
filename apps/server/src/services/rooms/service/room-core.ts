@@ -226,6 +226,7 @@ export function createRoomCore(deps: RoomServiceDeps, writeBack: RoomWriteBack):
     collect: deps.collect,
     responseGate: deps.responseGate,
     holdCeilingMs: deps.holdCeilingMs,
+    maxConcurrentTurnsPerAgent: deps.maxConcurrentTurnsPerAgent,
     writer: {
       post: (roomId, input) => writeBack.post(roomId, input),
       postNotice: (roomId, body, cascade, replyTo) =>

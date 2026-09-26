@@ -3175,6 +3175,42 @@ export function seedRoomCanvasOps(store: {
 }
 
 /**
+ * Migration body: seed `rooms.maxConcurrentTurnsPerAgent` on a `rooms` block
+ * that predates the setting (DOR-2104).
+ *
+ * Load-bearing for the same reason as {@link seedRoomCanvasOps}: `rooms` is a
+ * section every stored config already carries, and conf's pre-write merge is
+ * SHALLOW, so a stored `rooms` object never gains a member without this body.
+ *
+ * **Not safety-neutral, and deliberately so.** Before this setting existed the
+ * ceiling was a hard-coded one turn per agent folder; seeding `3` lets an
+ * upgraded install run up to three at once, which is the default the issue
+ * chose for everybody (DOR-500's damage curve was measured at six writers on
+ * one tree). Anyone who wants the old behaviour sets it to `1` in Settings.
+ * There is no earlier value a person could have chosen, so there is nothing
+ * here to overwrite.
+ *
+ * Additive and idempotent — it writes only when the leaf is absent, so a
+ * corrupt-recovery re-run leaves a number somebody chose exactly where it is.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedMaxConcurrentTurnsPerAgent(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const rooms = store.get('rooms');
+  if (rooms == null || typeof rooms !== 'object') return;
+  const current = rooms as Record<string, unknown>;
+  if (current.maxConcurrentTurnsPerAgent != null) return;
+  store.set('rooms', {
+    ...current,
+    maxConcurrentTurnsPerAgent: USER_CONFIG_DEFAULTS.rooms.maxConcurrentTurnsPerAgent,
+  });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -4136,6 +4172,22 @@ export const CONFIG_MIGRATIONS = {
     set: (key: string, value: unknown) => void;
   }) => {
     seedPermissionPresetFromDoor(store);
+  },
+  // 0.83.0 is the newest tag, so 0.84.0 is the next key. Frozen from merge, not
+  // from the release bump, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.85.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under `rooms`
+  // that nothing above names. `'0.66.0'`, `'0.70.0'`, `'0.79.0'` and `'0.81.0'`
+  // also touch `rooms`, and this body preserves every member they write.
+  '0.84.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.maxConcurrentTurnsPerAgent` — how many conversations one agent may
+    // work in at once. A nested leaf, so this body is the only thing that writes
+    // it; see `seedMaxConcurrentTurnsPerAgent`.
+    seedMaxConcurrentTurnsPerAgent(store);
   },
 } as const;
 

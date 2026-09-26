@@ -53,7 +53,8 @@ function heldSignal(
   entryId: string,
   behindRoomId = 'room-elsewhere',
   since = '2026-07-30T10:00:00.000Z',
-  othersWaiting = false
+  othersWaiting = false,
+  severalInTheWay?: boolean
 ): RoomSignalEvent {
   return {
     type: 'signal',
@@ -63,7 +64,11 @@ function heldSignal(
     state: 'held',
     entryId,
     since,
-    heldBehind: { roomId: behindRoomId, othersWaiting },
+    heldBehind: {
+      roomId: behindRoomId,
+      othersWaiting,
+      ...(severalInTheWay === undefined ? {} : { severalInTheWay }),
+    },
   };
 }
 
@@ -506,6 +511,7 @@ describe('a message waiting on an agent busy elsewhere', () => {
         since: '2026-07-30T10:00:00.000Z',
         behindRoomId: 'room-elsewhere',
         othersWaiting: false,
+        severalInTheWay: false,
       },
     ]);
   });
@@ -520,6 +526,15 @@ describe('a message waiting on an agent busy elsewhere', () => {
       behindRoomId: 'room-engagement',
       othersWaiting: true,
     });
+  });
+
+  it('carries whether several of the agent’s turns are in the way (DOR-2104)', () => {
+    useRoomPresenceStore
+      .getState()
+      .observe(ROOM, heldSignal('mio', 'entry-2', 'room-engagement', undefined, false, true));
+
+    const { result } = renderHook(() => useRoomHolds(ROOM));
+    expect(result.current[0]).toMatchObject({ severalInTheWay: true });
   });
 
   it('is cleared by its own `done`, so the wait resolves rather than lingering', () => {
