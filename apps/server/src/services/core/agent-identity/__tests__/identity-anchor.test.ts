@@ -24,12 +24,16 @@ const ANA_WORKTREE = `${WORKTREES}/ana-1a2b3c4d`;
 const STRAY_WORKTREE = `${WORKTREES}/ana-00000000`;
 
 /** A port with the manager's shape: location decides "a working copy", a record decides whose. */
-function portFor(owners: Record<string, string>): WorkingCopyOwnerPort {
+function portFor(
+  owners: Record<string, string>,
+  registered: ReadonlySet<string> = new Set([ANA, BEN])
+): WorkingCopyOwnerPort {
   return {
     ownerOf: (dir) =>
       path.dirname(path.resolve(dir)) === WORKTREES
         ? { owner: owners[path.resolve(dir)] ?? null }
         : null,
+    isRegisteredAgent: (agentPath) => registered.has(agentPath),
   };
 }
 
@@ -73,6 +77,33 @@ describe('resolveIdentityAnchor', () => {
     expect(resolveIdentityAnchor(STRAY_WORKTREE, ANA).kind).toBe('refused');
   });
 
+  it('refuses a working copy whose recorded owner is no longer a registered agent', () => {
+    // The record outlives registration. Anchored to Ana's folder after she was
+    // unregistered, the session would resolve to nobody — the operator, with
+    // login off. Seeded: dropping the registry check reddens this.
+    setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }, new Set([BEN])));
+
+    expect(resolveIdentityAnchor(ANA_WORKTREE)).toEqual({
+      kind: 'refused',
+      reason: 'unregistered-owner',
+    });
+    expect(resolveIdentityAnchor(ANA_WORKTREE, ANA).kind).toBe('refused');
+    // Ana's own folder is not a working copy: it anchors to itself, and the
+    // runtimes' exact lookup finds no agent there, exactly as before.
+    expect(resolveIdentityAnchor(ANA)).toEqual({ kind: 'path', agentPath: ANA });
+  });
+
+  it('fails CLOSED when the registry check throws', () => {
+    setWorkingCopyOwnerPort({
+      ownerOf: () => ({ owner: ANA }),
+      isRegisteredAgent: () => {
+        throw new Error('the registry is gone');
+      },
+    });
+
+    expect(resolveIdentityAnchor(ANA_WORKTREE).kind).toBe('refused');
+  });
+
   it("refuses agent A's working copy for a turn that is for agent B", () => {
     setWorkingCopyOwnerPort(portFor({ [ANA_WORKTREE]: ANA }));
 
@@ -94,6 +125,7 @@ describe('resolveIdentityAnchor', () => {
 
   it('fails CLOSED when the working-copy lookup throws', () => {
     setWorkingCopyOwnerPort({
+      isRegisteredAgent: () => true,
       ownerOf: () => {
         throw new Error('the manager is gone');
       },

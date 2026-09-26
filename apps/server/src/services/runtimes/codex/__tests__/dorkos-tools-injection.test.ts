@@ -778,6 +778,7 @@ describe('the dorkos tool server on a Codex turn', () => {
       worktree = path.join(agentDir, 'rooms', '01ROOM', 'worktrees', 'researcher-1a2b3c4d');
       await mkdir(worktree, { recursive: true });
       setWorkingCopyOwnerPort({
+        isRegisteredAgent: () => true,
         ownerOf: (dir) =>
           path.dirname(dir) === path.dirname(worktree)
             ? { owner: dir === worktree ? agentDir : null }

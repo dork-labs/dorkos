@@ -113,16 +113,20 @@ const STRAY_WORKTREE = `${WORKTREES}/ana-00000000`;
 /** A cockpit session in a plain directory: the control for the refusals. */
 const PLAIN_DIR = '/projects/scratch';
 
+/** Which recorded owners the registry still knows; a test may unregister one. */
+const registered = new Set<string>();
 /** The mesh as a launch sees it: two registered agents, keyed by their folders. */
 const mesh = {
-  getByPath: (p: string) =>
-    ({
-      [ANA]: { id: 'agent-ana', name: 'ana', displayName: 'Ana' },
-      [BEN]: { id: 'agent-ben', name: 'ben', displayName: 'Ben' },
-    })[p],
+  getByPath: (p: string) => (registered.has(p) ? agentRows[p] : undefined),
   getSubjectByPath: () => undefined,
   updateLastSeen: vi.fn(),
 } as unknown as AgentRegistryPort;
+
+/** The agent rows the mesh holds while an agent is registered. */
+const agentRows: Record<string, unknown> = {
+  [ANA]: { id: 'agent-ana', name: 'ana', displayName: 'Ana' },
+  [BEN]: { id: 'agent-ben', name: 'ben', displayName: 'Ben' },
+};
 
 /** What the rooms domain reads an agent member as. */
 const agents = agentLookupFor({
@@ -149,6 +153,8 @@ describe('a room turn in a room with files', () => {
 
   beforeEach(() => {
     installState.loginEnabled = true;
+    registered.clear();
+    registered.add(ANA).add(BEN);
     resetAgentIdentityService();
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
     initAgentIdentityService(harness.db);
@@ -162,6 +168,7 @@ describe('a room turn in a room with files', () => {
     ).id;
     // The manager's record: Ana was handed her worktree, and nobody the stray.
     setWorkingCopyOwnerPort({
+      isRegisteredAgent: (p) => registered.has(p),
       ownerOf: (dir) =>
         path.dirname(path.resolve(dir)) === WORKTREES
           ? { owner: path.resolve(dir) === ANA_WORKTREE ? ANA : null }
@@ -329,6 +336,27 @@ describe('a room turn in a room with files', () => {
       expect(reply.posted).toBeUndefined();
       expect(reply.code).toBe('AGENT_IDENTITY_UNVERIFIED');
       expect(lastAuthor()).toBe(before);
+    });
+
+    it('refuses a worktree whose owner was unregistered — never the operator', async () => {
+      // The owner record outlives registration (DOR-2095 adds a cascade; this
+      // must not depend on it). Seeded: dropping the registry check from the
+      // anchor reddens this row in both postures — login off posts as the
+      // operator, login on refuses `UNIDENTIFIED_CALLER`.
+      // Unregistered before this tree ever launched her, so no token row names
+      // her either — the state where "nobody" used to mean the operator.
+      registered.delete(ANA);
+      const before = lastAuthor();
+
+      const { token, session, toolLaunch } = await launch(ANA_WORKTREE, ANA);
+
+      expect(token).toBeUndefined();
+      const reply = await postFrom(session, toolLaunch, 'whose am I now?');
+
+      expect(lastAuthor(), 'nothing may be written, least of all as the operator').toBe(before);
+      expect(reply.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+      expect(reply.posted).toBeUndefined();
+      expect(toolLaunch.identity).toEqual({ kind: 'refused', reason: 'unregistered-owner' });
     });
 
     it('refuses a worktree nobody vouches for — never the operator', async () => {

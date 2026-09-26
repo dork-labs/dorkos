@@ -1734,7 +1734,12 @@ async function start() {
   // with login on, refused every DorkOS tool the agent called, and with login
   // off fell through to the operator. The manager's own record, never a path
   // prefix; see `core/agent-identity/identity-anchor.ts`.
-  setWorkingCopyOwnerPort(roomWorktrees);
+  setWorkingCopyOwnerPort({
+    ownerOf: (dir) => roomWorktrees.ownerOf(dir),
+    // Read per call off the live registry (assigned later in boot), so an agent
+    // unregistered after its tree was handed out stops anchoring at once.
+    isRegisteredAgent: (agentPath) => meshCore?.getByPath(agentPath) !== undefined,
+  });
   // The other half of a turn running somewhere new: session storage is derived
   // per working directory (ADR-0310), so a room turn's conversation is filed
   // under the WORKTREE it ran in and an agent's own folder no longer holds all

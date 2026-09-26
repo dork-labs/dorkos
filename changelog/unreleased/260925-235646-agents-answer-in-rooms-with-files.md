@@ -3,6 +3,7 @@ covers:
   - 'fix(rooms): let agents act as themselves in a room with files (DOR-2091)'
   - 'fix(rooms): close the identity gaps review found in the worktree anchor (DOR-2091)'
   - "fix(rooms): take a room session's agent from its binding, not the message (DOR-2091)"
+  - 'fix(rooms): refuse a room worktree whose owner is no longer a registered agent (DOR-2091)'
 ---
 
 ### Fixed

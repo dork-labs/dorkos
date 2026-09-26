@@ -59,6 +59,19 @@ export interface WorkingCopyOwnerPort {
    *   this exact directory to, or `null` when it cannot vouch for one.
    */
   ownerOf(dir: string): { owner: string | null } | null;
+  /**
+   * Whether `agentPath` is a registered agent RIGHT NOW.
+   *
+   * The owner record outlives registration: it says who a tree was handed to,
+   * not that they are still an agent. Anchored to an unregistered folder, a
+   * session would resolve to nobody — which a login-off install hands to the
+   * operator — so an owner the registry no longer knows is refused instead.
+   * Asked here rather than left to an unregister cascade (DOR-2095), so the
+   * invariant holds whether or not every such path remembers to clean up.
+   *
+   * @param agentPath - The recorded owner.
+   */
+  isRegisteredAgent(agentPath: string): boolean;
 }
 
 /**
@@ -72,7 +85,10 @@ export interface WorkingCopyOwnerPort {
  */
 export type IdentityAnchor =
   | { kind: 'path'; agentPath: string }
-  | { kind: 'refused'; reason: 'unowned-working-copy' | 'not-the-turns-agent' }
+  | {
+      kind: 'refused';
+      reason: 'unowned-working-copy' | 'unregistered-owner' | 'not-the-turns-agent';
+    }
   | { kind: 'none' };
 
 let workingCopies: WorkingCopyOwnerPort | undefined;
@@ -118,6 +134,7 @@ export function resolveIdentityAnchor(
   const workingCopy = safeOwnerOf(cwd);
   if (workingCopy) {
     if (workingCopy.owner === null) return { kind: 'refused', reason: 'unowned-working-copy' };
+    if (!workingCopy.registered) return { kind: 'refused', reason: 'unregistered-owner' };
     anchored = workingCopy.owner;
   }
 
@@ -142,12 +159,17 @@ export function anchorPath(anchor: IdentityAnchor): string | undefined {
  *
  * @param dir - The directory to classify.
  */
-function safeOwnerOf(dir: string): { owner: string | null } | null {
+function safeOwnerOf(dir: string): { owner: string | null; registered: boolean } | null {
   if (!workingCopies) return null;
   try {
-    return workingCopies.ownerOf(dir);
+    const found = workingCopies.ownerOf(dir);
+    if (!found) return null;
+    return {
+      owner: found.owner,
+      registered: found.owner !== null && workingCopies.isRegisteredAgent(found.owner),
+    };
   } catch {
-    return { owner: null };
+    return { owner: null, registered: false };
   }
 }
 

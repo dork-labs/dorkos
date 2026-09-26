@@ -2744,6 +2744,7 @@ describe('OpenCodeRuntime', () => {
 
       beforeEach(() => {
         setWorkingCopyOwnerPort({
+          isRegisteredAgent: () => true,
           ownerOf: (dir) =>
             path.dirname(dir) === path.dirname(WORKTREE)
               ? { owner: dir === WORKTREE ? DIRECTORY : null }

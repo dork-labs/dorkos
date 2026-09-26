@@ -350,6 +350,7 @@ describe('ClaudeCodeRuntime', () => {
         const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
         const { setWorkingCopyOwnerPort } = await import('../../../core/agent-identity/index.js');
         setWorkingCopyOwnerPort({
+          isRegisteredAgent: () => true,
           ownerOf: (dir) => (dir === WORKTREE ? { owner: ANA } : null),
         });
         const principals: ConnectorRuntimePrincipalPort = {

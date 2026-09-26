@@ -1033,6 +1033,7 @@ describe('relay_notify_user, by identity anchor', () => {
 
     beforeEach(() => {
       setWorkingCopyOwnerPort({
+        isRegisteredAgent: () => true,
         ownerOf: (dir) =>
           dir.startsWith(`${WORKTREES}/`)
             ? { owner: dir === ANA_WORKTREE ? '/agents/ana' : null }
