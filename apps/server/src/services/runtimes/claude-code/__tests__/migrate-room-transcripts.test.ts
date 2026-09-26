@@ -101,6 +101,18 @@ describe('migrateRoomTranscripts', () => {
       path.join(projectsDir(rootB, aliceWorktree), 's3.jsonl'),
       transcript(aliceWorktree, 'three')
     );
+    // A worktree the reap removed: gone from disk, its transcripts are not.
+    const reapedWorktree = path.join(
+      dorkHome,
+      'rooms',
+      'room3',
+      'worktrees',
+      path.basename(aliceWorktree)
+    );
+    await put(
+      path.join(projectsDir(rootA, reapedWorktree), 's6.jsonl'),
+      transcript(reapedWorktree, 'six')
+    );
     // Bob is not registered: his worktree's transcripts stay where they are.
     await put(
       path.join(projectsDir(rootA, bobWorktree), 's4.jsonl'),
@@ -122,6 +134,7 @@ describe('migrateRoomTranscripts', () => {
     expect(await exists(path.join(aliceWorktreeA, 's1.jsonl'))).toBe(false);
     expect(await exists(path.join(aliceWorktreeA, 's1'))).toBe(false);
     expect(await exists(path.join(aliceHomeA, 's5.jsonl'))).toBe(true);
+    expect(await exists(path.join(aliceHomeA, 's6.jsonl'))).toBe(true);
     // The second config dir was visited.
     expect(await exists(path.join(projectsDir(rootB, aliceHome), 's3.jsonl'))).toBe(true);
     // Unregistered agent: untouched.
@@ -149,7 +162,7 @@ describe('migrateRoomTranscripts', () => {
       await readFile(path.join(dorkHome, ROOM_TRANSCRIPT_MIGRATION_MARKER), 'utf-8')
     ) as RoomTranscriptMigrationMarker;
     expect(marker).toEqual(outcome.marker);
-    expect(marker.moved).toBe(3);
+    expect(marker.moved).toBe(4);
     expect(marker.conflicts).toEqual([
       { source: conflict, destination: path.join(aliceHomeA, 's2.jsonl') },
     ]);

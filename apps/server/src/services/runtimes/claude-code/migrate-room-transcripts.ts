@@ -7,7 +7,8 @@
  * turn's cwd was the agent's room worktree, so its conversation was filed under
  * the WORKTREE's slug. Once a room turn stands at home, resuming that session
  * looks in the home's slug folder and finds nothing. This module moves each
- * such transcript to where the next launch will look.
+ * such transcript to where the next launch will look. That includes a worktree
+ * the idle reap has since removed: its folder is gone, its transcripts are not.
  *
  * **When it runs matters more than what it does.** It must run only once room
  * turns no longer stand in worktrees: moved earlier, a turn still launched at
@@ -160,8 +161,8 @@ async function listRoomWorktrees(dorkHome: string, failures: string[]): Promise<
 }
 
 /**
- * The registered agent a worktree folder belongs to, by the digest suffix of its
- * name (`RoomWorktreeManager.slugFor`: `<name>-<digest of the agent path>`).
+ * The registered agent a worktree folder (or its slug folder) belongs to, by the
+ * digest suffix of its name (`RoomWorktreeManager.slugFor`: `<name>-<digest of the agent path>`).
  *
  * `null` for no match, and for the two-agents-one-digest case, which would make
  * either answer a guess.
@@ -172,6 +173,40 @@ function ownerOf(worktree: string, digests: ReadonlyMap<string, string[]>): stri
   if (dash < 0) return null;
   const owners = digests.get(name.slice(dash + 1));
   return owners?.length === 1 ? owners[0]! : null;
+}
+
+/**
+ * Slug folders in one projects root that name a room worktree of a registered
+ * agent, whether or not that worktree is still on disk.
+ *
+ * A room worktree's path is `<dorkHome>/rooms/<room>/worktrees/<name>-<digest>`,
+ * and a slug keeps every alphanumeric character, so its slug folder starts with
+ * the rooms folder's slug, contains `-worktrees-`, and ends in the digest. The
+ * one shape this misses is a slug the SDK truncated past 200 characters (its
+ * hash suffix replaces the digest); a worktree still on disk is found by its
+ * path instead, so only a reaped worktree with a very long path is left behind.
+ */
+async function reapedWorktreeSlugs(
+  projects: string,
+  roomsSlug: string,
+  digests: ReadonlyMap<string, string[]>,
+  failures: string[]
+): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  let entries: string[];
+  try {
+    entries = await fs.readdir(projects);
+  } catch (err) {
+    if (codeOf(err) !== 'ENOENT') failures.push(`${projects}: ${String(err)}`);
+    return found;
+  }
+  const prefix = `${roomsSlug}-`;
+  for (const entry of entries) {
+    if (!entry.startsWith(prefix) || !entry.slice(prefix.length).includes('-worktrees-')) continue;
+    const agentPath = ownerOf(entry, digests);
+    if (agentPath !== null) found.set(entry, agentPath);
+  }
+  return found;
 }
 
 /**
@@ -289,12 +324,27 @@ export async function migrateRoomTranscripts(
     await listRoomWorktrees(deps.dorkHome, tally.failures)
   ).map((worktree) => ({ path: worktree, agentPath: ownerOf(worktree, digests) }));
 
+  // A worktree the reap already removed is gone from disk, but its transcripts
+  // are not: they are found by their slug folder's shape instead.
+  const roomsSlug = projectSlug(path.join(deps.dorkHome, 'rooms'));
+
   for (const root of deps.claudeRoots) {
     const projects = path.join(root, 'projects');
+    const sources = new Map<string, string>();
     for (const { path: worktree, agentPath } of worktrees) {
-      if (agentPath === null) continue;
+      if (agentPath !== null) sources.set(projectSlug(worktree), agentPath);
+    }
+    for (const [slug, agentPath] of await reapedWorktreeSlugs(
+      projects,
+      roomsSlug,
+      digests,
+      tally.failures
+    )) {
+      if (!sources.has(slug)) sources.set(slug, agentPath);
+    }
+    for (const [slug, agentPath] of sources) {
       await moveSlugFolder(
-        path.join(projects, projectSlug(worktree)),
+        path.join(projects, slug),
         path.join(projects, projectSlug(agentPath)),
         tally
       );
