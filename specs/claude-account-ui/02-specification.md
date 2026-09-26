@@ -275,9 +275,9 @@ S4 keeps an episode in `session_limits` until the session's next `turn_start` an
 
 ### 7.2 Run extensions that ship inside an installed plugin
 
-- `ExtensionDiscovery.discover` scans two more roots: `<dorkHome>/plugins/*/.dork/extensions/*` with origin `global`, and `<cwd>/.dork/plugins/*/.dork/extensions/*` with origin `local`. Precedence and approval are exactly those of the existing roots: a local record never takes over an id that is core or already approved (the DOR-511 rule in the same file), and a plugin-carried extension needs the person's one-time "Allow it to run" (DOR-516) like any other non-core extension. Two plugins carrying the same id: the first by sorted plugin directory name wins, with a warning.
+- `ExtensionDiscovery.discover` scans two more roots: `<dorkHome>/plugins/*/.dork/extensions/*` with origin `global`, and `<cwd>/.dork/plugins/*/.dork/extensions/*` with origin `local`. A local record never takes over a core id. Approval follows S4 task 6.1: it is tied to the extension's source (its own folder, or the plugin's name plus the folder inside it), recorded in the operator-only `extensions.approvedSources` map. A different plugin claiming an approved id needs fresh approval, an update from the same plugin keeps it, and a legacy approval with no source counts as unapproved. Two plugins carrying the same id: the first by sorted plugin directory name wins, with a warning.
 - The record remembers its plugin directory, so uninstalling the plugin (`flows/uninstall.ts`, which already walks the package's `.dork/extensions`) disables it and clears its approval, and the compile cache is keyed by the real path.
-- Tests: an installed fixture plugin with an extension is discovered, enabled by `install-plugin.ts`, refused until approved, and gone after uninstall; a project plugin cannot inherit an approved global id.
+- Tests: an installed fixture plugin with an extension is discovered, enabled by `install-plugin.ts`, refused until approved, and gone after uninstall; a second plugin carrying the same approved id is refused until approved; an update from the same plugin stays approved; a legacy approval with no source is refused.
 
 ### 7.3 Server facts this UI needs that #2147 does not serve yet
 
@@ -466,7 +466,7 @@ Data: `settings-mock-data.ts` gains `color`/`colorIsDefault` on `MOCK_SERVER_CON
 - **The UI renders S4's decisions and computes only text** (invariant 6): states, targets, eligibility and countdown instants are the server's.
 - **Limit history is a table owned here** (§7.1), written by S4's `session_limits` module, because S4 deletes the episode at the next turn and the marker must outlive it. If #2147 adds its own history, this section is dropped in favor of it.
 - **The facts in §7.3 are asked of S4** rather than invented here; the tasks feature-detect them so the UI ships without waiting.
-- **Plugin-carried extensions are discovered** (§7.2) with today's approval rules. ADR seeded.
+- **Plugin-carried extensions are discovered** (§7.2), approved per source (S4 task 6.1). ADR seeded.
 - **The account-identity gate is capability-based** (`supportsAccounts` + 2+ registered accounts of that runtime), one hook for every surface.
 - **Usage rides the session list** (S4 D7's envelope) and the `account_usage` event; a fetch happens only for Settings or when the seed lacks the account, so an open session costs no extra request.
 - **Banner name rule:** the account's label with 2+ Claude accounts, else the runtime's name.
