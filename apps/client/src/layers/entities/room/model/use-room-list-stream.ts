@@ -18,6 +18,9 @@ import { useEventSubscription } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { useRoomWorkingStore } from './live/use-room-working';
 
+/** How long roster events for one open room are gathered into a single refetch. */
+const ROSTER_REFRESH_WINDOW_MS = 50;
+
 /** Global events that change what a room list row says. */
 const ROOM_LIST_EVENTS = [
   'room_created',
@@ -269,9 +272,13 @@ export function useRoomListStream(): void {
   // answer, its head count and its `@` picker. Same reason as `room_updated`
   // above: nothing else refetches the detail. Both events carry the `roomId`.
   //
-  // Coalesced per room to one refetch per tick: unregistering an agent sends
-  // one event per channel seat, and a burst for the same open room is one
-  // question, not several.
+  // Coalesced per room over a short window: unregistering an agent sends one
+  // event per channel seat, and a burst for the same open room is one question,
+  // not several. A window rather than a microtask because each event on the
+  // stream arrives as its own task, so a microtask merged nothing a real burst
+  // sends. 50ms, because the server broadcasts a burst from one synchronous
+  // write — its frames land within milliseconds of each other — while a delay
+  // that short is below anything a person could see on a roster.
   const pendingRosters = useRef(new Set<string>());
   const refreshRoster = (payload: unknown) => {
     if (!isRoomUpdated(payload)) return;
@@ -279,10 +286,10 @@ export function useRoomListStream(): void {
     if (pending.has(payload.roomId)) return;
     pending.add(payload.roomId);
     const roomId = payload.roomId;
-    queueMicrotask(() => {
+    setTimeout(() => {
       pending.delete(roomId);
       void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
-    });
+    }, ROSTER_REFRESH_WINDOW_MS);
   };
   useEventSubscription('room_member_added', refreshRoster);
   useEventSubscription('room_member_removed', refreshRoster);

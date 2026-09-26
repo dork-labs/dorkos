@@ -3,6 +3,7 @@ covers:
   - 'fix(rooms): unregistering an agent takes it off every channel roster (DOR-2095)'
   - 'fix(rooms): give a returning agent its channels back and refresh open rooms (DOR-2095)'
   - 'fix(rooms): a returning agent meets the room join rules again (DOR-2095)'
+  - 'fix(rooms): refresh an open room once per burst of roster events (DOR-2095)'
 ---
 
 ### Fixed
