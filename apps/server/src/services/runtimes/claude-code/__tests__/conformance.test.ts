@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { runtimeConformance } from '@dorkos/test-utils';
+import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
 import { controlUi } from '../../../session/browser-seat/ui-control.js';
 import { driveRoomCanvasTurn } from '../../../session/__tests__/durable-turn-harness.js';
 import {
@@ -187,6 +187,7 @@ import {
 } from '../../../session/__tests__/durable-turn-harness.js';
 import { getOrCreateProjector, feedProjector } from '../../../session/index.js';
 import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
+import { grantsFromSettings } from '../messaging/directory-grants.js';
 import { projectSlug } from '../sessions/project-slug.js';
 import { LocalSessionAttachmentStore } from '../../../session/attachments/local-session-attachment-store.js';
 
@@ -720,6 +721,42 @@ runtimeConformance(
           : '';
       };
       return [launchedAppend(0), launchedAppend(-1)] as const;
+    },
+    // The `agent-home-desk` §4.6 gate. Claude Code reads its folder grants from
+    // the launch's `settings.permissions` and has no live setter for them, so a
+    // changed set must REPLACE a warm process (`PIN_DISPOSITIONS
+    // .additionalDirectories: 'relaunch'`). Read off what each process was
+    // launched with, exactly as the append gate above does, with the warmth
+    // asserted so two cold launches cannot pass for it.
+    directoryGrantTurns: async (runtime: AgentRuntime, sessionId, [first, second]) => {
+      persistent.on = true;
+      warmCli = new FakeCli();
+      mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
+      for await (const _event of runtime.sendMessage(sessionId, 'the first turn', {
+        cwd: '/projects/conformance',
+        additionalDirectories: first,
+      })) {
+        // Drained: what the LAUNCH carried is the observation.
+      }
+      expect(
+        runtime.getSessionWarmth?.(sessionId),
+        'the second turn was supposed to meet a WARM process — a cold one would prove nothing about grants leaving a live session'
+      ).toBe('warm');
+      for await (const _event of runtime.sendMessage(sessionId, 'the second turn', {
+        cwd: '/projects/conformance',
+        additionalDirectories: second,
+      })) {
+        // Drained for the same reason.
+      }
+      const handed = (index: number): HandedGrants => {
+        const grants = grantsFromSettings(warmCli?.processes.at(index)?.options.settings);
+        return {
+          writable: grants.filter((grant) => grant.access === 'write').map((grant) => grant.path),
+          readOnly: grants.filter((grant) => grant.access === 'read').map((grant) => grant.path),
+          readOpen: [],
+        };
+      };
+      return [handed(0), handed(-1)] as const;
     },
     // C2/C3 are server-owned invariants every runtime inherits by construction,
     // driven through the shared machinery rather than claude-code itself.

@@ -72,7 +72,7 @@ import type {
   DeliveryResult,
 } from '../../types.js';
 import { handleAgentMessage, resolveAgentTurnIdentity } from './agent-handler.js';
-import { handleTasksMessage } from './task-handler.js';
+import { handleTasksMessage, refuseForeignTaskDispatch } from './task-handler.js';
 import { ClaudeCodeRuntimeAdapter } from './claude-code-runtime-adapter.js';
 import { subscribeApprovalHandler } from './approval-handler.js';
 import { subscribeTaskCancelHandler } from './task-cancel-handler.js';
@@ -747,6 +747,18 @@ export class ClaudeCodeAdapter implements RelayAdapter {
     startTime: number,
     turnController: AbortController
   ): Promise<DeliveryResult> {
+    // Only the scheduler starts a task run (DOR-2416), and a dispatch it did
+    // not send is refused before anything else here: before a runtime is
+    // picked, so a forged dispatch gets one answer whatever runtime it names,
+    // and before a concurrency slot, so it cannot make real work wait.
+    if (isTaskDispatchSubject(subject)) {
+      const refused = refuseForeignTaskDispatch(envelope, startTime, {
+        traceStore: this.deps.traceStore,
+        logger: this.deps.logger ?? console,
+      });
+      if (refused) return refused;
+    }
+
     // Which runtime answers, answered BEFORE a concurrency slot is taken: a
     // message nothing here can run must not spend one, and must not make the
     // next message wait behind it. The refusal reports the same way a slot

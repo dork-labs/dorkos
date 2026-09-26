@@ -1,7 +1,19 @@
 import type { Config } from 'drizzle-kit';
 
+import { refuseControlPlaneMigrationOnVercel } from './scripts/control-plane-deploy-guard';
+
+// Loading this config inside a Vercel build is refused outright, so no drizzle-kit
+// command can reach the shared database's control-plane tables from a deploy.
+refuseControlPlaneMigrationOnVercel();
+
 /**
  * Drizzle config for the **control-plane** half of the site schema.
+ *
+ * **Deploys never apply this history** (`scripts/control-plane-deploy-guard.ts`
+ * says why): the DorkOS Cloud control plane owns these tables' schema. This
+ * history builds the tables in local and test databases
+ * (`pnpm db:migrate:control-plane`), and changes only to mirror a change the
+ * control plane has already made.
  *
  * `migrations.table` is not optional here and must never be deleted — see
  * `drizzle.public.config.ts` for why a shared default journal would replay this

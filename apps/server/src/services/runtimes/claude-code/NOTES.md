@@ -128,6 +128,23 @@ toggles rarely, and a wrong answer costs a turn that ran in the wrong mode. Fail
 LIVE-VERIFY: `applyFlagSettings({ fastMode })` on a live query, against `Options.settings`.
 Move the pin to `live` only after watching a turn actually change behaviour.
 
+### `additionalDirectories` (folder grants) — RELAUNCH
+
+A turn's folder grants ride `Options.settings.permissions` (`messaging/directory-grants.ts`, spec
+`agent-home-desk` §4.2), the same layer as `fastMode`, and the CLI reads it at launch. A grant a later
+turn does not carry must not stay reachable in a warm process (I5), and `applyFlagSettings` would face
+the same shallow-merge objection as `fastMode` above, so a changed set relaunches. The pin is the
+sorted `path:access` list read back off the settings, so a reordered set rides. Room sessions carry a
+stable set, so the steady state costs nothing.
+
+The settings form, not `Options.additionalDirectories` (`--add-dir`), is a verified choice, not a
+reasoned one — live turns on 2026-09-26 against SDK 0.3.280 / CLI 2.1.280, each with a control:
+`Read` inside a grant raised no `canUseTool` in `default`; `Edit` inside a `write` grant raised none in
+`acceptEdits`; `Edit`/`Write` inside a `read` grant were refused under `acceptEdits` AND
+`bypassPermissions`; a granted folder's `.claude/skills` and `CLAUDE.md` did not load (both did under
+`--add-dir`, the second with `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`). The module doc carries
+the detail.
+
 ### `mcpServers` is compared by DECLARED CONFIG, not by instance
 
 The MCP server factory builds new `McpServer` objects per launch on purpose ("Already
