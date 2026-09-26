@@ -79,7 +79,7 @@ New subpath **`@dorkos/shared/account-usage`** (`src/account-usage.ts`, added to
 
 ### 5.2 Ledger and usage schemas (D2, D3, D7)
 
-Implementing contract §1.2, names as the contract spells them:
+Implementing contract §1.2. **Revision 6 (fixtures 2.0.0) makes this runtime-neutral and wins over the sketch below** (§6 R): the ledger gains `runtime`, `plan`, `credits` and `spend`; sources gain the Codex and error sources; window keys gain `window:<minutes>`; and a rejection that names no window uses the reserved key `account`. The sketch shows the revision 5 core those additions extend:
 
 ```ts
 export const LEDGER_SOURCES = ['statusline', 'sdk_event', 'sdk_usage', 'transcript'] as const;
@@ -93,7 +93,7 @@ export const LedgerEntrySchema = z
     source: z.enum(LEDGER_SOURCES),
   })
   .refine((e) => e.usedPct !== null || e.status !== null);
-export const WINDOW_KEY_PATTERN = /^(model:[a-z0-9][a-z0-9._-]*|[a-z][a-z0-9_]*)$/;
+export const WINDOW_KEY_PATTERN = /^(model:[a-z0-9][a-z0-9._-]*|window:[0-9]+|[a-z][a-z0-9_]*)$/; // rev 6 adds window:<minutes>
 export const UsageLedgerSchema = z.looseObject({
   v: z.literal(1),
   accountId: z.string().regex(ACCOUNT_ID_PATTERN),
@@ -155,7 +155,7 @@ The existing per-session `UsageStatus` is unchanged.
 
 ## 6. Server design (`apps/server`)
 
-New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay under `services/runtimes/claude-code/`, Hard Rule 2). `dorkHome` comes from `lib/dork-home.ts` (Hard Rule 3). New session-domain modules go in `services/session/launch/` and `services/session/fleet/`, because `services/session/` is already over the dir-size limit. The dev server's `dorkHome` is `apps/server/.temp/.dork`; flow only sees it when `DORK_HOME` points there (contract §1.1).
+The runtime-neutral pieces (the ledger file module, the usage store, the account ranking and advisor registry) live in a new **`services/core/usage/`** (a subfolder; `services/core` is at the dir-size limit). Each runtime's mapping lives with its runtime: **`services/runtimes/claude-code/accounts/`** holds the Claude SDK mapping, the feed helper and the probe (SDK imports stay there, Hard Rule 2); the Codex and OpenCode mappings live in their own runtime directories. Later file paths in this spec that say `accounts/` for the store, ledger file, ranking or advisor mean `services/core/usage/`. `dorkHome` comes from `lib/dork-home.ts` (Hard Rule 3). New session-domain modules go in `services/session/launch/` and `services/session/fleet/`, because `services/session/` is already over the dir-size limit. The dev server's `dorkHome` is `apps/server/.temp/.dork`; flow only sees it when `DORK_HOME` points there (contract §1.1).
 
 ### D1. Account color, and the identity rules the contract asks of DorkOS (DOR-2379, core part)
 
@@ -171,7 +171,7 @@ New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay un
 
 `accounts/account-usage-store.ts`: `class AccountUsageStore`, one instance, built in `index.ts`.
 
-**Keying.** By the account's canonical config dir (`path.resolve`). A registered account with a pattern-valid id has a ledger file; any other root (the inherited `~/.claude`, an env `CLAUDE_CONFIG_DIR`, a legacy id) is kept **in memory only**, with `accountId: null` for an unregistered one.
+**Keying** (per §6 R). Records are keyed by (runtime, account id). For Claude Code a session's account is found by matching its config dir (`path.resolve`) against the registry; with an **empty registry** it is the implicit `default` account, which has a ledger file like any other. Only two cases are memory-only, with `accountId: null`: a session on an unregistered root while other accounts are registered, and a registered row whose legacy id fails `ACCOUNT_ID_PATTERN`.
 
 **Feed.** One helper, `accounts/account-usage-feed.ts#recordSessionUsage(session, observations, meta?)`, resolves the root as `session.launchedAccountRoot ?? session.accountRoot ?? resolveActiveClaudeRoot()` and calls the store. Two feed points, both in the claude-code runtime:
 
@@ -180,7 +180,7 @@ New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay un
 
 **Memory and persistence.** `record` merges into the in-memory ledger synchronously (`mergeLedger`), so the mapper never waits on disk. For a file-backed account, a flush (1 s trailing debounce, one in flight per account) runs the contract's **writing steps 1-7 exactly**: exclusive-create lock with a `<pid>:<128-bit hex>` token, a lock older than 10 s broken per revision 4 (read its token, rename it to `.stale-<random>`, read the moved file, and if it is not the token judged stale put it back with `link(moved, <id>.json.lock)`, which fails harmlessly when a newer lock exists; then delete the moved name and retry; never delete a lock by its original name), 25-100 ms jittered retries for at most 2 s, read under the lock (unparsable → rename to `.corrupt-<ms>`, start empty), merge the pending observations, skip the write when nothing changed, temp file + `fsync` + `rename`, release only our own token. Folder `0700`, file `0600`. Giving up drops the write with a warning (at most once per account per hour) and keeps memory; nothing ever throws into a turn. Flushed on shutdown. The lock-and-write code lives in `accounts/ledger-file.ts` as a small reusable module.
 
-**Reading.** `list(): Promise<AccountUsage[]>`: every registered account in registry order, plus the resolved default root when unregistered. Before answering it re-reads each ledger file whose `mtime` changed (no lock; contract "Reading") and merges it into memory, so flow's status-line writes show up. `peek(accountIds): AccountUsage[]` answers from memory only (for D7's hot path). Boot loads every file: **the store survives a restart because the ledger files are its persistence.** Removing an account leaves its file.
+**Reading.** `list(): Promise<AccountUsage[]>`: per runtime, every registered account in registry order, or the implicit `default` when the registry is empty, plus (for Claude Code with a registry) the resolved ambient root when it is unregistered, as a memory-only row. The folder watcher (§6 R) keeps memory current with files the CLI writes; `list()` does no disk work. `peek(accountIds): AccountUsage[]` answers from memory only (for D7's hot path). Boot loads every file: **the store survives a restart because the ledger files are its persistence.** Removing an account deletes its file (§6 R).
 
 **Outputs.**
 
@@ -318,7 +318,7 @@ When D4 sets `limit`, core decides what happens next, and it works fully **witho
 
 **One carry-over per limit episode, race-free.** An in-flight marker keyed by (session, `limit.since`) is set synchronously before any await and shared by the person path and the timer; a second caller awaits the first one's promise and gets the same new session id.
 
-**Wait, then resume by itself.** For a `waiting` plan, core arms a timer for `resumeAt` (clamped to at least the limit's `resetsAt` and to now + 60 s, so an advisor's past time cannot fire at once). At that moment it asks for **confirmation** rather than trusting the clock, and a reading counts only if it proves the window **moved on**: its `resetsAt` is later than the episode's, or, for a source that gives no reset time, it was observed after the episode's `resetsAt` and reads under 90%. The reading is the newest store reading for the account's root, else a D3 probe for a registered account. An account that cannot be probed (the unregistered default root) is confirmed only from store readings; if none arrives, the state becomes `reset-ready` 15 minutes after `resumeAt`, with `plan.unconfirmed: true` and no automatic resume. An unconfirmed registered account is re-checked every 10 minutes, at most 6 times, then treated the same way. On confirmation (`resetConfirmedAt`):
+**Wait, then resume by itself.** For a `waiting` plan, core arms a timer for `resumeAt` (clamped to at least the limit's `resetsAt` and to now + 60 s, so an advisor's past time cannot fire at once). At that moment it asks for **confirmation** rather than trusting the clock, and a reading counts only if it proves the window **moved on**: its `resetsAt` is later than the episode's, or, for a source that gives no reset time, it was observed after the episode's `resetsAt` and reads under 90%. The reading is the newest store reading for the account, else a D3 probe when the account can be probed (a Claude Code account with a ledger id: a registered one, or `default`). An account that cannot be probed (a memory-only Claude root, and every Codex or OpenCode account) is confirmed only from store readings; if none arrives, the state becomes `reset-ready` 15 minutes after `resumeAt`, with `plan.unconfirmed: true` and no automatic resume. An unconfirmed registered account is re-checked every 10 minutes, at most 6 times, then treated the same way. On confirmation (`resetConfirmedAt`):
 
 - if `autoResume` is on (and the session is eligible), core sends a continue turn to the **same** session (its warm process if it has one) through `dispatchSessionMessage`, origin `{ kind: 'account-resume' }` (a new `TurnOrigin` member seeding nothing; the session is already bound, so its row decides the power), content "Your account's usage has reset. Continue where you left off.", with unattended approvals. **At most one automatic resume per session per window reset** (`session_metadata.last_auto_resume_for`, read by the new episode): if the resumed turn hits the limit again in the same window, the new episode can only reach `reset-ready`, never another automatic turn. Automatic resumes count against `AGENT_LAUNCH_MAX_LIVE`; a resume that finds the cap full is retried a minute later, so a reset that frees twenty sessions staggers them;
 - otherwise the state becomes `reset-ready`;
@@ -347,15 +347,21 @@ flow runs from Claude Code, Codex and OpenCode sessions, so the ledger, the even
 
 - **Claude Code:** as D2 (SDK `rate_limit_event` and the usage call).
 - **Codex:** the rollout's `token_count` record that `turn-context-usage.ts` already reads at turn end also carries `rate_limits`: `primary` and `secondary` (`used_percent`, `window_minutes`, `resets_at`), `plan_type`, `credits`, `rate_limit_reached_type`. The same bounded tail read maps them: a window is keyed by `window_minutes` (300 → `five_hour`, 10080 → `seven_day`, anything else → `window:<minutes>`), `usedPct = used_percent`, `status: 'rejected'` for the window `rate_limit_reached_type` names, `plan` from `plan_type`, `credits` as given. No new file access: it is the same file the runtime already reads.
-- **OpenCode:** each turn's `cost` (USD) from the sidecar's events adds to `spend.costUsd` for the current calendar month (UTC `periodStart`); a rate-limit or credit error ends the turn with a window-less `status: 'rejected'` reading (`source: 'error'`). `spend.limitUsd` stays unset (a provider-side budget lookup is a follow-up).
+- **OpenCode:** each turn's `cost` (USD) from the sidecar's events adds to `spend.costUsd` for the current calendar month (UTC `periodStart`); a rate-limit or credit error ends the turn with a `status: 'rejected'` reading under the reserved window key `account` (`source: 'error'`). Memory seeds `costUsd` from the ledger file at load, so a restart does not reset the month. `spend.limitUsd` stays unset (a provider-side budget lookup is a follow-up).
 
-**Limits for every runtime.** D4's `limit` and the `account.limited` notification apply to any runtime that reports `rejected`: Codex on a `rate_limit_reached_type` or a rate-limit `turn.failed`, OpenCode on a rate-limit or credit error. With one account per runtime, D9 lands on `wait-only` for them (no other account of that runtime to move to) and the wait-and-resume path works unchanged; confirmation uses the next reading for that account, since only Claude Code can be probed.
+**Limits for every runtime.** D4's `limit` and the `account.limited` notification apply to any runtime that reports `rejected`: Codex on a `rate_limit_reached_type` or a rate-limit `turn.failed`, OpenCode on a rate-limit or credit error. With one account per runtime, D9 lands on `wait-only` for them (no other account of that runtime to move to). Waiting works, but they cannot be probed and a reading arrives only at the end of another turn on that runtime, so a waiting Codex or OpenCode session usually reaches only the unconfirmed `reset-ready` fallback and does **not** resume by itself unless such a reading confirms the reset first.
 
-**Watching the folder.** The store watches `<dorkHome>/runtimes/*/usage/` (`fs.watch`, debounced 500 ms) plus a periodic read every 60 s (watchers miss events on some filesystems), merges CLI-written readings into memory, and emits `account_usage` (and the D4/D9 notifications a reading implies, such as `account.reset` when a waiting session's window moved on). This replaces D2's read-on-list mtime check.
+**Watching the folder.** `fs.watch` takes no glob, so the store watches each existing `<dorkHome>/runtimes/<runtime>/usage/` directory (debounced 500 ms), picks up directories created later on a periodic scan every 60 s (which also re-reads files, because watchers miss events on some filesystems), and ignores `.lock`, `.tmp`, `.stale-*` and `.corrupt-*` names. It merges CLI-written readings into memory and emits `account_usage` (and the D4/D9 notifications a reading implies, such as `account.reset` when a waiting session's window moved on). This replaces D2's read-on-list mtime check.
 
-**Removing an account deletes its ledger** (replacing D2's "leaves its file"): when a Claude Code account id leaves the registry, the server deletes `<dorkHome>/runtimes/claude-code/usage/<id>.json` under the contract's lock. An implicit `default` file is deleted when the runtime gets its first registered account.
+**The id `default` is reserved** (a contract-level rule flow must share): registration refuses it, and minting skips it (a label "Default" or a path ending `default` mints `default-2`). So a registered account can never collide with the implicit one. `claudeAccountId` itself does not change (the `'0.65.0'` migration pins it); the reservation is made by seeding `default` into the `taken` set at every minting call site (`backfillMissingAccountIds` and registration). A legacy row that already has the id `default` is treated like a legacy pattern-failing id: memory-only, warned once.
 
-**`supportsAccounts`.** `RuntimeCapabilities` gains `supportsAccounts: boolean`: `true` for claude-code, `false` for codex, opencode and test-mode, declared in each runtime's constants and checked by the shared conformance suite. The UI shows the account chip, dots and badge only when the session's runtime has `supportsAccounts` and 2+ registered accounts; usage bars and the out-of-usage banner show for any runtime with ledger data or a `limit` (R7). `session_start` takes `runtime`; its `account` is accepted only for a runtime with `supportsAccounts` (or the literal `default`), else 400.
+**Registry transitions keep state.**
+
+- **An account leaves the registry:** the server deletes `<dorkHome>/runtimes/claude-code/usage/<id>.json` under the contract's lock. `session_limits` rows naming it keep their `account_id`; their confirmation falls back to the unconfirmed path.
+- **The first account is registered:** if its path is the resolved ambient root (the usual case: the operator registers `~/.claude`), the server renames `default.json` to `<id>.json` under the lock and re-keys `session_limits` rows from `default` to the new id, so current readings and waiting plans carry over. If the paths differ, `default.json` is deleted (the ambient root is now an unregistered, memory-only root) and rows naming `default` get `account_id` null. flow's `claude-code:default` policy entry is flow's to migrate (the contract names the rule).
+- **The last account is removed:** the implicit `default` returns, with no file until its first reading.
+
+**`supportsAccounts`.** `RuntimeCapabilities` gains `supportsAccounts: boolean`: `true` for claude-code, `false` for codex, opencode and test-mode, declared in each runtime's constants and checked by the shared conformance suite. The UI shows the account chip, dots and badge only when the session's runtime has `supportsAccounts` and 2+ registered accounts; usage bars and the out-of-usage banner show for any runtime with ledger data or a `limit` (R7). `session_start` takes `runtime`. For a runtime with `supportsAccounts`, `account` is a registry id (or `default` when that runtime's registry is empty); for any other runtime `account` must be omitted or `default`, else 400.
 
 ### X. Extension server API additions (for the Flow extension)
 
@@ -443,16 +449,16 @@ Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/share
 
 ## 9. One account vs two or more
 
-| Behavior                        | 1 account (or none registered)                                                       | 2+ registered                                          |
-| ------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| D1 color                        | Stored and served; the UI shows nothing new (design rule).                           | Drives dots, chip, badge (S5).                         |
-| D2 store, event, REST           | Runs; the inherited root appears with `accountId: null` and no file.                 | One record and one ledger file per registered account. |
-| D3 probe                        | Works for a registered account and for the implicit `default` account (no registry). | Same.                                                  |
-| D4 limit + notification         | Same as 2+: a limit is a limit.                                                      | Same.                                                  |
-| D5 `session_start`              | `account` omitted → the ladder, as today.                                            | Names an account; the advisor decides.                 |
-| D6 schedule and relay `account` | Absent → today's behavior.                                                           | Honored at launch.                                     |
-| D7 list                         | `accountId` and `accountUsage` only when that account is registered.                 | Full.                                                  |
-| D8 tracker item                 | Same either way.                                                                     | Same.                                                  |
+| Behavior                        | 1 account (or none registered)                                                          | 2+ registered                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| D1 color                        | Stored and served; the UI shows nothing new (design rule).                              | Drives dots, chip, badge (S5).                         |
+| D2 store, event, REST           | Runs; with no registry the account is the implicit `default`, with its own ledger file. | One record and one ledger file per registered account. |
+| D3 probe                        | Works for a registered account and for the implicit `default` account (no registry).    | Same.                                                  |
+| D4 limit + notification         | Same as 2+: a limit is a limit.                                                         | Same.                                                  |
+| D5 `session_start`              | `account` omitted → the ladder, as today.                                               | Names an account; the advisor decides.                 |
+| D6 schedule and relay `account` | Absent → today's behavior.                                                              | Honored at launch.                                     |
+| D7 list                         | `accountId` is `default` and `accountUsage` covers it.                                  | Full.                                                  |
+| D8 tracker item                 | Same either way.                                                                        | Same.                                                  |
 
 ## 10. What the UI track reads (S5, S6)
 
