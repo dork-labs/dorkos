@@ -66,7 +66,6 @@ const SEED = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
 } as unknown as AgentManifest;
 
