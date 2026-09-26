@@ -43,9 +43,11 @@
         "3.4",
         "3.5",
         "5.1",
-        "5.2"
+        "5.2",
+        "5.3",
+        "5.4"
       ],
-      "note": "After 2.5+3.1 (3.2), 3.1 (3.4), 2.1+2.3+2.4 (3.5), 2.1+2.3+2.5+3.1 (5.1), 5.1+2.2 (5.2). 3.5 and 5.1 both touch routes/sessions.ts: land 3.5 first."
+      "note": "After 2.5+3.1 (3.2), 3.1 (3.4), 2.1+2.3+2.4 (3.5), 2.1+2.3+2.5+3.1 (5.1), 5.1+2.2 (5.2), 1.2+2.1 (5.3), 1.2 (5.4). 3.5 and 5.1 both touch routes/sessions.ts: land 3.5 first."
     },
     {
       "group": "E",
@@ -419,6 +421,47 @@
       ],
       "issue": null,
       "parentIssue": "DOR-2382"
+    },
+    {
+      "id": "5.3",
+      "phase": 3,
+      "phaseName": "Launching and routing",
+      "subject": "[claude-account-fleet] [P3] Show each session its account's cached usage from the moment it opens, and keep every session on the account in step",
+      "description": "Tracker: DOR-2380 (and DOR-2385). Spec §6 U. Works for every runtime and for one account.\n\n1. `SessionStatusSchema` (packages/shared/src/session-stream.ts) gains `accountUsage: AccountUsageSchema.nullable().default(null)` (TSDoc: account-wide cached usage for the account this session bills; `updatedAt`/`observedAt` show freshness).\n2. `services/session/fleet/session-account.ts#billingAccountFor(sessionId)`: claude-code → the session's derived `account` root, else the root `resolveLaunchAccountRoot` would pick for it (hint/agent from its metadata), mapped to a registry id or `default` (memory-only roots map to their memory key); codex/opencode → `default`. Cache per session; invalidate on registry change.\n3. On projector creation (subscribe, snapshot, first send) stamp `accountUsage` from `store.peek` so the cold snapshot carries it. Subscribe to `store.onChange`: for every LIVE projector whose session bills that account, emit a partial `status_change { accountUsage }`, throttled per account (2 s trailing). A watcher-picked CLI reading and a probe go through the same path.\n4. Write-through: claude-code's subscription `session_status.usage` is derived from the store record (the binding window, the rule `mapSdkUsageResponse` uses today, now over the store's windows) plus the session's own cost; `session.lastSubscriptionUsage` is no longer the source (keep it only as a fallback while the store has no record). OpenCode's pay-as-you-go `usage` stays per session.\n5. `GET /api/sessions/:id` includes `status.accountUsage`.\n\nTests: open a session (no turn) → snapshot has accountUsage (registered account; implicit default; codex default); two live sessions on one account both get a status_change when one records a reading; a CLI-written ledger picked up by the watcher reaches both; a session on another account does not; claude-code usage shows the store's binding window without a turn of its own; throttle.\n\nAlways: work in your own worktree based on origin/main; TSDoc on every export; tests beside the code in __tests__/; every new test must fail with its implementation reverted; run `pnpm vitest run <file>` per file and `pnpm --filter <pkg> typecheck` + `lint` for each touched package; rebuild `@dorkos/shared` (`pnpm --filter @dorkos/shared build`) after changing it. SDK imports stay under apps/server/src/services/runtimes/claude-code/ (Hard Rule 2); never os.homedir() in the server, use lib/dork-home.ts (Hard Rule 3). The dir-size pre-commit hook refuses a new file in a directory already at 25+ source files (apps/server/src/services/session has 32, services/tasks 36): new modules go in the subfolders named here. No user-facing copy beyond what is quoted here. Changelog fragment only for user-visible behavior.",
+      "activeForm": "Serving cached account usage to sessions",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "1.2",
+        "2.1"
+      ],
+      "parallelWith": [
+        "3.2",
+        "3.4",
+        "3.5",
+        "5.1"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2380"
+    },
+    {
+      "id": "5.4",
+      "phase": 3,
+      "phaseName": "Launching and routing",
+      "subject": "[claude-account-fleet] [P3] Keep each session's context usage so it shows on open and after a restart",
+      "description": "Tracker: DOR-2385. Spec §6 U \"Context usage is per session\".\n\n1. `session_metadata` gains nullable `context_tokens`, `context_max_tokens`, `context_observed_at` (Drizzle migration); `rekeySessionSettings` moves them.\n2. Write-through: when a session's status carries context figures (contextTokens and contextMaxTokens, typically the terminal status of a turn), upsert them with observedAt now.\n3. Hydrate: a projector created with a cold status fills `contextUsage` from the row. With no row, derive once from the runtime's own record: claude-code from the transcript tail's last main-thread assistant usage (reuse the bounded tail read behind the list's `contextTokens`) plus the model's context window; codex from the rollout's last token_count record via `readCodexTurnContextUsage` (needs the thread id); opencode none. Write the derived value to the row.\n\nTests: after a turn the row holds the figures; a new projector after a simulated restart shows them with no transcript read (spy); no row → derived from a transcript fixture and written; codex derivation from a rollout fixture; rekey moves the columns.\n\nAlways: work in your own worktree based on origin/main; TSDoc on every export; tests beside the code in __tests__/; every new test must fail with its implementation reverted; run `pnpm vitest run <file>` per file and `pnpm --filter <pkg> typecheck` + `lint` for each touched package; rebuild `@dorkos/shared` (`pnpm --filter @dorkos/shared build`) after changing it. SDK imports stay under apps/server/src/services/runtimes/claude-code/ (Hard Rule 2); never os.homedir() in the server, use lib/dork-home.ts (Hard Rule 3). The dir-size pre-commit hook refuses a new file in a directory already at 25+ source files (apps/server/src/services/session has 32, services/tasks 36): new modules go in the subfolders named here. No user-facing copy beyond what is quoted here. Changelog fragment only for user-visible behavior.",
+      "activeForm": "Persisting per-session context usage",
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "5.3",
+        "3.5"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2385"
     },
     {
       "id": "4.1",

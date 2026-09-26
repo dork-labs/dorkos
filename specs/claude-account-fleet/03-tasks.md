@@ -7,7 +7,7 @@ Generated from `03-tasks.json` (the canonical file). Spec: `02-specification.md`
 - **A**: 1.1, 1.2, 2.5, 3.3. No dependencies; different files.
 - **B**: 1.3, 2.1, 2.4, 2.8. After 1.1 (1.3, 2.1) and 1.2 (2.4).
 - **C**: 2.2, 2.3, 3.1, 2.6, 2.7. After 2.1 (and 1.2 for 2.3).
-- **D**: 3.2, 3.4, 3.5, 5.1, 5.2. After 2.5+3.1 (3.2), 3.1 (3.4), 2.1+2.3+2.4 (3.5), 2.1+2.3+2.5+3.1 (5.1), 5.1+2.2 (5.2). 3.5 and 5.1 both touch routes/sessions.ts: land 3.5 first.
+- **D**: 3.2, 3.4, 3.5, 5.1, 5.2, 5.3, 5.4. After 2.5+3.1 (3.2), 3.1 (3.4), 2.1+2.3+2.4 (3.5), 2.1+2.3+2.5+3.1 (5.1), 5.1+2.2 (5.2), 1.2+2.1 (5.3), 1.2 (5.4). 3.5 and 5.1 both touch routes/sessions.ts: land 3.5 first.
 - **E**: 4.1. After 1.1, 1.3, 2.1, 2.4 (the marketplace fixture folder is merged, PR #57).
 
 Critical path: 1.1 → 2.1 → 3.1 → 3.2.
@@ -349,6 +349,36 @@ Tracker: DOR-2382 (and the server half of DOR-2388). Spec D9 "Wait, then resume 
 4. Notification kind `'account.reset'` (NOTIFICATION_KINDS + registry): tier 'notable', storage 'event', subjectType 'account' if the registry supports it (else 'session' of the first waiting session), payload `{ accountId, accountLabel, pausedCount, resetsAt }`, title `${accountLabel} is back: ${pausedCount} paused session(s) can continue` (singular/plural), dedupeKey `account-reset:${accountId ?? path}:${resetsAt ?? resetConfirmedAt truncated to the hour}`, relay 'never'. Raised once per account per reset at the first confirmation; pausedCount = sessions on that account whose plan is waiting at that moment.
 
 Tests (fake timers, FakeAgentRuntime, fake probe): a restart between wait and resumeAt still resumes (boot scan of session_limits); a 99% reading and a reading taken before the real reset do NOT confirm; a resumed turn that re-hits the limit in the same window gets only reset-ready (no loop, no second auto turn); the unregistered root confirms from a store reading, else becomes unconfirmed reset-ready 15 minutes after resumeAt; an advisor wait with a past resumeAt is clamped; timer at resumeAt; confirmation by a newer store reading and by a probe; unconfirmed → 6 retries then stop; autoResume sends exactly one turn to the same session with unattended approvals and origin account-resume; autoResume off → reset-ready; ineligible launch origin never auto-resumes; cap full → retried a minute later; one account.reset for three waiting sessions with pausedCount 3; a restart re-arms waiting plans and a past resumeAt checks at once; continue/cancel/new turn clear the timer.
+
+### Task 5.3: Show each session its account's cached usage from the moment it opens, and keep every session on the account in step
+
+- Size medium, priority high, tracker DOR-2380
+- Depends on: 1.2, 2.1
+- Parallel with: 3.2, 3.4, 3.5, 5.1
+
+Tracker: DOR-2380 (and DOR-2385). Spec §6 U. Works for every runtime and for one account.
+
+1. `SessionStatusSchema` (packages/shared/src/session-stream.ts) gains `accountUsage: AccountUsageSchema.nullable().default(null)` (TSDoc: account-wide cached usage for the account this session bills; `updatedAt`/`observedAt` show freshness).
+2. `services/session/fleet/session-account.ts#billingAccountFor(sessionId)`: claude-code → the session's derived `account` root, else the root `resolveLaunchAccountRoot` would pick for it (hint/agent from its metadata), mapped to a registry id or `default` (memory-only roots map to their memory key); codex/opencode → `default`. Cache per session; invalidate on registry change.
+3. On projector creation (subscribe, snapshot, first send) stamp `accountUsage` from `store.peek` so the cold snapshot carries it. Subscribe to `store.onChange`: for every LIVE projector whose session bills that account, emit a partial `status_change { accountUsage }`, throttled per account (2 s trailing). A watcher-picked CLI reading and a probe go through the same path.
+4. Write-through: claude-code's subscription `session_status.usage` is derived from the store record (the binding window, the rule `mapSdkUsageResponse` uses today, now over the store's windows) plus the session's own cost; `session.lastSubscriptionUsage` is no longer the source (keep it only as a fallback while the store has no record). OpenCode's pay-as-you-go `usage` stays per session.
+5. `GET /api/sessions/:id` includes `status.accountUsage`.
+
+Tests: open a session (no turn) → snapshot has accountUsage (registered account; implicit default; codex default); two live sessions on one account both get a status_change when one records a reading; a CLI-written ledger picked up by the watcher reaches both; a session on another account does not; claude-code usage shows the store's binding window without a turn of its own; throttle.
+
+### Task 5.4: Keep each session's context usage so it shows on open and after a restart
+
+- Size small, priority medium, tracker DOR-2385
+- Depends on: 1.2
+- Parallel with: 5.3, 3.5
+
+Tracker: DOR-2385. Spec §6 U "Context usage is per session".
+
+1. `session_metadata` gains nullable `context_tokens`, `context_max_tokens`, `context_observed_at` (Drizzle migration); `rekeySessionSettings` moves them.
+2. Write-through: when a session's status carries context figures (contextTokens and contextMaxTokens, typically the terminal status of a turn), upsert them with observedAt now.
+3. Hydrate: a projector created with a cold status fills `contextUsage` from the row. With no row, derive once from the runtime's own record: claude-code from the transcript tail's last main-thread assistant usage (reuse the bounded tail read behind the list's `contextTokens`) plus the model's context window; codex from the rollout's last token_count record via `readCodexTurnContextUsage` (needs the thread id); opencode none. Write the derived value to the row.
+
+Tests: after a turn the row holds the figures; a new projector after a simulated restart shows them with no transcript read (spy); no row → derived from a transcript fixture and written; codex derivation from a rollout fixture; rekey moves the columns.
 
 ## Phase 4: Contract conformance
 
