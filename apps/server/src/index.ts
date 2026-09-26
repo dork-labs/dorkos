@@ -285,6 +285,7 @@ import {
   listInstalledShapeManifests,
 } from './services/shapes/shape-services.js';
 import { UninstallFlow } from './services/marketplace/flows/uninstall.js';
+import { createMeshAgentRegistry } from './services/marketplace/flows/mesh-agent-registry.js';
 import { UpdateFlow } from './services/marketplace/flows/update.js';
 import { MarketplaceInstaller } from './services/marketplace/marketplace-installer.js';
 import { createMarketplaceRouter } from './routes/marketplace.js';
@@ -332,6 +333,9 @@ import {
   initAgentIdentityService,
   getAgentIdentityService,
   ensureInSessionAgentIdentity,
+  anchorPath,
+  resolveIdentityAnchor,
+  setWorkingCopyOwnerPort,
   createCapabilityAttributionObserver,
   createCapabilityGateAuditObserver,
   createAgentIdentityUnregisterCascade,
@@ -1726,6 +1730,17 @@ async function start() {
   // to run before its context is built (`resolve-session-cwd.ts` rung 2, spec
   // §3.5).
   setRoomWorktreeManager(roomWorktrees);
+  // And every runtime can tell whose a worktree is (DOR-2091): a turn standing
+  // in one acts as the agent the manager handed it to, not as nobody — which,
+  // with login on, refused every DorkOS tool the agent called, and with login
+  // off fell through to the operator. The manager's own record, never a path
+  // prefix; see `core/agent-identity/identity-anchor.ts`.
+  setWorkingCopyOwnerPort({
+    ownerOf: (dir) => roomWorktrees.ownerOf(dir),
+    // Read per call off the live registry (assigned later in boot), so an agent
+    // unregistered after its tree was handed out stops anchoring at once.
+    isRegisteredAgent: (agentPath) => meshCore?.getByPath(agentPath) !== undefined,
+  });
   // The other half of a turn running somewhere new: session storage is derived
   // per working directory (ADR-0310), so a room turn's conversation is filed
   // under the WORKTREE it ran in and an agent's own folder no longer holds all
@@ -3288,12 +3303,17 @@ async function start() {
       // (spec `mcp-server-management` §6).
       mergeSessionMcpServers({
         // The agent's ENABLED managed servers, injected inline so no `.mcp.json`
-        // is written. The agent workspace is the session cwd; a non-agent
-        // session has no manifest and contributes nothing.
-        managed:
-          session.cwd && agentMcpServerService
-            ? toSdkMcpServers(agentMcpServerService.injectableServersForCwd(session.cwd))
-            : {},
+        // is written. Keyed on the agent the session acts as — its own folder
+        // even when it stands in a room worktree (DOR-2091) — so a non-agent or
+        // refused session has no manifest and contributes nothing.
+        managed: (() => {
+          const agentDir = launch?.identity
+            ? anchorPath(launch.identity)
+            : anchorPath(resolveIdentityAnchor(session.cwd));
+          return agentDir && agentMcpServerService
+            ? toSdkMcpServers(agentMcpServerService.injectableServersForCwd(agentDir))
+            : {};
+        })(),
         // `marketplaceMcpDeps` is populated later in boot (the relay-enabled
         // marketplace-wiring block). This factory closure runs per query, so it
         // reads the captured binding lazily — by the time any session dispatches
@@ -3305,7 +3325,10 @@ async function start() {
           sessionId,
           marketplaceMcpDeps,
           capabilityRegistry,
-          launch?.hiddenToolNames
+          launch?.hiddenToolNames,
+          // Whose identity the tools act as, as the launch resolved it — the
+          // agent a room worktree belongs to, not the worktree (DOR-2091).
+          launch?.identity
         ),
       })
     );
@@ -4306,17 +4329,7 @@ async function start() {
     // One agent-registry surface for the flows that take an agent off the team
     // (DOR-2245): an uninstalled agent package, and an agent a different
     // package with the same name replaces.
-    const marketplaceAgentRegistry = {
-      unregisterAtPath: async (projectPath: string) => {
-        const agent = meshCore?.getByPath(projectPath);
-        if (!meshCore || !agent) return null;
-        const { manifestKept } = await meshCore.unregister(agent.id);
-        return { id: agent.id, directoryDenied: manifestKept };
-      },
-      restoreAtPath: async (projectPath: string) => {
-        await meshCore?.syncFromDisk(projectPath);
-      },
-    };
+    const marketplaceAgentRegistry = createMeshAgentRegistry(() => meshCore);
     const marketplaceAgentFlow = new AgentInstallFlow({
       dorkHome,
       agentCreator: { createAgentWorkspace },

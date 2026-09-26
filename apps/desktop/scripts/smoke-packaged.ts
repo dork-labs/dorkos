@@ -358,8 +358,10 @@ function assertTrayImagesPackaged(appPath: string): void {
  * The tunnel binary, as the packaged app has to carry it.
  *
  * macOS/arm64 because this smoke only ever runs against a `.app` bundle (see
- * `main`); the Windows counterpart (`…-win32-x64-msvc/ngrok.win32-x64-msvc.node`)
- * rides `desktop-release.yml`'s `verify-windows` job instead.
+ * `main`). The Windows counterpart (`…-win32-x64-msvc/ngrok.win32-x64-msvc.node`)
+ * is NOT checked anywhere: `desktop-release.yml`'s `verify-windows` job only
+ * silent-installs the `.exe` and confirms `DorkOS.exe` landed, and never looks
+ * in `app.asar.unpacked`.
  */
 const TUNNEL_BINARY = path.join(
   'node_modules',

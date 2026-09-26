@@ -63,6 +63,7 @@ import {
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
   seedRoomCanvasOps,
+  seedMaxConcurrentTurnsPerAgent,
   retireToolOnlyReplies,
   seedCommunityNavigationPrefs,
 } from '../config-manager.js';
@@ -1250,6 +1251,89 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
   });
 });
 
+describe('seedMaxConcurrentTurnsPerAgent migration (DOR-2104)', () => {
+  it('reserves the leaf on a `rooms` block that predates the setting', () => {
+    // What this catches: conf merges top-level defaults SHALLOWLY, so an
+    // upgrading install with a stored `rooms` block never inherits the new leaf
+    // on its own. Drop the body and it reads `undefined`.
+    const store = createMockStore({ rooms: { maxAgentDepth: 12, maxCanvasOpsPerTurn: 1 } });
+    seedMaxConcurrentTurnsPerAgent(store);
+    expect(store.data.rooms).toEqual({
+      maxAgentDepth: 12,
+      maxCanvasOpsPerTurn: 1,
+      maxConcurrentTurnsPerAgent: 3,
+    });
+  });
+
+  it('never overwrites a limit somebody chose (idempotent)', () => {
+    // The stored value differs from the seeded one, so a body that wrote
+    // unconditionally is caught here rather than passing on a coincidence.
+    const store = createMockStore({ rooms: { maxConcurrentTurnsPerAgent: 1 } });
+    seedMaxConcurrentTurnsPerAgent(store);
+    expect(store.data.rooms).toEqual({ maxConcurrentTurnsPerAgent: 1 });
+  });
+
+  it('does nothing when there is no `rooms` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedMaxConcurrentTurnsPerAgent(store);
+    expect(store.data.rooms).toBeUndefined();
+  });
+
+  it('a real pre-0.84.0 config file gains the leaf on disk (full conf path)', () => {
+    // Reads the FILE: conf's `store` getter hands back a copy Ajv has already
+    // filled the default into, so a `getDot` assertion passes with the body
+    // deleted (DOR-1496). `projectVersion` is explicit because `SERVER_VERSION`
+    // is `0.0.0` in a dev tree, which runs no migration at all.
+    const dir = path.join(os.tmpdir(), 'test-dork-turns-per-agent-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          rooms: { maxAgentDepth: 12, maxPostsPerTurn: 1, maxCanvasOpsPerTurn: 2 },
+          __internal__: { migrations: { version: '0.83.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        // Structurally compatible at runtime; mirrors the cast in config-manager.ts.
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.84.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        rooms: Record<string, unknown>;
+      };
+      expect(onDisk.rooms.maxConcurrentTurnsPerAgent).toBe(3);
+      // The upgrade adds one leaf; it changes nothing the person had set.
+      expect(onDisk.rooms.maxAgentDepth).toBe(12);
+      expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
+      expect(onDisk.rooms.maxCanvasOpsPerTurn).toBe(2);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a fresh install gets the same value from both default declarations', () => {
+    // The per-field default feeds a stored `rooms` block missing the leaf; the
+    // section literal feeds an install with no `rooms` block at all. They must
+    // agree, or which value a person gets depends on their config's history.
+    expect(USER_CONFIG_DEFAULTS.rooms.maxConcurrentTurnsPerAgent).toBe(3);
+    expect(UserConfigSchema.parse({ version: 1, rooms: {} }).rooms.maxConcurrentTurnsPerAgent).toBe(
+      3
+    );
+  });
+});
+
 describe('seedIdentityPromptDismissedDefault migration (DOR-677)', () => {
   it('reserves the leaf on a `profile` block that predates it', () => {
     // conf's pre-migration merge is shallow, so a stored `profile` never gains
@@ -1296,7 +1380,7 @@ describe('seedIdentityPromptDismissedDefault migration (DOR-677)', () => {
     expect(store.data.profile).toBeUndefined();
   });
 
-  it('a real pre-0.84.0 config file gains the leaf on disk (full conf path)', () => {
+  it('a real pre-0.85.0 config file gains the leaf on disk (full conf path)', () => {
     // Read from the FILE: Ajv's `useDefaults` answers `null` from a discarded
     // copy, so a `getDot` assertion would pass with the body deleted (DOR-1496).
     const dir = path.join(os.tmpdir(), 'test-dork-identity-prompt-mig-' + Date.now());
@@ -1314,7 +1398,7 @@ describe('seedIdentityPromptDismissedDefault migration (DOR-677)', () => {
             displayNameSource: null,
             rolePromptDismissedAt: '2026-08-01T00:00:00.000Z',
           },
-          __internal__: { migrations: { version: '0.83.0' } },
+          __internal__: { migrations: { version: '0.84.0' } },
         }),
         'utf-8'
       );
@@ -1325,7 +1409,7 @@ describe('seedIdentityPromptDismissedDefault migration (DOR-677)', () => {
         schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
         defaults: USER_CONFIG_DEFAULTS,
         clearInvalidConfig: false,
-        projectVersion: '0.84.0',
+        projectVersion: '0.85.0',
         migrations: CONFIG_MIGRATIONS,
       });
 
@@ -3817,7 +3901,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(31);
+    expect(Object.keys(bodies)).toHaveLength(32);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

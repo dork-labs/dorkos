@@ -126,6 +126,55 @@ describe('NotificationService.notify', () => {
     expect(service.list({ limit: 25, unread: false }).notifications).toHaveLength(1);
   });
 
+  it('says a thing once even when the same notification is raised twice at the same moment', async () => {
+    // The second call starts while the first is still handing off to the chat
+    // relay, so neither has stored its row yet when the other checks for one.
+    const publish = vi.fn(
+      () =>
+        new Promise<{ deliveredTo: number; messageId: string }>((resolve) =>
+          setTimeout(() => resolve({ deliveredTo: 1, messageId: 'm-1' }), 5)
+        )
+    );
+    const deps = relayDeps({ relayCore: { publish } });
+    const service = new NotificationService(store, { relay: () => deps });
+    const opts = { relay: { fromPrincipal: 'relay.system.tasks.notifier' } };
+
+    const results = await Promise.all([
+      service.notify('run.completed', run('run-1', 'failed'), opts),
+      service.notify('run.completed', run('run-1', 'failed'), opts),
+    ]);
+
+    expect(results.map((result) => result.deduped)).toEqual([false, true]);
+    expect(rowCount()).toBe(1);
+    expect(sentAs('notification')).toHaveLength(1);
+    expect(publish).toHaveBeenCalledTimes(1);
+  });
+
+  it('judges a waiting duplicate on its own when the first raise was refused', async () => {
+    // A refused first raise stores no row, so the raise queued behind it has
+    // not been said yet: it must go out and be stored, not be reported as a
+    // duplicate of nothing.
+    const reserve = vi.fn().mockReturnValueOnce(false).mockReturnValue(true);
+    const deps = relayDeps();
+    const service = new NotificationService(store, { relay: () => deps });
+    const opts = { relay: { fromPrincipal: 'relay.system.tasks.notifier', reserve } };
+
+    const [first, second] = await Promise.all([
+      service.notify('run.completed', run('run-1', 'failed'), opts),
+      service.notify('run.completed', run('run-1', 'failed'), opts),
+    ]);
+
+    expect(first).toMatchObject({ notification: null, deduped: false });
+    expect(first.relay).toMatchObject({ ok: false, reason: 'RATE_LIMITED' });
+    expect(second.deduped).toBe(false);
+    expect(second.notification).not.toBeNull();
+    expect(rowCount()).toBe(1);
+    expect(deps.relayCore!.publish).toHaveBeenCalledTimes(1);
+    expect(reserve).toHaveBeenCalledTimes(2);
+    // Nothing is left holding the key once both have settled.
+    expect((service as unknown as { inFlight: Map<string, unknown> }).inFlight.size).toBe(0);
+  });
+
   it('raises a second notification once the window has passed', async () => {
     vi.useFakeTimers();
     try {

@@ -10,6 +10,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { PresenceStrip } from '../ui/PresenceStrip';
 import type { PresenceFollowTarget } from '../lib/presence-rows';
 import { usePresenceRows } from './use-presence-rows';
+import { toSession } from '@/layers/shared/lib';
 
 /**
  * The strip and whether it will draw anything.
@@ -86,10 +87,7 @@ export function usePresenceStrip(excludeRoomIds: readonly string[] = []): Presen
       }
       useInteractionStore.getState().recordOpened('session', target.sessionId);
       if (target.cwd) useInteractionStore.getState().recordOpened('agent', target.cwd);
-      void navigate({
-        to: '/session',
-        search: { session: target.sessionId, dir: target.cwd },
-      });
+      void navigate(toSession({ session: target.sessionId, dir: target.cwd }));
     },
     [navigate]
   );

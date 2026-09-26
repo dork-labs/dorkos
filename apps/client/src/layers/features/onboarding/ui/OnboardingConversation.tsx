@@ -18,7 +18,7 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useAgentBirthStore, useAppStore, type AgentBirthRecord } from '@/layers/shared/model';
-import { fireCelebration, resolveAgentVisual } from '@/layers/shared/lib';
+import { fireCelebration, resolveAgentVisual, toSession } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { Conversation } from '@/layers/features/conversation';
 import { NARRATION_CAPABILITIES } from '../model/narration-capabilities';
@@ -237,10 +237,9 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       // its binding hint — the lever that makes the fallback above real rather
       // than cosmetic, since the server would otherwise resolve this session
       // from the manifest and the configured default.
-      navigate({
-        to: '/session',
-        search: { dir: defaultAgentDir, session: newSessionId, runtime: firstSessionRuntime },
-      });
+      navigate(
+        toSession({ dir: defaultAgentDir, session: newSessionId, runtime: firstSessionRuntime })
+      );
       onComplete();
     },
   };

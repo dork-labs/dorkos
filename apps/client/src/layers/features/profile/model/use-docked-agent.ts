@@ -12,9 +12,7 @@
  */
 import { useAppStore, useSafePathname } from '@/layers/shared/model';
 import { useMeshMemberId } from '@/layers/entities/mesh';
-
-/** The route the docked profile lives on. */
-const SESSION_ROUTE = '/session';
+import { SESSION_ROUTE } from '@dorkos/shared/session-link';
 
 /**
  * The directory of the agent the docked profile should show, or `null` when

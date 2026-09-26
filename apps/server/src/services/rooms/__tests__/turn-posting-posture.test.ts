@@ -17,14 +17,21 @@ import { warnIfTurnCannotPost } from '../room-turn-runner.js';
 
 /** A runtime that answers the capability question however a test says. */
 function runtimeThat(
-  carriesRoomTools: ((session: { cwd: string; sessionId: string }) => Promise<boolean>) | undefined
+  carriesRoomTools:
+    | ((session: { cwd: string; sessionId: string; agentPath?: string }) => Promise<boolean>)
+    | undefined
 ): Pick<AgentRuntime, 'carriesRoomTools'> {
   return carriesRoomTools === undefined ? {} : { carriesRoomTools };
 }
 
 /** Ask about one session, with the given runtime. */
 async function ask(runtime: Pick<AgentRuntime, 'carriesRoomTools'>): Promise<void> {
-  return warnIfTurnCannotPost({ runtime, cwd: '/agents/ana', sessionId: 'session-1' });
+  return warnIfTurnCannotPost({
+    runtime,
+    cwd: '/agents/ana',
+    sessionId: 'session-1',
+    agentPath: '/agents/ana',
+  });
 }
 
 describe('warnIfTurnCannotPost', () => {
@@ -40,8 +47,9 @@ describe('warnIfTurnCannotPost', () => {
 
   it('warns, naming the reason, when the runtime says the session carries none', async () => {
     // The state an operator has to be able to find: a codex or opencode session
-    // in a directory the injection gate did not recognise — a worktree, most
-    // often — has no posting verb, so its turn can only end in silence.
+    // in a directory that anchors to no registered agent — or to a different one
+    // than the turn is for — has no posting verb, so its turn can only end in
+    // silence.
     const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     await ask(runtimeThat(async () => false));
     expect(warn).toHaveBeenCalledTimes(1);
@@ -80,16 +88,19 @@ describe('warnIfTurnCannotPost', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('passes the session it is asking about, not just the directory', async () => {
+  it('passes the session and the agent it is asking about, not just the directory', async () => {
     // Test-mode answers per SESSION, while the two production runtimes answer
-    // per DIRECTORY. Both are handed both.
-    const seen: Array<{ cwd: string; sessionId: string }> = [];
+    // per DIRECTORY — and check that directory's owner against the agent the
+    // turn is for (DOR-2091). All three are handed all three.
+    const seen: Array<{ cwd: string; sessionId: string; agentPath?: string }> = [];
     await ask(
       runtimeThat(async (session) => {
         seen.push(session);
         return true;
       })
     );
-    expect(seen).toEqual([{ cwd: '/agents/ana', sessionId: 'session-1' }]);
+    expect(seen).toEqual([
+      { cwd: '/agents/ana', sessionId: 'session-1', agentPath: '/agents/ana' },
+    ]);
   });
 });

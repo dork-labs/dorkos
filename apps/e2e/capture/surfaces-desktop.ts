@@ -1,4 +1,4 @@
-import type { Browser, Page } from '@playwright/test';
+import { expect, type Browser, type Page } from '@playwright/test';
 import { DESKTOP_VIEWPORT, DEVICE_SCALE_FACTOR, type Theme } from './config.js';
 import type { RunRecorder } from './library.js';
 import {
@@ -312,29 +312,27 @@ async function shootCanvas(page: Page, theme: Theme, rec: RunRecorder): Promise<
 /** Interval between keystrokes while typing into the canvas editor. */
 const TYPE_DELAY_MS = 55;
 
+/** How long the editor's debounced autosave (500ms) needs to round-trip and echo back. */
+const AUTOSAVE_SETTLE_MS = 1500;
+
 /**
- * Dismiss the canvas held-update banner (ADR-0292) if it is showing, retrying
- * briefly since the editor can surface it more than once in a row.
+ * Let the typed edit's autosave land before the still/loop settles on it.
  *
- * The banner is honest, on-product behavior, not a capture bug: a file-backed
- * canvas doc's own autosave round-trips through the server and echoes back as
- * a `canvas` event while `editing` is still true, which edit-protection cannot
- * tell apart from a real agent push — so it holds the echo and shows the same
- * "Reload / Keep mine" notice a person editing this surface would see too. It
- * fires at least twice here: once for Milkdown's own markdown round-trip the
- * moment edit mode mounts (bullets and heading spacing get renormalized before
- * a single key is pressed), and again for the drive's own typed autosave. A
- * money shot cannot ship mid-transient, so this clicks "Keep mine" — keep what
- * was just typed, discard the held echo — until the banner stops reappearing.
+ * The autosave round-trips through the server and echoes back as a `canvas`
+ * event while edit mode is still on. That echo is this window's own write, so
+ * it raises no held-update notice (DOR-2213). If one shows anyway, that is a
+ * regression the shot must not paper over: the assertion below throws, so the
+ * shot is skipped and reported (`attemptShot`) rather than shipped with the
+ * notice in it or clicked away. It is an assertion rather than a visibility
+ * probe with its errors caught, so a check that cannot run fails the shot too,
+ * rather than reading as "not shown".
  */
-async function dismissCanvasHeldUpdate(page: Page): Promise<void> {
-  const keepMine = page.getByRole('button', { name: 'Keep mine' });
-  for (let i = 0; i < 4; i++) {
-    if (await keepMine.isVisible().catch(() => false)) {
-      await keepMine.click();
-    }
-    await sleep(600);
-  }
+async function settleCanvasEditing(page: Page): Promise<void> {
+  await sleep(AUTOSAVE_SETTLE_MS);
+  await expect(
+    page.getByText('changed this while you were editing', { exact: false }),
+    'canvas-editing: the held-update notice showed for the editor’s own autosave (DOR-2213 regressed)'
+  ).toBeHidden({ timeout: 2000 });
   // The capture stack's Vite ws-proxy occasionally drops with ECONNRESET
   // (seen across every run of this pipeline, not something this drive causes)
   // — the client's own `ServerUnreachableScreen` blanks the whole window for
@@ -373,9 +371,9 @@ async function driveCanvasEditing(page: Page, mark?: LoopMark): Promise<void> {
   await page.keyboard.type('Per-route needs a **budget registry** first.', {
     delay: TYPE_DELAY_MS,
   });
-  // Let the debounced autosave (500ms) round-trip and clear the transient
-  // held-update banner before the still/loop settles on this frame.
-  await dismissCanvasHeldUpdate(page);
+  // Let the debounced autosave (500ms) round-trip before the still/loop
+  // settles on this frame.
+  await settleCanvasEditing(page);
 }
 
 /** Capture the canvas mid-edit (editor active, freshly typed section visible). */

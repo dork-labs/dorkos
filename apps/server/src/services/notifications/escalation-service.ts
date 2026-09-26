@@ -80,6 +80,7 @@
  */
 import type { EscalationDelay } from '@dorkos/shared/config-schema';
 import type { NotificationChannel } from '@dorkos/shared/notification-schemas';
+import { sessionPath } from '@dorkos/shared/session-link';
 import { logger } from '../../lib/logger.js';
 import {
   notificationEntry,
@@ -455,7 +456,7 @@ export function standingDeepLink<K extends StandingNotificationKind>(
   // an in-app click all land on the button that fixes it.
   if (kind === 'signin.required') return `/?settings=${RUNTIMES_SETTINGS_TAB}`;
   const sessionId = (payload as NotificationPayload<'ask.pending'>).sessionId;
-  return `/session?session=${encodeURIComponent(sessionId)}`;
+  return sessionPath({ session: sessionId });
 }
 
 /** Which ledger column a successful relay delivery belongs in. */

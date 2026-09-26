@@ -342,6 +342,21 @@ export function LiveLaneShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
+        Waiting — one agent already working in several conversations at once (Settings → Rooms →
+        Conversations at once). Whichever finishes first may free it, so the line names the one it
+        has been in longest without promising it.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <LaneBox>
+          <Conversation.LiveLane
+            state={waiting([
+              { ...held('Mio Clicker PM', 40, '#mio-engagement'), severalInTheWay: true },
+            ])}
+          />
+        </LaneBox>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
         Waiting — two agents, so there is more than one conversation in the way and naming one would
         be picking a favourite
       </ShowcaseLabel>

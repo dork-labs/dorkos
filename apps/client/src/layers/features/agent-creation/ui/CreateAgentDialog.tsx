@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
-import { playCelebration, isSingleEmoji } from '@/layers/shared/lib';
+import { playCelebration, isSingleEmoji, toSession } from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -246,10 +246,7 @@ export function CreateAgentDialog() {
             hostOnCreated();
             return;
           }
-          navigate({
-            to: '/session',
-            search: { dir: data._path, session: newSessionId, runtime: data.runtime },
-          });
+          navigate(toSession({ dir: data._path, session: newSessionId, runtime: data.runtime }));
         },
         // A template that needs reviewing is shown here (`isShownInline` keeps
         // it out of the toast); every other failure is the shared toast's.

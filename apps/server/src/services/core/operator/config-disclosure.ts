@@ -248,6 +248,9 @@ export const CONFIG_DISCLOSURE = {
   // ceiling can say why its fourth change to the room's table was refused,
   // instead of retrying into the same wall.
   'rooms.maxCanvasOpsPerTurn': 'expose',
+  // An agent that can read how many conversations it may work in at once can
+  // say why a message is waiting for one of its other turns to finish.
+  'rooms.maxConcurrentTurnsPerAgent': 'expose',
 
   // A room's own files: whether they are available at all, and the bounds a
   // merge is measured against. Plain numbers and a boolean about the person's

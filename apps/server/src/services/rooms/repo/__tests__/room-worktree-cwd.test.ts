@@ -83,7 +83,7 @@ describe('ensureRoomWorktreePath', () => {
 describe('roomSessionPlace', () => {
   const worktrees = () => manager(() => Promise.resolve({ path: WORKTREE }));
 
-  it('names the room and the label the room shows for the agent', () => {
+  it('names the room, the label the room shows, and the agent the room bound', () => {
     const place = roomSessionPlace({
       bindings: {
         bindingForSession: () => ({ roomId: 'room-1', authorId: 'author-1', sessionId: 's1' }),
@@ -92,7 +92,12 @@ describe('roomSessionPlace', () => {
       worktrees,
     });
 
-    expect(place.roomFor('s1')).toEqual({ roomId: 'room-1', agentName: 'Ana the Reviewer' });
+    // The agent comes from the ROOM's binding, never from the message (DOR-2091).
+    expect(place.roomFor('s1')).toEqual({
+      roomId: 'room-1',
+      agentName: 'Ana the Reviewer',
+      agentPath: AGENT,
+    });
   });
 
   it('answers nothing for a session no room is bound to', () => {

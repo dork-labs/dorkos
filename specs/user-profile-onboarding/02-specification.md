@@ -131,7 +131,7 @@ Rules: omit any empty line (`Name:` only when `displayName` set, etc.); omit the
 
 - `packages/shared/src/profile-recommendations.ts` — canon, aliases, mapping, `recommendForRoles`. Pure.
 - `packages/shared/src/dorkbot-templates.ts` — new lines: `profilePrompt` (2 lines), `profileSkip`, `profileSaved`, `dorkbotProfileSuggestionLine(recs)`. Authored, deterministic.
-- `features/onboarding/ui/ProfileRolePicker.tsx` — chips + free text + confirm/skip; controlled; used by the beat widget, `ProfilePromptCard`, and the ProgressCard row.
+- `entities/user-profile/ui/ProfileRolePicker.tsx` (moved from `features/onboarding/ui/` in DOR-677, so onboarding and `features/profile` share it without importing each other) — chips + free text + confirm/skip; controlled; used by the beat widget, `ProfilePromptCard`, the ProgressCard row, and Settings › Profile.
 - `features/onboarding/ui/ProfilePromptCard.tsx` — the existing-user card.
 - `apps/server/.../shared/agent-context.ts` — `buildUserProfileBlock` (pure) + wiring.
 

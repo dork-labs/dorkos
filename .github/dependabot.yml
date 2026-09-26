@@ -145,8 +145,6 @@ updates:
         versions: ['>= 1.7.3'] # moves in lockstep with better-auth (exact dep)
       - dependency-name: '@better-fetch/fetch'
         versions: ['>= 1.3.2'] # peer of @better-auth/core; splits it if moved alone
-      - dependency-name: '@playwright/test'
-        versions: ['>= 1.63.0'] # DOR-2037: Chrome 153 drops focus in feedback-capture-focus.spec.ts
     # The queue merges it; nobody needs a review ping for a patch bump that
     # 13,000 tests are about to vet anyway.
     open-pull-requests-limit: 5

@@ -41,6 +41,7 @@ import {
   ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuLabel,
 } from '@/layers/shared/ui';
+import { toSession } from '@/layers/shared/lib';
 
 /** What "run this again, elsewhere" needs to know. */
 export interface EntryRunWith {
@@ -103,10 +104,7 @@ export function EntryRunWithMenu({
   // Fresh session, always: an explicit new id bypasses the loader's
   // auto-select of an existing session; `runtime` binds it; `prompt` seeds it.
   const launchOn = (type: string) => {
-    void navigate({
-      to: '/session',
-      search: { session: crypto.randomUUID(), dir: cwd, runtime: type, prompt },
-    });
+    void navigate(toSession({ session: crypto.randomUUID(), dir: cwd, runtime: type, prompt }));
   };
 
   const runWith = (type: string) => {

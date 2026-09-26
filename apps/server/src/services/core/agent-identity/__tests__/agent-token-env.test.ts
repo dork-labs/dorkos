@@ -14,6 +14,7 @@ import {
   createInSessionContextResolver,
   AGENT_TOKEN_ENV_VAR,
 } from '../agent-token-env.js';
+import { resolveIdentityAnchor } from '../identity-anchor.js';
 import { logger } from '../../../../lib/logger.js';
 
 vi.mock('../../../../lib/logger.js', () => ({
@@ -160,7 +161,7 @@ describe('createInSessionContextResolver', () => {
     initAgentIdentityService(createTestDb());
     await resolveAgentTokenEnv(AGENT_PATH, 'Researcher');
 
-    const context = await createInSessionContextResolver(AGENT_PATH)();
+    const context = await createInSessionContextResolver(resolveIdentityAnchor(AGENT_PATH))();
 
     expect(context?.identity).toMatchObject({
       agentPath: AGENT_PATH,
@@ -243,7 +244,7 @@ describe('createInSessionContextResolver', () => {
     await resolveAgentTokenEnv(AGENT_PATH, 'Researcher');
     const spy = vi.spyOn(AgentIdentityService.prototype, 'describeAgent');
 
-    const resolve = createInSessionContextResolver(AGENT_PATH);
+    const resolve = createInSessionContextResolver(resolveIdentityAnchor(AGENT_PATH));
     await Promise.all([resolve(), resolve(), resolve()]);
 
     expect(spy).toHaveBeenCalledOnce();
@@ -258,7 +259,9 @@ describe('createInSessionContextResolver', () => {
   it('resolves undefined when the agent holds no live token', async () => {
     initAgentIdentityService(createTestDb());
 
-    expect(await createInSessionContextResolver('/projects/never-minted')()).toBeUndefined();
+    expect(
+      await createInSessionContextResolver(resolveIdentityAnchor('/projects/never-minted'))()
+    ).toBeUndefined();
   });
 
   it('resolves a REVOKED context after the agent is revoked, not an empty one', async () => {
@@ -271,13 +274,15 @@ describe('createInSessionContextResolver', () => {
     await resolveAgentTokenEnv(AGENT_PATH, 'Researcher');
     await service.revoke(AGENT_PATH);
 
-    const context = await createInSessionContextResolver(AGENT_PATH)();
+    const context = await createInSessionContextResolver(resolveIdentityAnchor(AGENT_PATH))();
 
     expect(context?.identity).toMatchObject({ agentPath: AGENT_PATH, inactive: 'revoked' });
   });
 
   it('resolves undefined when the service was never initialized', async () => {
-    expect(await createInSessionContextResolver(AGENT_PATH)()).toBeUndefined();
+    expect(
+      await createInSessionContextResolver(resolveIdentityAnchor(AGENT_PATH))()
+    ).toBeUndefined();
   });
 
   it('resolves undefined instead of throwing when the lookup fails', async () => {
@@ -287,6 +292,8 @@ describe('createInSessionContextResolver', () => {
     );
 
     // Attribution must never fail the agent's tool call.
-    await expect(createInSessionContextResolver(AGENT_PATH)()).resolves.toBeUndefined();
+    await expect(
+      createInSessionContextResolver(resolveIdentityAnchor(AGENT_PATH))()
+    ).resolves.toBeUndefined();
   });
 });

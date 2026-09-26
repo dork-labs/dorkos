@@ -326,6 +326,28 @@ function readMaxCanvasOpsPerTurn(): number {
 }
 
 /**
+ * How many conversations one agent may work in at once, read live from
+ * `rooms.maxConcurrentTurnsPerAgent` (DOR-2104).
+ *
+ * Two different failures, and only one of them is handled here. A value in the
+ * file that the schema refuses (`0`, `99`, `"x"`) never reaches this function:
+ * the config manager repairs it to the shipped default, three, when it loads the
+ * file. What this catch covers is a config that cannot be read at all, and that
+ * answers ONE rather than three, because one is the direction that cannot hurt:
+ * it may make an agent wait for its other turn to finish, but never lets more
+ * turns loose in one folder than a person asked for (the contention ADR
+ * `260726-170125` measured). `claimBusyWith` reads anything below one as one
+ * too, so no path ends with an unbounded ceiling.
+ */
+function readMaxConcurrentTurnsPerAgent(): number {
+  try {
+    return configManager.get('rooms').maxConcurrentTurnsPerAgent;
+  } catch {
+    return 1;
+  }
+}
+
+/**
  * How many messages one agent may post into a room inside one turn, read live
  * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
  * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
@@ -549,6 +571,10 @@ export function createRoomSubsystem(opts: {
     // Read per tick, for the same reason: shortening how long a room waits on a
     // busy agent has to bind the wait that is already running.
     holdCeilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+    // Read at every claim decision, for the same reason: raising it in Settings
+    // has to let the very next message start, and lowering it has to hold the
+    // very next one — neither may wait for a restart.
+    maxConcurrentTurnsPerAgent: readMaxConcurrentTurnsPerAgent,
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,

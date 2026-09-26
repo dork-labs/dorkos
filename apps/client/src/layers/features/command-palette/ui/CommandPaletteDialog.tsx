@@ -7,6 +7,7 @@ import {
   cn,
   getAgentDisplayName,
   openLink,
+  sessionHref,
   supportsNewTab,
   supportsSeparateWindow,
 } from '@/layers/shared/lib';
@@ -208,10 +209,7 @@ export function CommandPaletteDialog() {
   const agentHref = useCallback(
     (agent: AgentPathEntry) => {
       const session = cachedSessionForCwd(queryClient, agent.projectPath);
-      return `/session?${new URLSearchParams({
-        dir: agent.projectPath,
-        ...(session ? { session } : {}),
-      }).toString()}`;
+      return sessionHref({ dir: agent.projectPath, session: session ?? undefined });
     },
     [queryClient]
   );

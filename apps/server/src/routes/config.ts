@@ -16,6 +16,7 @@ import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { env } from '../env.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import {
+  configuredRuntimes,
   SIDEBAR_PREFS_DEFAULTS,
   SHAPE_USER_PREFS_DEFAULTS,
   STATUS_BAR_PREFS_DEFAULTS,
@@ -76,20 +77,6 @@ const TASKS_LOCKED_BY_ENV = 'DORKOS_TASKS_ENABLED' in process.env;
 /** The same question for the Relay message bus and `DORKOS_RELAY_ENABLED`. */
 // eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
 const RELAY_LOCKED_BY_ENV = 'DORKOS_RELAY_ENABLED' in process.env;
-
-/**
- * List the agent runtimes configured on this host.
- *
- * claude-code is always available; codex and opencode are included unless a user
- * has explicitly disabled them in config (both default to enabled).
- */
-function configuredRuntimes(): string[] {
-  const runtimes = ['claude-code'];
-  const config = configManager.get('runtimes');
-  if (config?.codex?.enabled !== false) runtimes.push('codex');
-  if (config?.opencode?.enabled !== false) runtimes.push('opencode');
-  return runtimes;
-}
 
 router.get('/', async (req, res) => {
   let claudeCliPath: string | null = null;
@@ -154,7 +141,7 @@ router.get('/', async (req, res) => {
     // whoever sets it (the CLI does; the desktop shell will).
     workingDirectory: DEFAULT_CWD,
     platform: `${process.platform}-${process.arch}`,
-    runtimes: configuredRuntimes(),
+    runtimes: configuredRuntimes((key) => configManager.getDot(key)),
     // Which Claude account new work will run and bill on, RESOLVED, plus the
     // accounts registered here (spec claude-code-accounts). Resolved for the same
     // reason `claudeCliPath` is: the cockpit cannot see the server process's
@@ -319,7 +306,8 @@ router.get('/', async (req, res) => {
     //
     // The five limits ride along because Settings → Rooms offers them, and
     // because a room's own override is shown as "Use default (N)" where N is
-    // whatever is set HERE (DOR-1430). Writing them is still operator-only —
+    // whatever is set HERE (DOR-1430). So does how many conversations one agent
+    // may work in at once, which Settings → Rooms offers too (DOR-2104). Writing them is still operator-only —
     // `config-write-policy.ts` decides that, not this read. The rest of the
     // block (reply waits) is nothing the cockpit says out loud, so it stays off
     // the wire.
@@ -333,6 +321,7 @@ router.get('/', async (req, res) => {
         maxTurnsPerAgentPerCascade: rooms.maxTurnsPerAgentPerCascade,
         maxAutomaticTurnsPerRoomPerHour: rooms.maxAutomaticTurnsPerRoomPerHour,
         maxAutomaticTurnsTotalPerHour: rooms.maxAutomaticTurnsTotalPerHour,
+        maxConcurrentTurnsPerAgent: rooms.maxConcurrentTurnsPerAgent,
       };
     })(),
     // Whether agents may greet you when you come back, whether a greeting may

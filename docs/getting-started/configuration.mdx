@@ -292,6 +292,12 @@ You do not have to edit the file for these. **Settings → Rooms** has the switc
       type: 'integer (1--10)',
       default: '3',
     },
+    'rooms.maxConcurrentTurnsPerAgent': {
+      description:
+        'How many conversations one agent may work in at the same time. Higher is faster, but turns that change the same files can collide. A message sent while the agent is at the limit waits and starts when one of its conversations finishes; you never have to send it again. One agent never runs two turns in the same room, whatever this says. Set it to 1 to have each agent work on one thing at a time. Only you can change this.',
+      type: 'integer (1--8)',
+      default: '3',
+    },
     'rooms.repo.enabled': {
       description:
         'Whether a room may have files of its own: a git repo your agents can read, write, and run commands in together. Off, every room behaves the way it always has, and nothing already saved is deleted — turn it back on and everything is still there. Only you can change this.',
