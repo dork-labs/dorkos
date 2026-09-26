@@ -96,6 +96,8 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
+import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
+import { grantsFromSettings } from '../messaging/directory-grants.js';
 import { toSdkEffort } from '../messaging/thinking-config.js';
 
 /**
@@ -162,6 +164,15 @@ export const PIN_DISPOSITIONS = {
   effort: 'relaunch',
   /** `settings.fastMode`. */
   fastMode: 'relaunch',
+  /**
+   * The turn's folder grants (`settings.permissions`, spec `agent-home-desk`
+   * §4.2), as the sorted `path:access` list, so a reordered set rides and a
+   * changed one relaunches. The CLI reads settings at launch and has no live
+   * setter for them, and a grant a later turn does not carry must not stay
+   * reachable in a warm process (I5). Room sessions carry a stable set, so the
+   * steady state costs nothing.
+   */
+  additionalDirectories: 'relaunch',
   /** Swapped on the live query with `setMcpServers`. */
   mcpServers: 'live',
   /** Refreshed on the live query with `reloadPlugins`. */
@@ -541,6 +552,7 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           ? ((options.settings as { fastMode?: boolean }).fastMode ?? false)
           : false
       ),
+      additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
     },
     live: {
       model: options.model,

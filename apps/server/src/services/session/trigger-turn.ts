@@ -477,6 +477,12 @@ export interface TriggerTurnOpts {
    */
   systemPromptAppend?: string;
   /**
+   * The folders this turn may reach beyond its cwd, computed by the caller for
+   * THIS turn (spec `agent-home-desk` §4). Passed straight to the runtime, which
+   * hands exactly this set to its backend; absent means none.
+   */
+  additionalDirectories?: MessageOpts['additionalDirectories'];
+  /**
    * Which billing account this LAUNCH should run on, as a Claude account
    * registry id. Set only by the route that accepted a person's pre-launch
    * choice on the send that creates a claude-code session; passed straight
@@ -630,6 +636,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     seedContext,
     approvalVerdict,
     systemPromptAppend,
+    additionalDirectories,
     accountHint,
     settings,
     projector,
@@ -806,6 +813,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
         roomTurn,
         ...(opts.forAgent !== undefined ? { forAgent: opts.forAgent } : {}),
         ...(systemPromptAppend !== undefined ? { systemPromptAppend } : {}),
+        ...(additionalDirectories !== undefined ? { additionalDirectories } : {}),
         ...(accountHint !== undefined ? { accountHint } : {}),
         ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
         // A protected message is a connector's (an event, or an agent request's

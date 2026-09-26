@@ -36,6 +36,7 @@ const LABEL: Record<Change['field'], string> = {
   effort: 'Effort',
   maxRuntime: 'Time limit',
   sticky: 'Remembers earlier runs',
+  account: 'Account',
 };
 
 /** A duration in milliseconds the way the schedule form writes it (`2h`, `30m`, `45s`). */
@@ -59,7 +60,7 @@ function formatValue(field: Change['field'], value: Change['from']): string {
   if (field === 'maxRuntime')
     return typeof value === 'number' ? formatDuration(value) : 'the default';
   if (value === null || value === '') {
-    // A null runtime, model or effort follows the agent.
+    // A null runtime, model, effort or account follows the agent.
     return 'the agent’s own';
   }
   return String(value);
