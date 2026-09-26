@@ -219,12 +219,14 @@ describe('migrateRoomTranscripts', () => {
       await put(path.join(projectsDir(rootA, dir), `n${i}.jsonl`), transcript(dir, 'not mine'));
     }
 
-    await migrateRoomTranscripts(aliceOnly());
+    const outcome = await migrateRoomTranscripts(aliceOnly());
 
     for (const [i, dir] of lookalikes.entries()) {
       expect(await exists(path.join(projectsDir(rootA, dir), `n${i}.jsonl`))).toBe(true);
     }
     expect(await exists(projectsDir(rootA, aliceHome))).toBe(false);
+    // The one that has the full shape and a registered digest is named for the operator.
+    expect(outcome.marker?.nearMisses).toEqual([projectsDir(rootA, lookalikes[1]!)]);
   });
 
   it('finds a reaped worktree of an agent with the longest name', async () => {
@@ -235,6 +237,32 @@ describe('migrateRoomTranscripts', () => {
     await migrateRoomTranscripts(aliceOnly());
 
     expect(await exists(path.join(projectsDir(rootA, aliceHome), 's1.jsonl'))).toBe(true);
+  });
+
+  it('finds a reaped worktree of an agent whose name holds an 8-hex word', async () => {
+    const dated = RoomWorktreeManager.slugFor('Release 20260926', aliceHome);
+    const reaped = path.join(dorkHome, 'rooms', ROOM_3, 'worktrees', dated);
+    await put(path.join(projectsDir(rootA, reaped), 's1.jsonl'), transcript(reaped, 'dated'));
+
+    const outcome = await migrateRoomTranscripts(aliceOnly());
+
+    expect(await exists(path.join(projectsDir(rootA, aliceHome), 's1.jsonl'))).toBe(true);
+    expect(outcome.marker?.nearMisses).toEqual([]);
+  });
+
+  it('finishes a move a crash left linked under both names, without a conflict', async () => {
+    const source = path.join(projectsDir(rootA, aliceWorktree), 's1.jsonl');
+    const destination = path.join(projectsDir(rootA, aliceHome), 's1.jsonl');
+    await put(source, transcript(aliceWorktree, 'one'));
+    await mkdir(path.dirname(destination), { recursive: true });
+    await fsp.link(source, destination);
+
+    const outcome = await migrateRoomTranscripts(aliceOnly());
+
+    expect(await exists(source)).toBe(false);
+    expect(await exists(`${source}.conflict`)).toBe(false);
+    expect(await readFile(destination, 'utf-8')).toContain('"one"');
+    expect(outcome.marker).toMatchObject({ moved: 1, conflicts: [] });
   });
 
   it('guesses no owner when two registered paths share one digest', async () => {

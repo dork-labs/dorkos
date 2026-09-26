@@ -19,7 +19,11 @@
  *   transcript while it moves;
  * - after the agent registry has loaded, because `agentPaths` decides whose a
  *   worktree is. An empty list would skip every worktree and still write the
- *   marker, which never runs the move again.
+ *   marker, which never runs the move again;
+ * - inside a `try`. It throws on an unexpected filesystem error, and on a
+ *   marker write that races another process writing the same marker (both use
+ *   one fixed temp name). A throw leaves the marker unwritten, so the next start
+ *   tries again; it must not stop the server from starting.
  *
  * A moved transcript keeps the worktree as the `cwd` its records carry. Listing
  * accepts it anyway (it sits in the home's own slug folder), and a resume at the
@@ -42,7 +46,13 @@
  *   last server). That process appends by path, so moving the file under it
  *   would make it recreate `<id>.jsonl` at the old place: two transcripts for
  *   one id. Such a file is skipped and the marker is not written, so the next
- *   start tries again.
+ *   start tries again. The window protects a turn IN FLIGHT and nothing more:
+ *   an interactive `claude` session left idle outside DorkOS longer than the
+ *   window still holds the old path and will recreate the file on its next
+ *   turn, and a subagent transcript still being written under `<id>/` does not
+ *   refresh the main file's time. The next pass then finds a destination and
+ *   sets the recreated file aside as a conflict, so nothing is lost, but the
+ *   session is split until the operator resolves it.
  * - **Runs to completion once.** The marker at
  *   {@link ROOM_TRANSCRIPT_MIGRATION_MARKER} is written only after a pass with
  *   no failures and no skipped live files; while it is absent every start
@@ -142,6 +152,12 @@ export interface RoomTranscriptMigrationMarker {
   unmovable: UnmovableTranscript[];
   /** Everything else still in a worktree's slug folder (`memory/`, unknown files). */
   leftBehind: string[];
+  /**
+   * Slug folders shaped like a reaped worktree of a registered agent whose name
+   * part was refused (too long, or carrying another worktree's digest, as a path
+   * nested inside a worktree does). Not moved; listed for the operator.
+   */
+  nearMisses: string[];
 }
 
 /** Inputs, injected so a test never touches a real config directory. */
@@ -253,10 +269,12 @@ function escapeRegExp(value: string): string {
  * own data under `<worktree>/apps/server/.temp/.dork/rooms/…/worktrees/…`, whose
  * slug starts with the outer worktree's and ends in a real agent's digest. Here
  * the name part is a slugified agent name of at most
- * {@link WORKTREE_NAME_CHARS} characters with no dash-delimited 8-hex token in
- * it, which is what any path nested inside a worktree has: the outer
- * worktree's own digest. Room ids are ULIDs, so a lookalike beside the rooms
- * folder (`rooms-old/…`) does not match either.
+ * {@link WORKTREE_NAME_CHARS} characters with no dash-delimited token equal to
+ * a known worktree digest (a registered agent's, or one on a worktree folder on
+ * disk), which is what any path nested inside a worktree carries: the outer
+ * worktree's own digest. Any other 8-hex word is a legitimate name ("Release
+ * 20260926"). Room ids are ULIDs, so a lookalike beside the rooms folder
+ * (`rooms-old/…`) does not match either.
  */
 function worktreeSlugPattern(roomsSlug: string): RegExp {
   const name = `[a-z0-9]+(?:-[a-z0-9]+)*`;
@@ -264,8 +282,10 @@ function worktreeSlugPattern(roomsSlug: string): RegExp {
 }
 
 /** Whether a worktree slug's name part could have come from `slugFor`. */
-function isAgentNamePart(name: string): boolean {
-  return name.length <= WORKTREE_NAME_CHARS && !/(?:^|-)[0-9a-f]{8}(?:-|$)/.test(name);
+function isAgentNamePart(name: string, knownDigests: ReadonlySet<string>): boolean {
+  return (
+    name.length <= WORKTREE_NAME_CHARS && !name.split('-').some((token) => knownDigests.has(token))
+  );
 }
 
 /**
@@ -275,26 +295,41 @@ function isAgentNamePart(name: string): boolean {
  * The one shape this misses is a slug the SDK truncated past 200 characters (its
  * hash suffix replaces the digest); a worktree still on disk is found by its
  * path instead, so only a reaped worktree with a very long path is left behind.
+ *
+ * A folder that has the shape and ends in a registered agent's digest but whose
+ * name part is refused is not moved, and is named in the marker's `nearMisses`
+ * and the log, so a wrong refusal is recoverable by hand rather than silent.
  */
 async function reapedWorktreeSlugs(
   projects: string,
   pattern: RegExp,
   digests: ReadonlyMap<string, string[]>,
-  failures: string[]
+  knownDigests: ReadonlySet<string>,
+  tally: PassTally
 ): Promise<Map<string, string>> {
   const found = new Map<string, string>();
   let entries: string[];
   try {
     entries = await fs.readdir(projects);
   } catch (err) {
-    if (codeOf(err) !== 'ENOENT') failures.push(`${projects}: ${String(err)}`);
+    if (codeOf(err) !== 'ENOENT') tally.failures.push(`${projects}: ${String(err)}`);
     return found;
   }
   for (const entry of entries) {
     const match = pattern.exec(entry);
-    if (!match || !isAgentNamePart(match[1]!)) continue;
+    if (!match) continue;
     const agentPath = ownerOfDigest(match[2]!, digests);
-    if (agentPath !== null) found.set(entry, agentPath);
+    if (agentPath === null) continue;
+    if (isAgentNamePart(match[1]!, knownDigests)) {
+      found.set(entry, agentPath);
+    } else {
+      const nearMiss = path.join(projects, entry);
+      tally.nearMisses.push(nearMiss);
+      logger.warn('[migrate-room-transcripts] looks like a room worktree but is not moved', {
+        path: nearMiss,
+        agentPath,
+      });
+    }
   }
   return found;
 }
@@ -305,12 +340,24 @@ interface PassTally {
   conflicts: TranscriptConflict[];
   unmovable: UnmovableTranscript[];
   leftBehind: string[];
+  nearMisses: string[];
   skippedRecent: string[];
   failures: string[];
 }
 
 /** How a no-overwrite move came out. */
 type MoveResult = 'moved' | 'exists' | 'cross-device';
+
+/** Whether two paths name one file (same device and inode); false if either is missing. */
+async function sameFile(a: string, b: string): Promise<boolean> {
+  try {
+    const [x, y] = await Promise.all([fs.lstat(a), fs.lstat(b)]);
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch (err) {
+    if (codeOf(err) === 'ENOENT') return false;
+    throw err;
+  }
+}
 
 /**
  * Move a FILE without ever replacing its destination: `link` fails on an
@@ -406,6 +453,14 @@ async function moveTranscript(
   const { mtimeMs } = await fs.stat(source);
   if (nowMs - mtimeMs < RECENT_WRITE_WINDOW_MS) {
     tally.skippedRecent.push(source);
+    return;
+  }
+
+  // A pass that crashed between `link` and `unlink` left one file under two
+  // names. That is this transcript already moved, not a conflict.
+  if (await sameFile(source, destination)) {
+    await fs.unlink(source);
+    tally.moved += 1;
     return;
   }
 
@@ -539,6 +594,7 @@ export async function migrateRoomTranscripts(
     conflicts: [],
     unmovable: [],
     leftBehind: [],
+    nearMisses: [],
     skippedRecent: [],
     failures: [],
   };
@@ -554,7 +610,13 @@ export async function migrateRoomTranscripts(
   ).map((worktree) => ({ path: worktree, agentPath: ownerOf(worktree, digests) }));
 
   // A worktree the reap already removed is gone from disk, but its transcripts
-  // are not: they are found by their slug folder's shape instead.
+  // are not: they are found by their slug folder's shape instead. Every digest a
+  // worktree could carry — registered agents' and those on worktree folders on
+  // disk, registered or not — is what a path NESTED inside a worktree has in it.
+  const knownDigests = new Set(digests.keys());
+  for (const { path: worktree } of worktrees) {
+    knownDigests.add(path.basename(worktree).slice(path.basename(worktree).lastIndexOf('-') + 1));
+  }
   const pattern = worktreeSlugPattern(projectSlug(path.join(deps.dorkHome, 'rooms')));
 
   for (const root of deps.claudeRoots) {
@@ -567,7 +629,8 @@ export async function migrateRoomTranscripts(
       projects,
       pattern,
       digests,
-      tally.failures
+      knownDigests,
+      tally
     )) {
       if (!sources.has(slug)) sources.set(slug, agentPath);
     }
@@ -607,6 +670,7 @@ export async function migrateRoomTranscripts(
     conflicts: tally.conflicts,
     unmovable: tally.unmovable,
     leftBehind: tally.leftBehind,
+    nearMisses: tally.nearMisses,
   };
   await writeMarker(markerPath, marker);
   logger.info('[migrate-room-transcripts] room transcripts moved to agent homes', {
@@ -614,6 +678,7 @@ export async function migrateRoomTranscripts(
     conflicts: marker.conflicts.length,
     unmovable: marker.unmovable.length,
     leftBehind: marker.leftBehind,
+    nearMisses: marker.nearMisses,
     skippedUnregistered,
     worktrees: worktrees.length,
   });
