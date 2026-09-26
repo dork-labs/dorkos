@@ -214,6 +214,40 @@ describe('Agents Routes', () => {
       expect(mockWriteManifest).not.toHaveBeenCalledWith(CHECKOUT, expect.anything());
     });
 
+    it('finds an agent registered through a symlinked agents folder (the boundary answers realpaths)', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agents-route-link-')));
+      try {
+        fs.mkdirSync(path.join(scratch, 'real', 'ana'), { recursive: true });
+        fs.symlinkSync(path.join(scratch, 'real'), path.join(scratch, 'agents'));
+        const registered = path.join(scratch, 'agents', 'ana');
+        const real = path.join(scratch, 'real', 'ana');
+        registerTestHomes([registered]);
+        vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(real);
+        mockReadManifest.mockImplementation(async (dir: string) =>
+          dir === registered ? atHome : null
+        );
+
+        const get = await request(testServer)
+          .get('/api/agents/current')
+          .query({ path: registered });
+        expect(get.status).toBe(200);
+        expect(get.body.name).toBe('ana');
+
+        const patch = await request(testServer)
+          .patch('/api/agents/current')
+          .query({ path: registered })
+          .send({ displayName: 'Ana' });
+        expect(patch.status).toBe(200);
+        expect(mockWriteManifest).toHaveBeenCalledWith(registered, expect.anything());
+      } finally {
+        vi.mocked(validateBoundaryOrDorkHome).mockImplementation(async (p: string) => p);
+        fs.rmSync(scratch, { recursive: true, force: true });
+      }
+    });
+
     it('a folder that is no agent`s home is nobody, whatever `.dork/` it carries', async () => {
       mockReadManifest.mockResolvedValue(stale);
 

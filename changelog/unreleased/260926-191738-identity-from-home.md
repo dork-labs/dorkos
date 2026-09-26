@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(server): read every agent identity from its registered home (DOR-2355)'
+  - 'fix(server): refuse orphaned managed checkouts and match agent homes through symlinks (DOR-2355)'
+  - 'fix(relay): name the agent a binding or scheduled task turn is for (DOR-2355)'
 ---
 
 ### Fixed

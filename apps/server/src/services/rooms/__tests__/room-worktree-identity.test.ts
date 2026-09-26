@@ -172,6 +172,7 @@ describe('a room turn in a room with files', () => {
     // The registry, read live, so a test that unregisters an agent is seen at once.
     setAgentHomeRegistry({
       isRegisteredHome: (p) => registered.has(p),
+      listRegisteredHomes: () => [...registered],
       managedWorkspaceOwner: () => null,
       roomsDir: null,
     });

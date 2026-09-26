@@ -24,13 +24,16 @@
  *    owner is a registered agent. Checked before source 4 because a managed
  *    checkout is itself a linked worktree of its SOURCE repo, and an agent can
  *    own a checkout of another agent's repo (01-ideation decision 9): the owner,
- *    not the source, is who works there.
+ *    not the source, is who works there — and a record whose owner is no
+ *    longer registered is refused, never handed on to the source's agent.
  * 4. **A linked worktree of a home repo**, read from the filesystem with no
  *    `git` process: the folder's `.git` file, git's own backlink to it, and the
  *    repo's `commondir`. The folder at the same relative position in the main
  *    worktree must itself be a registered home — never a walk up past it.
  *
- * A path prefix is never an owner source.
+ * A path prefix is never an owner source. Every home is compared canonically —
+ * the same folder spelled through a symlink is the same home — and answered in
+ * the registry's own spelling (see {@link canonicalHome}).
  *
  * ## Who the turn is for
  *
@@ -82,11 +85,19 @@ export type HomeResolution =
  * every answer is `none` or `refused` — never an identity read off the folder.
  */
 export interface AgentHomeRegistry {
-  /** Whether `dir` is, exactly, a registered agent's home right now. */
+  /** Whether `dir` is, exactly as spelled, a registered agent's home right now. */
   isRegisteredHome(dir: string): boolean;
   /**
-   * The owning agent's home when `dir` is exactly a managed workspace's
-   * checkout owned by an agent, else `null`.
+   * Every registered home, in the registry's own spelling. Read only when an
+   * exact lookup misses, so a folder reached through a symlink (or a `/tmp` vs
+   * `/private/tmp` spelling) still finds the home it IS — see
+   * {@link canonicalHome}.
+   */
+  listRegisteredHomes(): readonly string[];
+  /**
+   * The owning agent's home when `dir` is a managed workspace's checkout owned
+   * by an agent, else `null`. Implementations compare canonically: the store
+   * may hold a realpath'd spelling of either side.
    */
   managedWorkspaceOwner(dir: string): string | null;
   /** `<dorkHome>/rooms`: no repo under it is ever an agent's home repo. */
@@ -150,14 +161,12 @@ export function resolveAgentHome(
 ): HomeResolution {
   const found: HomeResolution = dir ? resolveFolder(path.resolve(dir)) : { kind: 'none' };
   if (forAgent === undefined || found.kind === 'refused') return found;
+  const turnAgent = canonicalHome(path.resolve(forAgent));
   if (found.kind === 'home') {
-    return found.home === path.resolve(forAgent)
-      ? found
-      : { kind: 'refused', reason: 'not-the-turns-agent' };
+    return found.home === turnAgent ? found : { kind: 'refused', reason: 'not-the-turns-agent' };
   }
-  const turnAgent = path.resolve(forAgent);
-  return isRegistered(turnAgent)
-    ? { kind: 'home', home: turnAgent as AgentHome, via: 'turn-agent' }
+  return turnAgent !== null
+    ? { kind: 'home', home: turnAgent, via: 'turn-agent' }
     : { kind: 'refused', reason: 'unregistered-owner' };
 }
 
@@ -204,34 +213,55 @@ function resolveFolder(dir: string): HomeResolution {
   const workingCopy = safeOwnerOf(dir);
   if (workingCopy) {
     if (workingCopy.owner === null) return { kind: 'refused', reason: 'unowned-working-copy' };
-    const owner = path.resolve(workingCopy.owner);
-    if (!isRegistered(owner)) return { kind: 'refused', reason: 'unregistered-owner' };
-    return { kind: 'home', home: owner as AgentHome, via: 'room-worktree' };
+    const owner = canonicalHome(path.resolve(workingCopy.owner));
+    if (owner === null) return { kind: 'refused', reason: 'unregistered-owner' };
+    return { kind: 'home', home: owner, via: 'room-worktree' };
   }
 
-  if (isRegistered(dir)) return { kind: 'home', home: dir as AgentHome, via: 'exact' };
+  const exact = canonicalHome(dir);
+  if (exact !== null) return { kind: 'home', home: exact, via: 'exact' };
 
+  // A managed record that claims this folder is the whole answer. Falling
+  // through to the linked-worktree source when its owner is gone would hand
+  // Bob's checkout of Ana's repo to ANA — her persona, her account, her relay
+  // identity — which is exactly the borrowing this module exists to stop.
   const managedOwner = safeManagedOwner(dir);
   if (managedOwner !== null) {
-    const owner = path.resolve(managedOwner);
-    if (isRegistered(owner)) {
-      return { kind: 'home', home: owner as AgentHome, via: 'managed-workspace' };
-    }
+    const owner = canonicalHome(path.resolve(managedOwner));
+    return owner !== null
+      ? { kind: 'home', home: owner, via: 'managed-workspace' }
+      : { kind: 'refused', reason: 'unregistered-owner' };
   }
 
   const candidate = linkedWorktreeCandidate(dir);
-  if (candidate !== null && isRegistered(candidate)) {
-    return { kind: 'home', home: candidate as AgentHome, via: 'linked-worktree' };
-  }
+  const linked = candidate === null ? null : canonicalHome(candidate);
+  if (linked !== null) return { kind: 'home', home: linked, via: 'linked-worktree' };
   return { kind: 'none' };
 }
 
-function isRegistered(dir: string): boolean {
-  if (!registry) return false;
+/**
+ * The registered home `dir` IS, in the registry's own spelling, or `null`.
+ *
+ * Exact first (the hot path, one indexed read). On a miss, the same folder
+ * reached by another spelling — a symlinked agents directory, macOS's `/tmp`
+ * and `/private/tmp` — is found by comparing real paths, and answered with the
+ * spelling the registry holds so every later `getByPath(home)` hits. Never a
+ * prefix: two spellings of one folder, nothing wider.
+ *
+ * @param dir - An absolute, normalized folder.
+ */
+function canonicalHome(dir: string): AgentHome | null {
+  if (!registry) return null;
   try {
-    return registry.isRegisteredHome(dir);
+    if (registry.isRegisteredHome(dir)) return dir as AgentHome;
+    const real = realPathOr(dir);
+    if (real !== dir && registry.isRegisteredHome(real)) return real as AgentHome;
+    for (const home of registry.listRegisteredHomes()) {
+      if (realPathOr(home) === real) return home as AgentHome;
+    }
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -253,9 +283,15 @@ function safeManagedOwner(dir: string): string | null {
   try {
     return registry.managedWorkspaceOwner(dir);
   } catch {
-    return null;
+    // Cannot tell whether a record claims this folder: answer as if one does
+    // and its owner is gone, rather than letting the linked-worktree source
+    // hand the folder to its SOURCE repo's agent.
+    return UNREADABLE_MANAGED_OWNER;
   }
 }
+
+/** A managed-owner lookup that threw: resolves to no registered home, so refused. */
+const UNREADABLE_MANAGED_OWNER = '\0unreadable-managed-owner';
 
 /**
  * The main worktree's candidate home for a linked worktree, keyed on the two
@@ -358,6 +394,15 @@ function insideRoomsDir(target: string): boolean {
 
 function sameRealPath(a: string, b: string): boolean {
   return realPathOr(a) === realPathOr(b);
+}
+
+/**
+ * A folder's real path, or its lexically resolved path when it does not exist.
+ *
+ * @param p - Any path.
+ */
+export function canonicalDir(p: string): string {
+  return realPathOr(p);
 }
 
 function realPathOr(p: string): string {

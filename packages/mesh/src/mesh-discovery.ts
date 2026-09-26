@@ -7,6 +7,7 @@
  * @module mesh/mesh-discovery
  */
 import path from 'path';
+import { realpathSync } from 'fs';
 import { monotonicFactory } from 'ulidx';
 import type { AgentManifest, DiscoveryCandidate } from '@dorkos/shared/mesh-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
@@ -175,8 +176,27 @@ function managedScanRoot(projectPath: string, deps: DiscoveryDeps): string | und
 export function isInsideRoomFiles(projectPath: string, deps: DiscoveryDeps): boolean {
   const rooms = deps.roomFilesDir;
   if (!rooms) return false;
-  const relative = path.relative(path.resolve(rooms), path.resolve(projectPath));
+  // Lexically AND through real paths: a symlink pointing into a room's repo
+  // is that repo, and a rooms folder reached by another spelling is the same
+  // folder. Either match refuses.
+  return (
+    isWithin(path.resolve(rooms), path.resolve(projectPath)) ||
+    isWithin(realPathOr(rooms), realPathOr(projectPath))
+  );
+}
+
+function isWithin(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+/** The real path, or the lexical one for a path that does not exist (yet). */
+function realPathOr(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 /** Thrown when a registration names a folder inside a room's files. */

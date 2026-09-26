@@ -155,6 +155,20 @@ describe('resolveAgentHome — the turn the folder is for', () => {
     expect(homeOf(resolveAgentHome(undefined, BEN))).toBe(BEN);
   });
 
+  it('gives a turn that names its agent but stands NOWHERE that agent`s identity', () => {
+    // DOR-2091 refused this, so a login-off install would not read it as the
+    // operator. Naming the agent now IS the identity (01-ideation decision 10);
+    // refusal is kept for an agent that is not registered (below).
+    registerTestHomes([BEN]);
+
+    expect(resolveAgentHome(undefined, BEN)).toEqual({
+      kind: 'home',
+      home: BEN,
+      via: 'turn-agent',
+    });
+    expect(resolveAgentHome('', BEN)).toEqual({ kind: 'home', home: BEN, via: 'turn-agent' });
+  });
+
   it('refuses a turn for an agent that is not registered, rather than reading it as nobody', () => {
     registerTestHomes([ANA]);
 
@@ -208,9 +222,75 @@ describe('resolveAgentHome — managed workspaces', () => {
     }
   });
 
-  it('ignores a checkout whose owner is no longer registered', () => {
-    registerTestHomes([ANA], { managed: { '/ws/checkout': BEN } });
-    expect(resolveAgentHome('/ws/checkout')).toEqual({ kind: 'none' });
+  it("refuses a checkout whose owner is gone — never hands it to the source repo's agent", () => {
+    // Bob owned a checkout of ANA's repo and was then unregistered. The folder
+    // is still a linked worktree of Ana's registered home; falling through to
+    // that source would give Bob's checkout Ana's persona, account and relay
+    // identity. The managed record is the whole answer.
+    const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-home-gone-')));
+    try {
+      const anaRepo = path.join(scratch, 'ana');
+      initRepo(anaRepo);
+      const checkout = path.join(scratch, 'workspaces', 'bob-fix');
+      git(anaRepo, 'worktree', 'add', '-q', '-b', 'bob-fix', checkout);
+      registerTestHomes([anaRepo], { managed: { [checkout]: path.join(scratch, 'bob') } });
+
+      expect(resolveAgentHome(checkout)).toEqual({
+        kind: 'refused',
+        reason: 'unregistered-owner',
+      });
+      expect(resolveAgentHome(checkout, anaRepo).kind).toBe('refused');
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  it('matches an owner recorded realpath`d against a home registered through a symlink', () => {
+    const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-home-owner-')));
+    try {
+      const anaRepo = path.join(scratch, 'ana');
+      const bobReal = path.join(scratch, 'real', 'bob');
+      const bobLink = path.join(scratch, 'agents-link', 'bob');
+      fs.mkdirSync(bobReal, { recursive: true });
+      fs.symlinkSync(path.join(scratch, 'real'), path.join(scratch, 'agents-link'));
+      initRepo(anaRepo);
+      const checkout = path.join(scratch, 'workspaces', 'bob-fix');
+      git(anaRepo, 'worktree', 'add', '-q', '-b', 'bob-fix', checkout);
+      // Registered through the link; the workspace stores the realpath.
+      registerTestHomes([anaRepo, bobLink], { managed: { [checkout]: bobReal } });
+
+      expect(resolveAgentHome(checkout)).toEqual({
+        kind: 'home',
+        home: bobLink,
+        via: 'managed-workspace',
+      });
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resolveAgentHome — one folder, two spellings', () => {
+  it('finds a home registered through a symlink from its real path, in the registry`s spelling', () => {
+    const scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agent-home-link-')));
+    try {
+      const real = path.join(scratch, 'real-agents', 'ana');
+      fs.mkdirSync(real, { recursive: true });
+      fs.symlinkSync(path.join(scratch, 'real-agents'), path.join(scratch, 'agents'));
+      const link = path.join(scratch, 'agents', 'ana');
+
+      registerTestHomes([link]);
+      expect(resolveAgentHome(real)).toEqual({ kind: 'home', home: link, via: 'exact' });
+      expect(homeOf(resolveAgentHome('/default/cwd', real))).toBe(link);
+
+      registerTestHomes([real]);
+      expect(resolveAgentHome(link)).toEqual({ kind: 'home', home: real, via: 'exact' });
+      // Still never a prefix.
+      fs.mkdirSync(path.join(real, 'src'));
+      expect(resolveAgentHome(path.join(link, 'src'))).toEqual({ kind: 'none' });
+    } finally {
+      fs.rmSync(scratch, { recursive: true, force: true });
+    }
   });
 });
 

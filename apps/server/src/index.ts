@@ -335,6 +335,7 @@ import {
   ensureInSessionAgentIdentity,
   homeOf,
   resolveAgentHome,
+  canonicalDir,
   setAgentHomeRegistry,
   setWorkingCopyOwnerPort,
   createCapabilityAttributionObserver,
@@ -1755,10 +1756,18 @@ async function start() {
   // nobody's home at once and nothing is cached across a registration.
   setAgentHomeRegistry({
     isRegisteredHome: (dir) => meshCore?.getByPath(dir) !== undefined,
+    listRegisteredHomes: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
+    // Canonically: a checkout path may be stored realpath'd while the turn
+    // names it through a symlink, or the other way round.
     managedWorkspaceOwner: (dir) => {
+      const target = canonicalDir(dir);
       const owned = managedWorkspaces
         ?.list()
-        .find((ws) => ws.owner?.kind === 'agent' && path.resolve(ws.path) === dir);
+        .find(
+          (ws) =>
+            ws.owner?.kind === 'agent' &&
+            (path.resolve(ws.path) === dir || canonicalDir(ws.path) === target)
+        );
       return owned?.owner?.ref ?? null;
     },
     roomsDir: path.join(dorkHome, 'rooms'),

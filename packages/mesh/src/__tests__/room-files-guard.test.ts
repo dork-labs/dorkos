@@ -98,6 +98,19 @@ describe("a room's files never register an agent", () => {
     mesh.close();
   });
 
+  it('refuses a symlink that points into a room`s repo', async () => {
+    const roomRepo = path.join(roomsDir, '01ROOM', 'repo');
+    await seedAgent(roomRepo, makeManifest('01ROOMREPO0000000000000000', 'room-copy'));
+    const link = path.join(base, 'looks-like-a-project');
+    await fs.symlink(roomRepo, link);
+    const mesh = new MeshCore({ db, defaultScanRoot: base, roomFilesDir: roomsDir });
+
+    expect(await mesh.syncFromDisk(link)).toBe('inside-room-files');
+    await expect(mesh.registerByPath(link, {})).rejects.toBeInstanceOf(InsideRoomFilesError);
+    expect(mesh.listWithPaths()).toEqual([]);
+    mesh.close();
+  });
+
   it('still registers the same manifest outside the rooms folder', async () => {
     const home = path.join(base, 'agents', 'ana');
     await seedAgent(home, makeManifest('01ANAHOME00000000000000000', 'ana'));

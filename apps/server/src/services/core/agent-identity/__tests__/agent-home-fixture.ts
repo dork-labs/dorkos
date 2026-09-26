@@ -24,6 +24,7 @@ export function registerTestHomes(
   );
   const port: AgentHomeRegistry = {
     isRegisteredHome: (dir) => registered.has(dir),
+    listRegisteredHomes: () => [...registered],
     managedWorkspaceOwner: (dir) => managed.get(dir) ?? null,
     roomsDir: extra.roomsDir ?? null,
   };
@@ -43,6 +44,7 @@ export function registerTestHomes(
 export function registerEveryFolderAsHome(): void {
   setAgentHomeRegistry({
     isRegisteredHome: () => true,
+    listRegisteredHomes: () => [],
     managedWorkspaceOwner: () => null,
     roomsDir: null,
   });

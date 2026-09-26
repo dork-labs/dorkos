@@ -23,6 +23,7 @@ export {
 } from './agent-token-env.js';
 export {
   resolveAgentHome,
+  canonicalDir,
   homeOf,
   turnAgentOf,
   readHomeManifest,
