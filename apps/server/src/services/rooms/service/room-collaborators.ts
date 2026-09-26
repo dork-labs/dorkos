@@ -161,7 +161,7 @@ export function createRoomCollaborators(
     bridgeCreation,
     bridgeLifecycle,
     membership,
-    departures: new RoomDepartures(core),
+    departures: new RoomDepartures(core, membership),
     follow,
     directory: new RoomDirectory(core, visibility, projection),
     memberDirectory: new RoomMemberDirectory(core, visibility),

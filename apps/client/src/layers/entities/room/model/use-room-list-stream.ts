@@ -11,6 +11,7 @@
  *
  * @module entities/room/model/use-room-list-stream
  */
+import { useRef } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomSummary, RoomWithRoster, ThreadSummary } from '@dorkos/shared/room-schemas';
 import { useEventSubscription } from '@/layers/shared/model';
@@ -267,9 +268,21 @@ export function useRoomListStream(): void {
   // added from another window — changes what the OPEN room says about who will
   // answer, its head count and its `@` picker. Same reason as `room_updated`
   // above: nothing else refetches the detail. Both events carry the `roomId`.
+  //
+  // Coalesced per room to one refetch per tick: unregistering an agent sends
+  // one event per channel seat, and a burst for the same open room is one
+  // question, not several.
+  const pendingRosters = useRef(new Set<string>());
   const refreshRoster = (payload: unknown) => {
     if (!isRoomUpdated(payload)) return;
-    void queryClient.invalidateQueries({ queryKey: roomKeys.detail(payload.roomId) });
+    const pending = pendingRosters.current;
+    if (pending.has(payload.roomId)) return;
+    pending.add(payload.roomId);
+    const roomId = payload.roomId;
+    queueMicrotask(() => {
+      pending.delete(roomId);
+      void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
+    });
   };
   useEventSubscription('room_member_added', refreshRoster);
   useEventSubscription('room_member_removed', refreshRoster);

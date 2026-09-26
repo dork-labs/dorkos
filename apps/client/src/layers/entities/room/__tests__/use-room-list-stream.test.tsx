@@ -160,7 +160,7 @@ describe('useRoomListStream', () => {
 
   it.each(['room_member_removed', 'room_member_added'])(
     'invalidates the open room itself on %s, so its roster and head count follow (DOR-2095)',
-    (event) => {
+    async (event) => {
       // An agent unregistered elsewhere leaves every channel with only a
       // membership event. Without this the open room kept listing it, kept
       // saying "Two agents will answer you here", and kept offering its @.
@@ -168,10 +168,24 @@ describe('useRoomListStream', () => {
       seedOpenRoom(queryClient, 'me', 0);
 
       handlers.get(event)!({ roomId: 'room-1', authorId: 'agent-1' });
+      await Promise.resolve();
 
       expect(invalidated).toContainEqual(roomKeys.detail('room-1'));
     }
   );
+
+  it('refetches an open room once for a burst of roster events', async () => {
+    const { invalidated, queryClient } = setup();
+    seedOpenRoom(queryClient, 'me', 0);
+
+    handlers.get('room_member_removed')!({ roomId: 'room-1', authorId: 'agent-1' });
+    handlers.get('room_member_removed')!({ roomId: 'room-1', authorId: 'agent-2' });
+    handlers.get('room_member_added')!({ roomId: 'room-1', authorId: 'agent-3' });
+    await Promise.resolve();
+
+    const detail = JSON.stringify(roomKeys.detail('room-1'));
+    expect(invalidated.filter((key) => JSON.stringify(key) === detail)).toHaveLength(1);
+  });
 
   it('leaves a room nobody has open alone on room_updated, minting no cache entry', () => {
     const { queryClient } = setup();

@@ -82,6 +82,10 @@ function fakeMesh(db: Db) {
       registerAgent(db, { id: agentId, projectPath, name });
       for (const callback of changed) callback({ kind: 'registered', agentId, projectPath });
     },
+    /** An existing row changing — how an agent relocating back to its folder arrives. */
+    update(agentId: string, projectPath: string) {
+      for (const callback of changed) callback({ kind: 'updated', agentId, projectPath });
+    },
     unregister(agentId: string, projectPath: string) {
       db.delete(agents).where(eq(agents.id, agentId)).run();
       for (const callback of unregistered) callback(agentId, projectPath);
@@ -513,6 +517,143 @@ describe('an agent that comes back gets its channels back', () => {
     });
 
     expect(result.restored).toBe(1);
+    expect(memberIds(read(harness, general.id))).toContain(ana);
+  });
+});
+
+describe('a returning agent still meets the room’s join rules', () => {
+  it('is not given back a bridged room that now holds another agent', () => {
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'bo' });
+    const room = harness.service.createBridgedRoom({
+      adapterId: 'tg-main',
+      chatId: '555',
+      bindingId: 'binding-ana',
+      chatType: 'group',
+      channelType: 'group',
+      title: 'Ops Team',
+      agentPath: ANA_PATH,
+      operatorAuthorId: harness.human,
+    });
+    const ana = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
+    const mesh = fakeMesh(harness.db);
+    registerRoomUnregisterCascade(mesh, harness.service, quiet);
+    mesh.unregister('ULID_ANA', ANA_PATH);
+    // The chat is bound to Bo while Ana is away.
+    harness.service.addMember(room.id, harness.human, { agentPath: BO_PATH });
+    const bo = harness.authors.resolveAgent(BO_PATH, 'bo').id;
+
+    mesh.register('ULID_ANA', ANA_PATH, 'ana');
+
+    const agentIds = read(harness, room.id)
+      .members.filter((m) => m.author.kind === 'agent')
+      .map((m) => m.authorId);
+    expect(agentIds).toEqual([bo]);
+    expect(agentIds).not.toContain(ana);
+    // Refused, and not kept for later: a tombstone that outlived the refusal
+    // would re-seat Ana the day the chat happened to be unbound.
+    expect(harness.db.select().from(roomDepartedSeats).all()).toEqual([]);
+  });
+
+  it('is not given back a room the owner has left that now holds another agent', () => {
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'bo' });
+    const general = channel(harness, 'general', [ANA_PATH]);
+    const ana = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
+    harness.service.removeMember(general.id, harness.human, harness.human);
+    const mesh = fakeMesh(harness.db);
+    registerRoomUnregisterCascade(mesh, harness.service, quiet);
+    mesh.unregister('ULID_ANA', ANA_PATH);
+    harness.service.addMember(general.id, harness.human, { agentPath: BO_PATH });
+
+    mesh.register('ULID_ANA', ANA_PATH, 'ana');
+
+    // Two agents with nobody watching is the shape the three-way rule refuses
+    // (ADR 260814-025326); a replay must not build it either.
+    expect(memberIds(read(harness, general.id))).not.toContain(ana);
+  });
+
+  it('is given back its other seats when one is refused', () => {
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    registerAgent(harness.db, { id: 'ULID_BO', projectPath: BO_PATH, name: 'bo' });
+    const general = channel(harness, 'general', [ANA_PATH]);
+    const other = channel(harness, 'other', [ANA_PATH]);
+    const ana = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
+    harness.service.removeMember(general.id, harness.human, harness.human);
+    const mesh = fakeMesh(harness.db);
+    registerRoomUnregisterCascade(mesh, harness.service, quiet);
+    mesh.unregister('ULID_ANA', ANA_PATH);
+    harness.service.addMember(general.id, harness.human, { agentPath: BO_PATH });
+
+    mesh.register('ULID_ANA', ANA_PATH, 'ana');
+
+    expect(memberIds(read(harness, general.id))).not.toContain(ana);
+    expect(memberIds(read(harness, other.id))).toContain(ana);
+  });
+});
+
+describe('what a replay must get right about identity and timing', () => {
+  it('skips a seat the agent already holds again, and still gives back the rest', () => {
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    const general = channel(harness, 'general', [ANA_PATH]);
+    const other = channel(harness, 'other', [ANA_PATH]);
+    const ana = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
+    const mesh = fakeMesh(harness.db);
+    registerRoomUnregisterCascade(mesh, harness.service, quiet);
+    mesh.unregister('ULID_ANA', ANA_PATH);
+    // Back before the replay runs, and re-seated in #general the ordinary way —
+    // what `ensureTeamRoom` does to #team for every registered agent.
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    harness.service.addMember(general.id, harness.human, { agentPath: ANA_PATH });
+
+    expect(() => harness.service.restoreReturningAgentAt(ANA_PATH)).not.toThrow();
+    expect(memberIds(read(harness, other.id))).toContain(ana);
+    expect(memberIds(read(harness, general.id)).filter((id) => id === ana)).toHaveLength(1);
+  });
+
+  it('records a leftover author copy under ITS OWN agent, so its seats never come back to another', () => {
+    const harness = liveHarness();
+    // Generation one: agent X at the folder, seated in #old.
+    registerAgent(harness.db, { id: 'ULID_X', projectPath: ANA_PATH, name: 'ana' });
+    const old = channel(harness, 'old', [ANA_PATH]);
+    const first = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
+    // Generation two: agent Y takes the folder over; the first author is
+    // retired but keeps its seat in #old (ADR 260801-003051).
+    harness.db.delete(agents).where(eq(agents.id, 'ULID_X')).run();
+    registerAgent(harness.db, { id: 'ULID_Y', projectPath: ANA_PATH, name: 'ana' });
+    const neu = channel(harness, 'new', [ANA_PATH]);
+    const second = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
+    expect(second).not.toBe(first);
+    const mesh = fakeMesh(harness.db);
+    registerRoomUnregisterCascade(mesh, harness.service, quiet);
+
+    // Y leaves; both generations lose their seats. Then Y comes back.
+    mesh.unregister('ULID_Y', ANA_PATH);
+    mesh.register('ULID_Y', ANA_PATH, 'ana');
+
+    expect(memberIds(read(harness, neu.id))).toContain(second);
+    // The first generation spoke for X, not Y: its seat stays gone.
+    expect(memberIds(read(harness, old.id))).not.toContain(first);
+  });
+
+  it('gives seats back when the agent arrives as an update to an existing row', () => {
+    const harness = liveHarness();
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+    const general = channel(harness, 'general', [ANA_PATH]);
+    const ana = harness.authors.resolveAgent(ANA_PATH, 'ana').id;
+    const mesh = fakeMesh(harness.db);
+    registerRoomUnregisterCascade(mesh, harness.service, quiet);
+    mesh.unregister('ULID_ANA', ANA_PATH);
+    // Relocated back to the folder it left: the registry row already existed
+    // elsewhere, so Mesh reports an update, not a registration.
+    registerAgent(harness.db, { id: 'ULID_ANA', projectPath: ANA_PATH, name: 'ana' });
+
+    mesh.update('ULID_ANA', ANA_PATH);
+
     expect(memberIds(read(harness, general.id))).toContain(ana);
   });
 });

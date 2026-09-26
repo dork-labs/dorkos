@@ -135,12 +135,30 @@ export class DepartedSeatStore {
    * session and reads what it missed from its restored cursor, which is the
    * same path any first turn in a room takes.
    *
+   * **The room's own join rules still apply.** `admit` is asked about each seat
+   * inside the transaction, against the roster as it stands now — a bridged room
+   * rebridged to another agent, or a room the owner has left that now holds a
+   * different agent, has changed shape since, and a replay must not walk around
+   * the refusal an ordinary add would get. A refused seat is not given back.
+   *
+   * **Every matched tombstone is deleted, refused or not.** A refusal is about
+   * the room as it is NOW, and a tombstone kept for later would re-seat the
+   * agent the day some unrelated roster change happened to clear the conflict —
+   * a membership nobody asked for, arriving with no cause anyone could see. The
+   * caller logs each refusal instead.
+   *
    * @param authorId - The author that is live again.
    * @param manifestId - The manifest id of the agent now answering for it.
-   * @returns The seats given back.
+   * @param admit - Why this author may not rejoin a room now, or `null` when it may.
+   * @returns The seats given back, and the ones refused with the reason.
    */
-  restore(authorId: string, manifestId: string): ChannelSeat[] {
+  restore(
+    authorId: string,
+    manifestId: string,
+    admit: (roomId: string) => string | null
+  ): { restored: ChannelSeat[]; refused: Array<ChannelSeat & { reason: string }> } {
     const restored: ChannelSeat[] = [];
+    const refused: Array<ChannelSeat & { reason: string }> = [];
     this.db.transaction(
       (tx) => {
         const tombstones = tx
@@ -156,6 +174,11 @@ export class DepartedSeatStore {
         for (const seat of tombstones) {
           const room = tx.select().from(rooms).where(eq(rooms.id, seat.roomId)).get();
           if (!room || room.kind !== 'channel' || room.archived) continue;
+          const reason = admit(seat.roomId);
+          if (reason !== null) {
+            refused.push({ roomId: seat.roomId, authorId, reason });
+            continue;
+          }
           const inserted = tx
             .insert(roomMembers)
             .values({
@@ -190,7 +213,7 @@ export class DepartedSeatStore {
       },
       { behavior: 'immediate' }
     );
-    return restored;
+    return { restored, refused };
   }
 
   /** Every author with at least one seat waiting to be given back. */

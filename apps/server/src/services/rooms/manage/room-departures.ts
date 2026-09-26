@@ -23,7 +23,10 @@ import type { RoomAgentLookup } from '../room-errors.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomCore } from '../service/room-core.js';
+import { logger } from '../../../lib/logger.js';
+import { RoomError } from '../room-errors.js';
 import type { ChannelSeat } from './departed-seat-store.js';
+import type { RoomMembership } from './room-membership.js';
 
 /** What taking departed agents out of their channels changed. */
 export interface DepartedAgentsDrop {
@@ -41,7 +44,11 @@ export class RoomDepartures {
   private readonly agents: RoomAgentLookup;
   private readonly triggers: RoomTriggerDispatcher;
 
-  constructor(core: RoomCore) {
+  constructor(
+    core: RoomCore,
+    /** The join rules every door into a room shares. */
+    private readonly membership: Pick<RoomMembership, 'requireJoinAllowed'>
+  ) {
     this.store = core.store;
     this.authors = core.authors;
     this.agents = core.agents;
@@ -117,12 +124,43 @@ export class RoomDepartures {
       // ANY occupant, but its seats were recorded under the agent that left.
       const occupant = this.agents.byPath(author.naturalKey);
       if (!occupant) continue;
-      restored.push(...this.store.departedSeats.restore(author.id, occupant.id));
+      const outcome = this.store.departedSeats.restore(author.id, occupant.id, (roomId) =>
+        this.joinRefusal(roomId, author)
+      );
+      restored.push(...outcome.restored);
+      for (const seat of outcome.refused) {
+        logger.warn('[rooms] a returning agent was not given a seat back', {
+          event: 'rooms.agent_return_refused',
+          roomId: seat.roomId,
+          authorId: seat.authorId,
+          reason: seat.reason,
+        });
+      }
     }
     for (const { roomId, authorId } of restored) {
       eventFanOut.broadcast('room_member_added', { roomId, authorId });
     }
     return restored;
+  }
+
+  /**
+   * Why an author may not rejoin a room now, or `null` when it may — the join
+   * rules an ordinary add enforces (`RoomMembership.requireJoinAllowed`), read as
+   * an answer rather than a throw so one refused seat does not cost the others.
+   *
+   * @param roomId - The room.
+   * @param author - The returning author.
+   */
+  private joinRefusal(roomId: string, author: AuthorRecord): string | null {
+    const room = this.store.getRoom(roomId);
+    if (!room) return 'ROOM_NOT_FOUND';
+    try {
+      this.membership.requireJoinAllowed(room, author);
+      return null;
+    } catch (err) {
+      if (err instanceof RoomError) return err.code;
+      throw err;
+    }
   }
 
   /** Every author with seats waiting to be given back. See {@link RoomDepartures.restore}. */
