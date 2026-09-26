@@ -92,6 +92,16 @@ Source: the programme's runtime decisions (RUNTIMES.md R7).
 
 Spec: §4, §6.0, §6.5, §6.6, §6.7, §8.3.
 
+## 4c. Cached usage and context in the status bar (operator ask via the orchestrator, 2026-09-26)
+
+- The status bar's existing usage and context items show **cached data from the moment a session opens**, not only after a turn, for **all runtimes and a single account** (not gated like the chip).
+- Usage is account-wide: every session on the same account shows the same numbers, and they update together.
+- **No double display:** with 2+ Claude accounts the account chip absorbs the usage display; otherwise the existing usage item shows it.
+- **Freshness:** "as of 12 min ago" in the popover or tooltip; numbers dimmed when older than about 60 minutes; a window whose reset has passed shows as reset or empty.
+- Stay inside the existing chip's visual pattern; anything new goes to the open questions.
+
+Spec: §6.8.
+
 ## 5. Chosen in this spec (not a new visual decision)
 
 - **The palette** (§5 of the spec): 8 colors, blue, green, amber, purple, pink, teal, indigo, stone, each at least 3:1 against every surface a dot sits on in both themes. The first four follow the mockups' order. The brief asked the spec to choose it.
@@ -118,3 +128,8 @@ Listed with a proposed default in the spec, §14. None is decided here; each nee
 - Q14. Whether a moved session keeps a tint or text in the sidebar.
 - Q15. Whether and how to show spend-only usage (OpenCode) in Settings.
 - Q16. Cross-runtime fallback per runtime pair, beyond one fleet-wide toggle.
+- Q17. How stale numbers are dimmed.
+- Q18. "Continue on another account →" on a healthy session (S4 cannot move one yet).
+- Q19. The chip's look when only a model is out.
+- Q20. Where one-account and Codex usage bars sit in Settings.
+- Q21. The implicit account's color in the Flow tab.
