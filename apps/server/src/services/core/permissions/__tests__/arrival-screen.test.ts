@@ -8,27 +8,29 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionChangedMetadata } from '@dorkos/shared/permissions';
 
-import { ARRIVAL_NOTE } from '../permission-service.js';
+import { ARRIVAL_NOTE, ARRIVAL_WRITE_FAILED_NOTE } from '../permission-service.js';
 import { isAlwaysOffered } from '../../approvals/index.js';
-import { createPermissionWorld } from './permission-fixtures.js';
+import { createPermissionWorld, type FixtureAgent } from './permission-fixtures.js';
 
-const WIDE = {
+const WIDE: FixtureAgent = {
   id: 'agent-new',
   name: 'newcomer',
   projectPath: '/agents/newcomer',
   permissions: {
-    areas: { rooms: 'allowed' as const, tasks: 'blocked' as const },
-    actions: { 'rooms.merge': 'allowed' as const },
-    filesAndCommands: 'autonomy' as const,
+    areas: { rooms: 'allowed', tasks: 'blocked' },
+    actions: { 'rooms.merge': 'allowed' },
+    filesAndCommands: 'autonomy',
   },
 };
 
 describe('screening an arriving agent', () => {
-  it('keeps stricter settings, drops wider ones, and records one line', async () => {
+  it('keeps only what is strictly stricter than the defaults, and records one line', async () => {
     const world = createPermissionWorld({ preset: 'careful', trustStop: 'ask', agents: [WIDE] });
 
-    const changes = await world.service.screenArrivedAgent('agent-new');
+    const { changes, written } = await world.service.screenArrivedAgent('agent-new');
 
+    expect(written).toBe(true);
+    // Careful asks for Tasks, so Blocked is stricter and stays.
     expect(world.agents.get('agent-new')?.permissions).toEqual({ areas: { tasks: 'blocked' } });
     expect(changes.map((c) => c.key)).toEqual([
       { kind: 'area', area: 'rooms' },
@@ -43,14 +45,15 @@ describe('screening an arriving agent', () => {
     expect(world.events[0]!.actorLabel).toBe('DorkOS');
   });
 
-  it('keeps a setting that only matches what everyone already has', async () => {
+  it('drops a setting equal to the default, so the agent inherits it', async () => {
     const world = createPermissionWorld({
-      preset: 'full',
-      trustStop: 'autonomy',
-      agents: [{ ...WIDE, permissions: { areas: { rooms: 'allowed' }, filesAndCommands: 'act' } }],
+      preset: 'careful',
+      trustStop: 'ask',
+      agents: [{ ...WIDE, permissions: { areas: { rooms: 'ask' }, filesAndCommands: 'ask' } }],
     });
-    expect(await world.service.screenArrivedAgent('agent-new')).toEqual([]);
-    expect(world.events).toEqual([]);
+    const { changes } = await world.service.screenArrivedAgent('agent-new');
+    expect(changes.map((c) => c.key.kind)).toEqual(['area', 'files']);
+    expect(world.agents.get('agent-new')?.permissions).toBeUndefined();
   });
 
   it('keeps only Ask first for Files & commands when nobody set a stop for everyone', async () => {
@@ -63,15 +66,16 @@ describe('screening an arriving agent', () => {
     expect(world.agents.get('agent-new')?.permissions).toBeUndefined();
   });
 
-  it('leaves an agent DorkOS has already seen exactly as it is', async () => {
+  it('says so, and reports the write as not done, when the file cannot be written', async () => {
     const world = createPermissionWorld({
       preset: 'careful',
       trustStop: 'ask',
       agents: [WIDE],
-      seen: ['agent-new'],
+      writeFails: true,
     });
-    expect(await world.service.screenArrivedAgent('agent-new')).toEqual([]);
-    expect(world.agents.get('agent-new')?.permissions).toEqual(WIDE.permissions);
+    await expect(world.service.screenArrivedAgent('agent-new')).rejects.toThrow(/EACCES/);
+    expect(world.events).toHaveLength(1);
+    expect(world.events[0]!.metadata).toMatchObject({ note: ARRIVAL_WRITE_FAILED_NOTE });
   });
 });
 

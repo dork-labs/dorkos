@@ -50,12 +50,19 @@ import { notifyAgentCreated, setOnAgentCreated } from '../../services/core/agent
 import { createMeshRegisterHandler } from '../../services/runtimes/claude-code/mcp-tools/mesh-tools.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import {
+  ArrivalRecord,
   PermissionObserver,
+  createArrivalStep,
   createPermissionService,
+  narrowingContext,
+  narrowingReader,
   permissionActions,
   readAgentPermissionsFromManifest,
 } from '../../services/core/permissions/index.js';
-import { ARRIVAL_NOTE } from '../../services/core/permissions/permission-service.js';
+import {
+  ARRIVAL_NOTE,
+  ARRIVAL_WRITE_FAILED_NOTE,
+} from '../../services/core/permissions/permission-service.js';
 import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
 import type { ConfigManager } from '../../services/core/config-manager.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
@@ -91,6 +98,9 @@ let mesh: MeshCore;
 let base: string;
 let agentsHome: string;
 let emitted: Array<{ eventType: string; metadata?: Record<string, unknown> }>;
+let arrivals: ArrivalRecord;
+/** What the gate reads for an agent: the same narrowing reader index.ts hands it. */
+let gateRead: (agentPath: string) => Promise<unknown>;
 
 beforeEach(async () => {
   relay = new RelayCore({ dataDir: await tempDir('arrival-relay-') });
@@ -121,16 +131,35 @@ beforeEach(async () => {
     activity,
     logger: { warn: () => {} },
   });
+  arrivals = new ArrivalRecord({
+    file: path.join(await tempDir('arrival-record-'), 'pending.json'),
+    logger: { warn: () => {} },
+  });
   const service = createPermissionService({
     config: fakeConfig,
     mesh: () => mesh,
     registry: () => composeCapabilityRegistryForDocs(),
     activity,
     observer,
+    arrivals,
   });
-  // The seam index.ts wires: every arrival is screened first.
+  gateRead = narrowingReader(readAgentPermissionsFromManifest, {
+    arrivals,
+    agentAt: (agentPath) => mesh.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
+    context: () => narrowingContext(fakeConfig, composeCapabilityRegistryForDocs()),
+  });
+  // The seam index.ts wires: every arrival takes this step first.
+  const onArrival = createArrivalStep({
+    arrivals,
+    screen: () => (id) => service.screenArrivedAgent(id),
+    logger: { warn: () => {} },
+  });
   setOnAgentCreated(async (agent) => {
-    await service.screenArrivedAgent(agent.id);
+    await onArrival(agent.id);
+  });
+  mesh.onUnregister((agentId) => {
+    arrivals.clear(agentId);
+    void observer.forget(agentId);
   });
   // …and a folder a scan finds reaches that seam the way index.ts routes it.
   mesh.onAgentAdopted((agent) => void notifyAgentCreated({ ...agent, origin: 'registered' }));
@@ -142,6 +171,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   setOnAgentCreated(null);
+  // Put write access back so the temp folders can be removed.
+  for (const dir of tempDirs) {
+    await fs.chmod(dir, 0o755).catch(() => undefined);
+  }
   mesh?.close();
   await relay.close();
   for (const dir of tempDirs.splice(0)) await fs.rm(dir, { recursive: true, force: true });
@@ -215,5 +248,47 @@ describe('a folder cannot widen the agent it registers', () => {
       { timeout: 15_000 }
     );
     await expectScreened(dir);
+  });
+
+  it('stays on the defaults when its settings file cannot be written back', async () => {
+    const dir = await wideFolder(
+      path.join(base, 'proj'),
+      'locked-wide',
+      '01JKARRIVELOCK000000000000'
+    );
+    const dork = path.join(dir, '.dork');
+    await fs.chmod(path.join(dork, 'agent.json'), 0o444);
+    await fs.chmod(dork, 0o555);
+    try {
+      const res = await request(target.server).post('/api/mesh/agents').send({ path: dir });
+      expect(res.status).toBe(201);
+      // The file still says what the folder wrote…
+      expect((await readManifest(dir))?.permissions?.filesAndCommands).toBe('autonomy');
+      // …but nothing that reads it for the gate honours that.
+      expect(arrivals.isPending(res.body.id)).toBe(true);
+      expect(await gateRead(dir)).toEqual({ areas: { agents: 'blocked' } });
+      const lines = emitted.filter((e) => e.eventType === 'permission.changed');
+      expect(lines).toHaveLength(1);
+      expect(lines[0]!.metadata).toMatchObject({ note: ARRIVAL_WRITE_FAILED_NOTE });
+    } finally {
+      await fs.chmod(dork, 0o755);
+      await fs.chmod(path.join(dork, 'agent.json'), 0o644);
+    }
+  });
+
+  it('screens a new folder that reuses the id of an agent that left', async () => {
+    const id = '01JKARRIVEREUSE00000000000';
+    const first = await wideFolder(path.join(base, 'proj'), 'first-owner', id);
+    const registered = await request(target.server).post('/api/mesh/agents').send({ path: first });
+    expect(registered.status).toBe(201);
+    // It reads its (screened) settings, so DorkOS has a record of this id.
+    await gateRead(first);
+    expect((await request(target.server).delete(`/api/mesh/agents/${id}`)).status).toBe(200);
+
+    emitted = [];
+    const second = await wideFolder(path.join(base, 'proj'), 'second-owner', id);
+    const again = await request(target.server).post('/api/mesh/agents').send({ path: second });
+    expect(again.status).toBe(201);
+    await expectScreened(second);
   });
 });

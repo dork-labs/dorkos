@@ -211,6 +211,10 @@ import {
   observedPermissionReader,
   permissionActions,
   readAgentPermissionsFromManifest,
+  ArrivalRecord,
+  narrowingReader,
+  narrowingContext,
+  createArrivalStep,
   captureLiveStandingGrants,
   readStandingGrantLicence,
   readRawManifestFile,
@@ -1026,6 +1030,12 @@ async function start() {
   // Records a change to an agent's permissions that was made by editing its
   // settings file rather than through DorkOS. The last-seen values live in
   // DorkOS's own data directory, never the agent's.
+  // Agents that arrived and whose folder's settings have not been screened yet
+  // (review D1). Built with the observer so both exist before any agent does.
+  const arrivalRecord = new ArrivalRecord({
+    file: path.join(dorkHome, 'permissions', 'pending-arrivals.json'),
+    logger,
+  });
   const permissionObserver = new PermissionObserver({
     snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
     agentAt: (agentPath) => {
@@ -3960,21 +3970,18 @@ async function start() {
   // room says so (team-room-home spec D5.1).
   // Set once the permission service exists, below. Every arrival path
   // (create, the register route, the mesh_register tool, a discovery scan)
-  // reaches the listener, so this is the one place an arriving folder's own
-  // permission settings are screened before anything acts for the agent.
-  const arrivalScreen: { run?: (agentId: string) => Promise<unknown> } = {};
+  // reaches the listener, so this is where an arriving folder's own
+  // permission settings are screened (review D1).
+  const arrivalScreen: { run?: (agentId: string) => Promise<{ written: boolean }> } = {};
+  const onArrival = createArrivalStep({
+    arrivals: arrivalRecord,
+    screen: () => arrivalScreen.run,
+    logger,
+  });
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
-    // First: a folder's own settings file never widens what an agent may do
-    // on arrival (spec `agent-permissions`). Awaited, so a register call's
-    // response already reflects it.
-    try {
-      await arrivalScreen.run?.(agent.id);
-    } catch (err) {
-      logger.warn('[Permissions] could not screen an arriving agent', {
-        agentId: agent.id,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    // Marks the agent pending before anything awaits, so every reader narrows
+    // its folder's settings until the screened ones are in its file.
+    await onArrival(agent.id);
     joinTeamRoom(teamRoomDeps, agent.path);
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
@@ -4058,8 +4065,29 @@ async function start() {
     registry: () => capabilityRegistry,
     activity: activityService,
     observer: permissionObserver,
+    arrivals: arrivalRecord,
   });
   arrivalScreen.run = (agentId) => permissionService.screenArrivedAgent(agentId);
+  // A screen interrupted by a restart, or one whose write failed, is retried
+  // now; its agent stays narrowed until one lands.
+  for (const agentId of arrivalRecord.pendingIds()) {
+    if (!meshCore?.get(agentId)) {
+      arrivalRecord.clear(agentId);
+      continue;
+    }
+    void arrivalScreen
+      .run(agentId)
+      .then((screened) => {
+        if (screened.written) arrivalRecord.clear(agentId);
+      })
+      .catch(() => undefined);
+  }
+  // An agent that leaves is forgotten by both records, so a later folder
+  // reusing its id is screened as the newcomer it is.
+  meshCore?.onUnregister((agentId) => {
+    arrivalRecord.clear(agentId);
+    void permissionObserver.forget(agentId);
+  });
   app.use(
     '/api',
     createPermissionsRouter({
@@ -4810,7 +4838,12 @@ async function start() {
     readConfig: () => configManager.get('permissions'),
     // Fresh off the manifest on every call, and compared with the last value
     // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
-    readAgentPermissions: observedPermissionReader(permissionObserver),
+    readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
+      arrivals: arrivalRecord,
+      agentAt: (agentPath) =>
+        meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
+      context: () => narrowingContext(configManager, capabilityRegistry),
+    }),
     // The tool-list builders hide an action whose permission is Blocked; they
     // read this catalog, per build, off the composed registry.
     listActions: () => permissionActions(capabilityRegistry),

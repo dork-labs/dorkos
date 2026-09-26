@@ -48,6 +48,7 @@ import {
   type PermissionWriter,
 } from './permission-history.js';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { narrowArrivedPermissions } from './arrival-narrowing.js';
 
 /** Who a setting DorkOS declined on arrival is recorded under. */
 const ARRIVAL_WRITER: PermissionWriter = {
@@ -58,8 +59,13 @@ const ARRIVAL_WRITER: PermissionWriter = {
 
 /** The line a declined-on-arrival event carries. */
 export const ARRIVAL_NOTE =
-  "Permissions in this folder's settings file that would let the agent do more than " +
-  "everyone's defaults were not applied. Set them in DorkOS.";
+  "Permissions in this folder's settings file that were not stricter than everyone's " +
+  'defaults were not applied. Set them in DorkOS.';
+
+/** The line an arrival whose file could not be written back carries. */
+export const ARRIVAL_WRITE_FAILED_NOTE =
+  "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
+  'defaults except where its file is stricter. Set its permissions in DorkOS.';
 
 /** A permission write the service refused, with the HTTP status that fits it. */
 export class PermissionError extends Error {
@@ -151,11 +157,11 @@ export interface PermissionServiceDeps {
     /** Write an agent's overrides through the manifest (absent = inherit all). */
     writePermissions: (agentId: string, next: AgentPermissions | undefined) => Promise<void>;
     /**
-     * Whether DorkOS has already seen this agent's settings (a read or a write
-     * recorded them). An agent it has seen is not new, so its settings are the
-     * person's and {@link PermissionService.screenArrivedAgent} leaves them be.
+     * The agent's settings exactly as its file holds them, for the arrival
+     * screen, which must see what it is narrowing. Defaults to
+     * {@link readPermissions}.
      */
-    seenBefore?: (agentId: string) => Promise<boolean>;
+    readStoredPermissions?: (projectPath: string) => Promise<AgentPermissions | undefined>;
   };
   /** Every action an agent can reach, with its area. Read per call. */
   actions: () => PermissionActionInfo[];
@@ -440,105 +446,52 @@ export class PermissionService {
    *
    * An agent is registered from a folder whose `.dork/agent.json` anybody (or
    * any agent with file tools) may have written, so the permissions in it were
-   * never a person's choice in DorkOS. Honoured as found, a folder could mint
-   * an agent with more than everyone's defaults and no card, from any path
-   * that registers a folder: the HTTP route, the `mesh_register` tool, a
-   * discovery scan. So an arriving agent keeps only the settings that are at
-   * least as strict as the defaults it would otherwise follow; anything that
-   * would let it do more is dropped from the file, and one history line says
-   * so. Stricter settings stay, because dropping those would widen it too.
+   * never a person's choice in DorkOS. Every arrival is screened: the agent
+   * keeps only what is strictly stricter than the defaults it would otherwise
+   * follow ({@link narrowArrivedPermissions}), the rest is dropped from the
+   * file, and one history line says so.
    *
-   * An agent DorkOS has already seen is left alone: its settings are the
-   * person's, and the observer and the boot folds look after them.
+   * Until this returns `written: true` the agent is pending in the arrival
+   * record, and every reader narrows its settings the same way, so a write
+   * that cannot land (a read-only file) never leaves the folder's settings in
+   * force. A failed write is recorded too, and left for the next boot to retry.
    *
    * @param agentId - The agent that just arrived.
-   * @returns The changes made, empty when nothing was dropped.
+   * @returns What was dropped, and whether the file now says what the agent keeps.
    */
-  async screenArrivedAgent(agentId: string): Promise<PermissionChange[]> {
+  async screenArrivedAgent(
+    agentId: string
+  ): Promise<{ changes: PermissionChange[]; written: boolean }> {
     const agent = this.deps.agents.list().find((a) => a.id === agentId);
-    if (!agent) return [];
-    if (await this.deps.agents.seenBefore?.(agentId)) return [];
-    const stored = await this.deps.agents.readPermissions(agent.projectPath);
-    if (!stored) return [];
-    const config = this.deps.config.get();
+    if (!agent) return { changes: [], written: false };
+    const read = this.deps.agents.readStoredPermissions ?? this.deps.agents.readPermissions;
+    const stored = await read(agent.projectPath);
     const actions = this.actionIndex();
-    const rank: Record<PermissionState, number> = { allowed: 0, ask: 1, blocked: 2 };
+    const { kept, dropped, droppedUnknown } = narrowArrivedPermissions(stored, {
+      config: this.deps.config.get(),
+      actions,
+      globalStop: this.deps.config.trustStops().global,
+    });
     const target = this.agentTarget(agent);
-    const changes: PermissionChange[] = [];
-    const kept: AgentPermissions = {};
+    const changes: PermissionChange[] = dropped.map((d) => ({ ...d, target, after: null }));
+    if (changes.length === 0 && !droppedUnknown) return { changes, written: true };
 
-    for (const [area, state] of Object.entries(stored.areas ?? {})) {
-      if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area)) continue;
-      const areaId = area as PermissionAreaId;
-      const baseline = resolvePermission({ area: areaId, tier: 'act', config }).state;
-      if (rank[state] >= rank[baseline]) {
-        kept.areas = { ...kept.areas, [areaId]: state };
-      } else {
-        changes.push({ target, key: { kind: 'area', area: areaId }, before: state, after: null });
-      }
+    try {
+      await this.deps.agents.writePermissions(agentId, kept);
+    } catch (err) {
+      await this.record(
+        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_WRITE_FAILED_NOTE },
+        this.titleFor(actions)
+      );
+      throw err;
     }
-    let droppedUnknown = false;
-    for (const [id, state] of Object.entries(stored.actions ?? {})) {
-      const info = actions.get(id);
-      if (!info?.area) {
-        // An action DorkOS cannot place (none by that id yet, or one with no
-        // switch): a stricter entry is kept, since dropping it could only
-        // widen; an Allowed one is dropped, since nobody chose it here.
-        if (state === 'allowed') droppedUnknown = true;
-        else kept.actions = { ...kept.actions, [id]: state };
-        continue;
-      }
-      const baseline = resolvePermission({
-        area: info.area,
-        actionId: id,
-        tier: info.tier,
-        config,
-        ...(info.alwaysAsks ? { alwaysAsks: true } : {}),
-      }).state;
-      if (rank[state] >= rank[baseline]) {
-        kept.actions = { ...kept.actions, [id]: state };
-      } else {
-        changes.push({
-          target,
-          key: { kind: 'action', action: id, area: info.area },
-          before: state,
-          after: null,
-        });
-      }
-    }
-    if (stored.filesAndCommands) {
-      // Ask first is the strictest stop; with no stop set for everyone, the
-      // runtime decides, so only Ask first is certainly no wider than that.
-      const stopRank: Record<PermissionStop, number> = { autonomy: 0, act: 1, ask: 2 };
-      const global = this.deps.config.trustStops().global;
-      const floor = global ? stopRank[global] : stopRank.ask;
-      if (stopRank[stored.filesAndCommands] >= floor) {
-        kept.filesAndCommands = stored.filesAndCommands;
-      } else {
-        changes.push({
-          target,
-          key: { kind: 'files' },
-          before: stored.filesAndCommands,
-          after: null,
-        });
-      }
-    }
-    if (changes.length === 0 && !droppedUnknown) return [];
-
-    const empty = !kept.areas && !kept.actions && !kept.filesAndCommands;
-    await this.deps.agents.writePermissions(agentId, empty ? undefined : kept);
     if (changes.length > 0) {
       await this.record(
-        {
-          changes,
-          surface: 'file-edit',
-          writer: ARRIVAL_WRITER,
-          note: ARRIVAL_NOTE,
-        },
+        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_NOTE },
         this.titleFor(actions)
       );
     }
-    return changes;
+    return { changes, written: true };
   }
 
   /**

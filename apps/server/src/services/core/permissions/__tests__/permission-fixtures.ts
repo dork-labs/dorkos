@@ -52,8 +52,8 @@ export function createPermissionWorld(
     runtimeStops?: Record<string, PermissionStop | null>;
     /** Whether an acknowledgement of Full autonomy is on file. */
     autonomyAcknowledged?: boolean;
-    /** Agent ids DorkOS has already seen the settings of. */
-    seen?: string[];
+    /** Make every agent write throw, as a read-only settings file would. */
+    writeFails?: boolean;
   } = {}
 ) {
   const config = {
@@ -141,11 +141,11 @@ export function createPermissionWorld(
         return agent?.permissions ? structuredClone(agent.permissions) : undefined;
       },
       writePermissions: async (agentId, next) => {
+        if (options.writeFails) throw new Error('EACCES: permission denied');
         const agent = agents.get(agentId)!;
         if (next) agent.permissions = structuredClone(next);
         else delete agent.permissions;
       },
-      seenBefore: async (agentId) => (options.seen ?? []).includes(agentId),
     },
     actions: () => FIXTURE_ACTIONS,
     activity,

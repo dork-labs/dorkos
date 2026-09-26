@@ -251,18 +251,21 @@ export class PermissionObserver {
   }
 
   /**
-   * Whether DorkOS has already recorded this agent's settings, by a read or a
-   * write. An unreadable record answers `true`: treating it as empty would
-   * make every agent look new.
+   * Forget an agent that left, so an agent registered later under the same id
+   * (a folder reusing an old manifest) starts with no record of its own.
    *
-   * @param agentId - The agent.
+   * @param agentId - The agent that was unregistered.
    */
-  async hasSeen(agentId: string): Promise<boolean> {
-    try {
-      return (await this.load()).has(agentId);
-    } catch {
-      return true;
-    }
+  async forget(agentId: string): Promise<void> {
+    await this.exclusive(agentId, async () => {
+      let snapshots: Map<string, string>;
+      try {
+        snapshots = await this.load();
+      } catch {
+        return;
+      }
+      if (snapshots.delete(agentId)) await this.persist();
+    });
   }
 
   /**
