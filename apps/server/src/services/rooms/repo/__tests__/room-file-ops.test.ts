@@ -831,22 +831,61 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       expect(await git(['status', '--porcelain=v1'])).toBe('');
     });
 
-    it('a change set never overwrites, and a rollback never deletes, a file it did not create', async () => {
+    it('a change set refuses an NFD path exactly when this filesystem makes it the NFC file', async () => {
       // Straight at the engine, with the tree's answer deliberately wrong: the
-      // path is "new" to the change set but the disk holds it under another
-      // spelling. That is the state the NFD bug produced.
+      // path is "new" to the change set. On APFS the NFD name OPENS the NFC
+      // file — the state the NFD bug produced — and the exclusive create must
+      // refuse it. On ext4 the two are different files, so the NFD file is a
+      // new file of its own and the person's NFC file is untouched either way.
+      // (The editor never gets here with an NFD twin: it resolves each segment
+      // to the tree's own spelling first — the tests above, which hold on both.)
+      const folds = existsSync(path.join(repoDir, NFD));
       const before = await head();
+      const attempt = commitChangeSet(
+        repoDir,
+        store.homeDir(ROOM_ID),
+        [{ path: NFD, content: Buffer.from('another file\n'), existed: false }],
+        'Add café again',
+        { name: 'Dorian', email: 'operator@dorkos.local' }
+      );
+
+      if (folds) {
+        await expect(attempt).rejects.toMatchObject({ code: 'ROOM_FILE_EXISTS' });
+        expect(await head()).toBe(before);
+      } else {
+        await expect(attempt).resolves.toMatch(/^[0-9a-f]{40}$/);
+        expect(await readFile(path.join(repoDir, NFD), 'utf-8')).toBe('another file\n');
+      }
+      expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('the person’s own\n');
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+    });
+  });
+
+  describe('the exclusive create', () => {
+    it('never overwrites, and a rollback never deletes, a file it did not create', async () => {
+      // Filesystem-independent: something stands at a path the tree does not
+      // list (here an untracked file). The change set must refuse rather than
+      // truncate it, and must not count it as its own to remove.
+      await put('stray.md', 'somebody’s own\n');
+      const before = await head();
+
       await expect(
         commitChangeSet(
           repoDir,
           store.homeDir(ROOM_ID),
-          [{ path: NFD, content: Buffer.from('overwritten\n'), existed: false }],
-          'Add café again',
+          [
+            { path: 'fresh.md', content: Buffer.from('new\n'), existed: false },
+            { path: 'stray.md', content: Buffer.from('overwritten\n'), existed: false },
+          ],
+          'Add two files',
           { name: 'Dorian', email: 'operator@dorkos.local' }
         )
       ).rejects.toMatchObject({ code: 'ROOM_FILE_EXISTS' });
-      expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('the person’s own\n');
-      expect(await git(['status', '--porcelain=v1'])).toBe('');
+
+      expect(await readFile(path.join(repoDir, 'stray.md'), 'utf-8')).toBe('somebody’s own\n');
+      // The file it DID create is gone again; the stray one is exactly as it was.
+      expect(existsSync(path.join(repoDir, 'fresh.md'))).toBe(false);
+      expect(await git(['status', '--porcelain=v1'])).toBe('?? stray.md');
       expect(await head()).toBe(before);
     });
   });
