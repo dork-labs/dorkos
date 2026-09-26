@@ -9,6 +9,8 @@ covers:
   - 'fix(cli): check an action id before changing it, and fix the example'
   - 'fix(permissions): count an unset Files & commands stop as a change from the preset'
   - 'fix(control-center): open the phone sheet on the preset picker, and read permissions only when it opens'
+  - 'fix(control-center): wait for permissions before saying nothing is overridden'
+  - 'fix(marketplace): an agent package cannot ship what its agent may do'
 ---
 
 ### Added
@@ -24,6 +26,10 @@ covers:
 
 - Choosing a preset now also sets Files & commands: Careful starts new conversations at Ask first, Balanced at Act, and Full power at Full autonomy, which asks you to confirm what it means the first time
 - The agent profile's Tools & MCP page is now called MCP servers. What an agent may do is on its Permissions page
+
+### Security
+
+- An agent package can no longer ship its own permissions. DorkOS refuses a package whose agent settings say what the agent may do, so an agent from the marketplace starts where your defaults say, and you decide the rest after it is installed (DOR-2278)
 
 ### Removed
 
