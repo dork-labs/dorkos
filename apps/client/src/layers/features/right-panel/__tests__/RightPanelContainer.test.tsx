@@ -36,8 +36,17 @@ vi.mock('react-resizable-panels', async () => {
     PanelResizeHandle: ({
       className,
       children,
+      tabIndex,
+      'aria-label': ariaLabel,
+      'aria-disabled': ariaDisabled,
     }: React.PropsWithChildren<Record<string, unknown>>) => (
-      <div data-testid="resize-handle" className={className as string}>
+      <div
+        data-testid="resize-handle"
+        className={className as string}
+        tabIndex={tabIndex as number}
+        aria-label={ariaLabel as string}
+        aria-disabled={ariaDisabled as boolean | undefined}
+      >
         {children}
       </div>
     ),
@@ -193,6 +202,9 @@ describe('RightPanelContainer', () => {
     // Panel structure stays in the DOM for animation readiness (collapsed)
     expect(screen.getByTestId('right-panel')).toBeInTheDocument();
     expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+    // …but a closed panel's handle cannot move, so it is no tab stop.
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('renders the sole global tab body — never the removed empty state', () => {
@@ -220,7 +232,8 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer pathname={mockPathname} />);
 
     expect(screen.getByTestId('right-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('resize-handle')).toBeInTheDocument();
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('aria-label', 'Resize right panel');
+    expect(screen.getByTestId('resize-handle')).toHaveAttribute('tabindex', '0');
   });
 
   it('expands with the default size as a floor when opening (DOR-388)', () => {

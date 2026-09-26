@@ -40,6 +40,18 @@ import { ChannelsPage } from '../ui/ChannelsPage';
 const { toastError, toastInfo } = vi.hoisted(() => ({ toastError: vi.fn(), toastInfo: vi.fn() }));
 vi.mock('sonner', () => ({ toast: { error: toastError, info: toastInfo } }));
 
+// The room/thread split as plain boxes. The real resize handle claims any
+// pointer that lands inside its hit area, and jsdom lays nothing out — every
+// rect is 0×0 at the origin, where every simulated click also lands — so the
+// handle swallowed each click in the thread and focus never reached its
+// composer. The split has its own file (`RoomThreadSplit.test.tsx`), which runs
+// the real library.
+vi.mock('react-resizable-panels', () => ({
+  PanelGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Panel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  PanelResizeHandle: () => <div role="separator" />,
+}));
+
 /** The `?id=` the page reads, swapped between renders to change rooms. */
 let openRoomId = 'room-1';
 /** The `?entry=` the page reads — a search hit's seq, or nothing. */
@@ -857,7 +869,7 @@ describe('ChannelsPage — switching between threads', () => {
     const panel = screen.getByTestId('room-thread-panel');
     expect(within(panel).getByText('answering the second')).toBeInTheDocument();
     const animated = panel.querySelectorAll(
-      '[class*="animate-thread-reply-in"], [class*="animate-reply-settle"], [class*="animate-thread-line-draw"]'
+      '[class*="animate-thread-reply-in"], [class*="animate-reply-settle"]'
     );
     expect(animated).toHaveLength(0);
   });

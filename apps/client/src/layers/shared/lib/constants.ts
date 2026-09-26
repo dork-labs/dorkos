@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   RIGHT_PANEL_STATE: 'dorkos-right-panel-state',
   RIGHT_PANEL_LAYOUTS: 'dorkos-right-panel-layouts',
   PIP_PANEL_STATE: 'dorkos-pip-panel-state',
+  ROOM_THREAD_WIDTH: 'dorkos-room-thread-width',
 } as const;
 
 /**
