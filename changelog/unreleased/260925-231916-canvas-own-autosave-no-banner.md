@@ -1,6 +1,8 @@
 ---
 covers:
   - 'fix(canvas): stop your own autosave from raising the "your agent changed this" notice (DOR-2213)'
+  - 'fix(canvas): land the newest own echo whole, and retract a stale held version (DOR-2213)'
+  - 'fix(canvas): let a pin or activate never offer or withdraw a version mid-edit (DOR-2213)'
 ---
 
 ### Fixed

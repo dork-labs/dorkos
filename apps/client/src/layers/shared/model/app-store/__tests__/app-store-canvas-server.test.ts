@@ -334,8 +334,8 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
       });
 
       it('holds nothing for a frame that changes nothing on screen', () => {
-        // A pin or an activate from another window carries the content that is
-        // already here. There is no other version to offer.
+        // Another window's write that says what is already here has no other
+        // version to offer.
         useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('v1'), 6));
 
         const doc = useAppStore.getState().openDocuments[0]!;
@@ -403,6 +403,17 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
         expect(doc.rev).toBe(7);
       });
 
+      it('withdraws a held version only for an update, never for a re-open', () => {
+        useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('X'), 6));
+        // Another window opens the same file again. The row it lands on says v1,
+        // but opening a file is not somebody choosing v1 over X.
+        useAppStore.getState().applyCanvasEvent(SESSION, {
+          ...frame(markdown('v1'), 7),
+          change: 'opened' as const,
+        });
+        expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('X'));
+      });
+
       it('spends the older writes along with the one an echo matched', () => {
         useAppStore.getState().setDocumentContent('doc-a', markdown('A'));
         useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
@@ -455,6 +466,72 @@ describe('CanvasSlice — the server’s table, as this window holds it', () => 
 
         useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('A'), 6));
         expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('A'));
+      });
+
+      /**
+       * A pin or an activate changes the order, never what a document says
+       * (review round 2). Mid-edit it takes the row's bookkeeping and has no say
+       * over what is on offer, either way.
+       */
+      describe('a pin or an activate mid-edit', () => {
+        /** A reorder frame for `doc-a`, carrying whatever the row held. */
+        const reorder = (
+          content: UiCanvasContent,
+          rev: number,
+          change: 'pinned' | 'activated',
+          pinned = false
+        ) => ({
+          documentId: 'doc-a',
+          document: { ...serverDocument({ id: 'doc-a', content, rev }), pinned },
+          change,
+        });
+
+        it('does not withdraw a version the person has not answered for', () => {
+          useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+          useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('B'), 6));
+          useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('X'), 7));
+          expect(useAppStore.getState().openDocuments[0]!.heldUpdate).toEqual(markdown('X'));
+
+          // Another window pins the document. The row it carries says B, which is
+          // what is on screen — and still nobody chose between B and X.
+          useAppStore
+            .getState()
+            .applyCanvasEvent(SESSION, reorder(markdown('B'), 8, 'pinned', true));
+
+          const doc = useAppStore.getState().openDocuments[0]!;
+          expect(doc.heldUpdate).toEqual(markdown('X'));
+          expect(doc.pinned).toBe(true);
+          expect(doc.rev).toBe(8);
+        });
+
+        it('offers nothing when it carries the words from before a write in flight', () => {
+          useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+          // Activated before B reached the server, so the row still says v1.
+          useAppStore.getState().applyCanvasEvent(SESSION, reorder(markdown('v1'), 6, 'activated'));
+
+          const doc = useAppStore.getState().openDocuments[0]!;
+          expect(doc.heldUpdate).toBeNull();
+          expect(doc.content).toEqual(markdown('B'));
+          expect(doc.rev).toBe(6);
+        });
+
+        it('does not spend the write its real echo will need', () => {
+          useAppStore.getState().setDocumentContent('doc-a', markdown('B'));
+          // B reached the server; a pin lands and carries it before B's echo.
+          useAppStore.getState().applyCanvasEvent(SESSION, reorder(markdown('B'), 6, 'pinned'));
+          // A reconnect's snapshot from before either puts v1 back on screen.
+          useAppStore
+            .getState()
+            .hydrateCanvasFromSnapshot(SESSION, [
+              serverDocument({ id: 'doc-a', content: markdown('v1'), rev: 5 }),
+            ]);
+
+          // B's own echo is still recognised as ours, and lands.
+          useAppStore.getState().applyCanvasEvent(SESSION, frame(markdown('B'), 7));
+          const doc = useAppStore.getState().openDocuments[0]!;
+          expect(doc.heldUpdate).toBeNull();
+          expect(doc.content).toEqual(markdown('B'));
+        });
       });
 
       it('does not count a write the server refused as its own', async () => {

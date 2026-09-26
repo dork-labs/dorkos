@@ -1299,8 +1299,16 @@ export const createCanvasSlice: StateCreator<
       // Spent OUTSIDE the updater, which must stay free of side effects — and
       // spent even when the `rev` tiebreak drops the frame, since an echo that
       // arrived late has still arrived.
+      // A pin or an activate changes the ORDER, never what a document says: the
+      // content it carries is whatever the row held when it happened, which can
+      // be older than a write of ours still in flight.
+      const reordered = event.change === 'pinned' || event.change === 'activated';
+      // Only a content write can be the echo of one — a pin that happens to
+      // carry our words must not spend the write its real echo will need.
       const ownEcho =
-        event.document !== undefined && claimOwnEcho(event.document.id, event.document.content);
+        event.document !== undefined &&
+        !reordered &&
+        claimOwnEcho(event.document.id, event.document.content);
       // Whether that echo is of the LAST write this window has outstanding. Only
       // then is the frame the whole truth: nothing newer of ours is on its way.
       const newestOwnEcho = ownEcho && !writesAwaitingEcho.has(event.documentId);
@@ -1325,6 +1333,27 @@ export const createCanvasSlice: StateCreator<
           // The edit lock's job: while somebody is typing in this document, an
           // arrival is HELD for the banner rather than landing underneath them.
           if (held.editing) {
+            // A pin or an activate is nobody's new version, so mid-edit it takes
+            // the row's bookkeeping and nothing else: no content, and no say over
+            // what is on offer. Otherwise a pin carrying the content from before
+            // an in-flight write would be held as "your agent changed this", and
+            // one carrying what is on screen would withdraw a version the person
+            // has not answered for yet.
+            if (reordered) {
+              return {
+                openDocuments: s.openDocuments.map((d) =>
+                  d.id === row.id
+                    ? {
+                        ...d,
+                        rev: row.rev,
+                        pinned: row.pinned,
+                        lastActiveAt: Date.parse(row.lastActiveAt),
+                        sourceLabel: row.title || d.sourceLabel,
+                      }
+                    : d
+                ),
+              };
+            }
             // ...unless it is nobody else's change (DOR-2213). The echo of this
             // window's own autosave raises no banner — how much of it lands
             // depends on whether a newer write of ours is still on its way.
@@ -1354,15 +1383,18 @@ export const createCanvasSlice: StateCreator<
                 }),
               };
             }
-            // A frame that says what is already on screen (another window's pin
-            // or activate, or a change put back) has no other version to offer.
-            // It also RETRACTS whatever was held: the server is back to what
-            // this window shows, so an earlier version on offer would let Reload
-            // put back something nobody holds any more.
+            // A write that says what is already on screen has no other version
+            // to offer. When it is a content UPDATE it also retracts whatever was
+            // held: somebody put this back, the server is back to what this
+            // window shows, and an earlier version left on offer would let Reload
+            // restore something nobody holds any more.
             if (contentFingerprint(row.content) === contentFingerprint(held.content)) {
+              const retracts = event.change === 'updated';
               return {
                 openDocuments: s.openDocuments.map((d) =>
-                  d.id === row.id ? { ...fromServer(row, d), heldUpdate: null } : d
+                  d.id === row.id
+                    ? { ...fromServer(row, d), ...(retracts ? { heldUpdate: null } : {}) }
+                    : d
                 ),
               };
             }
