@@ -30,6 +30,7 @@ const RUNNING_SCHEDULE: Task = {
   runtime: null,
   model: null,
   effort: null,
+  account: null,
   status: 'active',
   filePath: '',
   createdAt: '2026-08-01T08:00:00.000Z',

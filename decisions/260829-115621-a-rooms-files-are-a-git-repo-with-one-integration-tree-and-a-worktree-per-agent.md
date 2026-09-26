@@ -14,6 +14,24 @@ amends: null
 
 Accepted. Shipped 2026-08-28/29 (DOR-1591, DOR-1592, DOR-1596, DOR-1597).
 
+**Amended by two later records; this ADR stays `accepted`.**
+
+- [260926-172251](260926-172251-an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy.md)
+  retires the reading of "**Only that agent's turns run in it**" under which the worktree is the turn's
+  working directory (the DOR-1597 cwd rung, `specs/project-rooms` §3.5 rung 2). A room turn now runs
+  in the agent's home, and its worktree is a granted folder it writes to. The Positive bullet "in a
+  directory that is only its own" still holds for where the agent writes; it no longer describes where
+  the turn stands.
+- [260926-180308](260926-180308-a-clean-room-worktree-is-fast-forwarded-when-its-agents-turn-launches.md)
+  retires "**The server never reaches into a worktree**" and the Alternatives bullet "The server
+  syncing worktrees for agents". The server fast-forwards a clean worktree with nothing ahead of `main`
+  when that agent's room turn launches and no session bound to it is busy; any other worktree is left
+  untouched.
+
+**Everything else stands:** the room repo layout, `repo/` as a server-only integration tree, one
+standing worktree per (room, agent) on `room/<slug>`, lazy creation, one writer per tree, pull-based
+propagation for any tree holding work, the four-gate reap, and not reusing `Workspace`.
+
 ## Context
 
 A room is a place several agents work on one thing, and until this shipped it had no files. Everything

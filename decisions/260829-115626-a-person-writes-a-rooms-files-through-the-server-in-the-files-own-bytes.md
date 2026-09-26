@@ -15,6 +15,15 @@ amends: null
 Accepted. Shipped 2026-08-29 (DOR-1600, DOR-1601). This record carries the amendment to
 `specs/project-rooms/` ideation Decision 17 and §3.10 made at implementation on 2026-08-29.
 
+**Extended by
+[260926-172252](260926-172252-people-change-a-rooms-files-through-the-server.md)
+(proposed); this record stays `accepted`.** The same write path now covers every text file, new files
+and folders, uploads, renames, deletes and saving a chat attachment, and each commit posts a quiet
+room entry. Retired: "It is markdown-first: other text types are read-only for now" and the Negative
+bullet "Editing is markdown-only today". Everything else here — the server as the only writer, no
+worktrees for people, per-path locking, `PEOPLE_ONLY`, the byte-faithful source editor, and the loud
+`MAIN_CHECKOUT_DIRTY` stop with its two-way repair — still governs.
+
 ## Context
 
 Agents write a room's files by merging from a worktree. A person should not have to. Fixing a typo in

@@ -1,0 +1,400 @@
+{
+  "spec": "specs/agent-home-desk/02-specification.md",
+  "slug": "agent-home-desk",
+  "generatedAt": "2026-09-26T17:30:00Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "parallelGroups": [
+    {
+      "group": "A",
+      "tasks": [
+        "T1",
+        "T2",
+        "T3",
+        "T6"
+      ],
+      "note": "No dependencies. T1/T2 share agent-runtime.ts, launch-resolver.ts and codex-runtime.ts in disjoint hunks (see sharedFileHotspots); T3 and T6 are file-disjoint from both."
+    },
+    {
+      "group": "B",
+      "tasks": [
+        "T4",
+        "T7"
+      ],
+      "note": "T4 after T1, T2 and T3 (T4 wires the T3 migration in the same PR that moves the desk). T7 after T6. T4 and T7 are file-disjoint (server vs client)."
+    },
+    {
+      "group": "C",
+      "tasks": [
+        "T5"
+      ],
+      "note": "After T4 (it runs inside the prepareLaunch hook and the context-block files section T4 adds)."
+    },
+    {
+      "group": "D",
+      "tasks": [
+        "T8"
+      ],
+      "note": "After T4, T5, T7."
+    }
+  ],
+  "sharedFileHotspots": [
+    "apps/server/src/services/session/message-dispatcher.ts: forwards turn fields BY NAME in the turn Pick whitelist (~:955-970) and the launch spread (~:1236-1250). T1 adds `forAgent` to both, T2 adds `additionalDirectories` to both, T4 adds `prepareLaunch` to both plus its awaited call at launch and an `isTurnInFlight` export. One line per field in each list; rebase, never overwrite. Each owner lands a queued-path test for its field.",
+    "packages/shared/src/agent-runtime.ts: T1 adds `forAgent`, T2 adds `DirectoryGrant` + `additionalDirectories`, T4 edits `roomTurn` docs and adds `roomTurn.worktree`. Different members of MessageOpts; land T1 or T2 first and rebase the other.",
+    "apps/server/src/services/runtimes/claude-code/messaging/launch-resolver.ts: T1 owns the manifest/anchor reads (~:176-252), T2 owns only the settings merge (~:552-556) via a call into directory-grants.ts.",
+    "apps/server/src/services/runtimes/codex/codex-runtime.ts: T1 owns ~:587, :700, :1186-1202; T2 owns the thread-options call ~:673.",
+    "apps/server/src/index.ts: T1 (resolver wiring ~:1743), T4 (ownerOf removal, migration startup, extraDirs ~:1754, roomSessionPlace ~:3792). T1 lands first by dependency.",
+    "apps/server/src/routes/sessions.ts: T1 (~:1037-1050, :1195), T4 (~:1177-1187). T1 lands first by dependency.",
+    "contributing/room-repos.md: T4, T5 and T6 each own a named section.",
+    "apps/server/src/services/runtimes/shared/room-context-block.ts: T4 (filesLines), then T5 (refresh lines)."
+  ],
+  "criticalPath": [
+    "T1",
+    "T4",
+    "T5",
+    "T8"
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "phase": 1,
+      "phaseName": "Identity from home",
+      "subject": "[agent-home-desk] [P1] Read every agent identity from its registered home",
+      "activeForm": "Reading agent identity from home",
+      "description": "Spec §3.1-§3.3, invariants I1 and I2. Closes DOR-2355's literal ask on its own. Add `agent-home.ts` with the branded `AgentHome` and `resolveAgentHome` (exact, linked worktree of a home repo by the `.git` file and commondir with no git process, managed workspace by owner.ref), fold `resolveIdentityAnchor` into it (keep the room-worktree owner source for now; T4 removes it), and switch every site in §3.2 rows 1-12 to read from the home. Add `MessageOpts.forAgent` (row 12) and send it from task and relay dispatch. Mesh refuses to register under `<dorkHome>/rooms/`. Changelog fragment: agents in a git worktree of their own repo keep their name, persona, memory and Claude account. Also forward `forAgent` by name through message-dispatcher.ts (the turn Pick whitelist ~:955-970 and the launch spread ~:1236-1250), with a queued-path test. Resolver hardening per §3.1: require git's gitdir backlink, missing commondir answers none, source-2 memo keyed on the .git and gitdir file contents.",
+      "validation": [
+        "For each §3.2 row, a test with a home-repo worktree whose committed .dork/ differs from the home shows the home's values (context text, launch options, account root, runtime choice, relay label, get_agent, GET /agents/current).",
+        "The same worktree with .dork/ deleted still resolves to the agent.",
+        "Resolver unit cases in §11 pass, including bare repo, rooms common dir (no registry lookup), non-matching subfolder, managed owned by the agent with a foreign source, forAgent mismatch, and memo invalidation on unregister.",
+        "Registering a candidate under <dorkHome>/rooms is refused `inside-room-files`; a linked worktree of a registered home is refused `duplicate-id` (named test).",
+        "buildAgentContextAppend, the context-builder agent block, and the launch-resolver manifest read accept AgentHome only (a string cwd fails typecheck).",
+        "pnpm --filter @dorkos/server typecheck, lint and the touched vitest files pass.",
+        "A room/task turn queued behind a running turn reaches runtime.sendMessage with forAgent; removing it from either the whitelist or the launch spread fails the test.",
+        "Resolver hardening tests (§11): hand-written .git pointer without backlink → none; submodule .git (no commondir) → none; worktree removed and re-added at the same path by another repo → new owner."
+      ],
+      "filesOwned": [
+        "apps/server/src/services/core/agent-identity/agent-home.ts (new)",
+        "apps/server/src/services/core/agent-identity/identity-anchor.ts",
+        "apps/server/src/services/runtimes/shared/agent-context.ts",
+        "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts",
+        "apps/server/src/services/runtimes/claude-code/messaging/launch-resolver.ts (manifest-read hunk ~:176-252 only)",
+        "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts (accountRootForSession ~:974, anchor ~:555)",
+        "apps/server/src/services/runtimes/codex/codex-runtime.ts (~:587, :700, :1186-1202 only)",
+        "apps/server/src/services/runtimes/opencode/messaging/turn-context.ts",
+        "apps/server/src/services/runtimes/opencode/opencode-runtime.ts (anchor hunks)",
+        "apps/server/src/routes/sessions.ts (resolveRuntimeTypeForNewSession ~:1037-1050, :1195)",
+        "apps/server/src/routes/agents.ts",
+        "apps/server/src/services/relay/subject-resolver.ts",
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/core-tools.ts",
+        "apps/server/src/services/tasks/task-provenance.ts",
+        "apps/server/src/services/mesh/agent-path-lookup.ts",
+        "apps/server/src/services/tasks/task-scheduler-service.ts (forAgent on dispatch)",
+        "apps/server/src/services/relay/binding-router.ts (forAgent on dispatch)",
+        "packages/shared/src/agent-runtime.ts (forAgent field only)",
+        "packages/mesh/src/mesh-discovery.ts",
+        "apps/server/src/index.ts (resolver wiring hunk ~:1743)",
+        "apps/client/src/layers/**/use-current-agent.ts (only if the response shape changes)",
+        "apps/server/src/services/session/message-dispatcher.ts (forAgent in the turn Pick whitelist and the launch spread only)"
+      ],
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "T2",
+        "T3",
+        "T6"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    },
+    {
+      "id": "T2",
+      "phase": 1,
+      "phaseName": "Runtime port",
+      "subject": "[agent-home-desk] [P1] Grant folders per turn on every runtime, gated by conformance",
+      "activeForm": "Adding per-turn directory grants to the runtime port",
+      "description": "Spec §4. Add `DirectoryGrant` and `MessageOpts.additionalDirectories` plus `@dorkos/shared/directory-grants` validation. Forward `additionalDirectories` by name through message-dispatcher.ts (whitelist + launch spread) with a queued-path test. claude-code: settings.permissions.additionalDirectories + `//` deny rules for read grants, merged into the existing settings object via a new directory-grants.ts; strip CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD from the turn env; add the fingerprint pin. codex: write grants into ThreadOptions.additionalDirectories. opencode: per-session PermissionRuleset via session.update when the set changes (ask-handler fallback if needed). test-mode declares an unproven reason. Add the §4.6 conformance case and wire it for all three runtimes. Nothing calls it yet, so no user-visible change; ship with skip-changelog only if no fragment is warranted (internal).",
+      "validation": [
+        "The §4.2 live validation gate is run and its results written into §4.2 in this PR: (a1) default mode, Read inside a write grant raises no canUseTool; (a2) acceptEdits, Edit inside a write grant raises no canUseTool; (b) Edit inside a read grant refused under acceptEdits AND bypassPermissions; (c) grant skills not loaded; (d) grant CLAUDE.md not loaded. The --add-dir fallback is taken only if (a1) or (a2) fails, and the spec is amended when it is.",
+        "Conformance case passes on claude-code (warm session asserted), codex and opencode mocked legs; test-mode declares its reason; the pairing test fails a runtime that declares neither.",
+        "Turn 2 of the conformance case hands C and neither A nor B on every runtime.",
+        "Fingerprint: changed set relaunches, reordered set does not.",
+        "Env test: the Claude-md env var is absent from the turn env even when set in the server env.",
+        "opencode: ruleset sent once per changed set (mocked client); the free live smoke (DORKOS_OPENCODE_LIVE=1) shows no external_directory ask inside a grant, or the fallback is implemented and NOTES.md says which.",
+        "contributing/adding-a-runtime.md documents the option and the case.",
+        "A room turn queued behind a running turn reaches runtime.sendMessage with its additionalDirectories; removing the field from either the whitelist or the launch spread fails the test."
+      ],
+      "filesOwned": [
+        "packages/shared/src/agent-runtime.ts (additionalDirectories + DirectoryGrant only)",
+        "packages/shared/src/directory-grants.ts (new) + packages/shared/package.json exports entry",
+        "apps/server/src/services/runtimes/claude-code/messaging/directory-grants.ts (new)",
+        "apps/server/src/services/runtimes/claude-code/messaging/launch-resolver.ts (settings hunk ~:552-556 only)",
+        "apps/server/src/services/runtimes/claude-code/sessions/launch-fingerprint.ts",
+        "apps/server/src/services/runtimes/codex/turn-input.ts",
+        "apps/server/src/services/runtimes/codex/codex-runtime.ts (call site ~:673 only)",
+        "apps/server/src/services/runtimes/opencode/sessions/directory-grants.ts (new)",
+        "apps/server/src/services/runtimes/opencode/sessions/session-mapper.ts",
+        "apps/server/src/services/runtimes/opencode/messaging/approvals.ts (fallback only)",
+        "apps/server/src/services/runtimes/opencode/NOTES.md",
+        "apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts",
+        "packages/test-utils/src/runtime-conformance.ts",
+        "apps/server/src/services/runtimes/*/__tests__/conformance.test.ts",
+        "contributing/adding-a-runtime.md",
+        "apps/server/src/services/session/message-dispatcher.ts (additionalDirectories in the turn Pick whitelist and the launch spread only)"
+      ],
+      "size": "large",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "T1",
+        "T3",
+        "T6"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    },
+    {
+      "id": "T3",
+      "phase": 1,
+      "phaseName": "Transcript migration",
+      "subject": "[agent-home-desk] [P1] Build the move of room transcripts from worktree folders to the agent's home folder",
+      "activeForm": "Building the room transcript migration",
+      "description": "Spec §8.1. Build migrate-room-transcripts.ts: marker-guarded, idempotent move of claude-code room transcripts from projects/<slug(worktree)>/ to projects/<slug(home)>/ across every Claude config dir DorkOS launches with, recording the frozen worktree list in the marker. On a colliding destination the source is renamed <id>.jsonl.conflict (so the JSONL frontier never sees two transcripts for one id) and both paths are logged and recorded for the operator. Measure codex and opencode listing and resume across a desk change and write the result into §8.1. This task does NOT wire the migration into startup and does not touch extraDirs: moving transcripts while room turns still run in worktrees would break their resume, so T4 wires both in the same PR that moves the desk. The module is unused between this PR and T4 on purpose (a staged programme; T4 is blocked on it). No changelog fragment.",
+      "validation": [
+        "Fixture test: two worktree slugs (registered + unregistered agent) and a colliding destination → moved / skipped / source renamed .jsonl.conflict and named in log and marker; the frontier indexes exactly one transcript for that id; marker written with the frozen list; second run no-op.",
+        "Every Claude config dir (default + account pins) is visited (test with two dirs).",
+        "Live check recorded in the PR: a claude-code room session moved by the module (run by hand against a copy) resumes with its history when launched with cwd = the home.",
+        "codex and opencode measurement recorded in §8.1, stating for each whether extraDirs must keep a frozen list."
+      ],
+      "filesOwned": [
+        "apps/server/src/services/runtimes/claude-code/sessions/migrate-room-transcripts.ts (new) + its test",
+        "specs/agent-home-desk/02-specification.md (§8.1 result)"
+      ],
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [
+        "T1",
+        "T2",
+        "T6"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    },
+    {
+      "id": "T4",
+      "phase": 2,
+      "phaseName": "Room turns at home",
+      "subject": "[agent-home-desk] [P2] Room turns run in the agent's own folder with the room's files granted",
+      "activeForm": "Moving room turns back to the agent's home",
+      "description": "Spec §5 and §3.4. The agent-facing truth flips atomically here: resolveRoomTurnPlace (cwd = home, three grants), dispatcher/runner/app-resume carry grants and forAgent, the rewritten context-block files section, the rewritten working-in-room-repos skill (OPERATING_SKILLS_VERSION bump), canvas resolveTree by source path, the desk guard (DOR-2356) at room/relay/task dispatch, the §5.8 removal list, §5.9 legacy plumbing retirement, and the §8.1 wiring: run the T3 migration at startup before the room dispatcher starts, and switch extraDirs to the frozen list (or delete it) per the T3 measurement. Adds the eval case (room turn edits a room file by absolute path) to the policed tier array. Changelog fragment: in a room with files, an agent now works from its own folder, so it can also change its own code in that conversation; it reaches the room's files by path. Also: add DispatchMessageOpts.prepareLaunch (awaited by message-dispatcher.ts where an immediate or dequeued turn is about to call runtime.sendMessage, forwarded by name in the whitelist and launch spread) and message-dispatcher isTurnInFlight(sessionId); T4 uses it for §5.9 legacy clean-up, T5 for the refresh. The desk guard takes the placement's binding rung so workspace.mode 'none' at DEFAULT_CWD passes (§3.4). The skill gains the own-code rule: change your own code in a private worktree of your repo, never in the home checkout (§5.5). The changelog fragment also says: an agent set to use no folder of its own can no longer run in another agent's folder (in a DorkOS dev checkout, where the default folder is the dorkos agent's home, such tasks now stop with a message saying to set a default folder).",
+      "validation": [
+        "Every §11 Room placement, Desk guard, Canvas, Legacy plumbing and negative I2 test passes.",
+        "Integration test (§11 Integration, first half): each room turn's sendMessage has cwd === agentPath and exactly the three grants; no-files room has none.",
+        "grep finds no ensureRoomWorktreePath, vouchForNamedWorktree, SEEDED_PACK_EXCLUDES, SCAFFOLDED_INSTRUCTION_EXCLUDES, refreshPack, or room-worktree rung in apps/server/src.",
+        "Context-block copy and skill text pinned by tests; the skill mentions no 'your turn runs in your own working copy'.",
+        "pnpm vitest run packages/evals passes with the new case in the tier array.",
+        "Dogfood check recorded in the PR: a claude-code and a codex room turn each edit, commit and merge a room file; the dorkos agent changes a file in its own repo in the same room turn.",
+        "apps/e2e grepped for old room-files copy; any spec asserting it is updated.",
+        "An agent's session list shows the same room sessions before and after upgrade (integration test over agent-session-fanout with a migrated fixture).",
+        "Desk guard: an agent configured workspace.mode 'none' passes at DEFAULT_CWD for a task and a relay binding with identity from its home; the same cwd with binding 'home' is refused; another agent's linked worktree is refused.",
+        "prepareLaunch runs for a dequeued turn at launch (not at enqueue) and its result reaches runtime.sendMessage; removing it from the whitelist or launch spread fails the test.",
+        "Legacy clean-up runs inside prepareLaunch and is skipped while a session bound to the (room, agent) has a turn in flight.",
+        "The skill text states the own-code-in-a-private-worktree rule (pinned).",
+        "isTurnInFlight is true for a turn launched with its queue budget exhausted (runtime lock held, no inFlight entry).",
+        "Dev-checkout fallback: with DEFAULT_CWD equal to the dorkos agent's home, a workspace.mode 'none' agent's task is refused DESK_NOT_OWN at step 2 with a plain-words reason; the rung-to-binding mapping is tested for agent-home, agent-managed, default with a boundary reason, and default without.",
+        "Restart test (§5.10): a room turn queued behind a running turn does not survive a simulated restart; no runtime.sendMessage is made without its grants and forAgent."
+      ],
+      "filesOwned": [
+        "apps/server/src/services/rooms/repo/room-turn-place.ts (new; replaces room-worktree-cwd.ts)",
+        "apps/server/src/services/rooms/repo/room-worktree-manager.ts",
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/rooms/room-turn-runner.ts",
+        "apps/server/src/services/rooms/room-turn-port.ts",
+        "apps/server/src/services/rooms/room-context.ts",
+        "apps/server/src/services/rooms/attachments/attachment-projection.ts (comment)",
+        "apps/server/src/services/rooms/canvas/room-canvas-service.ts",
+        "apps/server/src/services/session/browser-seat/ui-control.ts",
+        "apps/server/src/services/workspace/resolve-session-cwd.ts",
+        "apps/server/src/services/workspace/room-session-cwd.ts → room-session-place.ts",
+        "apps/server/src/routes/sessions.ts (app-resume ~:1177-1187 and grant forwarding)",
+        "apps/server/src/services/runtimes/shared/room-context-block.ts (filesLines)",
+        "apps/server/src/services/core/agent-identity/agent-home.ts (assertOwnDesk; drop room-worktree source)",
+        "apps/server/src/services/relay/binding-router.ts (guard call)",
+        "apps/server/src/services/tasks/task-scheduler-service.ts (guard call)",
+        "apps/server/src/services/harness/project-agent-workspace.ts (comments)",
+        "apps/server/src/index.ts (ownerOf wiring removal, roomSessionPlace wiring, migration startup, extraDirs ~:1754)",
+        "apps/server/src/services/session/agent-session-fanout.ts",
+        "packages/shared/src/agent-runtime.ts (roomTurn docs, roomTurn.worktree)",
+        "packages/operating-skills/src/skills/working-in-room-repos.ts + pack references",
+        "packages/evals (one case)",
+        "contributing/room-repos.md (placement sections)",
+        "apps/server/src/services/session/message-dispatcher.ts (prepareLaunch field, its awaited call at launch, isTurnInFlight export (inFlight-only stub is NOT acceptable; T4 ships the inFlight OR runtime-lock read))"
+      ],
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "parallelWith": [
+        "T7"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    },
+    {
+      "id": "T5",
+      "phase": 3,
+      "phaseName": "Refresh",
+      "subject": "[agent-home-desk] [P3] Bring an agent's copy of the room's files up to date at turn start",
+      "activeForm": "Refreshing room worktrees at turn start",
+      "description": "Spec §6. room-worktree-refresh.ts run from the room turn's prepareLaunch (added in T4), never at placement: capture mainTip first; skip with held:busy if any session bound to the (room, agent) has a turn in flight; hold on branch, changes, ahead, and any ignored or untracked file at a path the fast-forward would write; then ff-only to the captured tip. The MainMoved heads-up uses --first-parent and names commits from their room entries (merge or fileChange), never git authors; subjects and paths render inside the untrusted fence. §6.3 context lines; EditBaselineStore.forget. Changelog fragment: agents start each room turn on the latest files when they have nothing in progress, and are told what changed when they do.",
+      "validation": [
+        "Every §11 Refresh and Heads-up unit test passes, each held reason red-before/green-after.",
+        "Ignored-file test: notes.log ignored in the worktree, then committed on main → held: changes and notes.log bytes unchanged; the same for an untracked file at a parent-folder path.",
+        "Folder-becomes-file test: ignored build/keep.txt under a build/ rule; main commits a tracked file `build` and drops the rule → held: changes, build/keep.txt still exists (step 6 checks equal, inside and parent in both directions).",
+        "Busy test with two bound sessions: while a turn runs on a second session bound to the same (room, agent) (e.g. app-resumed), a room turn launched on the first answers held: busy with zero git calls, and refreshes after the second settles.",
+        "Lossy-inFlight test: the second session's turn launched with its queue budget exhausted (runtime lock held, no inFlight entry) still yields held: busy — isTurnInFlight reads inFlight OR the runtime lock/streaming state.",
+        "Launch-not-placement test: a turn placed while main is at A and launched after main moved to B lands on B.",
+        "main advancing after mainTip is captured: worktree lands exactly on the captured tip.",
+        "--first-parent test: merging a 12-commit agent branch lists one commit; people named from room entries (two signed-in people told apart); a hand commit is 'other'.",
+        "Integration test (§11 Integration, second half) passes.",
+        "contributing/room-repos.md no longer says the server never mutates a worktree; it describes the one exception."
+      ],
+      "filesOwned": [
+        "apps/server/src/services/rooms/repo/room-worktree-refresh.ts (new)",
+        "apps/server/src/services/runtimes/shared/room-context-block.ts (refresh lines)",
+        "apps/server/src/services/diff/edit-baseline.ts",
+        "apps/server/src/services/rooms/room-context.ts (pass the outcome)",
+        "contributing/room-repos.md (propagation section)",
+        "apps/server/src/services/rooms/room-turn-runner.ts (the prepareLaunch body only)"
+      ],
+      "size": "medium",
+      "priority": "medium",
+      "dependencies": [
+        "T4"
+      ],
+      "parallelWith": [
+        "T7"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    },
+    {
+      "id": "T6",
+      "phase": 1,
+      "phaseName": "People's file operations (server)",
+      "subject": "[agent-home-desk] [P1] Let people add, upload, rename and delete a room's files through the server",
+      "activeForm": "Adding people's file operations to the rooms API",
+      "description": "Spec §7.1-§7.2. room-file-ops.ts (stage a list, commit once, roll back on failure), save creates parents, the four new routes, two new error codes, schemas, OpenAPI entries plus committed generated docs, postFileChangeEvent and RoomFileChangeEventSchema, the existing save posting its entry. Independent of T1-T5. Changelog fragment (with T7 if they ship close together, else here as API-only). Authorship: the signed-in person (display name, person-<authorId>@dorkos.local) when login is on, the operator when it is off (§7.1). Case collisions checked per folder segment for save, upload, move and from-attachment. Multer disk storage in a per-request temp folder, removed on settle. fileChange paths composed from sanitized segments and rendered as plain text.",
+      "validation": [
+        "Every §11 File ops and Room entry test passes.",
+        "One commit per operation, authored as the person, subject pinned; multi-file rollback leaves main and repo/ unchanged.",
+        "Cascade-guard assertion: a fileChange entry triggers no turn.",
+        "openapi-fresh is green (generated API docs regenerated and committed).",
+        "contributing/room-repos.md lists the routes.",
+        "Case collision per segment: saving Notes/plan.md when notes/ exists is refused naming notes/ (save, upload, move, from-attachment).",
+        "Commit author is the signed-in person with login on (two people get two authors) and the operator with login off.",
+        "Upload uses disk storage; the temp folder is gone after success and after failure.",
+        "A path containing </room_context> and markdown renders inert in the entry text.",
+        "Author fallback: a signed-in person whose display name is only '<>' commits with the fallback operator name (git accepts it); test pins it."
+      ],
+      "filesOwned": [
+        "apps/server/src/routes/rooms.ts (files routes block ~:936-1124)",
+        "apps/server/src/services/rooms/repo/room-file-ops.ts (new)",
+        "apps/server/src/services/rooms/repo/room-file-editor.ts",
+        "apps/server/src/services/rooms/messages/room-system-posts.ts",
+        "apps/server/src/services/rooms/room-service.ts (postFileChangeEvent)",
+        "apps/server/src/services/rooms/room-errors.ts",
+        "apps/server/src/routes/room-error-response.ts",
+        "apps/server/src/services/core/openapi-registry.ts",
+        "packages/shared/src/room-files.ts",
+        "packages/shared/src/room-schemas.ts (RoomFileChangeEventSchema)",
+        "docs/api (generated)",
+        "contributing/room-repos.md (routes section)",
+        "apps/server/src/services/rooms/repo/room-repo-git.ts (commit author helper)"
+      ],
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [],
+      "parallelWith": [
+        "T1",
+        "T2",
+        "T3"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    },
+    {
+      "id": "T7",
+      "phase": 2,
+      "phaseName": "People's file operations (app)",
+      "subject": "[agent-home-desk] [P2] Run a room's files from the Files panel",
+      "activeForm": "Adding file operations to the room Files panel",
+      "description": "Spec §7.3. Transport methods (shared interface, HttpTransport, mocks, playground), writable room-files source, any-text editing, new folder via first file, drag-drop upload with the replace choice, rename, delete with confirm, FILE_CHANGED on every operation, 'Save to room files' on chat attachments, tree refresh on fileChange entries, Dev Playground coverage, browser test. Changelog fragment: you can now edit any text file, add, upload, rename and delete files, and keep a chat attachment in a room's files, right from the app.",
+      "validation": [
+        "Component tests with a mock Transport for each operation, its optimistic update and rollback, and each error's copy.",
+        "Browser test (§11 Browser) passes in the Playwright leg.",
+        "Mobile and desktop layouts checked (screenshots in the PR).",
+        "Copy follows writing-for-humans; no banned vocabulary (check-banned-words, check-vocab-gate).",
+        "docs/concepts/rooms.mdx 'Files a room owns' describes the new operations (or T8 does, if it lands first)."
+      ],
+      "filesOwned": [
+        "packages/shared/src/transport-rooms.ts",
+        "apps/client/src/layers/shared/lib/transport/room-methods.ts",
+        "packages/test-utils/src/mock-factories.ts (room files mocks)",
+        "apps/client/src/dev/playground-transport.ts",
+        "apps/client/src/layers/features/file-explorer/**",
+        "apps/client/src/layers/features/room-management/** (attachment menu entry only)",
+        "apps/client/src/layers/entities/room/api/query-keys.ts (if needed)",
+        "apps/e2e/**/room-files*.spec.ts"
+      ],
+      "size": "large",
+      "priority": "medium",
+      "dependencies": [
+        "T6"
+      ],
+      "parallelWith": [
+        "T4",
+        "T5"
+      ],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    },
+    {
+      "id": "T8",
+      "phase": 3,
+      "phaseName": "Docs and records",
+      "subject": "[agent-home-desk] [P3] Tell people where agents work in a room, and accept the records",
+      "activeForm": "Updating room docs and accepting the ADRs",
+      "description": "Spec §12 and §8.2. Rewrite docs/concepts/rooms.mdx 'Where an agent works when it answers you in a room' (desk at home, room files reached by path, the honest read-only limit, turn-start refresh) and 'Files a room owns' (people's operations, if T7 did not). Flip 260926-172251, 260926-180223, 260926-172252 and 260926-180308 to accepted in files and manifest; set the spec status to implemented. Comment on DOR-2161 is the orchestrator's (Linear), not this task's. skip-changelog.",
+      "validation": [
+        "Docs build (site-build) green; prose passes the banned-word and vocab gates and states no unverified surface as working.",
+        "adr-drift-check clean: amends links point at accepted parents; the four new ADRs accepted.",
+        "specs/manifest.json agent-home-desk status implemented."
+      ],
+      "filesOwned": [
+        "docs/concepts/rooms.mdx",
+        "decisions/260926-172251-*.md",
+        "decisions/260926-180223-*.md",
+        "decisions/260926-172252-*.md",
+        "decisions/260926-180308-*.md",
+        "decisions/manifest.json (four entries)",
+        "specs/agent-home-desk/*",
+        "specs/manifest.json (one entry)"
+      ],
+      "size": "small",
+      "priority": "medium",
+      "dependencies": [
+        "T4",
+        "T5",
+        "T7"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": "DOR-2355"
+    }
+  ]
+}

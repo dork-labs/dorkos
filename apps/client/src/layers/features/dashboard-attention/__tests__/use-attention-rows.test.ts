@@ -71,6 +71,7 @@ function task(id: string): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: `/tmp/${id}/SKILL.md`,
     createdAt: '2026-08-19T09:00:00.000Z',
