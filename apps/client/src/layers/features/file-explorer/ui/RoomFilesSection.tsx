@@ -1,10 +1,13 @@
 /**
- * A room's own files, in the room panel (spec `project-rooms` §3.9).
+ * A room's own files, in the room panel (spec `project-rooms` §3.9, spec
+ * `agent-home-desk` §7.3).
  *
- * The same explorer the Files tab is, over a different source: read-only,
- * because what it lists is the commit `main` points at rather than files on a
- * disk, and carrying the provenance a commit can answer and a filesystem
- * cannot.
+ * The same explorer the Files tab is, over a different source: what it lists
+ * is the commit `main` points at rather than files on a disk, it carries the
+ * provenance a commit can answer and a filesystem cannot, and every change a
+ * person makes here — a new file, an upload, a rename, a delete — is one commit
+ * with their name on it. The header carries the three ways to add something,
+ * because on a phone there is no dragging a file onto a panel.
  *
  * **A room without files of its own shows nothing at all** — not an empty
  * state, not a "no files yet" invitation. Most rooms are conversations and
@@ -17,9 +20,10 @@
  */
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderGit2 } from 'lucide-react';
+import { FilePlus, FolderGit2, FolderPlus, Upload } from 'lucide-react';
+import { Button } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
-import { useFileExplorerStore } from '../model/file-explorer-store';
+import { useFileExplorerStore, type FileExplorerCommands } from '../model/file-explorer-store';
 import { createRoomFilesSource } from '../model/room-files-source';
 import { explorerDirQueryOptions } from '../model/source';
 import { ROOT_KEY } from '../model/tree';
@@ -43,6 +47,9 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const showHidden = useFileExplorerStore((s) => s.showHidden);
+  // The pane's commands, published to this header rather than to the Files
+  // tab's — that one belongs to the session tree.
+  const [commands, setCommands] = useState<FileExplorerCommands | null>(null);
 
   const source = useMemo(
     () => createRoomFilesSource({ transport, queryClient, roomId }),
@@ -87,6 +94,36 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
         <div className="min-w-0 flex-1">
           <PendingWorkBadge roomId={roomId} />
         </div>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="New file"
+          title="New file"
+          disabled={commands === null}
+          onClick={() => commands?.newFile()}
+        >
+          <FilePlus className="text-muted-foreground" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="New folder"
+          title="New folder"
+          disabled={commands === null}
+          onClick={() => commands?.newFolder()}
+        >
+          <FolderPlus className="text-muted-foreground" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Upload files"
+          title="Upload files"
+          disabled={commands?.upload === undefined}
+          onClick={() => commands?.upload?.()}
+        >
+          <Upload className="text-muted-foreground" />
+        </Button>
         <HiddenEntriesToggle />
       </header>
       {/* Above the tree, not inside it: what it says is true of the whole
@@ -113,7 +150,7 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
         data-slot="room-files-body"
         className="border-border/60 h-72 overflow-hidden rounded-lg border"
       >
-        <FileExplorer source={source} />
+        <FileExplorer source={source} onCommands={setCommands} />
       </div>
     </section>
   );

@@ -14,8 +14,12 @@ import type {
   RoomCanvasDiffReview,
   RoomCanvasDiffWriteRequest,
   RoomCanvasDiffWriteResult,
+  RoomFileChangeResponse,
   RoomFileContentResponse,
+  RoomFileDeleteRequest,
+  RoomFileFromAttachmentRequest,
   RoomFileListResponse,
+  RoomFileMoveRequest,
   RoomFileSaveRequest,
   RoomFileSaveResponse,
 } from './room-files.js';
@@ -58,6 +62,25 @@ import type {
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from './room-schemas.js';
+
+/**
+ * What {@link RoomTransport.uploadRoomFiles} sends — the multipart fields of
+ * `POST /api/rooms/{id}/files/upload`, before they are strings.
+ */
+export interface RoomFileUploadInput {
+  /** The folder to upload into, relative to the repo root; `''` for the top. */
+  dir: string;
+  /**
+   * The commit the person's view of the folder came from, or `null` when the
+   * room's files have no commits yet. Only the files named in `replace` are
+   * locked against it.
+   */
+  baseCommit: string | null;
+  /** The file NAMES (not paths) the person agreed to overwrite. */
+  replace: string[];
+  /** The files, each uploaded under its own name. */
+  files: UploadFile[];
+}
 
 /** Everything the cockpit does to a room. */
 export interface RoomTransport {
@@ -212,6 +235,60 @@ export interface RoomTransport {
    * @param req - The file, the commit it was read at, and its new contents.
    */
   saveRoomFile(id: string, req: RoomFileSaveRequest): Promise<RoomFileSaveResponse>;
+  /**
+   * Upload files into one folder of a room's files, as one commit authored by
+   * the person doing it (spec `agent-home-desk` §7.1).
+   *
+   * At most `ROOM_UPLOAD_MAX_FILES` files; more is refused
+   * `ROOM_UPLOAD_TOO_MANY_FILES`. A name the folder already holds is refused
+   * `ROOM_FILE_EXISTS` unless it is listed in `replace` — overwriting somebody's
+   * file is a choice the person makes, never the server. A replaced file that
+   * changed since `baseCommit` is refused `FILE_CHANGED` with the same
+   * `conflict` body a save carries.
+   *
+   * @param id - The room id.
+   * @param input - The folder (`''` for the top), the commit the person's view
+   *   of it came from, the names they agreed to replace, and the files.
+   */
+  uploadRoomFiles(id: string, input: RoomFileUploadInput): Promise<RoomFileChangeResponse>;
+  /**
+   * Rename or move one file or folder in a room's files, as one commit.
+   *
+   * `baseCommit` is required: every path under `from` must be unchanged since,
+   * or the move is refused `FILE_CHANGED`. A `to` that already exists is
+   * refused `ROOM_FILE_EXISTS`.
+   *
+   * @param id - The room id.
+   * @param req - What moves, where to, and the commit the person saw.
+   */
+  moveRoomFile(id: string, req: RoomFileMoveRequest): Promise<RoomFileChangeResponse>;
+  /**
+   * Delete one file or folder from a room's files, as one commit. The room's
+   * history keeps what was deleted.
+   *
+   * `baseCommit` is required: every path under `path` must be unchanged since,
+   * or the delete is refused `FILE_CHANGED`.
+   *
+   * @param id - The room id.
+   * @param req - What to delete, and the commit the person saw.
+   */
+  deleteRoomFile(id: string, req: RoomFileDeleteRequest): Promise<RoomFileChangeResponse>;
+  /**
+   * Keep a file somebody attached to a message in this room as one of the
+   * room's files, as one commit.
+   *
+   * The attachment must be on a message in THIS room, else 404
+   * `ATTACHMENT_NOT_FOUND`. A name the folder already holds is refused
+   * `ROOM_FILE_EXISTS`; there is no replace here, so the answer is another name.
+   *
+   * @param id - The room id.
+   * @param req - The attachment, the folder, an optional new name, and the
+   *   commit the person's view of the folder came from.
+   */
+  saveAttachmentToRoomFiles(
+    id: string,
+    req: RoomFileFromAttachmentRequest
+  ): Promise<RoomFileChangeResponse>;
   /**
    * Deal with changes in a room's own copy that DorkOS did not make (spec
    * `project-rooms` §3.10).

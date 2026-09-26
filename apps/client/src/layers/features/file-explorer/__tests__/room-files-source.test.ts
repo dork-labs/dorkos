@@ -21,10 +21,12 @@ describe('the room files source', () => {
   it('declares what a commit can and cannot do', () => {
     const { source } = build();
     expect(source.scopeKey).toBe('room:room-1');
-    // No directory on disk to write into, so nothing is writable and nothing
-    // reveals — and the pane asks these rather than inferring them.
+    // No directory on disk, so nothing reveals and the files API is never the
+    // door — the tree is changed through the room's own, which says how many
+    // files one upload may carry. The pane asks these rather than inferring them.
     expect(source.cwd).toBeNull();
-    expect(source.writable).toBe(false);
+    expect(source.writable).toBe(true);
+    expect(source.changes?.maxUploadFiles).toBe(20);
     // The two the session source cannot claim, and the reason this exists.
     expect(source.provenance).toBe(true);
     expect(source.filtersHidden).toBe(false);
@@ -218,12 +220,11 @@ describe('the room files source, watching the room', () => {
 });
 
 describe('saving through the room files source', () => {
-  it('declares that the FILES are editable even though the tree is not', () => {
+  it('declares its files editable as well as its tree', () => {
     const { source } = build();
-    // The opposite pair from a session's, and both halves are true at once:
-    // merging is what adds and removes entries here, while a person's own edit
-    // goes through §3.10's door.
-    expect(source.writable).toBe(false);
+    // A person's own edit goes through §3.10's door, and a new file, an upload,
+    // a rename and a delete through `changes` (spec `agent-home-desk` §7.3).
+    expect(source.writable).toBe(true);
     expect(source.editable).toBe(true);
     expect(source.save).toBeTypeOf('function');
   });

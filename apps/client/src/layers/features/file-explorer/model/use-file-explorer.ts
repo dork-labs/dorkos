@@ -13,6 +13,7 @@ import {
 } from './source';
 import { useFileCrud, type FileCrudApi } from './use-file-crud';
 import { useFileActions, type FileActionsApi } from './use-file-actions';
+import { useSourceChanges, type SourceChangesApi } from './use-source-changes';
 import { useFileExplorerStore } from './file-explorer-store';
 
 /**
@@ -83,6 +84,11 @@ export interface FileExplorerApi extends FileCrudApi, FileActionsApi {
   reload: () => void;
   /** Refetch a single directory level (retry after a failed listing). */
   retryDir: (path: string) => void;
+  /**
+   * The changes a source with its own door makes (a room's files), or `null`
+   * for a source the files API writes to.
+   */
+  changes: SourceChangesApi | null;
 }
 
 /**
@@ -258,6 +264,13 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
     inFlightRef: inFlightMutations,
   });
 
+  const changes = useSourceChanges({
+    source: source ?? EMPTY_SOURCE,
+    showHidden,
+    queryClient,
+    inFlightRef: inFlightMutations,
+  });
+
   const actions = useFileActions(cwd);
 
   return {
@@ -270,6 +283,7 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
     openFile,
     reload,
     retryDir,
+    changes: source?.changes ? changes : null,
     ...crud,
     ...actions,
   };
