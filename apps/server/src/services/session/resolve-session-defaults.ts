@@ -96,6 +96,7 @@ import { readManifest } from '@dorkos/shared/manifest';
 import { resolveStopMode } from '@dorkos/shared/permission-semantics';
 import { resolveFilesAndCommands } from '@dorkos/shared/permissions';
 import { configManager } from '../core/config-manager.js';
+import { permissionGateSources } from '../core/capabilities/permission-enforcement.js';
 
 /**
  * What one agent says its sessions should start with — the ladder's first tier.
@@ -150,22 +151,33 @@ export async function readAgentExecutionDefaults(
   manifestDir?: string
 ): Promise<AgentExecutionDefaults> {
   if (!manifestDir) return {};
+  let manifest: Awaited<ReturnType<typeof readManifest>>;
   try {
-    const manifest = await readManifest(manifestDir);
-    if (!manifest) return {};
-    return {
-      // The manifest's own runtime travels with its model, because it is what
-      // makes the model id readable — see `AgentExecutionDefaults.runtime`.
-      runtime: manifest.runtime,
-      ...(manifest.model !== undefined ? { model: manifest.model } : {}),
-      ...(manifest.effort !== undefined ? { effort: manifest.effort } : {}),
-      ...(manifest.permissions?.filesAndCommands
-        ? { filesAndCommands: manifest.permissions.filesAndCommands }
-        : {}),
-    };
+    manifest = await readManifest(manifestDir);
   } catch {
     return {};
   }
+  if (!manifest) return {};
+  // The agent's own Files & commands stop is read through the permission
+  // gate's reader, never off the manifest here: that reader is the one place
+  // an arriving agent's unscreened folder settings are narrowed (spec
+  // `agent-permissions`, review D1), and a session, a scheduled run and a room
+  // turn all start from this value. A read that fails contributes no stop.
+  let filesAndCommands: PermissionStop | undefined;
+  try {
+    filesAndCommands = (await permissionGateSources().readAgentPermissions(manifestDir))
+      ?.filesAndCommands;
+  } catch {
+    filesAndCommands = undefined;
+  }
+  return {
+    // The manifest's own runtime travels with its model, because it is what
+    // makes the model id readable — see `AgentExecutionDefaults.runtime`.
+    runtime: manifest.runtime,
+    ...(manifest.model !== undefined ? { model: manifest.model } : {}),
+    ...(manifest.effort !== undefined ? { effort: manifest.effort } : {}),
+    ...(filesAndCommands ? { filesAndCommands } : {}),
+  };
 }
 
 /** The `runtimes.*` config keys that actually exist in {@link UserConfig}. */

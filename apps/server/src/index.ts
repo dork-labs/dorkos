@@ -2674,6 +2674,26 @@ async function start() {
   // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
   let capabilityRegistry: CapabilityRegistry | undefined;
 
+  // The permission gate's sources, wired as soon as the registry slot exists
+  // and before anything that starts a session, a scheduled run or a room turn
+  // is started: all of them read an agent's own settings through this reader,
+  // the one place an arriving agent's unscreened folder settings are narrowed
+  // (review D1). The registry is read lazily, once it is composed.
+  initPermissionGate({
+    readConfig: () => configManager.get('permissions'),
+    // Fresh off the manifest on every call, and compared with the last value
+    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
+    readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
+      arrivals: arrivalRecord,
+      agentAt: (agentPath) =>
+        meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
+      context: () => narrowingContext(configManager, capabilityRegistry),
+    }),
+    // The tool-list builders hide an action whose permission is Blocked; they
+    // read this catalog, per build, off the composed registry.
+    listActions: () => permissionActions(capabilityRegistry),
+  });
+
   // Approval primitive (spec `agent-trust` §3.3) — one instance, injected into
   // the marketplace confirmation provider and the approvals router so they share
   // a single token lifecycle. Built after `capabilityRegistry` is declared so
@@ -4833,20 +4853,6 @@ async function start() {
           ? agentRequestWriter({ name: write.writer.agentName ?? 'An agent' })
           : personWriter('local-trust'),
     });
-  });
-  initPermissionGate({
-    readConfig: () => configManager.get('permissions'),
-    // Fresh off the manifest on every call, and compared with the last value
-    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
-    readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
-      arrivals: arrivalRecord,
-      agentAt: (agentPath) =>
-        meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
-      context: () => narrowingContext(configManager, capabilityRegistry),
-    }),
-    // The tool-list builders hide an action whose permission is Blocked; they
-    // read this catalog, per build, off the composed registry.
-    listActions: () => permissionActions(capabilityRegistry),
   });
   if (connectorRuntimePrincipals) {
     const agentScopedRuntimePrincipals = new AgentIdentitySnapshotPrincipalPort({
