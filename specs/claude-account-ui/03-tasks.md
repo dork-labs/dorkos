@@ -15,7 +15,7 @@ Generated from `03-tasks.json` (the canonical file). Spec: `02-specification.md`
 | 3.1  | Keep a short history of usage-limit episodes and fill the server facts the account UI needs                      | large  | high     | none                         | dorkos      |
 | 3.2  | Build the "Continue on another account" picker and open it from the account popover                              | large  | high     | 1.2, 2.1, 3.1                | dorkos      |
 | 3.3  | Build the out-of-usage banner and its transcript marker, and run the accessibility check over every new showcase | xl     | high     | 3.2, 3.1, 2.2, 2.3, 2.4      | dorkos      |
-| 4.1  | Finish plugin-carried extensions: real-path compile cache, same-plugin update test, ADR status                   | small  | high     | none                         | dorkos      |
+| 4.1  | Keep a plugin extension's approval across a plugin update, and settle the ADR                                    | small  | high     | none                         | dorkos      |
 | 4.2  | Scaffold the Flow extension with its fleet routes and the account advisor (marketplace)                          | xl     | high     | 4.1                          | marketplace |
 | 4.3  | Build the Flow settings tab for choosing how flow spends each account (marketplace)                              | large  | medium   | 4.2                          | marketplace |
 | 5.1  | Document using several Claude accounts and what happens when usage runs out                                      | small  | medium   | 2.1, 2.3, 2.4, 3.2, 3.3, 4.3 | dorkos      |
@@ -47,7 +47,7 @@ Critical path: 1.1 → 1.2 → 2.1 → 3.2 → 3.3 → 5.1.
 - packages/db/src/schema/ (new session-limit-history.ts) + packages/db/drizzle/ migration and meta snapshot (3.1): regenerate if another PR takes the next number first.
 - S4's session_limits module (3.1 adds the history write inside it).
 - apps/client/src/layers/widgets/session/ui/ChatPanel.tsx, SessionComposer.tsx, features/chat/ui/status/TurnFailedNotice.tsx and features/chat/ui/message/ErrorMessageBlock.tsx (3.3).
-- apps/server/src/services/extensions/extension-compiler.ts (4.1).
+- apps/server/src/services/marketplace/flows/uninstall.ts (4.1).
 - marketplace plugins/flow/.dork/ (manifest.json, extensions/flow/), package.json, vitest.config.ts, tsconfig.json (4.2, 4.3).
 - docs/guides/runtimes.mdx (5.1; its account line goes stale when 2.1 lands).
 
@@ -747,7 +747,7 @@ Always (client): work in your own worktree based on origin/main (one checkout, o
 
 ## Phase 4: Flow extension
 
-### Task 4.1: Finish plugin-carried extensions: real-path compile cache, same-plugin update test, ADR status
+### Task 4.1: Keep a plugin extension's approval across a plugin update, and settle the ADR
 
 - Size small, priority high, repo dorkos
 - Depends on: nothing in this file (outside: S4 task 6.1, DOR-2383)
@@ -756,15 +756,14 @@ Depends on (outside this file): S4 task 6.1 (DOR-2383, branch `DOR-2383-plugin-e
 
 Tracker: DOR-2388 (prerequisite: the Flow extension ships inside the flow plugin). Spec §7.2, §12 Discovery row, §16 (draft ADR `260926-153107`).
 
-What 6.1 already does (do not redo): `ExtensionDiscovery.discover` scans `<dorkHome>/plugins/*/.dork/extensions/*` and `<cwd>/.dork/plugins/*/.dork/extensions/*` and records `sourcePlugin` (the plugin's name); precedence is core, then a direct install, then the approved copy, then a plugin copy by sorted plugin name (global before project) with one warning; a project copy never takes over a core id or an id approved for another copy; approval is tied to the source in the operator-only `extensions.approvedSources` map (`id → { path, plugin? }`) beside `approvedToRun`; an approval with no source counts as unapproved, except approvals older than the 0.86.0 migration, which bind to the direct install at `<dorkHome>/extensions/<id>` on first discovery (`ExtensionManager.bindUnsourcedApprovals`); `enable()` re-scans an unseen id so install-plugin's enable finds it; uninstall walks the package and clears the approval.
+What 6.1 already does (do not redo): `ExtensionDiscovery.discover` scans `<dorkHome>/plugins/*/.dork/extensions/*` and `<cwd>/.dork/plugins/*/.dork/extensions/*` and records `sourcePlugin` (the plugin's name); precedence is core, then a direct install, then the approved copy, then a plugin copy by sorted plugin name (global before project) with one warning; a project copy never takes over a core id or an id approved for another copy; approval is tied to the source in the operator-only `extensions.approvedSources` map (`id → { path, plugin? }`) beside `approvedToRun`; an approval with no source counts as unapproved, except approvals older than the 0.86.0 migration, which bind to the direct install at `<dorkHome>/extensions/<id>` on first discovery (`ExtensionManager.bindUnsourcedApprovals`); `enable()` re-scans an unseen id so install-plugin's enable finds it; uninstall walks the package and clears the approval. What it gets wrong: a marketplace update runs uninstall with `replacing: true` as the first half of a replace, and both branches of `removeLocated` (apps/server/src/services/marketplace/flows/uninstall.ts, around :354 and :378) call `runSideEffects`, which (around :708-709) calls `disableBundledExtensions` → `forgetRunApproval(id, installRoot)` without checking `req.replacing`. So updating the flow plugin silently stops its approved extension until the person approves it again. (If 6.1 fixes this before merging, this task keeps only the test and step 2.)
 
 Remaining work:
 
-1. Key the compile cache in apps/server/src/services/extensions/extension-compiler.ts by the extension's REAL path (`fs.realpath` of its directory) rather than the path it was found at, so two discovery roots never share a cache entry and a symlinked install compiles once. Keep the existing hash inputs; add the real path to the key.
-2. Add a test that an update from the same plugin keeps its approval: approve a plugin-carried extension, reinstall the same plugin (same name, same folder) with a changed `extension.json` version, and assert it still runs without a new approval. (6.1 has no such test.)
-3. Move draft ADR `decisions/260926-153107-plugin-carried-extension-discovery.md` to its decided status per the writing-adrs skill and keep `decisions/manifest.json` consistent; note 6.1's own ADR `260926-170606-plugin-carried-extensions` in it and supersede whichever is redundant.
+1. In uninstall.ts `runSideEffects`, skip disabling bundled extensions and forgetting their approval when `req.replacing` is set, so an update of the same plugin (same name, same folder) keeps `approvedToRun` and the `approvedSources` entry. A plain uninstall is unchanged.
+2. Move draft ADR `decisions/260926-153107-plugin-carried-extension-discovery.md` to its decided status per the writing-adrs skill and keep `decisions/manifest.json` consistent.
 
-Tests (apps/server/src/services/extensions/**tests**/): the compile cache key differs for two roots and is equal for a symlink and its target (temp dirs); the same-plugin update test above. Every new test must fail with its implementation reverted.
+Tests (apps/server/src/services/marketplace/**tests**/flows/): approve a plugin-carried extension, update the same plugin through the marketplace update path (a changed version), and assert it still runs with `approvedToRun` and its `approvedSources` entry intact; a plain uninstall still clears both. Every new test must fail with its implementation reverted.
 
 Changelog: internal only (6.1 carries the user-facing fragment); use a `chore(`-prefixed PR title.
 
