@@ -492,6 +492,11 @@ describe('codexObservations', () => {
       ['five_hour', 'rejected'],
       ['seven_day', null],
     ]);
+    // Both at 100%: both hit the limit, so both are rejected.
+    expect(statuses({ primary: window(100, 300), secondary: window(100, 10080) })).toEqual([
+      ['five_hour', 'rejected'],
+      ['seven_day', 'rejected'],
+    ]);
     // None at 100%: the single tightest, a tie going to the shorter window.
     expect(statuses({ primary: window(70, 300), secondary: window(90, 10080) })).toEqual([
       ['five_hour', null],
