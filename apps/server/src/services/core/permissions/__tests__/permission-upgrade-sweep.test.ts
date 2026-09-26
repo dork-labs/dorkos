@@ -200,6 +200,26 @@ describe('the permission upgrade', () => {
     expect(world.events).toHaveLength(count);
   });
 
+  it('folds on an install that already ran the 0.83.0 upgrade before phase 3 existed', async () => {
+    // 0.83.0 shipped phases 1 and 2; an install on it has run that version's
+    // config migration and its once-per-version sweep, and neither will run
+    // again. The phase 3 folds keep no version marker, so they still happen.
+    config = { ...config, upgradeSweptVersion: '0.83.0' };
+    agentContext = { relayTools: false };
+    expect(await runPermissionUpgradeSweep(deps('0.83.0'))).toBeNull();
+
+    expect(await runPermissionRetirements(deps('0.83.0'))).toBe(4);
+    expect(onDisk('capped')).not.toHaveProperty('tierCeiling');
+    expect(onDisk('granted')).not.toHaveProperty('enabledToolGroups');
+    expect(agentContext).toBeUndefined();
+  });
+
+  it('folds the same on an older install, after its 0.83.0 sweep runs', async () => {
+    expect(await runPermissionUpgradeSweep(deps('0.84.0'))).toBe(1);
+    expect(await runPermissionRetirements(deps('0.84.0'))).toBe(3);
+    expect(onDisk('capped')).not.toHaveProperty('tierCeiling');
+  });
+
   it('records the preset the migration set, once per server version', async () => {
     expect(await runPermissionUpgradeSweep(deps())).toBe(1);
     expect(world.events.map((e) => e.summary)).toEqual(['Preset set to Full power']);
