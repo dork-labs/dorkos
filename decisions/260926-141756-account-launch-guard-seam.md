@@ -21,9 +21,9 @@ The operator decided that routing policy (rotation, reserve, repo scope, handoff
 
 - Core never reads flow's policy file.
 - The extension server API gains `claudeAccounts.registerLaunchGuard`. Core consults every registered guard when an AGENT (`session_start`) or a RELAY message names an account, fail-closed on a throw or a 2 s timeout.
-- A person's own pick is never guarded. With no guard registered, any registered account is allowed.
+- A person's own pick is never guarded. With no guard registered, an agent's or a relay message's account pick is refused: nothing is spent until the operator opts in.
 
 ## Consequences
 
 - Positive: policy lives in one place, flow; core stays generic.
-- Negative: without the Flow extension, an agent can pick any registered account; the Activity log records every such pick.
+- Negative: without the Flow extension, agents cannot name an account at all (they still get the default ladder).
