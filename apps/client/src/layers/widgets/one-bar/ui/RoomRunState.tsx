@@ -79,10 +79,26 @@ interface RoomHaltButtonProps {
  * they already said stays — and red would put the room's most ordinary recovery
  * action in the same register as deleting something.
  *
- * The word rides beside the icon rather than being hidden at narrow widths:
- * {@link RoomRunState} does not draw this button on a phone at all (spec §4), so
- * every width that renders it has room for the word — and "Stop" spelled out is
- * worth more than the ~30px on the one surface that has the space.
+ * **It yields before anything else in the row does, in two steps (DOR-1816
+ * F1).** A docked sidebar at a 768px window leaves the bar 472px, and there
+ * Home's tab strip is already at its floor and every chip is `shrink-0`, so
+ * whatever this button spends comes straight out of the row: the health dot
+ * painted over the glyph beside it, further with every digit of the team's
+ * head count (17px at 120 members), and further still with remote access on,
+ * whose button takes another 36px of the same header. Both steps answer to the
+ * bar's own width (`@container/bar`), never the window's:
+ *
+ * - Below the `xl` bar (576px) the word goes and the button becomes a 24px
+ *   square, the size of the bar's other icon buttons. Its accessible name and
+ *   tooltip still say what it stops. The square comes from `size-6` alone: the
+ *   `xs` size's own `has-[>svg]:px-1.5` outranks a plain padding override, and
+ *   the 14px icon centres inside the 24px box with that padding anyway.
+ * - Below the `lg` bar (512px) — which is where a 768px window with the
+ *   sidebar docked lands — the button is not drawn at all, for the same reason
+ *   {@link RoomRunState} draws nothing on a phone: the live lane's stop-all
+ *   above the composer is on screen exactly when something is running, so the
+ *   room can still be stopped, and the bar keeps the width for the room's name
+ *   and the controls that are always there.
  */
 export function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
   const halt = useHaltRoom();
@@ -97,9 +113,12 @@ export function RoomHaltButton({ roomId, roomName }: RoomHaltButtonProps) {
           aria-label={`Stop all agents in ${roomName}`}
           disabled={halt.isPending}
           onClick={() => halt.mutate({ roomId })}
+          className="@max-xl/bar:size-6 @max-lg/bar:hidden"
         >
           <CircleStop aria-hidden className="size-3.5" />
-          Stop
+          <span data-slot="room-halt-label" className="@max-xl/bar:hidden">
+            Stop
+          </span>
         </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">

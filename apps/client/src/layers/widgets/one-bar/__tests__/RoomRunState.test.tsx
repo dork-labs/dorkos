@@ -151,6 +151,23 @@ describe('RoomRunState', () => {
     expect(screen.getByText('9')).toHaveClass('min-w-[2ch]', 'tabular-nums');
   });
 
+  it('gives up its width on a narrow bar in two steps, and still says what it stops (DOR-1816 F1)', () => {
+    // At a 768px window with the sidebar docked the bar is 472px wide, and
+    // Stop's width was what pushed Home's row past its own edge. Both rules
+    // answer to the BAR (`@container/bar`), never the viewport — jsdom
+    // resolves neither, so what this pins is that the rules are the container
+    // ones and that the button's name does not ride on the word it hides. The
+    // width itself is `responsive/no-horizontal-scroll.spec.ts`'s to measure.
+    working.count = 2;
+    renderRunState();
+
+    const stop = screen.getByRole('button', { name: 'Stop all agents in #general' });
+    expect(stop).toHaveClass('@max-xl/bar:size-6', '@max-lg/bar:hidden');
+    const word = stop.querySelector('[data-slot="room-halt-label"]');
+    expect(word).toHaveTextContent('Stop');
+    expect(word).toHaveClass('@max-xl/bar:hidden');
+  });
+
   it('cannot be pressed twice while the halt is still going out', () => {
     working.count = 2;
     pending.value = true;
