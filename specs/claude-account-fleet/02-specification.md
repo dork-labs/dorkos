@@ -152,7 +152,7 @@ The existing per-session `UsageStatus` is unchanged.
 
 ## 6. Server design (`apps/server`)
 
-New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay under `services/runtimes/claude-code/`, Hard Rule 2). `dorkHome` comes from `lib/dork-home.ts` (Hard Rule 3). The dev server's `dorkHome` is `apps/server/.temp/.dork`; flow only sees it when `DORK_HOME` points there (contract §1.1).
+New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay under `services/runtimes/claude-code/`, Hard Rule 2). `dorkHome` comes from `lib/dork-home.ts` (Hard Rule 3). New session-domain modules go in `services/session/launch/` and `services/session/fleet/`, because `services/session/` is already over the dir-size limit. The dev server's `dorkHome` is `apps/server/.temp/.dork`; flow only sees it when `DORK_HOME` points there (contract §1.1).
 
 ### D1. Account color, and the identity rules the contract asks of DorkOS (DOR-2379, core part)
 
@@ -206,7 +206,7 @@ Exposed as `POST /api/runtimes/claude-code/accounts/:id/probe` → `200 { accoun
 
 ### D5. MCP tool: start a session (DOR-2383)
 
-**Extract the launch service first.** The session-creating body of `POST /api/sessions/:id/messages` moves verbatim into `services/session/launch-session.ts#dispatchSessionMessage(opts)`: agent-path verification, workspace binding, cwd resolution, runtime resolution and `persistSessionRuntime`, account-hint gating, projector setup, `runInDispatch(… dispatchMessage)`. `opts.origin: TurnOrigin` is required. The route passes `{ kind: 'interactive' }` and keeps its HTTP concerns. The existing route and dispatch-correlation tests pass unchanged; that is the refactor's proof.
+**Extract the launch service first.** The session-creating body of `POST /api/sessions/:id/messages` moves verbatim into `services/session/launch/launch-session.ts#dispatchSessionMessage(opts)`: agent-path verification, workspace binding, cwd resolution, runtime resolution and `persistSessionRuntime`, account-hint gating, projector setup, `runInDispatch(… dispatchMessage)`. `opts.origin: TurnOrigin` is required. The route passes `{ kind: 'interactive' }` and keeps its HTTP concerns. The existing route and dispatch-correlation tests pass unchanged; that is the refactor's proof.
 
 **New origin.** `TurnOrigin` gains `{ kind: 'agent-launch' }`, which `permissionSeedForOrigin` maps to `'none'`: an agent does not hand a new session the operator's trust stop. Power comes only from the tool's `permissionMode`, clamped by `clampSchedulePermissionMode` (never `bypassPermissions`, the rule an agent-proposed schedule gets) and written to the new session's settings row before the send.
 
@@ -252,7 +252,7 @@ Every call writes an Activity entry naming the calling agent, the account and th
 
 ### D7. Session list carries status and account usage (DOR-2385)
 
-`GET /api/sessions`, after the existing overlays, runs `applySessionFleetOverlay(page, deps)` (`services/session/session-fleet-overlay.ts`):
+`GET /api/sessions`, after the existing overlays, runs `applySessionFleetOverlay(page, deps)` (`services/session/fleet/session-fleet-overlay.ts`):
 
 - `accountId` where `session.account` matches a registered account (`path.resolve` equality);
 - `status: { lifecycle, limit }` from `projectorFor(session.id)?.status` when this process holds a projector; absent otherwise, which consumers read as idle;
@@ -265,7 +265,7 @@ The status and usage parts add no I/O and no per-session calls. `GET /api/sessio
 
 Per contract §1.3, DorkOS **reads** `<main checkout>/.dork/flow/flow-state.json` and never writes it.
 
-- `services/session/flow-run-link.ts#flowRunsFor(cwd)`: resolve the main checkout as the parent of the git common dir (reuse `worktree-scan.ts`'s `rev-parse --path-format=absolute --git-common-dir` + `repoPathFromCommonDir`), cached per cwd for the process (a negative result for 60 s); read the file with the shared bounded reader (1 MB cap), cached by `mtime`; parse leniently (a `FlowRun` needs `identifier` and `sessionId` strings; unknown fields ignored; a file that fails to parse reads as no runs, logged once per mtime).
+- `services/session/fleet/flow-run-link.ts#flowRunsFor(cwd)`: resolve the main checkout as the parent of the git common dir (reuse `worktree-scan.ts`'s `rev-parse --path-format=absolute --git-common-dir` + `repoPathFromCommonDir`), cached per cwd for the process (a negative result for 60 s); read the file with the shared bounded reader (1 MB cap), cached by `mtime`; parse leniently (a `FlowRun` needs `identifier` and `sessionId` strings; unknown fields ignored; a file that fails to parse reads as no runs, logged once per mtime).
 - The D7 overlay sets `trackerItem: { id: run.identifier, stage: run.stage, runStatus: run.status }` on each session whose id equals a run's `sessionId`, looking up each distinct cwd on the page once.
 - A session no run names gets no `trackerItem` and nothing else changes. The link survives a restart because the file is flow's.
 - `session_start` takes no tracker argument: flow writes `FlowRun.sessionId` from the tool's result.
