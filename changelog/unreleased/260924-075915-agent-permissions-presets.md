@@ -11,6 +11,8 @@ covers:
   - 'fix(control-center): open the phone sheet on the preset picker, and read permissions only when it opens'
   - 'fix(control-center): wait for permissions before saying nothing is overridden'
   - 'fix(marketplace): an agent package cannot ship what its agent may do'
+  - 'fix(permissions): a new agent cannot bring wider permissions in its own folder'
+  - 'fix(permissions): an action that shows what it would change always asks'
   - 847dbbc
   - fcacf5a
   - fb6bdd0
