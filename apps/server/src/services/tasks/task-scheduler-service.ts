@@ -37,7 +37,12 @@ import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { RunAccounting } from './run-accounting.js';
-import { emitRefusedAskActivity, emitRunActivity } from './run-activity.js';
+import {
+  emitRefusedAskActivity,
+  emitRunActivity,
+  emitUnregisteredAccountActivity,
+} from './run-activity.js';
+import { isRegisteredClaudeAccount } from '../runtimes/claude-code/claude-config-dir.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
 import { sweepInterruptedRuns } from './crash-recovery.js';
@@ -162,6 +167,12 @@ export interface SchedulerAgentManager {
       model?: string;
       /** The reasoning-effort rung this run resolved to; absent leaves it unset. */
       effort?: EffortLevel;
+      /**
+       * The schedule's Claude account (DOR-2384). Arrives here only because the
+       * run's settings are spread whole into both calls; the claude-code launch
+       * reads it off the send ({@link SchedulerAgentManager.sendMessage}).
+       */
+      accountHint?: string;
     }
   ): void;
   sendMessage(
@@ -185,6 +196,13 @@ export interface SchedulerAgentManager {
       model?: string;
       /** See {@link SchedulerAgentManager.sendMessage}'s `model`. */
       effort?: EffortLevel;
+      /**
+       * The schedule's Claude account as the launch hint
+       * (`MessageOpts.accountHint`, DOR-2384): read by the claude-code launch
+       * ladder only when this run starts a conversation, ignored by every other
+       * runtime. An id nobody registered falls through the ladder.
+       */
+      accountHint?: string;
     }
   ): AsyncGenerator<StreamEvent>;
   /**
@@ -1085,6 +1103,7 @@ export class TaskSchedulerService {
           runtime: execution.runtimeType,
           model: execution.settings.model ?? null,
         });
+        this.reportUnregisteredAccount(task, run, execution);
 
         // **Only a runtime the relay can actually drive, right now** (DOR-1614,
         // DOR-1636). This read `execution.runtimeType === 'claude-code'` while
@@ -1132,6 +1151,31 @@ export class TaskSchedulerService {
         }
       })
     );
+  }
+
+  /**
+   * Say in the Activity feed when this run will not start on the account its
+   * schedule names, because no registered account has that id (DOR-2384).
+   *
+   * Asked once, before either dispatch path, so the direct and relay runs say
+   * the same thing. Only where the account would actually be read: a
+   * claude-code run that starts a conversation. A sticky run resuming one stays
+   * on that conversation's account whatever the schedule says, and a registry
+   * nobody can read says nothing rather than something that may be false.
+   *
+   * @param task - The task being dispatched.
+   * @param run - The run being dispatched.
+   * @param execution - What the run resolved to.
+   */
+  private reportUnregisteredAccount(task: Task, run: TaskRun, execution: RunExecution): void {
+    const account = execution.settings.accountHint;
+    if (!account || execution.runtimeType !== 'claude-code') return;
+    const { hasStarted } = resolveRunSession(this.store, task, {
+      runtimeType: execution.runtimeType,
+    });
+    if (hasStarted) return;
+    if (isRegisteredClaudeAccount(account) !== false) return;
+    emitUnregisteredAccountActivity(this.activityService, task, run, account);
   }
 
   /**

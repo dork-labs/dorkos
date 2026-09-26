@@ -373,6 +373,7 @@ export async function createScheduledTask(
       runtime: data.runtime || undefined,
       model: data.model || undefined,
       effort: data.effort || undefined,
+      account: data.account || undefined,
       // The CLAMPED mode, so the file and the row agree. A SKILL.md declaring more
       // power than its row holds is a standing request from disk that nobody made
       // and no screen shows.
@@ -431,6 +432,7 @@ export async function createScheduledTask(
       ...(data.runtime !== undefined && { runtime: data.runtime }),
       ...(data.model !== undefined && { model: data.model }),
       ...(data.effort !== undefined && { effort: data.effort }),
+      ...(data.account !== undefined && { account: data.account }),
       filePath,
     });
   }

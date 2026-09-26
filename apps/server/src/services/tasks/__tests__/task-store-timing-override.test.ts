@@ -29,6 +29,7 @@ const SETTINGS = {
   effort: null,
   maxRuntime: null,
   sticky: false,
+  account: null,
 };
 import { AGENT_TIMING_CHANGE_REASON } from '../timing/effective-timing.js';
 

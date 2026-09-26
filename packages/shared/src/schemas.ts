@@ -4590,6 +4590,7 @@ export const TaskSchema = z
             'effort',
             'maxRuntime',
             'sticky',
+            'account',
           ]),
           from: z.union([z.string(), z.number(), z.boolean(), z.null()]),
           to: z.union([z.string(), z.number(), z.boolean(), z.null()]),
@@ -4644,6 +4645,14 @@ export const TaskSchema = z
      * ladder, or `null` to follow the agent and the server default.
      */
     effort: EffortLevelSchema.nullable().default(null),
+    /**
+     * Which Claude account this task's runs start on, as a registry id, or
+     * `null` to follow the agent and then the default (DOR-2384). It decides
+     * which subscription pays for a run. Only claude-code runs use it, and only
+     * when a run starts a conversation: a sticky schedule stays on the account
+     * its conversation began on.
+     */
+    account: z.string().nullable().default(null),
     status: TaskStatusSchema,
     filePath: z.string(),
     createdAt: z.string(),
@@ -4928,6 +4937,14 @@ export const CreateTaskRequestSchema = z
     /** How hard the model thinks during this task's runs. `null` = follow the agent. */
     effort: EffortLevelSchema.nullable().optional(),
     /**
+     * Which Claude account this task's runs start on, as a registry id
+     * (DOR-2384). Omitted or `null` follows the agent, then the default. Not
+     * checked against the registry at write, for the reason
+     * {@link TaskSchema.model} gives: an id nobody registered falls through the
+     * launch ladder at run time. Mirrors `ScheduleBlockSchema.account`.
+     */
+    account: z.string().min(1).nullable().optional(),
+    /**
      * How much this schedule's runs may do without asking.
      *
      * **Deliberately without a default** (spec `full-power-defaults`, D6). It
@@ -5100,6 +5117,13 @@ export const UpdateTaskRequestSchema = z
     model: z.string().min(1).nullable().optional(),
     /** Change the reasoning effort, or `null` to clear it. */
     effort: EffortLevelSchema.nullable().optional(),
+    /**
+     * Change which Claude account this task's runs start on, or `null` to go
+     * back to following the agent (DOR-2384). Refused on a sticky schedule
+     * whose conversation has already started (`STICKY_ACCOUNT_LOCKED`): one
+     * conversation cannot change accounts. See {@link TaskSchema.account}.
+     */
+    account: z.string().min(1).nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */

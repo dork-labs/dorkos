@@ -207,6 +207,48 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
     });
   });
 
+  it('stops an approved schedule when the agent changes its account (DOR-2384)', async () => {
+    // The account decides whose subscription pays; an agent changing it is new
+    // work, written into the file's schedule block so the next sweep keeps it.
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, account: 'work' });
+
+    expect(isError).toBe(false);
+    expect(payload.schedule as Task).toMatchObject({
+      status: 'pending_approval',
+      account: 'work',
+      approvalChanges: [{ field: 'account', from: null, to: 'work' }],
+    });
+    expect(await fs.readFile(skillPath(), 'utf-8')).toMatch(/^ {2}account: work$/m);
+    await reconcile();
+    expect(store.getTask(id)).toMatchObject({ status: 'pending_approval', account: 'work' });
+  });
+
+  it('refuses to move a started sticky conversation to another account (DOR-2384)', async () => {
+    const id = await createTask({ sticky: true });
+    const run = store.createRun(id, 'scheduled');
+    store.updateRun(run.id, { sessionId: '0f6c1d7e-7d0e-4c55-9f55-000000000002' });
+
+    const { isError, payload } = await call('tasks_update', { id, account: 'work' });
+
+    expect(isError).toBe(true);
+    expect(payload).toEqual({
+      code: 'STICKY_ACCOUNT_LOCKED',
+      error:
+        "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it.",
+    });
+    expect(store.getTask(id)!.account).toBeNull();
+    expect(await fs.readFile(skillPath(), 'utf-8')).not.toContain('account');
+  });
+
+  it('creates a schedule on the account it names (DOR-2384)', async () => {
+    const id = await createTask({ account: 'work' });
+
+    expect(store.getTask(id)!.account).toBe('work');
+    expect(await fs.readFile(skillPath(), 'utf-8')).toMatch(/^ {2}account: work$/m);
+  });
+
   it('says nothing of the sort for an edit that keeps the approved work', async () => {
     // The negative control, and it is the half that makes the disclosure worth
     // anything: a note on every update is a note nobody reads. The description

@@ -225,6 +225,7 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: '/tmp/nightly-sweep/SKILL.md',
     createdAt: new Date(Date.now() - 20 * 60_000).toISOString(),

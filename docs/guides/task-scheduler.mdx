@@ -93,12 +93,17 @@ The block takes a handful of settings. Only `cron` is worth learning first:
       description:
         "How hard the model thinks. Leave it out and it uses the agent's setting. Runtimes without the setting ignore it.",
     },
+    account: {
+      type: 'string',
+      description:
+        "Which of your Claude accounts pays for the run, by the id DorkOS shows for it. Leave it out and it uses the agent's account, then your default. Only Claude Code runs use it.",
+    },
   }}
 />
 
 ### Pick where it runs
 
-Those last three are new, and the honest advice is to skip them. Leave all three
+`runtime`, `model` and `effort` are newer, and the honest advice is to skip them. Leave all three
 out and the task runs wherever its agent runs, which is what you almost always
 want. Set one when you want this job somewhere else: a nightly review on Codex
 while the agent itself works on Claude Code, say, or a chatty summary task on a
@@ -117,6 +122,14 @@ offers, and the run says so too if you save it anyway.
 somewhere else. A run on a different runtime is a different run, billed to a
 different account, with different tools, and you would have had nothing on screen
 to tell you.
+
+**`account` picks whose Claude plan pays.** If you have more than one Claude
+account set up in DorkOS, a schedule can name the one its runs use, for example
+to keep a client's nightly job on that client's plan. An id that is no longer set
+up doesn't stop the run: it runs on the usual account, and the Activity feed
+says so. A schedule that keeps one conversation stays on the account that
+conversation started on, so DorkOS refuses to change it once it has run. Turn
+off "Keep one conversation" first.
 
 Clearing a field puts the task back to following its agent. In the app, that is
 the first option in each menu: "Agent's runtime", "Agent default".
@@ -146,7 +159,7 @@ A schedule that shows up in a file has to ask before it runs. It lands on the Sc
 
 This matters because a `git pull`, a marketplace install, or an agent writing its own skill can all put a new timer on your machine. None of them can start one.
 
-Your approval is tied to what the task actually says and how it runs: its prompt, its timing (the timezone included), its name, the runtime, model and effort it runs with, its time limit, and whether it remembers earlier runs. Change any of those and it parks again for a fresh look. (A change you make yourself in DorkOS counts as your approval, so it keeps running.) When an agent makes the change through DorkOS, the schedule stops in that same moment, before the new version can run, and the card says what changed, with the old and the new value side by side, for example **Model: claude-sonnet-4 → claude-opus-4**. Approve the same content twice, and it stays approved through every later sync. Its description and its on/off switch are not part of the approval.
+Your approval is tied to what the task actually says and how it runs: its prompt, its timing (the timezone included), its name, the runtime, model and effort it runs with, the Claude account it runs on, its time limit, and whether it remembers earlier runs. Change any of those and it parks again for a fresh look. (A change you make yourself in DorkOS counts as your approval, so it keeps running.) When an agent makes the change through DorkOS, the schedule stops in that same moment, before the new version can run, and the card says what changed, with the old and the new value side by side, for example **Model: claude-sonnet-4 → claude-opus-4**. Approve the same content twice, and it stays approved through every later sync. Its description and its on/off switch are not part of the approval.
 
 Anything you create yourself in DorkOS starts armed. Clicking save **is** the approval.
 
@@ -332,7 +345,7 @@ curl -X POST http://localhost:4242/api/tasks \
   }'
 ```
 
-`target` is either an agent id (the task runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, `runtime`, `model`, `effort`, and `reason` are optional here. On a `PATCH`, sending `null` for `runtime`, `model` or `effort` clears it, so the task goes back to following its agent. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime this task resolves to. If you never chose one, it starts where scheduled runs have always started: able to edit files, but stopping for anything riskier. There is one exception to the optional list: a caller creating a scheduled task it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. It then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
+`target` is either an agent id (the task runs in that agent's project directory) or the literal string `"global"` (runs in the server's default working directory). `description` and `prompt` are required; `cron`, `timezone`, `maxRuntime`, `permissionMode`, `runtime`, `model`, `effort`, `account`, and `reason` are optional here. On a `PATCH`, sending `null` for `runtime`, `model`, `effort` or `account` clears it, so the task goes back to following its agent. Leave `permissionMode` out and the run starts at the level you chose for new chats, worked out for the runtime this task resolves to. If you never chose one, it starts where scheduled runs have always started: able to edit files, but stopping for anything riskier. There is one exception to the optional list: a caller creating a scheduled task it can't approve on its own (an agent identity or an approval token, rather than you at the keyboard) must send a `reason`, or the request is rejected with a 400. It then parks at `pending_approval` with the reason attached, the same as one proposed through the MCP tool below.
 
 Pause or resume:
 

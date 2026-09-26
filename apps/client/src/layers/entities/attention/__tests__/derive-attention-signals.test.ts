@@ -101,6 +101,7 @@ function schedule(overrides: Partial<Task> = {}): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: '/tasks/nightly-audit.json',
     createdAt: ago(20 * MINUTE),

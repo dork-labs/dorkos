@@ -127,3 +127,40 @@ export function resolveRunSession(
   }
   return { sessionId: previous.sessionId, hasStarted: true };
 }
+
+/** The machine-readable code a refused account change on a sticky schedule carries. */
+export const STICKY_ACCOUNT_LOCKED_CODE = 'STICKY_ACCOUNT_LOCKED';
+
+/** What a person or an agent reads when {@link refuseStickyAccountChange} refuses. */
+export const STICKY_ACCOUNT_LOCKED_MESSAGE =
+  "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it.";
+
+/**
+ * Refuse moving a sticky schedule to another Claude account once its
+ * conversation has started (DOR-2384).
+ *
+ * A sticky schedule resumes ONE conversation every run, and a conversation
+ * cannot change accounts: once it exists, its account comes from its transcript
+ * on disk, and the launch ladder that reads a schedule's `account` never runs
+ * for it again. Accepting the change would store an account no run would use.
+ *
+ * "Started" is the question {@link resolveRunSession} asks before it resumes:
+ * the task is sticky and has a prior run to resume. A sticky schedule that has
+ * never run can still change accounts, and so can a request that turns sticky
+ * off in the same write.
+ *
+ * @param lookup - The resume-target lookup (the task store).
+ * @param existing - The task as it stands.
+ * @param data - The update's `account` and `sticky`, as sent.
+ * @returns The refusal to send, or `null` to let the update through.
+ */
+export function refuseStickyAccountChange(
+  lookup: StickySessionLookup,
+  existing: Task,
+  data: { account?: string | null; sticky?: boolean }
+): { code: typeof STICKY_ACCOUNT_LOCKED_CODE; error: string } | null {
+  if (data.account === undefined || data.account === (existing.account ?? null)) return null;
+  if (!existing.sticky || data.sticky === false) return null;
+  if (lookup.latestStickyRun(existing.id) === null) return null;
+  return { code: STICKY_ACCOUNT_LOCKED_CODE, error: STICKY_ACCOUNT_LOCKED_MESSAGE };
+}

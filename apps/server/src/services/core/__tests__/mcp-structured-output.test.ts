@@ -109,6 +109,7 @@ const TASK: Task = {
   runtime: null,
   model: null,
   effort: null,
+  account: null,
   status: 'active',
   filePath: '',
   createdAt: NOW,

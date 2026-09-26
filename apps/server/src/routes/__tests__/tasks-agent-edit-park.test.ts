@@ -189,6 +189,7 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
     ['time limit', { maxRuntime: '2h' }],
     ['memory of earlier runs', { sticky: true }],
     ['name', { name: 'drain-everything' }],
+    ['account', { account: 'work' }],
   ])('parks when an agent changes the %s, and says what changed (DOR-2323)', async (_, change) => {
     // Purpose: each of these changes what an unattended run does or costs; an
     // agent changing one must put the schedule back in front of a person, and
@@ -407,5 +408,72 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
 
     expect(res.body.status).toBe('active');
     expect((await resync()).status).toBe('active');
+  });
+  describe('the account of a schedule that keeps one conversation (DOR-2384)', () => {
+    /** Make the approved schedule sticky, as a person would, and optionally give it a run. */
+    async function stickyTask(opts: { hasRun: boolean }): Promise<Task> {
+      const task = await approvedTask();
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ sticky: true });
+      expect(res.body.sticky).toBe(true);
+      if (opts.hasRun) {
+        const run = store.createRun(task.id, 'scheduled');
+        store.updateRun(run.id, { sessionId: '0f6c1d7e-7d0e-4c55-9f55-000000000001' });
+      }
+      return res.body as Task;
+    }
+
+    it('refuses to move a started conversation to another account', async () => {
+      // Purpose: a conversation cannot change accounts, so the new id would be
+      // stored and never used — the refusal says why and what to do instead.
+      const task = await stickyTask({ hasRun: true });
+
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ account: 'work' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toEqual({
+        code: 'STICKY_ACCOUNT_LOCKED',
+        error:
+          "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it.",
+      });
+      expect(store.getTask(task.id)!.account).toBeNull();
+      expect(readFileSync(filePath, 'utf-8')).not.toContain('account');
+    });
+
+    it('lets a sticky schedule that has never run choose its account', async () => {
+      const task = await stickyTask({ hasRun: false });
+
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ account: 'work' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.account).toBe('work');
+      expect(readFileSync(filePath, 'utf-8')).toContain('account: work');
+    });
+
+    it('lets the same request turn off one conversation and change the account', async () => {
+      const task = await stickyTask({ hasRun: true });
+
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ sticky: false, account: 'work' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ sticky: false, account: 'work' });
+    });
+
+    it('does not refuse a request that re-sends the account it already has', async () => {
+      const task = await stickyTask({ hasRun: true });
+
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ account: null, description: 'Tidier words' });
+
+      expect(res.status).toBe(200);
+    });
   });
 });

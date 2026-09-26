@@ -82,6 +82,8 @@ const FILE_BACKED_COLUMN = {
   runtime: 'runtime',
   model: 'model',
   effort: 'effort',
+  // Which Claude account a run starts on (DOR-2384). Compared like the trio.
+  account: 'account',
 } as const satisfies Record<string, string>;
 
 /** The row columns {@link touchesFile} compares a request against. */
@@ -101,6 +103,8 @@ export interface FileBackedRow {
   model?: string | null;
   /** The reasoning-effort rung its runs execute at; `null` = follow the agent. */
   effort?: string | null;
+  /** The Claude account its runs start on; `null` = follow the agent (DOR-2384). */
+  account?: string | null;
 }
 
 /**
@@ -188,6 +192,7 @@ export function changesApprovedWork(
     effort?: string | null;
     maxRuntime?: string | null;
     sticky?: boolean;
+    account?: string | null;
   },
   existing: {
     prompt: string;
@@ -199,6 +204,7 @@ export function changesApprovedWork(
     effort: string | null;
     maxRuntime: number | null;
     sticky: boolean;
+    account: string | null;
   }
 ): boolean {
   const differs = <T>(sent: T | undefined, current: T) => sent !== undefined && sent !== current;
@@ -213,7 +219,8 @@ export function changesApprovedWork(
     (data.maxRuntime !== undefined &&
       (data.maxRuntime === null ? null : parseDuration(data.maxRuntime)) !==
         (existing.maxRuntime ?? null)) ||
-    differs(data.sticky, existing.sticky)
+    differs(data.sticky, existing.sticky) ||
+    differs(data.account, existing.account ?? null)
   );
 }
 
@@ -735,6 +742,8 @@ const SCHEDULE_FIELD: Record<string, keyof ScheduleBlock> = {
   runtime: 'runtime',
   model: 'model',
   effort: 'effort',
+  // Which Claude account a run starts on (DOR-2384). Block-scoped like the trio.
+  account: 'account',
 };
 
 /**

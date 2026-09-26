@@ -25,6 +25,7 @@ const SETTINGS = {
   effort: null,
   maxRuntime: null,
   sticky: false,
+  account: null,
 };
 
 /** A package's schedule on its own timing: hourly, UTC, nothing overridden. */

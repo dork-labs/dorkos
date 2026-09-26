@@ -121,6 +121,7 @@ const PARKED_SCHEDULE: Task = {
   runtime: null,
   model: null,
   effort: null,
+  account: null,
   status: 'pending_approval',
   filePath: '',
   createdAt: new Date(Date.now() - 3 * 60 * 60_000).toISOString(),

@@ -109,6 +109,8 @@ export interface TaskFrontmatterWrite {
   model?: string | null;
   /** The reasoning-effort rung a fire runs at. Clearable. Block-scoped. */
   effort?: string | null;
+  /** The Claude account (registry id) a fire starts on. Clearable. Block-scoped (DOR-2384). */
+  account?: string | null;
 }
 
 /**

@@ -139,6 +139,7 @@ export class TaskFileSync {
           runtime: schedule.runtime ?? null,
           model: schedule.model ?? null,
           effort: schedule.effort ?? null,
+          account: schedule.account ?? null,
           // The file is no longer a package's, so it is the one source of
           // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
           ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
@@ -229,6 +230,7 @@ export class TaskFileSync {
         runtime: schedule.runtime ?? null,
         model: schedule.model ?? null,
         effort: schedule.effort ?? null,
+        account: schedule.account ?? null,
         status: arm?.status ?? 'active',
         reason: arm?.reason ?? null,
         origin: arm ? 'file' : null,

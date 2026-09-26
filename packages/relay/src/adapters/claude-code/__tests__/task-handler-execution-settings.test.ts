@@ -138,4 +138,43 @@ describe('handleTasksMessage execution settings (DOR-1615/DOR-1347)', () => {
     expect(sendOpts).not.toHaveProperty('model');
     expect(sendOpts).not.toHaveProperty('effort');
   });
+
+  it('hands the schedule’s account to the runtime as the launch hint (DOR-2384)', async () => {
+    // The relay path's half of a schedule's account: the receiver cannot read
+    // the task row, so the account arrives on the envelope and leaves as the
+    // `accountHint` the claude-code launch ladder reads off the send.
+    await handleTasksMessage(
+      'sub',
+      envelopeFor(basePayload({ account: 'work' })),
+      undefined,
+      Date.now(),
+      config,
+      deps
+    );
+
+    const [sessionId] = vi.mocked(agentManager.ensureSession).mock.calls[0]!;
+    expect(agentManager.ensureSession).toHaveBeenCalledWith(
+      sessionId,
+      expect.objectContaining({ accountHint: 'work' })
+    );
+    expect(agentManager.sendMessage).toHaveBeenCalledWith(
+      sessionId,
+      'do the thing',
+      expect.objectContaining({ accountHint: 'work' })
+    );
+  });
+
+  it('mentions no account hint when the envelope names no account (DOR-2384)', async () => {
+    await handleTasksMessage(
+      'sub',
+      envelopeFor(basePayload({ model: 'haiku' })),
+      undefined,
+      Date.now(),
+      config,
+      deps
+    );
+
+    const [, , sendOpts] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+    expect(sendOpts).not.toHaveProperty('accountHint');
+  });
 });

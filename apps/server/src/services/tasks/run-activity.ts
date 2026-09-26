@@ -220,6 +220,47 @@ export function emitRefusedAskActivity(
   });
 }
 
+/**
+ * Emit an activity event for a run whose schedule names a Claude account that is
+ * not registered, so the run starts on the agent's account or the default
+ * instead (DOR-2384).
+ *
+ * The launch never fails over it — the ladder logs the id and falls through
+ * (`resolveLaunchAccountRoot`) — but a log line is not where a person looks when
+ * a bill lands on the wrong subscription. This is the entry that says so, beside
+ * the run's own.
+ *
+ * @param activityService - The feed to write to; nothing is emitted without one.
+ * @param task - The run's task, for its name.
+ * @param run - The run starting without its account.
+ * @param account - The account id the schedule names.
+ */
+export function emitUnregisteredAccountActivity(
+  activityService: ActivityService | null,
+  task: Task,
+  run: TaskRun,
+  account: string
+): void {
+  if (!activityService) return;
+
+  const scheduled = run.trigger === 'scheduled';
+  void activityService.emit({
+    actorType: scheduled ? 'tasks' : 'user',
+    actorId: scheduled ? run.scheduleId : null,
+    actorLabel: scheduled ? 'Scheduler' : 'You',
+    category: 'tasks',
+    eventType: 'tasks.account_unavailable',
+    resourceType: 'schedule',
+    resourceId: run.scheduleId,
+    resourceLabel: task.name,
+    summary:
+      `${task.name} ran on the usual Claude account, because the account "${account}" ` +
+      `it names is not set up in DorkOS`,
+    linkPath: '/',
+    metadata: { runId: run.id, account },
+  });
+}
+
 /** What {@link createRelayRefusedAskEmitter} has to be able to look up. */
 export interface RelayRefusedAskDeps {
   /** The task and run behind an id pair the relay handler carries. */

@@ -102,7 +102,8 @@ export interface ApprovedSchedule extends ScheduleSettings {
  * - `maxRuntime` is the ceiling on how long, and so how much, one unattended
  *   run may spend;
  * - `sticky` decides whether every run resumes one session and carries
- *   everything earlier runs saw, which changes what a run knows and can repeat.
+ *   everything earlier runs saw, which changes what a run knows and can repeat;
+ * - `account` decides which Claude subscription pays for the run (DOR-2384).
  *
  * `enabled` and `permissionMode` are deliberately not here: the switch is the
  * person's own control, and the permission level has its own grant rule.
@@ -120,6 +121,11 @@ export interface ScheduleSettings {
   maxRuntime: number | null;
   /** Whether every run resumes one persistent session. */
   sticky: boolean;
+  /**
+   * The Claude account (registry id) its runs start on, `null` to follow the
+   * agent and then the default: which subscription pays for the run.
+   */
+  account: string | null;
 }
 
 /**
@@ -152,6 +158,7 @@ export function scheduleSettingsOf(source: ScheduleSettings): ScheduleSettings {
     maxRuntime: source.maxRuntime ?? null,
     // Absent means off, as it does to the store and the runner.
     sticky: source.sticky === true,
+    account: source.account ?? null,
   };
 }
 
@@ -201,11 +208,20 @@ export function scheduleContentKey(content: IncomingTaskContent): string {
     settings.effort,
     settings.maxRuntime,
     settings.sticky,
+    settings.account,
   ]);
 }
 
 /** How many parts a key this build writes has ({@link scheduleContentKey}). */
-const CONTENT_KEY_PARTS = 9;
+const CONTENT_KEY_PARTS = 10;
+
+/**
+ * How many parts a key had before the account joined it (DOR-2384). Still read
+ * by {@link parseContentKey}, as "no account", because a withdrawn approval
+ * (`previous_approval_key`) is kept exactly as it was written and the boot
+ * upgrade moves only live grants.
+ */
+const PRE_ACCOUNT_KEY_PARTS = 9;
 
 /**
  * The approved work a key records, read back, or `null` for a key this build
@@ -223,28 +239,33 @@ export function parseContentKey(key: string): IncomingTaskContent | null {
   } catch {
     return null;
   }
-  if (!Array.isArray(parsed) || parsed.length !== CONTENT_KEY_PARTS) return null;
-  const [prompt, cron, timezone, name, runtime, model, effort, maxRuntime, sticky] = parsed;
+  if (!Array.isArray(parsed)) return null;
+  if (parsed.length !== CONTENT_KEY_PARTS && parsed.length !== PRE_ACCOUNT_KEY_PARTS) return null;
+  // A key from before DOR-2384 has no account part: nothing had one then.
+  const [prompt, cron, timezone, name, runtime, model, effort, maxRuntime, sticky, account = null] =
+    parsed;
   const text = (v: unknown) => typeof v === 'string';
   const nullableText = (v: unknown) => v === null || typeof v === 'string';
   if (![prompt, cron, timezone, name].every(text)) return null;
-  if (![runtime, model, effort].every(nullableText)) return null;
+  if (![runtime, model, effort, account].every(nullableText)) return null;
   if (!(maxRuntime === null || typeof maxRuntime === 'number')) return null;
   if (typeof sticky !== 'boolean') return null;
-  return { prompt, cron, timezone, name, runtime, model, effort, maxRuntime, sticky };
+  return { prompt, cron, timezone, name, runtime, model, effort, maxRuntime, sticky, account };
 }
 
 /**
  * Move a grant recorded in an older key format onto today's key, or return
  * `null` when it needs no moving.
  *
- * Two older formats exist. `[prompt, cron]` (before DOR-2307) never said which
- * timezone was approved; `[prompt, cron, timezone]` (before DOR-2323) never
- * said which {@link ScheduleSettings}. Each was only ever checked against the
+ * Three older formats exist. `[prompt, cron]` (before DOR-2307) never said
+ * which timezone was approved; `[prompt, cron, timezone]` (before DOR-2323)
+ * never said which {@link ScheduleSettings}; the nine-part key (before
+ * DOR-2384) never said which account. Each was only ever checked against the
  * values the row runs with now, since a change to any of them never withdrew
  * it. So the grant is extended with exactly those values: what was running
  * approved keeps running approved, and nothing else is approved by the
- * upgrade. A legacy key that no longer matches the row's prompt and timing
+ * upgrade. A nine-part key keeps every part it recorded and gains only the
+ * row's account, which is `null` for every row written before the column. A legacy key that no longer matches the row's prompt and timing
  * still does not match after it, so a grant that was about to be withdrawn is
  * withdrawn just the same.
  *
@@ -263,7 +284,15 @@ export function upgradeLegacyContentKey(
   } catch {
     return null;
   }
-  if (!Array.isArray(parsed) || (parsed.length !== 2 && parsed.length !== 3)) return null;
+  if (!Array.isArray(parsed)) return null;
+  if (parsed.length === PRE_ACCOUNT_KEY_PARTS) {
+    // Every recorded part stays as it was — a settings part that no longer
+    // matches the row keeps not matching — and only the account is added.
+    const approved = parseContentKey(key);
+    if (approved === null) return null;
+    return scheduleContentKey({ ...approved, account: current.account ?? null });
+  }
+  if (parsed.length !== 2 && parsed.length !== 3) return null;
   if (!parsed.every((part) => typeof part === 'string')) return null;
   const [prompt, cron, timezone = current.timezone] = parsed as string[];
   return scheduleContentKey({ ...scheduleSettingsOf(current), prompt, cron, timezone });

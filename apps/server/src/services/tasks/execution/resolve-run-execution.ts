@@ -116,12 +116,29 @@ export interface RunExecution {
    */
   capabilities: RuntimeCapabilities | undefined;
   /**
-   * The model and effort the turn starts with. Only keys with an answer are
-   * present; an omitted key means "the runtime decides", which is what an unset
-   * session setting already means everywhere else.
+   * The model and effort the turn starts with, and the account it launches on.
+   * Only keys with an answer are present; an omitted key means "the runtime
+   * decides", which is what an unset session setting already means everywhere
+   * else.
    */
-  settings: Pick<SessionSettings, 'model' | 'effort'>;
+  settings: RunExecutionSettings;
 }
+
+/**
+ * What a run's turn is started with: the model and effort it resolved to, and
+ * the schedule's own Claude account as the launch `accountHint` (DOR-2384).
+ *
+ * `accountHint` is the schedule's `account` verbatim, never resolved here: the
+ * claude-code launch ladder is the one place that turns an id into an account
+ * (`resolveLaunchAccountRoot`), falls through an id nobody registered, and is
+ * skipped for a conversation that already has an account. Every other runtime
+ * ignores it. Spread into both `ensureSession` and `sendMessage` by the runner,
+ * and carried as `TaskDispatchPayload.account` over relay.
+ */
+export type RunExecutionSettings = Pick<SessionSettings, 'model' | 'effort'> & {
+  /** The schedule's Claude account (registry id), absent to follow the agent. */
+  accountHint?: string;
+};
 
 /**
  * A run that cannot start because the runtime it resolved to is not registered.
@@ -264,9 +281,12 @@ export async function resolveRunExecution(
   // decision 6) — and a scheduled run's power is `scheduled-run-power.ts`'s
   // answer. Picking the keys out says so structurally rather than in a comment
   // that a future widening of that function would silently outgrow.
-  const settings: Pick<SessionSettings, 'model' | 'effort'> = {
+  const settings: RunExecutionSettings = {
     ...(resolved.model !== undefined ? { model: resolved.model } : {}),
     ...(resolved.effort !== undefined ? { effort: resolved.effort } : {}),
+    // The schedule's own account, the operator's approved choice: no guard
+    // applies, and the ladder decides what it means (DOR-2384).
+    ...(task.account ? { accountHint: task.account } : {}),
   };
 
   // Tier 2, claude-code only: what the skill's author wrote at the top level.

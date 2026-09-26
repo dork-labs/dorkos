@@ -62,6 +62,8 @@ export interface CreateTaskStoreInput {
   model?: string | null;
   /** The reasoning-effort rung its runs execute at. */
   effort?: string | null;
+  /** The Claude account (registry id) its runs start on; absent follows the agent (DOR-2384). */
+  account?: string | null;
   filePath: string;
   /** Why the schedule should exist, in the proposer's own words. See {@link CreateTaskStoreInput.proposedByAgentPath}. */
   reason?: string | null;
@@ -270,6 +272,7 @@ export class TaskStore {
         runtime: input.runtime ?? null,
         model: input.model ?? null,
         effort: input.effort ?? null,
+        account: input.account ?? null,
         status: 'active',
         // An operator create is itself the approval, so the row arrives armed.
         // A caller that must not arm anything — an agent — is parked by the
@@ -285,6 +288,7 @@ export class TaskStore {
           effort: input.effort ?? null,
           maxRuntime: input.maxRuntime ?? null,
           sticky: input.sticky ?? false,
+          account: input.account ?? null,
         }),
         filePath: input.filePath,
         reason: input.reason ?? null,
@@ -355,6 +359,7 @@ export class TaskStore {
     if (input.runtime !== undefined) updates.runtime = input.runtime;
     if (input.model !== undefined) updates.model = input.model;
     if (input.effort !== undefined) updates.effort = input.effort;
+    if (input.account !== undefined) updates.account = input.account;
     if (input.status !== undefined) updates.status = input.status;
 
     this.db.update(pulseSchedules).set(updates).where(eq(pulseSchedules.id, id)).run();

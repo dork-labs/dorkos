@@ -179,6 +179,12 @@ export async function dispatchRunViaRelay(
     // which is byte-for-byte what every relay envelope carried before.
     ...(execution.settings.model !== undefined ? { model: execution.settings.model } : {}),
     ...(execution.settings.effort !== undefined ? { effort: execution.settings.effort } : {}),
+    // The schedule's own Claude account (DOR-2384), for the receiver to hand the
+    // runtime as its launch hint. Absent keeps every envelope without one
+    // byte-for-byte what it was.
+    ...(execution.settings.accountHint !== undefined
+      ? { account: execution.settings.accountHint }
+      : {}),
   };
 
   // No `replyTo`. Nothing subscribes to a task run's progress: this function

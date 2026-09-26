@@ -149,6 +149,13 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * has no effort at all drops it rather than pretending.
    */
   effort: text('effort'),
+  /**
+   * Which Claude account this schedule's runs start on, as a registry id
+   * (DOR-2384): which subscription pays for them. NULL follows the agent, then
+   * the default. Only claude-code runs read it, and only when a run starts a
+   * conversation.
+   */
+  account: text('account'),
   status: text('status', {
     enum: ['active', 'paused', 'pending_approval'],
   })

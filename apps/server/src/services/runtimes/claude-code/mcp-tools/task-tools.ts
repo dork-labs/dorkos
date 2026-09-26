@@ -37,6 +37,7 @@ import { createScheduledTask } from '../../../tasks/lifecycle/create-task.js';
 import { removeScheduledTaskFile } from '../../../tasks/lifecycle/delete-task.js';
 import { applyTaskFileUpdate } from '../../../tasks/lifecycle/update-task-file.js';
 import { changesApprovedWork } from '../../../tasks/task-file-update.js';
+import { refuseStickyAccountChange } from '../../../tasks/session/sticky-session.js';
 import { AGENT_TIMING_CHANGE_REASON } from '../../../tasks/timing/effective-timing.js';
 import { describeScheduleProblem } from '../../../tasks/cron-validation.js';
 import { broadcastTasksChanged } from '../../../tasks/task-sse-events.js';
@@ -263,6 +264,15 @@ export const EFFORT_DESCRIPTION =
   "How hard the model thinks during each run. Leave it out to use the agent's own setting, " +
   "then this DorkOS's default. A runtime that has no such setting ignores it.";
 
+/**
+ * The description both tools give the `account` argument — which Claude account
+ * (and so whose subscription) a run starts on (DOR-2384).
+ */
+export const ACCOUNT_DESCRIPTION =
+  'Which Claude account the scheduled task runs on, by its id in DorkOS. Leave it out to use ' +
+  "the agent's own account, then the default. Only Claude Code runs use it. A schedule that " +
+  'keeps one conversation stays on the account its conversation started on.';
+
 /** The description `tasks_create` gives the `reason` argument. */
 export const REASON_DESCRIPTION =
   'Why this schedule should exist, in your own words — the operator reads this to decide.';
@@ -407,6 +417,8 @@ export function createCreateScheduleHandler(
     model?: string;
     /** How hard the model thinks; see {@link EFFORT_DESCRIPTION}. */
     effort?: EffortLevel;
+    /** Which Claude account the runs start on; see {@link ACCOUNT_DESCRIPTION}. */
+    account?: string;
     /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
     permissionMode?: string;
     /** Advertised so it can be REFUSED; see {@link REFUSED_STATUS_DESCRIPTION}. */
@@ -464,6 +476,7 @@ export function createCreateScheduleHandler(
           ...(args.runtime !== undefined && { runtime: args.runtime }),
           ...(args.model !== undefined && { model: args.model }),
           ...(args.effort !== undefined && { effort: args.effort }),
+          ...(args.account !== undefined && { account: args.account }),
         },
         // An MCP tool call IS the agent surface — there is no header to omit and
         // no operator branch to spare.
@@ -557,6 +570,8 @@ export function createUpdateScheduleHandler(
     model?: string | null;
     /** How hard the model thinks, or `null` to clear the override. */
     effort?: EffortLevel | null;
+    /** Which Claude account the runs start on, or `null` to clear the override. */
+    account?: string | null;
     /** Put a package's schedule back on its own timing; see {@link RESET_TIMING_DESCRIPTION}. */
     resetTiming?: true;
     /** Advertised so it can be REFUSED; see {@link refuseOperatorOnlyTaskFields}. */
@@ -591,6 +606,10 @@ export function createUpdateScheduleHandler(
     // one question; the call has to pick (DOR-2302).
     const timingConflict = conflictingTimingRequest(args);
     if (timingConflict) return jsonContent({ error: timingConflict }, true);
+
+    // The same refusal, in the same words, as `PATCH /api/tasks/:id` (DOR-2384).
+    const accountLocked = refuseStickyAccountChange(deps.taskStore!, existing, args);
+    if (accountLocked) return jsonContent(accountLocked, true);
 
     // The MERGED schedule is what gets written and registered, so the merged
     // schedule is what has to read: a new cron runs in the task's existing
@@ -627,6 +646,7 @@ export function createUpdateScheduleHandler(
       ...(args.runtime !== undefined && { runtime: args.runtime }),
       ...(args.model !== undefined && { model: args.model }),
       ...(args.effort !== undefined && { effort: args.effort }),
+      ...(args.account !== undefined && { account: args.account }),
       ...(args.resetTiming === true && { resetTiming: true as const }),
     };
 
@@ -843,6 +863,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         runtime: z.string().min(1).optional().describe(RUNTIME_DESCRIPTION),
         model: z.string().min(1).optional().describe(MODEL_DESCRIPTION),
         effort: EffortLevelSchema.optional().describe(EFFORT_DESCRIPTION),
+        account: z.string().min(1).optional().describe(ACCOUNT_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),
         agentId: z.string().optional().describe(REFUSED_AGENT_ID_DESCRIPTION),
@@ -879,6 +900,7 @@ export function getTasksTools(deps: McpToolDeps, resolveProvenance?: TaskProvena
         runtime: z.string().min(1).nullable().optional().describe(RUNTIME_DESCRIPTION),
         model: z.string().min(1).nullable().optional().describe(MODEL_DESCRIPTION),
         effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),
+        account: z.string().min(1).nullable().optional().describe(ACCOUNT_DESCRIPTION),
         resetTiming: z.literal(true).optional().describe(RESET_TIMING_DESCRIPTION),
         permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),
         status: z.string().optional().describe(REFUSED_STATUS_DESCRIPTION),

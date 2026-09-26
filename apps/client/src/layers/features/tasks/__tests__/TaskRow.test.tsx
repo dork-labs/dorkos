@@ -53,6 +53,7 @@ const activeSchedule: Task = {
   runtime: null,
   model: null,
   effort: null,
+  account: null,
   filePath: '/home/user/.dork/tasks/sched-1.json',
   nextRun: new Date(Date.now() + 3600000).toISOString(),
   createdAt: new Date().toISOString(),

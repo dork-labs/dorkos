@@ -182,6 +182,11 @@ export const TASK_WRITE_POLICY = {
   runtime: 'agent-writable',
   model: 'agent-writable',
   effort: 'agent-writable',
+  // Which Claude account a run starts on (DOR-2384), classified with `model`
+  // and `runtime`: it chooses whose subscription pays, never what the run may
+  // do, and an agent's change to it on an approved schedule parks it for a
+  // person like any other settings change (`TaskApprovals.settleApprovedWorkChange`).
+  account: 'agent-writable',
 
   // The runtime's safety prompts, for a run nobody is watching.
   //

@@ -30,6 +30,18 @@ describe('describeApprovalChanges (DOR-2323)', () => {
     ]);
   });
 
+  it('names an account change, and an account left to the agent (DOR-2384)', () => {
+    expect(
+      describeApprovalChanges([
+        { field: 'account', from: null, to: 'work' },
+        { field: 'account', from: 'work', to: null },
+      ])
+    ).toEqual([
+      { label: 'Account', from: 'the agent’s own', to: 'work', unbroken: true },
+      { label: 'Account', from: 'work', to: 'the agent’s own', unbroken: true },
+    ]);
+  });
+
   it('says the instructions changed without quoting them', () => {
     // Purpose: the full prompt is one click away on the card; a diff here is noise.
     expect(describeApprovalChanges([{ field: 'prompt', from: null, to: null }])).toEqual([

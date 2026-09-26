@@ -33,6 +33,15 @@ vi.mock('../../relay/relay-state.js', () => ({
 
 import { isRelayEnabled } from '../../relay/relay-state.js';
 
+vi.mock('../../runtimes/claude-code/claude-config-dir.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../runtimes/claude-code/claude-config-dir.js')>()),
+  // "Nobody can say" by default, which reports nothing; the DOR-2384 cases
+  // answer for themselves.
+  isRegisteredClaudeAccount: vi.fn(() => undefined),
+}));
+
+import { isRegisteredClaudeAccount } from '../../runtimes/claude-code/claude-config-dir.js';
+
 function createMockAgentManager(): SchedulerAgentManager {
   return {
     ensureSession: vi.fn(),
@@ -2072,6 +2081,33 @@ describe('TaskSchedulerService', () => {
       await service.stop();
     });
 
+    it.each([
+      ['carries the schedule’s account on the wire', 'work', 'work'],
+      ['sends no account for a schedule that names none', undefined, undefined],
+    ])('%s (DOR-2384)', async (_label, account, expected) => {
+      // The relay path is the other launch path; a schedule's account has to
+      // reach the receiver the way its model does, and an absent one stays
+      // absent so every envelope without one is what it always was.
+      const task = store.createTask(
+        taskInput({ name: 'Account on the bus', ...(account ? { account } : {}) })
+      );
+      const service = new TaskSchedulerService({
+        store,
+        runtimes: singleRuntimeSource(mockAgent),
+        config: DEFAULT_CONFIG,
+        relay: mockRelay as unknown as RelayCore,
+      });
+
+      await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
+      await vi.waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
+
+      const [, payload] = mockRelay.publish.mock.calls[0];
+      if (expected === undefined) expect(payload).not.toHaveProperty('account');
+      else expect((payload as TaskDispatchPayload).account).toBe(expected);
+
+      await service.stop();
+    });
+
     it('marks run as failed when deliveredTo is 0', async () => {
       mockRelay.publish.mockResolvedValue({ messageId: 'msg-2', deliveredTo: 0 });
 
@@ -3008,6 +3044,117 @@ describe('TaskSchedulerService — per-task runtime, model and effort (DOR-1615)
     await service.stop();
   });
 
+  it('starts the turn on the schedule’s account, on BOTH agent calls (DOR-2384)', async () => {
+    // `sendMessage` is the seam the claude-code launch ladder reads the hint
+    // from; `ensureSession` gets it because the run's settings travel whole.
+    const task = store.createTask(taskInput({ name: 'On account', account: 'work' }));
+    const service = scheduler(['claude-code']);
+
+    await runToCompletion(service, task.id);
+
+    expect(managers['claude-code']!.ensureSession).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ accountHint: 'work' })
+    );
+    expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.objectContaining({ accountHint: 'work' })
+    );
+    await service.stop();
+  });
+
+  it('passes NO account hint when the schedule names none (DOR-2384)', async () => {
+    // No account anywhere keeps today's launch exactly: the ladder never sees a
+    // hint, so the agent's account and then the default decide as before.
+    const task = store.createTask(taskInput({ name: 'No account' }));
+    const service = scheduler(['claude-code']);
+
+    await runToCompletion(service, task.id);
+
+    const [, , sendOpts] = vi.mocked(managers['claude-code']!.sendMessage).mock.calls[0]!;
+    expect(sendOpts).not.toHaveProperty('accountHint');
+    const [, sessionOpts] = vi.mocked(managers['claude-code']!.ensureSession).mock.calls[0]!;
+    expect(sessionOpts).not.toHaveProperty('accountHint');
+    await service.stop();
+  });
+
+  describe('a schedule naming an account nobody registered (DOR-2384)', () => {
+    /** The Activity entries of one kind a run wrote. */
+    const entries = (emit: ReturnType<typeof vi.fn>) =>
+      emit.mock.calls
+        .map(([event]) => event as { eventType: string; summary: string })
+        .filter((event) => event.eventType === 'tasks.account_unavailable');
+
+    /** A scheduler with an Activity feed, driving claude-code runs. */
+    function withFeed(emit: ReturnType<typeof vi.fn>): TaskSchedulerService {
+      return new TaskSchedulerService({
+        store,
+        runtimes: runtimesWith(['claude-code']),
+        config: { ...DEFAULT_CONFIG },
+        activityService: { emit } as unknown as ActivityService,
+      });
+    }
+
+    afterEach(() => {
+      vi.mocked(isRegisteredClaudeAccount).mockReset();
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(undefined);
+    });
+
+    it('says in Activity that the run fell through to the usual account', async () => {
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(false);
+      const emit = vi.fn();
+      const task = store.createTask(taskInput({ name: 'Gone', account: 'old-client' }));
+      const service = withFeed(emit);
+
+      await runToCompletion(service, task.id);
+
+      expect(isRegisteredClaudeAccount).toHaveBeenCalledWith('old-client');
+      expect(entries(emit).map((event) => event.summary)).toEqual([
+        'Gone ran on the usual Claude account, because the account "old-client" it names is not set up in DorkOS',
+      ]);
+      // The run still ran, with the hint for the ladder to fall through.
+      expect(managers['claude-code']!.sendMessage).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(String),
+        expect.objectContaining({ accountHint: 'old-client' })
+      );
+      await service.stop();
+    });
+
+    it('says nothing for a registered account, or when the registry cannot be read', async () => {
+      const emit = vi.fn();
+      const task = store.createTask(taskInput({ name: 'Here', account: 'work' }));
+      const service = withFeed(emit);
+
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(true);
+      await runToCompletion(service, task.id);
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(undefined);
+      await runToCompletion(service, task.id);
+
+      expect(entries(emit)).toEqual([]);
+      await service.stop();
+    });
+
+    it('says nothing for a sticky run resuming its conversation', async () => {
+      // A resumed conversation keeps the account it started on, so the
+      // schedule's account is not read at all and there is nothing to report.
+      vi.mocked(isRegisteredClaudeAccount).mockReturnValue(false);
+      const emit = vi.fn();
+      const task = store.createTask(
+        taskInput({ name: 'Resumes', account: 'old-client', sticky: true })
+      );
+      const service = withFeed(emit);
+
+      await runToCompletion(service, task.id);
+      expect(entries(emit)).toHaveLength(1);
+      await runToCompletion(service, task.id);
+
+      expect(entries(emit)).toHaveLength(1);
+      await service.stop();
+    });
+  });
+
   describe('v1 dispatch routing — the bus can only carry claude-code (decision 7)', () => {
     let relay: { publish: ReturnType<typeof vi.fn> };
 
@@ -3355,6 +3502,7 @@ describe('buildTaskAppend', () => {
       runtime: null,
       model: null,
       effort: null,
+      account: null,
       status: 'active',
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',
@@ -3439,6 +3587,7 @@ describe('buildTaskAppend', () => {
       runtime: null,
       model: null,
       effort: null,
+      account: null,
       status: 'active',
       filePath: '/tmp/tasks/daily-cleanup/SKILL.md',
       createdAt: '2026-01-01T00:00:00Z',

@@ -5853,7 +5853,8 @@
                     "model",
                     "effort",
                     "maxRuntime",
-                    "sticky"
+                    "sticky",
+                    "account"
                   ]
                 },
                 "from": {
@@ -5947,6 +5948,13 @@
                 ]
               }
             ]
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           },
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
@@ -6138,6 +6146,13 @@
               }
             ]
           },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
@@ -6230,6 +6245,13 @@
                 ]
               }
             ]
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"

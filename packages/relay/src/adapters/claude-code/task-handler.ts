@@ -249,6 +249,10 @@ export async function handleTasksMessage(
   const executionSettings = {
     ...(payload.model !== undefined ? { model: payload.model } : {}),
     ...(payload.effort !== undefined ? { effort: payload.effort } : {}),
+    // The schedule's own Claude account as the launch hint (DOR-2384). No guard:
+    // it is the operator's approved choice, and the runtime's launch ladder is
+    // what skips it for a conversation that already has an account.
+    ...(payload.account !== undefined ? { accountHint: payload.account } : {}),
   };
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
   // The session this run runs on, decided on the scheduler side and carried here

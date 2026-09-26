@@ -28,6 +28,7 @@ const SETTINGS = {
   effort: null,
   maxRuntime: null,
   sticky: false,
+  account: null,
 };
 
 const FILE_PATH = `/home/u/.dork/skills/digest/${SKILL_FILENAME}`;
