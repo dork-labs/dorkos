@@ -50,6 +50,23 @@ function roomWith(tree: Record<string, RoomFileEntry[]>): Transport {
   return transport;
 }
 
+/**
+ * Refuse a change the way the room does — and, first, stop the tree from ever
+ * hearing back from the server again.
+ *
+ * Every change ends by re-reading the tree, and a mock that answers that read
+ * instantly puts the right rows back whether or not the change rolled back its
+ * own optimistic edit. Freezing the listings at the moment of refusal leaves
+ * the rollback as the only thing that can put the tree right, which is what
+ * these tests are about.
+ */
+function refuseAndFreeze(transport: Transport, error: Error) {
+  return vi.fn(async () => {
+    transport.readRoomFiles = vi.fn(() => new Promise<never>(() => {}));
+    throw error;
+  });
+}
+
 /** A refusal as the HTTP transport throws it. */
 function refusal(code: string, message = 'refused', body?: unknown): Error {
   return Object.assign(new Error(message), { code, status: 409, body });
@@ -158,7 +175,7 @@ describe('renaming a room’s file', () => {
 
   it('puts the name back and says so when the new name is taken', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
-    transport.moveRoomFile = vi.fn().mockRejectedValue(refusal('ROOM_FILE_EXISTS'));
+    transport.moveRoomFile = refuseAndFreeze(transport, refusal('ROOM_FILE_EXISTS'));
     renderSection(transport);
 
     await press('notes.md', 'F2');
@@ -171,12 +188,13 @@ describe('renaming a room’s file', () => {
         'There’s already something called “plan.md” there, so nothing was changed. Pick another name.'
       )
     );
-    expect(await screen.findByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: 'plan.md' })).not.toBeInTheDocument();
   });
 
   it('tells a paused room plainly, and rolls the row back', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
-    transport.moveRoomFile = vi.fn().mockRejectedValue(refusal('MAIN_CHECKOUT_DIRTY'));
+    transport.moveRoomFile = refuseAndFreeze(transport, refusal('MAIN_CHECKOUT_DIRTY'));
     renderSection(transport);
 
     await press('notes.md', 'F2');
@@ -189,6 +207,34 @@ describe('renaming a room’s file', () => {
         'Somebody changed this room’s files outside DorkOS, so changes are paused until that is sorted out. The warning above the files says how.'
       )
     );
+    expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: 'plan.md' })).not.toBeInTheDocument();
+  });
+
+  it('a move into a folder that is refused puts the row back where it was', async () => {
+    const transport = roomWith({ '': [file('notes.md'), file('docs', 'dir')], docs: [] });
+    transport.moveRoomFile = refuseAndFreeze(transport, refusal('MERGE_IN_FLIGHT'));
+    renderSection(transport);
+
+    const row = await screen.findByRole('treeitem', { name: 'notes.md' });
+    const dataTransfer = {
+      types: ['application/x-dorkos-file-path', 'text/plain'],
+      getData: (type: string) => (type === 'text/plain' ? '' : 'notes.md'),
+      setData: vi.fn(),
+      dropEffect: 'none',
+      effectAllowed: 'all',
+    };
+    fireEvent.dragStart(row, { dataTransfer });
+    const folder = screen.getByRole('treeitem', { name: 'docs' });
+    fireEvent.dragOver(folder, { dataTransfer });
+    fireEvent.drop(folder, { dataTransfer });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(transport.moveRoomFile).toHaveBeenCalledWith(ROOM_ID, {
+      from: 'notes.md',
+      to: 'docs/notes.md',
+      baseCommit: HEAD,
+    });
     expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
   });
 
@@ -253,6 +299,24 @@ describe('deleting from a room’s files', () => {
     await waitFor(() =>
       expect(dialog).toHaveTextContent('“designs” and the 2 files in it leave the room’s files.')
     );
+  });
+
+  it('a refused delete puts the row back', async () => {
+    const transport = roomWith({ '': [file('notes.md')] });
+    transport.deleteRoomFile = refuseAndFreeze(transport, refusal('MERGE_IN_FLIGHT'));
+    renderSection(transport);
+
+    await press('notes.md', 'Delete');
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        'Somebody else is changing this room’s files right now, so nothing was changed. Try again in a moment.'
+      )
+    );
+    expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
   });
 
   it('cancelling deletes nothing', async () => {
@@ -431,7 +495,7 @@ describe('uploading into a room’s files', () => {
 
   it('rolls back the optimistic rows when the room refuses', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
-    transport.uploadRoomFiles = vi.fn().mockRejectedValue(refusal('REPO_CAP_EXCEEDED'));
+    transport.uploadRoomFiles = refuseAndFreeze(transport, refusal('REPO_CAP_EXCEEDED'));
     renderSection(transport);
     await screen.findByRole('treeitem', { name: 'notes.md' });
 
@@ -442,9 +506,8 @@ describe('uploading into a room’s files', () => {
         'This room’s files are already as large as they are allowed to get, so nothing was changed. Delete something first.'
       )
     );
-    await waitFor(() =>
-      expect(screen.queryByRole('treeitem', { name: 'big.bin' })).not.toBeInTheDocument()
-    );
+    expect(screen.queryByRole('treeitem', { name: 'big.bin' })).not.toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
   });
 });
 
