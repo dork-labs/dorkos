@@ -73,8 +73,13 @@ export const DORKBOT_ONBOARDING_LINES = {
   ],
   /** Reply once a name or handle is saved in the onboarding beat. */
   identitySaved: 'Nice to meet you.',
-  /** Reply when the user skips the name-and-handle beat. Skipping counts as asked, forever. */
-  identitySkip: 'No problem. You can add them any time in Settings › Profile.',
+  /**
+   * Reply when the user skips the name-and-handle beat. Skipping counts as
+   * asked, forever. Worded to stay true after a partial answer — a skip can
+   * follow a saved name whose handle was refused — so it promises nothing
+   * about what is or is not set.
+   */
+  identitySkip: 'Okay. Your name and handle live in Settings › Profile whenever you want them.',
   /**
    * The one-time sidebar card for installs that onboarded before the question
    * existed. The ask, then why it matters in plain terms.

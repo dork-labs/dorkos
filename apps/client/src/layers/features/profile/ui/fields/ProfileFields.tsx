@@ -31,6 +31,7 @@ import {
   useUploadProfileAvatar,
 } from '../../model/use-profile-edits';
 import { useServerSeededDraft } from '../../model/use-server-seeded-draft';
+import { useMountedRef } from '../../model/use-mounted-ref';
 
 /** What the photo picker will offer. The server decides for real, by the bytes. */
 const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/webp';
@@ -147,7 +148,10 @@ export function ProfilePhotoField({ member }: ProfileFieldProps) {
 
 /** Your display name: what DorkOS calls you. */
 export function ProfileNameField({ member }: ProfileFieldProps) {
-  const updateName = useUpdateProfileName();
+  // The refusal is drawn under the field, so the toast stays out of it — but
+  // only while the field is on screen to draw it.
+  const mounted = useMountedRef();
+  const updateName = useUpdateProfileName({ isShownInline: () => mounted.current });
 
   // `You` is what the roster falls back to when this install knows no other
   // name — nobody chose it. Seeding the field with it would present a
@@ -212,7 +216,8 @@ export function ProfileNameField({ member }: ProfileFieldProps) {
 
 /** Your `@handle`: what people and agents type to reach you. */
 export function ProfileHandleField({ member }: ProfileFieldProps) {
-  const setHandle = useSetAuthorHandle();
+  const mounted = useMountedRef();
+  const setHandle = useSetAuthorHandle({ isShownInline: () => mounted.current });
   const [handle, setHandleText] = useServerSeededDraft(member.handle ?? '');
   const handleChanged = handle.trim() !== (member.handle ?? '');
 

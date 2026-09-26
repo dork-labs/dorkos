@@ -14,6 +14,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
+import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
 
 // Only the two stores are stubbed. `useSettingsDeepLink` stays real, because the
@@ -325,7 +326,9 @@ describe('ProgressCard', () => {
           profile: { identityPromptDismissedAt: expect.any(String) },
         })
       );
-      await waitFor(() => expect(screen.queryByTestId('progress-card-identity-form')).toBeNull());
+      // The same brief thanks the sidebar card gives, in place of the form.
+      expect(await screen.findByText(DORKBOT_ONBOARDING_LINES.identityCardSaved)).toBeTruthy();
+      expect(screen.queryByTestId('progress-card-identity-form')).toBeNull();
     });
   });
 });

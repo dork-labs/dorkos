@@ -79,6 +79,13 @@ describe('suggestOperatorHandle', () => {
     expect(suggestOperatorHandle(self, roster)).toBe('dorian-2');
   });
 
+  it('never suggests a handle the server holds back (DOR-677)', () => {
+    // `everyone@…` and `dorkos@…` are real mailboxes; offering `@everyone`
+    // would only earn the person a refusal the moment they press save.
+    expect(suggestOperatorHandle(selfRow({}, 'everyone@example.com'), [])).toBe('everyone-2');
+    expect(suggestOperatorHandle(selfRow({}, 'dorkos@example.com'), [])).toBe('dorkos-2');
+  });
+
   it('never counts the operator’s own current handle as taken', () => {
     const self = selfRow({ handle: 'dorian' }, 'dorian@example.com');
     expect(suggestOperatorHandle(self, [self])).toBe('dorian');

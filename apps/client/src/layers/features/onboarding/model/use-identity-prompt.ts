@@ -18,7 +18,7 @@
 import { useEffect, useState } from 'react';
 import { isOperatorIdentityIncomplete, useTeamRoster } from '@/layers/entities/team';
 import { useOnboarding } from './use-onboarding';
-import { useProfile } from './use-profile';
+import { useProfile } from '@/layers/entities/user-profile';
 
 /** How long the thanks line lingers before the card collapses (ms). */
 const SAVED_LINGER_MS = 4000;

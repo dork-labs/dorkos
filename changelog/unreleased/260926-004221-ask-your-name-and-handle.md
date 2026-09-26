@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(onboarding): ask the operator for a name and @handle (DOR-677)'
+  - 'fix(onboarding): keep suggested names, failed saves and reserved handles honest in the name question (DOR-677)'
 ---
 
 ### Added

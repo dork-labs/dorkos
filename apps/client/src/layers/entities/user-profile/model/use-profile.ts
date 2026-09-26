@@ -6,11 +6,11 @@
  * write path as onboarding and tours, so every consumer (the role beat, the
  * existing-user prompt card, the ProgressCard row) sees one consistent cache.
  *
- * @module features/onboarding/model/use-profile
+ * @module entities/user-profile/model/use-profile
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { UserProfile } from '@dorkos/shared/config-schema';
-import { useTransport } from '@/layers/shared/model';
+import { useTransport, CONFIG_WRITE_MUTATION_KEY } from '@/layers/shared/model';
 import { configKeys, CONFIG_STALE_TIME_MS } from '@/layers/entities/config';
 
 /** What {@link useProfile} hands its consumers. */
@@ -48,6 +48,9 @@ export function useProfile(): ProfileApi {
   });
 
   const patchProfile = useMutation({
+    // Labelled like every entity-layer config write, so `useConfigSync` sees
+    // it in flight and does not refetch settings it has already moved past.
+    mutationKey: CONFIG_WRITE_MUTATION_KEY,
     mutationFn: (patch: Partial<UserProfile>) => transport.updateConfig({ profile: patch }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: configKeys.all });

@@ -108,7 +108,7 @@ vi.mock('../model/use-onboarding', () => ({
 
 const mockSaveRoles = vi.fn().mockResolvedValue(undefined);
 const mockDismissIdentityPrompt = vi.fn().mockResolvedValue(undefined);
-vi.mock('../model/use-profile', () => ({
+vi.mock('@/layers/entities/user-profile/model/use-profile', () => ({
   useProfile: () => ({
     roles: [],
     rolePromptDismissedAt: null,

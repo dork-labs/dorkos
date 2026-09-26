@@ -28,12 +28,12 @@ import { NarrationMessage } from './NarrationMessage';
 import { Composer } from '@/layers/features/composer';
 import { OperatorIdentityForm } from '@/layers/features/profile';
 import { useDefaultAgentSession } from '@/layers/entities/config';
+import { ProfileRolePicker, useProfile } from '@/layers/entities/user-profile';
 import { PersonalityPicker, useUpdateAgent, useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useRuntimeRequirements, selectRuntimeReadiness } from '@/layers/entities/runtime';
 import { chooseDefaultRuntime } from '../model/use-onboarding-runtime-default';
 import { useOnboarding } from '../model/use-onboarding';
-import { useProfile } from '../model/use-profile';
 import { useIdentityQuestion } from '../model/use-identity-prompt';
 import {
   useOnboardingConversation,
@@ -41,7 +41,6 @@ import {
 } from '../model/use-onboarding-conversation';
 import { ConversationDiscoveryBeat } from './ConversationDiscoveryBeat';
 import { OnboardingWidgetCard } from './OnboardingWidgetCard';
-import { ProfileRolePicker } from './ProfileRolePicker';
 
 /** How long the first-light arrival lingers before DorkBot speaks (ms). */
 const FIRST_LIGHT_MS = 1500;

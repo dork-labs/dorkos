@@ -74,6 +74,11 @@ export function OperatorIdentityForm({
           onChange={(e) => form.setName(e.target.value)}
           className="h-8 text-sm"
         />
+        {form.nameSuggestion && !form.nameError && (
+          <p className="text-muted-foreground text-xs">
+            {form.nameSuggestion}. Save it to make it yours.
+          </p>
+        )}
         {form.nameError && <FieldNote tone="error">{form.nameError}</FieldNote>}
       </div>
       <div className="flex flex-col gap-1.5">

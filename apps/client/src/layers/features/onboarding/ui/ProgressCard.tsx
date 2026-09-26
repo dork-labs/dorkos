@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -22,10 +22,18 @@ import {
   useSettingsDeepLink,
 } from '@/layers/shared/model';
 import { useDefaultAgentSession } from '@/layers/entities/config';
+import { ProfileRolePicker, useProfile } from '@/layers/entities/user-profile';
 import { OperatorIdentityForm } from '@/layers/features/profile';
 import { useIdentityQuestion } from '../model/use-identity-prompt';
-import { useProfile } from '../model/use-profile';
-import { ProfileRolePicker } from './ProfileRolePicker';
+
+/**
+ * How long the name row's thanks line lingers before the row goes (ms) — the
+ * same beat the sidebar's identity card gives (`use-identity-prompt`).
+ */
+const IDENTITY_SAVED_LINGER_MS = 4000;
+
+/** Where the name row is in its closed → open → saved arc. */
+type IdentityRowPhase = 'closed' | 'open' | 'saved';
 
 /** The row that expands the name-and-handle form (DOR-677). */
 const IDENTITY_ROW_LABEL = 'Tell DorkBot your name';
@@ -77,7 +85,7 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
     useProfile();
   const identityQuestion = useIdentityQuestion();
 
-  const [identityOpen, setIdentityOpen] = useState(false);
+  const [identityPhase, setIdentityPhase] = useState<IdentityRowPhase>('closed');
   const [profilePhase, setProfilePhase] = useState<ProfileRowPhase>('closed');
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
 
@@ -86,10 +94,18 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
   // user who HAS roles never sees the row flash while it loads.
   const showProfileRow = !isLoading && roles.length === 0 && rolePromptDismissedAt === null;
 
-  // Saving closes the question for good, like every other surface that asks
-  // it; the row then goes away on its own because the question is settled.
+  // The thanks line lingers, then the row goes: saving settles the question,
+  // so once the phase leaves `saved` nothing holds the row up any more. Full
+  // length under reduced motion — less animation, not less feedback.
+  useEffect(() => {
+    if (identityPhase !== 'saved') return;
+    const t = setTimeout(() => setIdentityPhase('closed'), IDENTITY_SAVED_LINGER_MS);
+    return () => clearTimeout(t);
+  }, [identityPhase]);
+
+  // Saving closes the question for good, like every other surface that asks it.
   const handleIdentitySaved = () => {
-    setIdentityOpen(false);
+    setIdentityPhase('saved');
     void dismissIdentityPrompt().catch(() => {
       // Nothing to undo: the name and handle are saved; at worst the row
       // offers the question again next launch, prefilled with them.
@@ -116,13 +132,17 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
       label: 'Talk to DorkBot',
       onClick: startSession,
     },
-    ...(identityQuestion === 'ask'
+    ...(identityQuestion === 'ask' || identityPhase === 'saved'
       ? [
           {
             icon: AtSign,
             label: IDENTITY_ROW_LABEL,
-            onClick: () => setIdentityOpen((open) => !open),
-            expanded: identityOpen,
+            onClick: () =>
+              setIdentityPhase((phase) => {
+                if (phase === 'saved') return phase;
+                return phase === 'closed' ? 'open' : 'closed';
+              }),
+            expanded: identityPhase !== 'closed',
           },
         ]
       : []),
@@ -192,10 +212,15 @@ export function ProgressCard({ onDismiss }: ProgressCardProps) {
               <span className="text-foreground flex-1 text-xs">{label}</span>
               <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground size-3.5 shrink-0 transition-colors" />
             </button>
-            {label === IDENTITY_ROW_LABEL && identityOpen && (
+            {label === IDENTITY_ROW_LABEL && identityPhase === 'open' && (
               <div className="px-1.5 py-2" data-testid="progress-card-identity-form">
                 <OperatorIdentityForm onSaved={handleIdentitySaved} />
               </div>
+            )}
+            {label === IDENTITY_ROW_LABEL && identityPhase === 'saved' && (
+              <p role="status" className="text-muted-foreground px-1.5 py-2 text-xs">
+                {DORKBOT_ONBOARDING_LINES.identityCardSaved}
+              </p>
             )}
             {label === ROLES_ROW_LABEL && profilePhase !== 'closed' && (
               <div className="px-1.5 py-2" data-testid="progress-card-profile-picker">

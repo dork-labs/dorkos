@@ -16,8 +16,9 @@
  */
 import { useState } from 'react';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
-import { suggestOperatorHandle, useTeamRoster } from '@/layers/entities/team';
+import { nameProvenanceNote, suggestOperatorHandle, useTeamRoster } from '@/layers/entities/team';
 import { handleErrorMessage, nameErrorMessage } from './profile-errors';
+import { useMountedRef } from './use-mounted-ref';
 import { useSetAuthorHandle, useUpdateProfileName } from './use-profile-edits';
 import { useServerSeededDraft } from './use-server-seeded-draft';
 
@@ -39,6 +40,12 @@ export interface OperatorIdentityFormApi {
   saving: boolean;
   /** Why the name was refused, or `null`. */
   nameError: string | null;
+  /**
+   * "Suggested by DorkBot" while the name in the field is one an agent chose
+   * and nobody has saved since (DOR-1022), else `null`. Confirming it is how
+   * the person makes it theirs.
+   */
+  nameSuggestion: string | null;
   /** Why the handle was refused, or `null`. */
   handleError: string | null;
   /**
@@ -62,8 +69,12 @@ export function useOperatorIdentityForm(): OperatorIdentityFormApi {
   const members = roster.data?.members ?? [];
   const self = members.find((member) => member.isSelf);
 
-  const updateName = useUpdateProfileName();
-  const setAuthorHandle = useSetAuthorHandle();
+  // Refusals are drawn under the fields, so the shared toast stays out of
+  // them — only while this form is on screen. A save that fails after the row
+  // collapsed or the card was dismissed toasts, or it is shown nowhere.
+  const mounted = useMountedRef();
+  const updateName = useUpdateProfileName({ isShownInline: () => mounted.current });
+  const setAuthorHandle = useSetAuthorHandle({ isShownInline: () => mounted.current });
   const [saving, setSaving] = useState(false);
 
   // `You` is a placeholder nobody chose, so it seeds an empty field (the same
@@ -78,6 +89,11 @@ export function useOperatorIdentityForm(): OperatorIdentityFormApi {
 
   const nextName = name.trim();
   const nextHandle = handle.trim();
+  // An agent's suggestion is re-saved even unchanged: that save is what
+  // records the person as its author and clears the note, exactly as pressing
+  // Save on the same name does in Settings (DOR-1022).
+  const suggestedBy = self ? nameProvenanceNote(self) : null;
+  const nameNeedsWrite = nextName.length > 0 && (nextName !== storedName || suggestedBy !== null);
 
   // A refusal is shown only while the field still holds what was refused, for
   // the reason `FieldNote` gives about "Saved": typing is the person acting on
@@ -98,7 +114,7 @@ export function useOperatorIdentityForm(): OperatorIdentityFormApi {
     // One after the other, and each on its own: a taken handle must not cost
     // the person the name they typed, and a retry re-sends only what is still
     // different from what is stored.
-    if (nextName && nextName !== storedName) {
+    if (nameNeedsWrite) {
       ok = await updateName.mutateAsync(nextName).then(
         () => ok,
         () => false
@@ -123,6 +139,7 @@ export function useOperatorIdentityForm(): OperatorIdentityFormApi {
     canSave: self !== undefined && !saving && (nextName.length > 0 || nextHandle.length > 0),
     saving,
     nameError,
+    nameSuggestion: suggestedBy !== null && nextName === storedName ? suggestedBy : null,
     handleError,
     save,
   };

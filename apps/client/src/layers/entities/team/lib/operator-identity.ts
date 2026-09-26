@@ -8,7 +8,7 @@
  *
  * @module entities/team/lib/operator-identity
  */
-import { deriveHandle } from '@dorkos/shared/handle';
+import { RESERVED_HANDLES, deriveHandle } from '@dorkos/shared/handle';
 import { OPERATOR_FALLBACK_DISPLAY_NAME, type TeamMember } from '@dorkos/shared/team-schemas';
 
 /** Whether the operator has chosen a name, and whether they have a handle. */
@@ -53,10 +53,11 @@ export function isOperatorIdentityIncomplete(self: TeamMember): boolean {
  * the defect itself — so the field starts empty (spec `handles` §4). Nothing
  * here writes anything: absence is never consent (DOR-604).
  *
- * De-collided against every handle the roster already shows, so the value
- * offered is one this install can accept. A handle released by somebody else
- * is invisible from here; the server refuses that one by name, and the form
- * says so.
+ * De-collided against every handle the roster already shows and every handle
+ * the server holds back at boot (`RESERVED_HANDLES` — `@dorkos` and the
+ * broadcast words), so the value offered is one this install can accept. A
+ * handle released by somebody else is invisible from here; the server refuses
+ * that one by name, and the form says so.
  *
  * @param self - The operator's own roster row.
  * @param roster - Every row on the roster, for the handles already taken.
@@ -64,10 +65,11 @@ export function isOperatorIdentityIncomplete(self: TeamMember): boolean {
 export function suggestOperatorHandle(self: TeamMember, roster: readonly TeamMember[]): string {
   const localpart = self.person?.email?.split('@')[0]?.trim();
   if (!localpart) return '';
-  const taken = new Set(
-    roster
+  const taken = new Set([
+    ...RESERVED_HANDLES,
+    ...roster
       .filter((member) => member.id !== self.id && member.handle)
-      .map((member) => member.handle!.toLowerCase())
-  );
+      .map((member) => member.handle!.toLowerCase()),
+  ]);
   return deriveHandle(localpart, taken) ?? '';
 }
