@@ -46,10 +46,19 @@ function newestRow(history: ReturnType<Page['getByRole']>, summary: string) {
   return history.getByTestId('permission-history-row').filter({ hasText: summary }).first();
 }
 
-/** The spec's own requester, seeded into a fixed slot. */
-async function requester(request: APIRequestContext): Promise<{ id: string; path: string }> {
+/**
+ * The spec's own requester: a fresh agent per attempt, because the suggestion
+ * counts a week of answers and keeps a "Not now", so a retry or a rerun on the
+ * same server would otherwise start where the last attempt stopped.
+ *
+ * @param instance - This attempt's own name, or none for the slot's base agent.
+ */
+async function requester(
+  request: APIRequestContext,
+  instance?: string
+): Promise<{ id: string; path: string }> {
   const res = await request.post('/api/test/seed-agent', {
-    data: { slot: 'suggestion-requester' },
+    data: { slot: 'suggestion-requester', ...(instance ? { instance } : {}) },
   });
   if (!res.ok()) throw new Error(`Could not seed the requester: ${await res.text()}`);
   const { agentId, agentDir } = (await res.json()) as { agentId: string; agentDir: string };
@@ -81,10 +90,6 @@ test.describe('Undo and the Always allow suggestion @permissions', () => {
   test.afterAll(async ({ playwright }, testInfo) => {
     const request = await playwright.request.newContext({ baseURL: testInfo.project.use.baseURL });
     await setRoomsDefault(request, null);
-    const bot = await requester(request);
-    await request.patch(`/api/agents/${bot.id}/permissions`, {
-      data: { areas: { rooms: null }, surface: 'api' },
-    });
     await request.dispose();
   });
 
@@ -124,8 +129,8 @@ test.describe('Undo and the Always allow suggestion @permissions', () => {
   test('three Allows in a week suggest Always allow on the fourth card, until Not now', async ({
     request,
     page,
-  }) => {
-    const bot = await requester(request);
+  }, testInfo) => {
+    const bot = await requester(request, `a${Date.now()}-r${testInfo.retry}`);
     const set = await request.patch(`/api/agents/${bot.id}/permissions`, {
       data: { areas: { rooms: 'ask' }, surface: 'agent-page' },
     });

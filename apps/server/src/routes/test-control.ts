@@ -668,6 +668,17 @@ const seedAgentSchema = z
     slot: z
       .enum(['shared', 'denied-access', 'permission-requester', 'suggestion-requester'])
       .default('shared'),
+    /**
+     * A fresh agent in the same slot: a spec whose checks read history that
+     * outlives an attempt (the Always allow suggestion counts a week of
+     * answers, and "Not now" is kept) seeds a new instance per attempt, so a
+     * retry or a rerun on the same server starts clean. Bounded, so the
+     * directory stays inside the slot's own by construction.
+     */
+    instance: z
+      .string()
+      .regex(/^[a-z0-9-]{1,40}$/)
+      .optional(),
   })
   .default({ slot: 'shared' });
 
@@ -718,8 +729,8 @@ const SEED_AGENT_COPY: Record<SeedAgentSlot, { name: string; description: string
  * Resolved per request rather than at module load: `app.ts` imports this router
  * statically, which runs before `initBoundary()` does at startup.
  */
-function e2eAgentDir(slot: SeedAgentSlot = 'shared'): string {
-  const suffix = slot === 'shared' ? '' : `-${slot}`;
+function e2eAgentDir(slot: SeedAgentSlot = 'shared', instance?: string): string {
+  const suffix = `${slot === 'shared' ? '' : `-${slot}`}${instance ? `-${instance}` : ''}`;
   return path.join(getBoundary(), 'tmp', `dorkos-e2e-agent${suffix}`);
 }
 
@@ -817,8 +828,9 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * uses for a manifest already written by hand: it adopts the id on disk, adds
  * exactly one registry row, and announces nothing.
  *
- * **No cleanup is owed, because none accumulates.** Each of the four slots maps
- * to one fixed directory and stable id. Re-seeding replaces that slot's row
+ * **No cleanup is owed, because little accumulates.** Each of the four slots maps
+ * to one fixed directory and stable id; an `instance` adds one agent per
+ * attempt, inside the leg's throwaway data directory. Re-seeding replaces that slot's row
  * rather than stacking rows. `POST /api/test/reset` does not touch mesh, and
  * does not need to.
  *
@@ -840,8 +852,8 @@ testControlRouter.post('/seed-agent', async (req, res) => {
         `this server does not register.`,
     });
   }
-  const { slot } = input.data;
-  const agentDir = e2eAgentDir(slot);
+  const { slot, instance } = input.data;
+  const agentDir = e2eAgentDir(slot, instance);
   const fixtureId = fixtureAgentId(agentDir);
   const manifest: AgentManifest = {
     id: fixtureId,
