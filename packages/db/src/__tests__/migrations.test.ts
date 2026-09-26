@@ -1076,7 +1076,50 @@ describe('Database Migrations', () => {
         )
         .run()
     ).not.toThrow();
+    // One row per provider-side identity: a second link of the same identity
+    // (a racing sign-in) is refused rather than left to lock the person out.
+    expect(() =>
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, account_id, provider_id, user_id, created_at, updated_at)
+           VALUES ('account-c', 'owner-a-2', 'credential', 'owner-a', 1788700000000, 1788700000000)`
+        )
+        .run()
+    ).toThrow(/UNIQUE/);
     expect(raw.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('refuses to drop account.issuer over a duplicate identity, changing nothing', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_ACCOUNT_ISSUER_DROP_IDX) });
+    const raw = db.$client;
+    raw
+      .prepare(
+        `INSERT INTO user
+          (id, name, email, email_verified, created_at, updated_at)
+         VALUES ('owner-a', 'Owner', 'owner@example.com', 1, 1788700000000, 1788700000000)`
+      )
+      .run();
+    // Two issuers let the same (provider_id, account_id) in twice under 0087.
+    for (const [id, issuer] of [
+      ['account-a', 'local:credential'],
+      ['account-b', 'local:other'],
+    ]) {
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, issuer, account_id, provider_id, user_id, created_at, updated_at)
+           VALUES (?, ?, 'owner-a', 'credential', 'owner-a', 1788700000000, 1788700000000)`
+        )
+        .run(id, issuer);
+    }
+
+    expect(() => runMigrations(db)).toThrow(/UNIQUE/);
+    expect(raw.prepare("SELECT name FROM pragma_table_info('account')").all()).toContainEqual({
+      name: 'issuer',
+    });
+    expect(raw.prepare('SELECT count(*) AS n FROM account').get()).toEqual({ n: 2 });
   });
 
   it('unique constraint on relay_traces.message_id is enforced', () => {

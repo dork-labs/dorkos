@@ -61,7 +61,20 @@ Not every deliberate hold belongs in the override map. When the repo declares th
 
 - 1.7.1 broke CLI auth at runtime, which no typecheck catches: `dorkos auth enable` exited 1, and a fresh credential signed in as `INVALID_EMAIL_OR_PASSWORD`.
 - 1.6.24 to 1.6.30 pulled `better-call@1.4.0`, which forked `@better-auth/utils` (the override above).
-- 1.7.0 to 1.7.2 keyed accounts by a new required `account.issuer`; migration `0087` (server) and `0010` (site) added it. 1.7.3 went back to the 1.6 shape and never writes it, so every sign-up failed on the NOT NULL column (DOR-2036). Server migration `0112` drops the column and its unique index. The site's control-plane migration `0001` only relaxes it, because Vercel migrates while the previous deployment still serves and still writes `issuer`; dropping the column there is the next release's job.
+- 1.7.0 to 1.7.2 keyed accounts by a new required `account.issuer`; migration `0087` (server) and `0010` (site) added it. 1.7.3 went back to the 1.6 shape and never writes it, so every sign-up failed on the NOT NULL column (DOR-2036). Server migration `0112` drops the column and its unique index. The site's control-plane migration `0001` only relaxes it, because Vercel migrates while the previous deployment still serves and still writes `issuer`; dropping the column there is the next release's job. Both migrations restate the lost uniqueness as `account_provider_accountId_unique` on `(provider_id, account_id)`: Better Auth links accounts check-then-insert, and a duplicate identity makes every later lookup of it throw.
+- **Rolling the site back to 1.7.2** needs a backfill first. 1.7.2 looks accounts up by `issuer`, so anyone who signed up under 1.7.5 (a NULL `issuer`) could not sign in. Run this, the same mapping migration `0010` used, before the old build serves traffic:
+
+  ```sql
+  UPDATE "account" SET "issuer" = CASE "provider_id"
+      WHEN 'credential' THEN 'local:credential'
+      WHEN 'github' THEN 'local:oauth:github'
+      WHEN 'google' THEN 'https://accounts.google.com'
+    END
+  WHERE "issuer" IS NULL;
+  ```
+
+  A local DorkOS server cannot be rolled back past `0112` at all: the column is gone, and an older build's migrations do not put it back.
+
 - From 1.7.3 the instance type inferred from the options literal is too big for the compiler to write, which is TS7056 at `createAuth`. `apps/server/src/services/core/auth/index.ts` names it from an explicit `AuthOptions` type instead; a new plugin goes in both places.
 
 **Re-test after moving the family:**

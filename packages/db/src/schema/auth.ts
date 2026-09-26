@@ -22,7 +22,7 @@
  * @module db/schema/auth
  */
 import { relations, sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const user = sqliteTable('user', {
   id: text('id').primaryKey(),
@@ -88,7 +88,14 @@ export const account = sqliteTable(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull(),
   },
-  (table) => [index('account_userId_idx').on(table.userId)]
+  (table) => [
+    index('account_userId_idx').on(table.userId),
+    // One row per provider-side identity. Better Auth links accounts with a
+    // check-then-insert, so two racing sign-ins could otherwise write the same
+    // identity twice, after which every lookup of it throws and that person is
+    // locked out. The database is the only place this can be enforced (DOR-2036).
+    uniqueIndex('account_provider_accountId_unique').on(table.providerId, table.accountId),
+  ]
 );
 
 export const verification = sqliteTable(

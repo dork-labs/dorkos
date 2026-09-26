@@ -38,7 +38,7 @@
  *
  * @module db/auth-schema
  */
-import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 
 /**
  * `user` — one row per DorkOS account. `email` is unique; `emailVerified`
@@ -98,30 +98,40 @@ export const session = pgTable('session', {
  * hash lives in `password`; GitHub/Google links carry OAuth tokens). Better
  * Auth identifies the provider-side account by `(providerId, accountId)`.
  */
-export const account = pgTable('account', {
-  id: text('id').primaryKey(),
-  // Better Auth 1.7.0-1.7.2 required this column; 1.7.3 went back to the 1.6
-  // shape and never writes it. It stays, nullable, for one release: the
-  // migration runs while the previous deployment still serves requests and
-  // still writes it, so dropping it here would fail that deployment's
-  // sign-ups mid-rollout. Unread and unwritten from this release on
-  // (DOR-2036).
-  issuer: text('issuer'),
-  accountId: text('account_id').notNull(),
-  providerId: text('provider_id').notNull(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  idToken: text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at'),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
-  scope: text('scope'),
-  password: text('password'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const account = pgTable(
+  'account',
+  {
+    id: text('id').primaryKey(),
+    // Better Auth 1.7.0-1.7.2 required this column; 1.7.3 went back to the 1.6
+    // shape and never writes it. It stays, nullable, for one release: the
+    // migration runs while the previous deployment still serves requests and
+    // still writes it, so dropping it here would fail that deployment's
+    // sign-ups mid-rollout. Unread and unwritten from this release on
+    // (DOR-2036).
+    issuer: text('issuer'),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at'),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    // One row per provider-side identity. Better Auth links accounts with a
+    // check-then-insert, so a retried or double-clicked OAuth callback could
+    // otherwise write the same identity twice, after which every lookup of it
+    // throws and that person is locked out (DOR-2036).
+    uniqueIndex('account_provider_accountId_unique').on(table.providerId, table.accountId),
+  ]
+);
 
 /**
  * `verification` — short-lived tokens for email verification and password

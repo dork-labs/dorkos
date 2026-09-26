@@ -1,5 +1,5 @@
 {
-  "id": "06f1bca4-3017-48dd-848a-f4a3ef44b7f8",
+  "id": "f4577b77-3766-47f3-9f29-41c75f91be7b",
   "prevId": "afa9df14-092a-4c2f-aa16-76c430712d6a",
   "version": "7",
   "dialect": "postgresql",
@@ -95,7 +95,29 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "account_provider_accountId_unique": {
+          "name": "account_provider_accountId_unique",
+          "columns": [
+            {
+              "expression": "provider_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",

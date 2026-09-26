@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "51e81083-8535-4de4-bd07-ecc20e364143",
+  "id": "cc27f8f3-74e5-4413-86e9-a2a9dcbda025",
   "prevId": "00589670-942c-49e0-ba71-260b5beff12a",
   "tables": {
     "a2a_tasks": {
@@ -2255,6 +2255,14 @@
             "user_id"
           ],
           "isUnique": false
+        },
+        "account_provider_accountId_unique": {
+          "name": "account_provider_accountId_unique",
+          "columns": [
+            "provider_id",
+            "account_id"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {

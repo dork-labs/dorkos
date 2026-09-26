@@ -148,10 +148,19 @@ async function rejectionMessage(operation: Promise<unknown>): Promise<string> {
 }
 
 describe('hosted Better Auth account identity since 1.7.3', () => {
-  it('keeps issuer only as an optional column, with no index on it', () => {
+  it('keeps issuer only as an optional column, keyed uniquely by provider instead', () => {
     expect(authSchema.account.issuer.notNull).toBe(false);
-    const indexNames = getTableConfig(authSchema.account).indexes.map((index) => index.config.name);
-    expect(indexNames).not.toContain('account_issuer_accountId_unique');
+    const indexes = getTableConfig(authSchema.account).indexes;
+    expect(indexes.map((index) => index.config.name)).not.toContain(
+      'account_issuer_accountId_unique'
+    );
+    const identity = indexes.find(
+      (index) => index.config.name === 'account_provider_accountId_unique'
+    );
+    expect(identity?.config.unique).toBe(true);
+    expect(
+      identity?.config.columns.map((column) => ('name' in column ? column.name : undefined))
+    ).toEqual(['provider_id', 'account_id']);
   });
 
   it('relaxes the live issuer column so both the old and the new deployment can write', async () => {
@@ -224,6 +233,69 @@ describe('hosted Better Auth account identity since 1.7.3', () => {
         { issuer: 'local:oauth:google', account_id: 'google-subject', provider_id: 'google' },
         { issuer: 'local:credential', account_id: 'owner@dork.test', provider_id: 'credential' },
       ]);
+
+      // One row per provider-side identity, from either deployment: a retried
+      // callback linking the same identity again is refused, not stored twice.
+      await expect(
+        client.query(
+          `INSERT INTO "account" ("id", "account_id", "provider_id", "user_id")
+           VALUES ('retried-callback', 'github-subject', 'github', 'owner-1')`
+        )
+      ).rejects.toThrow(/unique/i);
+      await expect(
+        client.query(
+          `INSERT INTO "account" ("id", "issuer", "account_id", "provider_id", "user_id")
+           VALUES ('old-deploy-dup', 'local:oauth:google', 'google-subject', 'google', 'owner-1')`
+        )
+      ).rejects.toThrow(/unique/i);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('refuses to relax issuer over a duplicate identity, naming no account', async () => {
+    const client = new PGlite();
+    const db = drizzle(client);
+    try {
+      await migrate(db, {
+        migrationsFolder: FROZEN_HISTORY.folder,
+        migrationsTable: FROZEN_HISTORY.migrationsTable,
+        migrationsSchema: FROZEN_HISTORY.migrationsSchema,
+      });
+      // 0010's index is on (issuer, account_id), so two issuers let one
+      // (provider_id, account_id) in twice.
+      await client.exec(`
+        INSERT INTO "user" ("id", "name", "email") VALUES ('owner-1', 'Owner', 'owner@dork.test');
+        INSERT INTO "account" ("id", "issuer", "account_id", "provider_id", "user_id")
+          VALUES ('a', 'issuer-a', 'private-subject', 'github', 'owner-1'),
+                 ('b', 'issuer-b', 'private-subject', 'github', 'owner-1');
+      `);
+
+      let failure = '';
+      try {
+        for (const history of MIGRATION_HISTORIES) {
+          await markBaselineApplied(db, history);
+          await migrate(db, {
+            migrationsFolder: history.folder,
+            migrationsTable: history.migrationsTable,
+            migrationsSchema: history.migrationsSchema,
+          });
+        }
+      } catch (error) {
+        const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+        failure = `${error instanceof Error ? error.message : String(error)} ${
+          cause instanceof Error ? cause.message : ''
+        }`;
+      }
+      expect(failure).toMatch(/duplicate \(provider_id, account_id\)/);
+      expect(failure).not.toContain('private-subject');
+
+      const issuerColumn = await client.query<{ is_nullable: string }>(
+        `SELECT is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'account' AND column_name = 'issuer'`
+      );
+      expect(issuerColumn.rows).toEqual([{ is_nullable: 'NO' }]);
     } finally {
       await client.close();
     }
