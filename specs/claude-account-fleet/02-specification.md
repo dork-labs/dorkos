@@ -44,14 +44,14 @@ Operator direction, 2026-09-26:
 
 ## 3. Goals and non-goals
 
-**Goals:** D1-D9 and X1-X3 as below, each behaving the same with one account and with many (§9).
+**Goals:** D1-D9, R (every runtime) and X1-X3 as below, each behaving the same with one account and with many (§9).
 
 **Non-goals:**
 
 - Any routing policy in core config (flow's, §2).
 - Automatic handoff, ranking, checkpoints (flow, S2/S3).
 - Reading any Anthropic endpoint directly, or touching Keychain credentials (§8).
-- Codex or OpenCode accounts.
+- Multi-account registries for Codex and OpenCode (they have one implicit `default` account each here; see R).
 - Moving a live session to another account (impossible by design, ADR 260801-204127). "Continue on another account" starts a **new** session.
 - Writing `flow-state.json` or storing flow's run records in SQLite (contract §1.3: DorkOS reads only).
 - The Accounts UI, the status-bar chip, sidebar dots, the Flow Settings tab (S5, S6, flow).
@@ -335,6 +335,28 @@ Timers do not survive a restart, but the plans do (the `session_limits` table): 
 
 The **default summary** is built mechanically, and **no model is ever called on the exhausted account** (it cannot run one). It holds: the previous session id and account, and the limit and its reset; the cwd, git branch, `git status --short` and `git diff --stat` (each bounded); the files the session touched (paths from its `Edit`, `Write` and `NotebookEdit` tool calls in the transcript tail); the last tool step (name and target); the session's first user message; and its last 6 user and assistant text messages, each trimmed. It ends with a pointer the new session can follow on the target account: the previous transcript's path and session id, and the line "If you need more than this summary, read the end of that file first." The whole is capped at `SEED_CONTEXT_MAX_LENGTH`, dropping the oldest of the last 6 messages first, then the diff stat. The source's `plan` becomes `continued`, and an Activity entry records who moved it (a person or the advisor), from which account to which. The pointer helps an attended carry-over: the file lives under the old account's config directory, outside the new session's cwd, so Claude Code asks before reading it, and an automatic carry-over (unattended) refuses that ask. The summary is written to stand on its own.
 
+### R. Every runtime records usage (operator direction, 2026-09-26; programme `RUNTIMES.md` R1-R3, R7-R9)
+
+flow runs from Claude Code, Codex and OpenCode sessions, so the ledger, the events and the out-of-usage flow are **runtime-neutral**. Multi-account support stays Claude Code only; Codex and OpenCode multi-account registries are out of scope (filed separately).
+
+**Accounts per runtime.** An account belongs to one runtime. Claude Code reads `runtimes.claudeCode.accounts[]`. A runtime with **no registered accounts** has one implicit account with id **`default`**: the ambient environment (Claude Code's inherited root, Codex's `CODEX_HOME`, OpenCode's configured provider). So Codex and OpenCode always have exactly `default`, and a Claude Code user who never registered an account also gets `default`, which replaces the "unregistered root, memory only" case of D2/D3/D9 for that user: it now has a ledger file, can be probed, and confirms resets like any account. The memory-only case remains only for a session that ran on an unregistered root while other accounts ARE registered.
+
+**The ledger is per runtime.** `<dorkHome>/runtimes/<runtime>/usage/<account-id>.json`, runtime slug `claude-code` | `codex` | `opencode`, with the contract revision 6 (fixtures 2.0.0) runtime-neutral schema: `runtime`, `accountId`, `windows` (entries gain an optional `windowMinutes`), optional `plan`, optional `credits { hasCredits, unlimited, balance }`, and optional `spend { periodStart, costUsd, limitUsd?, observedAt, source }`. The merge, lock and read rules are unchanged. The contract text wins on every field name; task 1.1 adopts it exactly. `AccountUsage` gains `runtime`, `plan`, `credits` and `spend`, and `state` covers metered accounts: a spend-only account is `limited` when `spend.limitUsd` is reached, and an account with neither windows nor spend (a local model) is always `ok`.
+
+**Writers, all from data the official binaries hand over:**
+
+- **Claude Code:** as D2 (SDK `rate_limit_event` and the usage call).
+- **Codex:** the rollout's `token_count` record that `turn-context-usage.ts` already reads at turn end also carries `rate_limits`: `primary` and `secondary` (`used_percent`, `window_minutes`, `resets_at`), `plan_type`, `credits`, `rate_limit_reached_type`. The same bounded tail read maps them: a window is keyed by `window_minutes` (300 → `five_hour`, 10080 → `seven_day`, anything else → `window:<minutes>`), `usedPct = used_percent`, `status: 'rejected'` for the window `rate_limit_reached_type` names, `plan` from `plan_type`, `credits` as given. No new file access: it is the same file the runtime already reads.
+- **OpenCode:** each turn's `cost` (USD) from the sidecar's events adds to `spend.costUsd` for the current calendar month (UTC `periodStart`); a rate-limit or credit error ends the turn with a window-less `status: 'rejected'` reading (`source: 'error'`). `spend.limitUsd` stays unset (a provider-side budget lookup is a follow-up).
+
+**Limits for every runtime.** D4's `limit` and the `account.limited` notification apply to any runtime that reports `rejected`: Codex on a `rate_limit_reached_type` or a rate-limit `turn.failed`, OpenCode on a rate-limit or credit error. With one account per runtime, D9 lands on `wait-only` for them (no other account of that runtime to move to) and the wait-and-resume path works unchanged; confirmation uses the next reading for that account, since only Claude Code can be probed.
+
+**Watching the folder.** The store watches `<dorkHome>/runtimes/*/usage/` (`fs.watch`, debounced 500 ms) plus a periodic read every 60 s (watchers miss events on some filesystems), merges CLI-written readings into memory, and emits `account_usage` (and the D4/D9 notifications a reading implies, such as `account.reset` when a waiting session's window moved on). This replaces D2's read-on-list mtime check.
+
+**Removing an account deletes its ledger** (replacing D2's "leaves its file"): when a Claude Code account id leaves the registry, the server deletes `<dorkHome>/runtimes/claude-code/usage/<id>.json` under the contract's lock. An implicit `default` file is deleted when the runtime gets its first registered account.
+
+**`supportsAccounts`.** `RuntimeCapabilities` gains `supportsAccounts: boolean`: `true` for claude-code, `false` for codex, opencode and test-mode, declared in each runtime's constants and checked by the shared conformance suite. The UI shows the account chip, dots and badge only when the session's runtime has `supportsAccounts` and 2+ registered accounts; usage bars and the out-of-usage banner show for any runtime with ledger data or a `limit` (R7). `session_start` takes `runtime`; its `account` is accepted only for a runtime with `supportsAccounts` (or the literal `default`), else 400.
+
 ### X. Extension server API additions (for the Flow extension)
 
 A server extension's `DataProviderContext` gives it secrets, scoped settings, scoped storage (`<dorkHome>/extension-data/<id>/`), a scheduler, `emit`, and its own directory. It runs in-process with no sandbox, so it **could** open any file with Node `fs`, but it has **no sanctioned way to learn `<dorkHome>`** (a project-local extension's `extensionDir` is not under it), **no read of the account registry or usage**, and **no way to take part in an account decision**. The Flow extension needs all three:
@@ -421,16 +443,16 @@ Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/share
 
 ## 9. One account vs two or more
 
-| Behavior                        | 1 account (or none registered)                                                 | 2+ registered                                          |
-| ------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
-| D1 color                        | Stored and served; the UI shows nothing new (design rule).                     | Drives dots, chip, badge (S5).                         |
-| D2 store, event, REST           | Runs; the inherited root appears with `accountId: null` and no file.           | One record and one ledger file per registered account. |
-| D3 probe                        | Works for a registered account; an unregistered root cannot be probed (no id). | Same.                                                  |
-| D4 limit + notification         | Same as 2+: a limit is a limit.                                                | Same.                                                  |
-| D5 `session_start`              | `account` omitted → the ladder, as today.                                      | Names an account; the advisor decides.                 |
-| D6 schedule and relay `account` | Absent → today's behavior.                                                     | Honored at launch.                                     |
-| D7 list                         | `accountId` and `accountUsage` only when that account is registered.           | Full.                                                  |
-| D8 tracker item                 | Same either way.                                                               | Same.                                                  |
+| Behavior                        | 1 account (or none registered)                                                       | 2+ registered                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| D1 color                        | Stored and served; the UI shows nothing new (design rule).                           | Drives dots, chip, badge (S5).                         |
+| D2 store, event, REST           | Runs; the inherited root appears with `accountId: null` and no file.                 | One record and one ledger file per registered account. |
+| D3 probe                        | Works for a registered account and for the implicit `default` account (no registry). | Same.                                                  |
+| D4 limit + notification         | Same as 2+: a limit is a limit.                                                      | Same.                                                  |
+| D5 `session_start`              | `account` omitted → the ladder, as today.                                            | Names an account; the advisor decides.                 |
+| D6 schedule and relay `account` | Absent → today's behavior.                                                           | Honored at launch.                                     |
+| D7 list                         | `accountId` and `accountUsage` only when that account is registered.                 | Full.                                                  |
+| D8 tracker item                 | Same either way.                                                                     | Same.                                                  |
 
 ## 10. What the UI track reads (S5, S6)
 
@@ -464,7 +486,9 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 - **Contracts adopted as written** (marketplace `flow-cli-core` §1, revision 6). Differences from S4's earlier draft (token colors, a top-level `limit`, `schemaVersion`, dash window keys, a `probe` source, a session_metadata tracker column) were dropped in favor of the contract.
 - **DOR-2379 core part is `color` only;** the policy fields and their UI are flow's (operator, 2026-09-26).
 - **No config migration for `color`.** The issue asked for one, but absent already means default-by-position, and a seeding migration would freeze a palette the UI track has not chosen into every config file. The adding-config-fields steps that do apply (disclosure, docs, tests) are in the task.
-- **Store keyed by config dir; a file only for a registered, pattern-valid id.** An unregistered root has no id to name a file.
+- **Store keyed by (runtime, account id).** A runtime with no registry has the implicit `default` account (programme R1), so a single-account user gets a ledger file too; only a session on an unregistered root beside registered ones stays memory-only.
+- **Every runtime records usage** (operator): Codex from the rollout record DorkOS already reads, OpenCode as spend; multi-account for Codex and OpenCode is out of scope. `supportsAccounts` is the capability the UI gates on.
+- **Removing an account deletes its ledger** (programme R8), superseding the earlier keep-the-file choice.
 - **`limit` field, not a new lifecycle value.** A new `SessionLifecycle` member breaks older clients' snapshot parsing and ~20 exhaustive client switches for a state that is "errored, because of a limit". `sessionDisplayState` gives consumers the word.
 - **`account.limited` is `notable` with no escalation.** A limit ends at a known time, and flow hands work off.
 - **D5 fails loudly on an unknown account;** the HTTP hint keeps falling through. An agent naming an account made a billing choice; silently billing another is worse.
