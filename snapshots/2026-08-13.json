@@ -189,12 +189,17 @@
   "test_executions": 0,
   "test_flaky": 0,
   "flaky_builds_sampled": 0,
-  "job_minutes": 6.1
+  "job_minutes": 6.1,
+  "canary_minutes": 0,
+  "repeat_ejections": 0
  },
+ "flaky_tests": [],
+ "flaky_builds": [],
  "real_catches": {},
  "ejections_caused": {},
  "queue_builds": [],
  "main": [],
+ "canary": [],
  "releases": [],
  "cache": {
   "bytes": 10640225159,

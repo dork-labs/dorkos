@@ -5721,7 +5721,8 @@
   "test_flaky": 0,
   "flaky_builds_sampled": 0,
   "job_minutes": 6045.9,
-  "canary_minutes": 0
+  "canary_minutes": 0,
+  "repeat_ejections": 11
  },
  "flaky_tests": [],
  "flaky_builds": [],
@@ -6021,115 +6022,239 @@
    "sha": "9edbe93e35f8",
    "at": "2026-08-28T00:07:30Z",
    "done": "2026-08-28T00:14:57Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": true,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "780646e26d89",
    "at": "2026-08-28T00:41:38Z",
    "done": "2026-08-28T00:48:39Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": true,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "9ac8d9cf0a03",
    "at": "2026-08-28T01:09:40Z",
    "done": "2026-08-28T01:17:08Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "4c61c5021723",
    "at": "2026-08-28T01:15:59Z",
    "done": "2026-08-28T01:23:36Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "ea15fa2a6936",
    "at": "2026-08-28T01:32:23Z",
    "done": "2026-08-28T01:40:47Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": true,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "04be182ac474",
    "at": "2026-08-28T01:40:00Z",
    "done": "2026-08-28T01:47:09Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "911a2a0360f2",
    "at": "2026-08-28T13:15:24Z",
    "done": "2026-08-28T13:22:54Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "eda4bcaacbb1",
    "at": "2026-08-28T17:52:35Z",
    "done": "2026-08-28T17:58:28Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": true,
+    "scripts-test.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "fa6767bb8873",
    "at": "2026-08-28T18:15:44Z",
    "done": "2026-08-28T18:23:17Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": true,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "bc0cb2f27a8c",
    "at": "2026-08-28T18:43:32Z",
    "done": "2026-08-28T18:50:58Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": true,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "7f010048f274",
    "at": "2026-08-28T19:15:21Z",
    "done": "2026-08-28T19:22:38Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "caac7fb41bbc",
    "at": "2026-08-28T19:19:52Z",
    "done": "2026-08-28T19:28:32Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": true,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "bd780289f90c",
    "at": "2026-08-28T19:27:16Z",
    "done": "2026-08-28T19:34:34Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "6d5c2b45b8ac",
    "at": "2026-08-28T21:05:01Z",
    "done": "2026-08-28T21:12:32Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "57f5cb9619af",
    "at": "2026-08-28T21:07:39Z",
    "done": "2026-08-28T21:19:03Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "c4a4171f2a77",
    "at": "2026-08-28T21:50:57Z",
    "done": "2026-08-28T21:58:25Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": false,
+    "scripts-test.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "4cbd45da2d4f",
    "at": "2026-08-28T22:42:56Z",
    "done": "2026-08-28T22:50:12Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "5b8a802fac40",
    "at": "2026-08-28T23:36:04Z",
    "done": "2026-08-28T23:46:16Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "typecheck.yml": false
+   }
   },
   {
    "sha": "1a3468e20925",
    "at": "2026-08-28T23:42:40Z",
    "done": "2026-08-28T23:52:11Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "docs-openapi-check.yml": false,
+    "typecheck.yml": false
+   }
   }
  ],
  "canary": [],

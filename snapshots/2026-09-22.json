@@ -3419,7 +3419,8 @@
   "test_flaky": 2,
   "flaky_builds_sampled": 4,
   "job_minutes": 3000.6,
-  "canary_minutes": 741.9
+  "canary_minutes": 741.9,
+  "repeat_ejections": 0
  },
  "flaky_tests": [
   {
@@ -3515,19 +3516,35 @@
    "sha": "7d365fc3678a",
    "at": "2026-09-22T20:36:05Z",
    "done": "2026-09-22T20:42:06Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "b502b65ede57",
    "at": "2026-09-22T22:53:10Z",
    "done": "2026-09-22T22:55:52Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false
+   }
   },
   {
    "sha": "7f90b1c17827",
    "at": "2026-09-22T23:49:56Z",
    "done": "2026-09-22T23:59:57Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   }
  ],
  "canary": [

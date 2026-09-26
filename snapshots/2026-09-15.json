@@ -8318,8 +8318,12 @@
   "test_executions": 4152,
   "test_flaky": 19,
   "flaky_builds_sampled": 10,
-  "job_minutes": 9196.5
+  "job_minutes": 9196.5,
+  "canary_minutes": 0,
+  "repeat_ejections": 1
  },
+ "flaky_tests": [],
+ "flaky_builds": [],
  "real_catches": {},
  "ejections_caused": {
   "wf.browser-test.browser-shard": 3,
@@ -8646,165 +8650,303 @@
    "sha": "8f43c254d4a3",
    "at": "2026-09-15T00:08:23Z",
    "done": "2026-09-15T00:20:17Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "06107f76123c",
    "at": "2026-09-15T01:02:36Z",
    "done": "2026-09-15T01:05:31Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false
+   }
   },
   {
    "sha": "5f387c0b66e7",
    "at": "2026-09-15T01:40:38Z",
    "done": "2026-09-15T01:48:18Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "b339f9746727",
    "at": "2026-09-15T11:41:05Z",
    "done": "2026-09-15T11:46:08Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "13fd2bb1bd59",
    "at": "2026-09-15T12:53:58Z",
    "done": "2026-09-15T13:07:08Z",
-   "red": true
+   "red": true,
+   "workflows": {
+    "cli-smoke-test.yml": true,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "0d66ebbc461b",
    "at": "2026-09-15T13:25:44Z",
    "done": "2026-09-15T13:28:50Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false
+   }
   },
   {
    "sha": "540a90f28e3d",
    "at": "2026-09-15T14:48:40Z",
    "done": "2026-09-15T14:52:59Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "c32579428193",
    "at": "2026-09-15T15:19:19Z",
    "done": "2026-09-15T15:27:27Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "6562cdb46b46",
    "at": "2026-09-15T16:13:48Z",
    "done": "2026-09-15T16:23:23Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "628885c6f4fb",
    "at": "2026-09-15T16:36:47Z",
    "done": "2026-09-15T16:46:02Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "714c66f78e99",
    "at": "2026-09-15T17:05:58Z",
    "done": "2026-09-15T17:12:52Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "ebb07de908db",
    "at": "2026-09-15T18:20:32Z",
    "done": "2026-09-15T18:30:06Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "2b638e122286",
    "at": "2026-09-15T19:45:08Z",
    "done": "2026-09-15T19:51:06Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "3755cabb9c32",
    "at": "2026-09-15T20:10:45Z",
    "done": "2026-09-15T20:16:04Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "2517101203a2",
    "at": "2026-09-15T20:41:30Z",
    "done": "2026-09-15T20:49:46Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "abb91b7c8931",
    "at": "2026-09-15T21:12:50Z",
    "done": "2026-09-15T21:15:37Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false
+   }
   },
   {
    "sha": "712b8f888a57",
    "at": "2026-09-15T21:19:38Z",
    "done": "2026-09-15T21:28:30Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "462c07867354",
    "at": "2026-09-15T21:44:16Z",
    "done": "2026-09-15T21:47:32Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false
+   }
   },
   {
    "sha": "d1b2da843464",
    "at": "2026-09-15T22:04:31Z",
    "done": "2026-09-15T22:08:26Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "a241c36ed2ee",
    "at": "2026-09-15T22:36:34Z",
    "done": "2026-09-15T22:39:33Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false
+   }
   },
   {
    "sha": "5de36cfe43e1",
    "at": "2026-09-15T22:51:02Z",
    "done": "2026-09-15T22:59:58Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "62999157f4d2",
    "at": "2026-09-15T22:51:19Z",
    "done": "2026-09-15T22:56:39Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false
+   }
   },
   {
    "sha": "f9cbdb5a29ef",
    "at": "2026-09-15T22:56:38Z",
    "done": "2026-09-15T23:06:15Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "931cfdcd6131",
    "at": "2026-09-15T23:00:14Z",
    "done": "2026-09-15T23:14:41Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "9ecd2aba30ca",
    "at": "2026-09-15T23:14:12Z",
    "done": "2026-09-15T23:22:45Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   },
   {
    "sha": "1a906d330c3b",
    "at": "2026-09-15T23:24:55Z",
    "done": "2026-09-15T23:28:45Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "scripts-test.yml": false
+   }
   },
   {
    "sha": "7e5196e3a263",
    "at": "2026-09-15T23:27:00Z",
    "done": "2026-09-15T23:34:58Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "desktop-smoke.yml": false
+   }
   }
  ],
+ "canary": [],
  "releases": [],
  "cache": {
   "bytes": 10879398077,

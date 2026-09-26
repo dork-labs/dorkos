@@ -927,7 +927,8 @@
   "test_flaky": 0,
   "flaky_builds_sampled": 0,
   "job_minutes": 347.2,
-  "canary_minutes": 0
+  "canary_minutes": 0,
+  "repeat_ejections": 1
  },
  "flaky_tests": [],
  "flaky_builds": [],
@@ -959,7 +960,13 @@
    "sha": "a88c079bb420",
    "at": "2026-08-30T21:36:17Z",
    "done": "2026-08-30T21:44:12Z",
-   "red": false
+   "red": false,
+   "workflows": {
+    "cli-smoke-test.yml": false,
+    "db-check.yml": false,
+    "scripts-test.yml": false,
+    "typecheck.yml": false
+   }
   }
  ],
  "canary": [],
