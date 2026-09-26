@@ -2,6 +2,7 @@
 covers:
   - 'feat(extensions): load extensions that come inside an installed plugin, once you approve that copy (DOR-2383)'
   - "fix(extensions): keep an extension's approval when its own plugin updates (DOR-2383)"
+  - "fix(extensions): leave another plugin's running copy alone on uninstall, and forget dropped extensions on reinstall (DOR-2383)"
 ---
 
 ### Added
