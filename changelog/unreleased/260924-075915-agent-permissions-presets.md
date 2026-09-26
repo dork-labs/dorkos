@@ -11,6 +11,24 @@ covers:
   - 'fix(control-center): open the phone sheet on the preset picker, and read permissions only when it opens'
   - 'fix(control-center): wait for permissions before saying nothing is overridden'
   - 'fix(marketplace): an agent package cannot ship what its agent may do'
+  - 847dbbc
+  - fcacf5a
+  - fb6bdd0
+  - 7c6f574
+  - d0a661d
+  - 26ec3c0
+  - c35f6b1
+  - 867f576
+  - 0e9bef3
+  - 3f039b4
+  - 721fb5c
+  - eda81c0
+  - ff8ba8c
+  - b6dc135
+  - 629f51f
+  - 2de41d6
+  - 38294e1
+  - 76db28f
 ---
 
 ### Added
