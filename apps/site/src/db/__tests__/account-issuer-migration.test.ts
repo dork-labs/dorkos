@@ -202,6 +202,13 @@ describe('hosted Better Auth account identity since 1.7.3', () => {
         `SELECT indexname FROM pg_indexes WHERE indexname = 'account_issuer_accountId_unique'`
       );
       expect(issuerIndex.rows).toEqual([]);
+      const identityIndex = await client.query<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes WHERE indexname = 'account_provider_accountId_unique'`
+      );
+      expect(identityIndex.rows).toHaveLength(1);
+      expect(identityIndex.rows[0].indexdef).toMatch(
+        /^CREATE UNIQUE INDEX .* ON public\.account USING btree \(provider_id, account_id\)$/
+      );
 
       // The write this release's Better Auth makes: no issuer at all. It is
       // the insert every sign-up failed on while the column was NOT NULL.
@@ -280,9 +287,12 @@ describe('hosted Better Auth account identity since 1.7.3', () => {
       await client.exec(sql);
 
       const identity = await client.query(
-        `SELECT indexname FROM pg_indexes WHERE indexname = 'account_provider_accountId_unique'`
+        `SELECT indexdef FROM pg_indexes WHERE indexname = 'account_provider_accountId_unique'`
       );
       expect(identity.rows).toHaveLength(1);
+      expect((identity.rows[0] as { indexdef: string }).indexdef).toMatch(
+        /^CREATE UNIQUE INDEX .* ON public\.account USING btree \(provider_id, account_id\)$/
+      );
     } finally {
       await client.close();
     }
