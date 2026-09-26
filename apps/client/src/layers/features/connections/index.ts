@@ -1,6 +1,7 @@
 /**
  * Connections feature — the working parts of the /connections surface: the
- * service grid and connect flow, the accounts list, standing per-agent
+ * service grid and connect flow, the shared "who can use it" access card
+ * (page and chat), the accounts list, standing per-agent
  * accounts, the claim feed for chats nobody answers, and the rules that apply
  * when a message arrives. Also the session view's quiet accounts group.
  *
@@ -17,5 +18,11 @@ export { ClaimCard } from './ui/ClaimCard';
 export { MessagePolicyCard } from './ui/MessagePolicyCard';
 export { SessionConnectorsGroup } from './ui/SessionConnectorsGroup';
 export { ConnectionAccessDialog } from './ui/ConnectionAccessDialog';
+export { ConnectionAccessCard } from './ui/ConnectionAccessCard';
+export type {
+  ConnectionAccessCardProps,
+  PageAccessCardProps,
+  AgentAccessCardProps,
+} from './ui/ConnectionAccessCard';
 export { ManagementReviews } from './ui/ManagementReviews';
 export { AgentRequests } from './ui/AgentRequests';
