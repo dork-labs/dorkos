@@ -6,7 +6,7 @@ status: specified
 tracker: DOR-2379, DOR-2380, DOR-2381, DOR-2382, DOR-2383, DOR-2384, DOR-2385, DOR-2386
 project: Flow CLI & Account Fleet
 ideation: dork-labs/marketplace specs/flow-fleet/01-ideation.md (§4, §6) and 04-design-decisions.md
-contracts: dork-labs/marketplace specs/flow-cli-core/02-specification.md §1 (revision 4)
+contracts: dork-labs/marketplace specs/flow-cli-core/02-specification.md §1 (revision 5)
 ---
 
 # Claude account fleet: per-account usage, limits, and launching work on a chosen account
@@ -38,7 +38,7 @@ Operator direction, 2026-09-26:
 | Choosing an account automatically; handoff                            | **flow**                        | flow's dispatcher                                                                          |
 | Choosing an account by hand ("continue on another account", D10)      | DorkOS core UI (S5)             | the existing HTTP launch hint                                                              |
 
-**The contracts are the marketplace spec `flow-cli-core` §1, revision 4.** This spec adopts them exactly: field names, window keys, source names, merge and lock rules. Where this spec restates a rule, the contract wins; a mismatch found later is fixed here, never in code. DorkOS core **never reads `fleet.json`**. Where core must respect a routing rule (an agent or a relay message naming an account), it asks the launch guards the Flow extension registers (X3); with no guard registered, an agent's or a relay message's account pick is refused.
+**The contracts are the marketplace spec `flow-cli-core` §1, revision 5.** This spec adopts them exactly: field names, window keys, source names, merge and lock rules. Where this spec restates a rule, the contract wins; a mismatch found later is fixed here, never in code. DorkOS core **never reads `fleet.json`**. Where core must respect a routing rule (an agent or a relay message naming an account), it asks the launch guards the Flow extension registers (X3); with no guard registered, an agent's or a relay message's account pick is refused.
 
 ## 3. Goals and non-goals
 
@@ -158,7 +158,7 @@ New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay un
 ### D1. Account color, and the identity rules the contract asks of DorkOS (DOR-2379, core part)
 
 - **Rows keep what they do not know.** `ClaudeCodeAccountSchema` becomes a `z.looseObject` (`applyConfigPatch` re-parses the whole config, and a plain object strips per-row fields the contract says writers preserve). That alone is not enough: the client builds its PATCH from `GET /api/config`, which never shows unknown fields or rows skipped on read, and a PATCH replaces the array. So `applyConfigPatch`, for a patch naming `runtimes.claudeCode.accounts`, **merges each patched row onto the stored row with the same id** (a field the patch sets wins, `color: null` included; a field it leaves out survives) and **keeps every stored row the client could not see** (rows skipped by the read rules below). Removal stays by omission, only for rows the client was shown. The client's `toWritableAccounts` also sends each row's `color` (`null` when `colorIsDefault`), so an add or remove never resets a color. A test stores a row with an unknown field plus a skipped hand-edited row, PATCHes an add from the client's view, and asserts both survive.
-- **Read rules** (contract §1.1a): `readClaudeAccountSettings` skips a row whose `path` is missing or not absolute, keeps the first of two rows sharing an id, and reads a bad `color` as `null`, each with one warning. The write path keeps its existing duplicate-id refusal.
+- **Read rules** (contract §1.1a): `readClaudeAccountSettings` first mints missing ids over EVERY object row in array order (existing ids reserved first), exactly as `backfillMissingAccountIds` already does, and only then skips a row whose `path` is missing or not absolute (skipping first would shift later ids, so flow and DorkOS would write different ledger files; contract revision 5), keeps the first of two rows sharing an id, and reads a bad `color` as `null`, each with one warning. The write path keeps its existing duplicate-id refusal.
 - Schema per §5.1. `readClaudeAccountSettings` returns `color: resolveAccountColor(row.color, index)`; `describeClaudeCodeAccounts` puts the resolved color and a `colorIsDefault: boolean` on each `ServerConfig.claudeCode.accounts[]` row (synthesized unregistered rows get the next default).
 - **No config migration.** An absent `color` already means `null` means "default by position", so there is nothing to seed, and seeding would freeze S5's palette into every config file (§12). The adding-config-fields checklist still applies: `config-disclosure.ts` gets `'runtimes.claudeCode.accounts[].color': 'expose'`; the write policy keeps `accounts` operator-only (verify, and pin it with a test); `contributing/configuration.md` and `docs/getting-started/configuration.mdx` gain the row.
 - **Id pattern on write** (contract "What DorkOS must do"): a `PATCH /api/config` that ADDS a registry row, or changes a row's id, must use an id matching `ACCOUNT_ID_PATTERN`, else `400` naming the row. Existing rows are never rejected for an old id (that would block every settings write); such a row simply gets no ledger file, logged once.
@@ -351,7 +351,7 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 
 ## 12. Decisions and assumptions (autonomy grant; all reversible)
 
-- **Contracts adopted as written** (marketplace `flow-cli-core` §1, revision 4). Differences from S4's earlier draft (token colors, a top-level `limit`, `schemaVersion`, dash window keys, a `probe` source, a session_metadata tracker column) were dropped in favor of the contract.
+- **Contracts adopted as written** (marketplace `flow-cli-core` §1, revision 5). Differences from S4's earlier draft (token colors, a top-level `limit`, `schemaVersion`, dash window keys, a `probe` source, a session_metadata tracker column) were dropped in favor of the contract.
 - **DOR-2379 core part is `color` only;** the policy fields and their UI are flow's (operator, 2026-09-26).
 - **No config migration for `color`.** The issue asked for one, but absent already means default-by-position, and a seeding migration would freeze a palette the UI track has not chosen into every config file. The adding-config-fields steps that do apply (disclosure, docs, tests) are in the task.
 - **Store keyed by config dir; a file only for a registered, pattern-valid id.** An unregistered root has no id to name a file.
@@ -366,7 +366,7 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 - **No guard means no agent or relay account pick** (review): the contract spends nothing until the operator opts in, and core has no policy of its own. **Guards never apply to a person's pick,** and a schedule's account is an approved choice, so it is not guarded either.
 - **`limit` only when the turn stopped:** a `rejected` window covered by extra usage is recorded in the ledger but does not mark the session.
 - **The probe runs on demand only,** never at boot (N accounts would mean N processes on every start).
-- **Conformance by vendoring at a pinned commit,** not a git submodule or a package: the fixture is small, and a pin makes a contract change a deliberate DorkOS diff. The vendoring task waits for S1 to land the folder.
+- **Conformance by vendoring at a pinned commit,** not a git submodule or a package: the fixture is small, and a pin makes a contract change a deliberate DorkOS diff. The fixture folder is merged on marketplace main (PR #57).
 
 ## 13. Draft ADRs seeded
 
