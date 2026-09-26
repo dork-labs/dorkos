@@ -118,6 +118,10 @@ describe('connector-providers router', () => {
       expect(typeof provider.disclosure).toBe('string');
       expect(provider.disclosure.length).toBeGreaterThan(0);
     }
+    expect(res.body.appConnections).toEqual({
+      ways: [],
+      newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+    });
   });
 
   it('PUT credential stores the key and registers the provider live (no restart)', async () => {
@@ -136,6 +140,11 @@ describe('connector-providers router', () => {
     const list = await request(fixtureServer).get('/api/connectors/providers');
     const composio = list.body.providers.find((p: { type: string }) => p.type === 'composio');
     expect(composio).toMatchObject({ configured: true, registered: true });
+    // …and so does the way new apps use: the key just saved, used without asking.
+    expect(list.body.appConnections.newApps).toMatchObject({
+      status: 'ready',
+      way: { kind: 'own_key', type: 'composio', signInThrough: 'Composio' },
+    });
   });
 
   it('blocks provider reads and credential writes when the canonical migration failed', async () => {

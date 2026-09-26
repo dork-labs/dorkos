@@ -21,7 +21,7 @@
  * - Refusing agents outright reddens "a member agent may read".
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import request from '@dorkos/test-utils/supertest';
@@ -64,9 +64,14 @@ vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
 
+import express from 'express';
 import { createApp, finalizeApp } from '../../app.js';
+import roomsRouter from '../rooms.js';
 import {
   createRoomSubsystem,
+  getRoomFileEditor,
+  resolveOperatorAuthor,
+  setRoomAttachmentStores,
   setRoomFileEditor,
   setRoomFilesService,
   setRoomRepoService,
@@ -86,10 +91,27 @@ import {
   resetAgentIdentityService,
 } from '../../services/core/agent-identity/agent-identity-service.js';
 import { runGit } from '../../services/rooms/repo/room-repo-git.js';
+import { LocalRoomAttachmentStore } from '../../services/rooms/attachments/local-room-attachment-store.js';
+import { AttachmentRowStore } from '../../services/rooms/attachments/attachment-row-store.js';
 
 const app = createApp();
 finalizeApp(app);
 const testServer = listeningServer(app);
+
+/**
+ * The rooms router behind a stand-in for `sessionGate`: it sets
+ * `res.locals.user` exactly as the gate does for a signed-in request, which is
+ * the one thing the file routes read to decide whose name a commit carries.
+ */
+let signedInUserId = '';
+const signedInApp = express();
+signedInApp.use(express.json());
+signedInApp.use((_req, res, next) => {
+  res.locals.user = { userId: signedInUserId };
+  next();
+});
+signedInApp.use('/api/rooms', roomsRouter);
+const signedInServer = listeningServer(signedInApp);
 
 const ANA_PATH = '/agents/ana';
 
@@ -115,6 +137,9 @@ describe('room files routes', () => {
   let dorkHome: string;
   let store: RoomRepoStore;
   let maxFileBytes: number;
+  let attachmentRows: AttachmentRowStore;
+  let roomSubsystem: ReturnType<typeof createRoomSubsystem>;
+  let attachmentStore: LocalRoomAttachmentStore;
 
   beforeEach(async () => {
     fakeRuntime = new FakeAgentRuntime();
@@ -125,6 +150,7 @@ describe('room files routes', () => {
     maxFileBytes = ROOM_REPO_CAP_DEFAULTS.maxFileBytes;
     registerAgent(db, 'ana', ANA_PATH);
     const rooms = createRoomSubsystem({ db });
+    roomSubsystem = rooms;
     setRoomService(rooms.service);
     setReadCursorService(rooms.readCursors);
     store = new RoomRepoStore(db, dorkHome);
@@ -160,9 +186,15 @@ describe('room files routes', () => {
         assertCanWriteFiles: (roomId, authorId) =>
           rooms.service.assertCanWriteFiles(roomId, authorId),
         operatorGitName: () => 'Dorian',
+        personName: () => null,
+        announce: (roomId, input) => rooms.service.postFileChangeEvent(roomId, input),
+        uploadStagingRoot: () => path.join(dorkHome, '.temp', 'room-uploads'),
         files,
       })
     );
+    attachmentRows = new AttachmentRowStore(db);
+    attachmentStore = new LocalRoomAttachmentStore(dorkHome);
+    setRoomAttachmentStores({ attachments: attachmentStore, rows: attachmentRows });
   });
 
   afterEach(async () => {
@@ -565,6 +597,390 @@ describe('room files routes', () => {
         .put(`/api/rooms/${roomId}/files/content`)
         .send({ path: 'ROOM.md', baseCommit: '--upload-pack=touch /tmp/pwned', text: 'x\n' });
       expect(malformed.status).toBe(400);
+    });
+  });
+  describe('people’s file operations (agent-home-desk §7.1)', () => {
+    /** What `main` is at, as the explorer would read it. */
+    async function headOf(roomId: string): Promise<string> {
+      const res = await request(testServer).get(`/api/rooms/${roomId}/files`);
+      expect(res.status).toBe(200);
+      return res.body.commit as string;
+    }
+
+    /** Every staging folder still on disk. */
+    async function stagingLeft(): Promise<string[]> {
+      try {
+        return await readdir(path.join(dorkHome, '.temp', 'room-uploads'));
+      } catch {
+        return [];
+      }
+    }
+
+    /** Every file-change entry in the room, oldest first. */
+    async function fileChanges(
+      roomId: string
+    ): Promise<{ text: string; mentions: unknown[]; fileChange: { kind: string } }[]> {
+      const log = await request(testServer).get(`/api/rooms/${roomId}/entries`);
+      return (
+        log.body.entries as {
+          mentions: unknown[];
+          body: { text: string; fileChange?: { kind: string } };
+        }[]
+      )
+        .filter((entry) => entry.body.fileChange !== undefined)
+        .map((entry) => ({
+          text: entry.body.text,
+          mentions: entry.mentions,
+          fileChange: entry.body.fileChange!,
+        }));
+    }
+
+    function git(roomId: string, args: string[]): Promise<string> {
+      return runGit(args, store.repoPath(roomId), store.homeDir(roomId));
+    }
+
+    it('uploads as one commit by the person, posts one quiet entry, and leaves no staging behind', async () => {
+      const roomId = await roomWithFiles();
+      const base = await headOf(roomId);
+      // Disk storage, never memory: the editor is handed files staged under
+      // the room-uploads folder, not buffers.
+      const upload = vi.spyOn(getRoomFileEditor(), 'upload');
+
+      const res = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/upload`)
+        .field('dir', 'designs')
+        .field('baseCommit', base)
+        .attach('files', Buffer.from([0x89, 0x50, 0x00]), { filename: 'résumé.png' })
+        .attach('files', Buffer.from('notes\n'), { filename: 'notes.md' });
+
+      expect(res.status).toBe(200);
+      const staged = upload.mock.calls[0]?.[2].files.map((file) => file.content);
+      expect(staged).toHaveLength(2);
+      for (const content of staged ?? []) {
+        expect(Buffer.isBuffer(content)).toBe(false);
+        expect((content as { file: string }).file).toContain(
+          path.join(dorkHome, '.temp', 'room-uploads')
+        );
+      }
+      expect(res.body.paths).toEqual(['designs/notes.md', 'designs/résumé.png']);
+      expect(await git(roomId, ['log', '--format=%an <%ae>%n%s', '-n', '1'])).toBe(
+        'Dorian <operator@dorkos.local>\nUpload 2 files to designs/'
+      );
+      expect(await stagingLeft()).toEqual([]);
+      expect(await fileChanges(roomId)).toEqual([
+        {
+          text: 'Dorian uploaded 2 files to `designs/`',
+          mentions: [],
+          fileChange: expect.objectContaining({ kind: 'upload', pathCount: 2 }),
+        },
+      ]);
+    });
+
+    it('removes the staging folder after a refusal too', async () => {
+      const roomId = await roomWithFiles();
+
+      const res = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/upload`)
+        .field('dir', 'docs')
+        .field('baseCommit', await headOf(roomId))
+        .attach('files', Buffer.from('mine\n'), { filename: 'plan.md' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ROOM_FILE_EXISTS');
+      expect(res.body.error).toContain('docs/plan.md');
+      expect(await stagingLeft()).toEqual([]);
+    });
+
+    it('refuses a file over the room’s own cap while reading it, and leaves no staging behind', async () => {
+      const roomId = await roomWithFiles();
+      const sidecar = (await store.readSidecar(roomId))!;
+      await store.write({ ...sidecar, caps: { ...sidecar.caps, maxFileBytes: 16 } });
+
+      const res = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/upload`)
+        .attach('files', Buffer.alloc(64, 1), { filename: 'big.bin' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('FILE_TOO_LARGE');
+      expect(await stagingLeft()).toEqual([]);
+    });
+
+    it('refuses more than twenty files', async () => {
+      const roomId = await roomWithFiles();
+      let req = request(testServer).post(`/api/rooms/${roomId}/files/upload`);
+      for (let i = 0; i < 21; i++) {
+        req = req.attach('files', Buffer.from('x'), { filename: `f${i}.md` });
+      }
+
+      const res = await req;
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('ROOM_UPLOAD_TOO_MANY_FILES');
+      expect(await stagingLeft()).toEqual([]);
+    });
+
+    it('refuses a member agent every operation, before an upload’s bytes are read', async () => {
+      const roomId = await roomWithFiles();
+      const token = await anaToken();
+      const base = await headOf(roomId);
+
+      const answers = await Promise.all([
+        request(testServer)
+          .post(`/api/rooms/${roomId}/files/upload`)
+          .set('X-DorkOS-Agent', token)
+          .attach('files', Buffer.from('x'), { filename: 'a.md' }),
+        request(testServer)
+          .post(`/api/rooms/${roomId}/files/move`)
+          .set('X-DorkOS-Agent', token)
+          .send({ from: 'ROOM.md', to: 'R.md', baseCommit: base }),
+        request(testServer)
+          .post(`/api/rooms/${roomId}/files/delete`)
+          .set('X-DorkOS-Agent', token)
+          .send({ path: 'ROOM.md', baseCommit: base }),
+        request(testServer)
+          .post(`/api/rooms/${roomId}/files/from-attachment`)
+          .set('X-DorkOS-Agent', token)
+          .send({ attachmentId: '01NOPE', dir: '', baseCommit: base }),
+      ]);
+
+      for (const res of answers) {
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('PEOPLE_ONLY');
+      }
+      expect(await headOf(roomId)).toBe(base);
+      expect(await stagingLeft()).toEqual([]);
+    });
+
+    it('renames and deletes, one commit each, with the pinned subjects', async () => {
+      const roomId = await roomWithFiles();
+
+      const moved = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/move`)
+        .send({ from: 'docs', to: 'archive/docs', baseCommit: await headOf(roomId) });
+      expect(moved.status).toBe(200);
+      expect(moved.body.paths).toEqual(['archive/docs/plan.md']);
+      expect(moved.body.lastCommit).toMatchObject({ subject: 'Rename docs/ to archive/docs/' });
+
+      const deleted = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/delete`)
+        .send({ path: 'archive', baseCommit: moved.body.commit });
+      expect(deleted.status).toBe(200);
+      expect(deleted.body.lastCommit).toMatchObject({ subject: 'Delete archive/' });
+
+      expect((await fileChanges(roomId)).map((entry) => entry.text)).toEqual([
+        'Dorian renamed `docs/` to `archive/docs/`',
+        'Dorian deleted `archive/`',
+      ]);
+    });
+
+    it('answers a stale move with the same FILE_CHANGED payload a save gets', async () => {
+      const roomId = await roomWithFiles();
+      const opened = await headOf(roomId);
+      const theirs = await request(testServer)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'docs/plan.md', baseCommit: opened, text: '# Plan\n\nTheirs.\n' });
+      expect(theirs.status).toBe(200);
+
+      const res = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/move`)
+        .send({ from: 'docs', to: 'old-docs', baseCommit: opened });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('FILE_CHANGED');
+      expect(res.body.conflict).toMatchObject({ path: 'docs/plan.md', commit: theirs.body.commit });
+    });
+
+    it('the existing save now posts an entry too', async () => {
+      const roomId = await roomWithFiles();
+
+      const saved = await request(testServer)
+        .put(`/api/rooms/${roomId}/files/content`)
+        .send({ path: 'ROOM.md', baseCommit: await headOf(roomId), text: '# New\n' });
+
+      expect(saved.status).toBe(200);
+      expect(await fileChanges(roomId)).toEqual([
+        {
+          text: 'Dorian edited `ROOM.md`',
+          mentions: [],
+          fileChange: expect.objectContaining({ kind: 'edit', paths: ['ROOM.md'] }),
+        },
+      ]);
+    });
+
+    describe('one name, two Unicode spellings (found in review, on APFS)', () => {
+      const NFC = 'caf\u00e9.md';
+      const NFD = 'cafe\u0301.md';
+
+      /** A room holding the person's own NFC `café.md`. */
+      async function roomWithCafe(): Promise<string> {
+        const roomId = await roomWithFiles();
+        const saved = await request(testServer)
+          .put(`/api/rooms/${roomId}/files/content`)
+          .send({ path: NFC, baseCommit: null, text: 'mine\n' });
+        expect(saved.status).toBe(200);
+        return roomId;
+      }
+
+      async function cafe(roomId: string): Promise<string> {
+        const res = await request(testServer)
+          .get(`/api/rooms/${roomId}/files/content`)
+          .query({ path: NFC });
+        return res.body.body.text as string;
+      }
+
+      it('an NFD upload with no replace is refused ROOM_FILE_EXISTS', async () => {
+        const roomId = await roomWithCafe();
+        const res = await request(testServer)
+          .post(`/api/rooms/${roomId}/files/upload`)
+          .field('baseCommit', await headOf(roomId))
+          .attach('files', Buffer.from('overwritten\n'), { filename: NFD });
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('ROOM_FILE_EXISTS');
+        expect(await cafe(roomId)).toBe('mine\n');
+      });
+
+      it('an NFD save with no base commit is the FILE_CHANGED choice, not an overwrite', async () => {
+        const roomId = await roomWithCafe();
+        const res = await request(testServer)
+          .put(`/api/rooms/${roomId}/files/content`)
+          .send({ path: NFD, baseCommit: null, text: 'overwritten\n' });
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('FILE_CHANGED');
+        expect(res.body.conflict.path).toBe(NFC);
+        expect(await cafe(roomId)).toBe('mine\n');
+      });
+
+      it('an upload of NFD café beside a .git stream name is refused whole, and café survives', async () => {
+        const roomId = await roomWithCafe();
+        const base = await headOf(roomId);
+        const res = await request(testServer)
+          .post(`/api/rooms/${roomId}/files/upload`)
+          .field('baseCommit', base)
+          .field('replace', JSON.stringify([NFD]))
+          .attach('files', Buffer.from('overwritten\n'), { filename: NFD })
+          .attach('files', Buffer.from('x'), { filename: '.git::$INDEX_ALLOCATION' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('ROOM_FILE_PATH_INVALID');
+        expect(await headOf(roomId)).toBe(base);
+        expect(await git(roomId, ['status', '--porcelain=v1'])).toBe('');
+        expect(await cafe(roomId)).toBe('mine\n');
+        // And the room is not stuck: the next save goes in.
+        const next = await request(testServer)
+          .put(`/api/rooms/${roomId}/files/content`)
+          .send({ path: NFC, baseCommit: base, text: 'still mine\n' });
+        expect(next.status).toBe(200);
+      });
+    });
+
+    it('refuses a move or a delete that does not say what the person saw', async () => {
+      const roomId = await roomWithFiles();
+      const base = await headOf(roomId);
+
+      const moved = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/move`)
+        .send({ from: 'docs', to: 'old-docs', baseCommit: null });
+      const deleted = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/delete`)
+        .send({ path: 'docs', baseCommit: null });
+
+      expect(moved.status).toBe(400);
+      expect(deleted.status).toBe(400);
+      expect(await headOf(roomId)).toBe(base);
+    });
+
+    describe('with login on', () => {
+      it('authors each person’s commit as that person — two people, two authors', async () => {
+        const roomId = await roomWithFiles();
+        const owner = resolveOperatorAuthor(roomSubsystem.authors).id;
+        const people = ['user-one', 'user-two'].map((userId) => {
+          const author = roomSubsystem.authors.human(userId);
+          roomSubsystem.service.addMember(roomId, owner, { authorId: author.id });
+          return { userId, authorId: author.id };
+        });
+
+        for (const [index, person] of people.entries()) {
+          signedInUserId = person.userId;
+          const res = await request(signedInServer)
+            .put(`/api/rooms/${roomId}/files/content`)
+            .send({ path: `by-${index}.md`, baseCommit: null, text: `${index}\n` });
+          expect(res.status).toBe(200);
+        }
+
+        expect(await git(roomId, ['log', '--format=%ae', '-n', '2'])).toBe(
+          people
+            .map((person) => `person-${person.authorId}@dorkos.local`)
+            .reverse()
+            .join('\n')
+        );
+      });
+    });
+
+    describe('from the chat', () => {
+      /** An attachment in `roomId`, posted on a message there unless `bound` is false. */
+      async function attachment(roomId: string, bound = true): Promise<string> {
+        const id = `01ATT${Math.random().toString(36).slice(2, 12).toUpperCase().padEnd(21, 'A')}`;
+        const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]);
+        const { url } = await attachmentStore.put(roomId, id, 'png', bytes);
+        attachmentRows.create(
+          {
+            roomId,
+            id,
+            authorId: resolveOperatorAuthor(roomSubsystem.authors).id,
+            name: 'screenshot.png',
+            extension: 'png',
+            mimeType: 'image/png',
+            size: bytes.length,
+            preview: null,
+            url,
+          },
+          new Date().toISOString()
+        );
+        if (bound) {
+          const posted = await request(testServer)
+            .post(`/api/rooms/${roomId}/entries`)
+            .send({ text: 'look', attachmentIds: [id] });
+          expect(posted.status).toBe(202);
+        }
+        return id;
+      }
+
+      it('keeps a posted attachment as one of the room’s files', async () => {
+        const roomId = await roomWithFiles();
+        const id = await attachment(roomId);
+
+        const res = await request(testServer)
+          .post(`/api/rooms/${roomId}/files/from-attachment`)
+          .send({ attachmentId: id, dir: 'designs', baseCommit: await headOf(roomId) });
+
+        expect(res.status).toBe(200);
+        expect(res.body.paths).toEqual(['designs/screenshot.png']);
+        expect(res.body.lastCommit).toMatchObject({
+          subject: 'Add designs/screenshot.png from the chat',
+        });
+        expect((await fileChanges(roomId)).map((entry) => entry.text)).toEqual([
+          'Dorian saved `screenshot.png` from the chat to `designs/`',
+        ]);
+      });
+
+      it('answers 404 for another room’s attachment and for one never posted', async () => {
+        const roomId = await roomWithFiles();
+        const elsewhere = await channel('Elsewhere');
+        const foreign = await attachment(elsewhere);
+        const unposted = await attachment(roomId, false);
+        const base = await headOf(roomId);
+
+        for (const attachmentId of [foreign, unposted, '01NOSUCHATTACHMENT']) {
+          const res = await request(testServer)
+            .post(`/api/rooms/${roomId}/files/from-attachment`)
+            .send({ attachmentId, dir: '', baseCommit: base });
+          expect(res.status).toBe(404);
+          expect(res.body.code).toBe('ATTACHMENT_NOT_FOUND');
+        }
+        expect(await headOf(roomId)).toBe(base);
+      });
     });
   });
 });

@@ -164,6 +164,7 @@ const MECHANISM_ENUMS: Record<string, string> = {
   CustomAddressCapabilitySchema: 'whether the mechanism is available, not its price',
   SupportCapabilitySchema: 'which channel, not which subscription',
   CostBasisSchema: 'where a price came from, not what the price is',
+  AmountKindSchema: 'whether an amount counts money or credits, not what either is worth',
   UsageStateSchema: 'how a credit or subscription position reads at a glance',
   UsageGroupBySchema: 'how to group a query',
   InferenceRefusalReasonSchema: 'conditions a caller can act on',
@@ -468,6 +469,20 @@ describe('catalog blindness: the emitted declarations', () => {
     // at all — this package has no legitimate use for one (every enumeration it
     // does publish comes from a Zod schema, which MECHANISM_ENUMS vouches for),
     // so a blanket refusal costs nothing and cannot be dodged by naming.
+    //
+    // One exception, named with its reason the way MECHANISM_ENUMS names each
+    // enum: the display formatter is deliberately Zod-free, so the rounding
+    // kinds it takes cannot come from a schema. They are rounding rules, not a
+    // catalog, and a new alias still fails here until somebody writes it down.
+    const MECHANISM_ALIASES: Record<string, string> = {
+      'display.d.ts: CreditKind':
+        'how a credit figure is rounded for display: position, charge or rate',
+      'display.d.ts: AmountDisplayKind':
+        'how any figure is rounded for display: the credit kinds, money or a cap',
+    };
+    for (const [key, reason] of Object.entries(MECHANISM_ALIASES)) {
+      expect(reason.length, `${key} needs a real reason, not a placeholder`).toBeGreaterThan(15);
+    }
     const offenders: string[] = [];
     const alias = /^\s*(export\s+)?(declare\s+)?type\s+([A-Za-z_$][\w$]*)[^=]*=\s*(.+?);?\s*$/;
     for (const [file, text] of emitted) {
@@ -475,7 +490,17 @@ describe('catalog blindness: the emitted declarations', () => {
         const match = alias.exec(line);
         if (!match) continue;
         const [, , , name, body] = match;
-        if (/^(["'][^"']*["']\s*\|\s*)+["'][^"']*["']$/.test(body.trim())) {
+        // A union of string literals, or of literals and named types (which
+        // would otherwise let a literal ride in beside a named alias).
+        const members = body.trim().split(/\s*\|\s*/);
+        const literal = (member: string) => /^["'][^"']*["']$/.test(member);
+        const named = (member: string) => /^[A-Za-z_$][\w$.]*$/.test(member);
+        if (
+          members.length > 1 &&
+          members.some(literal) &&
+          members.every((member) => literal(member) || named(member))
+        ) {
+          if (`${path.basename(file)}: ${name}` in MECHANISM_ALIASES) continue;
           offenders.push(`${path.basename(file)}: type ${name} = ${body.trim()}`);
         }
       }

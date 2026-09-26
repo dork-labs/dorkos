@@ -536,7 +536,10 @@ describe('ConnectorAgentRequestService', () => {
 
       expect(message).toContain('DorkOS has no account services set up yet');
       expect(message).toContain('Connections');
-      expect(message).toContain('Accounts');
+      // The page's Accounts card that linked a DorkOS account is gone; the first
+      // connect is where a way to reach apps gets set up.
+      expect(message).not.toContain('Accounts');
+      expect(message).toContain('the first app they connect also sets up how DorkOS reaches apps');
       expect(message).toContain('command-line tool in a shell does not give DorkOS access');
       expect(message).not.toContain('connector_list_toolkits');
     });
@@ -590,7 +593,12 @@ describe('ConnectorAgentRequestService', () => {
           ...directory(COMPOSIO),
           services: [
             ...directory(COMPOSIO).services,
-            { serviceSlug: 'telegram', displayName: 'Telegram', requestable: false },
+            {
+              serviceSlug: 'telegram',
+              displayName: 'Telegram',
+              requestable: false,
+              unavailableBecause: 'messaging_only',
+            },
           ],
         }),
         'telegram'
@@ -598,6 +606,67 @@ describe('ConnectorAgentRequestService', () => {
 
       expect(message).toContain('Telegram connects through Messaging');
       expect(message).not.toContain('connector_list_toolkits');
+    });
+
+    /** The real catalog read, with nothing set up to reach apps. */
+    function bareDirectory(registry?: ConnectorRegistry) {
+      const catalogDb = createDb(':memory:');
+      runMigrations(catalogDb);
+      return new ConnectorOperatorQueryService({
+        db: catalogDb,
+        registry:
+          registry ??
+          new ConnectorRegistry({
+            db: catalogDb,
+            configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+          }),
+        relay: {
+          getManifest: (type) => (type === 'telegram' ? { displayName: 'Telegram' } : undefined),
+          getCatalog: () => [{ manifest: { type: 'telegram', displayName: 'Telegram' } }],
+        },
+        sessions: { resolveSessionAgent: () => undefined },
+        agentOwnership: { ownsAgent: () => false },
+      });
+    }
+
+    it('asks the person to connect a popular app no way reaches yet, not to use Messaging', async () => {
+      const message = await refusal(service({ services: bareDirectory() }), 'gmail');
+
+      expect(message).toContain('DorkOS cannot reach Gmail yet');
+      expect(message).toContain('connect Gmail');
+      expect(message).toContain('sets up how DorkOS reaches apps');
+      expect(message).not.toContain('Messaging');
+      // A chat app from the same real read still goes to Messaging.
+      expect(await refusal(service({ services: bareDirectory() }), 'telegram')).toContain(
+        'Telegram connects through Messaging'
+      );
+    });
+
+    it('reads a failing way as a retry even for a listed popular app', async () => {
+      const failingDb = createDb(':memory:');
+      runMigrations(failingDb);
+      const registry = new ConnectorRegistry({
+        db: failingDb,
+        configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
+      });
+      const failing = new FakeConnectorProvider({
+        instanceId: ConnectorProviderInstanceIdSchema.parse('provider-failing'),
+        type: 'composio',
+      });
+      Object.defineProperty(failing, 'listToolkitPage', {
+        value: () => Promise.reject(new Error('Composio is down')),
+      });
+      registry.register(failing);
+
+      const message = await refusal(service({ services: bareDirectory(registry) }), 'gmail');
+
+      expect(message).toContain('Try again');
+      expect(message).not.toContain('Messaging');
+      expect(message).not.toContain('cannot reach Gmail');
+      // A chat-only app does not depend on the catalog: same outage, Messaging guidance.
+      const telegram = await refusal(service({ services: bareDirectory(registry) }), 'telegram');
+      expect(telegram).toContain('Telegram connects through Messaging');
+      expect(telegram).not.toContain('Try again');
     });
   });
 

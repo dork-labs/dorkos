@@ -1,0 +1,981 @@
+{
+  "BalanceSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "allowance": {
+        "type": "object",
+        "properties": {
+          "grantedMicro": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+          },
+          "remainingMicro": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+          },
+          "resetsAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "An ISO-8601 instant with an explicit UTC offset."
+          }
+        },
+        "required": ["grantedMicro", "remainingMicro", "resetsAt"]
+      },
+      "purchased": {
+        "type": "object",
+        "properties": {
+          "remainingMicro": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+          },
+          "holds": {
+            "description": "How many first-purchase holds are in force. Absent means the server did not say; zero means none.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["remainingMicro"]
+      },
+      "pendingMicro": {
+        "description": "Credit the caller has paid for that is not spendable yet, because a hold is still in force. Absent means the server did not say.",
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$"
+      },
+      "heldMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "Reserved against turns currently running."
+      },
+      "owedMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "Debt from a turn that overran its reservation. May be \"0\"; when it is not, show it."
+      },
+      "autoReload": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "ceilingMicro": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^-?(0|[1-9][0-9]*)$",
+                "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["enabled", "ceilingMicro"]
+      }
+    },
+    "required": ["allowance", "purchased", "heldMicro", "owedMicro", "autoReload"],
+    "description": "The caller`s credit position. Every amount is an exact integer of micro-units carried as a string."
+  },
+  "CostBasisSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "string",
+    "enum": ["byo_key", "managed", "published_price"],
+    "description": "Where a usage line`s price came from: the caller`s own key, rates their organization configured, or the published DorkOS price."
+  },
+  "CustomAddressCapabilitySchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "string",
+    "enum": ["none", "addon", "included"],
+    "description": "Whether a custom address is unavailable, available as an add-on, or already included."
+  },
+  "EntitlementCommunityLimitsSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "maxCommunities": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "How many hosted communities the account may keep open. Null means no fixed count."
+      },
+      "maxMembersPerCommunity": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The most active members one hosted community may have. Null means no limit."
+      },
+      "maxStorageBytesPerCommunity": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The most bytes of files one hosted community may store. Null means communities draw on the account`s shared storage instead."
+      }
+    },
+    "required": ["maxCommunities", "maxMembersPerCommunity", "maxStorageBytesPerCommunity"],
+    "description": "The limits on the caller`s hosted communities. Counts and sizes only."
+  },
+  "EntitlementLimitsSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "personSeatsIncluded": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "agentSeatsIncluded": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "includedCreditsMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+      },
+      "cloudHours": {
+        "type": "number",
+        "minimum": 0
+      },
+      "storageGb": {
+        "type": "number",
+        "minimum": 0
+      },
+      "remoteAccess": {
+        "type": "string",
+        "enum": ["byo", "on_demand", "always_available"],
+        "description": "How remote access works for the caller: their own tunnel, opened on demand, or always up."
+      },
+      "alwaysAvailableInstances": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "customAddress": {
+        "type": "string",
+        "enum": ["none", "addon", "included"],
+        "description": "Whether a custom address is unavailable, available as an add-on, or already included."
+      },
+      "managedConnectionActions": {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Null means the allowance is counted per seat rather than for the organization as a whole."
+      },
+      "support": {
+        "type": "string",
+        "enum": ["community", "priority"],
+        "description": "Which support channel the caller reaches."
+      },
+      "emailAddressPerSeat": {
+        "type": "boolean"
+      },
+      "communities": {
+        "description": "The limits on hosted communities. Absent means the service did not say.",
+        "type": "object",
+        "properties": {
+          "maxCommunities": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How many hosted communities the account may keep open. Null means no fixed count."
+          },
+          "maxMembersPerCommunity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The most active members one hosted community may have. Null means no limit."
+          },
+          "maxStorageBytesPerCommunity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The most bytes of files one hosted community may store. Null means communities draw on the account`s shared storage instead."
+          }
+        },
+        "required": ["maxCommunities", "maxMembersPerCommunity", "maxStorageBytesPerCommunity"]
+      }
+    },
+    "required": [
+      "personSeatsIncluded",
+      "agentSeatsIncluded",
+      "includedCreditsMicro",
+      "cloudHours",
+      "storageGb",
+      "remoteAccess",
+      "alwaysAvailableInstances",
+      "customAddress",
+      "managedConnectionActions",
+      "support",
+      "emailAddressPerSeat"
+    ],
+    "description": "The measurable limits of the caller`s entitlement. Interface behaviour is driven by these values, never by the plan identifier."
+  },
+  "EntitlementSeatsSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "total": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "assigned": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+      },
+      "byKind": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "agent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["person", "agent"]
+      }
+    },
+    "required": ["total", "assigned", "byKind"],
+    "description": "Seat counts for the caller`s organization. Counts only."
+  },
+  "EntitlementsSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "planId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "An opaque identifier for the caller`s current subscription. Never switch on this value."
+      },
+      "planDisplayName": {
+        "type": "string",
+        "description": "The server-supplied string to show a person."
+      },
+      "periodStart": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "periodEnd": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "limits": {
+        "type": "object",
+        "properties": {
+          "personSeatsIncluded": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "agentSeatsIncluded": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "includedCreditsMicro": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+          },
+          "cloudHours": {
+            "type": "number",
+            "minimum": 0
+          },
+          "storageGb": {
+            "type": "number",
+            "minimum": 0
+          },
+          "remoteAccess": {
+            "type": "string",
+            "enum": ["byo", "on_demand", "always_available"],
+            "description": "How remote access works for the caller: their own tunnel, opened on demand, or always up."
+          },
+          "alwaysAvailableInstances": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "customAddress": {
+            "type": "string",
+            "enum": ["none", "addon", "included"],
+            "description": "Whether a custom address is unavailable, available as an add-on, or already included."
+          },
+          "managedConnectionActions": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null means the allowance is counted per seat rather than for the organization as a whole."
+          },
+          "support": {
+            "type": "string",
+            "enum": ["community", "priority"],
+            "description": "Which support channel the caller reaches."
+          },
+          "emailAddressPerSeat": {
+            "type": "boolean"
+          },
+          "communities": {
+            "description": "The limits on hosted communities. Absent means the service did not say.",
+            "type": "object",
+            "properties": {
+              "maxCommunities": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "How many hosted communities the account may keep open. Null means no fixed count."
+              },
+              "maxMembersPerCommunity": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The most active members one hosted community may have. Null means no limit."
+              },
+              "maxStorageBytesPerCommunity": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The most bytes of files one hosted community may store. Null means communities draw on the account`s shared storage instead."
+              }
+            },
+            "required": ["maxCommunities", "maxMembersPerCommunity", "maxStorageBytesPerCommunity"]
+          }
+        },
+        "required": [
+          "personSeatsIncluded",
+          "agentSeatsIncluded",
+          "includedCreditsMicro",
+          "cloudHours",
+          "storageGb",
+          "remoteAccess",
+          "alwaysAvailableInstances",
+          "customAddress",
+          "managedConnectionActions",
+          "support",
+          "emailAddressPerSeat"
+        ],
+        "description": "The measurable limits of the caller`s entitlement. Interface behaviour is driven by these values, never by the plan identifier."
+      },
+      "used": {
+        "type": "object",
+        "properties": {
+          "personSeats": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "agentSeats": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "communities": {
+            "description": "How many hosted communities count against `limits.communities.maxCommunities`. Absent means the service did not say.",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["personSeats", "agentSeats"]
+      },
+      "seats": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "assigned": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "byKind": {
+            "type": "object",
+            "properties": {
+              "person": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "agent": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["person", "agent"]
+          }
+        },
+        "required": ["total", "assigned", "byKind"],
+        "description": "Seat counts for the caller`s organization. Counts only."
+      },
+      "canCreateSeat": {
+        "type": "boolean"
+      },
+      "canInviteMember": {
+        "type": "boolean"
+      },
+      "staleAt": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "When this snapshot should be refetched."
+      }
+    },
+    "required": [
+      "planId",
+      "planDisplayName",
+      "periodStart",
+      "periodEnd",
+      "limits",
+      "used",
+      "seats",
+      "canCreateSeat",
+      "canInviteMember",
+      "staleAt"
+    ],
+    "description": "What the caller is allowed to do. A caller with no subscription gets the free entitlement, never a 404."
+  },
+  "HostedPageRequestSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "skuId": {
+        "description": "An opaque identifier the server supplied earlier. Clients never construct or enumerate one.",
+        "type": "string",
+        "minLength": 1
+      },
+      "returnUrl": {
+        "description": "Where to send the person when the hosted page is done.",
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "description": "A request for a hosted checkout or billing-portal page."
+  },
+  "HostedPageResponseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "required": ["url"],
+    "description": "The hosted page to open. A runtime value; no origin is baked into this package."
+  },
+  "NudgeSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "trailing30Micro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+      },
+      "suggestedPlanId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "An opaque identifier. Never switch on this value."
+      },
+      "suggestedPlanDisplayName": {
+        "type": "string"
+      },
+      "suggestedPlanPriceMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+      },
+      "savingMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "The subtraction the server already did."
+      },
+      "computedAt": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "dismissible": {
+        "type": "boolean",
+        "const": true
+      }
+    },
+    "required": [
+      "trailing30Micro",
+      "suggestedPlanId",
+      "suggestedPlanDisplayName",
+      "suggestedPlanPriceMicro",
+      "savingMicro",
+      "computedAt",
+      "dismissible"
+    ],
+    "description": "One already-computed comparison. 404 from this route means \"no nudge\", not an error."
+  },
+  "PriceListEntrySchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "modelId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "An opaque model identifier. This list is the only place a price belongs."
+      },
+      "displayName": {
+        "type": "string"
+      },
+      "unit": {
+        "type": "string",
+        "description": "What the prices below are per, as a server-supplied string."
+      },
+      "inputMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+      },
+      "outputMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+      }
+    },
+    "required": ["modelId", "displayName", "unit", "inputMicro", "outputMicro"],
+    "description": "One entry of the published price list."
+  },
+  "PriceListResponseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "version": {
+        "type": "string",
+        "description": "An opaque version string for this list."
+      },
+      "effectiveFrom": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "entries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "modelId": {
+              "type": "string",
+              "minLength": 1,
+              "description": "An opaque model identifier. This list is the only place a price belongs."
+            },
+            "displayName": {
+              "type": "string"
+            },
+            "unit": {
+              "type": "string",
+              "description": "What the prices below are per, as a server-supplied string."
+            },
+            "inputMicro": {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)$",
+              "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+            },
+            "outputMicro": {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)$",
+              "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+            }
+          },
+          "required": ["modelId", "displayName", "unit", "inputMicro", "outputMicro"],
+          "description": "One entry of the published price list."
+        }
+      }
+    },
+    "required": ["version", "effectiveFrom", "entries"],
+    "description": "The published per-model price list. The only route in this contract that carries a price."
+  },
+  "RefundRequestSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "chargeId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The charge to refund, as an opaque identifier the server issued."
+      }
+    },
+    "required": ["chargeId"],
+    "description": "Withdrawn: DorkOS Cloud does not offer refunds through this API, and no release of the service answers this route. Kept only so imports from an earlier release keep compiling.",
+    "deprecated": true
+  },
+  "RefundResponseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "refundId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "An opaque server-issued identifier. Clients never parse or enumerate it."
+      },
+      "chargeId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "An opaque server-issued identifier. Clients never parse or enumerate it."
+      },
+      "refundedMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "How much came back, in micro-units."
+      },
+      "refundedAt": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      }
+    },
+    "required": ["refundId", "chargeId", "refundedMicro", "refundedAt"],
+    "description": "Withdrawn: DorkOS Cloud does not offer refunds through this API, and no release of the service answers this route. Kept only so imports from an earlier release keep compiling.",
+    "deprecated": true
+  },
+  "RemoteAccessCapabilitySchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "string",
+    "enum": ["byo", "on_demand", "always_available"],
+    "description": "How remote access works for the caller: their own tunnel, opened on demand, or always up."
+  },
+  "StatementQuerySchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "period": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The billing period to fetch, as the server labels it."
+      }
+    },
+    "required": ["period"],
+    "description": "Which billing period to fetch a statement for."
+  },
+  "StatementResponseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "period": {
+        "type": "string"
+      },
+      "downloadUrl": {
+        "type": "string",
+        "format": "uri"
+      },
+      "expiresAt": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "When the download link stops working."
+      }
+    },
+    "required": ["period", "downloadUrl", "expiresAt"],
+    "description": "A short-lived download link for the caller`s own itemised usage statement."
+  },
+  "SupportCapabilitySchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "string",
+    "enum": ["community", "priority"],
+    "description": "Which support channel the caller reaches."
+  },
+  "TopupRequestSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "amountMicro": {
+        "type": "string",
+        "pattern": "^[1-9][0-9]*$",
+        "description": "How much credit to buy, in micro-units."
+      },
+      "returnUrl": {
+        "description": "Where to send the person when the hosted page is done.",
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "required": ["amountMicro"],
+    "description": "A request to buy credit. Carries an amount and nothing about what an amount is worth."
+  },
+  "UsageGroupBySchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "string",
+    "enum": ["seat", "model", "day"],
+    "description": "How to group a usage query."
+  },
+  "UsageQuerySchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "from": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "to": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "groupBy": {
+        "type": "string",
+        "enum": ["seat", "model", "day"],
+        "description": "How to group a usage query."
+      }
+    },
+    "required": ["from", "to", "groupBy"],
+    "description": "The window and grouping for a usage query."
+  },
+  "UsageResponseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "from": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "to": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "description": "An ISO-8601 instant with an explicit UTC offset."
+      },
+      "groupBy": {
+        "type": "string",
+        "enum": ["seat", "model", "day"],
+        "description": "How to group a usage query."
+      },
+      "state": {
+        "type": "string",
+        "enum": ["inactive", "active", "grace", "exhausted", "unknown"],
+        "description": "How a credit or subscription position reads at a glance."
+      },
+      "rows": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "The grouping key: an opaque seat identifier, an opaque model identifier, or a date."
+            },
+            "displayName": {
+              "type": "string",
+              "description": "The server-supplied string to show for this row."
+            },
+            "units": {
+              "type": "number",
+              "minimum": 0,
+              "description": "How much was used, in the unit the row is measured in."
+            },
+            "unit": {
+              "type": "string",
+              "description": "What `units` counts, as a server-supplied string."
+            },
+            "listPriceMicro": {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)$",
+              "description": "The upstream list price for this row."
+            },
+            "dorkosPriceMicro": {
+              "type": "string",
+              "pattern": "^-?(0|[1-9][0-9]*)$",
+              "description": "What DorkOS charged for this row."
+            },
+            "costBasis": {
+              "type": "string",
+              "enum": ["byo_key", "managed", "published_price"],
+              "description": "Where a usage line`s price came from: the caller`s own key, rates their organization configured, or the published DorkOS price."
+            }
+          },
+          "required": [
+            "key",
+            "displayName",
+            "units",
+            "unit",
+            "listPriceMicro",
+            "dorkosPriceMicro",
+            "costBasis"
+          ],
+          "description": "One row of the caller`s own usage, projected. No supplier and no price-list version appear here."
+        }
+      },
+      "totals": {
+        "type": "object",
+        "properties": {
+          "listPriceMicro": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+          },
+          "dorkosPriceMicro": {
+            "type": "string",
+            "pattern": "^-?(0|[1-9][0-9]*)$",
+            "description": "An exact integer count of micro-units, carried as a string so no value goes through a JavaScript number."
+          }
+        },
+        "required": ["listPriceMicro", "dorkosPriceMicro"]
+      }
+    },
+    "required": ["from", "to", "groupBy", "state", "rows", "totals"],
+    "description": "The caller`s own usage for a window, grouped as asked."
+  },
+  "UsageRowSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "key": {
+        "type": "string",
+        "description": "The grouping key: an opaque seat identifier, an opaque model identifier, or a date."
+      },
+      "displayName": {
+        "type": "string",
+        "description": "The server-supplied string to show for this row."
+      },
+      "units": {
+        "type": "number",
+        "minimum": 0,
+        "description": "How much was used, in the unit the row is measured in."
+      },
+      "unit": {
+        "type": "string",
+        "description": "What `units` counts, as a server-supplied string."
+      },
+      "listPriceMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "The upstream list price for this row."
+      },
+      "dorkosPriceMicro": {
+        "type": "string",
+        "pattern": "^-?(0|[1-9][0-9]*)$",
+        "description": "What DorkOS charged for this row."
+      },
+      "costBasis": {
+        "type": "string",
+        "enum": ["byo_key", "managed", "published_price"],
+        "description": "Where a usage line`s price came from: the caller`s own key, rates their organization configured, or the published DorkOS price."
+      }
+    },
+    "required": [
+      "key",
+      "displayName",
+      "units",
+      "unit",
+      "listPriceMicro",
+      "dorkosPriceMicro",
+      "costBasis"
+    ],
+    "description": "One row of the caller`s own usage, projected. No supplier and no price-list version appear here."
+  },
+  "UsageStateSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "string",
+    "enum": ["inactive", "active", "grace", "exhausted", "unknown"],
+    "description": "How a credit or subscription position reads at a glance."
+  }
+}
