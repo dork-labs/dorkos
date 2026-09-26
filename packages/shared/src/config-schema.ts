@@ -1320,6 +1320,29 @@ export function readClaudeAccountSettings(raw: unknown): {
 }
 
 /**
+ * The agent runtimes configured on this host, in a fixed order.
+ *
+ * claude-code is always available; codex and opencode are included unless they
+ * are explicitly turned off, since both default to enabled. The one definition
+ * behind the config DTO's `runtimes` list and the feedback report's, so the web
+ * app and a pasted report can never disagree about what a host runs.
+ *
+ * Takes a dotted-path reader rather than a parsed config, because both callers
+ * hold one (`configManager.getDot`, the feedback gatherer's `readConfigValue`)
+ * and a store that is missing or unreadable should degrade to the defaults
+ * instead of failing.
+ *
+ * @param read - Reads one dotted config path; returns `undefined` when unset.
+ * @returns The configured runtime ids, `claude-code` first.
+ */
+export function configuredRuntimes(read: (key: string) => unknown): string[] {
+  const runtimes = ['claude-code'];
+  if (read('runtimes.codex.enabled') !== false) runtimes.push('codex');
+  if (read('runtimes.opencode.enabled') !== false) runtimes.push('opencode');
+  return runtimes;
+}
+
+/**
  * The Claude account registry: rows with stable ids, no two the same.
  *
  * Uniqueness is enforced rather than assumed because an id is a REFERENCE — an

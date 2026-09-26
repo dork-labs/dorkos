@@ -38,7 +38,7 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 }));
 
 vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+  configManager: { get: vi.fn().mockReturnValue(null), getDot: vi.fn(), set: vi.fn() },
 }));
 
 // `getBoundary` throws unless `initBoundary()` ran at startup, which a bare test
