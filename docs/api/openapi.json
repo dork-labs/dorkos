@@ -25394,7 +25394,7 @@
           "Connectors"
         ],
         "summary": "List connector provider setup statuses",
-        "description": "Reference-free setup state per credential-gated provider: configured/registered booleans, the custody stance with its plain-language disclosure, and — when a configured provider refused to register — the honest error text. Never carries a secret or a credential reference.",
+        "description": "Reference-free setup state per credential-gated provider: configured/registered booleans, the custody stance with its plain-language disclosure, and — when a configured provider refused to register — the honest error text. `appConnections` lists every way set up to reach apps and names the one new apps use. Never carries a secret or a credential reference.",
         "responses": {
           "200": {
             "description": "Provider setup statuses",
@@ -25448,10 +25448,147 @@
                           "disclosure"
                         ]
                       }
+                    },
+                    "appConnections": {
+                      "type": "object",
+                      "properties": {
+                        "ways": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "dorkos_account",
+                                  "own_key"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "unavailable"
+                                ]
+                              },
+                              "providerInstanceId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "signInThrough": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "type",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20
+                        },
+                        "newApps": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ready"
+                                  ]
+                                },
+                                "way": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dorkos_account",
+                                        "own_key"
+                                      ]
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "ready",
+                                        "unavailable"
+                                      ]
+                                    },
+                                    "providerInstanceId": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "signInThrough": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "type",
+                                    "status"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "way"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "setup_needed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "nothing_set_up",
+                                    "dorkos_account_unavailable",
+                                    "own_key_unavailable"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ways",
+                        "newApps"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "providers"
+                    "providers",
+                    "appConnections"
                   ]
                 }
               }
@@ -25644,7 +25781,7 @@
           "Connectors"
         ],
         "summary": "List the provider-neutral connector catalog",
-        "description": "Returns one bounded account-free page. Native message adapters remain distinct from account routes.",
+        "description": "Returns one bounded account-free page. Hand-picked popular apps are always listed, even before any way to reach apps is set up; live services merge into them by service id. Native message adapters remain distinct from account routes.",
         "parameters": [
           {
             "schema": {
@@ -26069,6 +26206,11 @@
                                               "requiresAccountFields"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "signInThrough": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 100
                                           }
                                         },
                                         "required": [
@@ -26083,7 +26225,6 @@
                                         ],
                                         "additionalProperties": false
                                       },
-                                      "minItems": 1,
                                       "maxItems": 20
                                     }
                                   },
@@ -26098,6 +26239,33 @@
                             },
                             "minItems": 1,
                             "maxItems": 20
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "email",
+                              "calendar",
+                              "chat",
+                              "docs",
+                              "files",
+                              "code",
+                              "tasks",
+                              "sales",
+                              "developer"
+                            ]
+                          },
+                          "popular": {
+                            "type": "boolean"
+                          },
+                          "signInName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
                           }
                         },
                         "required": [
@@ -26138,6 +26306,142 @@
                         "additionalProperties": false
                       },
                       "maxItems": 50
+                    },
+                    "appConnections": {
+                      "type": "object",
+                      "properties": {
+                        "ways": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "dorkos_account",
+                                  "own_key"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "unavailable"
+                                ]
+                              },
+                              "providerInstanceId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "signInThrough": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "type",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20
+                        },
+                        "newApps": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ready"
+                                  ]
+                                },
+                                "way": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dorkos_account",
+                                        "own_key"
+                                      ]
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "ready",
+                                        "unavailable"
+                                      ]
+                                    },
+                                    "providerInstanceId": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "signInThrough": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "type",
+                                    "status"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "way"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "setup_needed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "nothing_set_up",
+                                    "dorkos_account_unavailable",
+                                    "own_key_unavailable"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ways",
+                        "newApps"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

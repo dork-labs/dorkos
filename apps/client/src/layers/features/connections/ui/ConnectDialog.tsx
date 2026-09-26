@@ -26,6 +26,14 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
+import {
+  accountRoutes,
+  chooseConnectRoute,
+  firstConnectReason,
+  needsFirstConnectStep,
+  signInLine,
+} from '../lib/connect-route';
+import { FirstConnectStep } from './FirstConnectStep';
 
 interface ConnectDialogProps {
   /** Service selected from the account-free catalog. */
@@ -40,23 +48,6 @@ interface ConnectDialogProps {
   onClose: () => void;
   /** Opens exact agent access for the newly connected stable account. */
   onChooseAccess: (connectionId: string) => void;
-}
-
-function defaultRoute(
-  routes: ConnectorCatalogProviderRoute[]
-): ConnectorCatalogProviderRoute | null {
-  const available = routes.filter(
-    (route) => route.capabilities.authentication.status === 'available'
-  );
-  return (
-    available.find((route) => route.mode === 'managed') ??
-    available.find((route) => route.mode === 'byo') ??
-    null
-  );
-}
-
-function accountRoutes(service: ConnectorCatalogService | null): ConnectorCatalogProviderRoute[] {
-  return service?.intents.find((intent) => intent.kind === 'account')?.routes ?? [];
 }
 
 function titleCase(value: string): string {
@@ -116,11 +107,15 @@ export function ConnectDialog({
   const requestFlow = useConnectorAgentRequestAuthentication(agentRequestId, flowId);
   const start = agentRequestId ? requestStart : standaloneStart;
   const flow = agentRequestId ? requestFlow : standaloneFlow;
-  const lookup = useConnectorCatalog(flow.data?.toolkit ?? service?.serviceSlug ?? '');
+  const serviceSlug = flow.data?.toolkit ?? service?.serviceSlug ?? '';
+  const lookup = useConnectorCatalog(serviceSlug);
+  // The fresh read wins over the row the list handed in, so a way set up in
+  // the one-time step shows its routes here without reopening the dialog.
   const lookedUpService = lookup.data?.pages
     .flatMap((page) => page.services)
-    .find((candidate) => candidate.serviceSlug === flow.data?.toolkit);
-  const resolvedService = service ?? lookedUpService ?? null;
+    .find((candidate) => candidate.serviceSlug === serviceSlug);
+  const appConnections = lookup.data?.pages[0]?.appConnections;
+  const resolvedService = lookedUpService ?? service ?? null;
   const routes = accountRoutes(resolvedService);
   const availableRouteCount = routes.filter(
     (candidate) => candidate.capabilities.authentication.status === 'available'
@@ -130,11 +125,13 @@ export function ConnectDialog({
     (flow.data
       ? routes.find((candidate) => candidate.providerInstanceId === flow.data.providerInstanceId)
       : null) ??
-    defaultRoute(routes);
+    chooseConnectRoute(routes, appConnections?.newApps);
   const activeFlow: ConnectorAuthenticationFlowState | undefined = flow.data ?? start.data;
+  const firstConnect = !activeFlow && needsFirstConnectStep(resolvedService);
 
   const serviceName = resolvedService?.displayName ?? titleCase(activeFlow?.toolkit ?? 'service');
   const guidance = route ? authenticationGuidance(route, serviceName) : null;
+  const whoAsks = signInLine(route, resolvedService);
   const unavailableReason = useMemo(() => {
     if (route) return null;
     const unavailable = routes.find(
@@ -199,11 +196,15 @@ export function ConnectDialog({
             <ResponsiveDialogDescription>
               {activeFlow
                 ? 'Finish this connection, then choose which agents may use it.'
-                : 'Name the account and review who handles its sign-in.'}
+                : firstConnect
+                  ? 'First, pick how DorkOS reaches your apps. You’ll only do this once.'
+                  : 'Name the account and review who handles its sign-in.'}
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
           <ResponsiveDialogBody className="space-y-4 pb-4">
-            {!activeFlow ? (
+            {firstConnect ? (
+              <FirstConnectStep reason={firstConnectReason(appConnections, serviceName)} />
+            ) : !activeFlow ? (
               <>
                 <div className="space-y-1.5">
                   <Label htmlFor="connection-label">Account label</Label>
@@ -219,6 +220,11 @@ export function ConnectDialog({
                   </p>
                 </div>
 
+                {whoAsks && (
+                  <p data-testid="connect-sign-in-line" className="text-sm">
+                    {whoAsks}
+                  </p>
+                )}
                 {route ? (
                   <div
                     data-testid="connect-disclosure"
@@ -329,7 +335,7 @@ export function ConnectDialog({
                 {activeFlow.state === 'pending' && activeFlow.authorizeUrl ? (
                   <>
                     <p className="text-sm">
-                      Continue with {route?.displayName ?? 'the selected service'}.
+                      {whoAsks ?? `Continue with ${route?.displayName ?? 'the selected service'}.`}
                     </p>
                     {/* The authorize URL is the connector flow's answer, so it
                         clears the app's scheme allowlist before the browser is
@@ -415,9 +421,11 @@ export function ConnectDialog({
               <Button variant="ghost" onClick={close}>
                 Cancel
               </Button>
-              <Button onClick={begin} disabled={!route || start.isPending}>
-                {start.isPending ? 'Starting…' : authenticationAction(route, 'start')}
-              </Button>
+              {!firstConnect && (
+                <Button onClick={begin} disabled={!route || start.isPending}>
+                  {start.isPending ? 'Starting…' : authenticationAction(route, 'start')}
+                </Button>
+              )}
             </ResponsiveDialogFooter>
           )}
         </ResponsiveDialogContent>

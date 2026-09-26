@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -426,5 +426,160 @@ describe('ConnectDialog', () => {
       'flow-1'
     );
     expect(transport.pollConnectorAuthentication).not.toHaveBeenCalled();
+  });
+
+  describe('the first connect', () => {
+    const builtInGmail: ConnectorCatalogService = {
+      serviceSlug: 'gmail',
+      displayName: 'Gmail',
+      iconKey: 'gmail',
+      description: 'Read, search and send email.',
+      category: 'email',
+      popular: true,
+      signInName: 'Google',
+      intents: [{ kind: 'account', displayName: 'Use a Gmail account', routes: [] }],
+    };
+    const composioRoute: ConnectorCatalogProviderRoute = {
+      providerInstanceId: 'composio-1' as never,
+      displayName: 'composio',
+      mode: 'byo',
+      custody: 'managed',
+      payer: 'operator_byo',
+      capabilities,
+      disclosure: 'Composio stores your connected accounts’ login access.',
+      authKind: 'oauth2',
+      signInThrough: 'Composio',
+    };
+    const statuses = [
+      {
+        type: 'composio',
+        configured: false,
+        registered: false,
+        custody: 'managed' as const,
+        disclosure: 'Composio keeps sign-ins.',
+      },
+      {
+        type: 'nango',
+        configured: false,
+        registered: false,
+        custody: 'self-host' as const,
+        disclosure: 'Nango keeps sign-ins on your server.',
+      },
+    ];
+
+    it('asks how DorkOS reaches apps once, then goes straight to sign-in after a key works', async () => {
+      const user = userEvent.setup();
+      const transport = createMockTransport({
+        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+        putConnectorCredential: vi
+          .fn()
+          .mockResolvedValue({ ...statuses[0], configured: true, registered: true }),
+      });
+      const unreached = {
+        services: [builtInGmail],
+        warnings: [],
+        appConnections: {
+          ways: [],
+          newApps: { status: 'setup_needed' as const, reason: 'nothing_set_up' as const },
+        },
+      };
+      const way = {
+        kind: 'own_key' as const,
+        type: 'composio',
+        status: 'ready' as const,
+        providerInstanceId: 'composio-1' as never,
+        signInThrough: 'Composio',
+      };
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue(unreached);
+      renderDialog(transport, builtInGmail);
+
+      const step = await screen.findByTestId('first-connect-step');
+      expect(screen.getByText(/First, pick how DorkOS reaches your apps/)).toBeInTheDocument();
+      // Nothing is set up, which needs no explaining.
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+      // No sign-in can start from here, and nothing names a plan or a price.
+      expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
+      expect(step).not.toHaveTextContent(/\$|plan|price/i);
+      // Nango is folded under Other ways until asked for.
+      expect(screen.queryByText(/My own Nango server/)).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Other ways' }));
+      expect(screen.getByText(/My own Nango server/)).toBeVisible();
+
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [
+          {
+            ...builtInGmail,
+            intents: [
+              { kind: 'account', displayName: 'Use a Gmail account', routes: [composioRoute] },
+            ],
+          },
+        ],
+        warnings: [],
+        appConnections: { ways: [way], newApps: { status: 'ready', way } },
+      });
+      await user.click(screen.getByRole('button', { name: /Use my Composio key/ }));
+      await user.type(screen.getByLabelText('Composio API key'), 'ck-test');
+      await user.click(
+        within(screen.getByTestId('provider-card-composio')).getByRole('button', {
+          name: 'Save key',
+        })
+      );
+
+      // The saved key refreshes the list; the step is gone and sign-in is next.
+      expect(await screen.findByTestId('connect-sign-in-line')).toHaveTextContent(
+        'Google will ask you to allow Composio — that’s the service DorkOS uses to connect.'
+      );
+      expect(screen.queryByTestId('first-connect-step')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    });
+
+    it('says in one line why the step shows when a linked DorkOS account cannot connect apps', async () => {
+      const transport = createMockTransport({
+        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+      });
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [builtInGmail],
+        warnings: [],
+        appConnections: {
+          ways: [
+            {
+              kind: 'dorkos_account',
+              type: 'dorkos-managed',
+              status: 'unavailable',
+              signInThrough: 'Composio',
+            },
+          ],
+          newApps: { status: 'setup_needed', reason: 'dorkos_account_unavailable' },
+        },
+      });
+      renderDialog(transport, builtInGmail);
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Your DorkOS account is linked, but it can’t connect apps right now.'
+      );
+      expect(screen.getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
+    });
+
+    it('uses the way marked for new apps without asking, preferring the person’s own key', async () => {
+      const transport = createMockTransport();
+      const way = {
+        kind: 'own_key' as const,
+        type: 'composio',
+        status: 'ready' as const,
+        providerInstanceId: 'byo-1' as never,
+      };
+      // `gmail` lists the DorkOS-account route first; the marked way still wins.
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [gmail],
+        warnings: [],
+        appConnections: { ways: [way], newApps: { status: 'ready', way } },
+      });
+      renderDialog(transport);
+
+      await waitFor(() =>
+        expect(screen.getByTestId('connect-disclosure')).toHaveTextContent('My provider')
+      );
+      expect(screen.queryByTestId('first-connect-step')).not.toBeInTheDocument();
+    });
   });
 });

@@ -38,7 +38,12 @@ import type {
   ConnectorProvider,
   ConnectorProviderStatus,
 } from '@dorkos/shared/connector-provider';
+import type {
+  ConnectorAppConnections,
+  ConnectorAppWay,
+} from '@dorkos/shared/connector-resource-schemas';
 import { logger } from '../../lib/logger.js';
+import { chooseNewAppsWay, signInThroughFor } from './app-connection-way.js';
 import type { CredentialProvider } from '../core/credential-provider.js';
 import { custodyDisclosure, MANAGED_CUSTODY_CANONICAL_SENTENCE } from './custody-disclosure.js';
 import type { ConnectorRegistry } from './registry.js';
@@ -58,6 +63,7 @@ import {
   NANGO_SECRET_KEY_REF,
   type MaybeCreateNangoProviderDeps,
 } from './providers/nango.js';
+import { MANAGED_CLOUD_PROVIDER_TYPE } from './providers/managed/managed-cloud.js';
 import {
   RawMcpConnectorProvider,
   type RawMcpServerDescriptor,
@@ -388,7 +394,7 @@ export class ConnectorProviderBootstrapper {
       );
     } finally {
       if (wasRegistered && !this._registry.resolveProviderInstance(managed.instanceId)) {
-        this._onUnregistered?.(managed.instanceId, 'dorkos-managed');
+        this._onUnregistered?.(managed.instanceId, MANAGED_CLOUD_PROVIDER_TYPE);
       }
     }
   }
@@ -418,6 +424,49 @@ export class ConnectorProviderBootstrapper {
   /** The setup status of every credential-gated provider, for `GET /providers`. */
   async listStatuses(): Promise<ConnectorProviderStatus[]> {
     return Promise.all([...this._specs.values()].map((spec) => this._statusFor(spec)));
+  }
+
+  /**
+   * Every way the person has set up to reach apps, and the one new apps use
+   * ({@link chooseNewAppsWay}). A way is ready only while its route is
+   * registered, which means it answered its last check — a linked DorkOS
+   * account that cannot connect apps, or a key that failed, is set up but
+   * unavailable.
+   */
+  async appConnections(): Promise<ConnectorAppConnections> {
+    const ways: ConnectorAppWay[] = [];
+    for (const spec of this._specs.values()) {
+      if (!(await spec.configured())) continue;
+      const instanceId = this._instanceBySpecType.get(spec.type);
+      const live = instanceId ? this._registry.resolveProviderInstance(instanceId) : undefined;
+      ways.push(this._way('own_key', spec.type, live));
+    }
+    const managed = this._managedCloud;
+    if (managed?.configured()) {
+      ways.push(
+        this._way(
+          'dorkos_account',
+          MANAGED_CLOUD_PROVIDER_TYPE,
+          this._registry.resolveProviderInstance(managed.instanceId)
+        )
+      );
+    }
+    return { ways, newApps: chooseNewAppsWay(ways) };
+  }
+
+  private _way(
+    kind: ConnectorAppWay['kind'],
+    type: string,
+    live: ConnectorProvider | undefined
+  ): ConnectorAppWay {
+    const signInThrough = signInThroughFor(type);
+    return {
+      kind,
+      type,
+      status: live ? 'ready' : 'unavailable',
+      ...(live && { providerInstanceId: live.instanceId }),
+      ...(signInThrough !== undefined && { signInThrough }),
+    };
   }
 
   /** Unregister → create → probe → register-if-it-answers, recording any failure. */

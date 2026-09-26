@@ -1,10 +1,7 @@
 /** Provider-neutral owner catalog, connection, access, and lifecycle projections. */
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import {
-  projectConnectorAuthentication,
-  type ConnectorAuthenticationSetup,
-} from '@dorkos/shared/connector-provider';
+import { projectConnectorAuthentication } from '@dorkos/shared/connector-provider';
 import {
   agents,
   and,
@@ -31,7 +28,9 @@ import {
   ConnectorAgentConnectionsSchema,
   ConnectorSessionConnectionsSchema,
   type ConnectorAgentConnections,
+  type ConnectorAppConnections,
   type ConnectorAuthoritySyncState,
+  type ConnectorCatalogProviderRoute,
   type ConnectorCatalogResourcePage,
   type ConnectorConnectionDetail,
   type ConnectorConnectionSummary,
@@ -49,11 +48,13 @@ import type {
   ManagedConnectorUsageRequest,
   ManagedConnectorUsageResponse,
 } from '@dorkos/shared/connector-managed-usage-schemas';
+import { signInThroughFor } from '../app-connection-way.js';
 import { custodyDisclosure } from '../custody-disclosure.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
+import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
 
 const CATALOG_PROVIDER_PAGE_SIZE = 100;
 const CATALOG_PROVIDER_PAGE_LIMIT = 100;
@@ -109,6 +110,8 @@ export interface ConnectorOperatorQueryServiceOptions {
   readonly managedUsage?: ConnectorManagedUsageQueryPort;
   /** Recover an absent hosted provider before a normal catalog read. */
   readonly recoverManagedProvider?: () => Promise<void>;
+  /** Every way set up to reach apps, and the one new apps use. */
+  readonly appConnections?: () => Promise<ConnectorAppConnections>;
 }
 
 function ownerColumns(owner: ConnectorOwnerAuthority): {
@@ -154,13 +157,41 @@ function encodeCatalogCursor(offset: number, query: string): string {
   );
 }
 
+/** A catalog row while it is being assembled from built-ins, Relay and live routes. */
+interface CatalogServiceDraft {
+  serviceSlug: string;
+  displayName: string;
+  iconKey: string;
+  accountRoutes: ConnectorCatalogProviderRoute[];
+  builtIn?: BuiltInApp;
+}
+
+/** A built-in app's place in the hand-picked order; every other service sorts after them. */
+function popularRank(serviceSlug: string): number {
+  const index = BUILT_IN_APPS.findIndex((app) => app.serviceSlug === serviceSlug);
+  return index === -1 ? BUILT_IN_APPS.length : index;
+}
+
+/** "a" or "an" for a service name, by its first letter ("an Asana account"). */
+function indefiniteArticle(name: string): 'a' | 'an' {
+  return /^[aeiou]/i.test(name) ? 'an' : 'a';
+}
+
+/** Whether any field contains the (already lower-cased) query; an empty query matches all. */
+function matchesQuery(query: string, ...fields: string[]): boolean {
+  return !query || fields.some((field) => field.toLowerCase().includes(query));
+}
+
 /** One catalog service, reduced to what an agent service request needs. */
 export interface ConnectorServiceDirectoryEntry {
   /** Exact service id an agent passes as `serviceSlug`. */
   readonly serviceSlug: string;
   /** Human-facing service name. */
   readonly displayName: string;
-  /** False for a Messaging-only row: the person sets it up; an agent cannot ask for it. */
+  /**
+   * False for a Messaging-only row (the person sets it up; an agent cannot ask
+   * for it) and for a popular app no way reaches yet.
+   */
   readonly requestable: boolean;
 }
 
@@ -183,6 +214,7 @@ export class ConnectorOperatorQueryService {
   private readonly agentOwnership: ConnectorAgentOwnershipPort;
   private readonly managedUsage: ConnectorManagedUsageQueryPort | undefined;
   private readonly recoverManagedProvider: (() => Promise<void>) | undefined;
+  private readonly appConnections: (() => Promise<ConnectorAppConnections>) | undefined;
 
   /** Construct owner projections over canonical connector state. */
   constructor(options: ConnectorOperatorQueryServiceOptions) {
@@ -193,6 +225,7 @@ export class ConnectorOperatorQueryService {
     this.agentOwnership = options.agentOwnership;
     this.managedUsage = options.managedUsage;
     this.recoverManagedProvider = options.recoverManagedProvider;
+    this.appConnections = options.appConnections;
   }
 
   /** Return a bounded account-free catalog page across every live provider. */
@@ -212,12 +245,15 @@ export class ConnectorOperatorQueryService {
       signal: input.signal,
     });
     const page = all.slice(offset, offset + limit);
+    // Read after the catalog, which may have just recovered the DorkOS account route.
+    const appConnections = await this.appConnections?.();
     return ConnectorCatalogResourcePageSchema.parse({
       services: page,
       ...(offset + page.length < all.length
         ? { nextCursor: encodeCatalogCursor(offset + page.length, query) }
         : {}),
       warnings,
+      ...(appConnections && { appConnections }),
     });
   }
 
@@ -237,7 +273,11 @@ export class ConnectorOperatorQueryService {
       services: all.map((service) => ({
         serviceSlug: service.serviceSlug,
         displayName: service.displayName,
-        requestable: service.intents.some((intent) => intent.kind === 'account'),
+        // A popular app no way reaches yet is listed, but not requestable: an
+        // agent's request needs a route the person can sign in through.
+        requestable: service.intents.some(
+          (intent) => intent.kind === 'account' && intent.routes.length > 0
+        ),
       })),
       warnings,
       routeTypes: this.registry.listProviders().map((provider) => provider.type),
@@ -252,29 +292,28 @@ export class ConnectorOperatorQueryService {
     this.registry.assertAvailable();
     await this.recoverManagedProvider?.();
     const query = input.query;
-    const services = new Map<
-      string,
-      {
-        serviceSlug: string;
-        displayName: string;
-        iconKey: string;
-        accountRoutes: Array<
-          ConnectorProviderDisclosure & {
-            authKind: 'oauth2' | 'api-key' | 'none';
-            authenticationSetup?: ConnectorAuthenticationSetup;
-          }
-        >;
-      }
-    >();
+    const services = new Map<string, CatalogServiceDraft>();
     const warnings: Array<{ code: string; message: string }> = [];
 
+    // Popular apps first, so the list is never empty before a way to reach
+    // apps is set up; everything live below merges into them by service id.
+    for (const app of BUILT_IN_APPS) {
+      if (!matchesQuery(query, app.serviceSlug, app.displayName, app.category)) continue;
+      services.set(app.serviceSlug, {
+        serviceSlug: app.serviceSlug,
+        displayName: app.displayName,
+        iconKey: app.serviceSlug,
+        accountRoutes: [],
+        builtIn: app,
+      });
+    }
+
     for (const { manifest } of this.relay?.getCatalog?.() ?? []) {
+      // Plumbing (the internal agent relay) and retired chat apps are not
+      // something a person connects.
+      if (manifest.category === 'internal' || manifest.deprecated) continue;
       const displayName = manifest.displayName ?? manifest.type;
-      if (
-        query &&
-        !manifest.type.toLowerCase().includes(query) &&
-        !displayName.toLowerCase().includes(query)
-      ) {
+      if (services.has(manifest.type) || !matchesQuery(query, manifest.type, displayName)) {
         continue;
       }
       services.set(manifest.type, {
@@ -304,6 +343,7 @@ export class ConnectorOperatorQueryService {
               });
               return;
             }
+            const signInThrough = signInThroughFor(provider.type);
             for (const rawToolkit of result.toolkits) {
               const toolkit = projectConnectorAuthentication(
                 rawToolkit,
@@ -332,6 +372,7 @@ export class ConnectorOperatorQueryService {
                 ...(toolkit.authenticationSetup
                   ? { authenticationSetup: toolkit.authenticationSetup }
                   : {}),
+                ...(signInThrough !== undefined && { signInThrough }),
               });
               services.set(toolkit.slug, current);
             }
@@ -353,31 +394,41 @@ export class ConnectorOperatorQueryService {
     );
 
     const all = [...services.values()]
-      .map((service) => {
+      .map(({ accountRoutes, builtIn, ...service }) => {
         const intents: ConnectorCatalogResourcePage['services'][number]['intents'] = [];
-        if (this.relay?.getManifest(service.serviceSlug)) {
+        if (builtIn?.chat || this.relay?.getManifest(service.serviceSlug)) {
           intents.push({
             kind: 'messages',
             displayName: `Messages through a ${service.displayName} bot`,
             relayAdapterType: service.serviceSlug,
           });
         }
-        if (service.accountRoutes.length > 0) {
+        if (accountRoutes.length > 0 || builtIn?.account) {
           intents.push({
             kind: 'account',
-            displayName: `Use a ${service.displayName} account`,
-            routes: service.accountRoutes.sort(
+            displayName: `Use ${indefiniteArticle(service.displayName)} ${service.displayName} account`,
+            routes: accountRoutes.sort(
               (left, right) =>
                 (left.mode === 'managed' ? 0 : 1) - (right.mode === 'managed' ? 0 : 1) ||
                 left.displayName.localeCompare(right.displayName)
             ),
           });
         }
-        return { ...service, intents };
+        return {
+          ...service,
+          intents,
+          ...(builtIn && {
+            description: builtIn.description,
+            category: builtIn.category,
+            popular: true,
+            ...(builtIn.signInName && { signInName: builtIn.signInName }),
+          }),
+        };
       })
-      .map(({ accountRoutes: _routes, ...service }) => service)
+      // Popular apps lead in their hand-picked order; everything else follows by name.
       .sort(
         (left, right) =>
+          popularRank(left.serviceSlug) - popularRank(right.serviceSlug) ||
           left.displayName.localeCompare(right.displayName) ||
           left.serviceSlug.localeCompare(right.serviceSlug)
       );
