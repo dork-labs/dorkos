@@ -97,6 +97,7 @@ export const LedgerEntrySchema = z
   .object({
     usedPct: z.number().min(0).max(100).nullable(),
     resetsAt: z.string().datetime({ offset: true }).nullable(),
+    windowMinutes: z.number().int().min(1).optional(),
     status: RateLimitStatusSchema.nullable(),
     observedAt: z.string().datetime({ offset: true }),
     source: z.enum(LEDGER_SOURCES),
@@ -106,22 +107,24 @@ export const WINDOW_KEY_PATTERN =
   /^(model:[a-z0-9][a-z0-9._-]*|window:[1-9][0-9]*|(credits|rate_limit):[a-z0-9][a-z0-9._-]*|[a-z][a-z0-9_]*)$/; // rev 6
 export const UsageLedgerSchema = z.looseObject({
   v: z.literal(1),
+  runtime: z.enum(['claude-code', 'codex', 'opencode']).optional(), // required on write; readers trust the path
   accountId: z.string().regex(ACCOUNT_ID_PATTERN),
   updatedAt: z.string().datetime({ offset: true }),
   windows: z.record(z.string().regex(WINDOW_KEY_PATTERN), LedgerEntrySchema),
+  // plus optional facts plan, credits, spend (each with observedAt and source)
 });
 
-export function readWindow(key, entry, now): ReadWindow | null; // contract "Reading a window"
+export function readWindow(entry, now, key): ReadWindow | null; // contract "Reading a window"
 export function mergeLedger(
   existing,
-  observations,
+  observations, // each has a window `key` or a fact `kind`
   now,
-  accountId
+  owner // { runtime, accountId }
 ): { ledger; changed: boolean; dropped: { key: string; reason: string }[] }; // contract "Merging"
 export function modelWindowKey(displayName: string): string | null; // 'Fable' → 'model:fable'
 ```
 
-`readWindow`: expired (`now ≥ resetsAt`) reads as `{ usedPct: 0, status: 'allowed', expired: true }`; stale (no `resetsAt`, older than the window length: `five_hour` 5 h, every other key 7 days) reads as `null`; else as stored.
+`readWindow`: expired (`now ≥ resetsAt`) reads as `{ usedPct: 0, status: 'allowed', expired: true }`; stale (no `resetsAt`, older than the window length: 1 h for `credits:*` and `rate_limit:*`, else `windowMinutes` or the `window:<minutes>` length, else `five_hour` 5 h and every other key 7 days) reads as `null`; else as stored.
 
 The wire shape every surface serves for one account:
 
@@ -349,7 +352,7 @@ The **default summary** is built mechanically, and **no model is ever called on 
 
 flow runs from Claude Code, Codex and OpenCode sessions, so the ledger, the events and the out-of-usage flow are **runtime-neutral**. Multi-account support stays Claude Code only; Codex and OpenCode multi-account registries are out of scope (filed separately).
 
-**Accounts per runtime.** An account belongs to one runtime. Claude Code reads `runtimes.claudeCode.accounts[]`. A runtime with **no registered accounts** has one implicit account with id **`default`**: the ambient environment (Claude Code's inherited root, Codex's `CODEX_HOME`, OpenCode's configured provider). So Codex and OpenCode always have exactly `default`, and a Claude Code user who never registered an account also gets `default`, which replaces the "unregistered root, memory only" case of D2/D3/D9 for that user: it now has a ledger file, can be probed, and confirms resets like any account. The memory-only case remains only for a session that ran on an unregistered root while other accounts ARE registered.
+**Accounts per runtime.** An account belongs to one runtime. Claude Code reads `runtimes.claudeCode.accounts[]`. A runtime with **no registered accounts** has one implicit account with id **`default`**: the ambient environment (Claude Code's inherited root, Codex's `CODEX_HOME`, OpenCode's configured provider). So Codex and OpenCode, which have no registry today, have `default` (readers read `runtimes.codex.accounts[]` and `runtimes.opencode.accounts[]` when present, per the contract), and a Claude Code user who never registered an account also gets `default`, which replaces the "unregistered root, memory only" case of D2/D3/D9 for that user: it now has a ledger file, can be probed, and confirms resets like any account. The memory-only case remains only for a session that ran on an unregistered root while other accounts ARE registered.
 
 **The ledger is per runtime.** `<dorkHome>/runtimes/<runtime>/usage/<account-id>.json`, runtime slug `claude-code` | `codex` | `opencode`, with the contract revision 6 (fixtures 2.0.0, marketplace `flow-cli-core` §1.2) runtime-neutral schema: `v: 1`, required `runtime`, `accountId`, `windows` (entries gain an optional integer `windowMinutes`), and optional facts `plan { name }`, `credits { hasCredits, unlimited, balance: string | null }` and `spend { periodStart, costUsd, limitUsd: number | null }`, each fact with its own `observedAt` and `source`. A spend reading never goes stale in the ledger. The contract text wins on every field name; task 1.1 adopts it exactly. `AccountUsage` gains `runtime`, `plan`, `credits` and `spend`, and `state` covers metered accounts: a spend-only account is `limited` when `spend.limitUsd` is reached, and an account with neither windows nor spend (a local model) is always `ok`.
 
@@ -357,7 +360,7 @@ flow runs from Claude Code, Codex and OpenCode sessions, so the ledger, the even
 
 - **Claude Code:** as D2 (SDK `rate_limit_event` and the usage call).
 - **Codex:** the rollout's `token_count` record that `turn-context-usage.ts` already reads at turn end also carries `rate_limits`: `primary` and `secondary` (`used_percent`, `window_minutes`, `resets_at`), `plan_type`, `credits`, `rate_limit_reached_type`. The same bounded tail read maps them: the mapping is the contract's `codexObservations` rule: only the main limit (`limit_id` `codex` or none) maps to plain windows keyed by `window_minutes` (300 → `five_hour`, 10080 → `seven_day`, else `window:<minutes>`); any other limit (a model-specific or premium one) becomes one `model:<slug>` bucket holding its tightest window; `status` is `rejected` when `rate_limit_reached_type` is not null; `plan_type` becomes the `plan` fact and `credits` the `credits` fact; source `rollout`. No new file access: it is the same file the runtime already reads.
-- **OpenCode:** each turn's `cost` (USD) from the sidecar's events adds to `spend.costUsd` for the current calendar month (UTC `periodStart`, source `sidecar`); a rate-limit error ends the turn with a `rate_limit:<provider>` entry and a credit or payment error with a `credits:<provider>` entry (`source: 'error'`, `status: 'rejected'`, `usedPct: null`, `resetsAt` when the provider says). Memory seeds `costUsd` from the ledger file at load, so a restart does not reset the month. `spend.limitUsd` stays null (the provider key-API lookup, source `provider_api`, is a follow-up). DorkOS's `AccountUsage.state` reads spend from a previous calendar month as reset, so a budget reached last month does not keep the account limited; that is a derived reading, the ledger itself keeps the fact.
+- **OpenCode:** each turn's `cost` (USD) from the sidecar's events adds to `spend.costUsd` for the current calendar month (UTC `periodStart`, source `sidecar`); a rate-limit error ends the turn with a `rate_limit:<provider>` entry and a credit or payment error with a `credits:<provider>` entry (`source: 'error'`, `status: 'rejected'`, `usedPct: null`, `resetsAt` when the provider says). Memory seeds `costUsd` from the ledger file at load, so a restart does not reset the month. `spend.limitUsd` stays null (the provider key-API lookup, source `provider_api`, is a follow-up). A spend fact never goes stale, and `AccountUsage.state` follows the contract's spend-room rule exactly (limited when `limitUsd` is reached); a month-boundary reset is proposed to the contract, to land on both sides together once `limitUsd` has a writer.
 
 **Limits for every runtime.** D4's `limit` and the `account.limited` notification apply to any runtime that reports `rejected`: Codex on a `rate_limit_reached_type` or a rate-limit `turn.failed`, OpenCode on a rate-limit or credit error. With one account per runtime, D9 lands on `wait-only` for them (no other account of that runtime to move to). Waiting works, but they cannot be probed and a reading arrives only at the end of another turn on that runtime, so a waiting Codex or OpenCode session usually reaches only the unconfirmed `reset-ready` fallback and does **not** resume by itself unless such a reading confirms the reset first.
 
