@@ -1260,7 +1260,7 @@
               "number",
               "null"
             ],
-            "exclusiveMinimum": 0,
+            "minimum": 0,
             "default": null
           },
           "observedAt": {

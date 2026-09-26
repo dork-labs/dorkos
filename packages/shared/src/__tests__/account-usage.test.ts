@@ -346,6 +346,9 @@ describe('mergeLedger', () => {
       expect(first.spend).toMatchObject({ costUsd: 4.2, limitUsd: null });
       const capped = written(mergeLedger(null, [spend({ limitUsd: 25 })], NOW, OPENCODE));
       expect(capped.spend?.limitUsd).toBe(25);
+      // The contract's schema allows a cap of 0 (minimum 0), so flow's files read.
+      const zero = written(mergeLedger(null, [spend({ limitUsd: 0 })], NOW, OPENCODE));
+      expect(zero.spend?.limitUsd).toBe(0);
     });
 
     it('drops an invalid fact, an unknown kind and a fact from the future', () => {
@@ -353,7 +356,7 @@ describe('mergeLedger', () => {
         null,
         [
           spend({ costUsd: -1 }),
-          spend({ limitUsd: 0 }),
+          spend({ limitUsd: -1 }),
           { kind: 'plan', name: '', observedAt: at(0), source: 'rollout' },
           { kind: 'mood', observedAt: at(0), source: 'sidecar' } as unknown as LedgerObservation,
           spend({ observedAt: at(5 * MIN + 1000) }),

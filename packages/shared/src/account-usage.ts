@@ -234,7 +234,7 @@ export const LedgerSpendSchema = z
     /** Spend so far in the period, in USD. */
     costUsd: z.number().min(0),
     /** The period's cap in USD, or `null` with no cap. Reaching it makes the account limited. */
-    limitUsd: z.number().positive().nullable().default(null),
+    limitUsd: z.number().min(0).nullable().default(null),
     /** When the source observed this total. */
     observedAt: IsoTimeSchema,
     /** Which source produced the total. */
