@@ -53,7 +53,7 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
 import { normalizeRoomFilePath } from './room-files.js';
-import { fileChangeSentence, sanitizeSegment } from './room-file-change-text.js';
+import { fileChangeSentence, ROOT_FOLDER_LABEL, sanitizeSegment } from './room-file-change-text.js';
 import type { RoomRepoStore } from './room-repo-store.js';
 import type { RoomRepoMutex } from './room-repo-mutex.js';
 import { assertMainCheckoutReady } from './room-main-checkout.js';
@@ -80,7 +80,6 @@ import {
   commitChangeSet,
   describeCommit,
   isExecutable,
-  readBlobBytes,
   RoomTreeIndex,
   type RoomFileChange,
   type RoomFileContent,
@@ -223,9 +222,13 @@ export class RoomFileEditor {
     input: { path: string; baseCommit: string | null; text: string }
   ): Promise<RoomFileSaveOutcome> {
     this.assertCanChange(roomId, actor);
-    const filePath = requireFilePath(input.path);
+    const requested = requireFilePath(input.path);
 
     return this.underLock(roomId, async (state) => {
+      const index = new RoomTreeIndex(state.tree.keys());
+      // The tree's own spelling of what was asked for — see
+      // {@link RoomTreeIndex.canonicalize} for the NFD/NFC overwrite this closes.
+      const filePath = index.canonicalize(requested);
       const existing = state.tree.get(filePath) ?? null;
 
       // **The lock is asked FIRST when the editor said what it read.** A stale
@@ -245,7 +248,7 @@ export class RoomFileEditor {
       }
 
       if (existing) assertOrdinaryFile(filePath, existing);
-      else new RoomTreeIndex(state.tree.keys()).assertPlaceable(filePath);
+      else index.assertPlaceable(filePath);
       await assertNotIgnored(state.repoDir, state.ceiling, filePath);
 
       if (input.baseCommit === null && existing) {
@@ -413,24 +416,26 @@ export class RoomFileEditor {
   async move(
     roomId: string,
     actor: RoomFileActor,
-    input: { from: string; to: string; baseCommit: string | null }
+    input: { from: string; to: string; baseCommit: string }
   ): Promise<RoomFileChangeOutcome> {
     this.assertCanChange(roomId, actor);
-    const from = requireFilePath(input.from);
-    const to = requireFilePath(input.to);
-    if (from === to) {
-      throw new RoomError('ROOM_FILE_PATH_INVALID', 'That is already its name.');
-    }
-    if (to.startsWith(`${from}/`)) {
-      throw new RoomError('ROOM_FILE_PATH_INVALID', 'A folder cannot be moved inside itself.');
-    }
+    const requestedFrom = requireFilePath(input.from);
+    const requestedTo = requireFilePath(input.to);
 
     return this.underLock(roomId, async (state) => {
-      const isUnder = (p: string): boolean => p === from || p.startsWith(`${from}/`);
-      if (input.baseCommit !== null) {
-        const stale = await this.lockConflict(roomId, state, input.baseCommit, isUnder, from);
-        if (stale) return { status: 'conflict' as const, conflict: stale };
+      const treeIndex = new RoomTreeIndex(state.tree.keys());
+      const from = treeIndex.canonicalize(requestedFrom);
+      const to = treeIndex.canonicalize(requestedTo);
+      if (from === to) {
+        throw new RoomError('ROOM_FILE_PATH_INVALID', 'That is already its name.');
       }
+      if (to.startsWith(`${from}/`)) {
+        throw new RoomError('ROOM_FILE_PATH_INVALID', 'A folder cannot be moved inside itself.');
+      }
+      // Always locked: moving files is only safe over the files the person saw.
+      const isUnder = (p: string): boolean => p === from || p.startsWith(`${from}/`);
+      const stale = await this.lockConflict(roomId, state, input.baseCommit, isUnder, from);
+      if (stale) return { status: 'conflict' as const, conflict: stale };
 
       const sources = [...state.tree.values()].filter((entry) => isUnder(entry.path));
       if (sources.length === 0) throw notThere(from);
@@ -457,7 +462,8 @@ export class RoomFileEditor {
         changes.push({ path: entry.path, content: null, existed: true });
         writes.push({
           path: target,
-          content: await readBlobBytes(state.repoDir, entry.sha, state.ceiling),
+          // Read when it is written, one at a time — never the whole folder at once.
+          content: { blob: entry.sha, size: entry.size },
           existed: false,
           executable: isExecutable(entry),
         });
@@ -493,17 +499,17 @@ export class RoomFileEditor {
   async remove(
     roomId: string,
     actor: RoomFileActor,
-    input: { path: string; baseCommit: string | null }
+    input: { path: string; baseCommit: string }
   ): Promise<RoomFileChangeOutcome> {
     this.assertCanChange(roomId, actor);
-    const target = requireFilePath(input.path);
+    const requested = requireFilePath(input.path);
 
     return this.underLock(roomId, async (state) => {
+      const target = new RoomTreeIndex(state.tree.keys()).canonicalize(requested);
+      // Always locked: nobody deletes a file they have not seen.
       const isUnder = (p: string): boolean => p === target || p.startsWith(`${target}/`);
-      if (input.baseCommit !== null) {
-        const stale = await this.lockConflict(roomId, state, input.baseCommit, isUnder, target);
-        if (stale) return { status: 'conflict' as const, conflict: stale };
-      }
+      const stale = await this.lockConflict(roomId, state, input.baseCommit, isUnder, target);
+      if (stale) return { status: 'conflict' as const, conflict: stale };
 
       const doomed = [...state.tree.values()].filter((entry) => isUnder(entry.path));
       if (doomed.length === 0) throw notThere(target);
@@ -544,28 +550,38 @@ export class RoomFileEditor {
       kind: 'upload' | 'from-attachment';
     }
   ): Promise<RoomFileChangeOutcome> {
-    const dir = normalizeRoomFilePath(input.dir);
-    const replace = new Set(input.replace);
-    const targets = input.files.map((file) => {
+    const requestedDir = normalizeRoomFilePath(input.dir);
+    const replace = new Set(input.replace.map((name) => name.normalize('NFC')));
+    const requested = input.files.map((file) => {
       const name = requireFileName(file.name);
-      const filePath = dir === '' ? name : `${dir}/${name}`;
+      const filePath = requestedDir === '' ? name : `${requestedDir}/${name}`;
       assertWritablePath(filePath);
-      return { name, path: filePath, content: file.content };
+      return { path: filePath, content: file.content };
     });
-    const seen = new Set<string>();
-    for (const target of targets) {
-      if (seen.has(target.path)) {
-        throw new RoomError(
-          'ROOM_FILE_PATH_INVALID',
-          `\`${target.path}\` is in this upload twice. Give one of them another name.`
-        );
-      }
-      seen.add(target.path);
-    }
 
     return this.underLock(roomId, async (state) => {
+      const index = new RoomTreeIndex(state.tree.keys());
+      const dir = requestedDir === '' ? '' : index.canonicalize(requestedDir);
+      // Every target in the tree's own spelling, so a name that is the same
+      // file under another Unicode spelling is found rather than overwritten.
+      const targets = requested.map((target) => {
+        const filePath = index.canonicalize(target.path);
+        return { path: filePath, name: basenameOf(filePath), content: target.content };
+      });
+      const seen = new Set<string>();
+      for (const target of targets) {
+        if (seen.has(target.path)) {
+          throw new RoomError(
+            'ROOM_FILE_PATH_INVALID',
+            `\`${target.path}\` is in this upload twice. Give one of them another name.`
+          );
+        }
+        seen.add(target.path);
+      }
       const replaced = new Set(
-        targets.filter((target) => replace.has(target.name)).map((target) => target.path)
+        targets
+          .filter((target) => replace.has(target.name.normalize('NFC')))
+          .map((target) => target.path)
       );
       if (input.baseCommit !== null && replaced.size > 0) {
         const first = [...replaced].sort()[0] as string;
@@ -579,7 +595,6 @@ export class RoomFileEditor {
         if (stale) return { status: 'conflict' as const, conflict: stale };
       }
 
-      const index = new RoomTreeIndex(state.tree.keys());
       const changes: RoomFileChange[] = [];
       for (const target of targets) {
         const existing = state.tree.get(target.path) ?? null;
@@ -607,7 +622,7 @@ export class RoomFileEditor {
       const subject =
         input.kind === 'from-attachment'
           ? `Add ${paths[0]} from the chat`
-          : `Upload ${plural(paths.length, 'file')} to ${dirLabel === '' ? 'the top folder' : dirLabel}`;
+          : `Upload ${plural(paths.length, 'file')} to ${dirLabel === '' ? ROOT_FOLDER_LABEL : dirLabel}`;
       return this.commitAndAnnounce(roomId, actor, state, changes, {
         subject,
         kind: input.kind,
@@ -981,6 +996,15 @@ function exists(filePath: string): RoomError {
  */
 function notThere(filePath: string): RoomError {
   return new RoomError('ROOM_FILE_NOT_FOUND', `There is no \`${filePath}\` in this room’s files.`);
+}
+
+/**
+ * The last segment of a path.
+ *
+ * @param filePath - The path.
+ */
+function basenameOf(filePath: string): string {
+  return filePath.slice(filePath.lastIndexOf('/') + 1);
 }
 
 /**

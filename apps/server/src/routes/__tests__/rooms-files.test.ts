@@ -669,7 +669,7 @@ describe('room files routes', () => {
       expect(await stagingLeft()).toEqual([]);
       expect(await fileChanges(roomId)).toEqual([
         {
-          text: 'Dorian uploaded 2 files to designs/',
+          text: 'Dorian uploaded 2 files to `designs/`',
           mentions: [],
           fileChange: expect.objectContaining({ kind: 'upload', pathCount: 2 }),
         },
@@ -768,8 +768,8 @@ describe('room files routes', () => {
       expect(deleted.body.lastCommit).toMatchObject({ subject: 'Delete archive/' });
 
       expect((await fileChanges(roomId)).map((entry) => entry.text)).toEqual([
-        'Dorian renamed docs/ to archive/docs/',
-        'Dorian deleted archive/',
+        'Dorian renamed `docs/` to `archive/docs/`',
+        'Dorian deleted `archive/`',
       ]);
     });
 
@@ -800,11 +800,95 @@ describe('room files routes', () => {
       expect(saved.status).toBe(200);
       expect(await fileChanges(roomId)).toEqual([
         {
-          text: 'Dorian edited ROOM.md',
+          text: 'Dorian edited `ROOM.md`',
           mentions: [],
           fileChange: expect.objectContaining({ kind: 'edit', paths: ['ROOM.md'] }),
         },
       ]);
+    });
+
+    describe('one name, two Unicode spellings (found in review, on APFS)', () => {
+      const NFC = 'caf\u00e9.md';
+      const NFD = 'cafe\u0301.md';
+
+      /** A room holding the person's own NFC `café.md`. */
+      async function roomWithCafe(): Promise<string> {
+        const roomId = await roomWithFiles();
+        const saved = await request(testServer)
+          .put(`/api/rooms/${roomId}/files/content`)
+          .send({ path: NFC, baseCommit: null, text: 'mine\n' });
+        expect(saved.status).toBe(200);
+        return roomId;
+      }
+
+      async function cafe(roomId: string): Promise<string> {
+        const res = await request(testServer)
+          .get(`/api/rooms/${roomId}/files/content`)
+          .query({ path: NFC });
+        return res.body.body.text as string;
+      }
+
+      it('an NFD upload with no replace is refused ROOM_FILE_EXISTS', async () => {
+        const roomId = await roomWithCafe();
+        const res = await request(testServer)
+          .post(`/api/rooms/${roomId}/files/upload`)
+          .field('baseCommit', await headOf(roomId))
+          .attach('files', Buffer.from('overwritten\n'), { filename: NFD });
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('ROOM_FILE_EXISTS');
+        expect(await cafe(roomId)).toBe('mine\n');
+      });
+
+      it('an NFD save with no base commit is the FILE_CHANGED choice, not an overwrite', async () => {
+        const roomId = await roomWithCafe();
+        const res = await request(testServer)
+          .put(`/api/rooms/${roomId}/files/content`)
+          .send({ path: NFD, baseCommit: null, text: 'overwritten\n' });
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('FILE_CHANGED');
+        expect(res.body.conflict.path).toBe(NFC);
+        expect(await cafe(roomId)).toBe('mine\n');
+      });
+
+      it('an upload of NFD café beside a .git stream name is refused whole, and café survives', async () => {
+        const roomId = await roomWithCafe();
+        const base = await headOf(roomId);
+        const res = await request(testServer)
+          .post(`/api/rooms/${roomId}/files/upload`)
+          .field('baseCommit', base)
+          .field('replace', JSON.stringify([NFD]))
+          .attach('files', Buffer.from('overwritten\n'), { filename: NFD })
+          .attach('files', Buffer.from('x'), { filename: '.git::$INDEX_ALLOCATION' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('ROOM_FILE_PATH_INVALID');
+        expect(await headOf(roomId)).toBe(base);
+        expect(await git(roomId, ['status', '--porcelain=v1'])).toBe('');
+        expect(await cafe(roomId)).toBe('mine\n');
+        // And the room is not stuck: the next save goes in.
+        const next = await request(testServer)
+          .put(`/api/rooms/${roomId}/files/content`)
+          .send({ path: NFC, baseCommit: base, text: 'still mine\n' });
+        expect(next.status).toBe(200);
+      });
+    });
+
+    it('refuses a move or a delete that does not say what the person saw', async () => {
+      const roomId = await roomWithFiles();
+      const base = await headOf(roomId);
+
+      const moved = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/move`)
+        .send({ from: 'docs', to: 'old-docs', baseCommit: null });
+      const deleted = await request(testServer)
+        .post(`/api/rooms/${roomId}/files/delete`)
+        .send({ path: 'docs', baseCommit: null });
+
+      expect(moved.status).toBe(400);
+      expect(deleted.status).toBe(400);
+      expect(await headOf(roomId)).toBe(base);
     });
 
     describe('with login on', () => {
@@ -877,7 +961,7 @@ describe('room files routes', () => {
           subject: 'Add designs/screenshot.png from the chat',
         });
         expect((await fileChanges(roomId)).map((entry) => entry.text)).toEqual([
-          'Dorian saved screenshot.png from the chat to designs/',
+          'Dorian saved `screenshot.png` from the chat to `designs/`',
         ]);
       });
 

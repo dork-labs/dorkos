@@ -5485,7 +5485,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Upload files into a room's files",
   description:
-    "Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/`, authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `ROOM_FILE_EXISTS`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `FILE_TOO_LARGE`); more than 20 files is 400 `ROOM_UPLOAD_TOO_MANY_FILES`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.",
+    "Multipart: up to 20 files in the `files` field, plus `dir` (the folder, relative to the repo root; empty for the root; missing folders are created), `baseCommit` (what the person's view was read at), and `replace` (a JSON list of the file NAMES this upload may overwrite). **One commit for the whole upload**, `Upload N files to <dir>/` (`to the top folder` for the root), authored as the person, and one quiet room entry (`body.fileChange`, `kind: 'upload'`) that wakes nobody. Each file must be new at `main`, or named in `replace` and unchanged since `baseCommit` — anything else already there is 409 `ROOM_FILE_EXISTS`, naming the path, so the app can ask whether to replace it. Uploads are bytes: binary files are fine. **Refused before a byte is read** when the caller may not change this room's files. Each file is capped at the room's own frozen file limit while it is still being read (409 `FILE_TOO_LARGE`); more than 20 files is 400 `ROOM_UPLOAD_TOO_MANY_FILES`. The files are staged on disk, never in memory, and the staging folder is gone before the response is sent. A failure part-way leaves the room's files exactly as they were.",
   request: {
     params: RoomIdParams,
     body: {
@@ -5510,7 +5510,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Rename or move one of a room's files or folders",
   description:
-    "One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). Every file under `from` must be unchanged since `baseCommit`, or 409 `FILE_CHANGED` with the conflict. `to` must not exist (409 `ROOM_FILE_EXISTS`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.",
+    "One commit, `Rename <from> to <to>` (a folder is written with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'rename'`). `baseCommit` is required: every file under `from` must be unchanged since it, or 409 `FILE_CHANGED` with the conflict. `to` must not exist (409 `ROOM_FILE_EXISTS`); missing folders above it are created, and a folder segment that differs only in capitals from one the room has is refused, naming the real one. A file keeps its executable bit. A link or another repository inside a moved folder is refused rather than carried. A rename that only changes capitals is allowed.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileMoveRequestSchema } } },
@@ -5524,7 +5524,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Delete one of a room's files or folders",
   description:
-    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). Every file under `path` must be unchanged since `baseCommit` — nobody deletes a file they have not seen — or 409 `FILE_CHANGED`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
+    "One commit, `Delete <path>` (a folder with a trailing `/`), authored as the person, and one quiet room entry (`kind: 'delete'`). `baseCommit` is required, and every file under `path` must be unchanged since it — nobody deletes a file they have not seen — or 409 `FILE_CHANGED`. The room's history keeps what was deleted: it is a commit, so an agent or git can bring it back. POST rather than DELETE because the request carries a body.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: RoomFileDeleteRequestSchema } } },

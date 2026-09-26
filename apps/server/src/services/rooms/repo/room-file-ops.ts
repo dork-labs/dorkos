@@ -8,9 +8,11 @@
  * copy of a chat attachment changes, and who may ask. This module is how any of
  * them lands, so the rules below are stated once and hold for all five:
  *
- * - **`.git` in any spelling is refused** ({@link assertWritablePath}) —
- *   lower-cased, because APFS and NTFS open `.GIT/config` as `.git/config`, and
- *   `repo/.git` is the common directory every worktree of the room shares.
+ * - **Every spelling of `.git` a filesystem opens as the real thing is
+ *   refused** ({@link assertWritablePath}): any case, trailing dots and spaces,
+ *   HFS-ignorable characters, the 8.3 alias `git~N`, and — by refusing colons —
+ *   NTFS stream names like `.git::$INDEX_ALLOCATION`. `repo/.git` is the common
+ *   directory every worktree of the room shares.
  * - **No ancestor of a written path may be a symlink on disk**, and the target
  *   itself is opened `O_NOFOLLOW` ({@link assertNoLinkOnDisk}). A link in the
  *   TREE is refused by the tree checks, but one that is not in the tree at all —
@@ -54,20 +56,39 @@ import {
 } from './room-repo-git.js';
 
 /**
- * Spellings of `.git` that a case-insensitive or 8.3-aware filesystem opens as
- * the real thing.
- *
- * The same list `room-merge-service.ts` refuses symlinks into, and refused here
- * for the same measured reason: `.GIT/config` and `.Git/hooks/pre-commit` open
- * exactly the files `.git/config` and `.git/hooks/pre-commit` open on APFS and
- * NTFS, and in `repo/` those are real. A trailing dot and the 8.3 alias `git~1`
- * are NTFS's other two doors to the same place.
- *
- * Kept beside the write path rather than shared with the merge service, because
- * the two ask different questions of it: that one asks where a symlink POINTS,
- * this one asks what a path NAMES.
+ * Code points HFS+ ignores when it compares names — git's own `is_hfs_dotgit`
+ * list (ZWNJ/ZWJ, the bidi marks and embeddings, the deprecated format
+ * characters, the BOM). On a filesystem that ignores them, `.g\u200cit` opens
+ * `.git`.
  */
-const GIT_DIR_SPELLINGS: readonly string[] = ['.git', '.git.', 'git~1'];
+const HFS_IGNORABLE = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
+
+/**
+ * Whether one path segment is a door into the repository's own `.git`, on any
+ * filesystem a room might live on — git's `is_ntfs_dotgit` and `is_hfs_dotgit`,
+ * applied together because a room repo can be checked out on either.
+ *
+ * - **Case** is folded (APFS, NTFS: `.GIT` is `.git`).
+ * - **HFS-ignorable code points** are dropped ({@link HFS_IGNORABLE}).
+ * - **Trailing dots and spaces** are trimmed: NTFS opens `.git.`, `.git..` and
+ *   `.git. .` as `.git`.
+ * - **The 8.3 short name** `git~<digit>` is NTFS's alias for `.git` — any digit,
+ *   not only `1`, because which one it gets depends on what else the folder
+ *   held when it was made.
+ *
+ * Colons never get here: {@link assertWritablePath} refuses any segment with
+ * one, which is what closes the NTFS stream syntax (`.git::$INDEX_ALLOCATION`,
+ * `.git:x`) — a name that opens `.git` itself as a folder.
+ *
+ * @param segment - One path segment.
+ */
+function isGitDirSegment(segment: string): boolean {
+  const folded = segment
+    .replace(HFS_IGNORABLE, '')
+    .replace(/[. ]+$/, '')
+    .toLowerCase();
+  return folded === '.git' || /^git~\d$/.test(folded);
+}
 
 /**
  * `O_NOFOLLOW` where the platform has it, and nothing where it does not.
@@ -85,11 +106,13 @@ const EXECUTABLE_MODE = '100755';
 /**
  * What one path in a change set becomes.
  *
- * Bytes already in memory (a text save, a file moved out of the tree), or a
- * file on disk to stream from (an upload multer staged), so twenty large
- * uploads never sit in memory together.
+ * Bytes already in memory (a text save, a chat attachment), a file on disk to
+ * stream from (an upload multer staged), or a blob already in the repository (a
+ * file being moved), read only at the moment it is written — so a large upload
+ * or a large folder being moved never sits in memory all at once.
  */
-export type RoomFileContent = Buffer | { file: string; size: number };
+export type RoomFileContent =
+  Buffer | { file: string; size: number } | { blob: string; size: number };
 
 /** One path in a change set: its new contents, or `null` to remove it. */
 export interface RoomFileChange {
@@ -112,6 +135,24 @@ export function contentSize(content: RoomFileContent): number {
   return Buffer.isBuffer(content) ? content.length : content.size;
 }
 
+/** How many paths one git command is handed, so a large folder never outgrows a command line. */
+const PATH_BATCH = 200;
+
+/**
+ * Run a path-taking git step over a list in batches of {@link PATH_BATCH}.
+ *
+ * @param paths - Every path.
+ * @param step - The step, for one batch.
+ */
+async function inBatches(
+  paths: readonly string[],
+  step: (batch: readonly string[]) => Promise<void>
+): Promise<void> {
+  for (let at = 0; at < paths.length; at += PATH_BATCH) {
+    await step(paths.slice(at, at + PATH_BATCH));
+  }
+}
+
 /**
  * Refuse a path that names the repository's own git directory.
  *
@@ -123,20 +164,21 @@ export function contentSize(content: RoomFileContent): number {
  * @throws {RoomError} `ROOM_FILE_PATH_INVALID`.
  */
 export function assertWritablePath(filePath: string): void {
-  // **A leading colon is pathspec magic, and one command here cannot disarm
-  // it.** Everywhere else a path reaches git wrapped in `:(literal)`, which
-  // makes every character mean itself — but `check-ignore` refuses that wrapper
-  // outright ({@link isIgnored}), so a path beginning with `:` arrives as magic
-  // and git exits 128 on it. That surfaced as a 500 with no code, reachable by
-  // any member with one request (`:!x.md`, found in review).
-  if (filePath.startsWith(':')) {
+  // **A colon anywhere is refused**, for two reasons that each suffice. A
+  // LEADING colon is pathspec magic that `check-ignore` cannot disarm
+  // ({@link isIgnored} cannot wrap it in `:(literal)`), which surfaced as a 500
+  // with no code (`:!x.md`, found in review). And ANY colon is NTFS stream
+  // syntax: `.git::$INDEX_ALLOCATION` and `.git:x` open the repository's own
+  // `.git` folder on Windows. Windows cannot hold a filename with a colon at
+  // all, so no room that has to travel between machines needs one.
+  if (filePath.includes(':')) {
     throw new RoomError(
       'ROOM_FILE_PATH_INVALID',
-      'That path is not one this room can have: a name cannot start with a colon.'
+      'That path is not one this room can have: a name cannot contain a colon.'
     );
   }
   for (const segment of filePath.split('/')) {
-    if (GIT_DIR_SPELLINGS.includes(segment.toLowerCase())) {
+    if (isGitDirSegment(segment)) {
       throw new RoomError(
         'ROOM_FILE_PATH_INVALID',
         'That path is not one this room can have: it names the room’s own git directory.'
@@ -318,9 +360,11 @@ interface TreeChild {
  * A room's tree seen folder by folder, for placing NEW paths in it.
  *
  * A recursive `ls-tree` lists files only; this indexes every folder those files
- * imply, keyed by parent path and by lower-cased name, so "is there already
- * something at this level that differs only in capitals" is one lookup per
- * segment. Paths a change set is about to add are {@link add}ed as they are
+ * imply, keyed by parent path and by {@link foldName} — NFC, then lower case —
+ * so "is there already something at this level that this filesystem would open
+ * instead" is one lookup per segment. APFS and NTFS fold case, and APFS also
+ * treats `café` spelled with a combining accent (NFD) and with a precomposed one
+ * (NFC) as one name. Paths a change set is about to add are {@link add}ed as they are
  * placed, so two uploads in one batch cannot collide with each other either.
  */
 export class RoomTreeIndex {
@@ -354,7 +398,7 @@ export class RoomTreeIndex {
         level = new Map();
         this.children.set(parent, level);
       }
-      const key = name.toLowerCase();
+      const key = foldName(name);
       const known = level.get(key);
       if (!known || (isDir && !known.isDir)) level.set(key, { name, isDir });
       parent = parent === '' ? name : `${parent}/${name}`;
@@ -368,6 +412,36 @@ export class RoomTreeIndex {
    */
   hasFile(filePath: string): boolean {
     return this.files.has(filePath);
+  }
+
+  /**
+   * The spelling a path a person sent has in THIS tree.
+   *
+   * A person's path and the tree's can name the same file with different bytes:
+   * `café.md` typed on one machine arrives NFD, the tree (git with
+   * `core.precomposeunicode`) holds it NFC, and APFS opens either as the one
+   * file. Compared byte for byte, the tree would say "no such file", the lock
+   * and `ROOM_FILE_EXISTS` would be skipped, and the write would overwrite the
+   * real file. So each segment that matches an existing name once both are NFC
+   * takes the tree's own spelling; a segment the tree does not have is NFC, the
+   * form git on macOS records. Case is NOT canonicalized — a name that differs
+   * in capitals stays different, and {@link assertPlaceable} refuses it naming
+   * the real one.
+   *
+   * @param filePath - A normalised repo-relative path.
+   * @returns The same path, spelled as the tree spells it.
+   */
+  canonicalize(filePath: string): string {
+    const out: string[] = [];
+    let parent = '';
+    for (const segment of filePath.split('/')) {
+      const nfc = segment.normalize('NFC');
+      const known = this.children.get(parent)?.get(foldName(segment));
+      const name = known && known.name.normalize('NFC') === nfc ? known.name : nfc;
+      out.push(name);
+      parent = parent === '' ? name : `${parent}/${name}`;
+    }
+    return out.join('/');
   }
 
   /**
@@ -394,14 +468,14 @@ export class RoomTreeIndex {
     let parent = '';
     for (const [index, name] of segments.entries()) {
       const isLast = index === segments.length - 1;
-      const known = this.children.get(parent)?.get(name.toLowerCase());
+      const known = this.children.get(parent)?.get(foldName(name));
       const here = parent === '' ? name : `${parent}/${name}`;
       if (known) {
         const real = parent === '' ? known.name : `${parent}/${known.name}`;
         if (known.name !== name) {
           throw new RoomError(
             'ROOM_FILE_NOT_READABLE',
-            `This room already has \`${known.isDir ? `${real}/` : real}\`, and a name that differs only in capital letters is the same ${known.isDir ? 'folder' : 'file'} on some computers. Use \`${known.isDir ? `${real}/` : real}\` instead.`
+            `This room already has \`${known.isDir ? `${real}/` : real}\`, and a name that differs only in capital letters or accents is the same ${known.isDir ? 'folder' : 'file'} on some computers. Use \`${known.isDir ? `${real}/` : real}\` instead.`
           );
         }
         if (!isLast && !known.isDir) {
@@ -417,6 +491,16 @@ export class RoomTreeIndex {
       parent = here;
     }
   }
+}
+
+/**
+ * The key two names collide on, on a filesystem that folds case and Unicode
+ * normalization: NFC, then lower case.
+ *
+ * @param name - One path segment.
+ */
+function foldName(name: string): string {
+  return name.normalize('NFC').toLowerCase();
 }
 
 /**
@@ -549,7 +633,7 @@ export async function commitChangeSet(
   subject: string,
   identity: GitIdentity
 ): Promise<string | null> {
-  const created: string[] = [];
+  const undo: ChangeSetUndo = { folders: [], files: [] };
   try {
     const removals = changes.filter((change) => change.content === null);
     const writes = changes.filter((change) => change.content !== null);
@@ -558,25 +642,59 @@ export async function commitChangeSet(
       await pruneEmptyParents(repoDir, change.path);
     }
     for (const change of writes) {
-      created.push(...(await makeParents(repoDir, change.path)));
-      await writeContent(repoDir, change);
+      undo.folders.push(...(await makeParents(repoDir, change.path)));
+      if (!change.existed) {
+        // **A path the tree does not hold must not exist on disk either.** If it
+        // does, it is another name for something that is there — a different
+        // Unicode spelling or case of a real file — and writing would overwrite
+        // it, and undoing the write would delete it. Refused before a byte is
+        // written, and never recorded as ours to remove.
+        if (await existsOnDisk(path.join(repoDir, change.path))) {
+          throw new RoomError(
+            'ROOM_FILE_EXISTS',
+            `This room already has a file at \`${change.path}\` under another spelling. Replace it, or choose another name.`
+          );
+        }
+        undo.files.push(change.path);
+      }
+      await writeContent(repoDir, ceiling, change);
     }
 
-    await unstagePaths(
-      repoDir,
+    await inBatches(
       removals.map((change) => change.path),
-      ceiling
+      (batch) => unstagePaths(repoDir, batch, ceiling)
     );
-    await stagePaths(
-      repoDir,
+    await inBatches(
       writes.map((change) => change.path),
-      ceiling
+      (batch) => stagePaths(repoDir, batch, ceiling)
     );
     if (!(await hasStagedChanges(repoDir, ceiling))) return null;
     return await commitStaged(repoDir, subject, identity, ceiling);
   } catch (err) {
-    await rollbackChangeSet(repoDir, ceiling, changes, created);
+    await rollbackChangeSet(repoDir, ceiling, changes, undo);
     throw err;
+  }
+}
+
+/** What a change set made that did not exist before it — the only things its rollback removes. */
+interface ChangeSetUndo {
+  /** Folders it created, shallowest first. */
+  folders: string[];
+  /** Files it created where nothing stood on disk. */
+  files: string[];
+}
+
+/**
+ * Whether anything — a file, a folder, a link — stands at a path.
+ *
+ * @param target - The absolute path.
+ */
+async function existsOnDisk(target: string): Promise<boolean> {
+  try {
+    await fs.lstat(target);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -589,35 +707,39 @@ export async function commitChangeSet(
  * that fails is logged loudly, because what it leaves behind is exactly the
  * dirty-main state the operator will be asked about.
  *
- * New paths are removed BEFORE `main`'s paths are restored — on a filesystem that
- * folds case, a case-only rename's new name and its old one are one file, and the
- * other order would delete what was just restored.
+ * **It removes only what this change set created** — files it wrote where
+ * nothing stood, and folders it made — never a path merely because the tree did
+ * not list it. A path the tree missed can still be somebody's file under another
+ * spelling (found in review: an NFD upload over an NFC file, rolled back, deleted
+ * the person's tracked file).
+ *
+ * Created files are removed BEFORE `main`'s paths are restored — on a filesystem
+ * that folds case, a case-only rename's new name and its old one are one file,
+ * and the other order would delete what was just restored.
  *
  * @param repoDir - The room's main checkout.
  * @param ceiling - The room home directory git's search may not climb past.
  * @param changes - The change set.
- * @param created - Folders the set created, shallowest first.
+ * @param undo - What the set created.
  */
 async function rollbackChangeSet(
   repoDir: string,
   ceiling: string,
   changes: readonly RoomFileChange[],
-  created: readonly string[]
+  undo: ChangeSetUndo
 ): Promise<void> {
   try {
-    const added = changes.filter((change) => !change.existed).map((change) => change.path);
-    for (const filePath of added) {
+    for (const filePath of undo.files) {
       await fs.rm(path.join(repoDir, filePath), { force: true });
     }
     // The file first, then the index — see {@link unstagePaths} for why that
     // order is what lets this run without a force flag.
-    await unstagePaths(repoDir, added, ceiling);
-    await restoreFromHead(
-      repoDir,
+    await inBatches(undo.files, (batch) => unstagePaths(repoDir, batch, ceiling));
+    await inBatches(
       changes.filter((change) => change.existed).map((change) => change.path),
-      ceiling
+      (batch) => restoreFromHead(repoDir, batch, ceiling)
     );
-    for (const dir of [...created].reverse()) {
+    for (const dir of [...undo.folders].reverse()) {
       await fs.rmdir(path.join(repoDir, dir)).catch(() => undefined);
     }
   } catch (err) {
@@ -690,9 +812,14 @@ async function pruneEmptyParents(repoDir: string, filePath: string): Promise<voi
  * Write one path's contents, refusing to follow a link at the final component.
  *
  * @param repoDir - The room's main checkout.
+ * @param ceiling - The room home directory git's search may not climb past.
  * @param change - The write.
  */
-async function writeContent(repoDir: string, change: RoomFileChange): Promise<void> {
+async function writeContent(
+  repoDir: string,
+  ceiling: string,
+  change: RoomFileChange
+): Promise<void> {
   // `O_NOFOLLOW` on the final component: the lstat walk cannot close the window
   // between looking and writing, and the kernel can.
   const handle = await fs.open(
@@ -702,7 +829,10 @@ async function writeContent(repoDir: string, change: RoomFileChange): Promise<vo
   );
   try {
     const content = change.content as RoomFileContent;
-    await handle.writeFile(Buffer.isBuffer(content) ? content : createReadStream(content.file));
+    if (Buffer.isBuffer(content)) await handle.writeFile(content);
+    else if ('file' in content) await handle.writeFile(createReadStream(content.file));
+    // One blob in memory at a time, at the moment it is written.
+    else await handle.writeFile(await readBlobBytes(repoDir, content.blob, ceiling));
     // `O_CREAT`'s mode only applies to a file that did not exist; a moved file
     // replacing nothing is new, but say it explicitly so the bit is certain.
     if (change.executable) await handle.chmod(0o755);

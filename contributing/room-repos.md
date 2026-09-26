@@ -219,10 +219,13 @@ commit on `main`, through the same mutex merges use, after `assertMainCheckoutRe
 | Route                                       | Body                                                       | Commit subject               |
 | ------------------------------------------- | ---------------------------------------------------------- | ---------------------------- |
 | `PUT /api/rooms/:id/files/content`          | `{ path, baseCommit, text }` (text only)                   | `Edit <path>` / `Add <path>` |
-| `POST /api/rooms/:id/files/upload`          | multipart `files[]` (≤ 20), `dir`, `baseCommit`, `replace` | `Upload N files to <dir>/`   |
+| `POST /api/rooms/:id/files/upload`          | multipart `files[]` (≤ 20), `dir`, `baseCommit`, `replace` | `Upload N files to <dir>/`¹  |
 | `POST /api/rooms/:id/files/move`            | `{ from, to, baseCommit }`, file or folder                 | `Rename <from> to <to>`      |
 | `POST /api/rooms/:id/files/delete`          | `{ path, baseCommit }`, file or folder                     | `Delete <path>`              |
 | `POST /api/rooms/:id/files/from-attachment` | `{ attachmentId, dir, name?, baseCommit }`                 | `Add <path> from the chat`   |
+
+¹ `Upload N files to the top folder` for the root; the room entry says "the top folder" too.
+`baseCommit` is required for move and delete — nobody moves or deletes files they have not seen.
 
 - **People only.** An agent is refused `PEOPLE_ONLY` (403), not 404: it is already a visible member,
   and merging is its write path. An upload is refused before multer reads a byte.
@@ -237,13 +240,24 @@ commit on `main`, through the same mutex merges use, after `assertMainCheckoutRe
   room entry, never from git.
 - **One quiet entry per commit.** `RoomService.postFileChangeEvent` posts `body.fileChange` in the
   room's own voice with `mentions: []` and a spent cascade, so it wakes nobody (I10). Its `text` is
-  built from sanitized path segments; clients render `fileChange.paths` as plain text.
+  built from sanitized path segments, each path set in a markdown code span (`codeSpan`, backtick-
+  safe), because the app draws post text as markdown; clients render `fileChange.paths` as plain
+  text.
 - **Every change is a change set** (`room-file-ops.ts`): a list of `{ path, content | null }` written
   (removals first, so a case-only rename works on APFS), staged by exact `:(literal)` path and
-  committed once — or rolled back entirely, including folders it created.
+  committed once — or rolled back entirely. A rollback removes only files and folders the set
+  itself created; a "new" path that already exists on disk (another spelling of a real file) is
+  refused `ROOM_FILE_EXISTS` before anything is written.
 - **Missing folders are created; a case clash is refused per folder segment.** `Notes/plan.md` when
   `notes/` exists names `notes/`, because APFS and NTFS would write into `notes/` while git records
   `Notes/`. A folder segment that is a file is `ROOM_FILE_PATH_INVALID`.
+- **Unicode spellings resolve to the tree's.** `RoomTreeIndex.canonicalize` maps each segment that
+  equals an existing name once both are NFC onto that name, and a new segment to NFC (what git with
+  `core.precomposeunicode` records). An NFD `café.md` therefore finds the NFC `café.md` the tree
+  holds — it meets the lock and `ROOM_FILE_EXISTS` — instead of silently overwriting it on APFS.
+- **Every `.git` door is refused** (`assertWritablePath`): any case, trailing dots and spaces,
+  HFS-ignorable characters, `git~<digit>`, and any colon at all (NTFS streams such as
+  `.git::$INDEX_ALLOCATION`).
 - **Uploads use multer disk storage** in a per-request folder under `<dorkHome>/.temp/room-uploads/`,
   capped per file at the room's frozen `maxFileBytes`, removed before the response is sent.
 - The client editor is a **source** editor, not the session canvas. The canvas round-trips markdown

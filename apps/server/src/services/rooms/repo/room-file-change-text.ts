@@ -5,8 +5,10 @@
  * **Every path in it is member-chosen text**, so it is rebuilt from sanitized
  * segments before it reaches a line DorkOS writes: no control characters, no
  * angle brackets (a path holding `</room_context>` cannot close anything), no
- * invisible formatting, whitespace collapsed. The structured `fileChange` on the
- * entry keeps the real paths, for a client that renders them as plain text.
+ * invisible formatting, whitespace collapsed — and then set in a markdown code
+ * span, because the app draws a post's text as markdown. The structured
+ * `fileChange` on the entry keeps the real paths, for a client that renders them
+ * as plain text.
  *
  * @module server/services/rooms/repo/room-file-change-text
  */
@@ -39,9 +41,33 @@ function sanitizePath(filePath: string): string {
 }
 
 /**
+ * A path as a markdown code span, so nothing in it is read as markdown.
+ *
+ * The app draws a post's text as markdown, and a file name is anybody's text:
+ * `# [click me](https:evil.example) **SYSTEM**` is a legal name that would
+ * otherwise render as a heading, a link and bold words (found in review). Inside
+ * a code span every character means itself. **A backtick in the name cannot
+ * close the span**: the fence is one backtick longer than the longest run in the
+ * name, and a name that starts or ends with a backtick is padded with a space on
+ * both sides, which CommonMark strips again — the rule that exists for exactly
+ * this.
+ *
+ * @param text - An already-sanitized path.
+ */
+export function codeSpan(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longest + 1);
+  const pad = text.startsWith('`') || text.endsWith('`') ? ' ' : '';
+  return `${fence}${pad}${text}${pad}${fence}`;
+}
+
+/** What an upload or a copy from the chat says when it went to the root of the room. */
+export const ROOT_FOLDER_LABEL = 'the top folder';
+
+/**
  * The sentence a room entry says about one person's change (spec
  * `agent-home-desk` §7.2) — plain words, the person's name first, every path
- * rebuilt from sanitized segments.
+ * rebuilt from sanitized segments and set in a code span ({@link codeSpan}).
  *
  * @param who - The person's display name, already sanitized.
  * @param change - What changed.
@@ -53,23 +79,25 @@ export function fileChangeSentence(
   change: Pick<RoomFileChangeEvent, 'kind' | 'paths' | 'pathCount' | 'from'>,
   target: string
 ): string {
-  const first = sanitizePath(change.paths[0] ?? '');
-  const where = target === '' ? 'the room’s files' : sanitizePath(target);
+  const file = (filePath: string): string => codeSpan(sanitizePath(filePath));
+  const name = (filePath: string): string => codeSpan(sanitizeSegment(basename(filePath)));
+  const first = change.paths[0] ?? '';
+  const where = target === '' ? ROOT_FOLDER_LABEL : file(target);
   switch (change.kind) {
     case 'edit':
-      return `${who} edited ${first}`;
+      return `${who} edited ${file(first)}`;
     case 'add':
-      return `${who} added ${first}`;
+      return `${who} added ${file(first)}`;
     case 'upload':
       return change.pathCount === 1
-        ? `${who} uploaded ${sanitizeSegment(basename(change.paths[0] ?? ''))} to ${where}`
+        ? `${who} uploaded ${name(first)} to ${where}`
         : `${who} uploaded ${change.pathCount} files to ${where}`;
     case 'rename':
-      return `${who} renamed ${sanitizePath(change.from ?? '')} to ${sanitizePath(target)}`;
+      return `${who} renamed ${file(change.from ?? '')} to ${file(target)}`;
     case 'delete':
-      return `${who} deleted ${sanitizePath(target)}`;
+      return `${who} deleted ${file(target)}`;
     case 'from-attachment':
-      return `${who} saved ${sanitizeSegment(basename(change.paths[0] ?? ''))} from the chat to ${where}`;
+      return `${who} saved ${name(first)} from the chat to ${where}`;
   }
 }
 

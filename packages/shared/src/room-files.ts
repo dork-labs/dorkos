@@ -356,10 +356,11 @@ export const RoomFileMoveRequestSchema = z.object({
   /** Where it goes. Must not exist; missing folders above it are created. */
   to: z.string().min(1),
   /**
-   * The commit the person's view came from. Every path under `from` must be
-   * unchanged since, or the move is refused `FILE_CHANGED`.
+   * The commit the person's view came from — required. Every path under `from`
+   * must be unchanged since, or the move is refused `FILE_CHANGED`: a move only
+   * makes sense over files the person has seen.
    */
-  baseCommit: CommitIdSchema.nullable(),
+  baseCommit: CommitIdSchema,
 });
 
 /** What a move sends. See {@link RoomFileMoveRequestSchema}. */
@@ -370,11 +371,11 @@ export const RoomFileDeleteRequestSchema = z.object({
   /** The file or folder to delete, as a listing named it. */
   path: z.string().min(1),
   /**
-   * The commit the person's view came from. Every path under `path` must be
-   * unchanged since, or the delete is refused `FILE_CHANGED` — nobody deletes a
-   * file they have not seen.
+   * The commit the person's view came from — required. Every path under
+   * `path` must be unchanged since, or the delete is refused `FILE_CHANGED`:
+   * nobody deletes a file they have not seen.
    */
-  baseCommit: CommitIdSchema.nullable(),
+  baseCommit: CommitIdSchema,
 });
 
 /** What a delete sends. See {@link RoomFileDeleteRequestSchema}. */

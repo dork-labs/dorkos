@@ -1188,12 +1188,34 @@ router.post('/:id/files/upload', (req, res) => {
             : () => res.json(outcome.result);
       }
     } catch (err) {
-      reply = () => sendRoomError(res, err, 'POST /:id/files/upload');
+      // A person closing the tab mid-upload is not a server fault, and there is
+      // nobody left to answer: a note, not an error, and no response.
+      if (isAbortedUpload(err)) {
+        logger.info('[rooms] an upload was abandoned before it finished', {
+          roomId: req.params.id,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+        reply = () => undefined;
+      } else {
+        reply = () => sendRoomError(res, err, 'POST /:id/files/upload');
+      }
     }
     if (stagingDir) await getRoomFileEditor().discardUpload(stagingDir);
     reply();
   })();
 });
+
+/**
+ * Whether an upload failed because the client went away — multer's own words
+ * for an aborted or closed request.
+ *
+ * @param err - What the upload failed with.
+ */
+function isAbortedUpload(err: unknown): boolean {
+  return (
+    err instanceof Error && (err.message === 'Request aborted' || err.message === 'Request closed')
+  );
+}
 
 /**
  * Turn a multer refusal into the room's own.

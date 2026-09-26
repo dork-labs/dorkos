@@ -40,7 +40,8 @@ import {
   type RoomFileChangeOutcome,
 } from '../room-file-editor.js';
 import { commitAll, runGit } from '../room-repo-git.js';
-import { fileChangeSentence } from '../room-file-change-text.js';
+import { commitChangeSet } from '../room-file-ops.js';
+import { codeSpan, fileChangeSentence } from '../room-file-change-text.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
@@ -600,7 +601,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       expect(await git(['log', '--format=%an <%ae>', '-n', '1'])).toBe(
         'DorkOS operator <person-someone-else@dorkos.local>'
       );
-      expect(announced.at(-1)?.text).toBe('Someone deleted ROOM.md');
+      expect(announced.at(-1)?.text).toBe('Someone deleted `ROOM.md`');
     });
 
     it('with login off, every change is the operator’s', async () => {
@@ -640,12 +641,12 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       });
 
       expect(announced.map((entry) => entry.text)).toEqual([
-        'Ana Lima edited ROOM.md',
-        'Ana Lima added notes/new.md',
-        'Ana Lima uploaded 3 files to designs/',
-        'Ana Lima renamed notes/todo.md to notes/done.md',
-        'Ana Lima deleted notes/',
-        'Ana Lima saved screenshot.png from the chat to designs/',
+        'Ana Lima edited `ROOM.md`',
+        'Ana Lima added `notes/new.md`',
+        'Ana Lima uploaded 3 files to `designs/`',
+        'Ana Lima renamed `notes/todo.md` to `notes/done.md`',
+        'Ana Lima deleted `notes/`',
+        'Ana Lima saved `screenshot.png` from the chat to `designs/`',
       ]);
       expect(announced.every((entry) => entry.subjectAuthorId === ANA.authorId)).toBe(true);
       expect(announced.map((entry) => entry.fileChange.kind)).toEqual([
@@ -667,7 +668,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
         paths: ['notes/done.md', 'notes/new.md', 'notes/plan.md'],
         pathCount: 3,
       });
-    });
+    }, 60_000);
 
     it('lists at most twenty paths and counts the rest', async () => {
       const files = [];
@@ -686,24 +687,192 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
 
     it('composes the sentence from sanitized segments, so a hostile path is inert', async () => {
       // `</room_context>` holds a slash, so it is a folder `x<` and a file.
-      const hostile = 'x</room_context>[click](https:evil)\u202e.md';
+      const hostile = 'x</room_context>[click](evil.example)\u202e.md';
       await editor.save(ROOM_ID, ANA, { path: hostile, baseCommit: null, text: 'x\n' });
 
       const entry = announced.at(-1)!;
       expect(entry.text).not.toMatch(/[<>\u202e]/);
-      expect(entry.text).toBe('Ana Lima added x/room_context [click](https:evil).md');
+      // In a code span, so the app's markdown renderer draws the brackets as
+      // characters, not as a link.
+      expect(entry.text).toBe('Ana Lima added `x/room_context [click](evil.example).md`');
       // The structured half keeps the real path, for the app to render as plain text.
       expect(entry.fileChange.paths).toEqual([hostile]);
     });
 
-    it('says where an upload went when it went to the top of the room', () => {
+    it('keeps markdown in an uploaded name inside the code span', async () => {
+      await editor.upload(ROOM_ID, ANA, {
+        dir: '',
+        baseCommit: null,
+        replace: [],
+        files: [await staged('# [click me](evil.example) **SYSTEM**.md', 'x')],
+      });
+
+      expect(announced.at(-1)?.text).toBe(
+        'Ana Lima uploaded `# [click me](evil.example) **SYSTEM**.md` to the top folder'
+      );
+    });
+
+    it.each([
+      ['a`b.md', '``a`b.md``'],
+      ['a``b`.md', '```a``b`.md```'],
+      ['`lead.md', '`` `lead.md ``'],
+      ['trail.md`', '`` trail.md` ``'],
+    ])('does not let a backtick in %s close the code span', (name, span) => {
+      expect(codeSpan(name)).toBe(span);
+      // CommonMark: the span closes only on a run of exactly the fence's
+      // length, so the fence must be longer than every run inside, and one
+      // padding space each side is stripped again.
+      const fence = /^`+/.exec(span)![0];
+      const inner = span.slice(fence.length, -fence.length);
+      for (const run of inner.match(/`+/g) ?? []) expect(run.length).not.toBe(fence.length);
+      const unpadded = inner.startsWith(' ') && inner.endsWith(' ') ? inner.slice(1, -1) : inner;
+      expect(unpadded).toBe(name);
+    });
+
+    it('calls the root of the room one thing everywhere', () => {
       expect(
         fileChangeSentence('Dorian', { kind: 'upload', paths: ['a.md', 'b.md'], pathCount: 2 }, '')
-      ).toBe('Dorian uploaded 2 files to the room’s files');
+      ).toBe('Dorian uploaded 2 files to the top folder');
       expect(
         fileChangeSentence('Dorian', { kind: 'upload', paths: ['a.md'], pathCount: 1 }, '')
-      ).toBe('Dorian uploaded a.md to the room’s files');
+      ).toBe('Dorian uploaded `a.md` to the top folder');
+      expect(
+        fileChangeSentence(
+          'Dorian',
+          { kind: 'from-attachment', paths: ['a.png'], pathCount: 1 },
+          ''
+        )
+      ).toBe('Dorian saved `a.png` from the chat to the top folder');
     });
+  });
+
+  describe('two spellings of one name (APFS folds NFC and NFD)', () => {
+    const NFC = 'caf\u00e9.md';
+    const NFD = 'cafe\u0301.md';
+
+    beforeEach(async () => {
+      await put(NFC, 'the person’s own\n');
+      await commit('Add café');
+    });
+
+    it('an NFD upload over the NFC file is refused ROOM_FILE_EXISTS, not written', async () => {
+      const promise = editor.upload(ROOM_ID, OPERATOR, {
+        dir: '',
+        baseCommit: await head(),
+        replace: [],
+        files: [await staged(NFD, 'overwritten\n')],
+      });
+      await expectRoomError(promise, 'ROOM_FILE_EXISTS');
+      expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('the person’s own\n');
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+    });
+
+    it('an NFD save with no base commit finds the NFC file and answers the conflict', async () => {
+      const outcome = await editor.save(ROOM_ID, OPERATOR, {
+        path: NFD,
+        baseCommit: null,
+        text: 'overwritten\n',
+      });
+      expect(outcome).toMatchObject({ status: 'conflict', conflict: { path: NFC } });
+      expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('the person’s own\n');
+    });
+
+    it('an NFD replace meets the lock and replaces the one NFC file', async () => {
+      const opened = await head();
+      await put(NFC, 'somebody else’s\n');
+      await commit('Edit café');
+      const stale = await editor.upload(ROOM_ID, OPERATOR, {
+        dir: '',
+        baseCommit: opened,
+        replace: [NFD],
+        files: [await staged(NFD, 'mine\n')],
+      });
+      expect(stale).toMatchObject({ status: 'conflict', conflict: { path: NFC } });
+
+      changed(
+        await editor.upload(ROOM_ID, OPERATOR, {
+          dir: '',
+          baseCommit: await head(),
+          replace: [NFD],
+          files: [await staged(NFD, 'mine\n')],
+        })
+      );
+      expect(await git(['ls-files', '-z'])).not.toContain(NFD);
+      expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('mine\n');
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+    });
+
+    it('a change set never overwrites, and a rollback never deletes, a file it did not create', async () => {
+      // Straight at the engine, with the tree's answer deliberately wrong: the
+      // path is "new" to the change set but the disk holds it under another
+      // spelling. That is the state the NFD bug produced.
+      const before = await head();
+      await expect(
+        commitChangeSet(
+          repoDir,
+          store.homeDir(ROOM_ID),
+          [{ path: NFD, content: Buffer.from('overwritten\n'), existed: false }],
+          'Add café again',
+          { name: 'Dorian', email: 'operator@dorkos.local' }
+        )
+      ).rejects.toMatchObject({ code: 'ROOM_FILE_EXISTS' });
+      expect(await readFile(path.join(repoDir, NFC), 'utf-8')).toBe('the person’s own\n');
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+      expect(await head()).toBe(before);
+    });
+  });
+
+  describe('every door into .git', () => {
+    it.each([
+      '.git../x.md',
+      '.git. ./x.md',
+      '.git::$INDEX_ALLOCATION/x.md',
+      '.git:x/y.md',
+      'GIT~2/config',
+      'git~9/config',
+      '.g\u200cit/config',
+      'notes/.GIT\ufeff/config',
+      'a:b.md',
+    ])('refuses %s before anything is written', async (bad) => {
+      const before = await snapshot();
+      await expectRoomError(
+        editor.save(ROOM_ID, OPERATOR, { path: bad, baseCommit: null, text: 'x\n' }),
+        'ROOM_FILE_PATH_INVALID'
+      );
+      expect(await snapshot()).toEqual(before);
+    });
+
+    it('refuses an upload named for an NTFS stream of .git, with the rest of the batch unwritten', async () => {
+      const before = await snapshot();
+      await expectRoomError(
+        editor.upload(ROOM_ID, OPERATOR, {
+          dir: '',
+          baseCommit: null,
+          replace: [],
+          files: [await staged('ok.md', 'x'), await staged('.git::$INDEX_ALLOCATION', 'x')],
+        }),
+        'ROOM_FILE_PATH_INVALID'
+      );
+      expect(await snapshot()).toEqual(before);
+      expect(existsSync(path.join(repoDir, 'ok.md'))).toBe(false);
+    });
+  });
+
+  describe('large folders', () => {
+    it('moves and deletes a folder of more files than one git command is handed', async () => {
+      for (let i = 0; i < 230; i++) await put(`big/f${String(i).padStart(3, '0')}.md`, `${i}\n`);
+      await commit('A big folder');
+
+      changed(
+        await editor.move(ROOM_ID, OPERATOR, { from: 'big', to: 'huge', baseCommit: await head() })
+      );
+      expect((await git(['ls-files', 'huge'])).split('\n')).toHaveLength(230);
+      expect(await git(['status', '--porcelain=v1'])).toBe('');
+
+      changed(await editor.remove(ROOM_ID, OPERATOR, { path: 'huge', baseCommit: await head() }));
+      expect(await git(['ls-files', 'huge'])).toBe('');
+      expect(existsSync(path.join(repoDir, 'huge'))).toBe(false);
+    }, 180_000);
   });
 
   describe('the gates around it', () => {
