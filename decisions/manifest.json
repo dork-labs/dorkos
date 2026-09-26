@@ -6570,6 +6570,20 @@
         "apps/server/src/services/runtimes/claude-code/accounts/account-launch-guard.ts",
         "packages/extension-api/src/server-extension-api.ts"
       ]
+    },
+    {
+      "id": "260926-153107",
+      "slug": "plugin-carried-extension-discovery",
+      "title": "Extensions that ship inside an installed plugin are discovered and gated like any other extension",
+      "status": "draft",
+      "created": "2026-09-26",
+      "extractedFrom": "claude-account-ui",
+      "specSlug": "claude-account-ui",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/extensions/extension-discovery.ts",
+        "apps/server/src/services/marketplace/flows/uninstall.ts"
+      ]
     }
   ]
 }

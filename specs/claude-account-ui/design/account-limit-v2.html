@@ -1,0 +1,336 @@
+<h2>When a session's account runs out: without flow vs with flow</h2>
+<p class="subtitle">
+  DorkOS always shows the notice, lets you pick another account, or wait. Flow, when installed, adds
+  a recommendation, hides kept-out accounts, keeps Main in reserve, and can move the work
+  automatically. The question for you is only <b>where the notice sits</b>: A or B. Each option
+  shows both states.
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 13px/1.5 system-ui;
+  }
+  .ax-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  @media (max-width: 760px) {
+    .ax-pair {
+      grid-template-columns: 1fr;
+    }
+  }
+  .ax-tag {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #71717a;
+    margin-bottom: 4px;
+  }
+  .ax-chat {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    overflow: hidden;
+    color: #18181b;
+  }
+  .ax-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid #f4f4f5;
+    font-size: 12px;
+  }
+  .ax-pill {
+    font-size: 10px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .ax-msgs {
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .ax-m {
+    background: #f4f4f5;
+    border-radius: 8px;
+    padding: 5px 9px;
+    max-width: 85%;
+    color: #3f3f46;
+  }
+  .ax-muted {
+    color: #71717a;
+  }
+  .ax-banner {
+    margin: 0 10px 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    font-size: 12px;
+    color: #7f1d1d;
+  }
+  .ax-card {
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid #fecaca;
+    background: #fff;
+    font-size: 12px;
+    border-left: 3px solid #ef4444;
+    color: #18181b;
+  }
+  .ax-btns {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .ax-btn {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+    white-space: nowrap;
+  }
+  .ax-btn.p {
+    background: #18181b;
+    color: #fff;
+    border-color: #18181b;
+  }
+  .ax-comp {
+    margin: 0 10px 10px;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 6px 9px;
+    color: #a1a1aa;
+    font-size: 11px;
+  }
+  .ax-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 3px;
+    vertical-align: middle;
+  }
+  .ax-dlg {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    padding: 12px 14px;
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+  }
+  .ax-opt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    margin-top: 5px;
+  }
+  .ax-opt.sel {
+    border-color: #18181b;
+    box-shadow: 0 0 0 1px #18181b inset;
+  }
+  .ax-grow {
+    flex: 1;
+  }
+  .ax-rec {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+  }
+  .ax-list {
+    margin: 6px 0 0;
+    padding-left: 16px;
+    color: #3f3f46;
+  }
+  .ax-cap {
+    font-size: 11px;
+    color: #a1a1aa;
+    margin: 16px 0 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A banner above the message box</h3>
+      <p>Stays in view where you'd type next, until it's resolved.</p>
+      <div class="ax ax-pair">
+        <div>
+          <div class="ax-tag">Without flow</div>
+          <div class="ax-chat">
+            <div class="ax-hdr">
+              <b>Fix the login bug</b><span class="ax-pill">● Acct 4 · out</span>
+            </div>
+            <div class="ax-msgs"><div class="ax-m">Running the tests now…</div></div>
+            <div class="ax-banner">
+              <b>Acct 4 is out of usage until Tue 3pm.</b>
+              <div class="ax-btns">
+                <span class="ax-btn p">Continue on another account…</span
+                ><span class="ax-btn">Wait for reset</span>
+              </div>
+            </div>
+            <div class="ax-comp">Paused until you continue or the account resets</div>
+          </div>
+        </div>
+        <div>
+          <div class="ax-tag">With flow (automatic hand-off)</div>
+          <div class="ax-chat">
+            <div class="ax-hdr">
+              <b>DOR-2361 issuer column</b><span class="ax-pill">● Acct 4 · out</span>
+            </div>
+            <div class="ax-msgs"><div class="ax-m">Running the migration tests now…</div></div>
+            <div class="ax-banner">
+              <b>Acct 4 is out of usage until Tue 3pm.</b> Moving this task to
+              <span class="ax-dot" style="background: #16a34a"></span>Acct 2 in 10s…
+              <div class="ax-btns">
+                <span class="ax-btn p">Move now</span><span class="ax-btn">Choose account…</span
+                ><span class="ax-btn">Wait for reset</span>
+              </div>
+            </div>
+            <div class="ax-comp">Paused until the task moves or the account resets</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A card in the conversation, where it stopped</h3>
+      <p>
+        Reads as part of the story, but scrolls away; the status chip and sidebar dot carry the
+        "out" state after that.
+      </p>
+      <div class="ax ax-pair">
+        <div>
+          <div class="ax-tag">Without flow</div>
+          <div class="ax-chat">
+            <div class="ax-hdr">
+              <b>Fix the login bug</b><span class="ax-pill">● Acct 4 · out</span>
+            </div>
+            <div class="ax-msgs">
+              <div class="ax-m">Running the tests now…</div>
+              <div class="ax-card">
+                <b>Acct 4 ran out of usage</b> <span class="ax-muted">· resets Tue 3pm</span>
+                <div class="ax-btns">
+                  <span class="ax-btn p">Continue on another account…</span
+                  ><span class="ax-btn">Wait for reset</span>
+                </div>
+              </div>
+            </div>
+            <div class="ax-comp">Message… (paused)</div>
+          </div>
+        </div>
+        <div>
+          <div class="ax-tag">With flow (after the automatic hand-off)</div>
+          <div class="ax-chat">
+            <div class="ax-hdr">
+              <b>DOR-2361 issuer column</b><span class="ax-pill">● Acct 4 · out</span>
+            </div>
+            <div class="ax-msgs">
+              <div class="ax-m">Running the migration tests now…</div>
+              <div class="ax-card">
+                <b>Acct 4 ran out of usage</b> <span class="ax-muted">· resets Tue 3pm</span
+                ><br />Saved a checkpoint and moved the task to
+                <span class="ax-dot" style="background: #16a34a"></span><b>Acct 2</b>.
+                <span style="color: #2563eb">Open the new session →</span>
+              </div>
+            </div>
+            <div class="ax-comp">Message… (paused)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ax">
+  <div class="ax-cap">The "Continue on another account" picker, same for A and B</div>
+  <div class="ax-pair">
+    <div>
+      <div class="ax-tag">Without flow</div>
+      <div class="ax-dlg">
+        <b>Continue on another account</b>
+        <div class="ax-muted">
+          Starts a new chat in the same folder, with a summary of this one. Sorted by most usage
+          left.
+        </div>
+        <div class="ax-opt sel">
+          <span class="ax-dot" style="background: #2563eb"></span><b>Main</b
+          ><span class="ax-grow"></span><span class="ax-muted">69% left · resets Sun</span>
+        </div>
+        <div class="ax-opt">
+          <span class="ax-dot" style="background: #16a34a"></span><b>Acct 2</b
+          ><span class="ax-grow"></span><span class="ax-muted">28% left · resets Sun</span>
+        </div>
+        <div class="ax-opt">
+          <span class="ax-dot" style="background: #71717a"></span><b>Client</b
+          ><span class="ax-grow"></span><span class="ax-muted">80% left · resets Fri</span>
+        </div>
+        <ul class="ax-list">
+          <li>Carries over: the folder and a summary of this chat</li>
+          <li>Doesn't: the chat itself</li>
+        </ul>
+        <div class="ax-btns" style="justify-content: flex-end">
+          <span class="ax-btn">Cancel</span><span class="ax-btn p">Continue on Main</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="ax-tag">With flow</div>
+      <div class="ax-dlg">
+        <b>Continue on another account</b>
+        <div class="ax-muted">Picks up in the same folder and branch from flow's checkpoint.</div>
+        <div class="ax-opt sel">
+          <span class="ax-dot" style="background: #16a34a"></span><b>Acct 2</b
+          ><span class="ax-rec">recommended</span><span class="ax-grow"></span
+          ><span class="ax-muted">28% left · resets Sun</span>
+        </div>
+        <div class="ax-opt">
+          <span class="ax-dot" style="background: #d97706"></span><b>Acct 3</b
+          ><span class="ax-grow"></span><span class="ax-muted">9% left · resets Thu</span>
+        </div>
+        <div class="ax-opt" style="opacity: 0.6">
+          <span class="ax-dot" style="background: #2563eb"></span><b>Main</b
+          ><span class="ax-grow"></span><span class="ax-muted">kept in reserve (50%)</span>
+        </div>
+        <div class="ax-muted" style="margin-top: 4px">Client is kept out, so it isn't listed.</div>
+        <ul class="ax-list">
+          <li>Carries over: files, branch, checkpoint, task</li>
+          <li>Doesn't: the chat itself</li>
+        </ul>
+        <div class="ax-btns" style="justify-content: flex-end">
+          <span class="ax-btn">Cancel</span><span class="ax-btn p">Continue on Acct 2</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 16px">
+  <b>My pick: A.</b> Running out blocks your next step, so the notice belongs where you'd act, and
+  it stays until it's handled.
+</p>
