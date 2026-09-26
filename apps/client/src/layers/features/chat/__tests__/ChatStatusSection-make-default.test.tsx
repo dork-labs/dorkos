@@ -490,8 +490,6 @@ describe('the offer stays quiet when it would say nothing', () => {
   });
 
   it('offers nothing where the answer could not be stored', async () => {
-    // Obsidian: config does not round-trip, so an offer would save nothing and
-    // report nothing — worse than never offering.
     canRemember.current = false;
     renderSection();
     fireEvent.click(screen.getByTestId('select-act'));

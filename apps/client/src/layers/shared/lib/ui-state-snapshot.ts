@@ -16,8 +16,7 @@
  *
  * @module shared/lib/ui-state-snapshot
  */
-import type { UiState, UiSidebarTab } from '@dorkos/shared/types';
-import { getPlatform } from './platform';
+import type { UiState } from '@dorkos/shared/types';
 
 /**
  * The app-store slice values the UI-state snapshot reads.
@@ -34,13 +33,6 @@ export interface UiStateSource {
   relayOpen: boolean;
   pickerOpen: boolean;
   sidebarOpen: boolean;
-  /**
-   * The embedded shell's legacy sidebar-strip tab. Only reported to the agent on
-   * the embedded (Obsidian) host — the web cockpit has no sidebar tab strip, so
-   * the snapshot reports `sidebar.activeTab: null` there rather than a control
-   * that does nothing.
-   */
-  sidebarActiveTab: UiSidebarTab;
 }
 
 /**
@@ -58,12 +50,8 @@ export function buildUiStateSnapshot(source: UiStateSource, cwd: string | null):
       relay: source.relayOpen,
       picker: source.pickerOpen,
     },
-    // `activeTab` is meaningful only where a sidebar tab strip exists — the
-    // embedded (Obsidian) shell. The web cockpit has no strip, so report null
-    // rather than a tab the agent could never address (an honest `get_ui_state`).
     sidebar: {
       open: source.sidebarOpen,
-      activeTab: getPlatform().isEmbedded ? source.sidebarActiveTab : null,
     },
     agent: { id: null, cwd: cwd ?? null },
   };

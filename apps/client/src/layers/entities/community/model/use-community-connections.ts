@@ -37,11 +37,18 @@ export function communityAccessState(access: CommunityConnectionAccess | null | 
   const cacheReadable = verified
     ? capabilities.read
     : access?.state === 'unverified' && access.lastKnown?.capabilities.read;
+  // What the grant allows, never WHEN it was last checked. The server stamps a
+  // fresh `verifiedAt` on every connection listing (every 30 seconds, and on
+  // every mount), so a fingerprint carrying it changed each time and every open
+  // channel threw away its history, restarted its stream and dropped the
+  // receipt for a post in flight — the reason your own message could take
+  // twenty seconds to appear (DOR-2268). A change in what you may do still
+  // moves it, which is the fence it exists for.
   const fingerprint =
     access?.state === 'reconnect-required'
       ? 'reconnect-required'
       : access?.lastKnown
-        ? JSON.stringify([access.lastKnown.verifiedAt, access.lastKnown.capabilities])
+        ? JSON.stringify([access.lastKnown.lifecycle, access.lastKnown.capabilities])
         : (access?.state ?? 'pending');
   return { verified, capabilities, cacheReadable: Boolean(cacheReadable), fingerprint };
 }

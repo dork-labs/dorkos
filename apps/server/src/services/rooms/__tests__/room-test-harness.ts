@@ -702,6 +702,17 @@ export function createRoomHarness(opts: {
   responseGate?: ResponseGateMode;
   collect?: CollectWindow;
   holdCeilingMs?: number;
+  /**
+   * `rooms.maxConcurrentTurnsPerAgent` — how many turns one agent may run in
+   * its directory at once. A FUNCTION as well as a number, so a test can move it
+   * while turns are live, the way Settings does.
+   *
+   * **Defaults to 1, not the shipped 3, and deliberately.** Most suites that
+   * reach the second ceiling are about what a HOLD does — its indicator, its
+   * expiry, its promotion — and one busy room is the smallest setup that makes
+   * one. A test about the dial itself pins its own number.
+   */
+  maxConcurrentTurnsPerAgent?: number | (() => number);
   maxAttachmentsPerEntry?: number;
   /** How many messages one agent may post into a room inside one turn. */
   maxPostsPerTurn?: number;
@@ -770,8 +781,13 @@ export function createRoomHarness(opts: {
   mirrorAccess?: RoomMirrorAccess;
   /** Trusted remote-mirror delivery policy, for real writer transaction tests. */
   mirrorWrites?: RoomMirrorWritePolicy;
+  /**
+   * A migrated database to run on, for the tests that read its file. Defaults to a fresh
+   * in-memory one.
+   */
+  db?: Db;
 }): RoomHarness {
-  const db = createTestDb();
+  const db = opts.db ?? createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
   const authors = new AuthorRegistry(db, agentLookup);
   const runner = opts.runner ?? scriptedRunner();
@@ -899,6 +915,11 @@ export function createRoomHarness(opts: {
     responseGate: () => responseGate,
     collect: () => collect,
     holdCeilingMs: () => holdCeilingMs,
+    maxConcurrentTurnsPerAgent: () => {
+      const option = opts.maxConcurrentTurnsPerAgent;
+      if (typeof option === 'function') return option();
+      return option ?? 1;
+    },
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     maxPostsPerTurn: () => opts.maxPostsPerTurn ?? 3,
     maxCanvasOpsPerTurn: () => {

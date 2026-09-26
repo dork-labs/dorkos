@@ -119,7 +119,7 @@ describe('the snapshot a cold connect receives', () => {
   });
 
   it('answers the empty table on a host that stood no canvas up', async () => {
-    // The Obsidian embed and a server mid-boot: no canvas service is registered
+    // A server mid-boot has no canvas service registered
     // at all. A stream that failed here would take the whole session down over
     // a table nobody asked for. A fresh module graph is how "registered
     // nothing" is expressed — there is deliberately no unregister.

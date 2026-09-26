@@ -687,9 +687,8 @@ export interface FeedbackEventContext {
 
 /**
  * Build a fully-enveloped {@link FeedbackEvent} from a submission plus its
- * context. The single place the `kind → event name` mapping lives, shared by
- * the server feedback-reporter and the in-process (Obsidian) sender so both wire
- * the same shape: `idea` → `feature_requested`; `feedback`/`bug` →
+ * context. The single place the `kind → event name` mapping lives for
+ * the server feedback reporter: `idea` → `feature_requested`; `feedback`/`bug` →
  * `feedback_submitted` (carrying `kind`).
  *
  * Only `message`/`contact`/`route`/`dorkosVersion`/`reporterEmail`/`reporterName`

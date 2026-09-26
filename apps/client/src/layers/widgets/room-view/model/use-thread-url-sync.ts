@@ -121,10 +121,6 @@ export function useThreadUrlSync({
     }
 
     if (openThreadId === urlThreadId) return;
-    // Mirroring the open thread into `?thread=` is reading, not navigating, so it
-    // goes through the in-place navigator: a lookup in flight when the thread
-    // panel syncs its URL must not read as a departure (DOR-931). `null` only in
-    // the router-less embed, which never mounts this routed room view.
     inPlaceNavigate?.({
       to: route,
       search: (prev: Record<string, unknown>) => ({ ...prev, thread: openThreadId }),

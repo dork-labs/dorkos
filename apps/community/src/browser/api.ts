@@ -11,10 +11,53 @@ export class RequestError extends Error {
   }
 }
 
-/** Bind a v1 browser request to the immutable tenant in the canonical browser path. */
+/**
+ * A community reached by its short address: the resolved UUID and the `/<name>` base the page
+ * lives under. The name only ever finds the UUID; every request still names the UUID.
+ */
+export type ShortNameRoute = { communityId: string; basePath: string };
+
+let shortNameRoute: ShortNameRoute | null = null;
+
+/** Remember the community this page resolved from its short address, for tenant requests. */
+export function setShortNameRoute(route: ShortNameRoute | null): void {
+  shortNameRoute = route;
+}
+
+/** The `/<name>` base this page was opened under, when it was opened by a short address. */
+export function shortNameBasePath(): string | undefined {
+  return shortNameRoute?.basePath;
+}
+
+/** The community's base path on this page: its short address when it arrived by one. */
+export function communityBasePath(communityId: string): string {
+  return shortNameRoute?.communityId === communityId
+    ? shortNameRoute.basePath
+    : `/c/${communityId}`;
+}
+
+/**
+ * Whether a browser path names one community: its canonical `/c/<uuid>` address, or the short
+ * address this page resolved. Only such a page goes back to the chooser when that community
+ * turns out not to be open to this person.
+ */
+export function isCommunityPath(pathname: string): boolean {
+  if (/^\/c\/[^/]+(?:\/|$)/u.test(pathname)) return true;
+  const base = shortNameRoute?.basePath;
+  return base !== undefined && (pathname === base || pathname.startsWith(`${base}/`));
+}
+
+/** Bind a v1 browser request to the immutable tenant the browser path names. */
 export function tenantApiPath(path: string, browserPath = window.location.pathname): string {
   if (!path.startsWith('/api/v1/')) return path;
-  const tenant = browserPath.match(/^\/c\/([^/]+)(?:\/|$)/u)?.[1];
+  const canonical = browserPath.match(/^\/c\/([^/]+)(?:\/|$)/u)?.[1];
+  const named =
+    shortNameRoute &&
+    (browserPath === shortNameRoute.basePath ||
+      browserPath.startsWith(`${shortNameRoute.basePath}/`))
+      ? shortNameRoute.communityId
+      : undefined;
+  const tenant = canonical ?? named;
   return tenant ? `/api/v1/communities/${tenant}${path.slice('/api/v1'.length)}` : path;
 }
 

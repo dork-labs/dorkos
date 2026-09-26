@@ -76,9 +76,6 @@ export function useOnboardingStage(): OnboardingStageNav {
     hasAnchored.current = true;
     if (isOnboardingStage(raw)) return;
     const updater: OnboardingSearchUpdater = (prev) => ({ ...prev, onboarding: 'welcome' });
-    // The overlay rides above whatever route is active, so anchoring its stage
-    // is an in-place rewrite, not a departure (DOR-931). `null` only in the
-    // router-less embed, which never runs onboarding.
     inPlaceNavigate?.({ search: updater, replace: true });
   }, [routerResolved, raw, inPlaceNavigate]);
 

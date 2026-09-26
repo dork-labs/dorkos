@@ -18,6 +18,26 @@ import { minutesBetween, round, secondOfDay } from './time.ts';
 export const FAILED = new Set(['failure', 'timed_out', 'startup_failure']);
 const QUEUE_REF = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-/;
 
+/**
+ * One raw run from the Actions API, trimmed to the fields the collector reads.
+ *
+ * @param r - A `workflow_runs` element.
+ */
+export function trimRun(r: Record<string, unknown>): Run {
+  return {
+    id: Number(r.id),
+    path: String(r.path ?? ''),
+    event: String(r.event ?? ''),
+    status: String(r.status ?? ''),
+    conclusion: typeof r.conclusion === 'string' ? r.conclusion : null,
+    created_at: String(r.created_at),
+    updated_at: String(r.updated_at),
+    run_attempt: Number(r.run_attempt ?? 1),
+    head_branch: typeof r.head_branch === 'string' ? r.head_branch : null,
+    head_sha: String(r.head_sha),
+  };
+}
+
 function groupBy<T>(xs: readonly T[], key: (x: T) => string): Map<string, T[]> {
   const m = new Map<string, T[]>();
   for (const x of xs) {
@@ -160,7 +180,9 @@ export function canaryRuns(
 }
 
 /**
- * Commits on the default branch, and whether their PUSH checks went red.
+ * Commits on the default branch, whether their PUSH checks went red, and
+ * which push workflow went which way (`mainEpisodes` closes a red spell only
+ * when the workflow that failed goes green again).
  *
  * `push` only, deliberately, and the filter is load-bearing: the main canary
  * runs the same required workflows against the same branch on `schedule`, and
@@ -176,6 +198,24 @@ export function mainCommits(runs: readonly Run[], defaultBranch: string): MainCo
   const out: MainCommit[] = [];
   for (const [sha, rs] of groupBy(push, (r) => r.head_sha)) {
     if (rs.some((r) => r.status !== 'completed')) continue;
+    // Per workflow, the newest run decides: a re-run that went green is green.
+    // A cancelled or skipped run says nothing about the tree, so it is left
+    // out rather than read as green (it must not close a red spell).
+    const newest = new Map<string, Run>();
+    for (const r of rs) {
+      const cur = newest.get(r.path);
+      if (
+        !cur ||
+        r.created_at > cur.created_at ||
+        (r.created_at === cur.created_at && r.id > cur.id)
+      )
+        newest.set(r.path, r);
+    }
+    const workflows: Record<string, boolean> = {};
+    for (const [p, r] of [...newest].sort(([a], [b]) => a.localeCompare(b))) {
+      if (r.conclusion === 'cancelled' || r.conclusion === 'skipped') continue;
+      workflows[p.slice(p.lastIndexOf('/') + 1)] = FAILED.has(r.conclusion ?? '');
+    }
     out.push({
       sha: sha.slice(0, 12),
       at: rs.map((r) => r.created_at).sort()[0]!,
@@ -184,6 +224,7 @@ export function mainCommits(runs: readonly Run[], defaultBranch: string): MainCo
         .sort()
         .at(-1)!,
       red: rs.some((r) => FAILED.has(r.conclusion ?? '')),
+      workflows,
     });
   }
   return out.sort((a, b) => a.at.localeCompare(b.at));

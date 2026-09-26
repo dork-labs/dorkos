@@ -21,6 +21,13 @@ export {
   createInSessionContextResolver,
   AGENT_TOKEN_ENV_VAR,
 } from './agent-token-env.js';
+export {
+  resolveIdentityAnchor,
+  anchorPath,
+  setWorkingCopyOwnerPort,
+  type IdentityAnchor,
+  type WorkingCopyOwnerPort,
+} from './identity-anchor.js';
 export { createCapabilityAttributionObserver } from './capability-attribution.js';
 export { createCapabilityGateAuditObserver } from './capability-gate-audit.js';
 export { createAgentIdentityUnregisterCascade } from './unregister-cascade.js';

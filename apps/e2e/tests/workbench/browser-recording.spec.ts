@@ -48,7 +48,7 @@ test.describe('Browser — an agent records what it did @smoke', () => {
   });
 
   /** Select the recording scenario and seed a working directory to record into. */
-  async function selectRecordingScenario(page: Page): Promise<void> {
+  async function selectRecordingScenario(page: Page, sessionId: string): Promise<void> {
     const reset = await page.request.post('/api/test/reset');
     if (reset.status() === 404) {
       throw new Error(
@@ -57,8 +57,10 @@ test.describe('Browser — an agent records what it did @smoke', () => {
           '`chromium-browser-driving` project.'
       );
     }
+    // Only this conversation records a browser. Leaving the shared default on
+    // this scenario would make later room turns record instead of posting replies.
     const res = await page.request.post('/api/test/scenario', {
-      data: { name: 'browser-recording' },
+      data: { name: 'browser-recording', sessionId },
     });
     expect(res.ok(), `could not select the recording scenario: ${await res.text()}`).toBe(true);
 
@@ -99,7 +101,7 @@ test.describe('Browser — an agent records what it did @smoke', () => {
 
   test('records the run, saves a real GIF, and answers with its last frame', async ({ page }) => {
     const sessionId = randomUUID();
-    await selectRecordingScenario(page);
+    await selectRecordingScenario(page, sessionId);
     await openFixture(page, sessionId);
 
     const chat = new ChatPage(page);

@@ -8,9 +8,8 @@ import {
   ScrollArea,
 } from '@/layers/shared/ui';
 import { SessionRow } from '@/layers/entities/session';
-import type { Session, SessionListWarning } from '@dorkos/shared/types';
+import type { Session } from '@dorkos/shared/types';
 import { FleetContextBar } from './FleetContextBar';
-import { SessionListWarningNotice, warningKey } from './SessionListWarningNotice';
 
 interface SessionGroup {
   label: string;
@@ -20,12 +19,6 @@ interface SessionGroup {
 interface SessionsViewProps {
   activeSessionId: string | null;
   groupedSessions: SessionGroup[];
-  /**
-   * Per-runtime listing degradations from the aggregated session list
-   * (ADR-0310) — a runtime that failed or timed out contributed zero
-   * sessions. Rendered as a quiet, non-blocking notice above the list.
-   */
-  warnings?: SessionListWarning[];
   onSessionClick: (sessionId: string) => void;
   onForkSession?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string, title: string) => void;
@@ -35,7 +28,6 @@ interface SessionsViewProps {
 export function SessionsView({
   activeSessionId,
   groupedSessions,
-  warnings = [],
   onSessionClick,
   onForkSession,
   onRenameSession,
@@ -46,15 +38,7 @@ export function SessionsView({
 
   return (
     <ScrollArea type="scroll" className="h-full" viewportClassName="[&>div]:!block">
-      {warnings.length > 0 && (
-        <div className="space-y-1 px-4 pt-2" data-testid="session-list-warnings">
-          {warnings.map((warning) => (
-            <SessionListWarningNotice key={warningKey(warning)} warning={warning} />
-          ))}
-        </div>
-      )}
-      {/* Fleet-level context health — complements the per-runtime warnings above
-          and hides itself when there is nothing to report (spec §8b). */}
+      {/* Fleet context health hides when there is nothing to report. */}
       <FleetContextBar />
       <motion.div layout>
         <LayoutGroup id={rowGroupId}>

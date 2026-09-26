@@ -13,7 +13,7 @@
  */
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { Session, SessionListWarning } from '@dorkos/shared/types';
+import type { Session } from '@dorkos/shared/types';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from './query-keys';
@@ -23,19 +23,8 @@ import { syncSessionDetailCache } from '../lib/sync-session-detail-cache';
 export interface SessionListQueryDeps {
   /** Transport the list is fetched over. */
   transport: Transport;
-  /** Query client the sibling warnings + detail caches are written through. */
+  /** Query client used to refresh the detail cache. */
   queryClient: QueryClient;
-}
-
-/**
- * Cache key for the per-runtime listing warnings that ride the session list.
- * Deliberately outside {@link sessionKeys.listRoot}: every entry under that
- * prefix is swept as a `Session[]`, and this one is not (DOR-497).
- *
- * @param cwd - The working directory, or null for the default one.
- */
-export function sessionListWarningsKey(cwd: string | null) {
-  return ['session-list-warnings', cwd] as const;
 }
 
 /**
@@ -44,8 +33,7 @@ export function sessionListWarningsKey(cwd: string | null) {
  * The transport returns the aggregated-list envelope `{ sessions, warnings? }`
  * (ADR-0310). It is unwrapped here: this cache deliberately stays `Session[]`
  * because many consumers (router loader, submit hook, global stream bridge,
- * rename) read and patch it as a bare array. The per-runtime `warnings` ride a
- * sibling cache entry and surface through `useSessionListWarnings`.
+ * rename) read and patch it as a bare array.
  *
  * @param deps - Transport to fetch over and query client to write through.
  * @param cwd - The working directory, or null for the default one.
@@ -59,11 +47,7 @@ export function sessionListQueryOptions(deps: SessionListQueryDeps, cwd: string 
       // detail-cache sync needs that lower bound to tell an answer that predates
       // a settings PATCH from one that supersedes it (DOR-496).
       const observedAt = Date.now();
-      const { sessions, warnings } = await deps.transport.listSessions(cwd ?? undefined);
-      deps.queryClient.setQueryData<SessionListWarning[]>(
-        sessionListWarningsKey(cwd),
-        warnings ?? []
-      );
+      const { sessions } = await deps.transport.listSessions(cwd ?? undefined);
       // These rows are the same answer the detail endpoint gives, so any detail
       // entry they cover is refreshed too. A refetch triggered from elsewhere —
       // a Claude account switch, a rename from a profile — would otherwise leave a

@@ -8,7 +8,7 @@
  */
 import { createRef, type ReactNode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -604,5 +604,43 @@ describe('Conversation.Timeline', () => {
 
     expect(ref.current!.scrollToRow('room-entry-entry-1')).toBe(true);
     expect(screen.getByTestId('row')).toHaveFocus();
+  });
+
+  it('reaches the real end in one press of Scroll to bottom, through the virtualizer (DOR-2268)', () => {
+    // **Seeded defect:** point the jump back at `scroll.scrollToBottom` alone →
+    // red. That wrote `scrollTop = scrollHeight`, and a virtualized list's
+    // `scrollHeight` counts every never-drawn row at its 80px estimate — so
+    // after a burst of taller messages one smooth press stopped short, and a
+    // reader in a community channel pressed two to four times. Only the
+    // virtualizer re-aims as rows are measured; whether that lands is asked in
+    // a browser (`apps/e2e/tests/connections/community-channel-view.spec.ts`).
+    mount();
+    virtual.scrollToEnd.mockClear();
+    const scroller = screen.getByTestId('conversation-scroller');
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 5_000 });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 500 });
+    scroller.scrollTop = 0;
+    fireEvent.scroll(scroller);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scroll to bottom' }));
+
+    expect(virtual.scrollToEnd).toHaveBeenCalledTimes(1);
+    // Instant, because it is far: a smooth scroll re-aimed on every measured
+    // row crawls, and took over five seconds past forty messages in Chromium.
+    expect(virtual.scrollToEnd).toHaveBeenCalledWith({ behavior: 'auto' });
+  });
+
+  it('animates a jump that is less than a screen away', () => {
+    mount();
+    virtual.scrollToEnd.mockClear();
+    const scroller = screen.getByTestId('conversation-scroller');
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 5_000 });
+    Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 500 });
+    scroller.scrollTop = 4_200;
+    fireEvent.scroll(scroller);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scroll to bottom' }));
+
+    expect(virtual.scrollToEnd).toHaveBeenCalledWith({ behavior: 'smooth' });
   });
 });

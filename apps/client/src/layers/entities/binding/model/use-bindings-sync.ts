@@ -10,10 +10,6 @@ import { BINDINGS_QUERY_KEY } from './use-bindings';
  * orphan of a removed adapter. This hook invalidates the shared bindings query
  * so every open surface (topology graph, Integrations tab, sidebar) reflects the
  * change immediately instead of waiting for a local mutation.
- *
- * Mount once near the app root. In embedded mode (Obsidian) the in-process
- * transport yields no generic events, so the subscription is an inert no-op
- * there; that surface stays consistent via each mutation's direct invalidation.
  */
 export function useBindingsSync(): void {
   const queryClient = useQueryClient();

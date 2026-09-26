@@ -2,11 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTransport, useAppStore, useTabVisibility } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
-import {
-  isSessionScopeReady,
-  useSessionScopedCwd,
-  useSessionStreamLifecycle,
-} from '@/layers/entities/session';
+import { useSessionScopedCwd, useSessionStreamLifecycle } from '@/layers/entities/session';
 import type { TaskItem, TaskUpdateEvent, SessionTaskStatus } from '@dorkos/shared/types';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import { applyTaskEvent, createTaskFoldState, type TaskFoldState } from '@dorkos/shared/task-fold';
@@ -127,8 +123,8 @@ export function useTaskState(sessionId: string | null, isStreaming: boolean = fa
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     // A null directory is a complete question — the server resolves the
-    // session's own (DOR-1444). Only an UNSETTLED one is worth waiting for.
-    enabled: isSessionScopeReady(sessionId, sessionCwd),
+    // session's own (DOR-1444). The URL supplies the scope on the first render.
+    enabled: sessionId !== null,
     refetchInterval: () => {
       if (!enableMessagePolling) return false;
       if (isStreaming) return false;

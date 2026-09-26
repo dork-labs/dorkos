@@ -63,17 +63,9 @@ export interface PanelsSlice {
   setProfileOpen: (open: boolean) => void;
   /**
    * Whose profile the drawer is showing, in roster ids.
-   *
-   * The payload beside the open flag, the same shape `shapeSwitcherFocus` has —
-   * and the reason there is a store half at all: the Obsidian embed has no URL
-   * to carry the subject in, so without this the drawer would open on nobody.
-   * Cleared whenever the drawer closes.
    */
   profileMemberId: string | null;
-  /**
-   * Which page of that profile is pushed, or `null` for its root — the store
-   * half of `?profilePage=`, and the only way the embed can push one at all.
-   */
+
   profilePage: string | null;
   /** Push a page of the open profile, or go back to its root with `null`. */
   setProfilePage: (page: string | null) => void;

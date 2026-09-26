@@ -1044,8 +1044,7 @@ export const SessionSnapshotSchema = z
      *
      * Required rather than optional, so a transport that forgot to decorate its
      * snapshot fails a test instead of quietly answering with an empty table.
-     * Decorated in `deliverSessionStream` and in `DirectTransport`'s own
-     * session-stream methods rather than inside four runtime adapters: storage a
+     * Decorated in `deliverSessionStream` rather than inside four runtime adapters: storage a
      * runtime owns lives in the runtime, and storage the server owns is not
      * copied into each of them (ADR-0310's reasoning, in the other direction).
      */

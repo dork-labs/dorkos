@@ -49,10 +49,10 @@
 #
 # WHICH FILES — THE SAME "CHANGED" THE COMMIT GATES MEAN
 #
-# The base is resolved with the exact expression the pre-commit `lint` and
-# `typecheck` commands in lefthook.yml use for TURBO_SCM_BASE
-# (DOR-617/DOR-1717; the pre-push `tests` command used it too, until DOR-2160
-# removed that command):
+# The base is resolved with the exact expression the pre-commit `lint` command
+# in lefthook.yml uses for TURBO_SCM_BASE (DOR-617/DOR-1717; the pre-push
+# `tests` command used it too, until DOR-2160 removed that command, and so did
+# the pre-commit `typecheck`, until ci/ledger/260919-175506-* removed that):
 #
 #     $(git rev-parse --verify --quiet origin/main || echo main)
 #
@@ -204,7 +204,7 @@ if [ -z "$repo_root" ]; then
 fi
 cd "$repo_root" || exit 1
 
-# Identical to the pre-commit gates' TURBO_SCM_BASE expression, on purpose —
+# Identical to the pre-commit lint gate's TURBO_SCM_BASE expression, on purpose —
 # see the header. `--verify --quiet` prints a sha and stays silent when the ref is
 # absent, so the fallback is the literal branch name for git to resolve.
 base="$(git rev-parse --verify --quiet origin/main || echo main)"

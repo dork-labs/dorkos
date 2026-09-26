@@ -45,7 +45,9 @@ import { buildInstallerForTests } from './installer-harness.js';
 import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
 import { UpdateFlow } from '../flows/update.js';
 import { pickInstallation } from '../flows/update-selection.js';
-import type { UpdateResult } from '../flows/update-types.js';
+import type { UpdateCheckResult } from '../flows/update-types.js';
+import type { InstallResult } from '../types.js';
+import { applyAsShown } from './apply-as-shown.js';
 import { noopLogger } from '@dorkos/shared/logger';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -63,22 +65,23 @@ function fixturePath(
 
 /**
  * Check one package by name the way the per-package route does: scan the
- * request's scope, resolve the installation the name means, and run it.
+ * request's scope and check the installation the name means. With `apply`,
+ * that installation is applied the only way the flow allows
+ * ({@link applyAsShown}), as a named `marketplace_update` would.
  */
 async function runNamed(
   flow: UpdateFlow,
   dorkHome: string,
   req: { name: string; apply?: boolean; projectPath?: string }
-): Promise<UpdateResult> {
+): Promise<{ checks: UpdateCheckResult[]; applied: InstallResult[] }> {
   const inScope = await scanInstallationRecords(
     dorkHome,
     req.projectPath ? { projectPath: req.projectPath } : { agents: [] }
   );
-  return flow.run({
-    name: req.name,
-    installation: pickInstallation(inScope, req.name),
-    apply: req.apply,
-  });
+  const installation = pickInstallation(inScope, req.name);
+  if (req.apply && installation) return applyAsShown(flow, [installation]);
+  const { checks } = await flow.run({ name: req.name, installation });
+  return { checks, applied: [] };
 }
 
 /** Returns true if `target` exists on disk. */
@@ -766,10 +769,10 @@ describe('marketplace install pipeline — integration', () => {
           fetcher,
           logger: noopLogger,
         });
-        const { checks } = await flow.checkInstallations({
-          installations: await scanInstallationRecords(dorkHome, { agents: [] }),
-          apply: true,
-        });
+        const { checks } = await applyAsShown(
+          flow,
+          await scanInstallationRecords(dorkHome, { agents: [] })
+        );
 
         const agentRoot = path.join(dorkHome, 'agents', 'valid-agent');
         expect(checks.find((c) => c.installPath === linkPath)).toMatchObject({ status: 'unknown' });
@@ -920,22 +923,19 @@ describe('marketplace install pipeline — integration', () => {
         const scan = () =>
           scanInstallationRecords(dorkHome, { agents: [{ projectPath: agentPath }] });
 
-        const advisory = await flow.checkInstallations({ installations: await scan() });
+        const advisory = await flow.planInstallations({ installations: await scan() });
         expect(advisory.checks.map((c) => [c.scope, c.status])).toEqual([
           ['global', 'update-available'],
           ['override', 'update-available'],
         ]);
 
-        const { checks } = await flow.checkInstallations({
-          installations: await scan(),
-          apply: true,
-        });
+        const { checks } = await applyAsShown(flow, await scan());
         expect(checks.map((c) => c.applied?.installPath)).toEqual([
           path.join(dorkHome, 'plugins', 'valid-plugin'),
           path.join(agentPath, '.dork', 'plugins', 'valid-plugin'),
         ]);
 
-        const rerun = await flow.checkInstallations({ installations: await scan() });
+        const rerun = await flow.planInstallations({ installations: await scan() });
         expect(rerun.checks.map((c) => [c.installedVersion, c.status])).toEqual([
           ['1.1.0', 'current'],
           ['1.1.0', 'current'],
@@ -952,7 +952,7 @@ describe('marketplace install pipeline — integration', () => {
       await setMarketplaceVersion('1.1.0', '1.1.0');
       const before = await scanInstallationsAcrossScopes(dorkHome, []);
 
-      const { checks } = await flow.checkInstallations({
+      const { checks } = await flow.planInstallations({
         installations: await scanInstallationRecords(dorkHome, { agents: [] }),
       });
 

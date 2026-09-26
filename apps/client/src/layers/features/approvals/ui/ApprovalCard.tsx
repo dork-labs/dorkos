@@ -258,11 +258,14 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               scrollable rather than clamped: a person answering this has to be
               able to read all of it, and a long one must not push the buttons
               off the card. `whitespace-pre-wrap` keeps the author's own line
-              breaks without letting a single long line widen the layout. */}
+              breaks without letting a single long line widen the layout. On a
+              phone it gets up to half the screen: the card is full width there,
+              and a settings file or a script is otherwise read a few lines at a
+              time (DOR-2325). */}
           {approval.detail !== undefined && (
             <pre
               data-slot="approval-detail"
-              className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-56 overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap"
+              className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
             >
               {approval.detail}
             </pre>

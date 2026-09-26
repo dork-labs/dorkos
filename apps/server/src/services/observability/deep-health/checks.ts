@@ -13,6 +13,7 @@
  * @module services/observability/deep-health/checks
  */
 import type { CheckResult } from '@dorkos/shared/health-schemas';
+import type { InstallIntegrity } from '@dorkos/shared/marketplace-schemas';
 import type { RoomSessionBinding } from '../../rooms/session-bindings/room-session-ledger.js';
 
 /** Facts needed to judge whether room members still have a conversation to continue. */
@@ -243,6 +244,89 @@ export function checkRelayBindingGhosts(input: RelayBindingGhostInput): CheckRes
     detail: `${capitalize(parts.join('; '))}. Messages sent through them go nowhere.`,
     fix: 'Delete the stale connections on the Connections page, or re-add what they point at.',
   };
+}
+
+/** One installed package's name and integrity, as the installed list reports it. */
+export interface InstalledPackageIntegrity {
+  name: string;
+  integrity: InstallIntegrity;
+}
+
+/** Facts needed to judge the installed packages. */
+export interface InstalledPackagesInput {
+  /** Every installation, verified. */
+  installs: readonly InstalledPackageIntegrity[];
+}
+
+/**
+ * Installed packages whose files changed since install, and packages an older
+ * DorkOS installed without recording their files (DOR-2197).
+ *
+ * Names only, never paths: this response is content-free. A linked working
+ * copy, or a record that cannot be read, says nothing here; the Installed view
+ * and `dorkos marketplace installed --verify` show those.
+ *
+ * @param input - Every installation's integrity.
+ * @returns A `pass` when everything is as installed, otherwise a `warn`.
+ */
+export function checkInstalledPackages(input: InstalledPackagesInput): CheckResult {
+  const unique = (names: string[]): string[] => [...new Set(names)].sort();
+  const changed = unique(
+    input.installs.filter((i) => i.integrity.status === 'modified').map((i) => i.name)
+  );
+  const older = unique(
+    input.installs
+      .filter(
+        (i) =>
+          i.integrity.status === 'unknown' &&
+          (i.integrity.reason === 'no-record' || i.integrity.reason === 'inferred')
+      )
+      .map((i) => i.name)
+  );
+  // Files an update kept because nothing proved whose they were (DOR-2322).
+  const keptInstalls = input.installs.filter(
+    (i) =>
+      (i.integrity.status === 'clean' || i.integrity.status === 'modified') &&
+      i.integrity.unproven !== undefined
+  );
+  const kept = unique(keptInstalls.map((i) => i.name));
+  const keptRunning = new Set(
+    keptInstalls
+      .filter(
+        (i) =>
+          (i.integrity.status === 'clean' || i.integrity.status === 'modified') &&
+          (i.integrity.unproven?.running.length ?? 0) > 0
+      )
+      .map((i) => i.name)
+  );
+  const total = unique([...changed, ...older, ...kept]).length;
+  if (total === 0) {
+    return { label: 'Installed packages match what was installed', status: 'pass' };
+  }
+  const label =
+    older.length + kept.length === 0
+      ? `${total} installed ${plural(total, 'package', 'packages')} changed since install`
+      : `${total} installed ${plural(total, 'package', 'packages')} need a look`;
+  const detail = [
+    changed.length > 0 && `Changed since install: ${changed.join(', ')}.`,
+    older.length > 0 &&
+      `Installed by an older DorkOS: ${older.join(', ')}. DorkOS can't tell their files from yours yet.`,
+    kept.length > 0 &&
+      `Kept files an update couldn't sort: ${kept.map((n) => (keptRunning.has(n) ? `${n} (some still run)` : n)).join(', ')}. DorkOS couldn't tell whether they were yours.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const fix = [
+    changed.length > 0 &&
+      'An update replaces files you edited and keeps your copies, keeps files you added, and puts back files you removed. See which files with:\n  dorkos marketplace installed --verify',
+    older.length > 0 &&
+      `Compare an older install with the version you installed, so updates keep your edits:\n  dorkos marketplace check-files ${older[0]}`,
+    kept.length > 0 &&
+      `Sort the files an update kept: leftovers from the earlier version are removed, yours stay:\n  dorkos marketplace check-files ${kept[0]}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return { label, status: 'warn', detail, fix };
 }
 
 /** Singular/plural helper, matching the doctor renderer's. */

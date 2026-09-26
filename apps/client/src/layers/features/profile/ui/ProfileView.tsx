@@ -36,6 +36,7 @@ import { ProfilePage } from './ProfilePage';
 import { ProfileRows } from './ProfileRows';
 import { ProfileStack } from './ProfileStack';
 import { profilePage } from './pages/registry';
+import { toSession } from '@/layers/shared/lib';
 
 export interface ProfileViewProps {
   /** The identity being shown — any roster row. */
@@ -132,10 +133,10 @@ export function ProfileView({
       // with the agent's folder is how a real conversation reads as an empty
       // one (DOR-1836). Omitting it is a complete question the server answers
       // from the session's own binding.
-      void navigate({ to: '/session', search: { session: inRoom } });
+      void navigate(toSession({ session: inRoom }));
       return;
     }
-    void navigate({ to: '/session', search: { dir: target.projectPath } });
+    void navigate(toSession({ dir: target.projectPath }));
   }
 
   // A page is only reachable when a row of THIS profile pushes it. The row

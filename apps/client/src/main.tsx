@@ -1,9 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
-// Expose React globally for extensions — they run as ESM modules
-// with `react` externalized, so they reference `React.createElement` etc.
-// from the global scope (Obsidian plugin model).
 (globalThis as unknown as Record<string, unknown>).React = React;
 import { QueryClientProvider } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
@@ -21,6 +18,7 @@ import {
   registerLinkNavigator,
   registerTabOpener,
   useRenderSlot,
+  toSession,
 } from '@/layers/shared/lib';
 import { HttpTransport, streamManager } from '@/layers/shared/lib/transport';
 import { createBootCache } from '@/layers/shared/lib/query-persister';
@@ -274,9 +272,6 @@ function Root() {
  * panel is simply there. That was measured against a production build rather
  * than assumed: see `BootCache` for the numbers and why an earlier synchronous
  * pre-render hydrate was removed.
- *
- * On a surface with no local memory — the Obsidian embed, whose server is in the
- * same process — this is the plain provider and nothing is written anywhere.
  */
 function QueryProviders({ children }: { children: React.ReactNode }) {
   if (bootCache === null) {
@@ -411,7 +406,7 @@ const extensionDeps: ExtensionAPIDeps = {
         queryClient,
         transport,
         currentLocation: () => router.state.location,
-        navigate: (search) => void router.navigate({ to: '/session', search }),
+        navigate: (search) => void router.navigate(toSession(search)),
       }),
     // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
     // shared action) to the real apply flow (DOR-355 task 3.1). Each restored
@@ -430,7 +425,7 @@ const extensionDeps: ExtensionAPIDeps = {
             queryClient,
             transport,
             currentLocation: () => router.state.location,
-            navigate: (search) => void router.navigate({ to: '/session', search }),
+            navigate: (search) => void router.navigate(toSession(search)),
           }),
       }),
   },
@@ -522,14 +517,4 @@ ReactDOM.createRoot(document.getElementById('root')!, {
   </React.StrictMode>
 );
 
-// Disarm the boot sentinel in `index.html` (DOR-1451). Reaching this line means
-// the bundle evaluated and React has been handed the tree, which is the whole
-// question the sentinel exists to answer — everything after this (data, streams)
-// has its own error surfaces. Optional because embeds that do not use
-// `index.html` as their host document (Obsidian) never run the sentinel.
-//
-// In the desktop app this same call reports the window alive to the shell's
-// renderer supervisor (DOR-1453), which reloads and eventually replaces a
-// window that never does. The report is made from inside `done()` rather than
-// added here, so there is exactly one definition of "the app came up".
 window.__dorkosBoot?.done();

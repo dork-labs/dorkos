@@ -24,6 +24,7 @@
  *
  * @module services/openapi-registry
  */
+import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
@@ -249,6 +250,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
+import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
 
 /**
  * Simplified documentation mirror of `@dorkos/marketplace`'s
@@ -317,6 +319,21 @@ const LocalInstallRequestBodySchema = z.object({
   force: z.boolean().optional(),
   yes: z.boolean().optional(),
   projectPath: z.string().optional(),
+  approvedDisclosure: DisclosedEffectsSchema.optional().describe(
+    "Install only: the preview's `disclosed`, sent back untouched. The install refuses a " +
+      'package that now runs anything else (409 `disclosure_changed`).'
+  ),
+  approvedContentHash: z
+    .string()
+    .optional()
+    .describe(
+      "Install only: the preview's `contentHash`. A global package that runs anything loads into " +
+        'sessions only when its installed files hash the same.'
+    ),
+  confirmationToken: z
+    .string()
+    .optional()
+    .describe("Install only: the token an agent's earlier 202 carried, once a person approved."),
 });
 
 /**
@@ -370,6 +387,26 @@ const LocalPermissionPreviewSchema = z.object({
   skillTools: z.array(
     z.object({ source: z.string(), skill: z.string(), tools: z.array(z.string()) })
   ),
+  skillCommands: z
+    .array(
+      z.object({
+        source: z.string(),
+        skill: z.string(),
+        form: z.enum(['inline', 'block']),
+        command: z.string(),
+        usesArguments: z
+          .boolean()
+          .describe(
+            'Names $ARGUMENTS, $N or a named $name, which are filled with the text typed after ' +
+              'the command before it runs.'
+          ),
+      })
+    )
+    .describe(
+      "Shell commands a skill's or command's text runs when it is used: `!`cmd`` and a " +
+        'fenced block whose info string is `!`, verbatim. Claude Code runs them as it loads ' +
+        'the skill, before the model sees it.'
+    ),
   unreadableDeclarations: z.array(
     z.object({
       path: z.string(),
@@ -377,6 +414,7 @@ const LocalPermissionPreviewSchema = z.object({
       entry: z.string().optional(),
     })
   ),
+  skippedLinks: z.array(z.object({ path: z.string(), message: z.string() })),
   schedules: z.array(
     z.object({
       name: z.string(),
@@ -441,7 +479,6 @@ const LocalUpdateCheckResultSchema = z.object({
  */
 const LocalUpdateResultSchema = z.object({
   checks: z.array(LocalUpdateCheckResultSchema),
-  applied: z.array(LocalInstallResultSchema),
 });
 
 /**
@@ -465,6 +502,18 @@ const LocalInstallationUpdateCheckSchema = LocalUpdateCheckResultSchema.extend({
     ),
   applied: LocalInstallResultSchema.optional(),
   applyError: z.string().optional(),
+  disclosed: DisclosedEffectsSchema.nullable()
+    .optional()
+    .describe(
+      'On every update-available check: what the new version runs on its own. An apply sends it back untouched.'
+    ),
+  contentHash: z
+    .string()
+    .optional()
+    .describe("The new version's staged files, hashed. An apply sends it back untouched."),
+  installedDisclosed: DisclosedEffectsSchema.nullable()
+    .optional()
+    .describe('What the installed version runs now; null when it could not be read.'),
 });
 
 /** The 404 body when an update names packages or installations not in view. */
@@ -488,6 +537,8 @@ const LocalUninstallResultSchema = z.object({
   packageName: z.string(),
   removedFiles: z.number().int().nonnegative(),
   preservedData: z.array(z.string()),
+  unproven: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
 });
 
 const registry = new OpenAPIRegistry();
@@ -2272,8 +2323,67 @@ const MarketplaceSourceSchema = z.object({
   addedAt: z.string(),
 });
 
+/**
+ * How the one listing fetch `POST /api/marketplace/sources` makes after saving
+ * went (DOR-2304). Hand-mirrors `SourceListingOutcome` in
+ * `@dorkos/shared/marketplace-schemas`, the way every marketplace schema in
+ * this file mirrors its interface: that module is interfaces-only by design.
+ */
+const SourceListingOutcomeSchema = z
+  .discriminatedUnion('fetched', [
+    z.object({ fetched: z.literal(true), packageCount: z.number().int().nonnegative() }),
+    z.object({ fetched: z.literal(false), reason: z.string() }),
+  ])
+  .describe(
+    "The first fetch of the new source's listing. `fetched: true` means fetched just now from " +
+      'this source, never an older cached copy. `fetched: false` never undoes the add: the ' +
+      'source is saved, `reason` says in plain words why the listing is not there yet (including ' +
+      'a source added with `enabled: false`, which is not fetched), and a refresh tries again.'
+  );
+
+/**
+ * How the most recent fetch of a source's listing went (DOR-2324). Hand-mirrors
+ * `SourceLastFetch` in `@dorkos/shared/marketplace-schemas`, which is
+ * interfaces-only by design.
+ */
+const SourceLastFetchSchema = z
+  .discriminatedUnion('state', [
+    z.object({ state: z.literal('never') }),
+    z.object({
+      state: z.literal('fetched'),
+      checkedAt: z.string(),
+      packageCount: z.number().int().nonnegative(),
+    }),
+    z.object({ state: z.literal('failed'), checkedAt: z.string(), reason: z.string() }),
+    z.object({
+      state: z.literal('stale'),
+      checkedAt: z.string(),
+      reason: z.string(),
+      copyFetchedAt: z.string(),
+      packageCount: z.number().int().nonnegative(),
+    }),
+  ])
+  .describe(
+    'How the most recent attempt to fetch the listing went, from adding, refreshing, browsing ' +
+      'or an update check. `stale`: it failed and an older copy, fetched at `copyFetchedAt`, ' +
+      'is still listed. `failed`: it failed with no copy. Kept by the server, so it survives ' +
+      'a reload.'
+  );
+
+const AddedMarketplaceSourceSchema = MarketplaceSourceSchema.extend({
+  listing: SourceListingOutcomeSchema,
+});
+
 const AddMarketplaceSourceBodySchema = z.object({
-  name: z.string().min(1).max(128),
+  name: z
+    .string()
+    .min(1)
+    .max(128)
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+    .describe(
+      'Letters, numbers, dots, dashes and underscores, starting with a letter or number. ' +
+        'Checked by the server on add; names saved before the check still load.'
+    ),
   source: z.string().min(1),
   enabled: z.boolean().optional(),
 });
@@ -2311,6 +2421,41 @@ const InstalledPackageSchema = z.object({
     .optional()
     .describe(
       "Present only when the install folder is a symbolic link to a developer's working copy, which is never updated in place."
+    ),
+  heldBack: z
+    .object({
+      reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
+      note: z.string(),
+      reviewable: z.boolean(),
+      linkedPath: z.string().optional(),
+    })
+    .optional()
+    .describe(
+      'Present only on a global installation held back from every session until a person approves the install that put it there (DOR-2306). `linkedPath` marks a linked install, whose approval covers whatever is in that folder.'
+    ),
+  integrity: z
+    .union([
+      z.object({
+        status: z.literal('clean'),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('modified'),
+        changed: z.array(z.string()),
+        missing: z.array(z.string()),
+        added: z.array(z.string()),
+        customized: z.array(z.string()),
+        truncated: z.literal(true).optional(),
+      }),
+      z.object({
+        status: z.literal('unknown'),
+        reason: z.enum(['no-record', 'unreadable-record', 'linked']),
+      }),
+    ])
+    .optional()
+    .describe(
+      'Present only with verify=true: whether the installed files still match what was installed (DOR-2197).'
     ),
 });
 
@@ -2363,7 +2508,9 @@ registry.registerPath({
       description: 'Configured marketplace sources',
       content: {
         'application/json': {
-          schema: z.object({ sources: z.array(MarketplaceSourceSchema) }),
+          schema: z.object({
+            sources: z.array(MarketplaceSourceSchema.extend({ lastFetch: SourceLastFetchSchema })),
+          }),
         },
       },
     },
@@ -2389,7 +2536,9 @@ registry.registerPath({
     'Only the person running DorkOS may add a package source. Any caller that could not decide ' +
     'an approval is refused with 403, which includes one presenting an agent identity, one ' +
     'presenting an approval token, and (with local login on) one with no signed-in identity. ' +
-    'There is no approval that unlocks it.',
+    'There is no approval that unlocks it. After saving, the server fetches the new ' +
+    "source's listing once, the same way the refresh route does but without falling back to a " +
+    'cached copy; a failed fetch is reported in `listing` and never fails the add.',
   request: {
     body: {
       content: { 'application/json': { schema: AddMarketplaceSourceBodySchema } },
@@ -2397,11 +2546,11 @@ registry.registerPath({
   },
   responses: {
     201: {
-      description: 'Source added',
-      content: { 'application/json': { schema: MarketplaceSourceSchema } },
+      description: 'Source added, with how the first fetch of its listing went',
+      content: { 'application/json': { schema: AddedMarketplaceSourceSchema } },
     },
     400: {
-      description: 'Validation error',
+      description: 'Validation error, a name DorkOS cannot use, or an address it will not fetch',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {
@@ -2424,7 +2573,8 @@ registry.registerPath({
     'Only the person running DorkOS may remove a package source. Any caller that could not ' +
     'decide an approval is refused with 403, which includes one presenting an agent identity, ' +
     'one presenting an approval token, and (with local login on) one with no signed-in ' +
-    'identity. There is no approval that unlocks it.',
+    "identity. There is no approval that unlocks it. The source's cached listing is removed " +
+    'with it, so a later source given the same name starts clean.',
   request: {
     params: z.object({ name: z.string() }),
   },
@@ -2442,17 +2592,26 @@ registry.registerPath({
   path: '/api/marketplace/sources/{name}/refresh',
   tags: ['Marketplace'],
   summary: 'Force refetch of a source marketplace.json',
+  description:
+    'Checks the source now. When it cannot be reached but a copy is cached, answers 200 with ' +
+    'that copy, `stale: true`, the `reason`, and `fetchedAt` set to when the copy was fetched. ' +
+    'With nothing cached, answers 502.',
   request: {
     params: z.object({ name: z.string() }),
   },
   responses: {
     200: {
-      description: 'Refreshed marketplace document',
+      description: 'The listing, fetched now or (when `stale`) the last cached copy',
       content: {
         'application/json': {
           schema: z.object({
             marketplace: LocalMarketplaceJsonSchema,
-            fetchedAt: z.string(),
+            fetchedAt: z.string().describe('When this copy of the listing was fetched'),
+            stale: z.boolean().describe('True when the source could not be reached'),
+            reason: z
+              .string()
+              .optional()
+              .describe('Why the source could not be reached; present only when `stale`'),
           }),
         },
       },
@@ -2479,7 +2638,13 @@ registry.registerPath({
     'With projectPath: the merged view for that single project — one entry per install root ' +
     'and name — scanned at the canonical path, so its install paths match `GET /updates`.',
   request: {
-    query: z.object({ projectPath: z.string().optional() }),
+    query: z.object({
+      projectPath: z.string().optional(),
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
@@ -2511,6 +2676,12 @@ registry.registerPath({
     'each enriched with capability counts (commands, skills, hooks).',
   request: {
     params: z.object({ name: z.string() }),
+    query: z.object({
+      verify: z
+        .enum(['true'])
+        .optional()
+        .describe("Add each installation's `integrity`. Reads every shipped file."),
+    }),
   },
   responses: {
     200: {
@@ -2614,6 +2785,8 @@ registry.registerPath({
             manifest: LocalMarketplacePackageManifestSchema,
             packagePath: z.string(),
             preview: LocalPermissionPreviewSchema,
+            disclosed: DisclosedEffectsSchema,
+            contentHash: z.string(),
             // Raw README markdown read from the staged clone; omitted when the
             // package ships no README (see routes/marketplace.ts readPackageReadme).
             readme: z.string().optional(),
@@ -2652,6 +2825,12 @@ registry.registerPath({
             preview: LocalPermissionPreviewSchema,
             manifest: LocalMarketplacePackageManifestSchema,
             packagePath: z.string(),
+            disclosed: DisclosedEffectsSchema.describe(
+              'What the package runs on its own, in the form an install is held to: send it back as `approvedDisclosure`.'
+            ),
+            contentHash: z
+              .string()
+              .describe('The staged files, hashed: send it back as `approvedContentHash`.'),
           }),
         },
       },
@@ -2683,6 +2862,21 @@ registry.registerPath({
       description: 'Install result from the type-specific flow',
       content: { 'application/json': { schema: LocalInstallResultSchema } },
     },
+    202: {
+      description:
+        "An agent's global install that runs things on its own, or replaces a global package, " +
+        'waits for a person to approve the card; nothing was installed',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            preview: LocalPermissionPreviewSchema,
+            message: z.string(),
+          }),
+        },
+      },
+    },
     400: {
       description: 'Validation error or invalid package',
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -2692,15 +2886,74 @@ registry.registerPath({
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     409: {
-      description: 'Install blocked by conflicts',
+      description:
+        'Install blocked by conflicts, or (`code: disclosure_changed`) the package now runs something other than `approvedDisclosure`',
       content: {
         'application/json': {
           schema: z.object({
             error: z.string(),
-            conflicts: z.array(LocalConflictReportSchema),
+            conflicts: z.array(LocalConflictReportSchema).optional(),
+            code: z.literal('disclosure_changed').optional(),
           }),
         },
       },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/packages/{name}/check-files',
+  tags: ['Marketplace'],
+  summary: 'Check the files of a package an older DorkOS installed',
+  description:
+    "Give an install made before DorkOS recorded a package's files its installed-files record, " +
+    'from the exact commit it was installed at, only when that commit matches the installed ' +
+    'files byte for byte. Otherwise nothing is written and the answer says why (DOR-2320).',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            projectPath: z.string().optional(),
+            installRoot: z
+              .string()
+              .optional()
+              .describe(
+                'One installation the caller already sees; narrows, never widens, the lookup.'
+              ),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'What the check did, and one sentence saying so',
+      content: {
+        'application/json': {
+          schema: z.object({
+            outcome: z.enum([
+              'rebuilt',
+              'sorted',
+              'not-needed',
+              'no-source',
+              'fetch-failed',
+              'mismatch',
+            ]),
+            message: z.string(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: 'Validation error or an invalid package name',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'Package not installed',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -2743,23 +2996,23 @@ registry.registerPath({
   method: 'post',
   path: '/api/marketplace/packages/{name}/update',
   tags: ['Marketplace'],
-  summary: 'Advisory update check (pass apply:true to actually update)',
+  summary: 'Check one package for an update',
+  description:
+    'Advisory only: nothing is reinstalled. Updates are applied through `POST /api/marketplace/updates`, ' +
+    'which shows what each new version runs first. A body with `apply` is refused (400).',
   request: {
     params: z.object({ name: z.string() }),
     body: {
       content: {
         'application/json': {
-          schema: z.object({
-            apply: z.boolean().optional(),
-            projectPath: z.string().optional(),
-          }),
+          schema: z.object({ projectPath: z.string().optional() }).strict(),
         },
       },
     },
   },
   responses: {
     200: {
-      description: 'Update advisory result (and any applied reinstalls)',
+      description: 'The check for the installation the name means in this scope',
       content: { 'application/json': { schema: LocalUpdateResultSchema } },
     },
     400: {
@@ -2787,7 +3040,8 @@ registry.registerPath({
     'check may stage a newer version into the package cache. Without ' +
     '`projectPath`, every installation in every scope (global, then each registered ' +
     "agent's project); with it, that project's merged view. Each check carries the " +
-    "installation's identity; `installPath` matches the installed list's.",
+    "installation's identity (`installPath` matches the installed list's) and, for a newer " +
+    'version, `disclosed`: what it runs on its own, which an apply sends back.',
   request: {
     query: z.object({ projectPath: z.string().optional() }),
   },
@@ -2811,26 +3065,38 @@ registry.registerPath({
   method: 'post',
   path: '/api/marketplace/updates',
   tags: ['Marketplace'],
-  summary: 'Update every stale installed package, or the named ones',
+  summary: 'Update exactly the installations a person was shown',
   description:
-    'Reinstalls every installation in view whose check is `update-available`, each in the ' +
-    'scope it was found in, one at a time. A failed reinstall is reported on its ' +
-    'installation as `applyError` and the rest carry on. Each reinstall is authorized as ' +
-    '`marketplace.install` before anything runs. A batch that would need a person to ' +
-    'approve each install is refused (`batch_update_needs_approval`); use the one-package ' +
-    'route instead. `names` selects every installation of those packages; `installPaths` ' +
-    'selects exactly the installations a check reported. The response is the record of ' +
-    'what changed.',
+    'Reinstalls each target whose check is `update-available`, in the scope it was found in, one at ' +
+    'a time. Each target carries the `latestVersion` and `disclosed` its check reported, sent back ' +
+    'untouched: the server recomputes both, and if either moved the whole apply is refused (409 ' +
+    '`disclosure_changed`) with nothing reinstalled; each reinstall is then held to its disclosure. ' +
+    'Each reinstall is authorized as `marketplace.install` first. The person applies directly; an ' +
+    "agent's apply raises the same approval card `marketplace_update` does (202 " +
+    '`requires_confirmation`) and runs once retried with its `confirmationToken` after a person ' +
+    'approves. A failed reinstall is reported on its installation as `applyError` and the rest ' +
+    'carry on. The response is the record of what changed.',
   request: {
     body: {
       content: {
         'application/json': {
-          schema: z.object({
-            apply: z.literal(true),
-            names: z.array(z.string().min(1)).min(1).optional(),
-            installPaths: z.array(z.string().min(1)).min(1).optional(),
-            projectPath: z.string().optional(),
-          }),
+          schema: z
+            .object({
+              apply: z.literal(true),
+              projectPath: z.string().optional(),
+              targets: z
+                .array(
+                  z.object({
+                    installPath: z.string().min(1),
+                    latestVersion: z.string(),
+                    disclosed: DisclosedEffectsSchema.nullable(),
+                    contentHash: z.string().min(1),
+                  })
+                )
+                .min(1),
+              confirmationToken: z.string().min(1).optional(),
+            })
+            .strict(),
         },
       },
     },
@@ -2840,20 +3106,140 @@ registry.registerPath({
       description: 'One check per installation, with `applied` or `applyError` where one ran',
       content: { 'application/json': { schema: LocalInstallationUpdatesResultSchema } },
     },
+    202: {
+      description: "An agent's apply waits for a person to approve the card; nothing ran",
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            updates: z.array(z.unknown()),
+            message: z.string(),
+          }),
+        },
+      },
+    },
     400: {
-      description: 'Validation error (including a body without `apply: true`)',
+      description:
+        'Validation error (a body without `apply: true`, no targets, or a retired selector)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {
-      description: 'Refused by the permission check, or projectPath outside the boundary',
+      description:
+        'Refused by the permission check, a person declined the card, or projectPath outside the boundary',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
-      description: 'A named package or install path is not installed in view',
+      description: 'A target install path is not installed in view',
       content: { 'application/json': { schema: NotInstalledForUpdateSchema } },
+    },
+    409: {
+      description:
+        'A new version, or what it runs, is not what was shown (`disclosure_changed`); nothing ran',
+      content: {
+        'application/json': {
+          schema: z.object({
+            error: z.string(),
+            code: z.literal('disclosure_changed'),
+            changed: z.array(z.unknown()),
+          }),
+        },
+      },
     },
     502: {
       description: "The package's git remote could not be reached, or its fetch failed",
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+const LocalHeldBackPackageSchema = z.object({
+  name: z.string(),
+  reason: z.enum(['unasked', 'refused', 'unrecorded', 'unreadable', 'unreadable-config']),
+  note: z.string(),
+  reviewable: z.boolean(),
+  linkedPath: z.string().optional(),
+  version: z.string().optional(),
+  source: z.string().optional(),
+  changedSinceApproval: z.boolean(),
+  effects: DisclosedEffectsSchema.optional(),
+  bindsTo: z.string().optional(),
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/marketplace/held-back',
+  tags: ['Marketplace'],
+  summary: 'List global packages held back from every session',
+  description:
+    'A globally installed package that runs things on its own loads into sessions only when a ' +
+    'person approved the install that put it there (the content hash recorded when it landed) ' +
+    'and what it runs. A linked install is approved by its folder instead. Each entry says why ' +
+    'it is held back, what it runs, and `bindsTo`: what a decision is bound to.',
+  responses: {
+    200: {
+      description: 'Every held-back package',
+      content: {
+        'application/json': { schema: z.object({ packages: z.array(LocalHeldBackPackageSchema) }) },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/held-back/{name}/review',
+  tags: ['Marketplace'],
+  summary: 'Raise the approval card for a held-back package again',
+  request: { params: z.object({ name: z.string() }) },
+  responses: {
+    202: {
+      description: 'The card is raised; a person decides on it',
+      content: { 'application/json': { schema: z.object({ status: z.literal('asked') }) } },
+    },
+    409: {
+      description: 'Not held back, or cannot be shown on a card (the error says what to do)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/marketplace/held-back/{name}/decision',
+  tags: ['Marketplace'],
+  summary: "Record the person's allow or refuse for a held-back package",
+  description:
+    'The person only: the same bar as deciding an approval card. An agent is refused, and with ' +
+    'sign-in on, so is anything but a signed-in session (decide on the Review card instead). ' +
+    'Send back `effects` and `bindsTo` exactly as listed; a package that changed since is not ' +
+    'decided by it.',
+  request: {
+    params: z.object({ name: z.string() }),
+    body: {
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              decision: z.enum(['allow', 'refuse']),
+              effects: DisclosedEffectsSchema,
+              bindsTo: z.string().min(1),
+            })
+            .strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    204: { description: 'Recorded' },
+    403: {
+      description:
+        'Not the person (`operator_only`), or sign-in is on and this is not a signed-in ' +
+        'session (`operator_cookie_required`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'Not held back, unreadable, or changed since it was shown',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -2956,21 +3342,15 @@ registry.registerPath({
  */
 const LocalShapeLayoutSchema = z.object({
   sidebarOpen: z.boolean(),
-  // A sidebar tab id, bounded. The sidebar tab strip exists only in the embedded
-  // (Obsidian) shell; the web cockpit has no strip, so a pinned tab is a no-op
-  // there. The `:` is still accepted so old manifests that pinned a namespaced
-  // tab keep validating. Mirrors the bounded `sidebarTab` in manifest-schema.ts
-  // and `UiSidebarTabSchema` in @dorkos/shared.
+  // Legacy sidebar tab metadata remains accepted so installed manifests with a
+  // pinned tab still validate. Applying a Shape ignores it. Mirrors the bounds
+  // in manifest-schema.ts and ShapeLiveLayoutCaptureSchema in @dorkos/shared.
   sidebarTab: z
     .string()
     .min(1)
     .max(200)
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9_.:-]*$/)
-    .describe(
-      "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
-        "'connections'). The sidebar tab strip exists only in the embedded " +
-        '(Obsidian) app; in the web app switching a sidebar tab is a no-op.'
-    )
+    .describe('Legacy sidebar tab id retained for stored Shape manifests.')
     .optional(),
   openPanels: z.array(z.enum(['settings', 'tasks', 'relay', 'picker'])),
   focusDashboardSections: z.array(z.string()),
@@ -4067,6 +4447,87 @@ registry.registerPath({
     200: {
       description: 'Permission changes',
       content: { 'application/json': { schema: PermissionHistoryResponseSchema } },
+    },
+  },
+});
+
+const TemplateBringsSchema = z.object({
+  source: z.string(),
+  contentHash: z.string(),
+  findings: z.array(z.object({ path: z.string(), message: z.string() })),
+  settings: z
+    .array(
+      z.object({
+        path: z.string(),
+        bytes: z.number().int(),
+        content: z.string().optional(),
+        omitted: z.enum(['too-long', 'not-text', 'link']).optional(),
+      })
+    )
+    .describe(
+      'Each file under `findings`, its text verbatim with hidden and control characters shown ' +
+        'as <U+XXXX>, or why it is not shown.'
+    ),
+  disclosed: DisclosedEffectsSchema,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/agents/create',
+  tags: ['Agents'],
+  summary: 'Create an agent',
+  description:
+    'Makes the folder, scaffolds the agent and registers it. Two sources need more than that ' +
+    '(DOR-2325). `template` is cloned into a staging folder and read before it lands: a person ' +
+    'whose template brings settings or programs gets 409 `template_needs_review` with what it ' +
+    'brings, and creates it by sending back `approvedTemplateHash`; anyone else (an agent) gets ' +
+    '202 `requires_confirmation` and an approval card, and retries with `confirmationToken`. ' +
+    '`package` creates the agent a marketplace package brings, through the marketplace installer, ' +
+    'held to `approvedDisclosure` and `approvedContentHash` (the preview’s `disclosed` and ' +
+    '`contentHash`); a person only.',
+  request: {
+    body: {
+      content: {
+        'application/json': {
+          schema: CreateAgentOptionsSchema.omit({ skipTemplateDownload: true }).extend({
+            approvedTemplateHash: z.string().optional(),
+            confirmationToken: z.string().optional(),
+            package: z
+              .object({
+                name: z.string(),
+                marketplace: z.string().optional(),
+                approvedDisclosure: DisclosedEffectsSchema,
+                approvedContentHash: z.string(),
+              })
+              .optional(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: { description: 'Created: the agent manifest, with `_path`' },
+    202: {
+      description: 'A template waits on a person’s approval card',
+      content: {
+        'application/json': {
+          schema: z.object({
+            status: z.literal('requires_confirmation'),
+            confirmationToken: z.string(),
+            message: z.string(),
+            template: TemplateBringsSchema,
+          }),
+        },
+      },
+    },
+    403: {
+      description: 'Turned down, nobody can be asked, or a package requested by an agent',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        '`template_needs_review` (with `template`), `disclosure_changed`, or a collision',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
 });
@@ -6097,13 +6558,12 @@ registry.registerPath({
     '**It writes nothing**: no manifest is scaffolded, nothing is turned on, and no settings ' +
     'store is opened. That is DOR-678’s rule, learned when `dorkos harness sync --check` ' +
     'scaffolded a manifest into whatever folder a person happened to be standing in. ' +
-    '**`state` answers for the project as a whole**, and has four values. `ready` — the manifest ' +
+    '**`state` answers for the project as a whole**, and has three values. `ready` — the manifest ' +
     'parsed and everything below is populated. `not-set-up` — there is no ' +
     '`.agents/harness.manifest.json`, answered `200` rather than `404`, because a project with ' +
     'no manifest is a state the app is built to draw and a `404` would say the route is not ' +
     'there. `unreadable` — there is one and it will not parse, with `detail` saying why in words ' +
-    'a person can act on. `unavailable` — a build with no harness service at all; it belongs to ' +
-    'the in-process (Obsidian) transport and is never produced here. On anything but `ready` ' +
+    'a person can act on. On anything but `ready` ' +
     'every list is empty and every count is zero. ' +
     '**No file bytes**: the response carries artifact names, repo-relative paths and reasons, ' +
     'and a withheld package’s hook commands are deliberately left out of it. ' +

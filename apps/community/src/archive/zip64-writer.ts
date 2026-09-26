@@ -64,7 +64,15 @@ export interface ZipSegmentWriter {
 /** A finished segment as the tail needs it. */
 export interface ZipSegmentLayout {
   byteSize: number;
-  entries: readonly ZipEntryRecord[];
+  /**
+   * The segment's entry rows. An array is checked up front, names included, against every other
+   * entry. A function is called once, when the central directory reaches this segment, so a
+   * caller with millions of entries can read them one segment at a time; each is checked for a
+   * safe name and for fitting its segment as it is written, and the caller keeps names unique
+   * across segments (the export names every entry after its segment number or file id).
+   */
+  entries:
+    readonly ZipEntryRecord[] | (() => Iterable<ZipEntryRecord> | AsyncIterable<ZipEntryRecord>);
 }
 
 /** Input to {@link writeZipTail}. */
@@ -167,24 +175,14 @@ export function writeZipTail(input: ZipTailInput, options: ZipWriterOptions = {}
     if (!Number.isSafeInteger(segment.byteSize) || segment.byteSize < 1) {
       throw new ZipWriterError('ZIP_SEGMENT_INVALID', 'Segment size is invalid');
     }
-    for (const entry of segment.entries) {
-      assertArchiveName(entry.name);
-      const key = archiveNameKey(entry.name);
-      if (names.has(key)) {
-        throw new ZipWriterError('ZIP_DUPLICATE_NAME', 'Archive entry names must be unique');
-      }
-      names.add(key);
-      // The smallest span the entry occupies: local header, name, and data.
-      const span =
-        LOCAL_HEADER_BYTES + Buffer.byteLength(entry.name, 'utf8') + entry.compressedSize;
-      if (
-        !Number.isSafeInteger(entry.offset) ||
-        !Number.isSafeInteger(entry.compressedSize) ||
-        entry.offset < 0 ||
-        entry.compressedSize < 0 ||
-        entry.offset + span > segment.byteSize
-      ) {
-        throw new ZipWriterError('ZIP_SEGMENT_INVALID', 'An entry does not fit in its segment');
+    if (typeof segment.entries !== 'function') {
+      for (const entry of segment.entries) {
+        assertFits(entry, segment.byteSize);
+        const key = archiveNameKey(entry.name);
+        if (names.has(key)) {
+          throw new ZipWriterError('ZIP_DUPLICATE_NAME', 'Archive entry names must be unique');
+        }
+        names.add(key);
       }
     }
     tailStart += segment.byteSize;
@@ -206,7 +204,10 @@ export function writeZipTail(input: ZipTailInput, options: ZipWriterOptions = {}
       { byteSize: state.offset, entries: state.records },
     ];
     for (const layout of layouts) {
-      for (const entry of layout.entries) {
+      const lazy = typeof layout.entries === 'function';
+      const entries = typeof layout.entries === 'function' ? layout.entries() : layout.entries;
+      for await (const entry of entries) {
+        if (lazy) assertFits(entry, layout.byteSize);
         const record = encodeCentralDirectoryRecord(entry, segmentStart + entry.offset);
         centralDirectorySize += record.length;
         entryCount++;
@@ -258,6 +259,22 @@ export function writeZipTail(input: ZipTailInput, options: ZipWriterOptions = {}
       return summary;
     },
   };
+}
+
+/** Throw unless an entry has a safe name and lies wholly inside its segment. */
+function assertFits(entry: ZipEntryRecord, segmentBytes: number): void {
+  assertArchiveName(entry.name);
+  // The smallest span the entry occupies: local header, name, and data.
+  const span = LOCAL_HEADER_BYTES + Buffer.byteLength(entry.name, 'utf8') + entry.compressedSize;
+  if (
+    !Number.isSafeInteger(entry.offset) ||
+    !Number.isSafeInteger(entry.compressedSize) ||
+    entry.offset < 0 ||
+    entry.compressedSize < 0 ||
+    entry.offset + span > segmentBytes
+  ) {
+    throw new ZipWriterError('ZIP_SEGMENT_INVALID', 'An entry does not fit in its segment');
+  }
 }
 
 async function* writeEntries(

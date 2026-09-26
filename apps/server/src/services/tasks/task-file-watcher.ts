@@ -82,7 +82,7 @@ import type { ScheduleIdentityRegistry } from './schedule-identity.js';
 import { SKILL_FILENAME } from '@dorkos/skills/constants';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import { readTaskRootFile, scanTaskRoot, type ReadOutcome } from './skills-root-discovery.js';
-import { isPackageOwnedInRoot } from './task-file-update.js';
+import { carrySwitchIntoReleasedFile, packageOwnershipInRoot } from './task-file-update.js';
 import { reservedDirsFor, type TaskRoot } from './skills-roots.js';
 import { logger } from '../../lib/logger.js';
 
@@ -585,14 +585,27 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // `onTaskChange` left this doing until the next restart.
     const { discovered } = outcome;
     if (!this.identities.claim(discovered.def.filePath, root.dir, outcome.filePath)) return;
-    const task = this.store.upsertFromFile(discovered.def, root.agentId, {
+    const packageOwned = await packageOwnershipInRoot(discovered.def.filePath, root);
+    const task = this.store.fileSync.upsertFromFile(discovered.def, root.agentId, {
       source: 'discovery',
       problem: discovered.problem,
       // A schedule an installed package owns keeps the switch a person set on
-      // the row, because its file is one DorkOS never writes (FB-26).
-      packageOwned: await isPackageOwnedInRoot(discovered.def.filePath, root),
+      // the row, because its file is one DorkOS never writes (FB-26). The row
+      // keeps the answer, so the sync sees ownership lapse (DOR-2272).
+      packageOwned,
     });
     this.registrar.syncTask(task.id);
+    // A file that just stopped being a package's gets the switch the row kept
+    // for it. That write comes back through here, finds the file agreeing, and
+    // records the release; a write that fails is retried by the next sync.
+    try {
+      await carrySwitchIntoReleasedFile(task, discovered.def, root);
+    } catch (err) {
+      logger.warn('[TaskFileWatcher] could not write the kept switch into its file', {
+        filePath: discovered.def.filePath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -605,8 +618,8 @@ export class TaskFileWatcher implements TaskWatchHealth {
     // one of them on every arm rather than only for a file an event named. The
     // read is indexed and the write is not free — the same trade the
     // reconciler's own `retireIfPresent` makes, for the same reason.
-    if (this.store.getByFilePath(filePath) === null) return;
-    if (this.store.markRemovedByFilePath(filePath) === 0) return;
+    if (this.store.fileSync.getByFilePath(filePath) === null) return;
+    if (this.store.fileSync.markRemovedByFilePath(filePath) === 0) return;
     this.registrar.syncTaskByFilePath(filePath);
     logger.info(`[TaskFileWatcher] Schedule block removed from ${filePath} — paused`);
   }
@@ -628,7 +641,7 @@ export class TaskFileWatcher implements TaskWatchHealth {
       // for a file this process never saw arrive.
       const identity = this.identities.resolvedFor(filePath) ?? filePath;
       this.identities.releasePath(filePath);
-      this.store.markRemovedByFilePath(identity);
+      this.store.fileSync.markRemovedByFilePath(identity);
       // Paused in the DB is not paused on the clock. Without this the job keeps
       // firing a task whose file — the source of truth for what it even does —
       // is gone. Keyed on the same identity the pause used, or it looks up a row

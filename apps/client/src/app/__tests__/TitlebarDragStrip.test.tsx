@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe('TitlebarDragStrip', () => {
-  it('renders hidden by default (browser and Obsidian)', () => {
+  it('renders hidden by default (browser)', () => {
     const { container } = render(<TitlebarDragStrip isFullscreen={false} />);
     const strip = container.firstElementChild;
 

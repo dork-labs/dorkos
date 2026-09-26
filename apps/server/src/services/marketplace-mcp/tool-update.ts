@@ -178,7 +178,24 @@ export function createUpdateHandler(deps: MarketplaceMcpDeps) {
       const outcome = await applyApprovedUpdates<ToolResponse>(
         door,
         { projectPath, callerProjectPath: args.projectPath, ...selector },
-        (updates) => confirmBatch(deps, args, updates, context)
+        (updates) => confirmBatch(deps, args, updates, context),
+        // After each reinstall landed: a person's yes on the card (never
+        // `preApproved`, where nobody was shown anything) is recorded when the
+        // installed copy is what the card showed (DOR-2306).
+        async (landed) => {
+          for (const update of landed) {
+            await deps.consent.settle(
+              {
+                installPath: update.installPath,
+                type: update.type,
+                global: update.scope === 'global',
+              },
+              context?.preApproved
+                ? undefined
+                : { disclosed: update.disclosed, contentHash: update.contentHash }
+            );
+          }
+        }
       );
       if ('refused' in outcome) return outcome.refused;
       // Nothing was stale, or nothing stale could be shown and approved: say so,

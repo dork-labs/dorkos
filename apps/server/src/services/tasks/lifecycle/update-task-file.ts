@@ -32,10 +32,11 @@ import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import {
   describeArmBlocker,
   fileBackedChanges,
-  isPackageOwned,
   landsOnRowAlone,
   packageOwnershipContext,
+  packageOwnershipOf,
   planTaskFileUpdate,
+  type PackageOwnershipKind,
 } from '../task-file-update.js';
 import type { TimingLandsOn } from '../timing/effective-timing.js';
 import { logger } from '../../../lib/logger.js';
@@ -57,6 +58,12 @@ export interface TaskFileUpdateRefusal {
   error: string;
   /** A machine-readable code, on the refusals that carry one. */
   code?: string;
+  /**
+   * For `schedule_package_owned`: how the package's ownership is known. A
+   * `record` refusal can be answered with the person's own copy; a `legacy` one
+   * lasts only until the package's next update writes a record (DOR-2272).
+   */
+  ownedBy?: PackageOwnershipKind;
 }
 
 /** A rewrite that happened, or that correctly had nothing to do. */
@@ -92,7 +99,7 @@ export interface TaskFileUpdateSuccess {
    *
    * Always, except for a package's schedule whose change lands on its row alone
    * (DOR-2302): the package's file is never written, and a timing change there
-   * is settled against the approval instead (`TaskStore.settleTimingChange`
+   * is settled against the approval instead (`TaskApprovals.settleApprovedWorkChange`
    * parks an agent's), so the clamp has nothing to protect — and carried into
    * the request it would read as an attempt to change the package's permission
    * level, and refuse a timing change with a sentence about approval levels.
@@ -148,6 +155,45 @@ function describeTaskFileFailure(
 }
 
 /**
+ * The sentence a refused edit to a package's schedule answers with.
+ *
+ * A `record` refusal is permanent and has a way out: the person's own copy. A
+ * `legacy` one is not about the package at all but about DorkOS not knowing yet
+ * which files are the package's, so it says when that changes, and offers no
+ * copy it cannot promise is needed.
+ *
+ * @param by - How the package's ownership is known.
+ * @param packageName - The owning package, named so a link into another
+ *   package's checkout does not read as the agent's own.
+ * @param grant - Whether the refused change was a higher power level.
+ */
+function packageOwnedRefusal(
+  by: PackageOwnershipKind,
+  packageName: string,
+  grant: boolean
+): string {
+  const rowOnly = grant
+    ? `You can still approve it as it stands, and it will run at the level the package asks for.`
+    : `You can switch it on or off, or change when it runs, here.`;
+  if (by === 'legacy') {
+    return (
+      `This schedule sits in the "${packageName}" package, which an older version of DorkOS ` +
+      `installed without a list of its files, so DorkOS can't yet tell them from yours and ` +
+      `didn't change ${grant ? 'how much it may do' : 'it'}. ${rowOnly} To change the rest, ` +
+      `choose Check files on the package in Marketplace's Installed tab (or run ` +
+      `\`dorkos marketplace check-files ${packageName}\`), then try again.`
+    );
+  }
+  return grant
+    ? `This schedule came with the "${packageName}" package, so DorkOS didn't change how much ` +
+        `it may do: the package's next update would put its own setting back. ${rowOnly} To ` +
+        `give it more, make your own copy.`
+    : `This schedule came with the "${packageName}" package, so DorkOS didn't change it: the ` +
+        `package's next update would put its own version back. ${rowOnly} To change what it ` +
+        `does, make your own copy.`;
+}
+
+/**
  * Merge an update into a task's SKILL.md, once the file has been read.
  *
  * Split out from {@link applyTaskFileUpdate} only to keep each half readable;
@@ -182,18 +228,19 @@ async function rewriteTaskFile(
     };
   }
 
-  // A skill an installed package owns is never ours to rewrite: the edit would
+  // A file an installed package owns is never ours to rewrite: the edit would
   // land inside the package's own checkout, be shared by every agent that
-  // installed it, and vanish at the next update. Plugins are not the only ones —
-  // a Shape ships schedules, and an agent that came from a package owns every
-  // schedule filed under it (DOR-1789).
+  // installed it, and be undone by its next update. Which files those are is
+  // the install's installed-files record's to say: the ones it lists, unless
+  // the package marked them editable (DOR-2272). A schedule a person made
+  // under a package agent is not listed, and is written like any other. An
+  // install with no record keeps the older location-and-marker answer.
   const agentDir = existing.agentId ? deps.meshCore?.getProjectPath(existing.agentId) : null;
-  if (
-    await isPackageOwned(
-      existing.filePath,
-      packageOwnershipContext(deps.dorkHome, agentDir ?? undefined)
-    )
-  ) {
+  const ownership = await packageOwnershipOf(
+    existing.filePath,
+    packageOwnershipContext(deps.dorkHome, agentDir ?? undefined)
+  );
+  if (ownership.owned) {
     // **The refusal's own promise, kept.** Switching a schedule on or off is a
     // decision about a file DorkOS will not write, so it lands on the row and
     // the file is left exactly as the package shipped it — which is why
@@ -223,17 +270,9 @@ async function rewriteTaskFile(
     return {
       ok: false,
       status: 409,
-      error: refusedGrant
-        ? `This schedule came with an installed package, so DorkOS did not change how much it ` +
-          `may do — its settings live in the package's own folder, and the next update of that ` +
-          `package would wipe the change out. You can still approve it as it stands, and it will ` +
-          `run at the level the package asks for. To give it more, edit the package or make your ` +
-          `own copy of the skill.`
-        : `This file lives inside an installed package's folder, so DorkOS did not change it — ` +
-          `the next update of that package would wipe the change out. You can switch this ` +
-          `schedule on or off, or change when it runs, here; to change what it does, edit the ` +
-          `package or make your own copy of the skill.`,
+      error: packageOwnedRefusal(ownership.by, ownership.packageName, refusedGrant),
       code: 'schedule_package_owned',
+      ownedBy: ownership.by,
     };
   }
 

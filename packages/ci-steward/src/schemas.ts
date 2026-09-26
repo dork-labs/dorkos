@@ -34,8 +34,24 @@ const CollectConfigSchema = z
           workflow: z.string().min(1),
           pattern: z.string().min(1),
           format: z.enum(['playwright', 'vitest']),
+          /**
+           * The gate whose jobs write these reports: a failed queue job in it
+           * is one `flaky-test-runs` can see.
+           */
+          gate: z
+            .string()
+            .regex(/^wf\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, 'a wf.<workflow>.<job> gate id'),
         })
         .strict()
+    ),
+    /**
+     * Gates that run tests on the queue with no report `flaky-test-runs` can
+     * read, each with why. A failed queue job in one is coverage the SLO does
+     * not have, so it reads `unmeasured` for that window.
+     */
+    blind_test_gates: z.record(
+      z.string().regex(/^wf\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, 'a wf.<workflow>.<job> gate id'),
+      z.string().min(20)
     ),
   })
   .strict();
@@ -193,6 +209,25 @@ export const ConfigSchema = z
     generated_blocks: z.object({ required_checks: z.array(RepoPath) }).strict(),
     commands: z.object({ ledger_new: z.string().min(1), census_fix: z.string().min(1) }).strict(),
     collect: CollectConfigSchema,
+    /**
+     * Deadlines that fire inside a job before its own `timeout-minutes`, by
+     * gate. `headroom` measures a gate against the smaller of the two, because
+     * that is the one that ends the run.
+     */
+    deadlines: z
+      .array(
+        z
+          .object({
+            gate: z
+              .string()
+              .regex(/^wf\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/, 'a wf.<workflow>.<job> gate id'),
+            minutes: z.number().positive(),
+            /** Where the deadline is set, so a reader can check it. */
+            source: z.string().min(1),
+          })
+          .strict()
+      )
+      .default([]),
     quarantine: QuarantineConfigSchema,
     canary: CanaryConfigSchema,
     verdicts: z

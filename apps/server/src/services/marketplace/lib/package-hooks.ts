@@ -43,9 +43,10 @@ import {
   readDeclarationJson,
   type DeclarationSource,
 } from './package-declarations.js';
+import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
 /** Package-relative path of the default Claude-plugin hooks declaration. */
-export const HOOKS_FILE = 'hooks/hooks.json';
+export const HOOKS_FILE = EFFECT_BEARING_PATHS.hooksFile;
 
 /** What {@link readPackageHooks} found. */
 export interface PackageHooks {

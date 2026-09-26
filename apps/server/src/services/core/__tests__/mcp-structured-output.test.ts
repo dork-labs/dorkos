@@ -99,6 +99,8 @@ const TASK: Task = {
   defaultCron: '0 2 * * *',
   defaultTimezone: null,
   timingOverridden: false,
+  packageOwned: null,
+  approvalChanges: [],
   agentId: null,
   enabled: true,
   maxRuntime: null,

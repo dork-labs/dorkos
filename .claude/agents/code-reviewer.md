@@ -50,7 +50,7 @@ Review code for adherence to established patterns and conventions. Apply both ge
 
 - Follows SOLID principles and hexagonal architecture conventions
 - Proper separation of concerns and loose coupling
-- Transport interface used correctly (HttpTransport vs DirectTransport)
+- Transport interface used correctly (HttpTransport and mock transports)
 - Code integrates cleanly with existing systems
 - Scalability and extensibility considered
 - No circular dependencies introduced

@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import type { GitStatusResponse, GitStatusError } from '@dorkos/shared/types';
 import { GIT } from '../../config/constants.js';
 import { validateBoundary, BoundaryError } from '../../lib/boundary.js';
+import { internalGitArgs } from '../../lib/git-safety.js';
 
 /**
  * Git repository status via `git status --porcelain=v1`.
@@ -30,10 +31,14 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse | Git
   }
 
   try {
-    const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '--branch'], {
-      cwd,
-      timeout: GIT.STATUS_TIMEOUT_MS,
-    });
+    const { stdout } = await execFileAsync(
+      'git',
+      [...internalGitArgs(), 'status', '--porcelain=v1', '--branch'],
+      {
+        cwd,
+        timeout: GIT.STATUS_TIMEOUT_MS,
+      }
+    );
     return parsePorcelainOutput(stdout);
   } catch {
     return { error: 'not_git_repo' as const };

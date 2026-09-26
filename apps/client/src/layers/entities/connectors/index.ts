@@ -88,4 +88,3 @@ export type {
 } from '@dorkos/shared/connector-resource-schemas';
 
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
-export { EmbeddedConnectionsNotice } from './ui/EmbeddedConnectionsNotice';

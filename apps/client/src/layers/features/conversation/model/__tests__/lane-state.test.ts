@@ -538,6 +538,22 @@ describe('deriveLaneState — a message that has not started', () => {
     });
   });
 
+  it('does not promise the named room when the agent is working in several (DOR-2104)', () => {
+    // At `rooms.maxConcurrentTurnsPerAgent` above one, the room named is only
+    // the turn that has run longest; any of them finishing may start this one.
+    const state = deriveLaneState(
+      input({
+        held: [{ ...waiting('Mio Clicker PM', 1, '#mio-engagement'), severalInTheWay: true }],
+      })
+    );
+
+    expect(state).toMatchObject({
+      kind: 'held',
+      sentence:
+        'Mio Clicker PM will pick this up when it finishes in #mio-engagement or another conversation',
+    });
+  });
+
   it('lets somebody actually working outrank somebody about to', () => {
     // **Seeded defect:** swap rungs 3 and 4, and a room where one agent is
     // mid-answer reports the OTHER one's wait instead — hiding live work to

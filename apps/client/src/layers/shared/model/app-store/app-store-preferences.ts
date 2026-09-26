@@ -1,12 +1,6 @@
 /**
  * Preferences slice — persisted user settings (booleans, font, promo) for the app store.
  *
- * All fields in this slice are backed by localStorage and survive page refresh.
- * The resets are intentionally absent here — `resetAllSettings` touches
- * cross-slice state (sidebarOpen, sidebarActiveTab, devtoolsOpen), so both it
- * and its appearance-scoped sibling live in the core slice in app-store.ts
- * where `set` has the full AppState type.
- *
  * @module shared/model/app-store-preferences
  */
 import type { StateCreator } from 'zustand';

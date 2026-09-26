@@ -181,7 +181,7 @@ export async function launchDesktop(
       `${origin}/api/config`,
       sendJson('PATCH', {
         onboarding: { dismissedAt: now },
-        profile: { rolePromptDismissedAt: now },
+        profile: { rolePromptDismissedAt: now, identityPromptDismissedAt: now },
         telemetry: { userHasDecided: true },
         ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
       })

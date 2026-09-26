@@ -1,7 +1,4 @@
 /**
- * URL classification + sandbox posture for the embedded browser canvas
- * (DOR-216, DOR-1260; ADR 260708-185519).
- *
  * The browser renders three kinds of target, each routed differently:
  * - `external` — an arbitrary `http(s)` site, framed directly (and falling back
  *   to the system browser when the site refuses embedding).

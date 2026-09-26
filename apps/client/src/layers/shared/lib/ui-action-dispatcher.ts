@@ -1,4 +1,4 @@
-import type { UiCommand, UiCanvasContent, UiPanelId, UiSidebarTab } from '@dorkos/shared/types';
+import type { UiCommand, UiCanvasContent, UiPanelId } from '@dorkos/shared/types';
 import { canvasContentForFile } from '@dorkos/shared/viewer-registry';
 import { toast } from 'sonner';
 import type { PipContent } from '@/layers/shared/model';
@@ -11,7 +11,7 @@ import type { PipContent } from '@/layers/shared/model';
 import { configKeys } from '@/layers/shared/model/server-config/query-keys';
 import { queryClient } from './query-client';
 import { canvasViewForContent } from '@dorkos/shared/canvas-view';
-import { getPlatform } from './platform';
+
 import { fireCelebration, type CelebrationOrigin } from './celebrations/celebration-effects';
 
 /**
@@ -24,7 +24,6 @@ import { fireCelebration, type CelebrationOrigin } from './celebrations/celebrat
 export interface DispatcherStore {
   // Sidebar
   setSidebarOpen: (open: boolean) => void;
-  setSidebarActiveTab: (tab: UiSidebarTab) => void;
 
   // Panels
   settingsOpen: boolean;
@@ -148,7 +147,6 @@ const LOCAL_UI_ONLY_COMMANDS: Record<UiCommand['action'], boolean> = {
   // Embedded-shell chrome, off the approved list rather than judged harmless.
   open_sidebar: false,
   close_sidebar: false,
-  switch_sidebar_tab: false,
 };
 
 /**
@@ -211,13 +209,7 @@ export interface DispatcherContext {
    * test that wants to state the overrides inline.
    */
   workbenchViewerOverrides?: Record<string, string>;
-  /**
-   * Whether the active transport can host a server-side terminal
-   * (`transport.supportsTerminal`). Consulted by `open_terminal`: when `false`
-   * the action surfaces a toast instead of revealing an unavailable tab (the
-   * Terminal contribution is hidden under DirectTransport/Obsidian). Omit to
-   * treat the terminal as available (the web default).
-   */
+
   supportsTerminal?: boolean;
   /**
    * Normalized viewport point a `celebrate` command should erupt from — the
@@ -326,18 +318,6 @@ export function executeUiCommand(
     case 'close_sidebar':
       store.setSidebarOpen(false);
       break;
-    case 'switch_sidebar_tab':
-      // The sidebar tab strip lives ONLY in the embedded (Obsidian) shell; the
-      // web cockpit retired it for the persistent roster plus the right-panel
-      // inspector. Off the embedded host there is no strip to drive, so this is a
-      // deliberate, documented no-op rather than a command that silently writes
-      // state no visible surface reads (the get_ui_state/control_ui tool docs and
-      // the web ui-state snapshot are honest about this).
-      if (getPlatform().isEmbedded) {
-        store.setSidebarActiveTab(command.tab);
-        store.setSidebarOpen(true);
-      }
-      break;
 
     // --- Canvas (multi-document) ---
     case 'open_canvas':
@@ -386,9 +366,6 @@ export function executeUiCommand(
         ctx.workbenchViewerOverrides ?? workbenchViewerOverrides()
       );
       if (!ctx.serverAppliedCanvas) store.openCanvasDocument(content);
-      // No viewer resolves to the embedded browser today, so every opened file
-      // reveals Canvas — and the day one does, this line routes it to Browser
-      // without an edit, because it asks the content rather than the extension.
       revealForContent(store, origin, content);
       break;
     }
@@ -406,12 +383,6 @@ export function executeUiCommand(
       revealCanvas(store, origin);
       break;
     case 'open_terminal': {
-      // No agent-side PTY spawn (PTY creation is client-driven): reveal and
-      // focus the Terminal tab for the attached session, which spawns the shell
-      // in the session's own worktree — so the command's `cwd` hint is advisory
-      // and unused here. Web-only: under a transport without terminal support
-      // (DirectTransport/Obsidian) the tab does not exist, so degrade to a toast
-      // rather than focusing a phantom tab.
       if (ctx.supportsTerminal === false) {
         toast.info('Terminal is not available here', {
           description: 'Open this session in the DorkOS web app to use the terminal.',
@@ -487,11 +458,6 @@ export function executeUiCommand(
       ctx.switchAgent?.(command.cwd);
       break;
 
-    // --- Shape ---
-    // The app shell wires `applyShape` to the real flow (POST
-    // /api/shapes/:name/apply → restore chrome + live re-mount, DOR-355 task
-    // 3.1). Optional-context, so unwired (e.g. Obsidian) it is a safe no-op —
-    // mirrors `switch_agent`.
     case 'apply_layout':
       ctx.applyShape?.(command.shape);
       break;
@@ -574,8 +540,6 @@ export function revealCanvas(store: DispatcherStore, origin: UiCommandOrigin): v
 }
 
 /**
- * Reveal the Browser tab — the pages the embedded browser renders.
- *
  * The sibling of {@link revealCanvas}, for the same reason: a page opened into a
  * tab nobody selected is a page nobody sees.
  *

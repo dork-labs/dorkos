@@ -25,7 +25,7 @@
  * @module widgets/control-center/model/use-overrides-ledger
  */
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
-import { createModalHandoff, permissionModeLabel } from '@/layers/shared/lib';
+import { createModalHandoff, permissionModeLabel, toSession } from '@/layers/shared/lib';
 import { stopLabel } from '@/layers/shared/ui';
 import {
   useAppStore,
@@ -58,7 +58,7 @@ export interface OverrideRow {
   name: string;
   /** The power it runs at, in the runtime's own word for the mode. */
   detail: string;
-  /** Open the owning surface, or `null` where there is nowhere to navigate (the embed). */
+
   onOpen: (() => void) | null;
   /**
    * Put it back on the default in one tap. Only an agent's own permission has
@@ -161,9 +161,7 @@ export function useOverridesLedger(): OverridesLedger {
         name: session.title || 'Untitled session',
         detail: descriptor?.label ?? permissionModeLabel(session.permissionMode),
         onOpen: navigate
-          ? openAndClose(() =>
-              navigate({ to: '/session', search: { session: session.id, dir: session.cwd } })
-            )
+          ? openAndClose(() => navigate(toSession({ session: session.id, dir: session.cwd })))
           : null,
       });
     }

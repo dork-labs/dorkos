@@ -72,6 +72,8 @@ export const CONVERSATION_SECTIONS: PlaygroundSection[] = [
       'grouping',
       'pending',
       'thread',
+      'answering',
+      'reply',
       'long run',
     ],
   },

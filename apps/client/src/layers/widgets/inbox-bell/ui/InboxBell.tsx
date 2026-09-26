@@ -9,7 +9,7 @@ import {
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
-import { listWaitingKinds } from '@/layers/shared/lib';
+import { listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import {
@@ -166,11 +166,6 @@ interface PillState {
  * while the app already knows the link is down, because the status line's
  * connection item is the signal for an outage and a second amber marker would
  * only dilute what this one means.
- *
- * Only the standalone shell (`AppShell`) mounts this. The Obsidian embed renders
- * `App` instead and never mounts it, which is the actual reason the embed's
- * stubbed-out approvals and empty Inbox cannot produce a permanently empty pill
- * there.
  */
 export function InboxBell() {
   // The popover's one derivation of "what's waiting" (spec
@@ -363,7 +358,7 @@ export function InboxBell() {
                       // the whole conversation rather than the one question.
                       onOpenSession={(sessionId) => {
                         setOpen(false);
-                        void navigate({ to: '/session', search: { session: sessionId } });
+                        void navigate(toSession({ session: sessionId }));
                       }}
                       emptyState={
                         <p className="text-muted-foreground text-xs">Nothing needs you</p>

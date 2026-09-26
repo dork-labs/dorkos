@@ -15,7 +15,10 @@ vi.mock('@/layers/shared/model', async (importOriginal) => ({
   useSettingsDeepLink: () => ({ open: openSettings }),
 }));
 
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('@tanstack/react-router', () => ({
+  useRouter: () => ({}),
+  useNavigate: () => vi.fn(),
+}));
 afterEach(cleanup);
 
 function renderRegion(transport: Transport) {

@@ -61,7 +61,7 @@ describe('runMarketplaceDispatcher', () => {
     expect(help).toMatch(/dorkos install.*shorthand/is);
   });
 
-  it.each(['install', 'update', 'uninstall', 'installed', 'outdated'])(
+  it.each(['install', 'update', 'uninstall', 'installed', 'outdated', 'check-files'])(
     'prints help for `%s --help` without calling the server',
     async (verb) => {
       // Purpose: each package verb documents itself under its canonical name.
@@ -71,6 +71,15 @@ describe('runMarketplaceDispatcher', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     }
   );
+
+  // Purpose (DOR-2197 review 6): the command says what it is for in the same
+  // words as the app's "Check files" button.
+  it('explains check-files in the same words as the app', async () => {
+    expect(await runMarketplaceDispatcher('check-files', ['--help'])).toBe(0);
+    expect(printed(logSpy)).toContain(
+      'Compares this package with the version you installed, so updates keep your edits.'
+    );
+  });
 
   it('prints help for `install <name> --help` instead of installing', async () => {
     // Purpose: a help flag anywhere in the arguments shows help. Before, only a
@@ -132,13 +141,14 @@ describe('runMarketplaceDispatcher', () => {
   });
 
   it('routes `update <name>` to the per-package door', async () => {
-    fetchMock.mockResolvedValueOnce(mockResponse(200, { checks: [], applied: [] }));
+    fetchMock.mockResolvedValueOnce(mockResponse(200, { checks: [] }));
 
     expect(await runMarketplaceDispatcher('update', ['flow'])).toBe(0);
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/api\/marketplace\/packages\/flow\/update$/);
-    expect(JSON.parse(String(init.body))).toEqual({ apply: false });
+    // A check only: the per-package door no longer applies (DOR-2306).
+    expect(JSON.parse(String(init.body))).toEqual({});
   });
 
   it('routes `uninstall <name>` to the uninstall door', async () => {

@@ -111,6 +111,8 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     defaultCron: '0 9 * * 1-5',
     defaultTimezone: null,
     timingOverridden: false,
+    packageOwned: null,
+    approvalChanges: [],
     maxRuntime: null,
     permissionMode: 'acceptEdits',
     runtime: null,
@@ -413,8 +415,8 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       (cwd: string, filePath: string) => `/api/files/raw?cwd=${cwd}&path=${filePath}`
     ),
     // Embedded browser signed URLs — the default mock behaves like the HTTP
-    // transport, returning a resolvable URL. Tests that exercise the
-    // DirectTransport path override these to resolve null.
+    // transport, returning a resolvable URL. Tests for unavailable previews
+    // override these to resolve null.
     createServeUrl: vi.fn(
       async (cwd: string, filePath?: string) =>
         `/api/workbench/serve/mock-token/${filePath ?? 'index.html'}?cwd=${cwd}`
@@ -423,17 +425,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       url: `http://localhost:4999/?__dorkos_preview=mock-token-${port}`,
     })),
     // Default: the port answers. Tests covering the dead-port message override
-    // this with `{ listening: false }`, and DirectTransport tests with `null`.
+    // this with `{ listening: false }`; unavailable probes return `null`.
     probeLoopbackPort: vi.fn(async () => ({ listening: true })),
     // Embedded browser — the default mock behaves like the HTTP transport (it
-    // can serve a page); tests covering the DirectTransport path override
+    // can serve a page); tests for unavailable previews override
     // `supportsWorkbenchServe: false`.
     supportsWorkbenchServe: true,
     ingestDevtoolsCapture: vi.fn(async () => {}),
     postDevtoolsAction: vi.fn(async () => {}),
     uploadDevtoolsRecording: vi.fn(async () => {}),
     // Embedded terminal — the default mock behaves like the HTTP transport
-    // (supported); tests that need the DirectTransport path override
+    // (supported); tests for unsupported terminals override
     // `supportsTerminal: false`.
     supportsTerminal: true,
     openTerminal: vi.fn(async () => ({
@@ -469,7 +471,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     renameEntry: vi.fn().mockResolvedValue({ ok: true }),
     copyEntry: vi.fn().mockResolvedValue({ ok: true }),
     // Reveal behaves like the HTTP transport by default (supported); tests that
-    // need the DirectTransport path override `supportsReveal: false`.
+    // need an unavailable file manager override `supportsReveal: false`.
     supportsReveal: true,
     revealEntry: vi.fn().mockResolvedValue(undefined),
     getConfig: vi.fn().mockResolvedValue({
@@ -1008,10 +1010,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     uninstallMarketplacePackage: vi.fn(),
     checkMarketplaceUpdates: vi.fn().mockResolvedValue({ checks: [] }),
     applyMarketplaceUpdates: vi.fn(),
+    reviewHeldBackPackage: vi.fn().mockResolvedValue(undefined),
     listInstalledPackages: vi.fn().mockResolvedValue([]),
+    checkPackageFiles: vi.fn(),
     listPackageInstallations: vi.fn().mockResolvedValue([]),
     listMarketplaceSources: vi.fn().mockResolvedValue([]),
     addMarketplaceSource: vi.fn(),
+    refreshMarketplaceSource: vi.fn(),
     removeMarketplaceSource: vi.fn().mockResolvedValue(undefined),
     // Harness Sync (spec `harness-sync-status` §5). A clean `ready` status with
     // nothing in it: every existing client test keeps compiling and none of them

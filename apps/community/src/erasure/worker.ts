@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { ContentChangeError } from '../content-removal.js';
 import { transaction } from '../data.js';
 import { eraseAccount, eraseMembership, ErasureError, type ErasureOptions } from './erasure.js';
 import { cleanupBackoffSql } from '../storage/pending-deletions.js';
@@ -61,7 +62,10 @@ export async function sweepErasures(
     }
     return { claimed: 1, completed: 1, failed: 0 };
   } catch (error) {
-    const code = error instanceof ErasureError ? error.code : 'ERASURE_FAILED';
+    const code =
+      error instanceof ErasureError || error instanceof ContentChangeError
+        ? error.code
+        : 'ERASURE_FAILED';
     await pool.query(
       `UPDATE erasure_requests SET attempts=attempts+1,last_error_class=$2,
          next_attempt_at=$3::timestamptz + ${cleanupBackoffSql('attempts')}

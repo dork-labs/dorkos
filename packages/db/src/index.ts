@@ -83,47 +83,6 @@ export function createDb(dbPath: string) {
   }
 }
 
-/**
- * Opens an EXISTING database for reading only, creating nothing and changing
- * nothing.
- *
- * For a second program on the machine that wants to read DorkOS's data while
- * DorkOS itself may be running — today that is the Obsidian plugin reading the
- * message index (ADR 260825-194924). It differs from {@link createDb} in three
- * ways, and each one is the point:
- *
- * - **`fileMustExist`.** A missing database is an error, not an invitation to
- *   create an empty one. `createDb`'s create-on-open is how an install gets its
- *   first database; a reader that did the same would leave a schemaless
- *   `dork.db` behind and make the real DorkOS boot into it.
- * - **No `journal_mode` and no `synchronous`.** Both are writes. Against a
- *   database already in WAL, SQLite answers `journal_mode` from the header and
- *   nothing happens; against one that is not, it raises "attempt to write a
- *   readonly database". Measured both ways.
- * - **`readonly`.** The connection cannot write even by mistake, which is what
- *   makes it safe to point at a file another process is writing.
- *
- * **It still sees that writer's newest rows.** A readonly connection reads the
- * `-wal` file too, so a row DorkOS committed a second ago and has not
- * checkpointed is visible here — measured. A reader is not a stale snapshot.
- *
- * `busy_timeout` is kept: readers still wait on a checkpointing writer.
- *
- * @param dbPath - Absolute path to an existing database file.
- * @returns The Drizzle instance, same type as {@link createDb}'s.
- * @throws {DatabaseOpenError} When the file is absent, or will not open.
- */
-export function openReadOnlyDb(dbPath: string) {
-  let sqlite: Database.Database;
-  try {
-    sqlite = new Database(dbPath, { readonly: true, fileMustExist: true });
-    sqlite.pragma('busy_timeout = 5000');
-  } catch (err) {
-    throw new DatabaseOpenError(dbPath, err);
-  }
-  return drizzle(sqlite, { schema });
-}
-
 /** Apply the house pragmas to an open connection and wrap it in Drizzle. */
 function configureAndWrap(sqlite: Database.Database) {
   sqlite.pragma('journal_mode = WAL');
@@ -166,6 +125,18 @@ function configureAndWrap(sqlite: Database.Database) {
   // It is per-connection, so it protects connections opened through here and no
   // others. Anything writing `messages` must come through `createDb`.
   sqlite.pragma('recursive_triggers = ON');
+  // Deleted content is overwritten with zeros, not left in the file for a later write to cover.
+  //
+  // A Community message that was deleted, removed by a moderator or a host, or erased with its
+  // author has to leave this machine's copy too (specs/community-member-erasure task 2.1), and a
+  // row update or delete alone only unlinks the old bytes. Replacing them at that moment is not
+  // enough either: SQLite also leaves old bytes behind whenever it reorganizes a page — a leaf
+  // split into an interior page keeps its former cells in the unused area — and that happens on
+  // ordinary writes long before anyone asks for a deletion. Only a connection that zeroes as it
+  // goes never leaves such remnants, so it is on for every write rather than for the sync.
+  // It costs extra writes only where pages are freed, which on this mostly-append database is
+  // rare; it is the default on several platforms' own SQLite builds.
+  sqlite.pragma('secure_delete = ON');
   return drizzle(sqlite, { schema });
 }
 

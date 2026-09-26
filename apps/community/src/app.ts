@@ -15,7 +15,7 @@ import {
 import type { CommunityConfig } from './config.js';
 import { createCommunityAuth } from './auth.js';
 import { bootstrapGrant, transaction } from './data.js';
-import { ApiError, handleError, json, readJson } from './http.js';
+import { ApiError, handleError, json, RateLimited, readJson } from './http.js';
 import { equalSecret, hashSecret, isHostApiKeyBearer, randomToken, signValue } from './security.js';
 import { mintHandle } from './handles.js';
 import { registerChannelRoutes } from './routes/channels.js';
@@ -24,14 +24,21 @@ import { registerEventRoutes } from './routes/events.js';
 import { registerInviteRoutes } from './routes/invites.js';
 import { registerMemberRoutes } from './routes/members.js';
 import { registerPairingRoutes } from './routes/pairings.js';
+import { registerRedactionRoutes } from './routes/redactions.js';
+import { registerRemovalRoutes } from './routes/removals.js';
 import { registerAgentRoutes } from './routes/agents.js';
 import { registerAttachmentRoutes } from './routes/attachments.js';
 import { registerExportRoutes } from './routes/exports.js';
 import { registerHostRoutes } from './routes/host.js';
 import { registerMembershipRoutes } from './routes/memberships.js';
 import { registerHostLimitRoutes } from './routes/host-limits.js';
+import { registerHostLegalHoldRoutes } from './routes/host-legal-hold.js';
+import { registerHostLifecycleRoutes } from './routes/host-lifecycle.js';
+import { registerShortNameRoutes } from './routes/short-names.js';
+import { callerAddress } from './caller-address.js';
 import { registerOwnerClaimRoutes } from './routes/owner-claims.js';
 import { registerHostKeyRoutes } from './routes/host-keys.js';
+import { registerHostLinkRoutes } from './routes/host-links.js';
 import { createHostAuthority } from './host/authority.js';
 import { registerAdministrationRoutes } from './routes/administration.js';
 import { registerAccountErasureRoutes, registerOwnerErasureRoutes } from './routes/erasures.js';
@@ -40,6 +47,7 @@ import { DeliveryReceiptGate } from './delivery-receipt-gate.js';
 import { registerCommunityTestControlRoutes } from './routes/test-control.js';
 import { resolveCommunityContext } from './tenant-context.js';
 import { createPasswordConfirmation } from './password-confirmation.js';
+import { accountHasPassword, registerAccountPasswordRoutes } from './routes/account-password.js';
 
 /** Assemble the injectable HTTP app without reading environment variables. */
 export function createCommunityApp({
@@ -57,12 +65,11 @@ export function createCommunityApp({
     beforeBootstrapChannelCreate?: () => Promise<void>;
     /** The clock host API key expiry is judged by. Tests move it; production uses the wall clock. */
     now?: () => Date;
-    afterExportSnapshot?: () => Promise<void>;
   };
   blobStore?: BlobStore;
 }) {
   const app = new Hono();
-  const auth = createCommunityAuth(pool, config);
+  const auth = createCommunityAuth(pool, config, { now: hooks?.now });
   const receiptGate = config.testRuntime ? new DeliveryReceiptGate() : undefined;
   app.onError(handleError);
   app.get('/health', (c) => c.json({ status: 'ok' }));
@@ -77,7 +84,11 @@ export function createCommunityApp({
     }
     const current = (attemptTimes.get(key) ?? []).filter((time) => now - time < 60_000);
     if (current.length >= ceiling)
-      throw new ApiError(429, 'RATE_LIMITED', 'Too many attempts. Try again soon.');
+      // The oldest attempt still in the window is the next one to free a slot.
+      throw new RateLimited(
+        'Too many attempts. Try again soon.',
+        Math.max(1, Math.ceil((current[0] + 60_000 - now) / 1000))
+      );
     current.push(now);
     attemptTimes.set(key, current);
   };
@@ -85,14 +96,16 @@ export function createCommunityApp({
   const refundAttempt = (key: string) => {
     attemptTimes.get(key)?.pop();
   };
-  // Use the socket peer. Proxy headers are client-controlled until a trusted proxy is configured.
-  const peer = (c: Parameters<typeof getConnInfo>[0]) => getConnInfo(c).remote.address ?? 'unknown';
+  // The socket peer, or the address a configured trusted proxy names; see `callerAddress`.
+  const peer = (c: Parameters<typeof getConnInfo>[0]) =>
+    callerAddress(c, config.trustedProxyHeader);
   // Every server-side password check spends from this one per-account budget (see its TSDoc).
   const confirmPassword = createPasswordConfirmation({
     auth,
     ceiling: config.limits.reauthAttemptsPerMinute,
     spend: limitAttempts,
     refund: refundAttempt,
+    hasPassword: (userId) => accountHasPassword(pool, userId),
   });
   app.use('/api/*', async (c, next) => {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(c.req.method)) {
@@ -292,13 +305,24 @@ export function createCommunityApp({
     limitKeyMiss: (c) =>
       limitAttempts(`host-key:${peer(c)}`, config.limits.hostKeyAttemptsPerMinute),
   });
+  registerHostLinkRoutes(app, { config });
   const hostApi = new Hono();
-  registerHostRoutes(hostApi, { pool, blobStore, authority, now });
+  registerHostRoutes(hostApi, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(hostApi, { pool, auth, config, authority, now });
   registerMembershipRoutes(hostApi, { pool, auth });
   registerHostLimitRoutes(hostApi, { pool, config, authority, now });
+  registerHostLifecycleRoutes(hostApi, { pool, config, blobStore, authority, now });
+  registerHostLegalHoldRoutes(hostApi, { pool, authority, now });
+  registerShortNameRoutes(hostApi, {
+    pool,
+    config,
+    authority,
+    now,
+    limitLookup: (c) => limitAttempts(`name-lookup:${peer(c)}`, config.limits.nameLookupsPerMinute),
+  });
   registerHostKeyRoutes(hostApi, { pool, auth, authority, now, confirmPassword });
   registerAccountErasureRoutes(hostApi, { pool, auth, confirmPassword });
+  registerAccountPasswordRoutes(hostApi, { pool, auth });
   app.route('/api/v1', hostApi);
 
   const communityApi = new Hono();
@@ -339,6 +363,7 @@ export function createCommunityApp({
     json(c, CommunityWireAuthOptionsSchema, {
       google: Boolean(config.oauth.google),
       github: Boolean(config.oauth.github),
+      oidc: config.oidc ? { label: config.oidc.label } : null,
     })
   );
 
@@ -373,7 +398,9 @@ export function createCommunityApp({
   });
   registerAgentRoutes(communityApi, { pool, auth, config });
   registerAttachmentRoutes(communityApi, { pool, auth, config, blobStore });
-  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword, hooks });
+  registerRemovalRoutes(communityApi, { pool, auth, config });
+  registerRedactionRoutes(communityApi, { pool, auth, config });
+  registerExportRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerAdministrationRoutes(communityApi, { pool, auth, blobStore, confirmPassword });
   registerOwnerErasureRoutes(communityApi, { pool, auth });
   app.route('/api/v1', communityApi);

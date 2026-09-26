@@ -22,6 +22,7 @@ import type { InstallationUpdateCheck } from '@dorkos/shared/marketplace-schemas
 
 import {
   MOCK_INSTALLED_FOR_UPDATES,
+  MOCK_INSTALLED_VERIFIED,
   MOCK_UPDATE_CHECKS,
   MOCK_UPDATE_CHECKS_ALL_CURRENT,
 } from './marketplace-mocks';
@@ -37,6 +38,12 @@ function seedChecks(checks: InstallationUpdateCheck[]) {
     seedInstalled(qc);
     qc.setQueryData(marketplaceKeys.updates(), { checks });
   };
+}
+
+/** A settled check plus verification: changed files on one row, an older install on another. */
+function seedVerified(qc: QueryClient) {
+  seedChecks(MOCK_UPDATE_CHECKS)(qc);
+  qc.setQueryData(marketplaceKeys.integrity(), MOCK_INSTALLED_VERIFIED);
 }
 
 /** A check that never settles: the pending state, as when it waits behind another scan. */
@@ -80,6 +87,17 @@ export function InstalledPackagesViewShowcase() {
         </IsolatedQueryProvider>
       </ShowcaseDemo>
 
+      <ShowcaseLabel>
+        Files changed since install (open it for the paths, and what an update does to them), an
+        install an older DorkOS made with Check files, one whose files were found to differ, and
+        files an offline update kept because it couldn’t tell whose they were
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <IsolatedQueryProvider seed={seedVerified}>
+          <InstalledPackagesView />
+        </IsolatedQueryProvider>
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Everything up to date</ShowcaseLabel>
       <ShowcaseDemo>
         <IsolatedQueryProvider seed={seedChecks(MOCK_UPDATE_CHECKS_ALL_CURRENT)}>
@@ -115,7 +133,7 @@ export function ConfirmUpdatesDialogShowcase() {
   return (
     <PlaygroundSection
       title="ConfirmUpdatesDialog"
-      description="Confirm step before updating: every installation it will touch, where it lives, and its version change. Confirms any list, one included. A drawer on phones."
+      description="Confirm step before updating: every installation it will touch, where it lives, its version change, and everything its new version runs on its own. Confirms any list, one included; a row whose new version runs something opens it too. A drawer on phones."
     >
       <ShowcaseDemo>
         <div className="flex gap-3">
@@ -135,7 +153,14 @@ export function ConfirmUpdatesDialogShowcase() {
           </button>
         </div>
         <ConfirmUpdatesDialog
-          stale={open === 'all' ? stale : open === 'one' ? stale.slice(1, 2) : null}
+          stale={open === 'all' ? stale : open === 'one' ? stale.slice(-1) : null}
+          integrityByPath={
+            new Map(
+              MOCK_INSTALLED_VERIFIED.flatMap((pkg) =>
+                pkg.integrity ? [[pkg.installPath, pkg.integrity] as const] : []
+              )
+            )
+          }
           onCancel={() => setOpen(null)}
           onConfirm={() => setOpen(null)}
         />

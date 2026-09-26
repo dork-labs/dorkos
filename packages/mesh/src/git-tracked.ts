@@ -14,6 +14,7 @@ import { execFile } from 'child_process';
 import { access } from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
+import { gitConfigArgs, internalGitConfig } from '@dorkos/shared/git-hardening';
 import { MANIFEST_DIR, MANIFEST_FILE } from './manifest.js';
 
 const execFileAsync = promisify(execFile);
@@ -73,10 +74,16 @@ export async function isManifestGitTracked(
 ): Promise<boolean> {
   const manifestPath = path.join(projectPath, MANIFEST_DIR, MANIFEST_FILE);
   try {
-    await execFileAsync('git', ['ls-files', '--error-unmatch', '--', manifestPath], {
-      cwd: projectPath,
-      timeout: GIT_TIMEOUT_MS,
-    });
+    // The folder is an agent's, which DorkOS did not create; its own git
+    // configuration must not run anything (DOR-2326).
+    await execFileAsync(
+      'git',
+      [...gitConfigArgs(internalGitConfig()), 'ls-files', '--error-unmatch', '--', manifestPath],
+      {
+        cwd: projectPath,
+        timeout: GIT_TIMEOUT_MS,
+      }
+    );
     return true;
   } catch (err) {
     const code = (err as { code?: number | string }).code;

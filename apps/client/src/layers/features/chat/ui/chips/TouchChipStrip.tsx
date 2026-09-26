@@ -7,7 +7,7 @@
 import { Fragment, useCallback, useId, useMemo } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import type { MessagePart, UiCanvasContent } from '@dorkos/shared/types';
-import { cn, getPlatform, openExternalLink, revealForContent } from '@/layers/shared/lib';
+import { cn, revealForContent } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { accumulateTouchChips, type TouchChip as TouchChipData } from '../../lib/touch-chips';
 import { trayExpansionKey, useTrayExpansion } from '../../model/view/use-tray-expansion';
@@ -163,8 +163,6 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
     useMemo(() => trayExpansionKey(sessionId, parts), [sessionId, parts])
   );
   const handleOpen = useCallback((chip: TouchChipData) => {
-    const embedded = getPlatform().isEmbedded;
-
     // A glob names a set of files, so there is no one file to open — handing
     // `src/**/*.ts` to the canvas opens an empty document named after the
     // pattern. The chip says so in its tooltip and does nothing here.
@@ -181,22 +179,6 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
     const store = useAppStore.getState();
 
     if (chip.kind === 'url') {
-      // A url chip's target is the agent's own `WebFetch` input, so both
-      // branches below are handed a string this app did not author. They clear
-      // two different gates, each the right one for where the target is going.
-      //
-      // In the plugin there is no canvas, so the page leaves for the browser —
-      // and leaving is what `openExternalLink` gates, against the scheme
-      // allowlist every other exit in the app shares. This used to be a bare
-      // `window.open`, which is the allowlist bypass DOR-921 named
-      // (`contributing/link-dispatch-policy.md`). A refused scheme opens
-      // nothing and says so, the same answer every other caller of the seam
-      // gives since DOR-547; the chip's tooltip still carries the full target,
-      // so the record is not lost either.
-      if (embedded) {
-        openExternalLink(chip.fullTarget);
-        return;
-      }
       // Everywhere else the target is FRAMED rather than opened, and framing has
       // its own, differently-shaped policy: `classifyBrowserTarget`
       // (`canvas/lib/browser-url.ts`) frames `http(s)` and serves `file:`, and
@@ -211,9 +193,6 @@ export function TouchChipStrip({ parts, sessionId, turnActive = false }: TouchCh
     }
 
     if (chip.kind === 'file') {
-      // A file chip in the plugin is a record with a tooltip and nothing more —
-      // there is no pane to open it into. Revisit when that surface is verified.
-      if (embedded) return;
       const file: UiCanvasContent = { type: 'file', sourcePath: chip.fullTarget };
       store.openCanvasDocument(file);
       revealForContent(store, 'user', file);

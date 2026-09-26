@@ -43,7 +43,12 @@ import {
   resolveScheduledRunPermissionMode,
 } from '../scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../../session/resolve-session-defaults.js';
-import { isPackageOwnedAgent, planTaskFileCreate } from '../task-file-update.js';
+import {
+  packageOwnershipContext,
+  packageOwnershipOf,
+  planTaskFileCreate,
+  type PackageOwnershipKind,
+} from '../task-file-update.js';
 import { broadcastTasksChanged } from '../task-sse-events.js';
 import type { TaskStore } from '../task-store.js';
 import type { TaskRegistrar } from '../task-registrar.js';
@@ -104,6 +109,8 @@ export interface CreateScheduledTaskRefusal {
   error: string;
   /** A machine-readable code, on the refusals that carry one. */
   code?: string;
+  /** For `schedule_package_owned`: how the package's ownership is known (DOR-2272). */
+  ownedBy?: PackageOwnershipKind;
   /** Zod's flattened issues, on a schema refusal. */
   details?: unknown;
 }
@@ -309,31 +316,37 @@ export async function createScheduledTask(
   const home = resolveTaskHome(data.target, deps);
   if (!home.ok) return home;
 
-  // An agent that came from a marketplace package IS its own install directory,
-  // and `agentSkillsRoot` puts this file inside it — so the schedule would be
-  // written into a checkout the package's next update replaces wholesale, taking
-  // the person's new schedule with it and saying nothing.
-  //
-  // Refused here rather than only at UPDATE, which is where DOR-1789 first found
-  // it. Refusing one door and not the other is worse than either answer alone:
-  // the person writes a schedule DorkOS accepts, then gets told it belongs to a
-  // package the moment they try to change it — a sentence that reads as untrue
-  // about a file they just made (DOR-1789 review).
-  //
-  // This does cost a capability: you cannot schedule work for a marketplace
-  // agent without adding it to the package. Accepted deliberately — the
-  // capability only ever appeared to work, and evaporated at the next package
-  // update with nothing saying why. Restoring it properly (a schedule that lives
-  // outside the checkout and survives updates) is DOR-1791.
-  if (home.projectPath && (await isPackageOwnedAgent(home.projectPath))) {
+  // The create door asks the update door's question about the file it is about
+  // to write, so it can never make a schedule the person is then refused leave
+  // to edit (DOR-1789 review). Under an agent that came from a marketplace
+  // package, the file lands inside the package's install root: a name the
+  // package's record lists is the package's (its next update puts that file
+  // back), and any other name is the person's and survives every update
+  // (DOR-2245). An install from before records existed cannot tell the two
+  // apart, so it refuses and says how to get a record (DOR-2272).
+  const ownership = await packageOwnershipOf(
+    path.join(home.skillsDir, slug, SKILL_FILENAME),
+    packageOwnershipContext(deps.dorkHome, home.projectPath)
+  );
+  if (ownership.owned) {
+    // Named for whoever really owns the path: under an agent, a skills entry can
+    // be a Harness Sync link into some other package's checkout.
+    const owner = ownership.agentOwned
+      ? `This agent's package`
+      : `The "${ownership.packageName}" package`;
     return {
       ok: false,
       status: 409,
       error:
-        `This agent's files belong to an installed package, so DorkOS did not make the ` +
-        `schedule — the package's next update would wipe it out. Add the schedule to the ` +
-        `package itself, or ask the package's author to ship it.`,
+        ownership.by === 'record'
+          ? `${owner} already has a schedule called "${slug}", so DorkOS didn't make another ` +
+            `one with that name. Pick a different name.`
+          : `${owner} was installed by an older version of DorkOS without a list of its files, ` +
+            `so DorkOS can't yet tell them from yours, and a schedule made here could be lost ` +
+            `at the package's next update. Choose Check files on it in Marketplace's Installed ` +
+            `tab (or run \`dorkos marketplace check-files ${ownership.packageName}\`), then try again.`,
       code: 'schedule_package_owned',
+      ownedBy: ownership.by,
     };
   }
 
@@ -410,7 +423,7 @@ export async function createScheduledTask(
 
   let schedule: Task;
   if (discovered) {
-    schedule = deps.store.upsertFromFile(discovered.def, home.agentId ?? undefined);
+    schedule = deps.store.fileSync.upsertFromFile(discovered.def, home.agentId ?? undefined);
   } else {
     // Fallback: create the row directly. NOT a file path, so it gets none of
     // `upsertFromFile`'s clamping — which is why the mode handed in was clamped at

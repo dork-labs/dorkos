@@ -61,7 +61,7 @@ Finally, sign-in is email and password plus optional Google and GitHub (`auth.ts
 | ---------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `hono`                             | 4.13.8                                | routes, streaming upload body                                                                                                                          |
 | `better-auth`                      | 1.7.5                                 | sessions, `verifyPassword` reauthentication, the `genericOAuth` plugin for P4 (discovery URL, PKCE)                                                    |
-| `pg` + hand-written SQL migrations | `apps/community/migrations/0001…0011` | schema changes; new files 0012–0015 are added to the list in `src/migrate.ts`                                                                          |
+| `pg` + hand-written SQL migrations | `apps/community/migrations/0001…0011` | schema changes; new files 0012 and 0014–0016 are added (0013 is member erasure) to the list in `src/migrate.ts`                                        |
 | `drizzle-orm`                      | 0.45.2                                | `src/schema.ts` mirrors every migration                                                                                                                |
 | `fflate`                           | 0.8.3                                 | already writes the export zip; its streaming `Unzip` reads the import archive                                                                          |
 | `zod`                              | ^4.1.13                               | strict wire schemas in `@dorkos/shared/community-wire` and `@dorkos/shared/community-admin-wire`; the non-strict house style in `@dork-labs/cloud-api` |
@@ -256,6 +256,40 @@ stateDiagram-v2
   deletion_pending --> held: host cancels a host-started deletion
 ```
 
+#### Holding a suspended community (DOR-2299)
+
+A host that suspended a community and then decides it should become read-only for its owner's export window used to need two calls: resume, then hold. If anything failed between them, the community was live again and nobody had meant it to be. `action: 'hold'` now also accepts a `suspended` community, in one transaction under the community lock:
+
+- From a suspension of `active` or `archived`: the community becomes `held` with `held_from_state` = the `suspended_from_state`, `held_at` = now, and the optional `deletionNoticeAt` (same rules as any hold). `suspended_from_state` and `suspended_at` clear.
+- From a suspension of a hold (`suspended_from_state = 'held'`): the community returns to that hold. `held_from_state` and `held_at` are kept; the suspension withdrew the old notice, so a new `deletionNoticeAt` may be published with the same call.
+- Nothing is revived. Suspension already revoked every credential, and a hold revives none.
+- One host audit row, `community.hold`, with `priorState: 'suspended'`.
+- There is never a moment in which the community is `active` or `archived`: the only states anyone can observe are `suspended` before and `held` after.
+
+#### Legal hold (DOR-2299)
+
+A host sometimes has a duty to preserve a community: a court order, a regulator's request, or pending litigation. Neither the lifecycle hold nor suspension can guarantee that. The owner can still request deletion of a held community, and after seven days the worker would carry it out. A **legal hold** is a separate flag that blocks every path that permanently deletes a community until the host releases it. It is independent of the lifecycle: a community can be under a legal hold in any state, and the flag changes nothing people can do.
+
+- **Scope.** A new host key scope, `communities:legal_hold`, and nothing else sets or releases one. `communities:lifecycle` does not imply it, so a key that can hold or delete a community cannot also lift the preservation that stops the deletion. A host operator's own session (person authority) may act, as for every host route.
+- **Routes.** `PUT /host/communities/:id/legal-hold { reference }` places the hold, or updates its reference if one is already in place (the start time is kept). `DELETE /host/communities/:id/legal-hold` releases it. `reference` is an optional free-text pointer to the host's own record (a case or ticket number), 1 to 200 characters, or `null`. It is host-only and never shown to members.
+- **Storage.** `communities.legal_hold_at`, `legal_hold_by_host_actor` (the same `person:`/`api_key:` form as host-started deletion), and `legal_hold_reference`, with a check that the first two are set together and the reference only with them.
+- **Audit.** `community.legal_hold.set`, `community.legal_hold.update`, and `community.legal_hold.release` host audit rows. The reference is not written to the audit row; the audit names the actor and the fields changed.
+- **What it blocks.**
+  - _The tenant deletion worker._ It never claims a job for a community under a legal hold. Each blob deletion re-checks the flag under a `FOR SHARE` lock on the community row, and so does the final step that removes the tenant's rows. Placing a hold takes that row `FOR UPDATE`, so once the hold commits the worker deletes no further byte or row. This one gate covers the owner's deletion, host-started deletion, and a takedown's community deletion (`specs/community-host-takedown/`), which all finish through this worker.
+  - _Host-started deletion_ (`POST /host/communities/:id/deletion`) and _abandoning an unclaimed community_ (`DELETE /host/communities/:id`): `409 LEGAL_HOLD_ACTIVE`. The host knows about its own hold, so it gets a clear refusal.
+  - _A takedown's community deletion_, when it lands, still enters `deletion_pending` (members must stop seeing the content at once) and then waits in the worker.
+- **What it does not block.**
+  - _The owner's deletion request_ is accepted as usual, and the community enters `deletion_pending`: people lose access as they asked. The purge simply does not run while the legal hold stands, and the owner can still cancel within the seven-day window. **Owners and members are not told** that a legal hold exists. No tenant route, projection, banner, error, or email mentions it, so a hold cannot tip off the person it may concern. After the hold is released, a deletion whose `delete_after` has passed is carried out by the next worker pass.
+  - _Item removals and member erasure_: single-item deletion, a moderator's removal, a takedown of one item, and member erasure keep working. A legal hold preserves the community's existence and whatever those paths leave behind; a host that must preserve specific content uses its own backups today, and the takedown evidence store once `specs/community-host-takedown/` ships. Extending the hold to item removals and erasure is a follow-up for the operator to decide (see Open Questions).
+  - _Exports, holds, suspension, and every other lifecycle action_: unchanged.
+- **Host projection.** `CommunityAdminHostProjectionSchema` gains `legalHold: { since, reference } | null`. The `reference` is shown only to a host person and to keys with `communities:legal_hold`; any other key sees that a hold exists and since when (it explains a paused deletion), with `reference: null`. No tenant schema changes.
+- **Database backstop.** A `BEFORE DELETE` trigger on `communities`, firing when `legal_hold_at IS NOT NULL`, raises. No path can delete a legally held community's row, including code older than the migration after a rollback. The tenant purge ends with that row in one transaction, so every row survives; the older worker's earlier file deletions do not, which is why a backout releases every legal hold first.
+- **Bounded file deletions.** Each file deletion's transaction sets a 5-second statement timeout for its `FOR SHARE` read and passes a 60-second abort signal to the storage delete, so a slow store never holds the community row, and a hold being placed, for long. Either timeout counts as a failed attempt and is retried with backoff.
+- **Owner's view.** Once a deletion's date has passed, the owner's deletion page drops its Cancel button (the server already refused the cancel then) and says "The deletion date has passed. It can't be cancelled.", which is true whether or not a legal hold delays the purge.
+- **Host page.** The host page shows "Legal hold since <date>" on the community's record, says a pending deletion is paused, and says plainly that the hold does not stop item removals or a person's own erasure, pointing to `OPERATIONS.md`. Placing and releasing a hold are API-only in this pass (a rare, deliberate step taken with a key that carries the scope); the page does not offer a button.
+
+ADR `260924-215422` records the decision that a legal hold blocks deletion silently for the owner.
+
 ### P6. Short names in the path
 
 #### Model
@@ -370,7 +404,7 @@ stateDiagram-v2
 
 **All or nothing.** No row of the imported community becomes visible, and no file becomes a committed attachment, until step 5's single transaction commits. Files stored in step 4 stay `stored` (never `committed`) in the blob inventory until then, so a failure at any point leaves nothing that a person could see and only inventory that the cleanup path removes.
 
-**Failure and cancel.** A failure records a redacted `failure_code` (`IMPORT_ARCHIVE_INVALID`, `IMPORT_NOT_OWNER_EXPORT` for a manifest whose `scope` is `personal`, `IMPORT_VERSION_UNSUPPORTED`, `IMPORT_TOO_LARGE`, `STORAGE_LIMIT_REACHED`, `IMPORT_CHECKSUM_MISMATCH`, `IMPORT_STORAGE_UNAVAILABLE`) and never a manifest value. Transient storage errors retry with the existing cleanup backoff; validation errors do not retry. `POST /host/imports/:id/cancel` works in any state before `ready`. Cancel, failure, and an expired upload window all end the same way: every reserved or stored blob of that import moves to the existing pending-deletion cleanup, and the `pending_owner` community is removed by the existing abandon path, which now also accepts a community whose only content came from an unfinished import. A `ready` community that is never claimed is abandoned through the ordinary deletion job instead, because it holds content, using the host requester columns added for host-started deletion (migration 0013); a host-requested deletion of an unclaimed imported community has no grace period, since no person has ever had access to it.
+**Failure and cancel.** A failure records a redacted `failure_code` (`IMPORT_ARCHIVE_INVALID`, `IMPORT_NOT_OWNER_EXPORT` for a manifest whose `scope` is `personal`, `IMPORT_VERSION_UNSUPPORTED`, `IMPORT_TOO_LARGE`, `STORAGE_LIMIT_REACHED`, `IMPORT_CHECKSUM_MISMATCH`, `IMPORT_STORAGE_UNAVAILABLE`) and never a manifest value. Transient storage errors retry with the existing cleanup backoff; validation errors do not retry. `POST /host/imports/:id/cancel` works in any state before `ready`. Cancel, failure, and an expired upload window all end the same way: every reserved or stored blob of that import moves to the existing pending-deletion cleanup, and the `pending_owner` community is removed by the existing abandon path, which now also accepts a community whose only content came from an unfinished import. A `ready` community that is never claimed is abandoned through the ordinary deletion job instead, because it holds content, using the host requester columns added for host-started deletion (migration 0014); a host-requested deletion of an unclaimed imported community has no grace period, since no person has ever had access to it.
 
 **Why this is still host authority.** Import writes content the host was handed into a new community that has no members. The host cannot read it back through any host route, and nobody can read it until a person redeems the owner claim. It never touches an existing community. This is the one place the host writes content, and ADR `260923-121153` records it.
 
@@ -437,7 +471,7 @@ The local DorkOS server makes every call to the hosted service with the installa
 ### P4. Generic OpenID Connect sign-in
 
 - **Configuration** (all or none, validated in `parseConfig` like the Google and GitHub pairs): `COMMUNITY_OIDC_ISSUER_URL` (HTTPS, or HTTP on localhost), `COMMUNITY_OIDC_CLIENT_ID`, `COMMUNITY_OIDC_CLIENT_SECRET`, optional `COMMUNITY_OIDC_LABEL` (button text, 1–40 characters, default "Single sign-on"), optional `COMMUNITY_OIDC_SCOPES` (default `openid email profile`; must include `openid`).
-- **Wiring.** `createCommunityAuth` adds Better Auth's `genericOAuth` plugin with one provider, `providerId: 'oidc'`, `discoveryUrl: <issuer>/.well-known/openid-configuration`, and `pkce: true`. Discovery runs at first use, not at startup, so a down issuer never stops the server. The callback is `<COMMUNITY_PUBLIC_URL>/api/auth/oauth2/callback/oidc`, printed in the startup log line and the deployment guide.
+- **Wiring.** `createCommunityAuth` adds Better Auth's `genericOAuth` plugin with one provider, `providerId: 'oidc'`, `discoveryUrl: <issuer>/.well-known/openid-configuration`, and `pkce: true`. Discovery runs at first use, not at startup, so a down issuer never stops the server. The callback is `<COMMUNITY_PUBLIC_URL>/api/auth/callback/oidc` (Better Auth 1.7 serves generic providers at the core `/callback/:id` route), printed in the startup log line and the deployment guide.
 - **Admission is unchanged.** The existing `databaseHooks.user.create.before` admission check runs for OIDC sign-ups too, so a new account still needs an invitation or an owner claim.
 - **Linking stays explicit.** `account.accountLinking.disableImplicitLinking: true` stays. If an OIDC identity's email matches an existing account, sign-in is refused, and the person links from their account page after signing in the usual way. The ID token's `email_verified` must be true or sign-up is refused.
 - **Auth options.** `CommunityWireAuthOptionsSchema` gains `oidc: z.strictObject({ label }).nullable()`. The sign-in page shows the button only when it is non-null.
@@ -801,9 +835,10 @@ The failure codes map from P3's `failure_code`: `IMPORT_ARCHIVE_INVALID` to `arc
 Hand-written SQL, each appended to the list in `src/migrate.ts` and mirrored in `src/schema.ts`. Each is additive for old code except where noted.
 
 - **`0012_host_keys_and_limits.sql` (phase 1).** `host_api_keys` (id, label, prefix, secret_hash UNIQUE, scopes text[] with a subset check, issued_via, issued_by_user_id NULL, created_at, expires_at, last_used_at, revoked_at, revoked_by_user_id NULL); the `host_audit_events` actor columns and check; nullable `community_creation_receipts.operator_user_id` plus `operator_api_key_id`; `bootstrap_grants.revoked_by_api_key_id` and the widened revocation check; `community_limits(community_id PK FK, max_active_members, max_storage_bytes, limits_version, updated_at)`; `member_limit_overrides(community_id, member_id, agents_per_member CHECK BETWEEN 1 AND 1000, updated_at, PRIMARY KEY (community_id, member_id))` with a composite tenant foreign key to `members(community_id, id)`; `managed_blobs_community_usage_idx`; `entries_community_created_idx`. The deletion worker deletes `community_limits`, `member_limit_overrides` rows with the tenant.
-- **`0013_host_hold.sql` (phase 2).** `communities_lifecycle` check gains `held`; `held_from_state`, `held_at`, `deletion_notice_at`, `deletion_from_state`, `delete_requested_by_host_actor`; `delete_requested_by` nullable; `community_deletion_jobs.requested_by_member_id` nullable beside `requested_by_host_actor` (key or user id) with an exactly-one check; the suspension check allows `suspended_from_state='held'`; the deletion check requires exactly one requester; `enforce_community_owner_lifecycle()` counts `held` among the states that need exactly one active owner. Old code never writes `held` and was never tested against a `held` row, so backing out phase 2 first releases every hold (see backout).
-- **`0014_short_names.sql` (phase 3).** `community_short_names` and its partial unique index; `released_short_names`; the deletion worker deletes the community's name rows and writes their hold rows.
-- **`0015_imports.sql` (phase 4).** `members.user_id` nullable, `members.origin` and its check; `communities.imported_at`; `managed_blobs_purpose` check widened with `import_staging`; `community_imports`, `community_import_files`; a zero-grace rule for host deletion of an unclaimed imported community. This is the one migration old code cannot fully tolerate once used (see backout).
+- **`0014_host_hold.sql` (phase 2).** `communities_lifecycle` check gains `held`; `held_from_state`, `held_at`, `deletion_notice_at`, `deletion_from_state`, `delete_requested_by_host_actor`; `delete_requested_by` nullable; `community_deletion_jobs.requested_by_member_id` nullable beside `requested_by_host_actor` (key or user id) with an exactly-one check; the suspension check allows `suspended_from_state='held'`; the deletion check requires exactly one requester; `enforce_community_owner_lifecycle()` counts `held` among the states that need exactly one active owner. Old code never writes `held` and was never tested against a `held` row, so backing out phase 2 first releases every hold (see backout).
+- **`0015_short_names.sql` (phase 3).** `community_short_names` and its partial unique index; `released_short_names`; the deletion worker deletes the community's name rows and writes their hold rows.
+- **`0018_host_legal_hold.sql` (DOR-2299).** After `0016_entry_removal.sql` (single-item delete) and `0017_export_jobs.sql` (export jobs). Adds a `BEFORE DELETE` trigger that refuses to delete a legally held community's row. `communities.legal_hold_at`, `legal_hold_by_host_actor`, `legal_hold_reference` and their check; `host_api_keys` scope check gains `communities:legal_hold`. Additive: old code ignores the columns, and backing out means releasing every legal hold first (old code would purge a community the host must preserve).
+- **`0016_imports.sql` (phase 4).** `members.user_id` nullable, `members.origin` and its check; `communities.imported_at`; `managed_blobs_purpose` check widened with `import_staging`; `community_imports`, `community_import_files`; a zero-grace rule for host deletion of an unclaimed imported community. This is the one migration old code cannot fully tolerate once used (see backout).
 
 P4 and P5 need no Community migration. P5 adds local configuration only if the app caches move state; it does not (state is read from the service on each poll).
 
@@ -882,8 +917,15 @@ Each test carries a purpose comment. Every acceptance criterion below names the 
 - Holding revokes nothing; release returns to the recorded prior state and every kept connection, agent, and invitation works again (AC-1 and AC-2 of `specs/community-hold-keeps-access/`).
 - Host deletion is refused (`409`) for an active, archived, or suspended community, for a held community without a notice date, and before the notice date (clock injected); after it, the community enters `deletion_pending` with `delete_after` seven days later and a host requester. Fails if any gate is missing.
 - The owner cannot cancel a host-started deletion; the host can, back to `held`. An owner-requested deletion started from `held` cancels back to `held`. Fails if a cancel lifts a hold.
-- A notice date set less than 7 days ahead is refused. Fails if the notice can be shortened after the fact.
+- Every published notice date, whether set with the hold or moved later, must be at least `COMMUNITY_HOST_DELETION_NOTICE_DAYS` (never fewer than 7) from the moment it is published, and a suspension withdraws it. Fails if a notice can be published or moved closer than that, or survive a suspension.
 - Community B is untouched by every hold, release, and host deletion of A (the existing two-community isolation fixture).
+
+**Hold from suspended and legal hold (DOR-2299)**
+
+- `hold` on a suspended community (from `active`, from `archived`, and from `held`) lands in `held` in one call with the right `held_from_state`, one audit row, and no revived credential. It writes exactly one `community.hold` audit row and no `community.resume` row, and a grant the suspension revoked stays revoked. Fails if a suspended community still has to be resumed first, or if the hold restarts `held_at` for a suspended hold.
+- Only `communities:legal_hold` (or a host person) can place or release a legal hold; a key with every other scope gets `403`. Each change writes its audit row, and the reference never appears in it.
+- Under a legal hold: host-started deletion and abandon answer `409 LEGAL_HOLD_ACTIVE`; the owner's deletion request is accepted and the community enters `deletion_pending`; the worker, run past `delete_after`, deletes no blob and no row, and a held job never stops another community's due deletion from being claimed. A hold placed while the worker is deleting a blob stops it before the next blob, and a hold placed during the last blob keeps the tenant's rows (barriers hold the worker inside a blob deletion). After release, the next worker pass completes the deletion. Fails if any path purges under a hold.
+- No tenant response (community, owner deletion status, admin projection, errors) contains any legal-hold field or wording. Fails if the owner can learn of the hold.
 
 **P6**
 
@@ -969,24 +1011,24 @@ Real Postgres and real BlobStores for everything in `apps/community`. The OIDC i
 ## Implementation Phases
 
 - **Phase 1 — P1 and P2 (host keys, limits, usage).** Migration 0012; `host-authority.ts`; key routes and CLI; scope checks on every host route; audit actor; limit checks in invites, attachments, icons, and agents; agent error fix (the agents-per-person default stays 20); usage route; host page sections; the adversarial matrix. Self-contained and useful to every host.
-- **Phase 2 — host hold and host-started deletion.** Migration 0013; `held` in every lifecycle check (tenant context, `lockActiveCommunity`, archived-read rules, blob reservation for owner export, owner lifecycle trigger); hold, release, notice, host deletion and cancel routes; banner; lifecycle matrix tests. The operator approved both halves on 2026-09-23 (Open Question 1).
-- **Phase 3 — P6 (short names).** Migration 0014; host set/release; cool-off holds; public lookup; server and browser path handling; connection parser; reserved-list test.
-- **Phase 4 — P3 (import).** Migration 0015; import routes, upload streaming, worker, report and commit, owner adoption, abandon and deletion changes, export `LEFT JOIN`; tamper and resume suites.
+- **Phase 2 — host hold and host-started deletion.** Migration 0014; `held` in every lifecycle check (tenant context, `lockActiveCommunity`, archived-read rules, blob reservation for owner export, owner lifecycle trigger); hold, release, notice, host deletion and cancel routes; banner; lifecycle matrix tests. The operator approved both halves on 2026-09-23 (Open Question 1).
+- **Phase 3 — P6 (short names).** Migration 0015; host set/release; cool-off holds; public lookup; server and browser path handling; connection parser; reserved-list test.
+- **Phase 4 — P3 (import).** Migration 0016; import routes, upload streaming, worker, report and commit, owner adoption, abandon and deletion changes, export `LEFT JOIN`; tamper and resume suites.
 - **Phase 5 — P5 (DorkOS app entry points).** `packages/cloud-api` contract first (its own PR, contract-first as the workspace requires), then local server routes and the switcher items. The private service implements against the published contract in its own repository.
 - **Phase 6 — P4 (generic OIDC) and host links.** Configuration, plugin wiring, auth options, password fallback, sign-in button, fake-issuer tests; host links route and their three placements.
 
 ### Backout
 
 - **Phase 1:** revert the code; migration 0012 stays. Old code writes `host_audit_events` with `actor_user_id` set and the default `actor_kind='person'`, which satisfies the new check; it ignores the new tables. Keys stop working, which is the intended effect of a backout. Limits stop being enforced.
-- **Phase 2:** release every hold and cancel every host-started deletion first (both are host routes), then revert the code; migration 0013 stays. With no `held` row and no host requester, old code sees only states it knows.
+- **Phase 2:** release every hold and cancel every host-started deletion first (both are host routes), then revert the code; migration 0014 stays. With no `held` row and no host requester, old code sees only states it knows.
 - **Phase 3:** revert the code; `community_short_names` and `released_short_names` are ignored; short-name URLs return `404`; canonical links are unaffected. Stored DorkOS connections never held a name.
-- **Phase 4:** before any import has completed, revert the code and drop nothing. After an import has completed, old code cannot handle `members.user_id IS NULL` (the owner export's inner join would drop historical authors). The supported path is forward-fix. If a backout is unavoidable, first delete every imported community through the ordinary deletion path, then revert. `0015` stays applied either way.
+- **Phase 4:** before any import has completed, revert the code and drop nothing. After an import has completed, old code cannot handle `members.user_id IS NULL` (the owner export's inner join would drop historical authors). The supported path is forward-fix. If a backout is unavoidable, first delete every imported community through the ordinary deletion path, then revert. `0016` stays applied either way.
 - **Phase 5:** the switcher items are removed with the code; the contract additions stay published (additive, per the package's rule).
 - **Phase 6:** unset the OIDC and link variables. Accounts created through OIDC remain and can sign in with a password if they set one.
 
 ## Open Questions
 
-None. The operator answered every question on 2026-09-23; the answers are below.
+One, added 2026-09-24 (question 8, below). The operator answered every earlier question on 2026-09-23; the answers are below.
 
 ### Resolved by the operator (2026-09-23)
 
@@ -997,6 +1039,10 @@ None. The operator answered every question on 2026-09-23; the answers are below.
 5. ~~**Reauthentication for accounts that only use OIDC.**~~ (RESOLVED) **Answer:** a follow-up that accepts a fresh OIDC sign-in (`prompt=login`, `max_age` ≤ 5 minutes, `auth_time` checked) as reauthentication, specified on its own. Until it ships, those actions stay password-only and say so. **Rationale:** it changes a security ceremony and deserves its own review.
 6. ~~**Export manifest version 2.**~~ (RESOLVED) **Answer:** a follow-up that adds the community name, description, icon, and channel memberships to the owner export as version 2, with import accepting both versions. **Rationale:** it changes the owner export, which has its own reauthentication and size contract; version 1 import is useful now.
 7. ~~**Member erasure.**~~ (RESOLVED) **Answer:** specified in `specs/community-member-erasure/` (DOR-2247), owned by the person (self-service) and the community owner, never by host authority. **It blocks launch** of any hosted service in this project, though not the phases of this spec. It also builds host account deletion: Better Auth's `deleteUser` is not enabled in `auth.ts`, and five columns reference `"user"(id)` without a cascade, so a host account cannot be closed today. It runs in every lifecycle state, including `held`. **Rationale:** it rewrites immutable history (entries, mentions, attachments, export contents) and has to decide what a thread shows in place of an erased message; every host that serves people in the EU or California will be asked.
+
+### Open (2026-09-24)
+
+8. **Should a legal hold also stop item removals and member erasure?** This pass blocks only permanent deletion of the whole community. A single-item delete, a moderator's removal, an item takedown, and member erasure still remove content under a legal hold. Stopping them would conflict with a person's erasure right unless a legal-obligation exemption applies, which is a policy call per host. Proposed default until decided: unchanged, and a host that must preserve specific content uses its own backups today, and the takedown evidence store once `specs/community-host-takedown/` ships.
 
 ### Resolved while specifying
 
@@ -1014,6 +1060,7 @@ None. The operator answered every question on 2026-09-23; the answers are below.
 - `260923-121151` — Host-set community limits are caps with typed errors, and usage exposes only enforcement aggregates (accepted 2026-09-23, from this spec)
 - `260923-121152` — Short names are a mutable path alias, never identity (accepted 2026-09-23, from this spec; reopens part of `260920-192429`)
 - `260923-121712` — A host hold stops growth without blocking export, and host-started deletion follows only a noticed hold (accepted 2026-09-23, from this spec; amends `260920-201101`)
+- `260924-215422` — A host legal hold silently blocks every permanent deletion of a community until released (draft 2026-09-24, from this spec; DOR-2299)
 - `260923-121153` — Import restores an owner export into a new community with derived IDs and historical members (accepted 2026-09-23, from this spec)
 - `260920-192429` — Scope host accounts through immutable community memberships
 - `260920-201101` — Separate community retention from permanent tenant deletion
@@ -1034,6 +1081,8 @@ None. The operator answered every question on 2026-09-23; the answers are below.
 - Better Auth `genericOAuth` plugin (1.7.x); RFC 4122 §4.3 (name-based UUIDs); OpenID Connect Discovery 1.0
 
 ## Changelog
+
+- **2026-09-24** — DOR-2299: a suspended community can be held in one call, and a host legal hold (scope `communities:legal_hold`) blocks every permanent deletion of a community until released, without telling the owner. ADR `260924-215422`. New open question 8 (should a legal hold also stop item removals and member erasure).
 
 - **2026-09-23** — A hold no longer revokes credentials (`specs/community-hold-keeps-access/`, ADR `260923-214401`). A host takedown (`specs/community-host-takedown/`, ADR `260923-214421`) is a second, narrow host removal path beside host-started deletion. Owner export of any size and manifest version 2 (Open Question 6) are specified in `specs/community-export-any-size/`, which also changes P3's reader and adds parted uploads.
 - **2026-09-23** — Operator answered every open question. The agents-per-person default stays 20 (maximum 100, set by configuration); the per-member override ceiling is 1,000; host-started deletion is approved as specified; Q3–Q6 become follow-ups; member erasure is DOR-2247 and blocks launch. ADRs accepted.

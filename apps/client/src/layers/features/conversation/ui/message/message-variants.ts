@@ -21,13 +21,18 @@ export const messageItem = tv({
     /** Identity column — the avatar on a group start, the hover timestamp on a continuation. */
     gutter: 'relative flex w-[var(--msg-gutter-width)] shrink-0 justify-center',
     /**
-     * A continuation's timestamp, right-aligned in the gutter. It overflows
-     * left into the row's padding, which is where the extra width for a
-     * locale's day period ("10:42 AM") comes from. Small-screen-hidden, as the
-     * old absolute timestamp was: it is a hover affordance, and touch has none.
+     * A continuation's timestamp, right-aligned in the gutter. A locale's day
+     * period ("10:42 AM") makes it wider than the gutter, so it overflows. It
+     * hangs a quarter-rem into the gap on its right as well as into the row's
+     * padding on its left: pinned flush to the gutter's edge, all of the
+     * overflow went left and the stamp sat about 4px from the edge of the row's
+     * hover wash, cramped against it (DOR-2120). This splits the room roughly
+     * evenly — about 9px to the edge, 8px to the words. Small-screen-hidden, as
+     * the old absolute timestamp was: it is a hover affordance, and touch has
+     * none.
      */
     avatarTimestamp:
-      'absolute top-0.5 right-0 hidden text-3xs leading-none whitespace-nowrap tabular-nums transition-colors duration-150 sm:block',
+      'absolute top-0.5 -right-1 hidden text-3xs leading-none whitespace-nowrap tabular-nums transition-colors duration-150 sm:block',
     body: 'flex min-w-0 flex-1 flex-col',
     header: 'flex items-baseline gap-2',
     authorName: 'truncate text-sm font-medium',

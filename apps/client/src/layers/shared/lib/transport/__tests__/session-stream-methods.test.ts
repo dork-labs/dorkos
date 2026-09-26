@@ -129,8 +129,6 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('resolves a snapshot with one unreadable message, with a placeholder in its place (DOR-2078)', async () => {
-      // Real failure mode: the embedded pump hydrates through this call, and a
-      // whole-frame parse rejected the snapshot over one bad message.
       const methods = createSessionStreamMethods('/api');
       const frame = {
         ...SNAPSHOT,
@@ -283,19 +281,6 @@ describe('createSessionStreamMethods', () => {
     });
 
     it('forwards EVERY SessionListEventSchema discriminant (schema-drift pin)', async () => {
-      // Real failure mode: `SESSION_LIST_EVENT_TYPES`, declared here and imported
-      // by `stream-manager.ts` (DOR-576, single source of truth) — a `Set`,
-      // consulted at `subscribeSessionList`'s `frame.type` check. A discriminant
-      // missing from it is `continue`d before validation: dropped in silence,
-      // exactly like the StreamManager consumer that shares this same set. This
-      // path is not wired into the live HTTP flow today (only DirectTransport
-      // reaches it), but it is an exported implementation of the Transport
-      // contract and one rewiring away from being as live as the other.
-      //
-      // The previous version of this test hardcoded "the 3 session-list event
-      // types" and passed exactly one frame, so it would have gone on passing the
-      // day a 4th discriminant shipped unlisted. Driving the schema instead is the
-      // whole point.
       const samples = listEventSamples();
       const discriminants = listDiscriminants();
 

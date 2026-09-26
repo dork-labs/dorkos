@@ -122,20 +122,21 @@ using-the-marketplace.
 
 The operator verbs hit the running server over its local HTTP API:
 
-- \`dorkos capabilities [--json]\` and \`dorkos call <id>\` (above) reach any
-  capability by id, and nothing else.
+- \`dorkos capabilities [--json]\` and \`dorkos call <id>\` (above) reach any capability by id.
 - \`dorkos agent list|show <path-or-id>|create|update\` manage agents.
 - \`dorkos task list|create|trigger <id>|runs\` manage tasks. No update, no delete.
 - \`dorkos activity [--actor <t>] [--category <c>] [--type <e>] [--limit <n>]\` reads the feed.
 - \`dorkos version --check\` shows the current server version and the latest release.
-- \`dorkos marketplace list|refresh|validate\` read sources. Only a person may \`add\` or \`remove\` one: see using-the-marketplace.
-- \`dorkos install <name>\` / \`dorkos uninstall <name>\` install/remove packages;
-  \`uninstall\` is gated and answers with the approval payload (using-the-marketplace).
+- \`dorkos marketplace install|update|uninstall|installed|outdated|held-back\` manage
+  packages (\`dorkos install|update|uninstall\` are shorthand); \`uninstall\` is gated
+  and answers with the approval payload. \`list|refresh|validate\` read sources, and
+  only a person may \`add\` or \`remove\` one. See using-the-marketplace.
 
-\`capabilities\`, \`call\`, \`agent\`, \`task\`, \`activity\`, and \`version\` take \`--json\`;
-\`marketplace\`, \`install\`, and \`uninstall\` do NOT, and passing it is an error, not a
-no-op. Exit code is \`0\` on success, non-zero when no server is reachable, the
-request fails, or a call is waiting on an approval.
+\`capabilities\`, \`call\`, \`agent\`, \`task\`, \`activity\`, \`version\`, and
+\`marketplace installed|outdated\` take \`--json\`; the other marketplace verbs do NOT,
+and passing it is an error, not a no-op. Exit code is \`0\` on success, non-zero
+when no server is reachable, the request fails, or a call is waiting on an approval
+(\`outdated\` also answers with it: see using-the-marketplace).
 
 ## Where live facts come from
 

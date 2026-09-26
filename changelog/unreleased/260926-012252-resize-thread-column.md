@@ -1,0 +1,11 @@
+---
+covers:
+  - 'feat(rooms): drag the line between a room and its thread to resize the thread (DOR-2119)'
+  - 'fix(rooms): keep the thread width a reader chose when the room is squeezed, and describe the thread to screen readers (DOR-2119)'
+  - 'fix(rooms): save a thread width chosen from the keyboard in a real browser (DOR-2119)'
+  - 'fix(rooms): ignore Home and End on a disabled thread handle, and note the removed connector in the design record (DOR-2119, DOR-2110)'
+---
+
+### Added
+
+- Drag the line between a channel and an open thread to make the thread wider or narrower. It lights up when you point at it, just like the right panel's edge, and the thread opens at the width you left it next time (DOR-2119).

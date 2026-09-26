@@ -183,7 +183,7 @@ export class RemoteRoomSubscriptionBridge {
     // The persisted cache state is the final authorization answer immediately
     // before dispatch; revocation and a stale owner grant therefore fail closed.
     if (!this.mirrors.isActivelyAuthorized(target.id, room.ownerAuthorId)) return;
-    const dispatchEntry = this.dispatchEntry(target.id, room, event, saved);
+    const dispatchEntry = this.dispatchEntry(target.id, room, saved);
     if (!dispatchEntry.mentions.length) return;
     if (
       !this.mirrors.claimRemoteDispatch(
@@ -263,12 +263,18 @@ export class RemoteRoomSubscriptionBridge {
     ownerAuthorId: string
   ): Promise<void> {
     const enrollments = [...this.enrollments.activeForOwner(communityRef, ownerAuthorId)];
-    this.mirrors.revoke(communityRef);
-    await Promise.all(
-      enrollments.map((enrollment) =>
-        this.revokeEnrollment(communityRef, enrollment.localAgentId, ownerAuthorId)
-      )
-    );
+    this.mirrors.revoke(communityRef, ownerAuthorId);
+    try {
+      await Promise.all(
+        enrollments.map((enrollment) =>
+          this.revokeEnrollment(communityRef, enrollment.localAgentId, ownerAuthorId)
+        )
+      );
+    } finally {
+      // After the halts, since a halt needs its room, and even when one fails: a revoked mirror
+      // can no longer learn of a later deletion or erasure, so its content must not stay.
+      this.mirrors.purgeRevoked(communityRef, ownerAuthorId);
+    }
   }
 
   /**
@@ -285,6 +291,20 @@ export class RemoteRoomSubscriptionBridge {
       ownerAuthorId,
       allowedRemoteRoomIds
     );
+    try {
+      await this.stopRevokedRooms(communityRef, ownerAuthorId, revoked);
+    } finally {
+      // After the halts, and even when one fails; see revokeConnection.
+      if (revoked.length) this.mirrors.purgeRevoked(communityRef, ownerAuthorId);
+    }
+  }
+
+  /** Stop queued delivery and every local turn in rooms that were just revoked. */
+  private async stopRevokedRooms(
+    communityRef: MirrorRoomInput['communityRef'],
+    ownerAuthorId: string,
+    revoked: readonly { localRoomId: string; remoteRoomId: string }[]
+  ): Promise<void> {
     await Promise.all(
       revoked.flatMap(({ localRoomId, remoteRoomId }) => {
         this.outbox?.stopForRoom(communityRef, remoteRoomId, ownerAuthorId);
@@ -467,10 +487,11 @@ export class RemoteRoomSubscriptionBridge {
   private dispatchEntry(
     localRoomId: string,
     room: MirrorRoomInput,
-    event: RemoteLiveEntry,
     saved: ReturnType<RemoteMirrorStore['importEntries']>[number]
   ) {
-    const mentions = CommunityEntrySchema.parse(event.entry).mentions.flatMap((remoteMemberId) => {
+    // The mentions the entry was stored with, not the frame's: a message removed before it was
+    // cached is stored as it stands now, and a removed message mentions nobody.
+    const mentions = saved.mentions.flatMap((remoteMemberId) => {
       const enrollment = this.enrollments.findLocalAgent(
         room.communityRef,
         remoteMemberId,

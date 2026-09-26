@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   readManifest: vi.fn(),
   writeManifest: vi.fn(),
   writeConventionFile: vi.fn(),
+  writeConventionFileIfAbsent: vi.fn(async () => true),
   getLatestVersion: vi.fn(),
   listRecentSessions: vi.fn(),
   configStore: { version: 1 } as Record<string, unknown>,

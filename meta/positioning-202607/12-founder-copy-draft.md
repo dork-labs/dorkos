@@ -1,5 +1,7 @@
 # Founder Copy Draft: X Bio & GitHub Org Page
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > DRAFT for Dorian to review and post himself. Nothing in this file has been published anywhere.
 > No script, tool, or agent should post this copy to X or GitHub without Dorian's explicit go-ahead.
 > Written 2026-07-11 alongside DOR-295 (pricing-philosophy page). Voice source: `meta/brand-foundation.md`

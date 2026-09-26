@@ -1,7 +1,7 @@
 ---
 id: 260923-223909
 title: With login off, permission writes are labelled unverified, and a tokenless agent gets the default
-status: draft
+status: accepted
 created: 2026-09-23
 spec: agent-permissions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: agent-permissions). The residual below was accepted by the operator on 2026-09-23.
+Accepted (extracted from spec: agent-permissions). The residual below was accepted by the operator on 2026-09-23.
 
 ## Context
 

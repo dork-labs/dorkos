@@ -1,7 +1,7 @@
 ---
 id: 260924-002908
 title: A person's timing for a package's schedule lives on the row
-status: draft
+status: accepted
 created: 2026-09-24
 spec: package-schedule-timing
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: package-schedule-timing)
+Accepted (extracted from spec: package-schedule-timing)
 
 ## Context
 
@@ -19,7 +19,7 @@ A schedule that ships inside an installed package lives in the package's own SKI
 
 ## Decision
 
-A package-owned schedule's cron and timezone can be overridden on its row (`pulse_schedules.cron_override`, `timezone_override`, NULL meaning "the file's"). The file's values stay in `cron`/`timezone` as the default, and the sync keeps writing them. Every reader uses the effective value (override, else default): the row mapper resolves it once for every Task consumer, and the four raw-row readers — the grant writer, the grant back-fill, the migration re-key and the file-sync gates — share one helper. The approval key is unchanged in shape and its cron is the effective one. A person's change re-keys the grant in the same act; an agent's change parks an active schedule in the same request, because a row-only write wakes no watcher and the new timing would otherwise run unapproved until the next sweep. `resetTiming: true` clears both overrides. A timing written to a file DorkOS can write still goes to the file and clears any override of it. When discovery finds that a file is no longer a package's (an uninstall left it in place), the sync drops its override so the file's timing runs again; a later reinstall over that file does not bring the override back, while a file that only vanished and returned (an update) keeps it.
+A package-owned schedule's cron and timezone can be overridden on its row (`pulse_schedules.cron_override`, `timezone_override`, NULL meaning "the file's"). The file's values stay in `cron`/`timezone` as the default, and the sync keeps writing them. Every reader uses the effective value (override, else default): the row mapper resolves it once for every Task consumer, and the four raw-row readers — the grant writer, the grant back-fill, the migration re-key and the file-sync gates — share one helper. The approval key's cron is the effective one (and, since ADR `260924-101531`, so is its timezone). A person's change re-keys the grant in the same act; an agent's change parks an active schedule in the same request, because a row-only write wakes no watcher and the new timing would otherwise run unapproved until the next sweep. `resetTiming: true` clears both overrides. A timing written to a file DorkOS can write still goes to the file and clears any override of it. When discovery finds that a file is no longer a package's (an uninstall left it in place), the sync drops its override so the file's timing runs again; a later reinstall over that file does not bring the override back, while a file that only vanished and returned (an update) keeps it.
 
 ## Consequences
 

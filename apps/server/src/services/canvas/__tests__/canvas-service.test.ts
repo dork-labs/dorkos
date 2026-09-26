@@ -103,7 +103,7 @@ describe('RoomCanvasService.apply', () => {
 
   describe('what it refuses, and in what order', () => {
     it('refuses every window action with the room sentence, and writes nothing', () => {
-      // The sixteen, expressed as everything that is NOT one of the six canvas
+      // The fifteen, expressed as everything that is NOT one of the six canvas
       // verbs — an allow-list, so a twenty-third action is refused by default
       // rather than leaking onto one agent's private stream.
       const windowActions: UiCommand[] = [
@@ -113,7 +113,6 @@ describe('RoomCanvasService.apply', () => {
         { action: 'toggle_panel', panel: 'tasks' },
         { action: 'open_sidebar' },
         { action: 'close_sidebar' },
-        { action: 'switch_sidebar_tab', tab: 'overview' },
         { action: 'set_theme', theme: 'dark' },
         { action: 'scroll_to_message' },
         { action: 'switch_agent', cwd: '/agents/ana' },
@@ -124,7 +123,7 @@ describe('RoomCanvasService.apply', () => {
         { action: 'celebrate' },
         { action: 'apply_layout', shape: 'focus' },
       ];
-      expect(windowActions).toHaveLength(16);
+      expect(windowActions).toHaveLength(15);
       for (const command of windowActions) {
         const result = applyAs(ana, `turn-${command.action}`, command);
         expect(result, command.action).toEqual({

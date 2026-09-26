@@ -66,13 +66,6 @@ function foldStatus(
  * Subscribe to the desktop native updater so the sidebar can show an in-app
  * "restart to install" card instead of the web/npm upgrade command (which
  * doesn't apply to a packaged `.app`).
- *
- * On mount it also replays the last actionable status via `getUpdateStatus`
- * (the analogue of `useElectronNavigate` pulling `getPendingNavigate`), so a
- * window recreated after `update-downloaded` fired still recovers the waiting
- * update. In the browser and Obsidian `window.electronAPI` is absent, so
- * `isDesktop` is `false`, `status` stays `null`, and the caller falls back to
- * the web upgrade card. Unsubscribes on unmount.
  */
 export function useDesktopUpdater(): DesktopUpdater {
   const isDesktop = typeof window !== 'undefined' && !!window.electronAPI?.onUpdateStatus;

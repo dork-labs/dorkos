@@ -25,6 +25,7 @@ import {
   discoverExtensionIds,
   discoverStagedExtensions,
 } from '../lib/staged-extensions.js';
+import { flowOwnership } from '../lib/flow-ownership.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -101,9 +102,10 @@ export class PluginInstallFlow {
   async install(
     packagePath: string,
     manifest: PluginPackageManifest,
-    opts: Pick<InstallRequest, 'projectPath'>
+    opts: Pick<InstallRequest, 'projectPath' | 'ownership'>
   ): Promise<InstallResult> {
     const installRoot = computeInstallRoot(this.deps.dorkHome, manifest, opts.projectPath);
+    const { ownership, finish } = flowOwnership(manifest, opts);
 
     // Capture the prior install's bundled extension IDs BEFORE the transaction
     // moves the existing target aside. Empty for a fresh install.
@@ -119,6 +121,7 @@ export class PluginInstallFlow {
       target: installRoot,
       stage: (staging) => this.stage(staging.path, packagePath, installRoot, warnings),
       activate: (staging) => this.activate(staging.path, installRoot, manifest, warnings),
+      ownership,
     });
 
     // Success path only: retire extensions the reinstalled version dropped.
@@ -126,7 +129,7 @@ export class PluginInstallFlow {
     // restored prior install's extensions.
     await this.disableDroppedExtensions(priorExtensionIds, installRoot);
 
-    return result;
+    return finish(result);
   }
 
   /**

@@ -1,0 +1,163 @@
+'use client';
+
+import * as React from 'react';
+import { XIcon } from 'lucide-react';
+import { Dialog as SheetPrimitive } from 'radix-ui';
+
+import { cn } from './cn.js';
+import { usePortalContainer } from './ui-provider.js';
+import { Button } from './button.js';
+
+/** Accessible slide-out panel root that manages open state. */
+function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  return <SheetPrimitive.Root data-slot="sheet" {...props} />;
+}
+
+/** Element that toggles the sheet panel open on click. */
+function SheetTrigger({ ...props }: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
+  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />;
+}
+
+/** Element that dismisses the sheet panel on click. */
+function SheetClose({ ...props }: React.ComponentProps<typeof SheetPrimitive.Close>) {
+  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />;
+}
+
+/** Portals a sheet into the nearest configured host or an explicit container. */
+function SheetPortal({ container, ...props }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
+  const resolvedContainer = usePortalContainer(container);
+  return (
+    <SheetPrimitive.Portal data-slot="sheet-portal" container={resolvedContainer} {...props} />
+  );
+}
+
+function SheetOverlay({
+  className,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Overlay>) {
+  return (
+    <SheetPrimitive.Overlay
+      data-slot="sheet-overlay"
+      className={cn(
+        // Same durations and curves as SheetContent so the scrim and the panel
+        // land together. Left to itself the overlay takes tw-animate's 150ms
+        // default and the page was fully dimmed while the panel was still
+        // sliding.
+        'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50 data-[state=closed]:duration-150 data-[state=closed]:ease-in data-[state=open]:duration-200 data-[state=open]:ease-out motion-reduce:animate-none! motion-reduce:transition-none!',
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
+/** Animated slide-out panel content with configurable side and close button. */
+function SheetContent({
+  className,
+  children,
+  side = 'right',
+  showCloseButton = true,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Content> & {
+  side?: 'top' | 'right' | 'bottom' | 'left';
+  showCloseButton?: boolean;
+}) {
+  return (
+    <SheetPortal>
+      <SheetOverlay />
+      <SheetPrimitive.Content
+        data-slot="sheet-content"
+        className={cn(
+          // 200ms in / 150ms out, ease-out arriving and ease-in leaving — the
+          // design system's overlay row and its easing table. shadcn ships this
+          // at 500ms in with `ease-in-out`, which made every drawer in the app
+          // hesitate and then take longer than any other motion to finish.
+          'bg-dui-background data-[state=closed]:animate-out data-[state=open]:animate-in fixed z-50 flex flex-col gap-4 shadow-lg transition data-[state=closed]:duration-150 data-[state=closed]:ease-in data-[state=open]:duration-200 data-[state=open]:ease-out motion-reduce:animate-none! motion-reduce:transition-none!',
+          side === 'right' &&
+            'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right border-dui-border inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
+          side === 'left' &&
+            'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left border-dui-border inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm',
+          side === 'top' &&
+            'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top border-dui-border inset-x-0 top-0 h-auto border-b',
+          side === 'bottom' &&
+            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom border-dui-border inset-x-0 bottom-0 h-auto border-t',
+          className
+        )}
+        {...props}
+      >
+        {children}
+        {showCloseButton && (
+          <SheetPrimitive.Close asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-4 right-4 opacity-70 hover:opacity-100"
+            >
+              <XIcon className="size-4" />
+              <span className="sr-only">Close</span>
+            </Button>
+          </SheetPrimitive.Close>
+        )}
+      </SheetPrimitive.Content>
+    </SheetPortal>
+  );
+}
+
+/** Header layout container for sheet title and description. */
+function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="sheet-header"
+      className={cn('flex flex-col gap-1.5 p-4', className)}
+      {...props}
+    />
+  );
+}
+
+/** Footer layout container for sheet action buttons. */
+function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="sheet-footer"
+      className={cn('mt-auto flex flex-col gap-2 p-4', className)}
+      {...props}
+    />
+  );
+}
+
+/** Accessible title heading for the sheet panel. */
+function SheetTitle({ className, ...props }: React.ComponentProps<typeof SheetPrimitive.Title>) {
+  return (
+    <SheetPrimitive.Title
+      data-slot="sheet-title"
+      className={cn('text-dui-foreground font-semibold', className)}
+      {...props}
+    />
+  );
+}
+
+/** Muted description text for the sheet panel. */
+function SheetDescription({
+  className,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Description>) {
+  return (
+    <SheetPrimitive.Description
+      data-slot="sheet-description"
+      className={cn('text-dui-muted-foreground text-sm', className)}
+      {...props}
+    />
+  );
+}
+
+export {
+  Sheet,
+  SheetTrigger,
+  SheetClose,
+  SheetPortal,
+  SheetContent,
+  SheetHeader,
+  SheetFooter,
+  SheetTitle,
+  SheetDescription,
+};

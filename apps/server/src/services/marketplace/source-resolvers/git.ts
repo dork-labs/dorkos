@@ -9,7 +9,7 @@
  * precedence (`sha > ref > HEAD`). So the commit an install records, the one
  * the update check looks up, and the tree that is fetched all come from the
  * same key (DOR-2248). How the tree is fetched and verified is
- * `lib/git-tree.ts`, behind {@link FetcherDeps.fetchGitTree}.
+ * `lib/git/git-tree.ts`, behind {@link FetcherDeps.fetchGitTree}.
  *
  * @module services/marketplace/source-resolvers/git
  */

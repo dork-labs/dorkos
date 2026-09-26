@@ -8,15 +8,20 @@
  * `sidebar-simplification` D4).
  *
  * **The order is the decision, and it is the whole of it:** a blocked setup
- * beats a version nudge beats a profile nicety beats marketing. The arbitration
+ * beats a version nudge beats a profile nicety beats marketing. Of the two
+ * profile niceties, who you are comes before what you do: a name and a handle
+ * change how every message you write is shown, and the role card simply takes
+ * its turn once this one is gone. The arbitration
  * itself is `BottomSlot` in `shared/ui`, which knows nothing about any of these.
  *
  * @module features/dashboard-sidebar/ui/bottom-slot/SidebarBottomSlot
  */
 import { usePromoCandidate } from '@/layers/features/feature-promos';
 import {
+  IdentityPromptCard,
   ProfilePromptCard,
   ProgressCard,
+  useIdentityPrompt,
   useOnboarding,
   useProfilePrompt,
 } from '@/layers/features/onboarding';
@@ -35,6 +40,7 @@ import { UpdatePill } from './UpdatePill';
 export function SidebarBottomSlot() {
   const { shouldShowGettingStarted, dismiss: dismissOnboarding } = useOnboarding();
   const update = useUpdateReady();
+  const identityPrompt = useIdentityPrompt();
   const prompt = useProfilePrompt();
   const promo = usePromoCandidate('dashboard-sidebar');
   const boot = useBootState();
@@ -49,6 +55,11 @@ export function SidebarBottomSlot() {
       id: 'update',
       show: update.kind !== 'none',
       render: () => <UpdatePill update={update} />,
+    },
+    {
+      id: 'identity-prompt',
+      show: identityPrompt.visible,
+      render: () => <IdentityPromptCard prompt={identityPrompt} />,
     },
     {
       id: 'profile-prompt',

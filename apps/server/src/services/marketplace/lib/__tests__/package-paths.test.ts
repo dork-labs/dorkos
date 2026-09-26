@@ -72,10 +72,16 @@ describe('assertPathSegment', () => {
 describe('assertContainedIn', () => {
   const root = path.join(path.sep, 'cache', 'packages');
 
-  it('accepts the root itself and anything nested under it', () => {
-    expect(assertContainedIn(root, root)).toBe(root);
+  it('accepts anything nested under the root', () => {
     const child = path.join(root, 'pkg@sha');
     expect(assertContainedIn(root, child)).toBe(child);
+  });
+
+  it('refuses the root itself (DOR-2304)', () => {
+    // Purpose: every caller names an entry INSIDE the root and then may
+    // rm(recursive) it; a key that resolves to the root would empty it.
+    expect(() => assertContainedIn(root, root)).toThrow(PathEscapeError);
+    expect(() => assertContainedIn(root, path.join(root, 'x', '..'))).toThrow(PathEscapeError);
   });
 
   it('refuses a sibling directory that merely shares a name prefix', () => {

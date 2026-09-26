@@ -41,9 +41,8 @@
  *   (`apps/server/src/lib/instance-lock.ts`) is advisory — its own ADR notes
  *   it does not stop anything else from writing under `~/.dork` — and real
  *   non-server writers exist there (the CLI migrates `config.json` and opens
- *   `dork.db`, the logger writes before the lock is even taken, the Obsidian
- *   plugin writes runtime caches in-process). None of those files come through
- *   here. Anyone routing a new file through this module owns checking that no
+ *   `dork.db`, and the logger writes before the lock is even taken). None
+ *   of those files come through here. Anyone routing a new file through this module owns checking that no
  *   second process writes it.
  * - **Two known cross-process edges, both accepted.** Local-scope extension
  *   data lives under `{cwd}/.dork/`, keyed to the project rather than to a

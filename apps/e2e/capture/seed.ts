@@ -199,7 +199,14 @@ async function settleFullPowerDoor(): Promise<void> {
  */
 async function seedOperatorProfile(): Promise<void> {
   await patchJson(`${API_URL}/api/config`, {
-    profile: { roles: ['software-development'] },
+    // The name-and-handle card (DOR-677) takes the same slot, so it is settled
+    // too. Dismissed rather than answered: an answer would put a name on every
+    // "You" in every shot, which is a change to the product shots should make
+    // on purpose, not as a side effect of clearing a prompt.
+    profile: {
+      roles: ['software-development'],
+      identityPromptDismissedAt: '2026-07-01T00:00:00.000Z',
+    },
   });
 }
 

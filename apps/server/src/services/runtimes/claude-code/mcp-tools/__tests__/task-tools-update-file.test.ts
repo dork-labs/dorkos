@@ -31,7 +31,11 @@ import { ScheduleIdentityRegistry } from '../../../../tasks/schedule-identity.js
 import { FakeScheduler } from '../../../../tasks/__tests__/fake-scheduler.js';
 import { skillsRoot } from '../../../../tasks/__tests__/task-root-fixtures.js';
 import type { McpToolDeps } from '../types.js';
-import { getTasksTools } from '../task-tools.js';
+import { getTasksTools, REAPPROVAL_NOTE } from '../task-tools.js';
+import {
+  AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
+} from '../../../../tasks/timing/effective-timing.js';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {
@@ -149,7 +153,7 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
   async function createApprovedTask(): Promise<string> {
     const id = await createTask();
     // The transition IS the approval, and it stamps the content key the arm gate
-    // reads later (`TaskStore.recordApproval`).
+    // reads later (`TaskApprovals.recordApproval`).
     store.updateTask(id, { status: 'active' });
     return id;
   }
@@ -166,23 +170,51 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
 
     expect(isError).toBe(false);
     expect(payload.needsReapproval).toBe(true);
-    expect(String(payload.note)).toContain('approve it again');
-    // The row the reply carries still says active, which is exactly why the note
-    // has to be there.
-    expect((payload.schedule as Task).status).toBe('active');
+    expect(payload.note).toBe(REAPPROVAL_NOTE);
+    // Parked in this same call (DOR-2313), so the row the reply carries already
+    // says so, in DorkOS's words about what the agent changed.
+    expect(payload.schedule as Task).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_CONTENT_CHANGE_REASON,
+    });
 
-    // And the note is TRUE: this is the sweep it warns about.
+    // And the sweep keeps it that way, sentence and all.
     await reconcile();
-    expect(store.getTask(id)!.status).toBe('pending_approval');
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_CONTENT_CHANGE_REASON,
+    });
+  });
+
+  it('stops an approved schedule when the agent changes how it runs (DOR-2323)', async () => {
+    // Parity with the REST route: the model is part of the approval now, and
+    // the reply says what it cost.
+    const id = await createApprovedTask();
+
+    const { isError, payload } = await call('tasks_update', { id, model: 'claude-opus-4' });
+
+    expect(isError).toBe(false);
+    expect(payload).toMatchObject({ needsReapproval: true, note: REAPPROVAL_NOTE });
+    expect(payload.schedule as Task).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_SETTINGS_CHANGE_REASON,
+      approvalChanges: [{ field: 'model', from: null, to: 'claude-opus-4' }],
+    });
+    await reconcile();
+    expect(store.getTask(id)).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_SETTINGS_CHANGE_REASON,
+    });
   });
 
   it('says nothing of the sort for an edit that keeps the approved work', async () => {
     // The negative control, and it is the half that makes the disclosure worth
-    // anything: a note on every update is a note nobody reads. `maxRuntime` is
-    // written to the file but is not part of the content key, so the grant holds.
+    // anything: a note on every update is a note nobody reads. The description
+    // is written to the file but is not part of the approval key, so the grant
+    // holds. (`maxRuntime` was the example until DOR-2323 made it part of it.)
     const id = await createApprovedTask();
 
-    const { isError, payload } = await call('tasks_update', { id, maxRuntime: '15m' });
+    const { isError, payload } = await call('tasks_update', { id, description: 'Tidier words' });
 
     expect(isError).toBe(false);
     expect(payload.needsReapproval).toBeUndefined();
@@ -278,6 +310,9 @@ describe('tasks_update writes the SKILL.md, not just the row', () => {
 
     expect(isError).toBe(true);
     expect(payload.code).toBe('schedule_package_owned');
+    // No record in this install, so the answer is the legacy one, and the
+    // agent is told which (DOR-2272).
+    expect(payload.ownedBy).toBe('legacy');
     expect(store.getTask(task.id)!.prompt).toBe('packaged prompt');
     expect(await fs.readFile(filePath, 'utf-8')).toContain('packaged prompt');
   });

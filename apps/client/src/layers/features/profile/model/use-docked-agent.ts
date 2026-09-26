@@ -12,9 +12,7 @@
  */
 import { useAppStore, useSafePathname } from '@/layers/shared/model';
 import { useMeshMemberId } from '@/layers/entities/mesh';
-
-/** The route the docked profile lives on. */
-const SESSION_ROUTE = '/session';
+import { SESSION_ROUTE } from '@dorkos/shared/session-link';
 
 /**
  * The directory of the agent the docked profile should show, or `null` when
@@ -27,9 +25,6 @@ const SESSION_ROUTE = '/session';
  * would otherwise profile a stranger. That is the same rule the tab's
  * `visibleWhen` gate applies, and the two must agree or the tab appears with
  * nothing behind it.
- *
- * In the Obsidian embed the pathname is the constant `/session`, so the panel
- * profiles the session's own agent there exactly as it does on the web.
  */
 export function useDockedAgentPath(): string | null {
   const explicitAgentPath = useAppStore((s) => s.explicitAgentPath);

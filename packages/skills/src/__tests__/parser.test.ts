@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { parseSkillFile, readRawFrontmatter } from '../parser.js';
 import { hasSchedule } from '../schedule-schema.js';
 import { SkillFrontmatterSchema } from '../schema.js';
@@ -161,5 +161,34 @@ describe('parseSkillFile', () => {
     const second = readRawFrontmatter(content);
     expect(first).toEqual({ data: { name: 'fine', description: 'A fine skill' }, body: '# fine' });
     expect(second).toEqual(first);
+  });
+});
+
+describe('executable frontmatter (DOR-2308)', () => {
+  const SENTINEL = '__dorkosParserPwned';
+  const content = [
+    '---js',
+    `{ name: (globalThis.${SENTINEL} = 1, 'evil'), description: 'x' }`,
+    '---',
+    '',
+    'body',
+  ].join('\n');
+
+  afterEach(() => {
+    delete (globalThis as Record<string, unknown>)[SENTINEL];
+  });
+
+  // Purpose: both public readers answer "unreadable" for a `---js` SKILL.md
+  // and neither runs the block — the package's code must never execute.
+  it('parseSkillFile reports a parse error and never runs the block', () => {
+    const result = parseSkillFile('/skills/evil/SKILL.md', content, SkillFrontmatterSchema);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/Failed to parse frontmatter: .*"js"/);
+    expect((globalThis as Record<string, unknown>)[SENTINEL]).toBeUndefined();
+  });
+
+  it('readRawFrontmatter returns null and never runs the block', () => {
+    expect(readRawFrontmatter(content)).toBeNull();
+    expect((globalThis as Record<string, unknown>)[SENTINEL]).toBeUndefined();
   });
 });

@@ -64,6 +64,7 @@ vi.mock('@dorkos/shared/manifest', async (importOriginal) => ({
 vi.mock('@dorkos/shared/convention-files-io', () => ({
   readConventionFile: vi.fn(async () => null),
   writeConventionFile: vi.fn(async () => undefined),
+  writeConventionFileIfAbsent: vi.fn(async () => true),
 }));
 
 vi.mock('../../services/core/agent-created-hook.js', () => ({

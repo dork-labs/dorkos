@@ -1,12 +1,6 @@
 /**
  * The playground's session fixtures, shared by every roster showcase.
  *
- * A module of their own for the same reason `agent-sidebar-fixtures.ts` is one:
- * two showcase files now draw the same list — `SidebarShowcases` for the Agent
- * Hub's `SessionsView` and `EmbedSessionListShowcase` for the Obsidian embed's
- * roster — and a second copy of the data is a second answer to "what does a
- * busy week look like".
- *
  * @module dev/showcases/session-list-fixtures
  */
 import type { Session } from '@dorkos/shared/types';

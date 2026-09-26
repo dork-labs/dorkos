@@ -50,6 +50,7 @@ interface OfferProps {
   packageSchedules?: PreviewSchedule[];
   isCheckingOffer?: boolean;
   offerCheckFailed?: boolean;
+  offerRefusal?: unknown;
 }
 
 function renderArrival(seed: CreationSeed, offer: OfferProps = {}) {
@@ -61,6 +62,7 @@ function renderArrival(seed: CreationSeed, offer: OfferProps = {}) {
           packageSchedules={offer.packageSchedules ?? []}
           isCheckingOffer={offer.isCheckingOffer ?? false}
           offerCheckFailed={offer.offerCheckFailed ?? false}
+          offerRefusal={offer.offerRefusal}
           resolvedDirectory="/home/me/.dork/agents/reviewer"
           canSubmit
           isCreating={false}
@@ -182,6 +184,20 @@ describe('ArrivalConfirm — what the package runs on its own (DOR-644)', () => 
     // A failed check does not trap the person: nothing the package brings can
     // arm itself without a separate approval once the agent exists.
     expect(screen.getByTestId('arrival-create')).toBeEnabled();
+  });
+
+  it('says why and blocks Create when the server refused the package (DOR-2314)', () => {
+    // Purpose: the server will not install this package, so the arrival card
+    // must not create an agent from it.
+    renderArrival(makeSeed(), {
+      offerCheckFailed: true,
+      offerRefusal: Object.assign(new Error('Package failed validation'), {
+        body: { errors: ["An agent package can't ship .claude/settings.json"] },
+      }),
+    });
+
+    expect(screen.getByRole('alert')).toHaveTextContent("can't ship .claude/settings.json");
+    expect(screen.getByTestId('arrival-create')).toBeDisabled();
   });
 
   it('leaves a Shape offer’s own cadence line untouched', () => {

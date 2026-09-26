@@ -1,7 +1,7 @@
 {
   "name": "@dorkos/monorepo",
   "private": true,
-  "version": "0.82.0",
+  "version": "0.83.0",
   "type": "module",
   "packageManager": "pnpm@10.28.2",
   "scripts": {
@@ -91,7 +91,7 @@
       "@types/node": "^24",
       "@anthropic-ai/sdk": "0.123.0",
       "@modelcontextprotocol/sdk": "1.30.0",
-      "lucide-react": "1.44.0",
+      "lucide-react": "1.47.0",
       "@vitejs/plugin-react": "5.2.0",
       "drizzle-orm": "0.45.2",
       "eslint-plugin-react-hooks": "7.1.1",
@@ -111,7 +111,6 @@
       "brace-expansion@1": "^1.1.18",
       "brace-expansion@2": "^2.1.4",
       "brace-expansion@5": "^5.0.9",
-      "js-yaml@3": "^3.15.2",
       "js-yaml@4": "^4.3.2",
       "fflate@0.4": "^0.4.9",
       "nanoid@5": "^5.1.16",

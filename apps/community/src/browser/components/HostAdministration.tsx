@@ -4,8 +4,11 @@ import { ownerClaimLink } from '../owner-claim.js';
 import { FocusDialog } from './CommunityAdministration.js';
 import { HostApiKeys } from './HostApiKeys.js';
 import { HostCommunityLimits } from './HostCommunityLimits.js';
+import { HostHoldControls } from './HostHoldControls.js';
+import { HostShortNames } from './HostShortNames.js';
 
-type Lifecycle = 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+type Lifecycle =
+  'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
 type Community = {
   id: string;
   name: string;
@@ -15,6 +18,10 @@ type Community = {
   settingsVersion: number;
   ownerPresent: boolean;
   deletionState: 'waiting' | 'deleting' | 'retrying' | null;
+  deletionNoticeAt: string | null;
+  deletionRequestedBy: 'owner' | 'host' | null;
+  shortName: string | null;
+  legalHold: { since: string; reference: string | null } | null;
   createdAt: string;
 };
 type Claim = { grantId: string; ownerClaimToken: string; expiresAt: string };
@@ -92,13 +99,17 @@ export function HostAdministration() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<HostConfirmation | null>(null);
+  const [noticeDays, setNoticeDays] = useState(14);
   const creationAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const refresh = useCallback(async () => {
     setError('');
     try {
-      const body = await request<{ communities: Community[] }>('/api/v1/host/communities');
+      const body = await request<{ communities: Community[]; deletionNoticeDays: number }>(
+        '/api/v1/host/communities'
+      );
       setCommunities(body.communities);
+      setNoticeDays(body.deletionNoticeDays);
     } catch (cause) {
       setError(describeError(cause));
     }
@@ -254,7 +265,9 @@ export function HostAdministration() {
               {communities.map((community) => {
                 const pending = community.lifecycle === 'pending_owner';
                 const suspendable =
-                  community.lifecycle === 'active' || community.lifecycle === 'archived';
+                  community.lifecycle === 'active' ||
+                  community.lifecycle === 'archived' ||
+                  community.lifecycle === 'held';
                 return (
                   <article
                     className="panel-alt p-4"
@@ -269,10 +282,30 @@ export function HostAdministration() {
                       <p className="small muted">{community.description}</p>
                     )}
                     <p className="small muted">
+                      {community.shortName && <>/{community.shortName} · </>}
                       ID: {shortId(community.id)} · Owner{' '}
                       {community.ownerPresent ? 'assigned' : 'not assigned'}
                       {community.deletionState ? ` · Cleanup ${community.deletionState}` : ''}
                     </p>
+                    {community.legalHold && (
+                      <div className="small">
+                        <p>
+                          Legal hold since{' '}
+                          {new Date(community.legalHold.since).toLocaleDateString()}
+                          {community.legalHold.reference
+                            ? ` (${community.legalHold.reference})`
+                            : ''}
+                          .{' '}
+                          {community.lifecycle === 'deletion_pending'
+                            ? 'Its deletion is paused until the hold is released.'
+                            : 'This community can’t be deleted until the hold is released.'}
+                        </p>
+                        <p className="muted">
+                          The hold doesn’t stop single messages or files being removed, or a person
+                          erasing their own data. See “Legal holds” in OPERATIONS.md.
+                        </p>
+                      </div>
+                    )}
                     <div className="row flex-wrap gap-2">
                       {pending && (
                         <button
@@ -321,6 +354,21 @@ export function HostAdministration() {
                         </button>
                       )}
                     </div>
+                    <div className="mt-3">
+                      <HostHoldControls
+                        community={community}
+                        busy={busy}
+                        noticeDays={noticeDays}
+                        perform={perform}
+                      />
+                    </div>
+                    {community.lifecycle !== 'deletion_pending' && (
+                      <HostShortNames
+                        communityId={community.id}
+                        name={community.name}
+                        onChanged={refresh}
+                      />
+                    )}
                     {community.lifecycle !== 'deletion_pending' && (
                       <HostCommunityLimits communityId={community.id} name={community.name} />
                     )}

@@ -55,16 +55,10 @@ import { emitToSession } from './session-reach.js';
 import { uiTurnFacts, type UiRoomTurn } from './ui-turn-facts.js';
 import { reachesPastTheScreen, uiActionRefusalMessage } from './ui-surface-consent.js';
 
-/**
- * Default UI state answered with when no client has reported one.
- *
- * `sidebar.activeTab` defaults to null: the sidebar tab strip exists only in the
- * embedded (Obsidian) shell, so the honest default — before any client reports —
- * is "no addressable tab", not a fabricated `overview`.
- */
+/** Default UI state answered with when no client has reported one. */
 const DEFAULT_UI_STATE: UiState = {
   panels: { settings: false, tasks: false, relay: false, picker: false },
-  sidebar: { open: true, activeTab: null },
+  sidebar: { open: true },
   agent: { id: null, cwd: null },
 };
 
@@ -117,13 +111,6 @@ function applyUiCommandToState(state: UiState, command: UiCommand): UiState {
       return { ...state, sidebar: { ...state.sidebar, open: true } };
     case 'close_sidebar':
       return { ...state, sidebar: { ...state.sidebar, open: false } };
-    case 'switch_sidebar_tab':
-      // Best-effort intent projection: the client dispatcher opens the sidebar
-      // and selects the tab — but ONLY on the embedded (Obsidian) shell, which is
-      // the sole host with a sidebar tab strip. In the web app this command is a
-      // no-op, and that client reports `activeTab: null`, which corrects this
-      // projection on its next snapshot (get_ui_state is intent, not a live read).
-      return { ...state, sidebar: { open: true, activeTab: command.tab } };
     case 'open_terminal':
       // The terminal is a right-panel tab, not a canvas document; it has no
       // canvas contentType. There is no server-projected panel/tab field beyond
@@ -170,7 +157,7 @@ const TARGET_NEEDS_AN_AGENT_MESSAGE =
  * What an agent is told when it hangs `target` on an action a room has no
  * surface for.
  *
- * The sixteen non-canvas actions are imperatives to one WINDOW — a toast, a
+ * The fifteen non-canvas actions are imperatives to one WINDOW — a toast, a
  * panel, the command palette — and a room has no window to push them to.
  * Targeting must not become a way around the verb allow-list a room already
  * enforces, so the action still runs where it was going to run and the target is
@@ -258,7 +245,7 @@ export async function controlUi(
   }
 
   // **Refused in reverse.** A room shares a canvas, not a window, so the other
-  // sixteen actions have nowhere to land there — and a room refuses them anyway
+  // fifteen actions have nowhere to land there — and a room refuses them anyway
   // (`CANVAS_VERBS`), so targeting must not become a way around that. The action
   // still runs where it was going to run and the target is dropped, out loud,
   // because a field that silently does nothing is worse than one that says so.
@@ -331,16 +318,8 @@ export async function controlUi(
         viewers: applied.viewers,
       };
     }
-    // No canvas service in this process — an embedded host reading somebody
-    // else's database read-only, or a boot that has not reached the rooms
-    // subsystem. Fall through to the `ui_command` event below.
-    //
-    // **In the embed that event reaches nobody, and that is the whole
-    // behaviour.** `subscribeUiCommand` has exactly one subscriber — the web
-    // app's `main.tsx` — and the Obsidian plugin never subscribes, so the push
-    // is a no-op there rather than the older client-side canvas path it never
-    // had. Net: the embed reads this machine's canvas and writes nothing to it,
-    // which is ADR `260825-194924`'s rule.
+    // A boot that has not reached the rooms subsystem has no canvas service.
+    // Fall through to the `ui_command` event below.
   }
 
   emitToSession(sessionId, { type: 'ui_command', command } as RawSessionEvent);
@@ -473,9 +452,8 @@ function applyToSessionCanvas(
   command: UiCommand
 ): CanvasApplyResult | null {
   const canvas = peekCanvasService();
-  // No canvas service in this process — an embedded host reading somebody
-  // else's database, or a boot that has not reached the rooms subsystem. `null`
-  // means "fall through", not "failed".
+  // A boot that has not reached the rooms subsystem has no canvas service.
+  // `null` means "fall through", not "failed".
   if (!canvas) return null;
   const content = canvas.contentForCommand(command);
   return canvas.apply({
@@ -544,9 +522,8 @@ function applyToSessionCanvasSafely(
  * Compose what `get_ui_state` answers with for a one-on-one session.
  *
  * Three of the four parts are the client's own last report; the fourth is a read
- * of the table. A process with no canvas service — an embedded host, or a boot
- * that never stood the rooms subsystem up — answers with an empty canvas and
- * `viewers: 0`, which is the honest reading of "there is no table here" rather
+ * of the table. A boot that never stood the rooms subsystem up answers with an
+ * empty canvas and `viewers: 0`, the honest reading of "there is no table here" rather
  * than a fabricated one.
  *
  * @param sessionId - The session being asked about.
@@ -585,7 +562,7 @@ function sessionUiStateReport(sessionId: string): UiStateReport {
  * `canvas-agent-seat` §9).
  *
  * **Only ever called for a CANVAS verb**, which the caller decides: the other
- * sixteen actions have no surface in a room and are handled where the command
+ * fifteen actions have no surface in a room and are handled where the command
  * runs.
  *
  * **It never falls through.** Every outcome is answered here — a room the agent
@@ -621,9 +598,9 @@ function applyToTargetedRoom(input: {
   try {
     rooms = getRoomService();
   } catch {
-    // No rooms subsystem in this process — an embedded host, or a boot that
-    // never stood one up. Falling through would put the document on this
-    // session's own canvas, which is not what was asked for.
+    // No rooms subsystem in this process — a boot that has not stood one up.
+    // Falling through would put the document on this session's own canvas,
+    // which is not what was asked for.
     throw new CapabilityToolError({
       success: false,
       target: 'room',

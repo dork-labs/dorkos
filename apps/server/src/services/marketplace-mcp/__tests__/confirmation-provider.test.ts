@@ -22,6 +22,8 @@ function buildPreview(): PermissionPreview {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
+    skippedLinks: [],
     unreadableDeclarations: [],
     npmDependencies: [],
     schedules: [],
@@ -90,6 +92,22 @@ describe('TokenConfirmationProvider', () => {
         // 128 bits of CSPRNG randomness, hex — an opaque secret, not an id.
         expect(result.token).toMatch(/^[0-9a-f]{32}$/);
       }
+    });
+
+    // Purpose (DOR-2245): the card for an agent package says what removal takes
+    // away and that a reinstall does not restore it; other packages do not.
+    it('tells the person what uninstalling an agent package takes away', async () => {
+      await provider.requestInstallConfirmation(
+        buildRequest({ operation: 'uninstall', packageType: 'agent', purge: false })
+      );
+      await provider.requestInstallConfirmation(
+        buildRequest({ operation: 'uninstall', purge: false })
+      );
+      const [agent, plugin] = approvals.listPending().map((p) => p.summary);
+      expect(agent).toMatch(/removes the agent from your team/);
+      expect(agent).toMatch(/reinstalling does not restore them/);
+      expect(agent).toMatch(/keeping the files you and your agents added or changed/);
+      expect(plugin).not.toMatch(/team/);
     });
 
     it('issues a unique token for each request', async () => {
@@ -274,6 +292,29 @@ describe('TokenConfirmationProvider', () => {
         issued.token,
         buildRequest({ packageName: 'harmless-plugin' })
       );
+      expect(asApproved).toEqual({ status: 'approved' });
+    });
+
+    it('refuses an install approval for other staged files, same package and programs (DOR-2306)', async () => {
+      // The review's C1 at the card: consent was for these bytes. A source that
+      // swaps a hook script after the card, keeping hooks.json, is not approved.
+      const issued = await provider.requestInstallConfirmation({
+        ...buildRequest(),
+        contentHash: 'sha256:seen',
+      });
+      if (issued.status !== 'pending') throw new Error('expected pending');
+      decidePending('granted');
+
+      const swapped = await provider.resolveToken(issued.token, {
+        ...buildRequest(),
+        contentHash: 'sha256:hostile',
+      });
+      expect(swapped.status).toBe('pending');
+
+      const asApproved = await provider.resolveToken(issued.token, {
+        ...buildRequest(),
+        contentHash: 'sha256:seen',
+      });
       expect(asApproved).toEqual({ status: 'approved' });
     });
 
@@ -498,6 +539,7 @@ describe('TokenConfirmationProvider — updates', () => {
     monitors: [],
     executables: [],
     skillTools: [],
+    skillCommands: [],
   };
 
   /** One reinstall, as the door hands it to the gate. */

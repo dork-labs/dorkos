@@ -37,7 +37,7 @@ import { MarketplaceSourceManager } from '../marketplace-source-manager.js';
 import { PackageFetcher } from '../package-fetcher.js';
 import { PackageResolver } from '../package-resolver.js';
 import { PermissionPreviewBuilder } from '../permission-preview.js';
-import type { GitTreeSource } from '../lib/git-tree.js';
+import type { GitTreeSource } from '../lib/git/git-tree.js';
 import { AdapterInstallFlow } from '../flows/install-adapter.js';
 import { AgentInstallFlow } from '../flows/install-agent.js';
 import { PluginInstallFlow } from '../flows/install-plugin.js';
@@ -55,6 +55,8 @@ export interface InstallerTestSpies {
   /** Called by the uninstall flow for each bundled extension it removes. */
   extensionDisable: ReturnType<typeof vi.fn>;
   createAgentWorkspace: ReturnType<typeof vi.fn>;
+  /** The agent flow's `agentRegistry.unregisterAtPath`; resolves `null` by default. */
+  agentUnregister: ReturnType<typeof vi.fn>;
   adapterAdd: ReturnType<typeof vi.fn>;
   adapterRemove: ReturnType<typeof vi.fn>;
   /** `GitTreeSource.lookup` — resolves a ref to a commit. */
@@ -152,7 +154,17 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
     extensionManager,
     logger,
   });
-  const agentFlow = new AgentInstallFlow({ dorkHome, agentCreator, logger });
+  // The agent registry the agent flow unregisters an earlier, different
+  // package's agent through (DOR-2245 review 5). Nothing is registered here.
+  const agentUnregister = vi.fn(
+    async (_projectPath: string): Promise<{ id: string; directoryDenied: boolean } | null> => null
+  );
+  const agentFlow = new AgentInstallFlow({
+    dorkHome,
+    agentCreator,
+    agentRegistry: { unregisterAtPath: agentUnregister },
+    logger,
+  });
   const skillPackFlow = new SkillPackInstallFlow({ dorkHome, logger });
   const adapterFlow = new AdapterInstallFlow({ dorkHome, adapterManager, logger });
   const shapeFlow = new ShapeInstallFlow({ dorkHome, extensionCompiler, logger });
@@ -188,6 +200,7 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
       extensionEnable,
       extensionDisable,
       createAgentWorkspace,
+      agentUnregister,
       adapterAdd,
       adapterRemove,
       gitLookup,

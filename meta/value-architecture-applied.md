@@ -1,5 +1,7 @@
 # The Value Architecture — Applied to DorkOS
 
+> **2026-09-25 product update:** The Obsidian plugin is retired. In-vault features and plugin-based journeys described below are historical research, not current product promises. Priya remains a target persona; the current path is the normal DorkOS app working with her vault folder, subject to ordinary permissions. See [retirement and migration](../docs/guides/obsidian-plugin.mdx).
+
 **Version**: 1.2
 **Created**: 2026-02-27 (1.0) · **Amended**: 2026-07-06 (positioning review, `positioning-202607/`) · 2026-07-09 (hero reframe: "You, multiplied." roof; personas expanded)
 **Framework**: `meta/value-architecture.md` + `meta/value-architecture-handbook.md`

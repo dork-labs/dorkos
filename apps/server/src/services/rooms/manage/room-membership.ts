@@ -154,45 +154,75 @@ export class RoomMembership {
     // its roster at all. Read BEFORE the add, because "was this name written by
     // us" can only be asked of the roster the name was written from.
     let priorTitleNames: string[] | null = null;
-    if (candidate.kind === 'agent') {
-      const roster = this.roster.list(roomId);
-      if (room.kind === 'dm') priorTitleNames = dmTitleNames(roster);
-      if (this.bridges.findBridgeByRoom(roomId)) {
-        const existingAgent = roster.find((member) => member.author.kind === 'agent');
-        // Re-adding the room's OWN bound agent is a harmless idempotent no-op
-        // one call down (`RoomStore.addMember`'s `onConflictDoNothing`) — the
-        // refusal is about a SECOND, DIFFERENT agent, not about this agent
-        // already being here.
-        if (existingAgent && existingAgent.authorId !== candidate.id) {
-          this.systemPosts.postNotice(
-            roomId,
-            buildBridgeSecondAgentRefusedNotice(candidate.displayName)
-          );
-          throw new RoomError(
-            'BRIDGE_SECOND_AGENT_REFUSED',
-            'A bridged room can hold only one agent — outbound consent is set per binding'
-          );
-        }
+    if (candidate.kind === 'agent' && room.kind === 'dm') {
+      priorTitleNames = dmTitleNames(this.roster.list(roomId));
+    }
+    try {
+      this.requireJoinAllowed(room, candidate);
+    } catch (err) {
+      // Said in the room as well as thrown, BEFORE the throw: the person
+      // watching the bridged chat is not the one reading this error.
+      if (err instanceof RoomError && err.code === 'BRIDGE_SECOND_AGENT_REFUSED') {
+        this.systemPosts.postNotice(
+          roomId,
+          buildBridgeSecondAgentRefusedNotice(candidate.displayName)
+        );
       }
-      // The roster this call is about to produce. The candidate is UNIONED in
-      // rather than appended, because re-adding somebody already on the roster
-      // is a no-op one call down — counting them twice would refuse a call that
-      // changes nothing.
-      this.authority.requireOwnerWitnessesAgents(
-        [
-          ...roster
-            .filter((member) => member.authorId !== candidate.id)
-            .map((member) => ({ authorId: member.authorId, kind: member.author.kind })),
-          { authorId: candidate.id, kind: candidate.kind },
-        ],
-        'add'
-      );
+      throw err;
     }
 
     const member = this.roster.add(room, input);
     eventFanOut.broadcast('room_member_added', { roomId, authorId: member.authorId });
     this.followRosterTitle(room, priorTitleNames);
     return member;
+  }
+
+  /**
+   * The FIELD checks a join must pass — what the roster would look like with
+   * this author on it — for every door into a room: {@link RoomMembership.addMemberTo}
+   * and the seat an agent gets back when it returns to your team (DOR-2095,
+   * `RoomDepartures.restore`). One method, so a rule added here holds for both.
+   *
+   * - **A bridged room holds one agent** (chats-as-channels spec §3.4, D-6 Q3):
+   *   outbound consent is set per binding, and a binding names one agent.
+   * - **A room without the owner on its roster may not gain a second agent** —
+   *   the three-way rule (ADR 260814-025326).
+   *
+   * Nothing for a person or the system: both rules are about agents.
+   *
+   * @param room - The room being joined.
+   * @param candidate - Who would join.
+   * @throws {RoomError} `BRIDGE_SECOND_AGENT_REFUSED` or the three-way refusal.
+   */
+  requireJoinAllowed(room: Room, candidate: Pick<AuthorRecord, 'id' | 'kind'>): void {
+    if (candidate.kind !== 'agent') return;
+    const roster = this.roster.list(room.id);
+    if (this.bridges.findBridgeByRoom(room.id)) {
+      const existingAgent = roster.find((member) => member.author.kind === 'agent');
+      // Re-adding the room's OWN bound agent is a harmless idempotent no-op
+      // one call down (`RoomStore.addMember`'s `onConflictDoNothing`) — the
+      // refusal is about a SECOND, DIFFERENT agent, not about this agent
+      // already being here.
+      if (existingAgent && existingAgent.authorId !== candidate.id) {
+        throw new RoomError(
+          'BRIDGE_SECOND_AGENT_REFUSED',
+          'A bridged room can hold only one agent — outbound consent is set per binding'
+        );
+      }
+    }
+    // The roster this call is about to produce. The candidate is UNIONED in
+    // rather than appended, because re-adding somebody already on the roster
+    // is a no-op one call down — counting them twice would refuse a call that
+    // changes nothing.
+    this.authority.requireOwnerWitnessesAgents(
+      [
+        ...roster
+          .filter((member) => member.authorId !== candidate.id)
+          .map((member) => ({ authorId: member.authorId, kind: member.author.kind })),
+        { authorId: candidate.id, kind: candidate.kind },
+      ],
+      'add'
+    );
   }
 
   /**

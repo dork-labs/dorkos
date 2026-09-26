@@ -20,7 +20,6 @@ const SOURCE_COPY: Record<string, string> = {
   agents: 'Couldn’t read your agents. Showing who we could.',
   authors: 'Couldn’t read the people on this install. Showing who we could.',
   account: 'Couldn’t read your account, so your own name may be missing.',
-  team: 'Your team lives on the DorkOS server, and there is no server here.',
   // The three activity sources. Each one says what is missing rather than
   // implying the roster is: everybody is still here, we just cannot say what
   // they are up to.

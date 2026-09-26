@@ -43,8 +43,6 @@ export function useOpenNotification(): (notification: NotificationDTO) => void {
     (notification: NotificationDTO) => {
       if (notification.readAt === undefined) mutate(notification.id);
       const link = notificationLink(notification);
-      // No router in the Obsidian embed, and a row there is still worth marking
-      // read even though it cannot travel.
       if (link !== null && navigate !== null) {
         void navigate({ to: link.to, search: link.search });
       }

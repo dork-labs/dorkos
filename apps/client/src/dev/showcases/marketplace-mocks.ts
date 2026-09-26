@@ -11,6 +11,7 @@
  */
 import type {
   AggregatedPackage,
+  DisclosedEffects,
   InstallationUpdateCheck,
   InstalledPackage,
   MarketplaceSource,
@@ -38,15 +39,15 @@ export const MOCK_PKG_FEATURED_AGENT: AggregatedPackage = {
 
 /** Plain plugin package — no featured indicator. */
 export const MOCK_PKG_PLUGIN: AggregatedPackage = {
-  name: 'obsidian-sync',
-  source: 'https://github.com/dorkos-marketplace/obsidian-sync',
+  name: 'notes-sync',
+  source: 'https://github.com/dorkos-marketplace/notes-sync',
   marketplace: 'dorkos-community',
-  description: 'Bidirectional sync between DorkOS agent sessions and your Obsidian vault.',
+  description: 'Keep project notes in sync across your workspaces.',
   version: '0.8.1',
   type: 'plugin',
   icon: '🗒️',
   category: 'integration',
-  tags: ['obsidian', 'notes', 'sync'],
+  tags: ['markdown', 'notes', 'sync'],
 };
 
 /** Skill pack — no description to exercise the no-description branch. */
@@ -174,6 +175,8 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [
@@ -190,12 +193,66 @@ export const MOCK_PERMISSION_PREVIEW_MINIMAL: PermissionPreview = {
   conflicts: [],
 };
 
-/** Full preview with all sections populated. */
+/**
+ * An agent package whose skills live where its sessions load them: its folder
+ * is the agent's working directory, so `.claude/skills` and `.agents/skills`
+ * are on the card (DOR-2314).
+ */
+export const MOCK_PERMISSION_PREVIEW_AGENT_WORKSPACE: PermissionPreview = {
+  ...MOCK_PERMISSION_PREVIEW_MINIMAL,
+  fileChanges: [
+    { path: `${MOCK_DORK_HOME}/agents/release-bot/CLAUDE.md`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/agents/release-bot/.claude/skills/ship/SKILL.md`, action: 'create' },
+    {
+      path: `${MOCK_DORK_HOME}/agents/release-bot/.agents/skills/notes/SKILL.md`,
+      action: 'create',
+    },
+  ],
+  extensions: [],
+  hooks: [
+    {
+      event: 'PreToolUse',
+      matcher: 'Bash',
+      command: './scripts/check-branch.sh',
+      source: '.claude/skills/ship/SKILL.md',
+    },
+  ],
+  skillTools: [
+    {
+      source: '.claude/skills/ship/SKILL.md',
+      skill: 'ship',
+      tools: ['Bash(git push:*)', 'Bash(gh:*)'],
+    },
+    { source: '.agents/skills/notes/SKILL.md', skill: 'notes', tools: ['Read', 'Write'] },
+  ],
+  schedules: [],
+  requires: [],
+};
+
+/**
+ * The error a refused preview carries: the server's reasons ride on `body`
+ * exactly as `http-client.ts` attaches them (DOR-2314).
+ */
+export const MOCK_PREVIEW_REFUSED_ERROR = Object.assign(new Error('Package failed validation'), {
+  status: 400,
+  body: {
+    error: 'Package failed validation',
+    errors: [
+      "An agent package can't ship .claude/settings.json: its folder is the agent's working directory, so Claude Code would load it into every session the agent runs, without it being shown to you. Leave it out; hooks, servers and permissions are added after install through DorkOS, where a person approves each one.",
+      "An agent package can't ship opencode.json: its folder is the agent's working directory, so OpenCode would load it into every session the agent runs, without it being shown to you. Leave it out; hooks, servers and permissions are added after install through DorkOS, where a person approves each one.",
+    ],
+  },
+});
+
+/**
+ * Full preview with all sections populated. A plugin: an agent package may not
+ * ship servers or programs of its own (DOR-2314).
+ */
 export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   fileChanges: [
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/agent.json`, action: 'create' },
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/config.json`, action: 'modify' },
-    { path: `${MOCK_DORK_HOME}/agents/deploy-bot/legacy-hooks.json`, action: 'delete' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/.claude-plugin/plugin.json`, action: 'create' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/config.json`, action: 'modify' },
+    { path: `${MOCK_DORK_HOME}/plugins/deploy-bot/legacy-hooks.json`, action: 'delete' },
   ],
   extensions: [{ id: 'deploy-bot-ext', slots: ['dashboard-panel', 'task-runner'] }],
   hooks: [
@@ -228,6 +285,23 @@ export const MOCK_PERMISSION_PREVIEW_FULL: PermissionPreview = {
   skillTools: [
     { source: 'skills/deploy/SKILL.md', skill: 'deploy', tools: ['Bash(kubectl:*)', 'Read'] },
   ],
+  skillCommands: [
+    {
+      source: 'skills/deploy/SKILL.md',
+      skill: 'deploy',
+      form: 'inline',
+      command: 'kubectl config current-context',
+      usesArguments: false,
+    },
+    {
+      source: 'commands/release.md',
+      skill: 'release',
+      form: 'block',
+      command: 'git fetch --tags\ngit describe --tags --abbrev=0',
+      usesArguments: false,
+    },
+  ],
+  skippedLinks: [],
   unreadableDeclarations: [{ path: '.mcp.json', kind: 'mcp-server', entry: 'legacy' }],
   npmDependencies: [
     { name: 'zod', range: '^4.3.6' },
@@ -282,6 +356,8 @@ export const MOCK_PERMISSION_PREVIEW_BLOCKING: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
@@ -347,12 +423,23 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     installedAt: '2026-09-20T10:00:00Z',
   },
   {
-    name: 'obsidian-sync',
+    name: 'notes-sync',
     version: '0.8.1',
     type: 'plugin',
     scope: 'global',
-    installPath: '/Users/kai/.dork/plugins/obsidian-sync',
+    installPath: '/Users/kai/.dork/plugins/notes-sync',
     installedAt: '2026-03-01T14:30:00Z',
+    linked: true,
+    // A linked install nobody approved yet: held back from every session, and
+    // its note says an approval covers whatever is in its folder (DOR-2306).
+    heldBack: {
+      reason: 'unasked',
+      reviewable: true,
+      linkedPath: '/Users/kai/src/notes-sync',
+      note:
+        'Held back: you have not approved it as it is now. Linked: it runs whatever is in ' +
+        '/Users/kai/src/notes-sync. Review it to decide.',
+    },
   },
   {
     name: 'python-skills',
@@ -364,6 +451,58 @@ export const MOCK_INSTALLED_FOR_UPDATES: InstalledPackage[] = [
     installedAt: '2026-04-11T08:15:00Z',
   },
 ];
+
+/** What a new version of the Flow plugin runs on its own, as a check discloses it. */
+const FLOW_NEXT_RUNS: DisclosedEffects = {
+  hooks: [
+    {
+      event: 'PreToolUse',
+      matcher: 'Bash',
+      command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/guard-git.mjs"',
+      source: null,
+    },
+    {
+      event: 'Stop',
+      matcher: null,
+      command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/tidy.mjs"',
+      source: null,
+    },
+  ],
+  schedules: [],
+  mcpServers: [
+    {
+      name: 'linear',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@linear/mcp-server'],
+      url: null,
+    },
+  ],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [{ source: 'skills/triage/SKILL.md', skill: 'triage', tools: ['Bash(gh:*)'] }],
+  skillCommands: [],
+};
+
+/** What the Flow plugin installed now runs: one hook fewer, an older server. */
+const FLOW_NOW_RUNS: DisclosedEffects = {
+  ...FLOW_NEXT_RUNS,
+  hooks: [FLOW_NEXT_RUNS.hooks[1]!],
+  mcpServers: [{ ...FLOW_NEXT_RUNS.mcpServers[0]!, args: ['-y', '@linear/mcp-server@1'] }],
+};
+
+/** A new version that runs nothing on its own. */
+const RUNS_NOTHING: DisclosedEffects = {
+  hooks: [],
+  schedules: [],
+  mcpServers: [],
+  lspServers: [],
+  monitors: [],
+  executables: [],
+  skillTools: [],
+  skillCommands: [],
+};
 
 /** One check per {@link MOCK_INSTALLED_FOR_UPDATES} row, in the server's shape. */
 export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
@@ -379,6 +518,9 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     installPath: '/Users/kai/.dork/agents/code-reviewer',
     type: 'agent',
     scope: 'global',
+    disclosed: RUNS_NOTHING,
+    contentHash: 'sha256:reviewer-150',
+    installedDisclosed: RUNS_NOTHING,
   },
   {
     packageName: 'flow',
@@ -395,28 +537,34 @@ export const MOCK_UPDATE_CHECKS: InstallationUpdateCheck[] = [
     agentPath: '/Users/kai/work/release-bot',
     agentName: 'Release Bot',
     applyError: 'another install is already running in this folder',
+    disclosed: FLOW_NEXT_RUNS,
+    contentHash: 'sha256:flow-073',
+    installedDisclosed: FLOW_NOW_RUNS,
   },
   {
     packageName: 'flow',
     installedVersion: '0.7.3',
-    latestVersion: '0.7.3',
-    hasUpdate: false,
+    latestVersion: '0.8.0',
+    hasUpdate: true,
     marketplace: 'dorkos-community',
-    status: 'current',
+    status: 'update-available',
     installedVersionSource: 'package',
     latestVersionSource: 'package',
     installPath: '/Users/kai/.dork/plugins/flow',
     type: 'plugin',
     scope: 'global',
+    disclosed: FLOW_NEXT_RUNS,
+    contentHash: 'sha256:flow-080',
+    installedDisclosed: FLOW_NEXT_RUNS,
   },
   {
-    packageName: 'obsidian-sync',
+    packageName: 'notes-sync',
     installedVersion: '0.8.1',
     latestVersion: '',
     hasUpdate: false,
     marketplace: '',
     status: 'unknown',
-    installPath: '/Users/kai/.dork/plugins/obsidian-sync',
+    installPath: '/Users/kai/.dork/plugins/notes-sync',
     type: 'plugin',
     scope: 'global',
     note: 'linked install — update its source instead',
@@ -448,6 +596,9 @@ export const MOCK_UPDATE_CHECKS_ALL_CURRENT: InstallationUpdateCheck[] = MOCK_UP
     marketplace: check.marketplace,
     applyError: undefined,
     note: undefined,
+    disclosed: undefined,
+    contentHash: undefined,
+    installedDisclosed: undefined,
   })
 );
 
@@ -499,6 +650,8 @@ export const MOCK_PERMISSION_PREVIEW_MANY_FILES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
@@ -523,6 +676,8 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   monitors: [],
   executables: [],
   skillTools: [],
+  skillCommands: [],
+  skippedLinks: [],
   unreadableDeclarations: [],
   npmDependencies: [],
   schedules: [],
@@ -531,3 +686,63 @@ export const MOCK_PERMISSION_PREVIEW_ESCAPES: PermissionPreview = {
   requires: [],
   conflicts: [],
 };
+
+export const MOCK_INSTALLED_VERIFIED: InstalledPackage[] = MOCK_INSTALLED_FOR_UPDATES.map((pkg) => {
+  if (pkg.installPath === '/Users/kai/work/release-bot/.dork/plugins/flow') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'modified' as const,
+        changed: ['skills/triage/SKILL.md', 'commands/ship.md'],
+        missing: ['README.md'],
+        added: ['skills/my-notes/SKILL.md'],
+        customized: [],
+      },
+    };
+  }
+  if (pkg.installPath === '/Users/kai/.dork/plugins/flow') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'unknown' as const,
+        reason: 'no-record' as const,
+        check: {
+          source: 'fetchable' as const,
+          last: {
+            outcome: 'mismatch' as const,
+            message:
+              "Some of flow's files differ from the version you installed, so DorkOS can't tell your edits from the package's files. Its next update still keeps your copies.",
+          },
+        },
+      },
+    };
+  }
+  if (pkg.name === 'python-skills') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'unknown' as const,
+        reason: 'no-record' as const,
+        check: { source: 'fetchable' as const },
+      },
+    };
+  }
+  if (pkg.name === 'code-reviewer') {
+    return {
+      ...pkg,
+      integrity: {
+        status: 'clean' as const,
+        customized: [],
+        unproven: {
+          files: ['commands/old-review.md', 'notes/team-style.md', 'prompts/review.md.dork-old'],
+          running: ['commands/old-review.md'],
+          check: { source: 'fetchable' as const },
+        },
+      },
+    };
+  }
+  if (pkg.name === 'notes-sync') {
+    return { ...pkg, integrity: { status: 'unknown' as const, reason: 'linked' as const } };
+  }
+  return { ...pkg, integrity: { status: 'clean' as const, customized: [] } };
+});

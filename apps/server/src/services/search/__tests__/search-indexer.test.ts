@@ -797,8 +797,7 @@ describe('starting the sweep in a host whose timers are not Node timers', () => 
   });
 
   it('does not throw when the interval handle has no unref()', () => {
-    // Obsidian's renderer runs with node integration but no context isolation,
-    // so `setInterval` is Blink's: it returns a plain NUMBER, and `.unref()` on
+    // Some timer implementations return a plain NUMBER, and `.unref()` on
     // it is a TypeError. Unguarded, that throw escaped `start()`, escaped the
     // plugin's index-opening, escaped `CopilotView.onOpen`, and rendered the
     // entire panel blank on every machine that had a database — for a call whose

@@ -8,7 +8,7 @@
  *
  * @module features/profile/ui/fields/ProfileFields
  */
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { OPERATOR_FALLBACK_DISPLAY_NAME, type TeamMember } from '@dorkos/shared/team-schemas';
 import {
   Button,
@@ -30,32 +30,11 @@ import {
   useUpdateProfileName,
   useUploadProfileAvatar,
 } from '../../model/use-profile-edits';
+import { useServerSeededDraft } from '../../model/use-server-seeded-draft';
+import { useMountedRef } from '../../model/use-mounted-ref';
 
 /** What the photo picker will offer. The server decides for real, by the bytes. */
 const ACCEPTED_IMAGE_TYPES = 'image/png,image/jpeg,image/webp';
-
-/**
- * A text field the person edits, seeded from a value the server owns.
- *
- * The roster changes under this panel — a successful save refetches it, and so
- * does anything else that renames this person — so a draft has to give way once
- * the stored value itself moves, or the form shows a stale edit of a value that
- * has already changed. Per field rather than per panel: saving your name must
- * not throw away a handle you were half-way through typing.
- *
- * Adjusted during render rather than in an effect, which is React's own
- * prescription for this ("adjusting state when a prop changes") and avoids the
- * extra render pass an effect would add on every roster refetch.
- */
-function useServerSeededDraft(serverValue: string): [string, (next: string) => void] {
-  const [draft, setDraft] = useState(serverValue);
-  const [seed, setSeed] = useState(serverValue);
-  if (seed !== serverValue) {
-    setSeed(serverValue);
-    setDraft(serverValue);
-  }
-  return [draft, setDraft];
-}
 
 /**
  * One line under a field, saying what just happened to it.
@@ -169,7 +148,10 @@ export function ProfilePhotoField({ member }: ProfileFieldProps) {
 
 /** Your display name: what DorkOS calls you. */
 export function ProfileNameField({ member }: ProfileFieldProps) {
-  const updateName = useUpdateProfileName();
+  // The refusal is drawn under the field, so the toast stays out of it — but
+  // only while the field is on screen to draw it.
+  const mounted = useMountedRef();
+  const updateName = useUpdateProfileName({ isShownInline: () => mounted.current });
 
   // `You` is what the roster falls back to when this install knows no other
   // name — nobody chose it. Seeding the field with it would present a
@@ -234,7 +216,8 @@ export function ProfileNameField({ member }: ProfileFieldProps) {
 
 /** Your `@handle`: what people and agents type to reach you. */
 export function ProfileHandleField({ member }: ProfileFieldProps) {
-  const setHandle = useSetAuthorHandle();
+  const mounted = useMountedRef();
+  const setHandle = useSetAuthorHandle({ isShownInline: () => mounted.current });
   const [handle, setHandleText] = useServerSeededDraft(member.handle ?? '');
   const handleChanged = handle.trim() !== (member.handle ?? '');
 

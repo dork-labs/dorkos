@@ -9,7 +9,7 @@ import type { SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { OpenCodeDirectSetup } from '@dorkos/shared/runtime-connect';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import { RuntimeSetupDialog } from '@/layers/entities/runtime';
 import { renderRuntimeConnect } from '../ui/RuntimeConnectFlow';
 import { OpenCodeProviderPicker } from '../ui/OpenCodeProviderPicker';
@@ -44,8 +44,6 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
-  // Restore the standalone-web platform between tests (some flip to embedded).
-  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
 });
 
 function renderPicker(overrides: Partial<Parameters<typeof createMockTransport>[0]> = {}) {
@@ -288,16 +286,6 @@ describe('OpenCodeProviderPicker — Gateway (OpenRouter, spec §5)', () => {
     expect(await screen.findByText('Connected to OpenRouter')).toBeInTheDocument();
     // The dead model dropdown is gone — no runtime-side model discovery here.
     expect(screen.queryByLabelText('Model')).not.toBeInTheDocument();
-  });
-
-  it('degrades to paste-key only in the Obsidian embedding (OAuth is browser-only)', async () => {
-    setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-    const user = userEvent.setup();
-    renderPicker();
-
-    await user.click(screen.getByTestId('power-source-cloud'));
-    expect(screen.queryByRole('button', { name: 'Connect OpenRouter' })).not.toBeInTheDocument();
-    expect(await screen.findByLabelText('OpenRouter key')).toBeInTheDocument();
   });
 });
 

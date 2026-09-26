@@ -1,7 +1,6 @@
 /**
  * @vitest-environment node
  */
-import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { neon } from '@neondatabase/serverless';
@@ -13,7 +12,6 @@ import { memoryAdapter } from 'better-auth/adapters/memory';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { drizzle as drizzleHttp } from 'drizzle-orm/neon-http';
-import { migrate } from 'drizzle-orm/pglite/migrator';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { Auth } from '@/lib/auth';
@@ -92,14 +90,13 @@ import { POST as executeOperation } from '../executions/route';
 import { GET as listUsage } from '../usage/route';
 import { GET as getToolkitVersion } from '../toolkits/[toolkit]/version/route';
 import { GET as getOperationSchemas } from '../toolkits/[toolkit]/operations/route';
+import { migrateCurrentSchema } from '@/db/__tests__/migrate-current-schema';
 
 // The shared PGlite this file boots in `beforeAll` runs every managed-connector
 // migration, so both budgets are real here: measured at 6.3s of vitest's 10s
 // hook default at a load average of 271 and peaking at 13.42s across three
 // rounds at 300-405 — the 5-15s band, so 30s (DOR-1886).
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
-
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../../drizzle/', import.meta.url));
 
 function bearerRequest(key: string, path = '/connections', body?: unknown): Request {
   const url = new URL(`/api/instances/connectors${path}`, 'https://dorkos.test');
@@ -138,7 +135,7 @@ describe('mounted managed connection isolation', () => {
         return typeof value === 'function' ? value.bind(target) : value;
       },
     });
-    await migrate(database, { migrationsFolder: MIGRATIONS_DIR });
+    await migrateCurrentSchema(database);
     state.authMemory = {
       user: [],
       session: [],

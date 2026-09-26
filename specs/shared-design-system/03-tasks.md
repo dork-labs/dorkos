@@ -4,7 +4,7 @@ Generated: 2026-09-23T20:14:23Z
 Mode: full  
 Source: `specs/shared-design-system/02-specification.md`
 
-The JSON file is canonical. These tasks cover the frozen first slice; publication and private registry adoption remain gated.
+The JSON file is canonical. These tasks cover the frozen first slice; the authorized release is published and registry-based adoption is delivered. All 14 tasks are complete.
 
 ## Phase 1: Public foundations
 
@@ -142,4 +142,4 @@ Acceptance: private manifest and lockfile identify an actual published version, 
 
 Foundations (1.1 → 1.2 → 1.3) enable the client form, Community form, catalog and private preparation. The catalog and client facade enable showcase migration. Public and private proof plus documentation converge at integrated review (3.4). Publication (4.1) requires explicit human authorization; private version pin and delivery (4.2) requires the published release.
 
-The first slice is not delivered by the prepared private patch or by the public package alone. Tasks 4.1–4.2 stay pending until the release gate is satisfied.
+The first slice is not delivered by the prepared private patch or by the public package alone. Task 4.1 is complete: the authorized 0.1.0 release is published and verified from the registry. Task 4.2 is complete: the independently released consumer pins the published version, passed verification and review, and completed its delivery gate.

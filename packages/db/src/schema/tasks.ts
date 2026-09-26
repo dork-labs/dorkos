@@ -26,9 +26,26 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   /**
    * A person's own timezone for a package's schedule, beside
    * {@link cronOverride} and for the same reason. NULL means "the file's
-   * timezone". Not part of the approval key, exactly as `timezone` is not.
+   * timezone". Part of the approval key when set, as the timezone that runs
+   * (DOR-2307).
    */
   timezoneOverride: text('timezone_override'),
+  /**
+   * Whether an installed package owns this schedule's file, as discovery last
+   * found it (DOR-2272). `record`: the install's installed-files record lists
+   * the file, so the package's next update puts its own copy back. `legacy`:
+   * the install predates records, and the location-and-marker answer claimed
+   * it. `unknown`: the row existed before this column (migration 0109), so it
+   * may have been a package's; the first sync treats it like one it is
+   * releasing. NULL: the file is the person's.
+   *
+   * A cache, like every column here, rewritten by every discovery sync. It is
+   * kept on the row for two readers: the sync itself, which has to see the
+   * moment a file STOPS being a package's (the person's switch, held on the row
+   * while the file was unwritable, is then written into the file), and the
+   * app, which shows ownership before a person tries an edit.
+   */
+  packageOwned: text('package_owned', { enum: ['record', 'legacy', 'unknown'] }),
   prompt: text('prompt').notNull(),
   agentId: text('agent_id'),
   /**
@@ -68,7 +85,7 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   reasonSource: text('reason_source', { enum: ['dorkos'] }),
   /**
    * The schedule content a person has actually approved, as a content key
-   * (prompt + cron; `scheduleContentKey` in `schedule-permission-clamp.ts`).
+   * (prompt, timing and settings since DOR-2323; `scheduleContentKey` in `schedule-permission-clamp.ts`).
    *
    * This is the arm grant, and it is POSITIVE on purpose. It used to be inferred
    * from `status`, and that inference sprang a leak every time some other writer
@@ -82,6 +99,15 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
    * moment its content drifts.
    */
   approvedContentKey: text('approved_content_key'),
+  /**
+   * The approval a park last withdrew, kept so the approval card can say what
+   * changed since (DOR-2323): old and new model, runtime, timing and so on.
+   *
+   * Written only when a park takes `approved_content_key` away, and cleared
+   * whenever an approval is recorded. Never read by any gate: it is a record of
+   * what was approved, not an approval.
+   */
+  previousApprovalKey: text('previous_approval_key'),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   /**
    * Whether every fire of this schedule RESUMES one persistent session instead

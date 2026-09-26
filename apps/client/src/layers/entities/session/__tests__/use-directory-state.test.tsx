@@ -4,17 +4,9 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
-// Mock platform
-let mockIsEmbedded = false;
-vi.mock('@/layers/shared/lib/platform', () => ({
-  getPlatform: () => ({ isEmbedded: mockIsEmbedded }),
-}));
-
-// Mock app store
 let mockStoreDir: string | null = null;
-const mockSetStoreDir = vi.fn((dir: string | null) => {
-  mockStoreDir = dir;
-});
+const mockSetStoreDir = vi.fn();
+
 vi.mock('@/layers/shared/model/app-store', () => ({
   useAppStore: (selector?: (s: Record<string, unknown>) => unknown) => {
     const state = {
@@ -89,7 +81,6 @@ import { useDirectoryState } from '../model/navigation/use-directory-state';
 describe('useDirectoryState', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockIsEmbedded = false;
     mockStoreDir = null;
     mockSearchDir = undefined;
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -101,13 +92,6 @@ describe('useDirectoryState', () => {
     mockSearchDir = '/test/path';
     const { result } = renderHook(() => useDirectoryState());
     expect(result.current[0]).toBe('/test/path');
-  });
-
-  it('returns Zustand state in embedded mode', () => {
-    mockIsEmbedded = true;
-    mockStoreDir = '/embedded/path';
-    const { result } = renderHook(() => useDirectoryState());
-    expect(result.current[0]).toBe('/embedded/path');
   });
 
   it('setter calls navigate and updates Zustand in standalone', async () => {
@@ -335,30 +319,5 @@ describe('useDirectoryState', () => {
 
     expect(onOpened).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalled();
-  });
-
-  it('reports that the agent opened, on the embedded path too', () => {
-    // Obsidian has no router, so this branch never awaits anything — and it is
-    // the branch a web-only test would silently skip.
-    mockIsEmbedded = true;
-    const onOpened = vi.fn();
-    const { result } = renderHook(() => useDirectoryState());
-
-    act(() => {
-      result.current[1]('/embedded/path', { onOpened });
-    });
-
-    expect(onOpened).toHaveBeenCalledTimes(1);
-    expect(mockSetStoreDir).toHaveBeenCalledWith('/embedded/path');
-  });
-
-  it('preserveSession: true skips session clearing in embedded', () => {
-    mockIsEmbedded = true;
-    const { result } = renderHook(() => useDirectoryState());
-    act(() => {
-      result.current[1]('/new/path', { preserveSession: true });
-    });
-    expect(mockSetStoreDir).toHaveBeenCalledWith('/new/path');
-    expect(mockSetSessionId).not.toHaveBeenCalled();
   });
 });

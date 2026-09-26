@@ -5,8 +5,6 @@ import {
   useSessionConnectorConnections,
 } from '../model/use-connector-resources';
 import { Badge, Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
-import { getPlatform } from '@/layers/shared/lib';
-import { EmbeddedConnectionsNotice } from './EmbeddedConnectionsNotice';
 
 const SESSION_ACCESS_COPY = {
   inherited: 'Inherited from agent',
@@ -43,9 +41,6 @@ export function AgentConnectionAccessList({
 
   if (query.isPending) return <Skeleton className="h-24 w-full rounded-lg" />;
   if (query.isError) {
-    if (getPlatform().isEmbedded) {
-      return <EmbeddedConnectionsNotice title="Account access is unavailable here" />;
-    }
     return (
       <QueryErrorState
         title="Couldn’t load account access"

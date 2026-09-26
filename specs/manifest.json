@@ -2,11 +2,69 @@
   "version": 1,
   "specs": [
     {
+      "id": "260925-225543",
+      "slug": "disconnected-account-removal",
+      "title": "Remove disconnected accounts",
+      "created": "2026-09-12",
+      "status": "implemented",
+      "project": "DorkOS Connections",
+      "linearIssue": "DOR-1994"
+    },
+    {
+      "id": "260925-192121",
+      "slug": "obsidian-retirement",
+      "title": "Retire the Obsidian plugin",
+      "created": "2026-09-25",
+      "status": "specified",
+      "linearIssue": "DOR-2343"
+    },
+    {
+      "id": "260924-175336",
+      "slug": "marketplace-install-verification",
+      "title": "Say whether an installed package still matches what was installed",
+      "created": "2026-09-24",
+      "status": "implemented",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2197"
+    },
+    {
+      "id": "260925-004621",
+      "slug": "agent-template-creation",
+      "title": "Creating an agent from a template or a marketplace package runs the package checks",
+      "created": "2026-09-25",
+      "status": "specified",
+      "project": "Marketplace Package Management"
+    },
+    {
+      "id": "260924-212851",
+      "slug": "agent-workspace-config",
+      "title": "An agent package can't ship its sessions' harness configuration",
+      "created": "2026-09-24",
+      "status": "specified",
+      "project": "Marketplace Package Management"
+    },
+    {
+      "id": "260924-130508",
+      "slug": "shared-ui-broader-adoption",
+      "title": "Shared UI: broader primitive adoption and maintenance",
+      "created": "2026-09-24",
+      "status": "implemented"
+    },
+    {
+      "id": "260924-114458",
+      "slug": "marketplace-update-disclosure-binding",
+      "title": "Updates and global plugins run only what a person approved",
+      "created": "2026-09-24",
+      "status": "specified",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2306"
+    },
+    {
       "id": "260923-144507",
       "slug": "shared-design-system",
       "title": "One design system across DorkOS surfaces",
       "created": "2026-09-23",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260923-223844",
@@ -67,6 +125,15 @@
       "status": "implemented",
       "project": "Marketplace Package Management",
       "linearIssue": "DOR-2194"
+    },
+    {
+      "id": "260923-163619",
+      "slug": "marketplace-package-file-ownership",
+      "title": "Keep a package's settings when it is updated or reinstalled",
+      "created": "2026-09-23",
+      "status": "implemented",
+      "project": "Marketplace Package Management",
+      "linearIssue": "DOR-2245"
     },
     {
       "id": "260923-122229",
@@ -278,7 +345,7 @@
       "slug": "marketplace-agent-schedules",
       "title": "A durable home for schedules a person makes for a marketplace agent",
       "created": "2026-09-06",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260906-164422",
@@ -730,7 +797,7 @@
       "slug": "handles",
       "title": "Handles — one addressable name for every author in a room",
       "created": "2026-07-28",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260728-213721",
@@ -3238,6 +3305,24 @@
       "status": "specified",
       "project": "Cloud-Hosted Communities",
       "linearIssue": "DOR-2283"
+    },
+    {
+      "id": "260926-141330",
+      "slug": "claude-account-fleet",
+      "title": "Claude account fleet: per-account usage, limits, and launching work on a chosen account",
+      "created": "2026-09-26",
+      "status": "specified",
+      "project": "Flow CLI & Account Fleet",
+      "linearIssue": "DOR-2379"
+    },
+    {
+      "id": "260926-152113",
+      "slug": "claude-account-ui",
+      "title": "Claude account UI: see which account a session spends, and move work off a spent one",
+      "created": "2026-09-26",
+      "status": "specified",
+      "project": "Flow CLI & Account Fleet",
+      "linearIssue": "DOR-2387"
     }
   ]
 }

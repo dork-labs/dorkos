@@ -552,6 +552,45 @@ export const roomMembers = sqliteTable(
 );
 
 /**
+ * The channel seats an unregistered agent held, kept so they can be given back
+ * if that same agent is registered again (DOR-2095).
+ *
+ * Unregistering takes an agent off every channel roster, because a roster is
+ * live state. But the reconciler also unregisters an agent whose folder has been
+ * unreachable for 24 hours — an external drive away for a weekend — and that
+ * agent comes back with the same manifest. Its seats are written here in the
+ * same transaction that removes them, and replayed when an agent with the same
+ * `manifest_id` is registered at the author's directory again.
+ *
+ * One row per `(room, author)`: the membership row as it stood, plus whether the
+ * author held the room's fallback seat. `manifest_id` is the identity a replay
+ * must match — a different agent at the same folder inherits nothing — and is
+ * `null` when the seat was taken by the repair sweep from an author that never
+ * carried a stamp, which can never be proven to be the same agent and so never
+ * replays.
+ */
+export const roomDepartedSeats = sqliteTable(
+  'room_departed_seats',
+  {
+    roomId: text('room_id').notNull(),
+    authorId: text('author_id').notNull(),
+    /** The manifest ULID of the agent that held the seat, or `null` when unknown. */
+    manifestId: text('manifest_id'),
+    responseMode: text('response_mode').notNull(),
+    joinedAt: text('joined_at').notNull(),
+    joinedSeq: integer('joined_seq').notNull().default(0),
+    lastReadSeq: integer('last_read_seq').notNull().default(0),
+    /** `1` when the author held the room's fallback seat when it left. */
+    heldFallbackSeat: integer('held_fallback_seat', { mode: 'boolean' }).notNull().default(false),
+    departedAt: text('departed_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.authorId] }),
+    index('idx_room_departed_seats_author').on(table.authorId),
+  ]
+);
+
+/**
  * The durable, append-only room log.
  *
  * **There is no trim.** Unlike the in-memory `EventLog` (capped at 5000, oldest

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { transaction } from '../data.js';
 import { ApiError } from '../http.js';
+import { isReadOnlyLifecycle } from '../tenant-context.js';
 import type { BlobStore, StoredBlob } from './blob-store.js';
 
 /** Maximum time an attachment or export writer owns an active reservation. */
@@ -34,7 +35,8 @@ export async function reserveManagedBlob(
   const allowArchived = purpose === 'export' && options.allowArchived === true;
   if (
     !community ||
-    (community.lifecycle !== 'active' && !(allowArchived && community.lifecycle === 'archived'))
+    (community.lifecycle !== 'active' &&
+      !(allowArchived && isReadOnlyLifecycle(community.lifecycle)))
   ) {
     throw new ApiError(409, 'STATE_CONFLICT', 'This community is not accepting new files.');
   }
@@ -68,7 +70,7 @@ export async function prepareManagedBlobCommit(
   if (
     !community ||
     (community.lifecycle !== 'active' &&
-      !(reservation.allowArchived && community.lifecycle === 'archived')) ||
+      !(reservation.allowArchived && isReadOnlyLifecycle(community.lifecycle))) ||
     community.lifecycle_version !== reservation.lifecycleVersion
   ) {
     throw new ApiError(
@@ -202,7 +204,8 @@ export async function discardManagedBlob(
       `DELETE FROM managed_blobs m
        WHERE m.blob_key=$1 AND m.community_id=$2 AND m.state='pending_delete'
          AND NOT EXISTS(SELECT 1 FROM attachments a WHERE a.blob_key=m.blob_key)
-         AND NOT EXISTS(SELECT 1 FROM export_archives e WHERE e.blob_key=m.blob_key)`,
+         AND NOT EXISTS(SELECT 1 FROM export_archives e WHERE e.blob_key=m.blob_key)
+         AND NOT EXISTS(SELECT 1 FROM export_segments s WHERE s.blob_key=m.blob_key)`,
       [reservation.key, reservation.communityId]
     );
     await client.query('DELETE FROM pending_blob_deletions WHERE blob_key=$1', [reservation.key]);

@@ -308,6 +308,22 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     category: 'Mesh',
     keywords: ['mesh', 'discovery', 'project', 'import', 'failed', 'retry', 'candidate'],
   },
+  {
+    id: 'templatereviewnotice',
+    title: 'TemplateReviewNotice',
+    page: 'features',
+    category: 'Mesh',
+    keywords: [
+      'agent',
+      'create',
+      'template',
+      'hooks',
+      'settings',
+      'skills',
+      'review',
+      'disclosure',
+    ],
+  },
   // TasksShowcases
   {
     id: 'tasktemplatecard',

@@ -172,7 +172,9 @@ p {
   font-size: 0.83rem;
   font-weight: 700;
 }
-.field input,
+/* Not a visually hidden input (a file picker inside a button): this rule's width and padding
+   would outrank .sr-only and stretch it across the page, off screen but still scrollable. */
+.field input:not(.sr-only),
 .field textarea,
 .field select {
   width: 100%;
@@ -371,6 +373,36 @@ p {
   overflow-wrap: anywhere;
   margin: 0.25rem 0;
 }
+/* A message whose content is gone keeps its place; the sentence says why, quietly. */
+.entry-text.tombstone {
+  color: var(--muted);
+  font-style: italic;
+}
+/* The actions menu sits at the end of the author line without making the line taller. */
+.entry-meta .entry-actions {
+  margin: -0.5rem -0.35rem -0.5rem auto;
+}
+.removal-trigger {
+  min-height: 32px;
+  min-width: 32px;
+  padding: 0.3rem;
+  color: var(--muted);
+}
+.removal-trigger:hover:not(:disabled),
+.removal-trigger[data-state='open'] {
+  color: var(--ink);
+}
+/* A file's download button and its actions menu read as one chip. */
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  max-width: 100%;
+}
+.file-chip > .button:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .composer {
   padding: 1rem max(1.2rem, calc((100% - 850px) / 2));
   border-top: 1px solid var(--line);
@@ -534,7 +566,7 @@ p {
     min-height: 44px;
     min-width: 44px;
   }
-  .field input,
+  .field input:not(.sr-only),
   .field textarea,
   .field select {
     min-height: 44px;
@@ -575,4 +607,36 @@ p {
     z-index: 19;
     border: 0;
   }
+}
+.export-panel {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: start;
+}
+.export-panel > p,
+.export-progress,
+.export-ready {
+  margin: 0;
+  width: 100%;
+}
+.export-progress,
+.export-ready {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+}
+.export-progress progress {
+  width: 100%;
+  height: 0.6rem;
+  accent-color: var(--accent);
+}
+.export-ready .button {
+  /* A narrow settings column wraps the size under the label rather than pushing the button
+     past its panel; each word group stays whole. */
+  flex-wrap: wrap;
+  max-width: 100%;
+  row-gap: 0.1rem;
+}
+.export-ready .button > span {
+  white-space: nowrap;
 }

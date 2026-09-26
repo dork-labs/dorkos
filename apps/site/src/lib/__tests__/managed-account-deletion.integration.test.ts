@@ -1,11 +1,9 @@
 /**
  * @vitest-environment node
  */
-import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { migrate } from 'drizzle-orm/pglite/migrator';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { toNextJsHandler } from 'better-auth/next-js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,9 +22,9 @@ import * as schema from '@/db/schema';
 import { createAuth } from '../auth';
 import * as mailer from '../mailer';
 import { revokeInstance } from '../instance-service';
+import { migrateCurrentSchema } from '@/db/__tests__/migrate-current-schema';
 
 const ORIGIN = 'http://localhost:3000';
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../../drizzle/', import.meta.url));
 
 type GraphKind = 'without_events' | 'discovery_only' | 'full_graph';
 
@@ -272,7 +270,7 @@ describe('managed event account deletion', () => {
       const client = new PGlite();
       try {
         const db = drizzle(client, { schema });
-        await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+        await migrateCurrentSchema(db);
         const auth = createAuth(drizzleAdapter(db, { provider: 'pg', schema }));
         const handlers = toNextJsHandler(auth);
         const owner = await createSignedInOwner(client, handlers, kind);
@@ -350,7 +348,7 @@ describe('managed event account deletion', () => {
     const client = new PGlite();
     try {
       const db = drizzle(client, { schema });
-      await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+      await migrateCurrentSchema(db);
       await client.query(
         `INSERT INTO "user"(id, name, email, email_verified)
          VALUES ('owner-a', 'Owner A', 'owner-a@dork.test', true),

@@ -76,9 +76,6 @@ export interface UnattendedAutonomyBannerProps {
  * @param drivers - Every live driver currently running at full power.
  */
 export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerProps) {
-  // `null` in the Obsidian embed, which has no router — and no bindings or tasks
-  // either, so this component never renders there. The actions simply drop out
-  // rather than offering a control that would throw on click.
   const navigate = useSafeNavigate();
   // The Connections half used to navigate to `?relay=open`, a search param
   // nothing has read since Messaging became a page — so the button was inert

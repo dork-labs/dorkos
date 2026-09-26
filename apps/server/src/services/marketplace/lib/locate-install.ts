@@ -20,7 +20,11 @@
  */
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { PackageType } from '@dorkos/marketplace';
+import {
+  CLAUDE_PLUGIN_MANIFEST_PATH,
+  PACKAGE_MANIFEST_PATH,
+  type PackageType,
+} from '@dorkos/marketplace';
 import { installRootsUnder, projectScopeRoot } from './install-roots.js';
 
 /** Identifies a package to look for on disk. */
@@ -83,29 +87,45 @@ export function installRootCandidates(input: LocateInstallInput): InstallRootCan
 }
 
 /**
- * Find where a package of this name is installed, or `null` when none of the
- * candidate roots exists.
+ * Whether `root` holds an installed package: a regular file at
+ * `.dork/manifest.json` or `.claude-plugin/plugin.json`, the identity Harness
+ * Sync and the installed scanner already require.
  *
- * @param input - The package to look for and the scopes to look under.
- * @returns The first existing install root in probe order, or `null`.
+ * A root an uninstall left behind (the files a person added, plus a pruned
+ * installed-files record) has neither, so it is not an installed package
+ * anywhere (DOR-2245). A linked install (the root is a symlink to a working
+ * copy, DOR-2194) is followed: its identity is in the linked tree.
+ *
+ * @param root - A candidate install root.
+ * @returns `true` when the root holds a package manifest.
  */
-export async function locateInstallRoot(input: LocateInstallInput): Promise<string | null> {
-  for (const candidate of installRootCandidates(input)) {
-    if (await pathExists(candidate.installRoot)) return candidate.installRoot;
+export async function hasPackageIdentity(root: string): Promise<boolean> {
+  for (const rel of [PACKAGE_MANIFEST_PATH, CLAUDE_PLUGIN_MANIFEST_PATH]) {
+    try {
+      if ((await stat(path.join(root, ...rel.split('/')))).isFile()) return true;
+    } catch {
+      // Absent: try the other manifest.
+    }
   }
-  return null;
+  return false;
 }
 
 /**
- * Returns true when `target` exists on disk (file or directory).
+ * Find where a package of this name is installed, or `null` when no candidate
+ * root holds one.
  *
- * @internal
+ * A candidate that exists but has no package identity ({@link hasPackageIdentity})
+ * is skipped: it holds only files an uninstall kept. The probe order is
+ * unchanged, so a kept project root is treated exactly as if that project never
+ * installed the package, and a project-scoped lookup then reaches the global
+ * install: the same precedence a package installed only globally has always had.
+ *
+ * @param input - The package to look for and the scopes to look under.
+ * @returns The first install root in probe order that holds a package, or `null`.
  */
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await stat(target);
-    return true;
-  } catch {
-    return false;
+export async function locateInstallRoot(input: LocateInstallInput): Promise<string | null> {
+  for (const candidate of installRootCandidates(input)) {
+    if (await hasPackageIdentity(candidate.installRoot)) return candidate.installRoot;
   }
+  return null;
 }

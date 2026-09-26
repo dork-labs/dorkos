@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, Download, KeyRound, Plus, Shield, Trash2, Unplug, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, Plus, Trash2, Unplug, UserPlus } from 'lucide-react';
 import { describeError, download, request } from '../api.js';
 import { describeInstallAccess, describeReauthenticationError } from '../account-controls.js';
 import { SignOutButton } from './SignOut.js';
+import { HostLinksPanel } from './HostLinks.js';
+import { CommunityAddress } from './CommunityAddress.js';
+import { SignInMethodsPanel } from './SignInMethods.js';
 import { CommunityAdministration } from './CommunityAdministration.js';
+import { EraseMembershipPanel } from './Erasure.js';
+import { ExportPanel } from './ExportPanel.js';
 import type { Agent, Channel, Member } from '../types.js';
 import type { CommunitySettingsSection } from '@dorkos/shared/community-wire';
 
@@ -26,6 +31,8 @@ type Grant = {
 type Props = {
   communityId: string;
   communityName: string;
+  /** The full address members open this community at: its short one when it has one. */
+  communityAddress: string;
   me: Member;
   channels: Channel[];
   selectedChannel: Channel | null;
@@ -35,6 +42,8 @@ type Props = {
   /** This browser's session ended; memberships and installations are untouched. */
   onSignedOut: () => void;
   readOnly?: boolean;
+  /** Read-only because the host holds the community, not because its owner archived it. */
+  held?: boolean;
   /** The section a settings link asked for; ignored when this role or state cannot see it. */
   initialSection?: CommunitySettingsSection | null;
 };
@@ -42,6 +51,7 @@ type Props = {
 export function Manage({
   communityId,
   communityName,
+  communityAddress,
   me,
   channels,
   selectedChannel,
@@ -50,6 +60,7 @@ export function Manage({
   onLeft,
   onSignedOut,
   readOnly = false,
+  held = false,
   initialSection = null,
 }: Props) {
   const moderator = me.role === 'owner' || me.role === 'admin';
@@ -168,7 +179,7 @@ export function Manage({
       await refresh(current.role === 'owner' || current.role === 'admin');
       onChanged();
     } catch (cause) {
-      // Transfer and the community export confirm a password; nothing else here can answer
+      // Transfer confirms a password; nothing else here can answer
       // REAUTH_FAILED or RATE_LIMITED.
       setError(describeReauthenticationError(cause, 'Nothing changed.'));
     } finally {
@@ -214,19 +225,6 @@ export function Manage({
     } catch (cause) {
       setError(describeError(cause));
     }
-  }
-  async function exportArchive(owner: boolean) {
-    await perform(async () => {
-      const body = await request<{ archiveId: string }>(
-        owner ? '/api/v1/owner/export' : '/api/v1/me/export',
-        'POST',
-        owner ? { password } : {}
-      );
-      await download(
-        `/api/v1/exports/${body.archiveId}`,
-        owner ? 'community-export.zip' : 'my-community-data.zip'
-      );
-    }, 'Your export is ready.');
   }
   async function leave() {
     if (
@@ -288,11 +286,13 @@ export function Manage({
     <div className="content-scroll">
       <main className="settings">
         <p className="eyebrow">Community settings</p>
-        <h2>{readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
+        <h2>{held ? 'On hold' : readOnly ? 'Archived history' : 'Make room for your people.'}</h2>
         <p className="muted">
-          {readOnly
-            ? 'History and exports remain available. Restore this community before changing content or access.'
-            : 'Manage channels and access without leaving the conversation.'}
+          {held
+            ? 'The host has put this community on hold. History stays readable and the owner can still export it. Nothing can change until the host releases the hold.'
+            : readOnly
+              ? 'History and exports remain available. Restore this community before changing content or access.'
+              : 'Manage channels and access without leaving the conversation.'}
         </p>
         <nav className="row mb-6" aria-label="Settings sections">
           {sections.map((item) => (
@@ -330,6 +330,7 @@ export function Manage({
         )}
         {!readOnly && tab === 'community' && (
           <div className="settings-grid">
+            <CommunityAddress address={communityAddress} />
             {moderator && (
               <>
                 <section className="panel">
@@ -793,6 +794,8 @@ export function Manage({
               </p>
               <SignOutButton onSignedOut={onSignedOut} />
             </section>
+            <SignInMethodsPanel communityId={communityId} />
+            <HostLinksPanel communityId={communityId} />
             <section className="panel" aria-labelledby="installations-title">
               <h3 id="installations-title" ref={installationsHeading} tabIndex={-1}>
                 Connected installations
@@ -874,12 +877,7 @@ export function Manage({
             </section>
             <section className="panel">
               <h3>Your data</h3>
-              <p className="small muted">
-                Download a copy of your account, posts, agent activity, and files.
-              </p>
-              <button className="button" disabled={busy} onClick={() => void exportArchive(false)}>
-                <Download size={16} /> Export my data
-              </button>
+              <ExportPanel scope="personal" idPrefix="personal-export" />
               {me.role === 'owner' && (
                 <>
                   <hr className="divider" />
@@ -887,23 +885,7 @@ export function Manage({
                   <p className="small muted">
                     Includes the whole community. Confirm your password.
                   </p>
-                  <div className="field">
-                    <label htmlFor="export-password">Password</label>
-                    <input
-                      id="export-password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                    />
-                  </div>
-                  <button
-                    className="button"
-                    disabled={!password || busy}
-                    onClick={() => void exportArchive(true)}
-                  >
-                    <Shield size={16} /> Export community
-                  </button>
+                  <ExportPanel scope="owner" idPrefix="owner-export" />
                 </>
               )}
             </section>
@@ -920,7 +902,8 @@ export function Manage({
                     </p>
                     <p className="small muted" id="leave-scope-stays">
                       <strong>Stays:</strong> your account, your other communities, this
-                      browser&rsquo;s sign-in, and your past messages.
+                      browser&rsquo;s sign-in, and your past messages. To remove your messages too,
+                      erase them here instead.
                     </p>
                     <div className="field">
                       <label htmlFor="leave-community-name">Enter {communityName}</label>
@@ -1003,6 +986,11 @@ export function Manage({
                 )}
               </section>
             )}
+            <EraseMembershipPanel
+              communityId={communityId}
+              communityName={communityName}
+              owner={me.role === 'owner'}
+            />
           </div>
         )}
       </main>

@@ -28,11 +28,13 @@ function mutationWithMeta(
  * (error, variables, onMutateResult, mutation, context).
  *
  * @param meta - The mutation's `meta`, or undefined when it declared none.
+ * @param code - The error's `code`, as the transport attaches a server refusal's.
  */
-function fireMutationError(meta: Record<string, unknown> | undefined): void {
+function fireMutationError(meta: Record<string, unknown> | undefined, code?: string): void {
   const handler = queryClient.getMutationCache().config.onError;
+  const error = Object.assign(new Error('boom'), code === undefined ? {} : { code });
   void handler?.(
-    new Error('boom'),
+    error,
     undefined,
     undefined,
     mutationWithMeta(meta),
@@ -84,6 +86,28 @@ describe('mutation error toast policy', () => {
     fireMutationError({ suppressErrorToast: true });
 
     expect(console.error).toHaveBeenCalledWith('[dorkos:mutation-error]', { error: 'boom' });
+  });
+
+  it('stays silent for a failure the surface says it is showing (isShownInline)', () => {
+    // Purpose: the schedule edit form shows `schedule_package_owned` inline with
+    // a way out (DOR-2272); the generic toast beside it would say it twice.
+    const isShownInline = (error: Error) =>
+      (error as { code?: string }).code === 'schedule_package_owned';
+    fireMutationError({ isShownInline }, 'schedule_package_owned');
+
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('still toasts every failure the surface is not showing', () => {
+    // Purpose: opting one refusal out must not silence any other failure of
+    // the same mutation, nor that refusal once the surface has gone.
+    const isShownInline = (error: Error) =>
+      (error as { code?: string }).code === 'schedule_package_owned';
+    fireMutationError({ isShownInline }, 'something_else');
+    fireMutationError({ isShownInline });
+    fireMutationError({ isShownInline: () => false }, 'schedule_package_owned');
+
+    expect(toast.error).toHaveBeenCalledTimes(3);
   });
 
   it('shows the toast when meta exists but does not opt out', () => {

@@ -34,7 +34,6 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Complex client state       | Zustand                                           | Sidebar open/closed, active panel                                    | Global access, no prop drilling, middleware support                                    |
 | Simple UI state            | React useState                                    | Modal open/close, toggle visibility                                  | Scoped to component, no persistence needed                                             |
 | URL state (standalone)     | TanStack Router search params                     | `?session=` ID, `?dir=` working directory                            | Shareable links, browser history, bookmarkable                                         |
-| URL state (Obsidian)       | Zustand                                           | Session ID, working directory                                        | No URL bar in Obsidian; Zustand replaces router search params                          |
 | Persistent client state    | Zustand + `persist` middleware                    | What you opened and how often (`entities/interactions`)              | Survives page reloads; one store two features read, no second key beside it            |
 | Dialog-scoped state        | React useState                                    | Pages stack in CommandPaletteDialog                                  | Resets when dialog closes, no persistence needed                                       |
 | Debounced derived state    | useDeferredValue                                  | Preview panel data during rapid navigation                           | Defers expensive fetches without state management overhead                             |
@@ -64,7 +63,6 @@ The combined `AppState` type is the intersection of all four slices, defined in 
 Key state owned by the app store:
 
 - `sidebarOpen` — persisted to localStorage; defaults to open on desktop (`BOOL_DEFAULTS.sidebarOpen`), always `false` on mobile and the embedded overlay on first load
-- `sidebarActiveTab` — persisted; the active tab of the embedded shell's legacy sidebar strip (Obsidian only — the web cockpit has no sidebar tab strip)
 - Dialog open states (`settingsOpen`, `tasksOpen`, `relayOpen`, etc.) — transient, not persisted
 - Canvas panel state (`canvasOpen`, `canvasContent`, `canvasPreferredWidth`) — transient; controls the agent-driven canvas side panel visibility, content, and width
 - `selectedCwd` — writes to `recentCwds` in localStorage on change
@@ -169,7 +167,7 @@ export function useSessionId(): [string | null, (id: string | null) => void] {
 }
 ```
 
-In Obsidian embedded mode, the same hooks use Zustand instead of TanStack Router (no URL bar available). The `?dir=` parameter is omitted when using the server's default directory to keep URLs clean.
+The `?dir=` parameter is omitted when using the server's default directory to keep URLs clean.
 
 ### Persistent Client State with Zustand `persist`
 

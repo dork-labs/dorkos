@@ -21,12 +21,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
 const urlSearch: { dir?: string } = {};
-let embedded = false;
-
-vi.mock('@/layers/shared/lib', async () => {
-  const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/lib');
-  return { ...actual, getPlatform: () => ({ isEmbedded: embedded }) };
-});
 
 vi.mock('@/layers/shared/model', async () => {
   const actual = await vi.importActual<Record<string, unknown>>('@/layers/shared/model');
@@ -34,11 +28,10 @@ vi.mock('@/layers/shared/model', async () => {
 });
 
 import { useAppStore } from '@/layers/shared/model';
-import { useSessionScopedCwd, isSessionScopeReady } from '../use-session-scoped-cwd';
+import { useSessionScopedCwd } from '../use-session-scoped-cwd';
 
 beforeEach(() => {
   delete urlSearch.dir;
-  embedded = false;
   useAppStore.setState({ selectedCwd: null });
 });
 
@@ -48,13 +41,13 @@ describe('useSessionScopedCwd', () => {
 
     const { result } = renderHook(() => useSessionScopedCwd());
 
-    expect(result.current).toEqual({ cwd: '/projects/api', resolved: true });
+    expect(result.current).toEqual({ cwd: '/projects/api' });
   });
 
   it('stays null when the URL named none, even after the store fills with the default', () => {
     const { result } = renderHook(() => useSessionScopedCwd());
 
-    expect(result.current).toEqual({ cwd: null, resolved: true });
+    expect(result.current).toEqual({ cwd: null });
 
     // The startup fetch lands. Red when this hook reads `selectedCwd`: the
     // session's reads silently re-point at the server default, which is the
@@ -67,7 +60,7 @@ describe('useSessionScopedCwd', () => {
   });
 
   it('is answerable from the first render, so no query re-keys underneath itself', () => {
-    // Why the standalone answer is always `resolved`: it comes from the URL,
+    // The directory comes from the URL,
     // which is present before the first paint. A consumer that fires on it
     // fires exactly once — the double-fetch DOR-495 removed cannot come back
     // through this door.
@@ -78,34 +71,5 @@ describe('useSessionScopedCwd', () => {
     rerender();
 
     expect(result.current).toEqual(first);
-    expect(isSessionScopeReady('s1', result.current)).toBe(true);
-  });
-
-  describe('embedded (Obsidian), where there is no URL', () => {
-    beforeEach(() => {
-      embedded = true;
-    });
-
-    it('reads the store, and reports itself unsettled until the store answers', () => {
-      const { result } = renderHook(() => useSessionScopedCwd());
-
-      expect(result.current).toEqual({ cwd: null, resolved: false });
-      expect(isSessionScopeReady('s1', result.current)).toBe(false);
-
-      act(() => {
-        useAppStore.setState({ selectedCwd: '/vault/notes' });
-      });
-
-      expect(result.current).toEqual({ cwd: '/vault/notes', resolved: true });
-      expect(isSessionScopeReady('s1', result.current)).toBe(true);
-    });
-  });
-
-  it('is never ready without a session, whatever the directory says', () => {
-    urlSearch.dir = '/projects/api';
-
-    const { result } = renderHook(() => useSessionScopedCwd());
-
-    expect(isSessionScopeReady(null, result.current)).toBe(false);
   });
 });

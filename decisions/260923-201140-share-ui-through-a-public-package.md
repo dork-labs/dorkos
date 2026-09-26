@@ -1,7 +1,7 @@
 ---
 id: 260923-201140
 title: Share UI through a public package with namespaced styles
-status: proposed
+status: accepted
 created: 2026-09-23
 spec: shared-design-system
 extractedFrom: shared-design-system
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Proposed. Implementation is authorized; publication requires a separate release decision.
+Accepted. Implemented: `@dork-labs/ui` shipped an authorized release (0.2.0), verified in its consumers.
 
 ## Context
 

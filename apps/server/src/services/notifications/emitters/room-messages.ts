@@ -43,7 +43,9 @@ export interface RoomMessageNotifyInput {
   mentionsOperator: boolean;
   /**
    * Whether the operator has muted this room. Consulted only for
-   * `isDirectMessage` — `mentionsOperator` always notifies, mute or not.
+   * `isDirectMessage` — `mentionsOperator` always notifies, mute or not. The
+   * caller never sets both for one entry: inside a 1:1 DM it clears
+   * `mentionsOperator`, so a muted DM stays silent.
    */
   roomMuted: boolean;
 }
@@ -58,7 +60,7 @@ export interface RoomMessageNotifyInput {
  * @param input - What the entry is and what the rooms domain decided about it.
  */
 export function notifyRoomMessage(input: RoomMessageNotifyInput): void {
-  const preview = previewOf(input.text);
+  const preview = roomMessagePreview(input.text);
 
   if (input.isDirectMessage && !input.roomMuted) {
     void notify('dm.received', {
@@ -91,7 +93,7 @@ export function notifyRoomMessage(input: RoomMessageNotifyInput): void {
  *
  * @param text - The entry's raw body text.
  */
-function previewOf(text: string): string {
+export function roomMessagePreview(text: string): string {
   const firstLine =
     text
       .split('\n')

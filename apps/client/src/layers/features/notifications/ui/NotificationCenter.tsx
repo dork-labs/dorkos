@@ -22,11 +22,6 @@ import { armPermissionPrimer } from '../model/primer-trigger';
 /**
  * Knock, chime, notify, and arm the permission card. Renders nothing.
  *
- * Mounted by `AppShell` only, which is the standalone web and desktop cockpit.
- * The Obsidian embed renders `App` directly and never mounts this — correctly:
- * one pane inside somebody else's app should not be making noises or raising OS
- * banners.
- *
  * ## Why the all-clear chime lives HERE and not in the bell
  *
  * The Inbox popover has its own drain beat, and it fires only while the popover

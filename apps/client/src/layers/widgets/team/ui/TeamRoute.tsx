@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useSearch, useNavigate } from '@tanstack/react-router';
 import { Drawer, DrawerContent, PageHeading, QueryErrorState, Spinner } from '@/layers/shared/ui';
-import { useIsMobile } from '@/layers/shared/model';
+import { useIsMobile, usePendingRead } from '@/layers/shared/model';
 import { useProfileStore } from '@/layers/features/profile';
 import { useOpenConnections } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
@@ -57,7 +57,12 @@ function TeamRouteBody() {
   const isMobile = useIsMobile();
   const openConnections = useOpenConnections();
   const [, setDir] = useDirectoryState();
-  const { data: topology, isLoading, isError, refetch } = useTopology();
+  const { data: topology, isLoading: isFetchingTopology, isError, refetch } = useTopology();
+  // "The read has not settled" is not "the fleet is empty" (DOR-1914): without
+  // this the table and topology views swap the whole page for the invitation
+  // below while the boot cache restores. Why `isLoading` cannot answer that on
+  // its own is in `usePendingRead`.
+  const isLoading = usePendingRead(isFetchingTopology);
 
   // Every one of these reached us through `teamSearchSchema`, so the values are
   // already validated — but they typecheck as `unknown`, because

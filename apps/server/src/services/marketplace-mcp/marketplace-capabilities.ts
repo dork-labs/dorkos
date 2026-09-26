@@ -171,7 +171,10 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.list_marketplaces',
       title: 'List marketplace sources',
       description:
-        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, and total package count.',
+        'List configured marketplace sources. Each source includes name, source URL/path, enabled flag, ' +
+        'total package count, and lastFetch: how the latest fetch of its listing went (never | fetched | ' +
+        'failed | stale, with the reason). A packageCount of 0 with lastFetch failed means the listing ' +
+        "didn't load, not that the marketplace is empty.",
       tier: 'observe',
       area: null,
       areaNote: 'reading',
@@ -198,7 +201,8 @@ export const marketplaceDomain: CapabilityDomain = {
         'Filter by type (agent/plugin/skill-pack/adapter). Includes install path, version, and provenance. ' +
         'Pass checkUpdates:true to also get, per entry, update.status (update-available | current | unknown), ' +
         "update.latestVersion and a note. That checks each package's marketplace, so it is slower; " +
-        'without it nothing is fetched.',
+        'without it nothing is fetched. Pass verify:true to also get, per entry, integrity.status ' +
+        '(clean | modified | unknown) with the files that changed since install; that reads every shipped file.',
       tier: 'observe',
       area: null,
       areaNote: 'reading',
@@ -303,7 +307,9 @@ export const marketplaceDomain: CapabilityDomain = {
       title: 'Uninstall package',
       description:
         'Uninstall a previously installed marketplace package. Requires user confirmation. ' +
-        'By default, preserves .dork/data/ and .dork/secrets.json. Pass purge:true to remove them.',
+        'By default, keeps the files you and your agents added or changed; purge:true removes them. ' +
+        'Uninstalling an agent package removes the agent from the team (rooms, schedules, sign-ins, access), ' +
+        'and reinstalling does not restore that.',
       tier: 'destructive',
       area: 'packages',
       input: z.object(UninstallInputSchema),

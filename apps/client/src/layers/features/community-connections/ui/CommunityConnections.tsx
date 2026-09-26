@@ -6,17 +6,16 @@ import {
   useConfirmedCommunityAuthority,
 } from '@/layers/entities/community';
 import { useTransport } from '@/layers/shared/model';
-import { getPlatform, isCommunityAuthorityCurrent } from '@/layers/shared/lib';
+import { isCommunityAuthorityCurrent } from '@/layers/shared/lib';
 import { Button, Input, Label, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { CommunityConnectionRow } from './CommunityConnectionRow';
 
 /** Pair this installation with independently hosted communities through their browser approval. */
 export function CommunityConnections() {
-  const embedded = getPlatform().isEmbedded;
   const transport = useTransport();
   const client = useQueryClient();
-  const authority = useConfirmedCommunityAuthority(!embedded);
-  const list = useCommunityConnections(!embedded);
+  const authority = useConfirmedCommunityAuthority(true);
+  const list = useCommunityConnections(true);
   const authorityAddress = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
   const id = useId();
   const [url, setUrl] = useState('');
@@ -68,7 +67,6 @@ export function CommunityConnections() {
     setNoticeState({ address: authorityAddress, message: '' });
     start.mutate();
   }
-  if (embedded) return null;
 
   return (
     <section aria-labelledby={`${id}-title`} className="space-y-4">
@@ -88,13 +86,17 @@ export function CommunityConnections() {
               ref={addressInput}
               id={`${id}-url`}
               type="url"
-              placeholder="https://community.example.com"
+              placeholder="https://spaces.example.com/acme"
+              aria-describedby={`${id}-url-hint`}
               required
               autoComplete="url"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               disabled={start.isPending || !authority}
             />
+            <p id={`${id}-url-hint`} className="text-muted-foreground text-xs">
+              Its full link or its short address both work.
+            </p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={`${id}-name`}>Name for this installation</Label>

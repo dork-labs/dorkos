@@ -6,10 +6,13 @@ import {
   CommunityWireEntryPageSchema,
   CommunityWireEntryPostRequestSchema,
   CommunityWireEntryPostResponseSchema,
+  CommunityWireThreadSummaryListSchema,
+  CommunityWireThreadSummaryQuerySchema,
   type CommunityWireEntry,
 } from '@dorkos/shared/community-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { CommunityConfig } from '../config.js';
+import { isTombstoneText } from '../content/tombstones.js';
 import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
   lockChannel,
@@ -24,7 +27,15 @@ import { resolveCommunityMentions } from '../mentions.js';
 import { attachmentsForEntries } from './attachments.js';
 import type { DeliveryReceiptGate } from '../delivery-receipt-gate.js';
 
-interface EntryRow {
+/** Entry ids here are UUIDs; any other string names no entry and must not reach a `uuid` cast. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (value: string) => UUID.test(value);
+
+/** The columns every entry projection reads, from `entries e LEFT JOIN agents a`. */
+const ENTRY_COLUMNS = `e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id`;
+
+/** One entry as the projection reads it. */
+export interface EntryRow {
   id: string;
   channel_id: string;
   seq: string;
@@ -92,11 +103,29 @@ export function entryProjection(
 /** Load one entry without revealing its storage columns. */
 export async function loadEntry(client: PoolClient | Pool, id: string): Promise<EntryRow> {
   const result = await client.query<EntryRow>(
-    `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1`,
+    `SELECT ${ENTRY_COLUMNS} FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.id=$1`,
     [id]
   );
   if (!result.rows[0]) throw new ApiError(404, 'NOT_FOUND', 'Entry not found.');
   return result.rows[0];
+}
+
+/**
+ * Load the current rows of several entries of one channel, in sequence order. Ids that name no
+ * entry of that channel are left out.
+ */
+export async function loadChannelEntries(
+  client: PoolClient,
+  channelId: string,
+  ids: readonly string[]
+): Promise<EntryRow[]> {
+  if (!ids.length) return [];
+  const result = await client.query<EntryRow>(
+    `SELECT ${ENTRY_COLUMNS} FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id
+     WHERE e.channel_id=$1 AND e.id=ANY($2::uuid[]) ORDER BY e.seq`,
+    [channelId, ids]
+  );
+  return result.rows;
 }
 
 /** Register ordered posts and bounded, scoped history. */
@@ -140,12 +169,18 @@ export function registerEntryRoutes(
       if (channel.archived) throw new ApiError(409, 'STATE_CONFLICT', 'This channel is archived.');
       // Channel first, then owner: all human and owned-agent posts share one quota lock.
       await lockPrincipalAuthority(client, principal);
-      const previous = await client.query<{ id: string; payload_hash: string }>(
-        `SELECT id,payload_hash FROM entries WHERE ${principal.kind === 'agent' ? 'author_agent_id' : 'author_member_id'}=$1 AND channel_id=$2 AND idempotency_key=$3`,
+      const previous = await client.query<{
+        id: string;
+        payload_hash: string;
+        gone: boolean;
+      }>(
+        `SELECT id,payload_hash,(removed_at IS NOT NULL OR erased_at IS NOT NULL) AS gone FROM entries WHERE ${principal.kind === 'agent' ? 'author_agent_id' : 'author_member_id'}=$1 AND channel_id=$2 AND idempotency_key=$3`,
         [principal.id, channel.id, body.idempotencyKey]
       );
       if (previous.rows[0]) {
-        if (previous.rows[0].payload_hash !== payloadHash) {
+        // A removed entry answers every retry of its post with its tombstone, whatever the
+        // payload, so a retry after a lost response can never bring deleted content back.
+        if (!previous.rows[0].gone && previous.rows[0].payload_hash !== payloadHash) {
           throw new ApiError(
             409,
             'IDEMPOTENCY_CONFLICT',
@@ -166,6 +201,14 @@ export function registerEntryRoutes(
           repeated: true,
         };
       }
+      // A new post may not pose as a removed one: the browser styles a message whose text is a
+      // tombstone sentence as removed. (A retry of a removed post, above, still answers.)
+      if (isTombstoneText(body.text.trim()))
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          "A message can't say only what a deleted message says. Change the text and send it again."
+        );
       let rootId: string | null = null;
       if (body.parentEntryId) {
         const parent = await loadEntry(client, body.parentEntryId);
@@ -228,6 +271,7 @@ export function registerEntryRoutes(
       );
       const kindsById = new Map(roster.rows.map((target) => [target.id, target.kind]));
       await client.query(
+        // content-change: post-binds-new-entry
         `INSERT INTO entry_mentions(entry_id,position,community_id,mentioned_member_id,mentioned_agent_id)
          SELECT $1,mentioned.position,$2,
            CASE WHEN mentioned.kind='human' THEN mentioned.id END,
@@ -241,6 +285,7 @@ export function registerEntryRoutes(
         ]
       );
       if (body.attachmentIds?.length) {
+        // content-change: post-binds-new-entry
         await client.query('UPDATE attachments SET entry_id=$1 WHERE id=ANY($2::uuid[])', [
           inserted.rows[0].id,
           body.attachmentIds,
@@ -316,7 +361,7 @@ export function registerEntryRoutes(
       }
       const limit = parsed.limit ?? 50;
       const result = await client.query<EntryRow>(
-        `SELECT e.id,e.channel_id,e.seq,COALESCE(e.author_member_id,e.author_agent_id) AS author_member_id,e.author_agent_id,e.author_display_name,e.text,COALESCE((SELECT array_agg(COALESCE(em.mentioned_member_id,em.mentioned_agent_id) ORDER BY em.position) FROM entry_mentions em WHERE em.entry_id=e.id),'{}'::uuid[]) AS mentions,e.parent_entry_id,e.thread_root_entry_id,e.created_at,e.idempotency_key,a.owner_member_id AS agent_owner_member_id
+        `SELECT ${ENTRY_COLUMNS}
          FROM entries e LEFT JOIN agents a ON a.id=e.author_agent_id WHERE e.channel_id=$1 AND e.seq>$2 AND
            (($3::uuid IS NULL AND e.thread_root_entry_id IS NULL) OR ($3::uuid IS NOT NULL AND (e.id=$3 OR e.thread_root_entry_id=$3)))
          ORDER BY e.seq LIMIT $4`,
@@ -356,5 +401,50 @@ export function registerEntryRoutes(
       };
     });
     return json(c, CommunityWireEntryPageSchema, page);
+  });
+
+  // Reply counts for up to one page of top-level entries. Read under the same
+  // channel lock and membership rule as the history the roots came from, so a
+  // caller can never learn more about a thread than it could read.
+  app.get('/channels/:id/threads', async (c) => {
+    const principal = await requirePrincipal(c, auth, pool, 'read');
+    const openedSession = principal.credentialHash
+      ? null
+      : await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!principal.credentialHash && !openedSession)
+      throw new ApiError(401, 'UNAUTHENTICATED', 'This session is unavailable.');
+    const parsed = CommunityWireThreadSummaryQuerySchema.parse(
+      Object.fromEntries(new URL(c.req.url).searchParams)
+    );
+    const threads = await transaction(pool, async (client) => {
+      const channel = await lockChannel(client, c.req.param('id'), principal, 'read');
+      requireJoined(channel);
+      await assertPrincipalCurrentInTransaction(
+        client,
+        principal,
+        'read',
+        openedSession?.session.id
+      );
+      const result = await client.query<{
+        root: string;
+        reply_count: string;
+        last_reply_at: Date;
+        last_reply_seq: string;
+      }>(
+        `SELECT thread_root_entry_id AS root, count(*)::text AS reply_count,
+                max(created_at) AS last_reply_at, max(seq)::text AS last_reply_seq
+           FROM entries
+          WHERE channel_id=$1 AND thread_root_entry_id = ANY($2::uuid[])
+          GROUP BY thread_root_entry_id`,
+        [channel.id, parsed.roots.filter(isUuid)]
+      );
+      return result.rows.map((row) => ({
+        rootEntryId: row.root,
+        replyCount: Number(row.reply_count),
+        lastReplyAt: row.last_reply_at.toISOString(),
+        lastReplySeq: Number(row.last_reply_seq),
+      }));
+    });
+    return json(c, CommunityWireThreadSummaryListSchema, { threads });
   });
 }

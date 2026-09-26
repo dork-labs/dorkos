@@ -109,7 +109,7 @@ Cursor and Windsurf use the same `url` + `headers` shape under their own config 
 
 ### What it exposes
 
-Connecting gives a client DorkOS's full external tool surface: 63 tools in total, covering sessions, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent permissions, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
+Connecting gives a client DorkOS's full external tool surface: 64 tools in total, covering sessions, scheduled tasks, Relay messaging, agent bindings, Mesh discovery, agent/extension management, the operator surface, agent memory, agent permissions, and the marketplace. Seven read-only resources round it out, for browsing sessions, agents, skills, and the capability catalog without a tool round-trip.
 
 | Domain              | Tools | Examples                                                                                       |
 | ------------------- | ----- | ---------------------------------------------------------------------------------------------- |
@@ -133,7 +133,7 @@ Inside a DorkOS session, Claude Code is also told which tier a tool sits at and 
 <Callout type="info">
   The 9 `marketplace_*` tools only appear when Relay is enabled and extensions have initialized
   successfully. Without that, the marketplace branch is silently skipped and the server still boots
-  with the other 54. `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`,
+  with the other 55. `marketplace_install`, `marketplace_uninstall`, `marketplace_create_package`,
   and `marketplace_update` with `apply: true` each return a pending approval with a token instead of
   doing the work; a person decides it in the DorkOS UI, and the client retries with the token.
   Without `apply`, `marketplace_update` only says which packages have a newer version.

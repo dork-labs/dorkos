@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "22355fb1-4d05-4695-b086-be2c3e4de896",
+  "id": "a4babdc7-9a2c-4cda-b21c-e96e7ba0ac8c",
   "prevId": "4cff9f5c-5804-491a-8353-94c0824c8bf7",
   "tables": {
     "a2a_tasks": {
@@ -525,6 +525,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "tier_ceiling": {
+          "name": "tier_ceiling",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'destructive'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -802,6 +810,13 @@
         },
         "timezone_override": {
           "name": "timezone_override",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "package_owned": {
+          "name": "package_owned",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

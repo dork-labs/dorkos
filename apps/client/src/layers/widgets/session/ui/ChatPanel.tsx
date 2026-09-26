@@ -2,12 +2,6 @@
  * The session's conversation, whole: transcript, live lane, composer and the
  * panels around them.
  *
- * The host every session mounts — the `/session` route, the Obsidian embed and
- * the dev simulator alike. It is a WIDGET because a conversation host composes
- * features (`features/chat`'s model, `features/conversation`'s compound) and
- * only a widget may; P4 moved it up here from `features/chat`, which is what
- * let the capability table and the body renderer come with it.
- *
  * @module widgets/session/ui/ChatPanel
  */
 import { useRef, useMemo, useCallback, useEffect } from 'react';
@@ -79,8 +73,6 @@ import { SessionTranscript } from './SessionTranscript';
 
 interface ChatPanelProps {
   sessionId: string | null;
-  /** Optional transform applied to message content before sending to server */
-  transformContent?: (content: string) => string | Promise<string>;
   /**
    * Runtime selected at launch (the `?runtime=` search param). Sent as the
    * runtime hint on the session-creating first message; absent means the
@@ -121,7 +113,6 @@ interface ChatPanelProps {
 /** Top-level chat view composing message list, input, task panel, and celebration effects. */
 export function ChatPanel({
   sessionId,
-  transformContent,
   launchRuntime,
   launchPrompt,
   launchSend = false,
@@ -188,9 +179,9 @@ export function ChatPanel({
         fileUpload.clearFiles();
       }
 
-      return transformContent ? transformContent(result) : result;
+      return result;
     },
-    [fileUpload, cwd, transformContent]
+    [fileUpload, cwd]
   );
 
   const handleTaskEventWithCelebrations = useCallback(
@@ -561,14 +552,8 @@ export function ChatPanel({
       messages,
       status,
       lastErrorCategory,
-      // The RAW server queue, deliberately not `waiting`. `selectWaitingQueue`
-      // hides the head row in every lifecycle that is not an open turn — which
-      // is precisely the set the resume runs in — because a head with nothing
-      // running is "on its way" and should not draw a chip. That is right for a
-      // chip and wrong here: a message another client queued (a second tab, a
-      // room, MCP, Obsidian) would read as zero, the resume would fire, and the
-      // two would run in the order rule 3 exists to prevent. The rule asks
-      // "is anything pending at all", not "what would a chip draw".
+      // Use the raw server queue: the visible waiting chips hide its head while
+      // no turn is open, but a pending message must still block automatic resume.
       queuedCount: serverQueue.length,
       // Read from the store at the moment of the decision rather than closed
       // over, and NOT for tidiness: this callback is threaded into the
@@ -714,9 +699,6 @@ export function ChatPanel({
   });
 
   return (
-    // The session's conversation, declared once by the surface every session
-    // mounts — the route, the Obsidian embed and the dev simulator alike. Every
-    // row, and from P2 the live lane, reads what it can do from here.
     <Conversation.Root surface="session" capabilities={SESSION_CAPABILITIES} target={sessionTarget}>
       <div ref={chatPanelRef} data-testid="chat-panel" className="flex h-full w-full flex-col">
         <BirthCertificate sessionId={sessionId} />

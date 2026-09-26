@@ -53,7 +53,6 @@ describe('ResetSettingsDialog', () => {
 
   it('confirming clears the cross-slice settings the Appearance reset must not touch', () => {
     useAppStore.getState().setShowTimestamps(true);
-    useAppStore.getState().setSidebarActiveTab('connections');
     useAppStore.getState().setFontSize('large');
     useThemeStore.getState().setTheme('dark');
 
@@ -62,7 +61,6 @@ describe('ResetSettingsDialog', () => {
 
     const s = useAppStore.getState();
     expect(s.showTimestamps).toBe(false);
-    expect(s.sidebarActiveTab).toBe('overview');
     expect(s.fontSize).toBe('medium');
     expect(useThemeStore.getState().theme).toBe('system');
     expect(localStorage.getItem('dorkos-show-timestamps')).toBeNull();

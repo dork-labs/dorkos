@@ -23,6 +23,7 @@ import { confirm } from '../lib/confirm-prompt.js';
 import { hasBlockingConflicts, renderPreview, type PreviewPayload } from '../lib/preview-render.js';
 import { resolveProjectFlag } from '../lib/package-commands.js';
 import { rethrowUnknownOption } from '../lib/parse-args-error.js';
+import type { DisclosedEffects } from '@dorkos/shared/marketplace-schemas';
 
 /** Parsed CLI arguments accepted by {@link runInstall}. */
 export interface InstallArgs {
@@ -38,6 +39,8 @@ export interface InstallArgs {
   yes?: boolean;
   /** Absolute project path for project-local installs, resolved against the caller's cwd. */
   projectPath?: string;
+  /** Approval token from an earlier run that came back waiting for a person. */
+  approvalToken?: string;
 }
 
 /** Install API response shape. Mirrors {@link InstallResult} on the server. */
@@ -50,17 +53,28 @@ interface InstallResultBody {
   warnings?: string[];
 }
 
-/** Preview API response shape — `{ preview, manifest, packagePath }`. */
+/** Preview API response shape — `{ preview, manifest, packagePath, disclosed }`. */
 interface PreviewResponseBody {
   preview: PreviewPayload;
   manifest: { name: string; version: string };
   packagePath: string;
+  /** What the package runs, in the form an install is held to (DOR-2306). */
+  disclosed?: DisclosedEffects;
+  /** A hash of the staged files, sent back so a global install is recorded as approved. */
+  contentHash?: string;
+}
+
+/** The answer an agent's global install gets while it waits for a person. */
+interface AwaitingApprovalBody {
+  status: 'requires_confirmation';
+  confirmationToken: string;
+  message: string;
 }
 
 /** One-line usage string surfaced in error messages. */
 const USAGE_LINE =
   'Usage: dorkos marketplace install <name> [--marketplace <name>] [--source <url>] ' +
-  '[--force] [--yes] [--project <path>]';
+  '[--force] [--yes] [--project <path>] [--approval <token>]';
 
 /**
  * Parse the raw argv slice that follows `dorkos marketplace install`. Splits the
@@ -81,6 +95,7 @@ export function parseInstallArgs(rawArgs: string[]): InstallArgs {
         force: { type: 'boolean', default: false },
         yes: { type: 'boolean', short: 'y', default: false },
         project: { type: 'string' },
+        approval: { type: 'string' },
       },
       allowPositionals: true,
       strict: true,
@@ -114,6 +129,7 @@ export function parseInstallArgs(rawArgs: string[]): InstallArgs {
     force: Boolean(values.force),
     yes: Boolean(values.yes),
     projectPath: resolveProjectFlag(values.project),
+    approvalToken: typeof values.approval === 'string' ? values.approval : undefined,
   };
 }
 
@@ -147,15 +163,38 @@ export async function runInstall(args: InstallArgs): Promise<number> {
       }
     }
 
-    const result = await apiCall<InstallResultBody>(
+    // Held to what was just printed: the server installs only a package that
+    // still runs exactly this, and refuses anything else before writing
+    // (DOR-2306). An older server that sent no disclosure gets none back.
+    const result = await apiCall<InstallResultBody | AwaitingApprovalBody>(
       'POST',
       `/api/marketplace/packages/${encodeURIComponent(args.name)}/install`,
-      buildRequestBody(args)
+      {
+        ...buildRequestBody(args),
+        ...(preview.disclosed && {
+          approvedDisclosure: preview.disclosed,
+          ...(preview.contentHash && { approvedContentHash: preview.contentHash }),
+        }),
+        ...(args.approvalToken && { confirmationToken: args.approvalToken }),
+      }
     );
 
-    console.log(`Installed ${result.packageName}@${result.version} to ${result.installPath}`);
-    if (result.warnings && result.warnings.length > 0) {
-      for (const warning of result.warnings) {
+    // From an agent's session, a global package that runs things waits for a
+    // person to approve it in DorkOS (DOR-2306). Nothing was installed.
+    if ('status' in result && result.status === 'requires_confirmation') {
+      console.error(result.message);
+      console.error(
+        `Retry with: dorkos marketplace install ${args.name} --yes --approval ${result.confirmationToken}`
+      );
+      return 1;
+    }
+
+    const installed = result as InstallResultBody;
+    console.log(
+      `Installed ${installed.packageName}@${installed.version} to ${installed.installPath}`
+    );
+    if (installed.warnings && installed.warnings.length > 0) {
+      for (const warning of installed.warnings) {
         console.log(`  warning: ${warning}`);
       }
     }

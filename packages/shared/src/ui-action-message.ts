@@ -59,8 +59,7 @@ const UI_ACTION_TAG = 'ui_action';
  *
  * Runtime-neutral by construction — the block is the plain message TEXT fed to
  * `sendMessage`, so every runtime receives it identically. Shared (not
- * server-only) so the HTTP path (server route) and the in-process
- * `DirectTransport` path (Obsidian) emit a byte-identical block. Includes the
+ * server-only) so the HTTP route and runtime share one byte-identical block. Includes the
  * action id, the widget title (when known), and the payload (form values already
  * merged in client-side) so the agent can respond to the specific control fired.
  *

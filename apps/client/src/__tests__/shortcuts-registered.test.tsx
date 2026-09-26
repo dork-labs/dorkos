@@ -4,14 +4,6 @@
  * The shortcuts panel is a promise. Every combo it lists must actually do
  * something, and this file is the gate that keeps that true.
  *
- * The panel renders {@link SHORTCUTS} verbatim, so a shortcut declared there and
- * listened for nowhere is a lie told straight to the operator — one that costs
- * nothing to write and is invisible in review. Three such shortcuts were deleted
- * a few PRs ago; `NEW_SESSION` (`mod+shift+n`) was a fourth, declared, rendered
- * in the panel, printed as a `Kbd` on the embed's New button, and wired to no
- * handler at all. One-off cleanups do not stop that recurring, so the registry
- * is now checked against reality on every run.
- *
  * Two tiers, because two tiers is what is honestly provable:
  *
  * - **{@link PROVED}** — window-level chords. The test mounts the smallest thing

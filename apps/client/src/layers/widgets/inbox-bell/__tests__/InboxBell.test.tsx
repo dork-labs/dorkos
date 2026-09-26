@@ -14,7 +14,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor, within, act } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -36,11 +36,6 @@ let mockIsMobile = false;
 
 /**
  * The router this suite does not mount.
- *
- * `useSafeNavigate` only returns `null` in the Obsidian embed; everywhere else
- * it hands back TanStack's navigator, which mounts happily without a provider
- * and throws the moment it is CALLED. Opening an Inbox row calls it, so a suite
- * that renders the bell outside a router has to say where "go there" goes.
  */
 const mockNavigate = vi.fn();
 
@@ -132,6 +127,8 @@ function parkedSchedule(overrides: Partial<Task> = {}): Task {
     defaultCron: '0 3 * * *',
     defaultTimezone: 'UTC',
     timingOverridden: false,
+    packageOwned: null,
+    approvalChanges: [],
     agentId: null,
     // True: this fixture stands in for a schedule an AGENT proposed, which is
     // asking to run by definition (DOR-2059 only quiets a package-shipped

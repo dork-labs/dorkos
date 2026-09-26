@@ -524,7 +524,7 @@ export type HarnessSyncBody = z.infer<typeof HarnessSyncBodySchema>;
  */
 export const HarnessStatusResponseSchema = z.object({
   projectPath: z.string(),
-  state: z.enum(['ready', 'not-set-up', 'unreadable', 'unavailable']),
+  state: z.enum(['ready', 'not-set-up', 'unreadable']),
   detail: z.string().optional(),
   computedAt: z.string(),
   enabled: z.array(HarnessIdSchema),
@@ -588,9 +588,7 @@ export const HarnessStatusResponseSchema = z.object({
    * courtesy. {@link HarnessClaudeOnlySchema} describes a read of somebody's
    * HOME directory, and the status model is a pure function of the inputs it is
    * handed — it never resolves a Claude root, so it never produces this field.
-   * Only a surface that reads the machine adds it: `GET /api/harness/status`
-   * does, and the Obsidian transport, which answers `state: 'unavailable'` and
-   * has no home directory to read, does not.
+   * The server route `GET /api/harness/status` adds it after reading the machine.
    */
   claudeOnly: HarnessClaudeOnlySchema.optional(),
 });

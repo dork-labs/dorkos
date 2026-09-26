@@ -13,8 +13,12 @@ export { useRoomSessions } from './api/use-room-sessions';
 export { useRooms, useRoomsByKind } from './model/use-rooms';
 export { routeShowsRoom, useRouteRoom } from './model/use-route-room';
 export type { RouteRoom } from './model/use-route-room';
-export { useRoomBoundSession, resolveRoomBoundSession } from './model/use-room-bound-session';
-export type { ResolveRoomSessionDeps } from './model/use-room-bound-session';
+export {
+  useRoomBoundSession,
+  resolveRoomBoundSession,
+  resolveRoomSessionForAuthor,
+} from './model/use-room-bound-session';
+export type { ResolveRoomSessionDeps, RoomSessionLookup } from './model/use-room-bound-session';
 export { roomBoundSessionId } from './lib/room-bound-session';
 export { useTeamRoom } from './model/use-team-room';
 export type { TeamRoomState } from './model/use-team-room';
@@ -153,7 +157,7 @@ export {
 export { profileMemberIdOf } from './lib/profile-target';
 export { roomIdentityMark, identityMarkFaces } from './lib/identity-mark';
 export type { IdentityMark, RoomIdentityMarkInput } from './lib/identity-mark';
-export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
+export { honestReplyCount, replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
 export type { ThreadReplySummary } from './lib/thread';
 export { useLoadOlderRoomEntries } from './model/use-load-older-entries';
 export type { LoadOlderRoomEntries } from './model/use-load-older-entries';
@@ -186,6 +190,7 @@ export { ResponseModeControl } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { OriginMark } from './ui/OriginMark';
+export { RetiredMark } from './ui/RetiredMark';
 export { BridgeVisibilityBadge } from './ui/BridgeVisibilityBadge';
 export type {
   AuthorOrigin,
@@ -194,6 +199,7 @@ export type {
   RoomBridgeInfo,
   RoomEntry,
   RoomEntryReaction,
+  RoomFormerAuthor,
   RoomKind,
   RoomRosterEntry,
   RoomSummary,

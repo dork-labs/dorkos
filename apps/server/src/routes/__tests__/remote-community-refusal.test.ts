@@ -85,6 +85,17 @@ describe('communityRefusal', () => {
     );
   });
 
+  it('says a held community is on hold by its host, not archived', () => {
+    // Purpose: a hold is the host's decision and the owner can still export; calling it
+    // "archived" would send people to an owner who cannot lift it.
+    expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_HELD'))).toEqual({
+      status: 423,
+      code: 'COMMUNITY_HELD',
+      error:
+        'The host has put this community on hold. You can read it, but no one can post. Its owner can still export it.',
+    });
+  });
+
   it('tells an archived community apart from one being deleted', () => {
     expect(communityRefusal(new PinnedHttpError(423, 'COMMUNITY_ARCHIVED'))?.error).toBe(
       'This community is archived, so it’s read-only.'

@@ -111,11 +111,6 @@ describe('useSessionTarget', () => {
   });
 
   it('refuses to send, and names the way out, when no conversation is selected', () => {
-    // **Seeded defect:** put `canSend: true` back and this goes red twice over.
-    // An empty id is the Obsidian embed's first load — `app-store` seeds
-    // `sessionId: null` and nothing auto-mints one — where Enter used to reach
-    // `postMessage(null, …)` and take a `400 INVALID_SESSION_ID` from the route
-    // (`parseSessionId` is a uuid check), with the composer already emptied.
     const { result } = renderHook(() => useSessionTarget(input({ sessionId: '' })));
 
     expect(result.current.canSend).toBe(false);

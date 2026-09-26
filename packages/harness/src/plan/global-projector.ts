@@ -36,7 +36,7 @@ import {
 } from '../sources/installed.js';
 import { planUnreadableManifestWarnings } from './unreadable-manifests.js';
 import { planUnreadableSkillWarnings } from './unreadable-skills.js';
-import { PLUGIN_ROOT_SKILL_WARNING_REASON } from './installed-projector.js';
+import { pluginTokenSkillWarningReason } from './installed-projector.js';
 import type { ProjectionAction, ProjectionPlan, ProjectionWarning } from './types.js';
 import { directoryWriteBlock } from '../apply/write-path-occupants.js';
 
@@ -523,14 +523,15 @@ export function buildGlobalPlan(input: GlobalPlanInput): GlobalProjectionPlan {
           reason: tier.reason(skill.hasSchedule),
         });
       }
-      if (skill.usesPluginRoot) {
+      const tokenReason = pluginTokenSkillWarningReason(skill);
+      if (tokenReason !== undefined) {
         warnings.push({
           artifact: 'skill',
           harness: GLOBAL_LINK_ATTRIBUTION,
           harnessAgnostic: true,
           name: namespaced,
           source: skill.sourceDir,
-          reason: PLUGIN_ROOT_SKILL_WARNING_REASON,
+          reason: tokenReason,
         });
       }
     }

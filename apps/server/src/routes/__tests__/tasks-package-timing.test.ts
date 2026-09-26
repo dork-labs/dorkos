@@ -60,7 +60,7 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = parseSkillFile(filePath, content, SkillFrontmatterSchema);
     if (!parsed.ok || !hasSchedule(parsed.definition.meta)) throw new Error('fixture unreadable');
-    return store.upsertFromFile(
+    return store.fileSync.upsertFromFile(
       {
         ...parsed.definition,
         meta: parsed.definition.meta,
@@ -68,7 +68,7 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
         projectPath: undefined,
       },
       undefined,
-      { source: 'discovery', packageOwned: true }
+      { source: 'discovery', packageOwned: 'record' }
     );
   }
 
@@ -165,6 +165,12 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     );
     // The parked preview reads the timing that would run.
     expect(vi.mocked(scheduler.previewNextRuns)).toHaveBeenLastCalledWith('* * * * *', 'UTC', 3);
+    // And the next sync keeps DorkOS's sentence rather than saying the schedule
+    // was "found in a file" (DOR-2313).
+    expect(await resync()).toMatchObject({
+      status: 'pending_approval',
+      reason: AGENT_TIMING_CHANGE_REASON,
+    });
   });
 
   it('lets an agent retime a full-power package schedule, parking it rather than refusing', async () => {
@@ -182,6 +188,32 @@ describe('PATCH /api/tasks/:id — a package’s schedule’s timing', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ cron: '*/5 * * * *', status: 'pending_approval' });
     expect(await fs.readFile(filePath, 'utf-8')).toBe(SKILL);
+  });
+
+  it('parks the schedule when an agent changes only its timezone (DOR-2307)', async () => {
+    // Purpose: a timezone moves the real run time; an agent must not move it
+    // on an approved schedule without a person seeing it.
+    const task = await approvedTask();
+
+    const res = await request(fixtureTarget.server)
+      .patch(`/api/tasks/${task.id}`)
+      .set('x-dorkos-agent', 'agent-token-abc')
+      .send({ timezone: 'Pacific/Kiritimati' });
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ timezone: 'Pacific/Kiritimati', status: 'pending_approval' });
+  });
+
+  it('keeps a person’s own timezone change approved', async () => {
+    // Purpose: the person changing it is the approval, as with the cron.
+    const task = await approvedTask();
+
+    const res = await request(fixtureTarget.server)
+      .patch(`/api/tasks/${task.id}`)
+      .send({ timezone: 'Asia/Tokyo' });
+
+    expect(res.body).toMatchObject({ timezone: 'Asia/Tokyo', status: 'active' });
+    expect((await resync()).status).toBe('active');
   });
 
   it('puts the package’s timing back on a reset, still approved', async () => {

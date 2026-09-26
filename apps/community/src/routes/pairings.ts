@@ -34,7 +34,7 @@ import {
 import type { ConfirmPassword } from '../password-confirmation.js';
 import { ApiError, json, readJson } from '../http.js';
 import { equalSecret, hashSecret, randomToken } from '../security.js';
-import { resolveCommunityContext } from '../tenant-context.js';
+import { isReadOnlyLifecycle, resolveCommunityContext } from '../tenant-context.js';
 
 const uuid = z.uuid();
 
@@ -45,6 +45,27 @@ function challenge(verifier: string) {
 function privateCaller(origin: string | undefined) {
   if (origin)
     throw new ApiError(403, 'FORBIDDEN', 'A local install must make this request directly.');
+}
+
+/**
+ * What a grant can do right now, from its scopes and the lifecycle an installation is told.
+ *
+ * A held community is reported as `archived`, and read-only either way: a grant kept through a
+ * hold reads, and posts, enrolls agents, and streams again only after release. A history-only
+ * grant never gains write access, whatever the lifecycle.
+ */
+function grantCapabilities(
+  scopes: readonly string[],
+  historyOnly: boolean,
+  lifecycle: 'active' | 'archived'
+) {
+  const live = lifecycle === 'active' && !historyOnly;
+  return {
+    read: scopes.includes('read'),
+    post: live && scopes.includes('post'),
+    enrollAgent: live && scopes.includes('enroll-agent'),
+    stream: live && scopes.includes('read'),
+  };
 }
 
 function exactArchivedRead(scopes: readonly string[]): boolean {
@@ -69,9 +90,13 @@ async function lockPairingCommunity(
     [communityId]
   );
   const lifecycle = result.rows[0]?.lifecycle;
-  if (lifecycle === 'active' || (lifecycle === 'archived' && allowArchivedRead)) return lifecycle;
+  if (lifecycle === 'active') return lifecycle;
+  // A held community pairs exactly as an archived one: read-only, history only.
+  if (isReadOnlyLifecycle(lifecycle) && allowArchivedRead) return 'archived';
   if (lifecycle === 'archived')
     throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'Archived communities accept read-only pairing.');
+  if (lifecycle === 'held')
+    throw new ApiError(423, 'COMMUNITY_HELD', 'Held communities accept read-only pairing.');
   if (lifecycle === 'suspended')
     throw new ApiError(503, 'COMMUNITY_SUSPENDED', 'This community is suspended.');
   if (lifecycle === 'deletion_pending')
@@ -101,7 +126,8 @@ async function lockRevocationMember(
 ): Promise<void> {
   const community = await client.query<{ lifecycle: string }>(
     `SELECT lifecycle FROM communities
-     WHERE id=$1 AND lifecycle IN ('active','archived','suspended','deletion_pending') FOR SHARE`,
+     WHERE id=$1 AND lifecycle IN ('active','archived','suspended','held','deletion_pending')
+     FOR SHARE`,
     [actor.community_id]
   );
   if (!community.rowCount)
@@ -149,12 +175,7 @@ export function registerPairingRoutes(
 ) {
   app.get('/me/connection-access', async (c) => {
     const { member: grant, lifecycle } = await requireConnectionGrant(c, pool, 'read');
-    const capabilities = {
-      read: true,
-      post: grant.scopes.includes('post') && !grant.history_only,
-      enrollAgent: grant.scopes.includes('enroll-agent') && !grant.history_only,
-      stream: !grant.history_only,
-    };
+    const capabilities = grantCapabilities(grant.scopes, grant.history_only, lifecycle);
     return json(c, CommunityWireConnectionAccessResponseSchema, {
       access: {
         state: 'verified',
@@ -200,7 +221,9 @@ export function registerPairingRoutes(
     const expiry = new Date(Date.now() + 600_000);
     const community = await resolveCommunityContext(c, pool);
     const archivedRead =
-      community.qualified && community.lifecycle === 'archived' && exactArchivedRead(body.scopes);
+      community.qualified &&
+      isReadOnlyLifecycle(community.lifecycle) &&
+      exactArchivedRead(body.scopes);
     await transaction(pool, async (client) => {
       await lockPairingCommunity(client, community.communityId, archivedRead);
       await client.query(
@@ -466,12 +489,11 @@ export function registerPairingRoutes(
           memberId: grant.rows[0].member_id,
           scopes: grant.rows[0].scopes,
           lifecycle,
-          capabilities: {
-            read: grant.rows[0].scopes.includes('read'),
-            post: grant.rows[0].scopes.includes('post'),
-            enrollAgent: grant.rows[0].scopes.includes('enroll-agent'),
-            stream: grant.rows[0].scopes.includes('read') && !grant.rows[0].history_only,
-          },
+          capabilities: grantCapabilities(
+            grant.rows[0].scopes,
+            grant.rows[0].history_only,
+            lifecycle
+          ),
           installName: row.install_name,
           createdAt: grant.rows[0].created_at.toISOString(),
         },
@@ -522,7 +544,9 @@ export function registerPairingRoutes(
         lifecycle: 'active' | 'archived';
         created_at: Date;
       }>(
-        `SELECT g.id,g.member_id,g.scopes,g.install_name,g.history_only,g.created_at,c.lifecycle
+        // A hold reads as an archive to installations, which know only that word.
+        `SELECT g.id,g.member_id,g.scopes,g.install_name,g.history_only,g.created_at,
+                CASE WHEN c.lifecycle='held' THEN 'archived' ELSE c.lifecycle END AS lifecycle
          FROM connection_grants g JOIN communities c ON c.id=g.community_id
          WHERE g.member_id=$1 AND g.community_id=$2 AND g.revoked_at IS NULL
          ORDER BY g.created_at,g.id`,
@@ -535,12 +559,7 @@ export function registerPairingRoutes(
         memberId: row.member_id,
         scopes: row.scopes,
         lifecycle: row.lifecycle,
-        capabilities: {
-          read: row.scopes.includes('read'),
-          post: row.scopes.includes('post'),
-          enrollAgent: row.scopes.includes('enroll-agent'),
-          stream: row.scopes.includes('read') && !row.history_only,
-        },
+        capabilities: grantCapabilities(row.scopes, row.history_only, row.lifecycle),
         installName: row.install_name,
         createdAt: row.created_at.toISOString(),
       })),

@@ -25,11 +25,7 @@ interface AgentSubMenuProps {
   onOpenHere: () => void;
   /** Open agent's project in a new tab */
   onOpenNewTab: () => void;
-  /**
-   * Open agent's project in a second cockpit window. Omitted where a separate
-   * window is not a real destination (a browser, the Obsidian embed) — no
-   * handler, no row.
-   */
+
   onOpenNewWindow?: () => void;
   /** Start a new session in this agent's CWD */
   onNewSession: () => void;

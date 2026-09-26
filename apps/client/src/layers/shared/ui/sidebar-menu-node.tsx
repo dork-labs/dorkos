@@ -540,11 +540,7 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
               <Icon className="mr-2 size-4" />
               {node.label}
             </SubTrigger>
-            {/* A floor and a ceiling rather than one set width, so a row with a
-                trailing mark keeps its label on one line instead of wrapping
-                at 12rem. This file is an Obsidian plugin Tailwind source: the
-                plugin CSS turns any bare word here that names a utility into
-                a real class, so the comment avoids naming positioning ones. */}
+            {}
             <SubContent className="max-w-72 min-w-48">{renderNodes(node.items, slots)}</SubContent>
           </Sub>
         );

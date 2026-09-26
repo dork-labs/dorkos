@@ -368,13 +368,14 @@ export function scheduleProblem<T extends { schedule?: ScheduleField }>(meta: T)
  * exactly that size across any number of round trips.
  *
  * **It always returns a mapping, never `undefined`.** An all-default block
- * writes as `schedule: {}`, which round-trips exactly — gray-matter emits
- * `schedule: {}` and reads it back as `{}` — and, which matters more, keeps the
+ * writes as `schedule: {}`, which round-trips exactly — the frontmatter writer
+ * emits `schedule: {}` and reads it back as `{}` — and, which matters more, keeps the
  * key present: presence is what makes the file a scheduled task, so dropping it
  * would silently un-schedule the skill. Returning `undefined` would be worse
  * still, because the spread this helper is written for
- * (`{...meta, schedule: scheduleToFrontmatter(block)}`) would hand js-yaml an
- * `undefined` and throw "unacceptable kind of an object".
+ * (`{...meta, schedule: scheduleToFrontmatter(block)}`) would hand the
+ * frontmatter writer an `undefined`, which it refuses rather than silently
+ * dropping the key.
  *
  * One thing it cannot preserve: a `true` the author typed by hand is
  * indistinguishable after parsing from one the schema supplied, so an explicit

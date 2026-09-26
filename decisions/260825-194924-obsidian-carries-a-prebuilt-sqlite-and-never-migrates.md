@@ -1,18 +1,18 @@
 ---
 id: 260825-194924
 title: The Obsidian embed carries a prebuilt SQLite and reads the database without ever writing it
-status: accepted
+status: superseded
 created: 2026-08-25
 spec: message-search
 amends: null
-superseded-by: null
+superseded-by: 260925-191411
 ---
 
 # 260825-194924. The Obsidian embed carries a prebuilt SQLite and reads the database without ever writing it
 
 ## Status
 
-Accepted (DOR-1563, spec `message-search` task 5.3, following DOR-691's seam).
+Superseded by [ADR 260925-191411](260925-191411-retire-the-obsidian-plugin.md) on 2026-09-25. The plugin is retired. The original decision below is preserved as history; shared database safeguards remain governed by their supported callers.
 
 **The filename still says `never-migrates`; the decision grew.** It was written as a decision
 about migrations and became one about writing at all — the embed does not migrate because it does

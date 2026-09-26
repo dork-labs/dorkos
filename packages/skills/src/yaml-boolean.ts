@@ -3,7 +3,7 @@ import { z } from 'zod';
 /**
  * Coerce the YAML 1.1 boolean words a person actually types into booleans.
  *
- * `gray-matter` parses with js-yaml v4, which is YAML **1.2 core**: only
+ * Frontmatter is parsed with js-yaml v4, which is YAML **1.2 core**: only
  * `true`/`false` are booleans there, so `yes`, `no`, `on`, `off`, `y`, `n` and
  * a quoted `"false"` all arrive as plain strings. Authors write those anyway —
  * they were valid YAML 1.1 for a decade and every other tool still takes them.

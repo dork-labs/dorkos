@@ -70,6 +70,7 @@ export { formatTime } from './lib/format-entry-time';
 export { DayDivider } from './ui/rows/DayDivider';
 export { UnreadDivider } from './ui/rows/UnreadDivider';
 export { NoticeRow } from './ui/rows/NoticeRow';
+export type { NoticeSessionLink } from './ui/rows/NoticeRow';
 export { MomentRow } from './ui/rows/MomentRow';
 export type { MomentSubjectIdentity } from './ui/rows/MomentRow';
 export { ThreadReplyRow } from './ui/rows/ThreadReplyRow';
