@@ -6,7 +6,12 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
+import {
+  reachesServerDestination,
+  SERVER_DESTINATION_REFUSAL,
+  type RelayCore,
+  type DeadLetterEntry,
+} from '@dorkos/relay';
 import {
   extractSessionIdFromSubject,
   isServerManagedSubject,
@@ -210,6 +215,20 @@ export function createRelayRouter(
           `Sender "${result.data.from}" is a reserved server principal and cannot be ` +
           `asserted by a client. Send from your own principal (e.g. relay.human.console).`,
         code: 'RESERVED_SENDER',
+      });
+    }
+
+    // DOR-2432: nothing on this route is a server publisher — the scheduler,
+    // the stop paths and the approval bridges publish in process — and the
+    // route cannot tell an agent with a shell from the person at the keyboard,
+    // so a server-owned destination or reply address is refused for everyone.
+    const refused = [result.data.subject, result.data.replyTo].find(
+      (subject): subject is string => subject !== undefined && reachesServerDestination(subject)
+    );
+    if (refused !== undefined) {
+      return res.status(403).json({
+        error: `Cannot send to "${refused}": ${SERVER_DESTINATION_REFUSAL}`,
+        code: 'RESERVED_SUBJECT',
       });
     }
 

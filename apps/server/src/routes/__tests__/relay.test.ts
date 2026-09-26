@@ -127,6 +127,33 @@ describe('Relay routes', () => {
       expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
     });
 
+    // DOR-2432: this route cannot tell an agent with a shell from the person at
+    // the keyboard, and no server publisher uses it, so a server-owned
+    // destination or reply address is refused for every caller.
+    it.each([
+      ['relay.system.tasks.task-1', undefined],
+      ['relay.system.approval.agent-1', undefined],
+      ['relay.control.task-cancel.run-1', undefined],
+      ['relay.*.console', undefined],
+      ['relay.agent.some-agent', 'relay.system.approval.agent-1'],
+    ])('refuses a send to %s (reply address %s) and never publishes', async (subject, replyTo) => {
+      const res = await request(server)
+        .post('/api/relay/messages')
+        .send({
+          subject,
+          payload: { type: 'forged' },
+          from: 'relay.human.console',
+          ...(replyTo ? { replyTo } : {}),
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('RESERVED_SUBJECT');
+      expect(res.body.error).toContain(
+        'relay.system.* and relay.control.* addresses belong to DorkOS; agents cannot send to them.'
+      );
+      expect(vi.mocked(relayCore.publish)).not.toHaveBeenCalled();
+    });
+
     it('still allows the in-app console operator principal (relay.human.console)', async () => {
       const res = await request(server)
         .post('/api/relay/messages')
