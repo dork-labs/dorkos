@@ -377,6 +377,9 @@ describe('Undo in the history', () => {
       ])
     ).toBe('Some of this has changed since. Set it all back anyway?');
     expect(partialUndoNote({ changes: [change], skipped: [] })).toBeNull();
+    expect(partialUndoNote({ changes: [], skipped: [] })).toBe(
+      'Nothing to undo. It was already back the way it was.'
+    );
     expect(
       partialUndoNote({
         changes: [change],

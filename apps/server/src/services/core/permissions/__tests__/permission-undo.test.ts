@@ -269,6 +269,64 @@ describe('PermissionService.undo', () => {
     });
   });
 
+  it('treats a change already undone as nothing to do, never as changed since', async () => {
+    const world = createPermissionWorld({ preset: 'careful', agents: TWO_AGENTS });
+    await world.service.setDefaults(
+      { areas: { rooms: 'allowed' }, applyToAgents: ['agent-auditor'], surface: 'settings' },
+      LOCAL
+    );
+    const bulk = world.events[0]!.id;
+    await world.service.undo(bulk, {}, LOCAL);
+    await world.service.setDefaults({ areas: { rooms: 'ask' }, surface: 'settings' }, LOCAL);
+
+    // Single target, already back: no conflict, nothing written.
+    const single = createPermissionWorld({ preset: 'careful' });
+    await single.service.setDefaults({ areas: { rooms: 'ask' }, surface: 'settings' }, LOCAL);
+    await single.service.undo(single.events[0]!.id, {}, LOCAL);
+    await expect(single.service.undo(single.events[0]!.id, {}, LOCAL)).resolves.toEqual({
+      changes: [],
+      skipped: [],
+    });
+    expect(single.events).toHaveLength(2);
+
+    // Bulk: the auditor is already back, so only the default (changed since)
+    // is reported; the auditor is not.
+    await expect(world.service.undo(bulk, {}, LOCAL)).rejects.toMatchObject({
+      code: 'UNDO_CONFLICT',
+      details: { conflicts: [expect.objectContaining({ current: 'ask' })] },
+    });
+  });
+
+  it('runs two Undos of one change one after the other: the second finds nothing to do', async () => {
+    const world = createPermissionWorld({ preset: 'careful', agents: TWO_AGENTS });
+    await world.service.setAgent(
+      'agent-test',
+      { areas: { rooms: 'blocked' }, surface: 'agent-page' },
+      LOCAL
+    );
+    const eventId = world.events[0]!.id;
+
+    const [a, b] = await Promise.all([
+      world.service.undo(eventId, {}, LOCAL),
+      world.service.undo(eventId, {}, LOCAL),
+    ]);
+
+    expect([a.changes.length, b.changes.length].sort()).toEqual([0, 1]);
+    expect(world.events).toHaveLength(2);
+  });
+
+  it('keeps both of two writes to one agent made side by side', async () => {
+    const world = createPermissionWorld({ agents: TWO_AGENTS });
+    await Promise.all([
+      world.service.setAgent('agent-test', { areas: { rooms: 'blocked' }, surface: 'api' }, LOCAL),
+      world.service.setAgent('agent-test', { areas: { tasks: 'ask' }, surface: 'api' }, LOCAL),
+    ]);
+    expect(world.agents.get('agent-test')?.permissions?.areas).toEqual({
+      rooms: 'blocked',
+      tasks: 'ask',
+    });
+  });
+
   it('undoes an Undo, which puts the change back', async () => {
     const world = createPermissionWorld({ agents: TWO_AGENTS });
     await world.service.setAgent(

@@ -215,6 +215,10 @@ export async function undoPermissionChange(
         skipped.push({ change, current: null, reason: 'gone' });
         continue;
       }
+      // Already back where the change found it (an earlier Undo of the same
+      // change, or a later change that happened to put it back): nothing to
+      // do, and nothing to ask about.
+      if (current === change.before) continue;
       if (widensFloor(change)) {
         skipped.push({ change, current, reason: 'floor' });
         continue;

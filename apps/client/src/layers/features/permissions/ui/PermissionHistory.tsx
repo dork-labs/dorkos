@@ -47,11 +47,15 @@ export function conflictQuestion(conflicts: readonly PermissionUndoSkip[]): stri
 
 /**
  * What an Undo that left some of a change alone says: "Undid 3 changes. 1 had
- * changed since and was left alone."
+ * changed since and was left alone." An Undo that found everything already
+ * back says so too.
  *
  * @param result - The Undo's answer.
  */
 export function partialUndoNote(result: UndoPermissionChangeResponse): string | null {
+  if (result.changes.length === 0 && result.skipped.length === 0) {
+    return 'Nothing to undo. It was already back the way it was.';
+  }
   if (result.skipped.length === 0) return null;
   const done = result.changes.length;
   const head = `Undid ${done} ${done === 1 ? 'change' : 'changes'}.`;

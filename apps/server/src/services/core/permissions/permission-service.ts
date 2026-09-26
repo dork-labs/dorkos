@@ -183,6 +183,24 @@ function agentName(agent: PermissionAgentRef): string {
 export class PermissionService {
   constructor(private readonly deps: PermissionServiceDeps) {}
 
+  /** The tail of the write queue; see {@link exclusive}. */
+  private writes: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Run one write after every earlier one has finished. Each write reads the
+   * stored value, awaits (a manifest read, an Activity read), then writes, so
+   * two writes side by side could both read the same value and the second
+   * would silently put back what the first changed, or two Undos of one change
+   * would both pass their compare-and-set. Permission writes are rare and
+   * person-paced, so one queue for the whole service costs nothing a person
+   * would notice and closes every such gap at once.
+   */
+  private exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.writes.then(work, work);
+    this.writes = run.catch(() => undefined);
+    return run;
+  }
+
   /** Actions keyed by id, for validation and titles. */
   private actionIndex(): Map<string, PermissionActionInfo> {
     return new Map(this.deps.actions().map((a) => [a.id, a]));
@@ -398,29 +416,36 @@ export class PermissionService {
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
-    const actions = this.actionIndex();
-    this.validate(input, actions);
-    const selected = this.agentsById(input.applyToAgents ?? []);
-    const config = this.deps.config.get();
-    const { next, changes } = this.applyPatch(config.defaults, input, { kind: 'default' }, actions);
-    const cleared = await this.clearAgentKeys(
-      selected,
-      { areas: Object.keys(input.areas ?? {}), actions: Object.keys(input.actions ?? {}) },
-      actions
-    );
-    if (changes.length > 0) this.deps.config.set({ ...config, defaults: next });
-    await cleared.write();
-    const all = [...changes, ...cleared.changes];
-    await this.record(
-      {
-        changes: all,
-        surface: input.surface,
-        writer,
-        ...(input.approvalId ? { approvalId: input.approvalId } : {}),
-      },
-      this.titleFor(actions)
-    );
-    return all;
+    return this.exclusive(async () => {
+      const actions = this.actionIndex();
+      this.validate(input, actions);
+      const selected = this.agentsById(input.applyToAgents ?? []);
+      const config = this.deps.config.get();
+      const { next, changes } = this.applyPatch(
+        config.defaults,
+        input,
+        { kind: 'default' },
+        actions
+      );
+      const cleared = await this.clearAgentKeys(
+        selected,
+        { areas: Object.keys(input.areas ?? {}), actions: Object.keys(input.actions ?? {}) },
+        actions
+      );
+      if (changes.length > 0) this.deps.config.set({ ...config, defaults: next });
+      await cleared.write();
+      const all = [...changes, ...cleared.changes];
+      await this.record(
+        {
+          changes: all,
+          surface: input.surface,
+          writer,
+          ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+        },
+        this.titleFor(actions)
+      );
+      return all;
+    });
   }
 
   /**
@@ -449,78 +474,80 @@ export class PermissionService {
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
-    const actions = this.actionIndex();
-    const selected = this.agentsById(input.applyToAgents ?? []);
-    const presetStop = PERMISSION_PRESET_TABLES[input.preset].filesStop;
-    const acknowledge = input.acknowledgeAutonomy === true;
-    if (presetStop === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
-      throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
-    }
-    const config = this.deps.config.get();
-    const stops = this.deps.config.trustStops();
-    const changes: PermissionChange[] = [];
-    if (config.preset !== input.preset) {
-      changes.push({
-        target: { kind: 'default' },
-        key: { kind: 'preset' },
-        before: config.preset,
-        after: input.preset,
-      });
-    }
-    for (const [area, state] of Object.entries(config.defaults.areas)) {
-      if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area)) continue;
-      changes.push({
-        target: { kind: 'default' },
-        key: { kind: 'area', area: area as PermissionAreaId },
-        before: state,
-        after: null,
-      });
-    }
-    for (const [id, state] of Object.entries(config.defaults.actions)) {
-      const area = actions.get(id)?.area;
-      if (!area) continue;
-      changes.push({
-        target: { kind: 'default' },
-        key: { kind: 'action', action: id, area },
-        before: state,
-        after: null,
-      });
-    }
-    if (presetStop !== null && stops.global !== presetStop) {
-      changes.push({
-        target: { kind: 'default' },
-        key: { kind: 'files' },
-        before: stops.global,
-        after: presetStop,
-      });
-    }
-    const cleared = await this.clearAgentKeys(selected, 'all', actions);
-    const presetSnapshot = {
-      preset: config.preset,
-      defaults: config.defaults,
-      trustStop: stops.global,
-    };
-    const moved =
-      config.preset !== input.preset ||
-      Object.keys(config.defaults.areas).length > 0 ||
-      Object.keys(config.defaults.actions).length > 0;
-    if (moved) {
-      this.deps.config.set({
-        ...config,
-        preset: input.preset,
-        defaults: { areas: {}, actions: {} },
-      });
-    }
-    if (presetStop !== null && (stops.global !== presetStop || acknowledge)) {
-      this.deps.config.setGlobalTrustStop(presetStop, acknowledge);
-    }
-    await cleared.write();
-    const all = [...changes, ...cleared.changes];
-    await this.record(
-      { changes: all, surface: input.surface, writer, presetSnapshot },
-      this.titleFor(actions)
-    );
-    return all;
+    return this.exclusive(async () => {
+      const actions = this.actionIndex();
+      const selected = this.agentsById(input.applyToAgents ?? []);
+      const presetStop = PERMISSION_PRESET_TABLES[input.preset].filesStop;
+      const acknowledge = input.acknowledgeAutonomy === true;
+      if (presetStop === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
+        throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
+      }
+      const config = this.deps.config.get();
+      const stops = this.deps.config.trustStops();
+      const changes: PermissionChange[] = [];
+      if (config.preset !== input.preset) {
+        changes.push({
+          target: { kind: 'default' },
+          key: { kind: 'preset' },
+          before: config.preset,
+          after: input.preset,
+        });
+      }
+      for (const [area, state] of Object.entries(config.defaults.areas)) {
+        if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area)) continue;
+        changes.push({
+          target: { kind: 'default' },
+          key: { kind: 'area', area: area as PermissionAreaId },
+          before: state,
+          after: null,
+        });
+      }
+      for (const [id, state] of Object.entries(config.defaults.actions)) {
+        const area = actions.get(id)?.area;
+        if (!area) continue;
+        changes.push({
+          target: { kind: 'default' },
+          key: { kind: 'action', action: id, area },
+          before: state,
+          after: null,
+        });
+      }
+      if (presetStop !== null && stops.global !== presetStop) {
+        changes.push({
+          target: { kind: 'default' },
+          key: { kind: 'files' },
+          before: stops.global,
+          after: presetStop,
+        });
+      }
+      const cleared = await this.clearAgentKeys(selected, 'all', actions);
+      const presetSnapshot = {
+        preset: config.preset,
+        defaults: config.defaults,
+        trustStop: stops.global,
+      };
+      const moved =
+        config.preset !== input.preset ||
+        Object.keys(config.defaults.areas).length > 0 ||
+        Object.keys(config.defaults.actions).length > 0;
+      if (moved) {
+        this.deps.config.set({
+          ...config,
+          preset: input.preset,
+          defaults: { areas: {}, actions: {} },
+        });
+      }
+      if (presetStop !== null && (stops.global !== presetStop || acknowledge)) {
+        this.deps.config.setGlobalTrustStop(presetStop, acknowledge);
+      }
+      await cleared.write();
+      const all = [...changes, ...cleared.changes];
+      await this.record(
+        { changes: all, surface: input.surface, writer, presetSnapshot },
+        this.titleFor(actions)
+      );
+      return all;
+    });
   }
 
   /**
@@ -549,59 +576,61 @@ export class PermissionService {
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
-    const actions = this.actionIndex();
-    this.validate(input, actions);
-    const files = input.filesAndCommands;
-    if (files !== undefined && files !== null && !PERMISSION_STOPS.includes(files)) {
-      throw new PermissionError(
-        'INVALID_STOP',
-        `"${String(files)}" is not a Files & commands stop.`
+    return this.exclusive(async () => {
+      const actions = this.actionIndex();
+      this.validate(input, actions);
+      const files = input.filesAndCommands;
+      if (files !== undefined && files !== null && !PERMISSION_STOPS.includes(files)) {
+        throw new PermissionError(
+          'INVALID_STOP',
+          `"${String(files)}" is not a Files & commands stop.`
+        );
+      }
+      // The same consent door the global stop has: an agent's own Full autonomy
+      // needs the acknowledgement on file, or sent with it (428 otherwise).
+      const acknowledge = input.acknowledgeAutonomy === true;
+      if (files === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
+        throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
+      }
+      const [agent] = this.agentsById([agentId]);
+      const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
+      const patch = input.expectActions ? unchanged(stored, input, input.expectActions) : input;
+      const target = this.agentTarget(agent!);
+      const { next, changes } = this.applyPatch(stored, patch, target, actions);
+      let nextFiles = stored.filesAndCommands;
+      if (files !== undefined && (stored.filesAndCommands ?? null) !== files) {
+        changes.push({
+          target,
+          key: { kind: 'files' },
+          before: stored.filesAndCommands ?? null,
+          after: files,
+        });
+        nextFiles = files ?? undefined;
+      }
+      if (changes.length > 0) {
+        if (files === 'autonomy' && acknowledge) this.deps.config.recordAutonomyAck();
+        const { filesAndCommands: _previous, ...rest } = stored;
+        await this.deps.agents.writePermissions(
+          agentId,
+          compact({
+            ...rest,
+            areas: next.areas,
+            actions: next.actions,
+            ...(nextFiles ? { filesAndCommands: nextFiles } : {}),
+          })
+        );
+      }
+      await this.record(
+        {
+          changes,
+          surface: input.surface,
+          writer,
+          ...(input.approvalId ? { approvalId: input.approvalId } : {}),
+        },
+        this.titleFor(actions)
       );
-    }
-    // The same consent door the global stop has: an agent's own Full autonomy
-    // needs the acknowledgement on file, or sent with it (428 otherwise).
-    const acknowledge = input.acknowledgeAutonomy === true;
-    if (files === 'autonomy' && !acknowledge && !this.deps.config.hasAutonomyAck()) {
-      throw new PermissionError('AUTONOMY_ACK_REQUIRED', AUTONOMY_ACK_MESSAGE, 428);
-    }
-    const [agent] = this.agentsById([agentId]);
-    const stored = (await this.deps.agents.readPermissions(agent!.projectPath)) ?? {};
-    const patch = input.expectActions ? unchanged(stored, input, input.expectActions) : input;
-    const target = this.agentTarget(agent!);
-    const { next, changes } = this.applyPatch(stored, patch, target, actions);
-    let nextFiles = stored.filesAndCommands;
-    if (files !== undefined && (stored.filesAndCommands ?? null) !== files) {
-      changes.push({
-        target,
-        key: { kind: 'files' },
-        before: stored.filesAndCommands ?? null,
-        after: files,
-      });
-      nextFiles = files ?? undefined;
-    }
-    if (changes.length > 0) {
-      if (files === 'autonomy' && acknowledge) this.deps.config.recordAutonomyAck();
-      const { filesAndCommands: _previous, ...rest } = stored;
-      await this.deps.agents.writePermissions(
-        agentId,
-        compact({
-          ...rest,
-          areas: next.areas,
-          actions: next.actions,
-          ...(nextFiles ? { filesAndCommands: nextFiles } : {}),
-        })
-      );
-    }
-    await this.record(
-      {
-        changes,
-        surface: input.surface,
-        writer,
-        ...(input.approvalId ? { approvalId: input.approvalId } : {}),
-      },
-      this.titleFor(actions)
-    );
-    return changes;
+      return changes;
+    });
   }
 
   /**
@@ -619,18 +648,20 @@ export class PermissionService {
     input: { force?: boolean; acknowledgeAutonomy?: boolean },
     writer: PermissionWriter
   ): Promise<UndoPermissionChangeResponse> {
-    const actions = this.actionIndex();
-    return undoPermissionChange(
-      {
-        deps: this.deps,
-        actions,
-        agentTarget: (agent) => this.agentTarget(agent),
-        record: (record) => this.record(record, this.titleFor(actions)),
-      },
-      eventId,
-      input,
-      writer
-    );
+    return this.exclusive(async () => {
+      const actions = this.actionIndex();
+      return undoPermissionChange(
+        {
+          deps: this.deps,
+          actions,
+          agentTarget: (agent) => this.agentTarget(agent),
+          record: (record) => this.record(record, this.titleFor(actions)),
+        },
+        eventId,
+        input,
+        writer
+      );
+    });
   }
 
   /**
