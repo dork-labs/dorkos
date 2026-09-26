@@ -1,11 +1,11 @@
 /**
- * Migration 0114 — the per-agent tier ceiling is retired (spec
+ * Migration 0115 — the per-agent tier ceiling is retired (spec
  * `agent-permissions` phase 3), so `agent_identity_tokens.tier_ceiling` goes.
  *
  * Applied from three starting points, because a DROP COLUMN only has to work on
  * the databases people actually have: a fresh one, one from the phase 2 era
  * (everything through 0107, a token carrying a narrowed ceiling), and one at the
- * last release's shape (everything through 0113). Every one ends with the column
+ * last release's shape (everything through 0114). Every one ends with the column
  * gone and the token rows it had kept.
  *
  * @module db/tests/tier-ceiling-drop-migration
@@ -23,7 +23,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
 
 /** The migration under test. */
-const TAG = '0114_superb_nightshade';
+const TAG = '0115_furry_starjammers';
 
 type Raw = Database.Database;
 
@@ -35,7 +35,7 @@ function databaseBefore(idx: number): Raw {
     readFileSync(path.join(DRIZZLE_DIR, 'meta/_journal.json'), 'utf-8')
   ) as { entries: { idx: number; tag: string }[] };
   const before = journal.entries.filter((e) => e.idx < idx);
-  // A renumbered 0114 would build a shape that already has it.
+  // A renumbered 0115 would build a shape that already has it.
   expect(before.map((e) => e.tag)).not.toContain(TAG);
   expect(journal.entries.map((e) => e.tag)).toContain(TAG);
   for (const entry of before) {
@@ -73,7 +73,7 @@ function seedOldToken(raw: Raw): void {
     .run();
 }
 
-describe('migration 0114: the tier ceiling column goes', () => {
+describe('migration 0115: the tier ceiling column goes', () => {
   it('leaves a fresh database without the column', () => {
     const raw = new Database(':memory:');
     applyAll(raw);
@@ -83,7 +83,7 @@ describe('migration 0114: the tier ceiling column goes', () => {
 
   it.each([
     ['the phase 2 era (through 0107)', 108],
-    ['the last release (through 0113)', 114],
+    ['the last release (through 0114)', 115],
   ])('drops it from a database at %s, keeping every token', (_label, idx) => {
     const raw = databaseBefore(idx);
     expect(columns(raw)).toContain('tier_ceiling');

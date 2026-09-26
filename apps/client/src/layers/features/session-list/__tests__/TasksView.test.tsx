@@ -113,6 +113,7 @@ function makeSchedule(overrides: Partial<Task> & { id: string; name: string }): 
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     filePath: '/tmp/tasks/test.md',
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',

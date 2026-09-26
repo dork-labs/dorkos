@@ -1,0 +1,87 @@
+<style>
+  .win{display:flex;background:#fff;border:1px solid #d9d9d9;border-radius:14px;overflow:hidden;max-width:900px;font-size:13px;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+  .nav{width:190px;background:#fafafa;border-right:1px solid #eee;padding:14px 10px;flex:none}
+  .nav .g{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#aaa;margin:12px 8px 4px}
+  .nav div.i{padding:6px 8px;border-radius:6px;color:#555}
+  .nav div.on{background:#ececec;color:#111;font-weight:600}
+  .nav .new{font-size:9px;background:#ede9fe;color:#6d28d9;border-radius:4px;padding:1px 4px;margin-left:4px}
+  .body{flex:1;padding:20px 24px}
+  .h{font-size:17px;font-weight:700}
+  .sub{color:#777;margin:2px 0 16px}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin:18px 0 6px}
+  .box{border:1px solid #eee;border-radius:10px}
+  .r{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #f3f3f3}
+  .r:last-child{border:none}
+  .r small{display:block;color:#888;font-size:12px}
+  .r .right{margin-left:auto;display:flex;gap:8px;align-items:center;white-space:nowrap}
+  .btn{font-size:12px;padding:5px 11px;border-radius:7px;border:1px solid #ddd;background:#fff}
+  .red{color:#b91c1c}
+  .g1{color:#1a7f37}
+  .add{color:#2563eb;padding:10px 14px;display:block}
+  .num{border:1px solid #ddd;border-radius:7px;padding:5px 10px;width:40px;text-align:center}
+  .tog{width:30px;height:18px;border-radius:99px;background:#111;position:relative}
+  .tog::after{content:"";position:absolute;right:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+  .dlg{background:#fff;border:1px solid #d4d4d4;border-radius:14px;padding:18px;max-width:380px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.1)}
+  .dlg .t{font-weight:700;font-size:15px;margin-bottom:6px}
+  .dlg ul{margin:8px 0;padding-left:18px;color:#444}
+  .dlg .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+  .dlg .danger{background:#b91c1c;color:#fff;border-color:#b91c1c}
+  .note{font-size:12px;color:#6d28d9;margin-top:8px}
+  .two{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-top:22px}
+</style>
+
+<h2>Step 7 — Changing it later: Settings › Connections</h2>
+<p class="subtitle">Yes. Today there's no such tab — your DorkOS account link sits in Settings › Access, and the Composio/Nango keys sit at the bottom of the Connections page. This gives them one home. <b>Rule of thumb:</b> the page is for <i>apps</i>; Settings is for <i>the plumbing</i>.</p>
+
+<div class="win">
+  <div class="nav">
+    <div class="g">You</div><div class="i">Profile</div><div class="i">Appearance</div><div class="i">Notifications</div>
+    <div class="g">Agents &amp; sessions</div><div class="i">Permissions</div><div class="i">Runtimes</div><div class="i">Rooms</div>
+    <div class="i on">Connections<span class="new">NEW</span></div>
+    <div class="g">Access &amp; privacy</div><div class="i">Access</div><div class="i">Privacy &amp; Data</div><div class="i">Remote access</div>
+  </div>
+  <div class="body">
+    <div class="h">Connections</div>
+    <div class="sub">How DorkOS reaches your apps, and how chat apps behave. Your apps themselves are on the <u>Connections page</u>.</div>
+
+    <div class="lbl">How DorkOS reaches your apps</div>
+    <div class="box">
+      <div class="r"><div><b>Your DorkOS account</b><small>Used for new apps · 4 apps connected</small></div><div class="right"><span class="g1">● Working</span><span class="btn">Disconnect…</span></div></div>
+      <div class="r"><div><b>Your Composio key</b><small>2 apps connected · key ends in …f3a9</small></div><div class="right"><span class="g1">● Working</span><span class="btn">Change key</span><span class="btn">Remove…</span></div></div>
+      <span class="add">+ Add another way</span>
+    </div>
+
+    <div class="lbl">Chat apps</div>
+    <div class="box">
+      <div class="r"><div><b>Start working right away</b><small>A new message puts the agent to work straight away</small></div><div class="right"><div class="tog"></div></div></div>
+      <div class="r"><div><b>Most chats at once</b><small>More wait their turn</small></div><div class="right"><span class="num">3</span></div></div>
+      <div class="r"><div><b>Give up after</b><small>Minutes one message gets before it's stopped</small></div><div class="right"><span class="num">5</span></div></div>
+    </div>
+  </div>
+</div>
+<div class="note">The "Chat apps" block is today's "When messages arrive" card, moved off the page. Same settings, plainer words.</div>
+
+<div class="two">
+  <div class="dlg">
+    <div class="t">Disconnect your DorkOS account?</div>
+    <div style="color:#555">These 4 apps will stop working for every agent:</div>
+    <ul><li>Gmail (you@gmail.com) — DorkBot, mailroom</li><li>Gmail (work@acme.com)</li><li>Google Calendar — DorkBot</li><li>Notion — DorkBot</li></ul>
+    <div style="color:#555">You can connect them again another way later. Their access settings won't come back on their own.</div>
+    <div class="btns"><span class="btn">Cancel</span><span class="btn danger">Disconnect 4 apps</span></div>
+  </div>
+  <div style="max-width:420px;font-size:13px;color:#555">
+    <h3 style="margin-top:0">How the pieces fit</h3>
+    <ul style="padding-left:18px">
+      <li><b>One app</b> (just Gmail): side panel › More › Disconnect. Tells you which agents lose it.</li>
+      <li><b>The whole setup</b> (every app that goes through it): Settings › Connections › Disconnect. Lists every app that will stop working, and the button says the number.</li>
+      <li><b>Switching</b> (Composio key → DorkOS account): add the new way, then reconnect apps one by one. Rows connected the old way keep working until you do. We never move logins behind your back.</li>
+      <li><b>Nothing set up yet:</b> this section just says "Set up when you connect your first app" with a link to the page.</li>
+      <li>The DorkOS account link itself stays in Settings › Access. This tab only shows that it's being used for apps.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="options" style="margin-top:20px">
+  <div class="option" data-choice="yes" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>Looks right</h3><p>New Settings › Connections tab, as shown.</p></div></div>
+  <div class="option" data-choice="change" onclick="toggleSelect(this)"><div class="letter">~</div><div class="content"><h3>Change something</h3><p>Tell me in the terminal.</p></div></div>
+</div>

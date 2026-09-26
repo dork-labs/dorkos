@@ -17,6 +17,17 @@ falls back to a copy on `EXDEV`/`EPERM`, `projectedAttachmentPath` is the one sh
 file, joining the absolute path the amendment describes. One name in that amendment has since moved —
 see the note at the end.
 
+**Amended by
+[260926-180223](260926-180223-a-turn-reaches-shared-folders-through-per-turn-grants-on-the-runtime-port.md)
+(2026-09-26, proposed).** The "filesystem grant on the `AgentRuntime` port" this record declined on
+cost is now built, for a room's files. Attachments are **still projected** — a remote attachment
+store has no local path to grant — and the projection root is again the agent's home, because a room
+turn runs there once more. The 2026-08-30 note at the end ("since DOR-1597 a turn in a project room
+runs in that agent's working COPY") stops being true when that record ships; the field keeps the name
+`cwd`, and for a room turn its value equals the agent's home. The Positive bullet "the `AgentRuntime`
+port is untouched" is retired: the port gains `additionalDirectories`, though projection does not use
+it.
+
 ## Context
 
 Attachment paths are delivered to room agents automatically with the entry, with no opt-in step

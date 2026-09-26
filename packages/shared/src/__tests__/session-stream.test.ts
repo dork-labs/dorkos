@@ -25,6 +25,7 @@ const coldStatus = {
   runningSubagentCount: 0,
   lifecycle: 'idle' as const,
   lastError: null,
+  limit: null,
 };
 
 describe('SessionStatusSchema', () => {

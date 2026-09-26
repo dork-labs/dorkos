@@ -41,12 +41,13 @@ Everything past this point is reference material: the full list of dials, groupe
 
 ### Where the dials live
 
-Almost every setting lives in one file. The autonomous schedule is the one exception:
+Almost every setting lives in `config.json`, with a second file beside it for what belongs to your machine alone. The autonomous schedule is the one exception:
 
-| File                                                                | Owns                                                                                | Validated by                                         |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `.dork/plugins/flow/config/config.json`                             | The engine's rulebook: autonomy, eligibility, involvement, gates, loops, ingestion. | `config.schema.json` (linked at the top of the file) |
-| `.dork/plugins/flow/skills/flow-drain/SKILL.md` (`schedule:` block) | The Pulse schedule: when the autonomous tick fires, and whether it fires at all.    | The Pulse task loader                                |
+| File                                                                | Owns                                                                                                                     | Validated by                                         |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `.agents/flow/config.json`                                          | The engine's rulebook: autonomy, eligibility, involvement, gates, loops, ingestion. Commit it: it is your team's policy. | `config.schema.json` (linked at the top of the file) |
+| `.agents/flow/config.local.json`                                    | This machine's tracker account and overrides. Git ignores it, so it never leaves your computer.                          | Checked with `config.json` once the two are combined |
+| `.dork/plugins/flow/skills/flow-drain/SKILL.md` (`schedule:` block) | The Pulse schedule: when the autonomous tick fires, and whether it fires at all.                                         | The Pulse task loader                                |
 
 That schema file isn't just documentation: it's enforced. If you type a value that isn't on the allowed list, or set a number below the floor `/flow` requires, the file fails to load instead of quietly misbehaving. Most code editors also read the schema reference at the top of `config.json` and give you autocomplete and inline errors as you type, the same way editors validate a `package.json`.
 

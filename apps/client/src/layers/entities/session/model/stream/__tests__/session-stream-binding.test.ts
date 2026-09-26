@@ -63,6 +63,7 @@ const STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'idle',
   lastError: null,
+  limit: null,
 };
 
 const SNAPSHOT: SessionSnapshot = {

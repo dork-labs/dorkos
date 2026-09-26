@@ -309,6 +309,8 @@ describe('the boot migration off the legacy task directories', () => {
           null,
           null,
           false,
+          // The account (DOR-2384): none, as every row before it had.
+          null,
         ])
       );
     });

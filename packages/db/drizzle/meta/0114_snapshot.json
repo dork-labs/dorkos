@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a42323bc-b22a-414b-84ec-18eead7433a5",
+  "id": "0f3aabdd-ff3b-4160-a3a7-cf3b689b51ff",
   "prevId": "eba6c1ca-2a94-466e-82c9-ca2fdcba888c",
   "tables": {
     "a2a_tasks": {
@@ -525,6 +525,14 @@
           "notNull": true,
           "autoincrement": false
         },
+        "tier_ceiling": {
+          "name": "tier_ceiling",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'destructive'"
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -924,6 +932,13 @@
         },
         "effort": {
           "name": "effort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "account": {
+          "name": "account",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
