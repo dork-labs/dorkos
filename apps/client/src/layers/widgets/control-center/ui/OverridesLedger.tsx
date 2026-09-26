@@ -36,7 +36,7 @@ const KIND_ICON: Record<OverrideKind, LucideIcon> = {
  * choosing one.
  */
 export function OverridesLedger() {
-  const { rows, isEmpty, isResolving } = useOverridesLedger();
+  const { rows, isEmpty, isResolving, permissionsUnreadable } = useOverridesLedger();
 
   return (
     <section className="flex flex-col gap-2" data-testid="control-center-overrides">
@@ -93,6 +93,16 @@ export function OverridesLedger() {
           })}
         </ul>
       )}
+
+      {permissionsUnreadable ? (
+        <p
+          data-testid="overrides-ledger-permissions-error"
+          className="text-muted-foreground px-1 text-xs"
+        >
+          Couldn’t read which agents have permissions of their own, so they aren’t listed here.
+          Settings → Permissions shows them.
+        </p>
+      ) : null}
     </section>
   );
 }

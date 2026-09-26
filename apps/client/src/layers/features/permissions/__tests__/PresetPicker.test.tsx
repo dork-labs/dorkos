@@ -171,7 +171,7 @@ describe('PresetPicker', () => {
     expect(screen.getByTestId('preset-picker')).toHaveAttribute('aria-busy', 'true');
   });
 
-  it('says so when the permissions cannot be read (the Obsidian embed)', async () => {
+  it('says so when the permissions cannot be read', async () => {
     const transport = createMockTransport({
       getPermissions: vi.fn().mockRejectedValue(new Error('not here')),
     });

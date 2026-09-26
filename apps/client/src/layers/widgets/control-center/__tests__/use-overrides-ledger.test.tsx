@@ -21,7 +21,12 @@ const openSettings = vi.fn();
 const openConnections = vi.fn();
 const setControlCenterOpen = vi.fn();
 const openProfile = vi.fn();
-const usePermissions = vi.fn(() => ({ data: undefined as unknown }));
+/** An overview with nobody set differently: the ledger's permissions half, answered. */
+const NO_EXCEPTIONS = { areas: [], exceptions: [], filesAndCommands: { exceptions: [] } };
+const usePermissions = vi.fn((): { data?: unknown; isError?: boolean } => ({
+  data: NO_EXCEPTIONS,
+  isError: false,
+}));
 const resetMutate = vi.fn();
 
 vi.mock('@/layers/entities/config', () => ({ useConfig: () => useConfig() }));
@@ -97,7 +102,7 @@ beforeEach(() => {
   useSessions.mockReturnValue({ sessions: [] });
   useTasks.mockReturnValue({ data: [] });
   useBindings.mockReturnValue({ data: [] });
-  usePermissions.mockReturnValue({ data: undefined });
+  usePermissions.mockReturnValue({ data: NO_EXCEPTIONS, isError: false });
   seedCaps();
 });
 
@@ -255,5 +260,20 @@ describe('useOverridesLedger', () => {
       key: { kind: 'files' },
       surface: 'control-center',
     });
+  });
+
+  it('waits for the permissions before saying nothing is overridden', () => {
+    usePermissions.mockReturnValue({ data: undefined, isError: false });
+    const { result } = renderHook(() => useOverridesLedger());
+    expect(result.current.isResolving).toBe(true);
+    expect(result.current.isEmpty).toBe(false);
+  });
+
+  it('says it could not read them, rather than that nothing differs, when the read fails', () => {
+    usePermissions.mockReturnValue({ data: undefined, isError: true });
+    const { result } = renderHook(() => useOverridesLedger());
+    expect(result.current.isResolving).toBe(false);
+    expect(result.current.isEmpty).toBe(false);
+    expect(result.current.permissionsUnreadable).toBe(true);
   });
 });

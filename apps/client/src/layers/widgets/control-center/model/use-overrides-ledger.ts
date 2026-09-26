@@ -82,6 +82,12 @@ export interface OverridesLedger {
    * an empty state it might have to take back a beat later.
    */
   isResolving: boolean;
+  /**
+   * True when agents' own permissions could not be read. The other rows still
+   * show, but "everything follows" would be a claim nobody checked, so the
+   * surface says it could not read them instead.
+   */
+  permissionsUnreadable: boolean;
 }
 
 /**
@@ -99,7 +105,8 @@ export function useOverridesLedger(): OverridesLedger {
   const tasksEnabled = useTasksEnabled();
   const { data: tasks } = useTasks(tasksEnabled);
   const { data: bindings } = useBindings();
-  const { data: permissions } = usePermissions();
+  const permissionsQuery = usePermissions();
+  const permissions = permissionsQuery.data;
   const resetPermission = useResetAgentPermission();
   const navigate = useSafeNavigate();
   const { open: openSettings } = useSettingsDeepLink();
@@ -113,7 +120,13 @@ export function useOverridesLedger(): OverridesLedger {
   // the same shape (DOR-1743), so the ordering lives in one place now.
   const openAndClose = createModalHandoff(() => setControlCenterOpen(false));
 
-  const isResolving = capabilityMap === undefined || config === undefined;
+  // Waits for the permissions too: an empty ledger shown before they arrive
+  // would say nothing is overridden, then take it back a beat later.
+  const permissionsUnreadable = permissionsQuery.isError;
+  const isResolving =
+    capabilityMap === undefined ||
+    config === undefined ||
+    (permissions === undefined && !permissionsUnreadable);
 
   const defaults = config?.executionDefaults;
   const defaultRuntime = defaults?.runtime ?? UNATTENDED_RUNTIME;
@@ -201,8 +214,8 @@ export function useOverridesLedger(): OverridesLedger {
 
   // 5. Agents with a permission of their own (spec `agent-permissions`, task
   //    3.8): an area, a single action, or a Files & commands stop that differs
-  //    from what everyone has. Read from the permissions overview, and absent
-  //    where it cannot be read (the Obsidian embed has no permissions).
+  //    from what everyone has. Read from the permissions overview; when that
+  //    read fails the surface says so rather than claiming none differ.
   if (permissions) {
     const areaLabel = new Map(permissions.areas.map((area) => [area.id, area.label]));
     const actionTitle = new Map(
@@ -244,5 +257,10 @@ export function useOverridesLedger(): OverridesLedger {
     }
   }
 
-  return { rows, isEmpty: !isResolving && rows.length === 0, isResolving };
+  return {
+    rows,
+    isEmpty: !isResolving && !permissionsUnreadable && rows.length === 0,
+    isResolving,
+    permissionsUnreadable,
+  };
 }
