@@ -35,7 +35,7 @@ describe('the permission gate before it is wired', () => {
       personaEnabled: true,
       mcpServers: [],
       permissions: { areas: { rooms: 'allowed' }, filesAndCommands: 'autonomy' },
-    } as AgentManifest);
+    } as unknown as AgentManifest);
     resetPermissionGate();
 
     expect(await permissionGateSources().readAgentPermissions(dir)).toBeUndefined();
