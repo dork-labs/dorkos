@@ -21,7 +21,7 @@ The operator decided that routing policy (rotation, reserve, repo scope, handoff
 
 - Core never reads flow's policy file.
 - The extension server API gains `claudeAccounts.registerAdvisor`: one advisor (last registration wins, with a warning) with `rank`, optional `onLimited` and optional `carryOver`. Core requires its ranking when an AGENT (`session_start`) or a RELAY message names an account (fail-closed on a throw or a 2 s timeout), and uses it optionally to steer the core out-of-usage flow (ranking, automatic handoff, handoff seed).
-- A person's own pick is never refused by it; without an advisor every person-facing flow uses core defaults. With no guard registered, an agent's or a relay message's account pick is refused: nothing is spent until the operator opts in.
+- A person's own pick is never refused by it; without an advisor every person-facing flow uses core defaults. With no advisor registered, an agent's or a relay message's account pick is refused: nothing is spent until the operator opts in.
 
 ## Consequences
 
