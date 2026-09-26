@@ -74,21 +74,23 @@ export function codeSpan(text: string): string {
  * start, where a block could open, `-` `+` `=` `#` `>` are escaped too, and a
  * leading `1.` or `1)` has its punctuation escaped so it cannot open a list.
  * Hyphens and dots in the middle of a name are left alone, so `Ana-Lima` still
- * reads as `Ana-Lima` in a bridge or an agent's context. A bare `https://` or
- * `www.` — which GFM links with no brackets at all — has its `:` or `.` escaped.
+ * reads as `Ana-Lima` in a bridge or an agent's context.
+ *
+ * **This does not stop a name that looks like a web address from showing as a
+ * link.** GFM autolinks bare `https://…`, `www.…`, email addresses and
+ * `mailto:` after escapes have been applied, so no backslash placed here
+ * defuses them (measured through the app's real renderer). What protects a
+ * person is the app's link-safety prompt, which shows the real address before
+ * opening it — and the app drawing `fileChange` entries as plain text, with the
+ * name taken from the author record, rather than rendering this sentence.
  *
  * @param who - The display name, already sanitized.
  */
 export function escapeMarkdown(who: string): string {
-  return (
-    who
-      .replace(/[\\`*_[\]!~|]/g, (char) => `\\${char}`)
-      .replace(/^[-+=#>]/, (char) => `\\${char}`)
-      .replace(/^(\d+)([.)])/, '$1\\$2')
-      // GFM links a bare `https://…` or `www.…` with no brackets at all.
-      .replace(/:\/\//g, '\\://')
-      .replace(/\bwww\./gi, (match) => `${match.slice(0, 3)}\\.`)
-  );
+  return who
+    .replace(/[\\`*_[\]!~|]/g, (char) => `\\${char}`)
+    .replace(/^[-+=#>]/, (char) => `\\${char}`)
+    .replace(/^(\d+)([.)])/, '$1\\$2');
 }
 
 /** What an upload or a copy from the chat says when it went to the root of the room. */

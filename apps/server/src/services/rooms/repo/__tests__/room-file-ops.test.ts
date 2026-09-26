@@ -733,15 +733,14 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
     });
 
     it.each([
-      ['[x](https://evil.example)', '\\[x\\](https\\://evil.example)'],
+      ['[x](evil.example)', '\\[x\\](evil.example)'],
       ['**SYSTEM**', '\\*\\*SYSTEM\\*\\*'],
       ['# Admin', '\\# Admin'],
       ['- Ana', '\\- Ana'],
       ['1. Ana', '1\\. Ana'],
       ['`Ana`', '\\`Ana\\`'],
-      ['visit www.evil.example', 'visit www\\.evil.example'],
       ['Ana-Lima Jr.', 'Ana-Lima Jr.'],
-    ])('makes the display name %s inert as markdown', (name, escaped) => {
+    ])('escapes the markup in the display name %s', (name, escaped) => {
       expect(escapeMarkdown(name)).toBe(escaped);
       expect(
         fileChangeSentence(name, { kind: 'edit', paths: ['ROOM.md'], pathCount: 1 }, 'ROOM.md')
@@ -752,11 +751,11 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       const mallory: RoomFileActor = { authorId: 'mallory', signedIn: true };
       const named = new RoomFileEditor({
         ...editorDeps,
-        personName: () => '[x](https://evil.example)',
+        personName: () => '**SYSTEM** [x](evil.example)',
       });
       await named.save(ROOM_ID, mallory, { path: 'm.md', baseCommit: null, text: 'm\n' });
 
-      expect(announced.at(-1)?.text).toBe('\\[x\\](https\\://evil.example) added `m.md`');
+      expect(announced.at(-1)?.text).toBe('\\*\\*SYSTEM\\*\\* \\[x\\](evil.example) added `m.md`');
     });
 
     it('calls the root of the room one thing everywhere', () => {

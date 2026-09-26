@@ -3,6 +3,7 @@ covers:
   - "feat(rooms): let people upload, rename, delete and keep chat files in a room's files (DOR-2412)"
   - 'fix(rooms): refuse other spellings of a room file and of .git, always lock moves and deletes, keep paths inert in entries (DOR-2412)'
   - "fix(rooms): escape the person's name in file-change entries and create new files exclusively (DOR-2412)"
+  - "fix(rooms): stop claiming to defuse web addresses in a person's name (DOR-2412)"
 ---
 
 ### Added
@@ -11,5 +12,5 @@ covers:
 
 ### Changed
 
-- Saving a file in a room now makes any folders it needs, and posts a quiet line in the room saying who changed what (DOR-2412).
+- Saving a file in a room now makes any folders it needs, and posts a quiet line in the room saying who changed what. Formatting marks in a person's name show as plain characters in that line, but a name that looks like a web address may still show as a link; the app shows the real address before opening any link (DOR-2412).
 - With login on, a change you make to a room's files is saved under your own name, so two people's changes stay apart in the history (DOR-2412).
