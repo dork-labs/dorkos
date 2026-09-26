@@ -314,15 +314,18 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
     await axeBothSchemes(page, '[role="menu"]', 'manage-desktop', testInfo);
 
     // Disconnect confirms in an alert dialog that opens on the safe choice.
+    // Radix moves focus after the key event, so each press waits for focus to
+    // land before reading it; reading at once can step past Disconnect onto
+    // Leave, whose Enter opens the Community's site instead.
+    const disconnect = page.getByRole('menuitem', { name: 'Disconnect…', exact: true });
+    const focusedText = () => page.evaluate(() => document.activeElement?.textContent ?? '');
     for (let step = 0; step < 6; step++) {
-      if (
-        await page
-          .getByRole('menuitem', { name: 'Disconnect…', exact: true })
-          .evaluate((element) => element === document.activeElement)
-      )
-        break;
+      if (await disconnect.evaluate((element) => element === document.activeElement)) break;
+      const before = await focusedText();
       await page.keyboard.press('ArrowDown');
+      await expect.poll(focusedText).not.toBe(before);
     }
+    await expect(disconnect).toBeFocused();
     await page.keyboard.press('Enter');
     const confirm = page.getByRole('alertdialog', { name: 'Disconnect this DorkOS from Alpha?' });
     await expect(confirm.getByRole('button', { name: 'Keep connected' })).toBeFocused();

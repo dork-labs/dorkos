@@ -23,16 +23,16 @@ import {
 } from '@/layers/shared/ui';
 import {
   communityKeys,
+  communityOwnerAddress,
   unconfirmedDisconnectMessage,
+  useCommunityApprovalCheck,
+  useCommunityApprovalStore,
   useCommunityConnections,
   useConfirmedCommunityAuthority,
   useEndCommunityConnection,
-} from '@/layers/entities/community';
-import {
-  useCommunityApprovals,
+  useShowCommunityApproval,
   type CommunityApprovalCheck,
-  type CommunityApprovalOutcome,
-} from '../../model/use-community-approvals';
+} from '@/layers/entities/community';
 
 /** What the connect dialog was opened for. */
 export interface ConnectCommunityRequest {
@@ -57,10 +57,12 @@ interface OwnedValue<T> {
   value: T;
 }
 
-function outcomeMessage(label: string, outcome: Exclude<CommunityApprovalOutcome, 'connected'>) {
-  return outcome === 'expired'
-    ? `Approval for ${label} expired. Connect again to continue.`
-    : `Approval for ${label} was cancelled.`;
+/** The connection a start returned, and whether the list has answered since. */
+interface Started {
+  address: string;
+  connection: CommunityConnectionDescriptor;
+  /** The list has been re-read after the start, so it is the truth from here on. */
+  settled: boolean;
 }
 
 /**
@@ -72,11 +74,10 @@ function outcomeMessage(label: string, outcome: Exclude<CommunityApprovalOutcome
  * it starts on that wait; opened on one whose access was withdrawn it offers
  * the disconnect that has to come before connecting again.
  *
- * It stays mounted while closed, because it also watches every pending
- * connection ({@link useCommunityApprovals}) — the check that finishes a
- * pairing — and remembers each approval link it was handed, so closing and
- * reopening the wait keeps the link. Everything is scoped to the confirmed
- * owner: a switch of owner hides the old owner's links, notices and rows.
+ * It only reads the wait. The app-level watcher (`useCommunityApprovalWatcher`)
+ * does the checking, and hands the ending of the wait on screen to this dialog
+ * rather than to a toast. Everything is scoped to the confirmed owner: a
+ * switch of owner hides the old owner's links, notices and rows.
  */
 export function ConnectCommunityDialog({
   request,
@@ -86,15 +87,20 @@ export function ConnectCommunityDialog({
 }: ConnectCommunityDialogProps) {
   const authority = useConfirmedCommunityAuthority(true);
   const list = useCommunityConnections(true);
-  const address = authority ? JSON.stringify([authority.ownerKey, authority.epoch]) : '';
+  const address = communityOwnerAddress(authority);
   const open = request !== null;
+  const links = useCommunityApprovalStore((state) => state.links);
+  const rememberLink = useCommunityApprovalStore((state) => state.rememberLink);
+  const ending = useCommunityApprovalStore((state) => state.ending);
 
   // The ref on screen. It needs no owner of its own: it is only ever looked up
   // in the confirmed owner's list, where another owner's ref is never found.
   const [shownRef, setShownRef] = useState<string | null>(null);
   const [notice, setNotice] = useState<OwnedValue<string> | null>(null);
-  const [approvalUrls, setApprovalUrls] = useState<OwnedValue<Record<string, string>> | null>(null);
-  const [started, setStarted] = useState<OwnedValue<CommunityConnectionDescriptor> | null>(null);
+  const [started, setStarted] = useState<Started | null>(null);
+  const [handledEnding, setHandledEnding] = useState(ending?.id ?? 0);
+  // The last name the wait on screen was shown under, to say which one ended.
+  const [lastSeen, setLastSeen] = useState<{ ref: string; label: string } | null>(null);
   // Each opening starts from what it was opened for, not from the last visit.
   const [openedFor, setOpenedFor] = useState<ConnectCommunityRequest | null>(null);
   if (request !== openedFor) {
@@ -105,26 +111,49 @@ export function ConnectCommunityDialog({
     }
   }
 
-  const connection =
-    shownRef === null
-      ? null
-      : (list.data?.find((row) => row.ref === shownRef) ??
-        // The list is refreshed after a start; until it answers, show what the start returned.
-        (started?.address === address && started.value.ref === shownRef ? started.value : null));
+  const listed = shownRef === null ? undefined : list.data?.find((row) => row.ref === shownRef);
+  // Until the list is re-read after a start, the start's answer stands in for it.
+  const provisional =
+    !listed &&
+    started !== null &&
+    !started.settled &&
+    started.address === address &&
+    started.connection.ref === shownRef
+      ? started.connection
+      : null;
+  const connection = listed ?? provisional;
+  if (connection && (lastSeen?.ref !== connection.ref || lastSeen.label !== connection.label))
+    setLastSeen({ ref: connection.ref, label: connection.label });
 
-  const checks = useCommunityApprovals(list.data, authority, (ended, outcome) => {
-    const onScreen = open && ended.ref === shownRef;
-    if (outcome === 'connected') {
-      if (!onScreen)
-        toast.success(`${ended.label} is connected.`, { id: `community-approval-${ended.ref}` });
-      return;
-    }
-    const message = outcomeMessage(ended.label, outcome);
-    if (onScreen) {
+  // The wait on screen ended, as the watcher saw it (expired, or cancelled on
+  // the Community's side). A connected ending is handled below, from the list.
+  if (ending && ending.id !== handledEnding) {
+    setHandledEnding(ending.id);
+    if (ending.ref === shownRef && ending.outcome !== 'connected') {
       setShownRef(null);
-      setNotice({ address, value: message });
-    } else toast.warning(message, { id: `community-approval-${ended.ref}` });
-  });
+      setNotice({
+        address,
+        value:
+          ending.outcome === 'expired'
+            ? `Approval for ${ending.label} expired. Connect again to continue.`
+            : `Approval for ${ending.label} was cancelled.`,
+      });
+    }
+  }
+  // The list, re-read, no longer has it: another window's check found it
+  // expired or refused, or it was cancelled elsewhere. Say so, rather than
+  // keep waiting on a connection that is gone.
+  else if (open && shownRef !== null && !connection && list.isSuccess) {
+    const label = lastSeen?.ref === shownRef ? lastSeen.label : 'this community';
+    setShownRef(null);
+    setNotice({
+      address,
+      value: `Approval for ${label} ended somewhere else. Connect again to continue.`,
+    });
+  }
+
+  useShowCommunityApproval(open && connection?.status === 'pending' ? connection.ref : null);
+  const check = useCommunityApprovalCheck(connection?.status === 'pending' ? connection : null);
 
   // Approved: the dialog's job is done, and the new Community is selected. Read
   // from the list rather than the check alone, because the list can learn it
@@ -154,29 +183,26 @@ export function ConnectCommunityDialog({
         <ConnectCommunityBody
           authority={authority}
           connection={connection}
-          check={connection ? checks.get(connection.ref) : undefined}
+          check={check}
           approvalUrl={
-            connection && approvalUrls?.address === address
-              ? approvalUrls.value[connection.ref]
-              : undefined
+            connection && links?.address === address ? links.urls[connection.ref] : undefined
           }
           notice={notice?.address === address ? notice.value : ''}
           installName={installName}
           onStarted={(result) => {
-            setApprovalUrls((previous) => ({
-              address,
-              value: {
-                ...(previous?.address === address ? previous.value : {}),
-                [result.connection.ref]: result.approvalUrl,
-              },
-            }));
-            setStarted({ address, value: result.connection });
+            rememberLink(address, result.connection.ref, result.approvalUrl);
+            setStarted({ address, connection: result.connection, settled: false });
             setShownRef(result.connection.ref);
             setNotice({
               address,
               value: `Next, approve this DorkOS on ${result.connection.label}.`,
             });
           }}
+          onStartSettled={(ref) =>
+            setStarted((previous) =>
+              previous?.connection.ref === ref ? { ...previous, settled: true } : previous
+            )
+          }
           onEnded={(message) => {
             setShownRef(null);
             setNotice({ address, value: message });
@@ -196,11 +222,13 @@ interface ConnectCommunityBodyProps {
   authority: ConfirmedCommunityAuthority | null;
   /** The connection on screen, or `null` for the form. */
   connection: CommunityConnectionDescriptor | null;
-  check: CommunityApprovalCheck | undefined;
+  check: CommunityApprovalCheck;
   approvalUrl: string | undefined;
   notice: string;
   installName: string;
   onStarted: (result: CommunityConnectionStartResponse) => void;
+  /** The list has been re-read since that start. */
+  onStartSettled: (ref: string) => void;
   /** A connection needing reconnection was removed; back to the form, saying so. */
   onEnded: (message: string) => void;
   /** A wait was cancelled; the dialog closes. */
@@ -220,6 +248,7 @@ function ConnectCommunityBody({
   notice,
   installName: defaultInstallName,
   onStarted,
+  onStartSettled,
   onEnded,
   onCancelled,
   onClose,
@@ -260,6 +289,7 @@ function ConnectCommunityBody({
       onStarted(result);
       if (authority)
         await client.invalidateQueries({ queryKey: communityKeys.connections(authority) });
+      onStartSettled(result.connection.ref);
     },
   });
   const end = useEndCommunityConnection();
@@ -428,20 +458,15 @@ function ConnectCommunityBody({
             Approve in the community tab you opened. If you closed it, cancel and connect again.
           </p>
         )}
-        {(end.isError || check?.error) && (
+        {(end.isError || Boolean(check.error)) && (
           <div role="alert" className="space-y-2 text-sm">
             <p>
               {end.isError
                 ? 'Couldn’t confirm cancellation. Refresh to check where it stands.'
                 : 'Couldn’t check approval. Try again.'}
             </p>
-            {!end.isError && check && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void check.refetch()}
-                disabled={check.isFetching}
-              >
+            {!end.isError && (
+              <Button size="sm" variant="outline" onClick={check.retry} disabled={check.isFetching}>
                 Check approval
               </Button>
             )}

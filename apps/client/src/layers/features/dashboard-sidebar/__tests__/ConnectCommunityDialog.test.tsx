@@ -6,7 +6,7 @@
  * asserted here, against the real community entity and a mock Transport.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -17,6 +17,10 @@ import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-con
 import { createMockTransport } from '@dorkos/test-utils';
 import { invalidateCommunityAuthority } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
+import {
+  useCommunityApprovalStore,
+  useCommunityApprovalWatcher,
+} from '@/layers/entities/community';
 import {
   ConnectCommunityDialog,
   type ConnectCommunityRequest,
@@ -71,7 +75,14 @@ beforeAll(() => {
 });
 beforeEach(() => {
   vi.clearAllMocks();
+  useCommunityApprovalStore.setState({ onScreen: null, ending: null, links: null });
 });
+
+/** The app shell's one watcher, which does the checking the dialog reads. */
+function Watcher() {
+  useCommunityApprovalWatcher();
+  return null;
+}
 afterEach(() => {
   cleanup();
   invalidateCommunityAuthority();
@@ -92,6 +103,7 @@ function mount(transport: Transport, request: ConnectCommunityRequest | null): M
   const tree = (next: ConnectCommunityRequest | null) => (
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
+        <Watcher />
         <ConnectCommunityDialog
           request={next}
           onOpenChange={onOpenChange}
@@ -173,24 +185,6 @@ describe('ConnectCommunityDialog', () => {
     expect(toast.success).toHaveBeenCalledWith('Community A is connected.', expect.anything());
   });
 
-  it('keeps checking with the dialog closed, so approving elsewhere still connects', async () => {
-    const poll = vi.fn().mockResolvedValue({ status: 'connected', connection: connected });
-    const transport = createMockTransport({
-      listCommunityConnections: vi
-        .fn()
-        .mockResolvedValueOnce([pending])
-        .mockResolvedValue([connected]),
-      pollCommunityConnection: poll,
-    });
-    const view = mount(transport, null);
-    await waitFor(() => expect(poll).toHaveBeenCalledWith(pending.ref));
-    await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith('Community A is connected.', expect.anything())
-    );
-    // Closed, it selects nothing on the person's behalf.
-    expect(view.onConnected).not.toHaveBeenCalled();
-  });
-
   it('returns to the form, saying why, when the approval expires', async () => {
     const transport = createMockTransport({
       listCommunityConnections: vi.fn().mockResolvedValueOnce([pending]).mockResolvedValue([]),
@@ -206,18 +200,98 @@ describe('ConnectCommunityDialog', () => {
     expect(toast.warning).not.toHaveBeenCalled();
   });
 
-  it('tells a person who closed the dialog that the approval expired', async () => {
+  it('returns to the form when the wait is gone from the re-read list', async () => {
+    const user = userEvent.setup();
+    // Another window's check found it expired, or it was cancelled elsewhere:
+    // the list the start re-reads no longer has it.
     const transport = createMockTransport({
-      listCommunityConnections: vi.fn().mockResolvedValueOnce([pending]).mockResolvedValue([]),
-      pollCommunityConnection: vi.fn().mockResolvedValue({ status: 'cancelled', connection: null }),
+      listCommunityConnections: vi.fn().mockResolvedValue([]),
+      startCommunityConnection: vi.fn().mockResolvedValue({
+        connection: pending,
+        approvalUrl: 'https://a.example/pair?code=public',
+      }),
     });
-    mount(transport, null);
+    mount(transport, { ref: null });
+    const address = screen.getByLabelText('Community address');
+    await waitFor(() => expect(address).toBeEnabled());
+    await user.type(address, 'https://a.example');
+    await user.click(screen.getByRole('button', { name: 'Connect community' }));
     await waitFor(() =>
-      expect(toast.warning).toHaveBeenCalledWith(
-        'Approval for Community A was cancelled.',
-        expect.anything()
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'Approval for Community A ended somewhere else. Connect again to continue.'
       )
     );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByText('Waiting for your approval')).not.toBeInTheDocument();
+  });
+
+  it('hides the approval link and notice once the owner changes', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([pending]),
+      startCommunityConnection: vi.fn().mockResolvedValue({
+        connection: pending,
+        approvalUrl: 'https://a.example/pair?code=public',
+      }),
+      pollCommunityConnection: vi
+        .fn()
+        .mockResolvedValue({ status: 'pending', connection: pending }),
+    });
+    mount(transport, { ref: null });
+    const address = screen.getByLabelText('Community address');
+    await waitFor(() => expect(address).toBeEnabled());
+    await user.type(address, 'https://a.example');
+    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    expect(await screen.findByRole('link', { name: 'Open Community A to approve' })).toBeVisible();
+
+    // A new authority epoch, even for the same owner, is a new owner as far as
+    // anything held for the old one goes.
+    act(() => {
+      invalidateCommunityAuthority();
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/Approve in the community tab you opened/)).toBeInTheDocument()
+    );
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByText('Next, approve this DorkOS on Community A.')).not.toBeInTheDocument();
+  });
+
+  it('discards a start that finished after the owner changed', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([]),
+      startCommunityConnection: vi.fn().mockImplementation(async () => {
+        invalidateCommunityAuthority();
+        return { connection: pending, approvalUrl: 'https://a.example/pair?code=public' };
+      }),
+    });
+    mount(transport, { ref: null });
+    const address = screen.getByLabelText('Community address');
+    await waitFor(() => expect(address).toBeEnabled());
+    await user.type(address, 'https://a.example');
+    await user.click(screen.getByRole('button', { name: 'Connect community' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t connect.');
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(useCommunityApprovalStore.getState().links).toBeNull();
+  });
+
+  it('keeps waiting, without an error, when another window is checking the same wait', async () => {
+    const busy = Object.assign(new Error('This pairing is still finishing.'), {
+      status: 409,
+      code: 'PAIRING_BUSY',
+    });
+    const poll = vi
+      .fn()
+      .mockRejectedValueOnce(busy)
+      .mockResolvedValue({ status: 'pending', connection: pending });
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([pending]),
+      pollCommunityConnection: poll,
+    });
+    mount(transport, { ref: pending.ref });
+    await waitFor(() => expect(poll).toHaveBeenCalledTimes(2), { timeout: 5_000 });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Waiting for your approval')).toBeInTheDocument();
   });
 
   it('opened on a wait from an earlier visit, says where to approve without a link', async () => {

@@ -151,6 +151,12 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   communityKeys: (await importOriginal<typeof import('@/layers/entities/community')>())
     .communityKeys,
   withinCommunityAuthority: (_authority: unknown, run: () => unknown) => run(),
+  // The connect dialog reads the app-level approval watcher; none runs here.
+  communityOwnerAddress: () => '',
+  useCommunityApprovalStore: (await importOriginal<typeof import('@/layers/entities/community')>())
+    .useCommunityApprovalStore,
+  useCommunityApprovalCheck: () => ({ error: null, isFetching: false, retry: () => {} }),
+  useShowCommunityApproval: () => {},
   useEndCommunityConnection: () => ({
     mutate: mockEndConnection,
     reset: () => {},
