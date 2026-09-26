@@ -270,15 +270,20 @@ dropped for any turn that waited in the queue — and for grants, absent means n
 first real user) to both; each lands with a test that queues a turn behind a running one and asserts the field reaches
 `runtime.sendMessage`.
 
-A nested grant is legal (the room's `repo/.git` inside `repo/`); where a backend's rules are
-path-prefix denies, a `read` ancestor wins for file tools and only shell processes write inside it —
-which is the intended outcome for `repo/.git` (§5.2).
+A `write` grant nested inside a `read` one is legal (the room's `repo/.git` inside `repo/`); where a
+backend's rules are path-prefix denies, the `read` ancestor wins for file tools and only shell
+processes write inside it — which is the intended outcome for `repo/.git` (§5.2). The reverse, a
+`read` grant inside a `write` one, is refused: Codex's `--add-dir` makes the whole `write` folder
+writable, so the runtimes would disagree about it.
 
-Validation, in one place (`packages/shared/src/directory-grants.ts`, new, exported as
-`@dorkos/shared/directory-grants`): absolute, normalized, no duplicates, not equal to or inside the
-cwd, not `/` or the user's home directory itself. A runtime receiving an invalid set throws before
-the backend is launched; the dispatcher is the only producer, so this is a programming error, not a
-user-facing one.
+Validation, in one place (`packages/shared/src/directory-grants.ts`, exported as
+`@dorkos/shared/directory-grants`, as built in T2): absolute, normalized and **`realpath`-resolved**
+(a grant spelled through a symlink — `/tmp` for `/private/tmp` — failed to match what the backend
+compares, and for a `read` grant that is a write let through); no duplicates; not equal to, inside
+or **containing** the cwd (a `read` grant above the cwd would refuse edits in the agent's own
+folder); not a filesystem root, and not the user's home directory **or anything containing it**; no
+`read` grant inside a `write` grant. A runtime receiving an invalid set throws before the backend is
+launched; the dispatcher is the only producer, so this is a programming error, not a user-facing one.
 
 ### 4.2 claude-code
 
@@ -323,6 +328,31 @@ object (`:2144`).
   `bypassPermissions`, a `read` grant under bypass is recorded as unenforced for file tools too, in
   §5.2 and the docs.
 
+- **Gate results (run 2026-09-26, T2, DOR-2408).** SDK 0.3.280 with its bundled CLI 2.1.280, model
+  `haiku`, the operator's own sign-in, one minimal turn per case, each beside a control without the
+  grant; `canUseTool` allowed everything, so a refusal could only come from the rules:
+  - (a1) passed: `Read` inside a `write` grant raised no `canUseTool` (the control raised one).
+  - (a2) passed: `Edit` inside a `write` grant raised none and changed the file (the control raised
+    `Read` and `Edit`).
+  - (b) passed under **both** modes: `Edit` and `Write` inside a `read` grant were refused ("denied by
+    your permission settings") under `acceptEdits` and `bypassPermissions`; the same `Edit` under
+    bypass with no grant succeeded.
+  - (c) passed: the grant's `.claude/skills/probe` was absent from the session's skills; the same
+    folder as `--add-dir` loaded it.
+  - (d) passed: the grant's `CLAUDE.md` was not loaded, even with
+    `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`; as `--add-dir` with that variable it loaded.
+
+  So the settings form stands and `--add-dir` is not used; I11 holds on claude-code.
+
+- **Rule paths are globs** (found in T2 review, run live). Claude Code matches the path inside a rule
+  as a glob, so an unescaped folder name like `R [x] (y)` named a different folder and the real one
+  failed open (`Write` succeeded under `bypassPermissions` and `acceptEdits`). The adapter escapes
+  `[ ] { } * !`; escaped, all of them were refused live. Spaces and parentheses need nothing. Four
+  shapes no escaping was seen to make safe are refused for `read` grants before launch, in plain
+  words telling the person to rename or move the folder: `?` (an escaped `\?` still let a write
+  through), a backslash (untestable — the CLI refused the write for its own reason), a control
+  character, and a folder name ending in whitespace (the CLI trims the rule, so `…/R ok ` failed
+  open). A `write` grant needs no rule and takes any name.
 - **`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`** is removed from the turn environment
   (`runtimeEnvironment('claude-code','turn', …)`) whenever it is present in the server's environment,
   pinned by test.
@@ -337,40 +367,46 @@ object (`:2144`).
 sets `additionalDirectories` to the `write` grants' paths (`@openai/codex-sdk` 0.154.0
 `ThreadOptions.additionalDirectories`, turned into `--add-dir` per run, so it is per turn on
 `startThread` and `resumeThread` alike). `read` grants hand nothing: the sandbox already reads outside
-the workspace in `read-only` and `workspace-write`. Under `danger-full-access` (bypass mode) nothing is
-enforced — the same as today for everything else.
+the workspace in `read-only` and `workspace-write`, so a `read` grant is read-open there and its
+write protection is the sandbox's own (a shell write into it was refused). Under `danger-full-access`
+(bypass mode) nothing is enforced — the same as today for everything else. Run live on 2026-09-26
+against codex 0.154.0 on the operator's sign-in: under `workspace-write`, a shell write into a
+`write` grant succeeded with the grant and was refused without it.
 
 ### 4.4 opencode
 
-The sidecar config (`opencode/server-manager.ts:52`) stays as it is. Per session, before each prompt
-whose grant set differs from the last one applied to that session, the adapter calls
-`client.session.update({ body: { permission } })` with a `PermissionRuleset`
-(`@opencode-ai/sdk` 1.18.30 v2 `types.gen.d.ts:58-63`, `SessionUpdateData.body.permission`):
+**Built as the ask handler, not session rules (T2 deviation, run live).** The sidecar config
+(`opencode/server-manager.ts:52`) stays as it is. The first design — `client.session.update({ body:
+{ permission } })` with a per-session `PermissionRuleset` when the grant set changes — was run against
+a live 1.18.31 sidecar with a free local model (`ollama/gemma4`) on 2026-09-26, each case beside a
+control, and rejected:
 
-```ts
-[
-  ...grants.flatMap((g) => [
-    { permission: 'external_directory', pattern: g.path, action: 'allow' },
-    { permission: 'external_directory', pattern: `${g.path}/**`, action: 'allow' },
-  ]),
-  ...grants
-    .filter((g) => g.access === 'read')
-    .map((g) => ({ permission: 'edit', pattern: `${g.path}/**`, action: 'deny' })),
-];
-```
+- An `external_directory: allow` session rule did stop the ask for a read inside the grant (the
+  control asked), so session rules do beat the sidecar default.
+- But `session.update` **appends** to the stored ruleset: a later update with a new set, `[]` or
+  `null` left every earlier rule in place. Taking a grant away needs a counter-rule appended after
+  it (last match wins, also run), the list only grows, and a server restart forgets what was written.
+- And an `edit: deny` rule on the absolute folder never matched: the edit tools ask with a path
+  **relative to the project's worktree**, so the write was still asked about.
 
-New module `opencode/sessions/directory-grants.ts`; the call sits in the turn path after
-`ensureSession` (`sessions/session-mapper.ts:478`). **Validation gate:** a mocked-client test proves
-the ruleset is sent; one live free-model run (`DORKOS_OPENCODE_LIVE=1`, the free local smoke) proves
-an external read inside a grant does not raise an `external_directory` ask. If session rules do not
-override the sidecar's `ask`, the fallback is the adapter's existing ask handler
-(`opencode/messaging/approvals.ts`): it answers `external_directory` asks for paths inside a grant
-with `allow` and `edit` asks inside a `read` grant with `deny`. The fallback is recorded in
-`opencode/NOTES.md` either way.
+So the adapter answers the sidecar's asks from the grants THIS turn carries
+(`opencode/messaging/directory-grants.ts`, consulted by `enforceApprovals` in
+`opencode/messaging/approvals.ts` before the session's mode): an `external_directory` ask whose
+folders all sit inside a grant is answered `once`; an `edit` ask for a file inside a `read` grant
+(`metadata.filepath`, or `metadata.files[]` for `apply_patch` — both absolute) is answered `reject` in
+every mode, bypass included. Anything the grants say nothing about goes to the mode as before.
+Nothing is written into the sidecar's store, so I5 holds by construction, and a subagent's asks pass
+the same handler. A reach is judged on where the path resolves, so a symlink committed inside a
+granted folder cannot stretch the grant; a refusal matches either spelling. A refused tool call can
+end the turn (observed live). The two live ask payloads are pinned in
+`opencode/__tests__/directory-grants.test.ts`, and `opencode/NOTES.md` records the runs. Not run live:
+a whole DorkOS turn through `OpenCodeRuntime` with grants.
 
 ### 4.5 test-mode and the fake runtime
 
-`runtimes/test-mode/test-mode-runtime.ts` declares `directoryGrantsUnprovenReason` (it has no backend).
+test-mode declares `directoryGrantsUnprovenReason` in its conformance wiring
+(`runtimes/test-mode/__tests__/conformance.test.ts`, beside its append reason); it has no backend, and
+`test-mode-runtime.ts` needed no change.
 `packages/test-utils/src/fake-agent-runtime.ts` needs no change (a spy records the field).
 
 ### 4.6 Conformance
@@ -398,8 +434,12 @@ Case `describe('directory grants (agent-home-desk §4)')`: exactly one of the tw
 turn 1 hands `{A: write, B: read}`, turn 2 hands `{C: write}` on the **same live session**
 (claude-code: warm, asserted). Assertions: turn 1 hands A as writable and B as read-only or read-open;
 turn 2 hands C and **neither A nor B** (I5). Wiring: claude-code reads the FakeCli launch
-options' `settings.permissions`; codex reads the mocked `startThread`/`resumeThread` options;
-opencode reads the mocked `session.update` calls.
+options' `settings.permissions`; codex reads the mocked `startThread`/`resumeThread` options (a `read`
+grant counts as read-open when the options set a sandbox mode); opencode scripts an
+`external_directory` and an `edit` ask per folder and reads what the adapter answered. The rules live
+in `evaluateDirectoryGrantsDeclaration` and `evaluateHandedGrants` (which also fails a `read` grant
+sitting inside a writable folder), proven to reject wrong answers by
+`packages/test-utils/src/__tests__/runtime-conformance-directory-grants.test.ts`.
 
 ## 5. Room turns stand at home (T4)
 
@@ -784,33 +824,85 @@ so every room turn since DOR-1597 was filed under its worktree's slug, and `extr
 the agent's session list. Once turns run at home, resuming such a session would look in the home's
 folder and not find it.
 
-`apps/server/src/services/runtimes/claude-code/sessions/migrate-room-transcripts.ts` (new, built in
-T3) runs at startup, before the room dispatcher starts, and only if its marker is absent. **T4 wires
-it**, in the same PR that moves the desk: run while room turns still stood in worktrees, it would move
-transcripts out from under the sessions resuming them.
+`apps/server/src/services/runtimes/claude-code/migrate-room-transcripts.ts` (built in T3; not in
+`sessions/`, which is at the 25-file dir-size cap) runs at startup and only if its marker is absent.
+**T4 wires it**, in the same PR that moves the desk: run while room turns still stood in worktrees, it
+would move transcripts out from under the sessions resuming them. T4 must call it:
+
+- **after the agent registry has loaded.** `agentPaths` decides whose a worktree is; an empty list
+  would skip every worktree and still write the marker, which never runs the move again;
+- **before the room dispatcher starts**, so no DorkOS turn writes a transcript while it moves;
+- **inside a `try`.** It throws on an unexpected filesystem error and on two processes racing to write
+  the marker (one fixed temp name). A throw leaves the marker unwritten, so the next start retries;
+  it must not stop the server from starting.
 
 1. For every room worktree folder on disk (`<dorkHome>/rooms/*/worktrees/*`), find its agent by the
    name's digest suffix against the registered agents (`digestFor(agentPath)`, the scheme
-   `listWorktreesForAgent` already uses). Skip a worktree whose agent is not registered.
-2. For every Claude config directory DorkOS launches with (the default and every account pin's
-   directory, from `claude-config-dir.ts` and the accounts store), move
-   `projects/<slug(worktree)>/<id>.jsonl` and its sibling `<id>/` folder to
-   `projects/<slug(home)>/`. Same filesystem, so a rename. An existing destination is never
-   overwritten. Leaving the source as a second `<id>.jsonl` would put two transcripts with one
-   session id in the indexed set, which `jsonl-frontier.ts:262-276` treats as contested and stops
-   indexing; so the source is renamed in place to `<id>.jsonl.conflict` (not indexed by anything), and
-   the startup log and the marker name both paths for the operator to resolve.
-3. Write `<dorkHome>/migrations/agent-home-desk-transcripts.json` with counts and the frozen list of
-   worktree folders it saw.
+   `listWorktreesForAgent` already uses). Skip a worktree whose agent is not registered, and a digest
+   two registered paths share.
+2. Also find the slug folders of worktrees the idle reap already removed (the folder is gone, its
+   transcripts are not), by exact shape: `<slug of <dorkHome>/rooms>-<room ULID>-worktrees-<agent
+name>-<8 hex digest>`, the name part at most 40 characters. A shape-match whose name part carries a
+   known worktree digest (a registered agent's, or one on a worktree folder on disk) is what a path
+   NESTED inside a worktree looks like — a dev DorkOS running in a worktree keeps its own
+   `rooms/…/worktrees/…` there — so it is not moved; when it ends in a registered agent's digest it
+   is logged and listed in the marker's `nearMisses`. A slug the SDK truncated past 200 characters is
+   not found this way (a worktree still on disk is found by its path instead).
+3. For every Claude config directory DorkOS launches with (`resolveClaudeRootSet()`: the default and
+   every account's directory), move `projects/<slug(worktree)>/<id>.jsonl` and its sibling `<id>/`
+   folder to `projects/<slug(home)>/`. Files move by `link` then `unlink`, so an existing destination
+   is never overwritten, and a pass that crashed between the two is finished (same inode), not
+   treated as a conflict. Leaving the source as a second `<id>.jsonl` would put two transcripts with
+   one session id in the indexed set, which `jsonl-frontier.ts` treats as contested and stops
+   indexing; so a colliding source is set aside in place as `<id>.jsonl.conflict` (then `.2`, `.3`…,
+   never replacing an earlier one; not indexed by anything), and a sibling folder meeting an existing
+   destination folder as `<id>.conflict`. The log and the marker name both paths for the operator.
+4. **A transcript written in the last 15 minutes is skipped**, and the marker is not written, so the
+   next start retries. A Claude Code process outside DorkOS appends by path, and moving the file under
+   it would recreate `<id>.jsonl` at the old place. Fifteen minutes is past the Bash tool's 10-minute
+   ceiling, the longest a turn goes without writing. The window protects a turn in flight only: an
+   interactive `claude` session left idle outside DorkOS, or a subagent file still being written under
+   `<id>/`, can still split a session; the next pass then sets the recreated file aside as a conflict,
+   so nothing is lost.
+5. **Only transcripts move.** Claude Code's per-project auto-memory (`memory/`) under a worktree slug,
+   and anything else unknown, stays and is listed in the marker's `leftBehind`: several rooms'
+   worktrees of one agent each have their own, and merging them would carry one room's notes into
+   every other room and into the person's own sessions at home. A move the filesystem cannot do
+   (`EXDEV`, a slug folder symlinked to another volume) is recorded once in `unmovable`, not retried
+   every start.
+6. Write `<dorkHome>/migrations/agent-home-desk-transcripts.json` with counts, conflicts, `unmovable`,
+   `leftBehind`, `nearMisses` and the **frozen list** of worktree folders it saw (`worktrees[]`, each
+   `{ path, agentPath | null }`).
 
-**Measured before T3 merges:** that a moved claude-code room session resumes with its history at the
-home (live, operator sign-in), and — for codex (threads resumed by id) and opencode (sessions scoped
-by directory) — whether a room session filed at the worktree is still listed and resumable at the
-home. For any runtime where listing depends on the worktree folder, `extraDirs` is kept but fed from a
-**frozen list** (the worktree folders that existed when the marker was written, stored in it), never
-from the live manager. Where a runtime cannot resume at the new desk, the next turn of that (room,
-agent) starts a fresh session and the old one stays listed; the room log carries the conversation
-either way. The measurement result is written into this section in the T3 PR.
+A moved transcript keeps the worktree as the `cwd` its records carry. Listing accepts it (it sits in
+the home's own slug folder, which `listSessionsAcrossAccounts` takes whatever the record says), and a
+resume carries its history (below), but a reader must not assume a record's `cwd` is the home. T4's
+live check must exercise a resume, not only a listing.
+
+**Measured (T3, 2026-09-26).** No paid call: each CLI was pointed at a local fake model endpoint that
+records the request, in temp config directories. The operator's real sign-in was not used: the fake endpoint stands in for it, which is enough to show the full history goes out on resume, and T4's live check covers a real turn.
+
+- **claude-code (Agent SDK 0.3.280 and its bundled CLI): resumes at the home after the move.** A copy of a real room transcript,
+  filed under a worktree slug, was moved by the module and resumed with `--resume <id>` at cwd = the
+  home: the request carried the full history (44 messages; 47 after one more turn) and the new turn
+  was appended to the moved file under the home's slug. The CLI also finds the id from the home
+  _before_ the move (it looks in other project folders), but then keeps appending under the worktree
+  slug, where DorkOS's own reads (history, listing by slug, crash recovery) never look. So the move is
+  still required. **`extraDirs` is not needed for claude-code** once transcripts are moved.
+- **codex (SDK/CLI 0.154.0): resumes, but does not list at the home.** `codex exec --cd <home> resume
+<threadId>` resumed a thread started in another folder with its history; rollouts are filed by date,
+  not by folder, so nothing moves. But `codex_threads.cwd` is first-write-wins, so after every restart
+  a room session carries the worktree as its cwd and `CodexSessionRegistry.list(home)` never returns
+  it. **`extraDirs` must be kept for codex, fed from the marker's frozen list** (or T4 re-points
+  `codex_threads.cwd`).
+- **opencode (sidecar 1.18.31, no model call): cannot resume at the new desk.** A session created in
+  the worktree is found by id from the home, but every session-scoped call routes by the session's
+  stored directory (`/shell` with `?directory=<home>` ran with cwd = the worktree; `/fork` also lands
+  there), and the directory cannot be changed (`PATCH /session/{id}` takes only title, metadata,
+  permission and time). `GET /session?directory=<home>`, exact and `scope=project`, returns none of
+  them. So **the next turn of that (room, agent) must start a fresh opencode session** when the bound
+  one's directory is a room worktree, and **`extraDirs` must be kept for opencode, fed from the
+  frozen list**, so the old session stays listed. The room log carries the conversation either way.
 
 ### 8.2 ADR status
 
@@ -859,12 +951,18 @@ T8 flips 260926-172251, 260926-180223, 260926-172252 and 260926-180308 to `accep
 - **Negative, I2 (T1/T4).** A room repo with a committed `.dork/agent.json` + `SOUL.md`: mesh refuses
   to register it (`inside-room-files`); a room turn in that room carries the agent's own persona, not
   the file's; a session a person opens in that room's worktree resolves to `none` (after T4).
-- **Grant validation (T2).** Relative, duplicate, cwd-equal, cwd-inside, `/`, user home → rejected.
+- **Grant validation (T2).** Relative, unnormalized, not `realpath`-resolved (a symlinked
+  spelling), duplicate, cwd-equal, cwd-inside, containing the cwd, a root, the user home or anything
+  containing it, and a `read` grant inside a `write` grant → rejected.
 - **claude-code mapping (T2).** `settings.permissions` merged with `fastMode`; `//` rule form;
   `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` stripped; fingerprint relaunch on a changed set, no
   relaunch on the same set in a different order.
+- **claude-code rule paths (T2).** Glob characters escaped; a `read` grant naming `?`, a backslash,
+  a control character or ending in whitespace refused with a plain-language message.
 - **codex / opencode mapping (T2).** `write` → `additionalDirectories`; `read` → nothing (codex);
-  ruleset sent only when the set changes (opencode).
+  the ask handler answers `external_directory` inside a grant `once` and `edit` inside a `read`
+  grant `reject` in every mode, from this turn's grants only, including a symlinked spelling
+  (opencode, §4.4).
 - **Room placement (T4).** A project-room turn: `cwd === agentPath`; grants exactly §5.1's three; a
   no-files room: no grants; files section rendered with the new copy (pinned).
 - **Desk guard (T4).** A room turn whose computed cwd is another agent's home, a linked worktree of
@@ -965,12 +1063,13 @@ pushing, grep `apps/e2e` for the old "markdown only" copy.
 
 ## 13. Risks
 
-- **Claude settings-form grants may not grant access under the SDK** (§4.2 gate). Fallback costs I11 on
-  claude-code if `--add-dir` loads skills; the spec says so rather than hiding it.
+- **Claude settings-form grants may not grant access under the SDK** (§4.2 gate). Retired: the gate
+  passed in T2, so `--add-dir` is not used and I11 holds.
 - **Codex commits in a linked worktree** need `repo/.git` writable; granting it is the design, but it
   has only been reasoned, not run. A live codex room turn that commits is part of T4's dogfood check.
-- **OpenCode session rules vs sidecar `ask`** precedence is unverified; the ask-handler fallback is
-  specified.
+- **OpenCode session rules vs sidecar `ask`.** Settled in T2: session rules grant but only append
+  and never matched edits, so the ask handler is what shipped (§4.4). Its residual: a refused tool
+  call can end an OpenCode turn.
 - **Agents writing into their home by mistake** when they mean the room's copy. The context block and
   skill carry exact paths; an eval case in `packages/evals` (room turn edits a room file) is added in T4
   and must join the policed tier array.

@@ -43,6 +43,7 @@ import type {
 } from '@dorkos/shared/types';
 import type {
   AgentRuntime,
+  DirectoryGrant,
   RuntimeCapabilities,
   DependencyCheck,
   SessionOpts,
@@ -110,6 +111,7 @@ import {
   parseModelSelection,
 } from './messaging/turn-input.js';
 import { resolveCompactionModel } from './messaging/compaction-model.js';
+import { validatedGrants } from './messaging/directory-grants.js';
 import { projectModelOptions, projectedProviderIds } from './providers/models.js';
 import { OpenCodeMcpManager } from './mcp/mcp-manager.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
@@ -373,7 +375,11 @@ export class OpenCodeRuntime implements AgentRuntime {
           throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
         }
       },
-      { connectorTurn: true, ...(forAgent !== undefined ? { forAgent } : {}) }
+      {
+        connectorTurn: true,
+        ...(forAgent !== undefined ? { forAgent } : {}),
+        grants: validatedGrants(opts?.additionalDirectories, cwd),
+      }
     );
   }
 
@@ -452,7 +458,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       dorkosApplied: boolean,
       connectionsApplied: boolean
     ) => Promise<void>,
-    opts?: { connectorTurn?: boolean; forAgent?: string }
+    opts?: { connectorTurn?: boolean; forAgent?: string; grants?: readonly DirectoryGrant[] }
   ): AsyncGenerator<StreamEvent> {
     const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
     const client = await this.provider.getClient(cwd);
@@ -568,7 +574,13 @@ export class OpenCodeRuntime implements AgentRuntime {
 
       await trigger(client, ocSessionId, mcpResult.dorkosApplied, mcpResult.connectorApplied);
 
-      const routing: ApprovalRouting = { sessionId, ocSessionId, cwd, permissions: ctx };
+      const routing: ApprovalRouting = {
+        sessionId,
+        ocSessionId,
+        cwd,
+        permissions: ctx,
+        ...(opts?.grants ? { grants: opts.grants } : {}),
+      };
       for await (const event of mapOpenCodeTurn(queue, ctx)) {
         if (event.type === 'error') sawRuntimeError = true;
         yield* enforceApprovals(this.approvalGate, routing, event);

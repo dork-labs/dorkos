@@ -56,6 +56,7 @@ import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
+import { applyDirectoryGrants } from './directory-grants.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
 import {
@@ -376,7 +377,7 @@ export async function resolveLaunch(args: {
       // stay empty forever, and nothing errors. The env var is the only lever
       // that does not cost something else: `allowedTools` is an auto-approval
       // list rather than an access list, so naming tools there widens
-      // auto-approval (DOR-519, argued at length in `tooling/tool-filter.ts`),
+      // auto-approval (DOR-519, recorded in ADR-0070),
       // and `tools` would mean declaring a whole base tool set DorkOS has never
       // taken a position on. Fixture-fed tests cannot catch a regression here —
       // fixtures keep supplying the blocks a real model would have stopped
@@ -543,6 +544,10 @@ export async function resolveLaunch(args: {
       fastMode: true,
     };
   }
+  // This turn's folder grants, merged into the same settings object, and the
+  // variable that would make a granted folder's CLAUDE.md load stripped from the
+  // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
+  applyDirectoryGrants(sdkOptions, messageOpts?.additionalDirectories, effectiveCwd);
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
