@@ -438,7 +438,8 @@ export class ClaudeCodeAdapter implements RelayAdapter {
         ...[...this.agentRuntimes.values()].filter((r) => r !== this.deps.agentManager),
       ],
       this.deps.logger ?? console,
-      this.deps.approvalAuthorizer
+      this.deps.approvalAuthorizer,
+      this.deps.traceStore
     );
     this.taskCancelUnsub = subscribeTaskCancelHandler(
       relay,
