@@ -1,0 +1,280 @@
+<h2>Which Claude account is this session on?</h2>
+<p class="subtitle">
+  Today the account only shows in a tooltip on the runtime chip. Here are three ways to make it
+  obvious. Each account gets a color and a short name, set in Settings → Runtimes.
+</p>
+
+<style>
+  /* Every rule is prefixed with .ax- so nothing collides with the frame's own classes. */
+  .ax-demo {
+    color: #18181b;
+  }
+  .ax-bar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font:
+      12px/1.2 ui-monospace,
+      Menlo,
+      monospace;
+    background: #fafafa;
+    color: #18181b;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 6px 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .ax-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: #fff;
+    color: #18181b;
+    border: 1px solid #e4e4e7;
+    white-space: nowrap;
+  }
+  .ax-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex: none;
+  }
+  .ax-c1 {
+    background: #2563eb;
+  }
+  .ax-c2 {
+    background: #16a34a;
+  }
+  .ax-c3 {
+    background: #d97706;
+  }
+  .ax-c4 {
+    background: #9333ea;
+  }
+  .ax-mini {
+    display: inline-flex;
+    gap: 2px;
+    align-items: flex-end;
+    height: 10px;
+  }
+  .ax-mini i {
+    display: block;
+    width: 4px;
+    height: 10px;
+    background: #e4e4e7;
+    border-radius: 1px;
+    position: relative;
+  }
+  .ax-mini i b {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-radius: 1px;
+  }
+  .ax-warn {
+    border-color: #f59e0b;
+    background: #fffbeb;
+    color: #92400e;
+  }
+  .ax-out {
+    border-color: #fca5a5;
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .ax-muted {
+    color: #52525b;
+  }
+  .ax-pop {
+    margin-top: 8px;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #fff;
+    color: #18181b;
+    font: 12px/1.5 system-ui;
+    max-width: 300px;
+  }
+  .ax-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: center;
+  }
+  .ax-track {
+    height: 6px;
+    background: #e4e4e7;
+    border-radius: 3px;
+    margin: 2px 0 8px;
+  }
+  .ax-track b {
+    display: block;
+    height: 6px;
+    border-radius: 3px;
+  }
+  .ax-btn {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: #18181b;
+    color: #fff;
+    font-size: 11px;
+  }
+  .ax-side {
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 6px;
+    font: 12px/1.6 system-ui;
+    background: #fff;
+    color: #18181b;
+    max-width: 320px;
+    margin-top: 8px;
+  }
+  .ax-side div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 4px;
+  }
+  .ax-side .ax-grow {
+    flex: 1;
+  }
+  .ax-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font: 13px system-ui;
+    padding: 6px 10px;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    background: #fff;
+    color: #18181b;
+    margin-top: 8px;
+  }
+  .ax-pill {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Its own account chip in the status bar</h3>
+      <p>
+        A new chip with a color dot, the account name, and two tiny bars (5-hour and week). It turns
+        amber when the account is near its limit and red when it's out. Click it to open the
+        details.
+      </p>
+      <div class="ax-demo">
+        <div class="ax-bar">
+          <span class="ax-chip">~/dorkos</span><span class="ax-chip">⎇ main</span>
+          <span class="ax-chip">◆ Claude Code · Opus</span>
+          <span class="ax-chip"
+            ><span class="ax-dot ax-c2"></span>Acct 2
+            <span class="ax-mini"
+              ><i><b style="height: 40%; background: #16a34a"></b></i
+              ><i><b style="height: 72%; background: #d97706"></b></i></span
+          ></span>
+          <span class="ax-chip ax-muted">ctx 38%</span>
+        </div>
+        <div class="ax-bar">
+          <span class="ax-chip">◆ Claude Code · Opus</span>
+          <span class="ax-chip ax-warn"
+            ><span class="ax-dot ax-c3"></span>Acct 3 · 91% of week</span
+          >
+          <span class="ax-chip ax-out"
+            ><span class="ax-dot ax-c4"></span>Acct 4 · out until Tue 3pm</span
+          >
+        </div>
+        <div class="ax-pop">
+          <div class="ax-row">
+            <b style="display: flex; align-items: center; gap: 6px"
+              ><span class="ax-dot ax-c2"></span>Acct 2</b
+            ><span class="ax-muted">Max plan</span>
+          </div>
+          <div class="ax-row" style="margin-top: 6px">
+            <span>5-hour</span><span class="ax-muted">40% · resets 2:10pm</span>
+          </div>
+          <div class="ax-track"><b style="width: 40%; background: #16a34a"></b></div>
+          <div class="ax-row">
+            <span>This week</span><span class="ax-muted">72% · resets Sun 9am</span>
+          </div>
+          <div class="ax-track"><b style="width: 72%; background: #d97706"></b></div>
+          <div class="ax-muted">Working on DOR-2353 · started on this account</div>
+          <span class="ax-btn">Continue on another account →</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Folded into the runtime chip</h3>
+      <p>
+        The existing runtime chip also names the account, with a color ring. There's no new chip, so
+        the status bar stays short. Usage stays in the separate usage chip that already exists.
+      </p>
+      <div class="ax-demo">
+        <div class="ax-bar">
+          <span class="ax-chip">~/dorkos</span><span class="ax-chip">⎇ main</span>
+          <span class="ax-chip" style="border-color: #16a34a; box-shadow: 0 0 0 1px #16a34a inset"
+            >◆ Claude Code · Opus · <b>Acct 2</b></span
+          >
+          <span class="ax-chip ax-muted">5h 40% · 7d 72%</span>
+          <span class="ax-chip ax-muted">ctx 38%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Everywhere a session appears (A, plus the sidebar and header)</h3>
+      <p>
+        The chip from A, plus a color dot on every session in the sidebar and a name badge in the
+        session header. You can tell at a glance which account each running session is spending,
+        without opening it.
+      </p>
+      <div class="ax-demo">
+        <div class="ax-hdr">DOR-2353 memory stamps <span class="ax-pill">● Acct 2</span></div>
+        <div class="ax-side">
+          <div>
+            <span class="ax-dot ax-c1"></span><span class="ax-grow">Main · groom check</span
+            ><span class="ax-muted">idle</span>
+          </div>
+          <div>
+            <span class="ax-dot ax-c2"></span><span class="ax-grow">DOR-2353 memory stamps</span
+            ><span class="ax-muted">busy</span>
+          </div>
+          <div>
+            <span class="ax-dot ax-c3"></span><span class="ax-grow">DOR-2360 CI flake</span
+            ><span class="ax-muted">busy</span>
+          </div>
+          <div style="background: #fef2f2">
+            <span class="ax-dot ax-c4"></span><span class="ax-grow">DOR-2361 issuer column</span
+            ><span style="color: #b91c1c">out · handing off</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 16px">
+  <b>My pick: C.</b> The chip is where you look while working. The sidebar dots answer "who is
+  spending what" across all sessions, which is the part you're missing today.
+</p>

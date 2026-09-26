@@ -5,7 +5,6 @@ import {
   AUTONOMY_ACK_REQUIRED_CODE,
   hasStandingAutonomyAck,
 } from '../services/core/approvals/autonomy-consent.js';
-import { reportUsageEvent } from '../services/core/usage-reporter.js';
 import {
   UpdateSessionRequestSchema,
   ForkSessionRequestSchema,
@@ -28,16 +27,9 @@ import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agen
 import type { MeshCore } from '@dorkos/mesh';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import { isAutonomyStop, needsConsentRitual } from '@dorkos/shared/permission-semantics';
-import { readManifest } from '@dorkos/shared/manifest';
-import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
-import { runInDispatch } from '../lib/dispatch-context.js';
-import {
-  recordDispatchEnd,
-  recordDispatchStart,
-} from '../services/observability/dispatch-buffers.js';
 import { resolveDecisionAuthority } from '../services/core/approvals/index.js';
 import {
   readCallerAuthority,
@@ -55,9 +47,6 @@ import {
   listRecentSessions,
   listPendingInteractionsAcrossSessions,
   countSessionsPerDay,
-  getOrCreateProjector,
-  persistenceModeFor,
-  dispatchMessage,
   clearQueuedMessages,
   applySessionOriginOverlays,
   sessionOriginResolvers,
@@ -79,13 +68,11 @@ import sessionCanvasRouter from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
-import path from 'node:path';
-import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
-import { getWorkspaceManager } from '../services/workspace/index.js';
+import type { RoomSessionPlacePort } from '../services/workspace/room-session-cwd.js';
 import {
-  resolveSessionCwdWithRoom,
-  type RoomSessionPlacePort,
-} from '../services/workspace/room-session-cwd.js';
+  dispatchSessionMessage,
+  isSessionLaunchRefusal,
+} from '../services/session/launch/launch-session.js';
 // A control request that outlived its bound is not a claude-code-only idea, but
 // claude-code is the only runtime with one today, so the class still lives with
 // its clock. A second runtime growing one is the signal to move it somewhere
@@ -1019,58 +1006,6 @@ router.post('/:id/reload-plugins', async (req, res) => {
   }
 });
 
-/**
- * Choose the runtime type for a newly-created session.
- *
- * Priority: explicit `body.runtime` hint > agent-manifest `runtime` field
- * (read from `<cwd>/.dork/agent.json`) > server default runtime type.
- *
- * Subsequent `POST /:id/messages` calls for the same `sessionId` do NOT
- * re-run this — `persistSessionRuntime` is first-write-wins, so the row
- * set by the first call is authoritative.
- *
- * The runtime is chosen FIRST because the other two execution defaults hang off
- * it: which model and effort a new session starts with is a per-runtime question
- * (`services/session/resolve-session-defaults.ts`), answered against the runtime
- * this returns, and seeded onto the same first write.
- */
-async function resolveRuntimeTypeForNewSession(opts: {
-  runtimeHint?: string;
-  agentPath?: string;
-  cwd?: string;
-}): Promise<string> {
-  if (opts.runtimeHint) return opts.runtimeHint;
-
-  // Look for an agent manifest in the provided agentPath or cwd. Fall back
-  // silently when no manifest exists or the read fails — a missing manifest
-  // is not an error on the hot path.
-  const manifestDir = opts.agentPath ?? opts.cwd;
-  if (manifestDir) {
-    try {
-      const manifest = await readManifest(manifestDir);
-      // The manifest names a runtime PREFERENCE — honor it only when that
-      // runtime is registered in this process. Unlike the explicit body hint
-      // (which 400s when unknown), an unregistered manifest runtime soft-falls
-      // back to the default: the test-mode server (DORKOS_TEST_RUNTIME=true)
-      // registers ONLY 'test-mode' while every manifest on disk says
-      // 'claude-code' (the AgentRuntime enum has no test-mode member), so
-      // without this guard no agent-seeded session can ever start there.
-      if (manifest?.runtime) {
-        if (runtimeRegistry.has(manifest.runtime)) return manifest.runtime;
-        logger.info('[POST /messages] manifest runtime not registered; using default', {
-          manifestRuntime: manifest.runtime,
-          defaultRuntime: runtimeRegistry.getDefaultType(),
-          manifestDir,
-        });
-      }
-    } catch {
-      // Fall through to default
-    }
-  }
-
-  return runtimeRegistry.getDefaultType();
-}
-
 // POST /api/sessions/:id/messages — Accept a message (trigger-only, ADR-0264;
 // accept-only, spec `persistent-session-runtime` §3.3).
 //
@@ -1090,7 +1025,9 @@ async function resolveRuntimeTypeForNewSession(opts: {
 // bound to the turn's real duration and released on completion AND on error; a
 // detached failure is surfaced INTO the projector so `/events` consumers see it.
 // See `services/session/message-dispatcher.ts` and `trigger-turn.ts` for the
-// orchestration and the lock/error invariants.
+// orchestration and the lock/error invariants, and
+// `services/session/launch/launch-session.ts` for the binding this route shares
+// with every other surface that starts a session from a message.
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -1099,232 +1036,25 @@ router.post('/:id/messages', async (req, res) => {
   if (!parsed.success) {
     return sendError(res, 400, 'Invalid request', 'VALIDATION_ERROR');
   }
-  const {
-    content,
-    cwd,
-    context,
-    runtime: runtimeHint,
-    account: accountHintRaw,
-    agentPath,
-    workspaceKey,
-    workspaceProvider,
-    seedContext,
-    disposition,
-  } = parsed.data;
-
-  // `agentPath` is durable ownership provenance, not an ordinary cwd hint. A
-  // caller may name it only when Mesh currently knows that exact registered
-  // agent directory. This keeps the first-write session binding authoritative
-  // without letting client metadata manufacture an agent owner.
-  let verifiedAgentPath: string | undefined;
-  if (agentPath !== undefined) {
-    const meshCore = req.app.locals.meshCore as MeshCore | undefined;
-    const isRegistered = meshCore?.listWithPaths().some((agent) => agent.projectPath === agentPath);
-    if (!isRegistered) {
-      return sendError(
-        res,
-        400,
-        'Choose a registered agent before starting this session',
-        'INVALID_AGENT_PATH'
-      );
-    }
-    verifiedAgentPath = agentPath;
-  }
-
-  // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
-  // server provisions-or-reuses the managed workspace from the source repo
-  // (`cwd`) and runs the turn with `cwd = workspace.path` + its port block.
-  // Additive + resilient: with no key (or a disabled/failing manager) the turn
-  // proceeds with the original cwd, byte-for-byte unchanged.
-  let effectiveCwd = cwd;
-  if (workspaceKey) {
-    try {
-      const source = cwd ?? DEFAULT_CWD;
-      const projectKey = sanitizeWorkspaceKey(path.basename(source));
-      const workspace = await getWorkspaceManager().ensure({
-        projectKey,
-        key: workspaceKey,
-        source,
-        provider: workspaceProvider,
-      });
-      effectiveCwd = workspace.path;
-      logger.info('[POST /messages] bound to workspace', {
-        sessionId,
-        workspaceKey,
-        path: workspace.path,
-      });
-    } catch (err) {
-      logger.warn('[POST /messages] workspace binding skipped', {
-        sessionId,
-        workspaceKey,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  } else {
-    // No unit-of-work key, so ask the precedence chain where this turn belongs
-    // (`services/workspace/resolve-session-cwd.ts`). `workspaceKey` above keeps
-    // its precedence deliberately: it is a per-turn statement about this piece
-    // of work, which is strictly more specific than a standing per-agent
-    // preference.
-    //
-    // The `default` rung is translated back into saying NOTHING, and that is
-    // load-bearing rather than fussy. Every runtime already falls back to
-    // `DEFAULT_CWD` on an absent cwd, so the turn runs in the same directory
-    // either way — but `effectiveCwd` is also what stamps `projector.cwd`
-    // below, overwriting whatever an `/events` subscribe put there. A turn that
-    // has no opinion about its directory must not acquire one here.
-    //
-    // The room binding is offered to the chain rather than resolved here
-    // (DOR-1624). A conversation this machine also answers in a room runs its
-    // room turns in that room's worktree, so a resume from the app that took the
-    // ordinary rungs would put the operator in the agent's own folder and hide
-    // every uncommitted edit the agent has made in the room. The port answers
-    // `null` for every other session, which leaves the chain exactly as it was.
-    const resolved = await resolveSessionCwdWithRoom(
-      { cwd, agentPath: verifiedAgentPath, sessionId },
-      req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined
-    );
-    if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
-  }
-
-  // First-message binding: choose + persist the runtime BEFORE resolving.
-  // `persistSessionRuntime` binds a session that has none — including one whose
-  // row a pre-launch settings change already created — and leaves an
-  // already-bound session completely alone, so a later call passing a different
-  // (or no) hint changes nothing. The first message wins.
-  const runtimeType = await resolveRuntimeTypeForNewSession({
-    runtimeHint,
-    agentPath: verifiedAgentPath,
-    cwd,
-  });
-  if (!runtimeRegistry.has(runtimeType)) {
-    return sendError(res, 400, `Unknown runtime: ${runtimeType}`, 'UNKNOWN_RUNTIME');
-  }
-  // The registry seeds this session's model, effort and trust stop from the
-  // server defaults if this call is what BINDS it — see `resolveSessionDefaults`
-  // — filling only what nobody chose, and re-checking a mode chosen before the
-  // runtime was known against what this one declares. Nothing is written for a
-  // session that is already bound, so a running conversation keeps whatever it
-  // is running with.
-  //
-  // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
-  // where that claim is true: a message posted to `/api/sessions/:id/messages`
-  // came from a person at a control panel holding the session's event stream
-  // open. Rooms, tasks and bindings never pass through here, and each names
-  // itself at its own call (DOR-2105).
-  const isNewSession = await runtimeRegistry.persistSessionRuntime(
-    sessionId,
-    runtimeType,
-    { kind: 'interactive' },
-    verifiedAgentPath
-  );
-  // Fire the anonymous `session_created` usage event exactly once, on the write
-  // that binds the session (no-op unless usage telemetry is on).
-  if (isNewSession)
-    reportUsageEvent({ event: 'session_created', properties: { runtime: runtimeType } });
-
-  // The billing-account launch hint, on exactly the `runtime` hint's lifecycle
-  // (ADR 260821-205323, mirroring ADR-0255). It is honored only on the send that
-  // CREATED this session, and only for claude-code — after launch the account is
-  // a fact on disk that nothing can move (ADR 260801-204127), and no other
-  // runtime has accounts at all. Anything else is ignored out loud rather than
-  // silently, because the person who picked it believed it would apply.
-  //
-  // Whether the id NAMES a registered account is deliberately not asked here:
-  // the resolver falls through an unknown id to the next rung so a launch never
-  // fails over a billing setting, and a 400 here would be exactly that failure.
-  let accountHint: string | undefined;
-  if (accountHintRaw !== undefined) {
-    if (isNewSession && runtimeType === 'claude-code') {
-      accountHint = accountHintRaw;
-    } else {
-      logger.warn('[POST /messages] ignoring account hint', {
-        sessionId,
-        account: accountHintRaw,
-        runtime: runtimeType,
-        reason: isNewSession ? 'runtime has no accounts' : 'session already launched',
-      });
-    }
-  }
 
   // Read X-Client-Id header, or generate UUID if missing
   const clientId = (req.headers['x-client-id'] as string) || crypto.randomUUID();
 
-  const runtime = await runtimeRegistry.resolveForSession(sessionId);
-
-  // One id for this whole dispatch, minted BEFORE the trigger so the line that
-  // announces it already carries it and a reader can start there.
-  const dispatchId = newDispatchId();
-  logger.info('[POST /messages] trigger', { sessionId, contentLength: content.length, dispatchId });
-  recordDispatchStart({ dispatchId, origin: 'session', sessionId });
-
-  // The POST body's cwd is operator-chosen and authoritative — overwrite any
-  // earlier stamp from a subscribe-path default (an /events connect without
-  // ?cwd falls back to the workspace root, which would otherwise pin this
-  // session's liveness to the wrong agent first-writer-wins).
-  // Persist the completed-turn stream (DOR-189) so it survives a server
-  // restart: everything for a log-backed runtime, and for the rest the narrow
-  // record its own transcript cannot answer for — including the permission
-  // decisions this turn was gated on. Enabling here — before the turn is fed —
-  // guarantees the turn_end flush regardless of whether an /events subscribe
-  // has already minted (and persistence-enabled) the projector.
-  const projector = getOrCreateProjector(sessionId, effectiveCwd, {
-    persist: persistenceModeFor(runtime.getCapabilities()),
+  const result = await dispatchSessionMessage({
+    // `{ kind: 'interactive' }` is what unlocks the trust stop, and this route is
+    // where that claim is true: a message posted to `/api/sessions/:id/messages`
+    // came from a person at a control panel holding the session's event stream
+    // open. Rooms, tasks and bindings never pass through here, and each names
+    // itself at its own call (DOR-2105).
+    origin: { kind: 'interactive' },
+    sessionId,
+    request: parsed.data,
+    clientId,
+    meshCore: req.app.locals.meshCore as MeshCore | undefined,
+    roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
   });
-  if (effectiveCwd !== undefined) projector.cwd = effectiveCwd;
-
-  // Trigger the detached turn. The projector is keyed by the client-facing id
-  // (stable across the new-session remap, since the projector registry and
-  // `/events` both resolve by it); the canonical id is captured for the body.
-  //
-  // **The scope wraps `dispatchMessage`, and that placement is the whole phase.**
-  // The dispatcher CONSTRUCTS the detached generator chain and then awaits only
-  // the canonical-id race, so entering the dispatch here binds the context to
-  // the chain itself — an async generator created inside an ALS scope keeps
-  // that scope for its whole life. The turn therefore stays correlated long
-  // after this `await` resolves and the 202 has been sent (ADR-0264's `void
-  // turn;`). A scope placed around the awaited race INSIDE the dispatcher would
-  // expire at the 202 and correlate nothing; see
-  // `__tests__/sessions-dispatch-correlation.test.ts`, which fails if it moves.
-  const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
-    dispatchMessage({
-      sessionId,
-      clientId,
-      content,
-      cwd: effectiveCwd,
-      context,
-      // Background this turn's opener attached to it. It rides the neutral
-      // context bag, never `content`: the prompt stays the person's message
-      // byte for byte, and the seed is stripped from every rendered transcript.
-      ...(seedContext ? { seedContext } : {}),
-      // Only ever set on the session-creating claude-code send (see above).
-      ...(accountHint ? { accountHint } : {}),
-      // Absent means `queue`, which is also what every disposition resolves to
-      // until the native rungs land (P4). The receipt says which it was.
-      ...(disposition ? { disposition } : {}),
-      projector,
-      runtime,
-      onError: (err) => {
-        logger.warn('[POST /messages] detached turn error', {
-          sessionId,
-          ...logError(err),
-        });
-      },
-      // The 202 has long since gone out by the time this fires. It is the only
-      // moment the server learns how a detached turn ended, which is exactly
-      // what the debug buffer is asked for during an incident.
-      onSettled: (outcome) =>
-        recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
-    })
-  );
-
-  if (result.queued) {
-    logger.info('[POST /messages] queued behind the running turn', {
-      sessionId,
-      dispatchId,
-      messageId: result.outcome.messageId,
-      queuePosition: result.queuePosition,
-    });
+  if (isSessionLaunchRefusal(result)) {
+    return sendError(res, 400, result.message, result.refused);
   }
 
   res.status(202).json({

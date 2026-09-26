@@ -6572,6 +6572,20 @@
       ]
     },
     {
+      "id": "260926-153107",
+      "slug": "plugin-carried-extension-discovery",
+      "title": "Extensions that ship inside an installed plugin are discovered and gated like any other extension",
+      "status": "draft",
+      "created": "2026-09-26",
+      "extractedFrom": "claude-account-ui",
+      "specSlug": "claude-account-ui",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/extensions/extension-discovery.ts",
+        "apps/server/src/services/marketplace/flows/uninstall.ts"
+      ]
+    },
+    {
       "id": "260926-172251",
       "slug": "an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy",
       "title": "An agent's identity comes from its home, and its desk is its home or a private copy of it",
