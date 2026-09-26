@@ -93,7 +93,7 @@ function taskEnvelope(payload: TaskDispatchPayload): RelayEnvelope {
   return {
     id: 'msg-task-001',
     subject: `relay.system.tasks.${payload.taskId}`,
-    from: 'system:tasks',
+    from: 'relay.system.tasks.scheduler',
     budget: {
       hopCount: 0,
       maxHops: 5,

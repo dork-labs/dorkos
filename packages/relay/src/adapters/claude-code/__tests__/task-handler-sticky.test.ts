@@ -35,7 +35,7 @@ function envelopeFor(payload: TaskDispatchPayload): RelayEnvelope {
   return {
     id: 'msg-1',
     subject: `relay.system.tasks.${payload.taskId}`,
-    from: 'system:tasks',
+    from: 'relay.system.tasks.scheduler',
     budget: { hopCount: 0, ttl: Date.now() + 60_000 },
     payload,
   } as unknown as RelayEnvelope;

@@ -77,7 +77,7 @@ function taskEnvelope(ttlOffsetMs: number): RelayEnvelope {
   return {
     id: 'msg-task-1',
     subject: TASK_SUBJECT,
-    from: 'relay.system.scheduler',
+    from: 'relay.system.tasks.scheduler',
     budget: budget(ttlOffsetMs),
     createdAt: new Date(EPOCH).toISOString(),
     payload: {
