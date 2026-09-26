@@ -437,7 +437,6 @@
       "created": "2026-08-28",
       "extractedFrom": "rooms-management-tools",
       "specSlug": "rooms-management-tools",
-      "amends": "260726-171347",
       "supersedes": null,
       "affects": [
         "apps/server/src/services/core/capabilities/capability-definition.ts",

@@ -5,7 +5,6 @@ status: superseded
 created: 2026-08-28
 spec: rooms-management-tools
 superseded-by: '260923-223904'
-amends: 260726-171347
 ---
 
 # 260828-123331. The first hard per-agent tool filter lives at registry.invoke, keyed on a grant only a person may write
