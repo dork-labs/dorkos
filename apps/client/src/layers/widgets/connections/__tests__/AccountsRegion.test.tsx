@@ -103,10 +103,6 @@ describe('AccountsRegion', () => {
     renderRegion(transport);
     expect(screen.getByRole('button', { name: 'Connect service' })).toBeInTheDocument();
     expect(await screen.findByText('No accounts connected')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Advanced account setup' })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
   });
 
   it('shows an account read failure as an error and retries the canonical resource', async () => {
@@ -122,11 +118,15 @@ describe('AccountsRegion', () => {
     expect(await screen.findByText('No accounts connected')).toBeInTheDocument();
   });
 
-  it('keeps BYO provider setup behind the explicit advanced action', async () => {
+  it('sends people who want their own key to Settings › Connections instead of a fold', async () => {
     const user = userEvent.setup();
     renderRegion(createMockTransport());
-    expect(screen.queryByText(/Use your own Composio or Nango account/i)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Advanced account setup' }));
-    expect(screen.getByText(/Use your own Composio or Nango account/i)).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Advanced account setup' })
+    ).not.toBeInTheDocument();
+    await user.click(
+      await screen.findByRole('button', { name: 'Set it up in Settings › Connections' })
+    );
+    expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
   });
 });

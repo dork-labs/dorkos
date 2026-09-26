@@ -15,6 +15,11 @@ import { ConnectionDetailSheet } from '../ui/ConnectionDetailSheet';
 import { ServiceGrid } from '../ui/ServiceGrid';
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn(), useRouter: () => ({}) }));
+const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSettingsDeepLink: () => ({ open: openSettings }),
+}));
 afterEach(() => {
   cleanup();
 });
@@ -112,7 +117,7 @@ describe('ServiceGrid', () => {
     );
   });
 
-  it('shows a useful empty result without promising a missing action inside the dialog', async () => {
+  it('shows a useful empty result and points at Settings › Connections for your own key', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorCatalog).mockResolvedValue({ services: [], warnings: [] });
@@ -120,8 +125,11 @@ describe('ServiceGrid', () => {
 
     await user.click(screen.getByRole('button', { name: 'Connect service' }));
     expect(await screen.findByText('No matching services')).toBeInTheDocument();
-    expect(screen.getByText(/Advanced account setup on the Connections page/)).toBeInTheDocument();
-    expect(screen.queryByText(/add your own account below/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Advanced account setup/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Open Settings › Connections' }));
+    // The catalog steps aside for Settings rather than stacking a modal on it.
+    expect(screen.queryByRole('dialog', { name: 'Connect a service' })).not.toBeInTheDocument();
+    expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
   });
 
   it('keeps a catalog error separate from an empty result and offers a retry', async () => {

@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 import { HostedAccountSetup } from './HostedAccountSetup';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
 import {
   AccountsList,
   AgentRequests,
@@ -9,7 +8,6 @@ import {
   ConnectionAccessDialog,
   ConnectionDetailSheet,
   ManagementReviews,
-  ProviderSetup,
   ServiceGrid,
 } from '@/layers/features/connections';
 
@@ -32,7 +30,11 @@ interface AccountsRegionProps {
   onCloseRequest?: () => void;
 }
 
-/** Account services, stable connections, owner reviews, and advanced provider setup. */
+/**
+ * Account services, stable connections and owner reviews. How DorkOS reaches
+ * these services (your own Composio or Nango key) is set in Settings ›
+ * Connections, not here.
+ */
 export function AccountsRegion({
   selectedReviewId = null,
   selectedFlowId = null,
@@ -88,18 +90,6 @@ export function AccountsRegion({
       {selectedFlowId && !selectedService && (
         <p className="text-muted-foreground text-xs">Your saved sign-in is ready to continue.</p>
       )}
-
-      <Collapsible>
-        <CollapsibleTrigger className="text-muted-foreground hover:text-foreground focus-ring rounded-md text-sm font-medium">
-          Advanced account setup
-        </CollapsibleTrigger>
-        <CollapsibleContent className="space-y-3 pt-3">
-          <p className="text-muted-foreground max-w-prose text-sm leading-relaxed">
-            Use your own Composio or Nango account to manage its billing and setup yourself.
-          </p>
-          <ProviderSetup />
-        </CollapsibleContent>
-      </Collapsible>
 
       <ManagementReviews
         selectedReviewId={selectedReviewId}

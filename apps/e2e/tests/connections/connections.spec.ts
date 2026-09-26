@@ -67,10 +67,10 @@ test('unlinked Accounts opens the existing owner account settings @smoke', async
   await gotoConnections(page);
   const link = page.getByTestId('link-dorkos-account');
   await expect(link).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toHaveAttribute(
-    'aria-expanded',
-    'false'
-  );
+  // Your own key is set in Settings › Connections now; the page only points there.
+  await expect(
+    page.getByRole('button', { name: 'Set it up in Settings › Connections' })
+  ).toBeVisible();
   await link.scrollIntoViewIfNeeded();
   await page
     .locator('[aria-labelledby="region-accounts"]')
@@ -90,7 +90,9 @@ test('unlinked Accounts opens the existing owner account settings @smoke', async
   await new BasePage(page).waitForAppReady();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(link).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Advanced account setup' })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Set it up in Settings › Connections' })
+  ).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true
   );
@@ -171,17 +173,33 @@ test('a revoked community grant gives a direct remove-and-reconnect path', async
 });
 
 /**
+ * Open Settings › Connections, where your own keys live (DOR-2419), and return
+ * the "add a way" entry for the scripted provider. Nothing is set up yet in
+ * these specs, so the fold is the "set one up here" one.
+ */
+async function openKeySetup(page: Page) {
+  await page.getByRole('button', { name: 'Set it up in Settings › Connections' }).click();
+  const settings = page.getByTestId('settings-dialog');
+  await expect(settings.getByText('How DorkOS reaches your apps')).toBeVisible();
+  await settings.getByRole('button', { name: 'Set one up here instead' }).click();
+  return settings.getByTestId(`add-connection-way-${PROVIDER}`);
+}
+
+/**
  * Save the provider key through the real UI form and wait for the live
- * registration to land ("Ready" badge on the provider card).
+ * registration to land (the way's row says "Working"), then close Settings.
  */
 async function saveKeyThroughUi(page: Page): Promise<void> {
-  const setup = page.getByRole('button', { name: 'Advanced account setup' });
-  if ((await setup.getAttribute('aria-expanded')) !== 'true') await setup.click();
-  const card = page.locator(`[data-testid="provider-card-${PROVIDER}"]`);
-  await card.getByLabel(/Test connector API key/i).fill('e2e-test-key');
-  await card.getByRole('button', { name: 'Save key' }).click();
-  // exact: a substring match would also accept future copy like "Not Ready".
-  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
+  const settings = page.getByTestId('settings-dialog');
+  const entry = settings.getByTestId(`add-connection-way-${PROVIDER}`);
+  if (!(await entry.isVisible())) await openKeySetup(page);
+  await entry.getByLabel(/Test connector API key/i).fill('e2e-test-key');
+  await entry.getByRole('button', { name: 'Save key' }).click();
+  const row = settings.getByTestId(`connection-way-${PROVIDER}`);
+  // exact: a substring match would also accept future copy like "Not working".
+  await expect(row.getByText('Working', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
 }
 
 /**
@@ -330,21 +348,19 @@ test.describe('Connections — save key, connect, multi-account', () => {
   }, testInfo) => {
     await gotoConnections(page);
 
-    // Before any key: the provider card says so, and the service grid is
-    // honestly empty (the raw-MCP baseline has no configured servers).
-    await page.getByRole('button', { name: 'Advanced account setup' }).click();
-    const card = page.locator(`[data-testid="provider-card-${PROVIDER}"]`);
-    await expect(card).toBeVisible();
-    await expect(card.getByText('Not set up')).toBeVisible();
-    // The custody stance is disclosed on the setup card BEFORE any key exists.
-    await expect(card).toContainText(CUSTODY_FRAGMENT);
     // With nothing connectable, the region leads with its own first-run card
     // rather than an empty service grid (DOR-857) — the grid's own empty copy
     // is no longer what a person in this state is shown.
     await expect(page.getByText('No accounts connected')).toBeVisible();
 
-    // Save the key → the provider registers live, no restart: the badge flips
-    // to Ready and the scripted toolkits appear as service tiles.
+    // Before any key: Settings › Connections has no way set up, and the
+    // custody stance is disclosed on the key's entry BEFORE any key exists.
+    const entry = await openKeySetup(page);
+    await expect(entry).toBeVisible();
+    await expect(entry).toContainText(CUSTODY_FRAGMENT);
+
+    // Save the key → the provider registers live, no restart: the way's row
+    // says Working and the scripted toolkits appear as service tiles.
     await saveKeyThroughUi(page);
     await page.getByRole('button', { name: 'Connect service' }).click();
     const catalog = page.getByRole('dialog', { name: 'Connect a service' });

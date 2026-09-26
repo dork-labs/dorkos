@@ -44,7 +44,14 @@ export function HostedAccountSetup() {
           Link DorkOS account
         </Button>
         <p className="text-muted-foreground text-xs">
-          Prefer your own service setup? Open Advanced account setup.
+          Prefer your own Composio or Nango account?{' '}
+          <Button
+            variant="link"
+            className="h-auto p-0 text-xs"
+            onClick={() => settings.open('connections', 'ways')}
+          >
+            Set it up in Settings › Connections
+          </Button>
         </p>
       </div>
     );
@@ -53,7 +60,7 @@ export function HostedAccountSetup() {
     return (
       <QueryErrorState
         title="Some services couldn’t load"
-        description="Try again, or use your own account in Advanced account setup."
+        description="Try again, or use your own Composio or Nango account from Settings › Connections."
         onRetry={() => void catalog.refetch()}
         isRetrying={catalog.isFetching}
       />

@@ -2,7 +2,7 @@ import { useDeferredValue, useState } from 'react';
 import { Cable, MessageSquare, Search } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import { useConnectorCatalog } from '@/layers/entities/connectors';
-import { useOpenConnections } from '@/layers/shared/model';
+import { useOpenConnections, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   Button,
   Input,
@@ -29,6 +29,7 @@ export function ServiceGrid({
   const deferredQuery = useDeferredValue(query);
   const catalog = useConnectorCatalog(deferredQuery);
   const openConnections = useOpenConnections();
+  const settings = useSettingsDeepLink();
   const services = catalog.data?.pages.flatMap((page) => page.services) ?? [];
   const warnings = catalog.data?.pages.flatMap((page) => page.warnings) ?? [];
 
@@ -78,9 +79,20 @@ export function ServiceGrid({
               <div className="bg-muted/40 rounded-lg p-6 text-center">
                 <p className="text-sm font-medium">No matching services</p>
                 <p className="text-muted-foreground mt-1 text-xs">
-                  Try another name. Custom service setup is available under Advanced account setup
-                  on the Connections page.
+                  Try another name. To reach more apps through your own Composio or Nango account,
+                  set it up in Settings.
                 </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => {
+                    setOpen(false);
+                    settings.open('connections', 'ways');
+                  }}
+                >
+                  Open Settings › Connections
+                </Button>
               </div>
             ) : (
               <ul className="space-y-2" data-testid="service-catalog-results">
