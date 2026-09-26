@@ -664,11 +664,11 @@ export class CodexRuntime implements AgentRuntime {
       // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Keyed
       // on the agent the turn acts as — its own folder even when it stands in a
       // room worktree (DOR-2091) — and a non-agent session contributes none.
-      const managedMcpServers = resolveManagedMcpServers(
-        this.managedMcpServers,
-        agentPath ?? cwd,
-        dorkosTools !== null
-      );
+      // No anchored agent — including a refused turn standing in another
+      // agent's folder — means no managed servers, never the directory's.
+      const managedMcpServers = agentPath
+        ? resolveManagedMcpServers(this.managedMcpServers, agentPath, dorkosTools !== null)
+        : { servers: {}, env: {} };
 
       const threadOptions = projectThreadOptions(settings, cwd);
       const client = await this.clientForTurn(
@@ -719,7 +719,7 @@ export class CodexRuntime implements AgentRuntime {
             buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
             // The agent's own Blocked areas, read where its manifest lives —
             // the listener hides the same areas keyed on the same anchor.
-            renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath ?? cwd)).blockedAreas),
+            renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas),
           ]
             .filter(Boolean)
             .join('\n\n')

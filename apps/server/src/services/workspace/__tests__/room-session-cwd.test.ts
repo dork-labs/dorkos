@@ -23,6 +23,7 @@ function place(overrides: Partial<RoomSessionPlacePort> = {}): RoomSessionPlaceP
   return {
     roomFor: () => ({ roomId: 'room-1', agentName: 'API Bot' }),
     ensureRoomWorktree: () => Promise.resolve(WORKTREE),
+    roomWorktreePath: () => WORKTREE,
     ...overrides,
   };
 }
@@ -59,5 +60,46 @@ describe('resolveSessionCwdWithRoom', () => {
     );
 
     expect(resolved).toMatchObject({ cwd: AGENT, rung: 'agent-home' });
+  });
+
+  describe('a turn that names its directory (DOR-2091)', () => {
+    // The client resends the directory it last showed, so an app-resumed room
+    // session names its worktree and takes the explicit rung. The worktree
+    // manager only learns whose a tree is when it hands one out, so after a
+    // restart that session would be refused its agent's identity until the
+    // room's next turn. Seeded: dropping the vouch reddens the first case;
+    // vouching for any named directory reddens the second.
+    it('vouches for the worktree it names, and still runs exactly there', async () => {
+      const ensureRoomWorktree = vi.fn(() => Promise.resolve(WORKTREE));
+
+      const resolved = await resolveSessionCwdWithRoom(
+        { cwd: `${WORKTREE}/`, agentPath: AGENT, sessionId: 's1' },
+        place({ ensureRoomWorktree })
+      );
+
+      expect(ensureRoomWorktree).toHaveBeenCalledWith('room-1', AGENT, 'API Bot');
+      expect(resolved).toEqual({ cwd: `${WORKTREE}/`, rung: 'explicit' });
+    });
+
+    it('makes no worktree for a turn that names any other directory', async () => {
+      const ensureRoomWorktree = vi.fn(() => Promise.resolve(WORKTREE));
+
+      const resolved = await resolveSessionCwdWithRoom(
+        { cwd: AGENT, agentPath: AGENT, sessionId: 's1' },
+        place({ ensureRoomWorktree })
+      );
+
+      expect(ensureRoomWorktree).not.toHaveBeenCalled();
+      expect(resolved).toEqual({ cwd: AGENT, rung: 'explicit' });
+    });
+
+    it('still runs the turn when vouching fails', async () => {
+      const resolved = await resolveSessionCwdWithRoom(
+        { cwd: WORKTREE, agentPath: AGENT, sessionId: 's1' },
+        place({ ensureRoomWorktree: () => Promise.reject(new Error('no git')) })
+      );
+
+      expect(resolved).toEqual({ cwd: WORKTREE, rung: 'explicit' });
+    });
   });
 });

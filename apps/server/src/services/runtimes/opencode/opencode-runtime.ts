@@ -517,12 +517,14 @@ export class OpenCodeRuntime implements AgentRuntime {
 
       // Registration and the lease use the sidecar's canonical directory. The
       // anchored agent path is the agent lookup key — the original cwd when it
-      // anchors nowhere else, which also covers symlinks that differ.
+      // anchors to itself, which also covers symlinks that differ — and `null`
+      // when the turn anchors to nobody, so a refused turn standing in another
+      // agent's folder is given none of that agent's servers.
       const mcpResult = await this.mcp.ensureManaged(
         client,
         directory,
         connectorInjection,
-        agentPath ?? cwd
+        agentPath ?? null
       );
       if (connectorInjection && !mcpResult.connectorApplied) {
         await this.revokeConnectorTurn(turn, 'setup_failed');

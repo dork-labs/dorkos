@@ -102,6 +102,13 @@ describe('resolveIdentityAnchor', () => {
     expect(resolveIdentityAnchor(ANA).kind).toBe('refused');
   });
 
+  it('refuses a turn that names its agent but stands nowhere, rather than reading it as nobody', () => {
+    expect(resolveIdentityAnchor(undefined, ANA)).toEqual({
+      kind: 'refused',
+      reason: 'not-the-turns-agent',
+    });
+  });
+
   it('answers none for no directory, and treats every directory as itself with no port wired', () => {
     expect(resolveIdentityAnchor(undefined)).toEqual({ kind: 'none' });
     expect(resolveIdentityAnchor(ANA_WORKTREE)).toEqual({ kind: 'path', agentPath: ANA_WORKTREE });

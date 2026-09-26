@@ -297,17 +297,18 @@ export class OpenCodeMcpManager {
    * @param connectorTools - This turn's runtime binding, when it has one.
    * @param agentCwd - Whose managed servers and `dorkos` entry this turn gets:
    *   the agent path the runtime anchored the turn to (DOR-2091), defaulting to
-   *   `cwd`.
+   *   `cwd`; `null` when the turn anchors to nobody, which gets neither.
    */
   async ensureManaged(
     client: OpencodeClient,
     cwd: string,
     connectorTools?: ConnectorRuntimeMcpInjection,
-    agentCwd = cwd
+    agentCwd: string | null = cwd
   ): Promise<EnsureManagedResult> {
-    const managed = this.resolver
-      ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(agentCwd))
-      : { servers: {}, skipped: [] };
+    const managed =
+      this.resolver && agentCwd !== null
+        ? toOpenCodeMcpServers(this.resolver.injectableServersForCwd(agentCwd))
+        : { servers: {}, skipped: [] };
     if (managed.skipped.length > 0) {
       logger.debug(
         '[OpenCodeRuntime] skipped SSE managed MCP servers — OpenCode has no SSE transport',
@@ -320,7 +321,7 @@ export class OpenCodeMcpManager {
     // a managed server can never shadow the name DorkOS owns.
     const servers: Record<string, OpenCodeMcpServerConfig> = {
       ...managed.servers,
-      ...(await this.resolveDorkosServer(agentCwd, connectorTools)),
+      ...(agentCwd !== null ? await this.resolveDorkosServer(agentCwd, connectorTools) : {}),
       ...(connectorTools
         ? {
             [CONNECTOR_RUNTIME_MCP_SERVER_NAME]: {

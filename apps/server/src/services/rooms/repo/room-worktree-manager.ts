@@ -628,10 +628,14 @@ export class RoomWorktreeManager {
    * is not a thing to authenticate by — there is, by design, no way back from a
    * directory to its owner (see {@link RoomWorktreeManagerDeps.busyAgentPaths}).
    * So the answer is recorded at the one moment it is a fact: when
-   * {@link ensureWorktree} hands the directory to an agent. Every room turn and
-   * every app-resumed room session asks for its directory that way before it
-   * launches, so a restart empties this map and the next turn refills it before
-   * anything needs to read it.
+   * {@link ensureWorktree} hands the directory to an agent. A restart empties
+   * this map, and three paths refill it before a turn launches: every room turn
+   * (the dispatcher resolves its cwd through this method), an app-resumed room
+   * session that names no directory (the room rung), and one that names THIS
+   * agent's worktree explicitly — which the client does, since it resends the
+   * directory it last showed (`resolveSessionCwdWithRoom`). A session reaching a
+   * worktree any other way — no room binding, or another agent's worktree — has
+   * no record and is refused, which is the safe direction.
    *
    * `null` is a POISONED entry: two different agents were handed one directory,
    * which only a digest-and-name collision can cause. Neither may act as the
@@ -761,6 +765,21 @@ export class RoomWorktreeManager {
     // on behalf of a different agent, and the collision has to be seen.
     this.recordOwner(handle.path, agentPath);
     return handle;
+  }
+
+  /**
+   * Where `agentPath`'s working copy in this room lives, whether or not it
+   * exists yet. Pure — creates, stamps and records nothing.
+   *
+   * @param roomId - The room.
+   * @param agentPath - The agent's workspace path.
+   * @param agentName - The agent's display name.
+   */
+  pathFor(roomId: string, agentPath: string, agentName: string): string {
+    return path.join(
+      this.deps.store.worktreesPath(roomId),
+      RoomWorktreeManager.slugFor(agentName, agentPath)
+    );
   }
 
   /**

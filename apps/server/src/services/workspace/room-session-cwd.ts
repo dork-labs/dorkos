@@ -25,6 +25,7 @@
  *
  * @module server/services/workspace/room-session-cwd
  */
+import path from 'node:path';
 import { logger } from '../../lib/logger.js';
 import {
   resolveSessionCwd,
@@ -49,6 +50,12 @@ export interface RoomSessionPlacePort {
   roomFor(sessionId: string): { roomId: string; agentName: string } | null;
   /** This install's {@link ResolveSessionCwdDeps.ensureRoomWorktree}. */
   ensureRoomWorktree: ResolveSessionCwdDeps['ensureRoomWorktree'];
+  /**
+   * Where the agent's working copy in this room lives, without creating it, or
+   * `null` when no worktree machinery is wired. Pure: it is how the explicit
+   * rung tells whether a named directory IS that working copy.
+   */
+  roomWorktreePath(roomId: string, agentPath: string, agentName: string): string | null;
 }
 
 /**
@@ -62,12 +69,23 @@ export interface RoomSessionPlacePort {
  * @param place - The rooms domain's answer to that lookup, or `undefined`.
  * @returns The directory to run in, the rung that chose it, and any degradation.
  */
-export function resolveSessionCwdWithRoom(
+export async function resolveSessionCwdWithRoom(
   req: Omit<ResolveSessionCwdRequest, 'room'> & { sessionId: string },
   place: RoomSessionPlacePort | undefined
 ): Promise<ResolvedCwd> {
   const room = place ? roomForSession(place, req.sessionId) : null;
   if (!place || !room) return resolveSessionCwd(req);
+  if (req.cwd) {
+    // The explicit rung still wins — but a named directory that IS this agent's
+    // working copy in the room is vouched for first (DOR-2091). The client
+    // resends the directory it last showed, so after a restart an app-resumed
+    // room session names its worktree and skips the room rung, and the
+    // worktree manager — which only learns whose a tree is when it hands one
+    // out — would otherwise refuse the agent its identity until the room's next
+    // turn.
+    await vouchForNamedWorktree(req.cwd, req, room, place);
+    return resolveSessionCwd(req);
+  }
   return resolveSessionCwd(
     { ...req, room },
     sessionCwdDeps({
@@ -75,6 +93,37 @@ export function resolveSessionCwdWithRoom(
         place.ensureRoomWorktree(roomId, agentPath, agentName),
     })
   );
+}
+
+/**
+ * Hand the agent its working copy when the turn names exactly that directory,
+ * so the manager records whose it is. Never fails the turn, and touches nothing
+ * for any other directory: a person who named the agent's own folder, or
+ * anything else, is not given a worktree as a side effect.
+ *
+ * @param cwd - The directory the turn named.
+ * @param req - The turn, for its agent.
+ * @param room - The room this session answers for.
+ * @param place - The rooms domain's port.
+ */
+async function vouchForNamedWorktree(
+  cwd: string,
+  req: { agentPath?: string; sessionId: string },
+  room: { roomId: string; agentName: string },
+  place: RoomSessionPlacePort
+): Promise<void> {
+  try {
+    const agentPath = req.agentPath ?? (await sessionCwdDeps().sessionAgentPath(req.sessionId));
+    if (!agentPath) return;
+    const expected = place.roomWorktreePath(room.roomId, agentPath, room.agentName);
+    if (expected === null || path.resolve(expected) !== path.resolve(cwd)) return;
+    await place.ensureRoomWorktree(room.roomId, agentPath, room.agentName);
+  } catch (err) {
+    logger.warn('[cwd] could not vouch for the room worktree this turn names', {
+      sessionId: req.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**

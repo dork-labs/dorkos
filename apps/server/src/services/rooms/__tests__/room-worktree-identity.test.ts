@@ -34,6 +34,13 @@
  *   in Ana's worktree" in both postures, which then posts as Ana.
  * - Anchoring a working copy nobody vouches for to itself reddens the
  *   unknown-worktree row in both postures.
+ * - Anchoring the tools on a bare `session.cwd` again — no `?? effectiveCwd` —
+ *   reddens the "re-created with no directory" row in both postures (login on
+ *   refuses Ana `UNIDENTIFIED_CALLER`, login off posts as the operator).
+ * - Removing that fallback AND answering `none` for a missing directory when
+ *   the turn names its agent also reddens the Ben row: his turn posts as the
+ *   operator with the cross-check never run. Either layer alone holds it; the
+ *   second is pinned on its own in `identity-anchor.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
@@ -177,10 +184,14 @@ describe('a room turn in a room with files', () => {
    */
   async function launch(
     cwd: string,
-    forAgent: string | undefined
+    forAgent: string | undefined,
+    options: { sessionHasNoCwd?: boolean } = {}
   ): Promise<{ token: string | undefined; toolLaunch: McpServerLaunch; session: AgentSession }> {
     let toolLaunch: McpServerLaunch | undefined;
     // A room session created on the worktree rung: its own cwd IS the worktree.
+    // Or, with `sessionHasNoCwd`, the session the store re-creates after a
+    // restart when a settings PATCH reaches it first (`session-store.ts`
+    // `updateSession`), which carries no directory at all.
     const session: AgentSession = {
       sdkSessionId: 'sdk-1',
       lastActivity: Date.now(),
@@ -188,7 +199,7 @@ describe('a room turn in a room with files', () => {
       hasStarted: false,
       pendingInteractions: new Map(),
       eventQueue: [],
-      cwd,
+      ...(options.sessionHasNoCwd ? {} : { cwd }),
     };
     const resolved = await resolveLaunch({
       sessionId: 'room-session-1',
@@ -290,6 +301,30 @@ describe('a room turn in a room with files', () => {
       expect(token).toBeUndefined();
       expect(toolLaunch.identity).toMatchObject({ kind: 'refused' });
       const reply = await postFrom(session, toolLaunch, 'posting as Ana, apparently');
+
+      expect(reply.posted).toBeUndefined();
+      expect(reply.code).toBe('AGENT_IDENTITY_UNVERIFIED');
+      expect(lastAuthor()).toBe(before);
+    });
+
+    it('posts as the agent when the session was re-created with no directory', async () => {
+      const { session, toolLaunch } = await launch(ANA_WORKTREE, ANA, { sessionHasNoCwd: true });
+
+      const reply = await postFrom(session, toolLaunch, 'still me after a restart');
+
+      expect(reply.code).toBeUndefined();
+      expect(reply.posted).toBe(true);
+      expect(lastAuthor()).toBe(anaAuthor());
+    });
+
+    it("refuses a turn for Ben in Ana's worktree when the session has no directory", async () => {
+      const before = lastAuthor();
+      const { token, session, toolLaunch } = await launch(ANA_WORKTREE, BEN, {
+        sessionHasNoCwd: true,
+      });
+
+      expect(token).toBeUndefined();
+      const reply = await postFrom(session, toolLaunch, 'posting as whoever');
 
       expect(reply.posted).toBeUndefined();
       expect(reply.code).toBe('AGENT_IDENTITY_UNVERIFIED');

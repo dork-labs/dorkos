@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import {
   createRelayNotifyUserHandler,
   type McpToolDeps,
@@ -8,6 +8,7 @@ import { NotifyBudget } from '../../relay/notify-budget.js';
 import { AdapterBindingSchema } from '@dorkos/shared/relay-schemas';
 import { resolveSenderIdentity } from '../../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { createCanUseTool } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
+import { resolveIdentityAnchor, setWorkingCopyOwnerPort } from '../agent-identity/index.js';
 
 vi.mock('../../relay/relay-state.js', () => ({ isRelayEnabled: vi.fn(() => true) }));
 
@@ -1014,6 +1015,69 @@ describe('relay_notify_user', () => {
         'Topic-qualified chat',
         { from: 'relay.bridge.initiate.tg-main.123.456', serverBridgePrincipal: true }
       );
+    });
+  });
+});
+
+describe('relay_notify_user, by identity anchor', () => {
+  describe('from a room worktree (DOR-2091)', () => {
+    // A turn in a room with files stands in the agent's WORKTREE. The sender was
+    // looked up by that directory, which the mesh does not place, so the agent
+    // got `NOT_AN_AGENT` and could not reach its person. It is now looked up by
+    // the session's identity anchor: the agent the worktree was handed to.
+    // Seeded: reverting `resolveSenderIdentity` to ask the mesh about `cwd`
+    // reddens the first case; ignoring the anchor it is handed reddens the
+    // second.
+    const WORKTREES = '/dork/rooms/01ROOM/worktrees';
+    const ANA_WORKTREE = `${WORKTREES}/ana-1a2b3c4d`;
+
+    beforeEach(() => {
+      setWorkingCopyOwnerPort({
+        ownerOf: (dir) =>
+          dir.startsWith(`${WORKTREES}/`)
+            ? { owner: dir === ANA_WORKTREE ? '/agents/ana' : null }
+            : null,
+      });
+    });
+
+    afterEach(() => {
+      setWorkingCopyOwnerPort(undefined);
+    });
+
+    /** A mesh that places exactly one directory: Ana's own folder. */
+    function anaMeshDeps(): McpToolDeps {
+      return makeMockDeps({
+        meshCore: {
+          getSubjectByPath: vi.fn((p: string) =>
+            p === '/agents/ana'
+              ? { subject: 'relay.agent.ns.agent-1', agentId: 'agent-1' }
+              : undefined
+          ),
+          get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
+        } as unknown as McpToolDeps['meshCore'],
+      });
+    }
+
+    it('sends as the agent the worktree belongs to', async () => {
+      const deps = anaMeshDeps();
+      const identity = resolveSenderIdentity(deps, ANA_WORKTREE);
+      expect(identity.agentId).toBe('agent-1');
+
+      const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'done' });
+      expect(JSON.parse(result.content[0].text).sent).toBe(true);
+    });
+
+    it('sends as nobody for a turn for ANOTHER agent standing in that worktree', async () => {
+      const deps = anaMeshDeps();
+      const identity = resolveSenderIdentity(
+        deps,
+        ANA_WORKTREE,
+        resolveIdentityAnchor(ANA_WORKTREE, '/agents/ben')
+      );
+      expect(identity.agentId).toBeUndefined();
+
+      const result = await createRelayNotifyUserHandler(deps, identity)({ message: 'as Ana?' });
+      expect(JSON.parse(result.content[0].text).code).toBe('NOT_AN_AGENT');
     });
   });
 });

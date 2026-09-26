@@ -228,16 +228,23 @@ export async function resolveLaunch(args: {
   // agent's worktree has THAT as its `session.cwd`, and the tools act as the
   // agent the worktree belongs to. One anchor feeds the tool server, the
   // approval gate and the prose below, so none of the three can disagree.
-  const toolIdentity = resolveIdentityAnchor(session.cwd, forAgent);
+  //
+  // **`?? effectiveCwd`, never a bare `session.cwd`.** A session the store
+  // re-creates after a restart or eviction — a settings PATCH that lands first
+  // builds it with no directory at all — would otherwise anchor to NOBODY while
+  // the token above is minted for the agent: login on refuses every room verb
+  // again, and login off hands them to the operator with the cross-check never
+  // run. The directory the turn actually launches in is the honest fallback.
+  const toolIdentity = resolveIdentityAnchor(session.cwd ?? effectiveCwd, forAgent);
   const toolAgentPath = anchorPath(toolIdentity);
   // What a Blocked permission hides from this agent (spec `agent-permissions`
   // D15), resolved against the SAME cwd the tool server keys the session's
   // identity on, for the reason the agent-to-agent flag above gives. The list
   // and the one context line per Blocked area come from one resolution, so the
   // prompt never names an area the tools disagree with.
-  const toolVisibility = await resolveToolVisibilityFor(
-    toolAgentPath ?? session.cwd ?? effectiveCwd
-  );
+  // The anchored agent or nobody: a refused session must not be shown some
+  // OTHER agent's Blocked areas off the directory it happens to stand in.
+  const toolVisibility = await resolveToolVisibilityFor(toolAgentPath);
   const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
       !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath)),

@@ -801,6 +801,8 @@ describe('RoomWorktreeManager', () => {
 
       expect(manager.ownerOf(dir)).toEqual({ owner: agentPath('ana') });
       expect(manager.ownerOf(`${dir}/`)).toEqual({ owner: agentPath('ana') });
+      // And `pathFor` names that same tree without making or recording anything.
+      expect(manager.pathFor(ROOM_ID, agentPath('ana'), 'ana')).toBe(dir);
       // Beneath it, beside it, and the agent's own folder are NOT working
       // copies: a prefix is never an identity.
       expect(manager.ownerOf(path.join(dir, 'src'))).toBeNull();

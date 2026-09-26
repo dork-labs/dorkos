@@ -333,6 +333,94 @@ describe('ClaudeCodeRuntime', () => {
       }
     );
 
+    describe('which agent a room turn opens its connections as (DOR-2091)', () => {
+      // A room turn names the agent it is for. The connections binding is opened
+      // for the agent the directory anchors to, and only when that is the
+      // turn's agent — a turn for Ben that stands in Ana's folder must never
+      // open Ana's connections. Seeded: `agentPath = cwdKey` (no anchor, no
+      // cross-check) reddens the refusal row.
+      const ANA = '/agents/ana';
+      const WORKTREE = '/dork/rooms/01ROOM/worktrees/ana-1a2b3c4d';
+
+      afterEach(async () => {
+        (await import('../../../core/agent-identity/index.js')).setWorkingCopyOwnerPort(undefined);
+      });
+
+      async function turnFor(cwd: string, forAgent: string) {
+        const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+        const { setWorkingCopyOwnerPort } = await import('../../../core/agent-identity/index.js');
+        setWorkingCopyOwnerPort({
+          ownerOf: (dir) => (dir === WORKTREE ? { owner: ANA } : null),
+        });
+        const principals: ConnectorRuntimePrincipalPort = {
+          openTurn: vi.fn().mockResolvedValue({
+            bindingId: 'binding-1',
+            bearer: 'turn-secret',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            renewalPermit: {} as never,
+          }),
+          renew: vi.fn(),
+          resolve: vi.fn().mockResolvedValue({
+            status: 'resolved',
+            principal: { claims: { kind: 'runtime' } } as ServerPrincipalProof,
+          }),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        };
+        agentManager.setMeshCore({
+          getByPath: (p: string) => (p === ANA ? { id: 'agent-ana', name: 'ana' } : undefined),
+          listWithPaths: () => [],
+          updateLastSeen: () => undefined,
+        });
+        agentManager.setConnectorRuntimeTools({
+          principals,
+          listenerUrl: 'http://127.0.0.1:4341/mcp',
+          isConnectorCapabilityId: (id) => id === 'connectors.execute_read',
+          accessSnapshot: vi.fn().mockResolvedValue({ accountCount: 0, revision: 'r' }),
+        });
+        let connectorTurn: { resolvePrincipal(): Promise<ServerPrincipalProof> } | undefined;
+        agentManager.setMcpServerFactory((session) => {
+          connectorTurn = session.connectorTurn;
+          return {};
+        });
+        const source = sdkSimpleText('ok', 'canonical-room-session');
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
+          wrapSdkQuery(
+            (async function* () {
+              for await (const message of source) {
+                yield message;
+                if (message.type === 'system' && message.subtype === 'init') {
+                  await connectorTurn?.resolvePrincipal();
+                }
+              }
+            })()
+          )
+        );
+        agentManager.ensureSession('room-session', { permissionMode: 'default', cwd });
+        for await (const event of agentManager.sendMessage('room-session', 'hi', {
+          cwd,
+          roomTurn: { roomId: '01ROOM', authorId: 'a-1', turnId: 't-1', cwd, agentPath: forAgent },
+        }))
+          void event;
+        return { principals, connectorTurn };
+      }
+
+      it('opens the connections as the agent its worktree belongs to', async () => {
+        const { principals } = await turnFor(WORKTREE, ANA);
+
+        expect(principals.openTurn).toHaveBeenCalledWith(
+          expect.objectContaining({ agentPath: ANA, canonicalCwd: WORKTREE }),
+          expect.anything()
+        );
+      });
+
+      it("opens nothing for a turn for Ben that stands in Ana's own folder", async () => {
+        const { principals, connectorTurn } = await turnFor(ANA, '/agents/ben');
+
+        expect(connectorTurn).toBeUndefined();
+        expect(principals.openTurn).not.toHaveBeenCalled();
+      });
+    });
+
     it('auto-creates session if not in memory', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
 

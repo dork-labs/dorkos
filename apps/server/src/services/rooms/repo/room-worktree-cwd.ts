@@ -109,5 +109,7 @@ export function roomSessionPlace(deps: RoomSessionPlaceDeps): RoomSessionPlacePo
     },
     ensureRoomWorktree: (roomId, agentPath, agentName) =>
       ensureRoomWorktreePath(deps.worktrees(), roomId, agentPath, agentName),
+    roomWorktreePath: (roomId, agentPath, agentName) =>
+      deps.worktrees()?.pathFor(roomId, agentPath, agentName) ?? null,
   };
 }

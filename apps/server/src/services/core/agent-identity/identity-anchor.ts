@@ -104,7 +104,15 @@ export function resolveIdentityAnchor(
   cwd: string | undefined,
   forAgent?: string | undefined
 ): IdentityAnchor {
-  if (!cwd) return { kind: 'none' };
+  // A turn that names its agent and stands NOWHERE cannot be shown to be that
+  // agent's; answering `none` would read as "nobody", which a login-off install
+  // hands to the operator. Only a caller with no agent to be checked against
+  // may have no directory.
+  if (!cwd) {
+    return forAgent !== undefined
+      ? { kind: 'refused', reason: 'not-the-turns-agent' }
+      : { kind: 'none' };
+  }
 
   let anchored = cwd;
   const workingCopy = safeOwnerOf(cwd);

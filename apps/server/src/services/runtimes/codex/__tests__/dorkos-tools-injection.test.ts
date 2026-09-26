@@ -828,6 +828,24 @@ describe('the dorkos tool server on a Codex turn', () => {
       expect(await runtime.carriesRoomTools({ cwd: worktree, agentPath: someoneElse })).toBe(false);
     });
 
+    it("gives a refused turn none of the folder's own managed servers", async () => {
+      // A turn for another agent standing in THIS agent's own folder anchors to
+      // nobody; the managed servers it would get by falling back to the
+      // directory are this agent's, so it gets none. Seeded: falling back to
+      // `agentPath ?? cwd` reddens it.
+      const managed: ManagedMcpServerResolver = {
+        injectableServersForCwd: (dir: string) =>
+          dir === agentDir ? { private_db: { transport: 'stdio', command: '/bin/db' } } : {},
+      } as unknown as ManagedMcpServerResolver;
+      const runtime = makeRuntime({ managed });
+
+      await drain(
+        runtime.sendMessage('s1', 'hello', roomTurn(agentDir, path.join(agentDir, '..', 'ben')))
+      );
+
+      expect(lastMcpServers()['private_db']).toBeUndefined();
+    });
+
     it('gives a working copy nobody vouches for nothing either', async () => {
       const stray = path.join(path.dirname(worktree), 'researcher-00000000');
       await mkdir(stray, { recursive: true });

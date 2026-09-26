@@ -206,9 +206,21 @@ export interface AccountPin {
   readonly configDirEnv: string | undefined;
 }
 
-/** Who the process was launched to act as, if anyone. */
+/**
+ * Who the process was launched to act as, if anyone.
+ *
+ * Only the TOKEN's identity is pinned, not the in-session tool server's
+ * (DOR-2091). Both are resolved per launch through `resolveIdentityAnchor`, from
+ * the same worktree-owner record and against the same turn's agent, so they can
+ * differ only when `session.cwd` and the launch directory differ. On a room turn
+ * each is then either that turn's agent or refused, never a different agent, so
+ * the drift can only narrow what a warm process may do. Outside a room a
+ * per-message `cwd` override has always been able to split the two; that
+ * predates the anchor and is why the tools key on `session.cwd`
+ * (`launch-resolver.ts`, above `loadsAgentToAgentTools`).
+ */
 export interface AgentIdentityPin {
-  /** The agent's project directory. */
+  /** The agent's project directory — the anchored agent, not a worktree. */
   readonly agentPath: string;
   /** The agent's display name, as attribution labels show it. */
   readonly displayName: string | undefined;
