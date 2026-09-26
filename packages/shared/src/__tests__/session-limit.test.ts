@@ -63,6 +63,9 @@ describe('SessionStatusSchema limit', () => {
       expect(LimitPlanSchema.parse(plan)).toEqual(plan);
     }
     expect(LimitPlanSchema.safeParse({ mode: 'auto' }).success).toBe(false);
+    expect(
+      LimitPlanSchema.safeParse({ mode: 'auto', target: 'claude4', fireAt: 'soon' }).success
+    ).toBe(false);
     expect(LimitPlanSchema.safeParse({ mode: 'later' }).success).toBe(false);
   });
 

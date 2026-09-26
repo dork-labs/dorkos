@@ -307,7 +307,11 @@ export type SessionLifecycle = z.infer<typeof SessionLifecycleSchema>;
 export const LimitPlanSchema = z
   .discriminatedUnion('mode', [
     z.object({ mode: z.literal('ask') }),
-    z.object({ mode: z.literal('auto'), target: z.string(), fireAt: z.string() }),
+    z.object({
+      mode: z.literal('auto'),
+      target: z.string(),
+      fireAt: z.string().datetime({ offset: true }),
+    }),
     z.object({ mode: z.literal('waiting') }),
     z.object({ mode: z.literal('continued'), sessionId: z.string(), accountId: z.string() }),
   ])

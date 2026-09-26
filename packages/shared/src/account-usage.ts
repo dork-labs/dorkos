@@ -2,7 +2,7 @@
  * Per-account Claude usage: the on-disk usage ledger shared with flow, and the
  * wire shape every surface serves for one account.
  *
- * The ledger contract (`<dorkHome>/usage/<account-id>.json`) is public and
+ * The ledger contract (`<dorkHome>/runtimes/<runtime>/usage/<account-id>.json`) is public and
  * tracker-neutral: flow and DorkOS each implement it independently and prove
  * it against one fixture set (marketplace `specs/flow-cli-core` §1.2). The
  * names below are spelled exactly as that contract spells them. Everything in
@@ -162,8 +162,7 @@ export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
  * known only by its length, `window:<minutes>` (a Codex window that is neither
  * 5 hours nor 7 days).
  */
-export const WINDOW_KEY_PATTERN =
-  /^(model:[a-z0-9][a-z0-9._-]*|window:[1-9][0-9]*|[a-z][a-z0-9_]*)$/;
+export const WINDOW_KEY_PATTERN = /^(model:[a-z0-9][a-z0-9._-]*|window:[0-9]+|[a-z][a-z0-9_]*)$/;
 
 /**
  * Prepaid credits an account reports (Codex). `balance` is the source's own
@@ -194,7 +193,7 @@ export const LedgerSpendSchema = z
     /** Spend so far in the period, in USD. */
     costUsd: z.number().min(0),
     /** The period's budget in USD, when known. Reaching it makes the account limited. */
-    limitUsd: z.number().min(0).optional(),
+    limitUsd: z.number().positive().optional(),
     /** When the source observed this total. */
     observedAt: z.string().datetime({ offset: true }),
     /** Which source produced the total. */
@@ -212,8 +211,12 @@ export type LedgerSpend = z.infer<typeof LedgerSpendSchema>;
 export const UsageLedgerSchema = z.looseObject({
   /** Contract version. */
   v: z.literal(1),
-  /** The runtime this account belongs to. */
-  runtime: z.enum(LEDGER_RUNTIMES),
+  /**
+   * The runtime this account belongs to. Writers always write it; readers take
+   * the runtime from the ledger's folder, so a file written before the field
+   * existed still parses.
+   */
+  runtime: z.enum(LEDGER_RUNTIMES).optional(),
   /** The registry id this ledger belongs to ({@link IMPLICIT_ACCOUNT_ID} for the implicit one). */
   accountId: z.string().regex(ACCOUNT_ID_PATTERN),
   /** The last write, any window. */
@@ -360,7 +363,8 @@ function sameJson(a: unknown, b: unknown): boolean {
  * @param existing - The stored ledger, or `null` when there is none yet.
  * @param observations - The window readings to merge, in order.
  * @param now - The moment of the write.
- * @param owner - The account and runtime, used when `existing` is `null`.
+ * @param owner - The account and runtime (the ledger's folder). The runtime is
+ *   written on every rewrite; the account id is used when `existing` is `null`.
  * @param account - Account-level readings (plan, credits, spend), if any.
  */
 export function mergeLedger(
@@ -427,7 +431,8 @@ export function mergeLedger(
   if (existing && !changed) return { ledger: existing, changed: false, dropped };
 
   const ledger: UsageLedger = existing
-    ? { ...existing, ...next, windows, updatedAt: now.toISOString() }
+    ? // The owner's runtime is the ledger's folder, so a rewrite always states it.
+      { ...existing, ...next, runtime: owner.runtime, windows, updatedAt: now.toISOString() }
     : {
         v: 1,
         runtime: owner.runtime,
@@ -531,8 +536,9 @@ export type AccountUsage = z.infer<typeof AccountUsageSchema>;
 /** The identity half of an {@link AccountUsage}, already resolved by the caller. */
 export interface AccountUsageIdentity {
   /**
-   * The account's runtime. Read from the ledger when there is one; this is the
-   * fallback when there is none. Defaults to `claude-code`.
+   * The account's runtime, as the store knows it from the ledger's folder.
+   * Wins over the ledger's own field; absent falls back to that field, then
+   * `claude-code`.
    */
   runtime?: LedgerRuntime;
   /** Registry id, or `null` for an unregistered root. */
@@ -578,6 +584,26 @@ function compareWindowKeys(a: string, b: string): number {
 /** The share of a window at which an account's chip turns to a warning. */
 const WARNING_USED_PCT = 90;
 
+/** The first instant of `now`'s UTC calendar month. */
+function utcMonthStart(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
+/**
+ * Read a spend total at `now`, the way {@link readWindow} reads a window: a
+ * total whose `periodStart` is before the current UTC month belongs to a period
+ * that has ended, so it reads as reset (`costUsd` 0 from the start of this
+ * month, budget kept). Otherwise it reads as stored.
+ *
+ * @param spend - The stored spend total.
+ * @param now - The moment to read at.
+ */
+export function readSpend(spend: LedgerSpend, now: Date): LedgerSpend {
+  const monthStart = utcMonthStart(now);
+  if (Date.parse(spend.periodStart) >= monthStart.getTime()) return spend;
+  return { ...spend, periodStart: monthStart.toISOString(), costUsd: 0 };
+}
+
 /** The `limit.window` an account reports when its spend reached its budget. */
 export const SPEND_LIMIT_WINDOW = 'spend';
 
@@ -586,7 +612,8 @@ export const SPEND_LIMIT_WINDOW = 'spend';
  *
  * Stale windows are left out. `limit` is the first readable window (in display
  * order) whose status is `rejected`, else {@link SPEND_LIMIT_WINDOW} when
- * `spend.costUsd` reached `spend.limitUsd`. `state` is `limited` with a
+ * `spend.costUsd` reached `spend.limitUsd` in the current period (spend from
+ * an earlier month reads as reset, see {@link readSpend}). `state` is `limited` with a
  * `limit`; `warning` when any window's `usedPct` is 90 or more or its status
  * is `allowed_warning`; `unknown` with no ledger, or with windows that are all
  * stale and no spend; else `ok`. A ledger with neither windows nor spend (a
@@ -620,7 +647,7 @@ export function toAccountUsage(
     });
   }
 
-  const spend = ledger?.spend ?? null;
+  const spend = ledger?.spend ? readSpend(ledger.spend, now) : null;
   const rejected = windows.find((w) => w.status === 'rejected');
   const spendReached =
     spend !== null && spend.limitUsd !== undefined && spend.costUsd >= spend.limitUsd;
@@ -643,7 +670,7 @@ export function toAccountUsage(
   else state = 'ok';
 
   return {
-    runtime: ledger?.runtime ?? identity.runtime ?? 'claude-code',
+    runtime: identity.runtime ?? ledger?.runtime ?? 'claude-code',
     accountId: identity.accountId,
     path: identity.path,
     label: identity.label,

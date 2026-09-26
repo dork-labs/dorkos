@@ -939,7 +939,8 @@
                 "type": "string"
               },
               "fireAt": {
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               }
             },
             "required": [
@@ -1204,7 +1205,7 @@
           },
           "limitUsd": {
             "type": "number",
-            "minimum": 0
+            "exclusiveMinimum": 0
           },
           "observedAt": {
             "type": "string",

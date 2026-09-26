@@ -8,6 +8,7 @@ import {
   UsageLedgerSchema,
   mergeLedger,
   modelWindowKey,
+  readSpend,
   nextAccountColor,
   readWindow,
   resolveAccountColor,
@@ -166,12 +167,14 @@ describe('mergeLedger', () => {
       [
         obs('five_hour', { observedAt: at(5 * MIN + 1000) }),
         obs('seven_day', { observedAt: at(5 * MIN - 1000) }),
+        obs('seven_day_opus', { observedAt: at(5 * MIN) }),
       ],
       NOW,
       OWNER
     );
     expect(out.dropped).toEqual([{ key: 'five_hour', reason: expect.any(String) }]);
-    expect(Object.keys(out.ledger.windows)).toEqual(['seven_day']);
+    // Exactly +5:00 is kept: only MORE than 5 minutes ahead is dropped.
+    expect(Object.keys(out.ledger.windows)).toEqual(['seven_day', 'seven_day_opus']);
   });
 
   it('drops invalid observations while the rest still merge', () => {
@@ -398,9 +401,9 @@ describe('runtime-neutral ledger', () => {
     expect(UsageLedgerSchema.parse(codex)).toEqual(codex);
   });
 
-  it('refuses a ledger with no runtime or an unknown one', () => {
+  it('parses a v1 ledger with no runtime (the folder names it), refuses an unknown one', () => {
     const base = { v: 1, accountId: 'default', updatedAt: at(0), windows: {} };
-    expect(UsageLedgerSchema.safeParse(base).success).toBe(false);
+    expect(UsageLedgerSchema.safeParse(base).success).toBe(true);
     expect(UsageLedgerSchema.safeParse({ ...base, runtime: 'gemini' }).success).toBe(false);
     expect(UsageLedgerSchema.safeParse({ ...base, runtime: 'opencode' }).success).toBe(true);
   });
@@ -409,6 +412,18 @@ describe('runtime-neutral ledger', () => {
     const e = (ms: number) => entry({ windowMinutes: 60, observedAt: at(-ms) });
     expect(readWindow('window:60', e(HOUR), NOW)).not.toBeNull();
     expect(readWindow('window:60', e(HOUR + 1), NOW)).toBeNull();
+  });
+
+  it('writes the runtime into a ledger that predates the field', () => {
+    const legacy = UsageLedgerSchema.parse({
+      v: 1,
+      accountId: 'claude3',
+      updatedAt: at(-HOUR),
+      windows: { five_hour: entry() },
+    });
+    const out = mergeLedger(legacy, [{ key: 'seven_day', ...entry() }], NOW, OWNER);
+    expect(out.ledger.runtime).toBe('claude-code');
+    expect(out.ledger.windows.five_hour).toEqual(entry());
   });
 
   it('starts a new ledger for the given runtime and accepts the new sources', () => {
@@ -477,6 +492,32 @@ describe('runtime-neutral ledger', () => {
       expect(below.state).toBe('ok');
       expect(below.limit).toBeNull();
       expect(below.spend).toMatchObject({ costUsd: 9.99, limitUsd: 10 });
+    });
+
+    it('reads spend from an earlier month as reset, so a reached budget no longer limits', () => {
+      const lastMonth = spend({
+        periodStart: '2026-08-01T00:00:00.000Z',
+        costUsd: 12,
+        limitUsd: 10,
+        observedAt: '2026-08-31T23:00:00.000Z',
+      });
+      const out = toAccountUsage(opencode({ spend: lastMonth }), who, NOW);
+      expect(out.state).toBe('ok');
+      expect(out.limit).toBeNull();
+      expect(out.spend).toMatchObject({
+        periodStart: '2026-09-01T00:00:00.000Z',
+        costUsd: 0,
+        limitUsd: 10,
+      });
+      expect(readSpend(lastMonth, NOW).costUsd).toBe(0);
+      const thisMonth = spend({ costUsd: 12, limitUsd: 10 });
+      expect(readSpend(thisMonth, NOW)).toBe(thisMonth);
+    });
+
+    it('refuses a zero budget', () => {
+      const stored = { ...ledger({}), runtime: 'opencode' as const };
+      const out = mergeLedger(stored, [], NOW, CODEX, { spend: spend({ limitUsd: 0 }) });
+      expect(out.dropped).toEqual([{ key: 'spend', reason: 'invalid spend' }]);
     });
 
     it('is ok for spend with no budget', () => {
