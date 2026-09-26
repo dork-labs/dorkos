@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Panel, PanelGroup, type ImperativePanelHandle } from 'react-resizable-panels';
 import { STORAGE_KEYS } from '@/layers/shared/lib';
 import { PaneResizeHandle } from '@/layers/shared/ui';
 import {
   THREAD_SPLIT_ID,
+  forgetLegacyThreadLayout,
   readChosenThreadWidth,
   threadPctFor,
   useThreadColumnSizing,
@@ -13,6 +14,9 @@ import {
 const ROOM_PANE_ID = `${THREAD_SPLIT_ID}-room`;
 const THREAD_PANE_ID = `${THREAD_SPLIT_ID}-thread`;
 const HANDLE_ID = `${THREAD_SPLIT_ID}-handle`;
+
+/** Below this much play, in pixels, the handle is disabled rather than offered. */
+const MIN_RANGE_PX = 4;
 
 interface RoomThreadSplitProps {
   /** The room's own column: bar chrome, timeline, live lane and composer. */
@@ -62,32 +66,45 @@ export function RoomThreadSplit({
   const [livePct, setLivePct] = useState<number | null>(null);
   const threadPane = useRef<ImperativePanelHandle>(null);
   const targetPct = threadPctFor(chosenPx, width, sizing);
-  const fixed = sizing.minPct >= sizing.maxPct;
+  // Too little range to be worth a stop: at 1440 with the right panel open the
+  // floors leave half a pixel of play, and a separator that moves by that is
+  // one a keyboard reader lands on for nothing.
+  const fixed = width === null || ((sizing.maxPct - sizing.minPct) / 100) * width < MIN_RANGE_PX;
   const open = thread !== false;
+
+  // Once per mount, and cheap: the old store only ever held a clamped layout.
+  useEffect(forgetLegacyThreadLayout, []);
 
   // Follow the target: a re-measure moves the bounds, a chosen width moves the
   // target, and either way the pane goes where the two agree. A resize here is
   // never saved — only `rememberChoice` saves.
+  //
+  // Only once the group has laid the pane out (`laidOut`, set from `onLayout`,
+  // which the group calls in its own layout effect — before this one runs).
+  // Until then the library has no size for the pane and `resize` throws, and
+  // `defaultSize` already puts it at this same target.
+  const laidOut = useRef(false);
   useLayoutEffect(() => {
-    const pane = threadPane.current;
-    if (pane === null) return;
-    try {
-      pane.resize(targetPct);
-    } catch {
-      // The group has not laid the pane out yet — the library throws rather
-      // than no-ops — and `defaultSize` already puts it at this same target.
-    }
+    if (laidOut.current) threadPane.current?.resize(targetPct);
   }, [targetPct, open]);
 
-  /** The thread's size as last committed — the "before" of a key press. */
-  const committedPct = useRef<number | null>(null);
-  /** The thread's size when a drag took hold — the "before" of a drag. */
-  const dragStartPct = useRef<number | null>(null);
+  /**
+   * The thread's size when a resize began — a drag taking hold, or a key
+   * arriving at the separator — so the end can tell a move from a no-op.
+   *
+   * **Read in the key's CAPTURE phase, never from the last render.** A real key
+   * press runs the microtask queue between the library's listener on the
+   * separator and React's at the root, and React commits the new width in that
+   * gap: a "before" read from what was last rendered is already the "after",
+   * and the move looked like nothing and was never saved. Capture runs before
+   * the library's listener, so it is the one place the old width is still true.
+   */
+  const startPct = useRef<number | null>(null);
 
   const rememberChoice = () => {
     const now = threadPane.current?.getSize();
-    const before = dragStartPct.current ?? committedPct.current;
-    dragStartPct.current = null;
+    const before = startPct.current;
+    startPct.current = null;
     // A click on the handle, or a key against a bound, moved nothing: that is
     // not a choice, and saving it would store whatever squeeze is on screen.
     if (now === undefined || width === null || width <= 0 || before === now) return;
@@ -98,7 +115,6 @@ export function RoomThreadSplit({
 
   const shownPct = livePct ?? targetPct;
   useLayoutEffect(() => {
-    committedPct.current = open ? shownPct : null;
     // Deliberately every commit, after the library's own write in the same
     // commit (a parent's layout effects run after its children's).
     const handle = element?.querySelector(`[data-panel-resize-handle-id="${HANDLE_ID}"]`);
@@ -114,7 +130,10 @@ export function RoomThreadSplit({
       <PanelGroup
         direction="horizontal"
         id={THREAD_SPLIT_ID}
-        onLayout={(layout) => setLivePct(layout.length > 1 ? layout[1]! : null)}
+        onLayout={(layout) => {
+          laidOut.current = layout.length > 1;
+          setLivePct(laidOut.current ? layout[1]! : null);
+        }}
       >
         <Panel id={ROOM_PANE_ID} order={1} className="flex">
           {room}
@@ -127,9 +146,10 @@ export function RoomThreadSplit({
               data-testid="room-thread-resize-handle"
               disabled={fixed}
               onDragging={(dragging) => {
-                if (dragging) dragStartPct.current = threadPane.current?.getSize() ?? null;
+                if (dragging) startPct.current = threadPane.current?.getSize() ?? null;
               }}
               onKeyDownCapture={(event) => {
+                startPct.current = threadPane.current?.getSize() ?? null;
                 // Home and End, the thread's way round. The library moves the
                 // pane BEFORE the line to its smallest on Home — the room — which
                 // made the thread, the pane this separator is named for, its

@@ -2,6 +2,7 @@
 covers:
   - 'feat(rooms): drag the line between a room and its thread to resize the thread (DOR-2119)'
   - 'fix(rooms): keep the thread width a reader chose when the room is squeezed, and describe the thread to screen readers (DOR-2119)'
+  - 'fix(rooms): save a thread width chosen from the keyboard in a real browser (DOR-2119)'
 ---
 
 ### Added

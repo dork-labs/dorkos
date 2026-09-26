@@ -4,7 +4,11 @@ import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest';
 import { STORAGE_KEYS } from '@/layers/shared/lib';
 import { RoomThreadSplit } from '../ui/RoomThreadSplit';
-import { threadColumnSizingFor, threadPctFor } from '../model/use-thread-column-sizing';
+import {
+  LEGACY_THREAD_LAYOUT_KEY,
+  threadColumnSizingFor,
+  threadPctFor,
+} from '../model/use-thread-column-sizing';
 
 // The REAL library, and its browser build. Vitest resolves the package's
 // `node` export here, which assumes it is rendering on a server and skips every
@@ -219,6 +223,28 @@ describe('RoomThreadSplit', () => {
     // Already at the thread's floor: Right Arrow cannot narrow it further.
     fireEvent.keyDown(handle(), { key: 'ArrowRight' });
     expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
+  it('treats a range of a pixel or two as no range at all', () => {
+    // 641px — 1440 with the right panel open: the thread's floor is 49.9% and
+    // the room's caps it at 50%, under a pixel of play. A stop a keyboard reader
+    // would land on to move nothing they could see.
+    measuredWidth = 641;
+    renderSplit();
+    expect(handle()).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('offers the handle once there is real range', () => {
+    measuredWidth = 700;
+    renderSplit();
+    expect(handle()).toHaveAttribute('tabindex', '0');
+  });
+
+  it('forgets the old library-format layout it used to save', () => {
+    localStorage.setItem(LEGACY_THREAD_LAYOUT_KEY, '{"room,thread":{"layout":[50,50]}}');
+    measuredWidth = 1000;
+    renderSplit();
+    expect(localStorage.getItem(LEGACY_THREAD_LAYOUT_KEY)).toBeNull();
   });
 
   it('leaves the tab order when the split has no range to offer', () => {

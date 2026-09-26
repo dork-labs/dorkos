@@ -114,6 +114,22 @@ export function writeChosenThreadWidth(storageKey: string, px: number): void {
   }
 }
 
+/**
+ * The key this split's layout was saved under before the width was kept in
+ * pixels — the library's own `autoSaveId` store, which saved clamped sizes over
+ * chosen ones. Nothing reads it any more.
+ */
+export const LEGACY_THREAD_LAYOUT_KEY = 'react-resizable-panels:room-thread-split';
+
+/** Drop the old-format layout if this browser still holds one. */
+export function forgetLegacyThreadLayout(): void {
+  try {
+    localStorage.removeItem(LEGACY_THREAD_LAYOUT_KEY);
+  } catch {
+    // Blocked storage holds nothing to forget.
+  }
+}
+
 /** The measured split: a ref for its element, and the bounds it implies. */
 export interface ThreadColumnMeasure {
   /** Attach to the element the split fills. */
