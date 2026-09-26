@@ -70,6 +70,9 @@ export function AgentChecklist({
       {visible.map((agent) => {
         const id = `${baseId}-${agent.agentId}`;
         const held = heldAccess(preview.candidates, current[agent.agentId] ?? []);
+        const loses =
+          decision.removedAgentIds.includes(agent.agentId) ||
+          decision.downgradedAgentIds.includes(agent.agentId);
         return (
           <div
             key={agent.agentId}
@@ -77,6 +80,7 @@ export function AgentChecklist({
           >
             <Checkbox
               id={id}
+              aria-describedby={loses ? `${id}-loss` : undefined}
               checked={picked.has(agent.agentId)}
               onCheckedChange={(next) => {
                 const updated = new Set(picked);
@@ -101,16 +105,20 @@ export function AgentChecklist({
           Show all {ranked.length}
         </Button>
       )}
-      {decision.removedAgentIds.map((agentId) => (
-        <p key={agentId} className="text-warning px-2 text-xs">
-          {nameOf(agentId)} will lose access to {serviceName}.
-        </p>
-      ))}
-      {decision.downgradedAgentIds.map((agentId) => (
-        <p key={agentId} className="text-warning px-2 text-xs">
-          {nameOf(agentId)} will lose write access.
-        </p>
-      ))}
+      {/* Each loss line describes its agent's checkbox, and the region
+          announces a new one as it appears. */}
+      <div aria-live="polite" className="space-y-1">
+        {decision.removedAgentIds.map((agentId) => (
+          <p key={agentId} id={`${baseId}-${agentId}-loss`} className="text-warning px-2 text-xs">
+            {nameOf(agentId)} will lose access to {serviceName}.
+          </p>
+        ))}
+        {decision.downgradedAgentIds.map((agentId) => (
+          <p key={agentId} id={`${baseId}-${agentId}-loss`} className="text-warning px-2 text-xs">
+            {nameOf(agentId)} will lose write access.
+          </p>
+        ))}
+      </div>
     </fieldset>
   );
 }

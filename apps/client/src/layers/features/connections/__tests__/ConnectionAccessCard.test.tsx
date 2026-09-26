@@ -406,7 +406,9 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     expect(await screen.findByLabelText('Now: Exact actions')).toBeInTheDocument();
     expect(screen.queryByText(/will lose access/)).not.toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: 'Gus' }));
-    expect(screen.getByText('Gus will lose access to Gmail.')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Gus' })).toHaveAccessibleDescription(
+      'Gus will lose access to Gmail.'
+    );
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() =>
@@ -451,7 +453,9 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
 
     expect(screen.queryByText('Ada will lose write access.')).not.toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Read' }));
-    expect(screen.getByText('Ada will lose write access.')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Ada' })).toHaveAccessibleDescription(
+      'Ada will lose write access.'
+    );
     await user.click(save);
     await waitFor(() =>
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
@@ -465,6 +469,9 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
       'Access updated'
     );
+    expect(
+      screen.getByText('Ada, Bo and Cy can use Gmail. Ada can now only read.')
+    ).toBeInTheDocument();
   });
 
   it('will not save a removal alone while a newly ticked agent still has no level', async () => {

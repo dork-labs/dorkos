@@ -126,6 +126,8 @@ function savedSummary(
       ? `${joinNames(kept)} can use ${props.serviceName}.`
       : `No agent can use ${props.serviceName}.`,
   ];
+  const downgraded = decision.downgradedAgentIds.map(nameOf);
+  if (downgraded.length > 0) lines.push(`${joinNames(downgraded)} can now only read.`);
   if (removed.length > 0) lines.push(`${joinNames(removed)} can no longer use it.`);
   return lines.join(' ');
 }

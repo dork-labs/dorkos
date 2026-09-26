@@ -2,6 +2,7 @@
 covers:
   - 'feat(connections): ask who can use an app right after you connect it (DOR-2417)'
   - 'fix(connections): make the access card change only the agents it shows, and say who loses access (DOR-2417)'
+  - 'fix(connections): announce access losses to screen readers and name downgrades after saving (DOR-2417)'
 ---
 
 ### Changed
