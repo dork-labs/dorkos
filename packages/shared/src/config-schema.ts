@@ -2281,14 +2281,6 @@ export const UserConfigSchema = z.object({
     rolePromptDismissedAt: null,
     identityPromptDismissedAt: null,
   })),
-  agentContext: z
-    .object({
-      relayTools: z.boolean().default(true),
-      meshTools: z.boolean().default(true),
-      adapterTools: z.boolean().default(true),
-      tasksTools: z.boolean().default(true),
-    })
-    .default(() => ({ relayTools: true, meshTools: true, adapterTools: true, tasksTools: true })),
   uploads: z
     .object({
       maxFileSize: z

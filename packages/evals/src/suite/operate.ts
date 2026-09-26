@@ -193,7 +193,6 @@ async function seedSelfEditAgent(sandbox: EvalSandbox): Promise<void> {
     registeredAt: new Date().toISOString(),
     registeredBy: 'dorkos-evals',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
   };
   await writeManifest(sandbox.projectCwd, manifest);

@@ -1,61 +1,72 @@
 /**
  * Settings → Permissions: what agents may do by default (spec
- * `agent-permissions`). The preset at the top (read-only in this phase), every
- * area with its three-way switch, the history of changes, and where connected
- * accounts keep their own permissions.
+ * `agent-permissions`). The preset picker at the top, the Files & commands
+ * stop, every area with its three-way switch and individual actions, the
+ * history of changes, and where connected accounts keep their own permissions.
  *
  * @module features/settings/ui/tabs/PermissionsTab
  */
-import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { usePermissions } from '@/layers/entities/permissions';
+import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import {
   BLOCKED_IS_NOT_A_SANDBOX,
-  PRESET_LABEL,
+  DefaultFilesAndCommandsRow,
+  NewAgentRecordNotice,
   PermissionHistory,
   PermissionList,
+  PresetPicker,
 } from '@/layers/features/permissions';
-import { FullPowerDoor } from '@/layers/features/full-power-door';
+import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { useSettingsDeepLink } from '@/layers/shared/model';
-import { Button, Dialog, DialogContent, FieldCard, FieldCardContent } from '@/layers/shared/ui';
+import { Button, FieldCard, FieldCardContent } from '@/layers/shared/ui';
+import { useTrustStopWrites } from '../../model/use-trust-stop-writes';
 
-/** The preset line: which one is chosen, or that none is yet. */
-function PresetSummary({ onChoose }: { onChoose: () => void }) {
+/**
+ * The Files & commands stop everyone has. It is the `runtimes.defaultTrustStop`
+ * setting, so it writes through the one consent-gated path Settings has for it,
+ * the same one Settings → Runtimes uses.
+ */
+function FilesAndCommandsSetting() {
   const { data } = usePermissions();
+  const trust = useTrustStopWrites();
   if (!data) return null;
-  if (data.preset === null) {
-    return (
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <p className="text-sm">Not chosen yet. Your agents work as they did before.</p>
-        <Button variant="outline" size="sm" onClick={onChoose}>
-          Choose how much agents may do
-        </Button>
-      </div>
-    );
-  }
-  const changes =
-    data.changeCount === 0
-      ? ''
-      : `, ${data.changeCount} ${data.changeCount === 1 ? 'change' : 'changes'}`;
   return (
-    <p className="text-sm" data-testid="permissions-preset">
-      <span className="font-medium">{PRESET_LABEL[data.preset]}</span>
-      {changes}
-    </p>
+    <>
+      <DefaultFilesAndCommandsRow
+        files={data.filesAndCommands}
+        preset={data.preset}
+        onChange={(stop) => trust.changeTrustStop(null, stop)}
+        disabled={trust.isPending}
+        runtimeLabel={(runtime) => getRuntimeDescriptor(runtime).label}
+      />
+      {trust.writeError ? (
+        <p className="text-destructive text-xs" role="alert">
+          {trust.writeError}
+        </p>
+      ) : null}
+      <AutonomyConfirmDialog
+        descriptor={trust.pendingAutonomy?.descriptor ?? null}
+        canRemember={false}
+        consentNote="Every new session will start here, and DorkOS will remember that you have read this."
+        onCancel={trust.cancelAutonomy}
+        onConfirm={trust.confirmAutonomy}
+      />
+    </>
   );
 }
 
 /** Settings → Permissions. */
 export function PermissionsTab() {
-  const [doorOpen, setDoorOpen] = useState(false);
   const navigate = useNavigate();
   const { close } = useSettingsDeepLink();
 
   return (
     <div className="space-y-6">
+      <NewAgentRecordNotice />
       <FieldCard>
-        <FieldCardContent className="space-y-2">
-          <PresetSummary onChoose={() => setDoorOpen(true)} />
+        <FieldCardContent className="@container space-y-2">
+          <PresetPicker surface="settings" />
         </FieldCardContent>
       </FieldCard>
 
@@ -66,7 +77,8 @@ export function PermissionsTab() {
           {BLOCKED_IS_NOT_A_SANDBOX}
         </p>
         <FieldCard>
-          <FieldCardContent>
+          <FieldCardContent className="divide-border divide-y">
+            <FilesAndCommandsSetting />
             <PermissionList scope={{ kind: 'default' }} />
           </FieldCardContent>
         </FieldCard>
@@ -96,15 +108,6 @@ export function PermissionsTab() {
         </Button>
         .
       </p>
-
-      <Dialog open={doorOpen} onOpenChange={setDoorOpen}>
-        <DialogContent>
-          <FullPowerDoor
-            heading="How much may your agents do?"
-            onClose={() => setDoorOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

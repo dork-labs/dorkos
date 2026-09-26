@@ -211,12 +211,21 @@ import {
   observedPermissionReader,
   permissionActions,
   readAgentPermissionsFromManifest,
+  ArrivalRecord,
+  narrowingReader,
+  narrowingContext,
+  createArrivalStep,
   captureLiveStandingGrants,
   readStandingGrantLicence,
   readRawManifestFile,
   recordEndedStandingGrants,
+  runPermissionRetirements,
   runPermissionUpgradeSweep,
+  recordPermissionChange,
+  agentRequestWriter,
+  personWriter,
 } from './services/core/permissions/index.js';
+import { onTrustStopChange } from './services/core/operator/config-write.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
 import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
@@ -1021,6 +1030,12 @@ async function start() {
   // Records a change to an agent's permissions that was made by editing its
   // settings file rather than through DorkOS. The last-seen values live in
   // DorkOS's own data directory, never the agent's.
+  // Agents that arrived and whose folder's settings have not been screened yet
+  // (review D1). Built with the observer so both exist before any agent does.
+  const arrivalRecord = new ArrivalRecord({
+    file: path.join(dorkHome, 'permissions', 'pending-arrivals.json'),
+    logger,
+  });
   const permissionObserver = new PermissionObserver({
     snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
     agentAt: (agentPath) => {
@@ -1041,6 +1056,39 @@ async function start() {
     })(),
     activity: activityService,
     logger,
+  });
+
+  // The single boot-composed Capability Registry — operator + marketplace +
+  // self-description folded into one immutable registry (spec
+  // `capability-registry`). Composed once below, after the dependency bags above
+  // are settled, then shared by both MCP servers and the `/api/capabilities/catalog`
+  // route. The factory/router closures below capture this `let` and read it lazily
+  // (they run per request, after boot has assigned it) — assigned once, but after
+  // those closures are defined, so it cannot be a `const` initialized in place.
+  // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
+  let capabilityRegistry: CapabilityRegistry | undefined;
+
+  // The permission gate's sources, wired right after the observer and the
+  // arrival record exist, before anything that can start a session, a
+  // scheduled run or a room turn (relay connections, community subscriptions,
+  // the task scheduler): all of them read an agent's own settings through this
+  // reader, the one place an arriving agent's unscreened folder settings are
+  // narrowed (review D1). Mesh and the registry are read lazily, when a read
+  // happens; until the gate is wired its default reader reads no agent's own
+  // settings at all.
+  initPermissionGate({
+    readConfig: () => configManager.get('permissions'),
+    // Fresh off the manifest on every call, and compared with the last value
+    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
+    readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
+      arrivals: arrivalRecord,
+      agentAt: (agentPath) =>
+        meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
+      context: () => narrowingContext(configManager, capabilityRegistry),
+    }),
+    // The tool-list builders hide an action whose permission is Blocked; they
+    // read this catalog, per build, off the composed registry.
+    listActions: () => permissionActions(capabilityRegistry),
   });
   const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
   try {
@@ -2096,13 +2144,15 @@ async function start() {
       logger.warn('[Mesh] Failed to ensure DorkBot system agent', logError(err));
     }
 
-    // The permission upgrade sweep (spec `agent-permissions` D13): once per server
-    // version, after the mesh and Activity are up, write folded manifests back
-    // and record what the upgrade changed. Non-fatal: a failure costs the audit
-    // line, never the boot, and the fold still happens on every read.
+    // The permission upgrade (spec `agent-permissions` D13), after the mesh and
+    // Activity are up: on every boot, fold whatever retired permission setting is
+    // still on disk (a manifest's `enabledToolGroups`/`tierCeiling`, the config's
+    // `agentContext`) and record what that decided; once per server version,
+    // record what the config migration changed. Non-fatal: a failure costs the
+    // audit line, never the boot, and a manifest is still folded on every read.
     try {
       const mesh = meshCore;
-      await runPermissionUpgradeSweep({
+      const upgradeDeps: Parameters<typeof runPermissionUpgradeSweep>[0] = {
         version: SERVER_VERSION,
         config: {
           get: () => configManager.get('permissions'),
@@ -2125,9 +2175,12 @@ async function start() {
           if (agentPath) await permissionObserver.writing(agentPath, fields.permissions, write);
           else await write();
         },
+        retireAgentContext: () => configManager.retireAgentContext(),
         activity: activityService,
         logger,
-      });
+      };
+      await runPermissionRetirements(upgradeDeps);
+      await runPermissionUpgradeSweep(upgradeDeps);
     } catch (err) {
       logger.warn('[Permissions] Upgrade sweep failed', logError(err));
     }
@@ -2654,15 +2707,6 @@ async function start() {
   // by the time the first MCP request arrives this is either populated or
   // intentionally undefined (relay disabled).
   let marketplaceMcpDeps: MarketplaceMcpDeps | undefined;
-  // The single boot-composed Capability Registry — operator + marketplace +
-  // self-description folded into one immutable registry (spec
-  // `capability-registry`). Composed once below, after the dependency bags above
-  // are settled, then shared by both MCP servers and the `/api/capabilities/catalog`
-  // route. The factory/router closures below capture this `let` and read it lazily
-  // (they run per request, after boot has assigned it) — assigned once, but after
-  // those closures are defined, so it cannot be a `const` initialized in place.
-  // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
-  let capabilityRegistry: CapabilityRegistry | undefined;
 
   // Approval primitive (spec `agent-trust` §3.3) — one instance, injected into
   // the marketplace confirmation provider and the approvals router so they share
@@ -3959,7 +4003,20 @@ async function start() {
   // after the seat and in that order deliberately: "tangerines joined your team"
   // is a line about a member of the room, so the roster is settled before the
   // room says so (team-room-home spec D5.1).
+  // Set once the permission service exists, below. Every arrival path
+  // (create, the register route, the mesh_register tool, a discovery scan)
+  // reaches the listener, so this is where an arriving folder's own
+  // permission settings are screened (review D1).
+  const arrivalScreen: { run?: (agentId: string) => Promise<{ written: boolean }> } = {};
+  const onArrival = createArrivalStep({
+    arrivals: arrivalRecord,
+    screen: () => arrivalScreen.run,
+    logger,
+  });
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
+    // Marks the agent pending before anything awaits, so every reader narrows
+    // its folder's settings until the screened ones are in its file.
+    await onArrival(agent.id);
     joinTeamRoom(teamRoomDeps, agent.path);
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
@@ -4043,6 +4100,28 @@ async function start() {
     registry: () => capabilityRegistry,
     activity: activityService,
     observer: permissionObserver,
+    arrivals: arrivalRecord,
+  });
+  arrivalScreen.run = (agentId) => permissionService.screenArrivedAgent(agentId);
+  // A screen interrupted by a restart, or one whose write failed, is retried
+  // now; its agent stays narrowed until one lands.
+  for (const agentId of arrivalRecord.pendingIds()) {
+    if (!meshCore?.get(agentId)) {
+      arrivalRecord.clear(agentId);
+      continue;
+    }
+    void arrivalScreen
+      .run(agentId)
+      .then((screened) => {
+        if (screened.written) arrivalRecord.clear(agentId);
+      })
+      .catch(() => undefined);
+  }
+  // An agent that leaves is forgotten by both records, so a later folder
+  // reusing its id is screened as the newcomer it is.
+  meshCore?.onUnregister((agentId) => {
+    arrivalRecord.clear(agentId);
+    void permissionObserver.forget(agentId);
   });
   app.use(
     '/api',
@@ -4683,6 +4762,9 @@ async function start() {
   capabilityRegistry = composeDorkOsCapabilityRegistry(
     {
       logger,
+      // An agent's approved `change_permission` writes through the same owner
+      // Settings does (spec `agent-permissions` D9).
+      permissionService,
       ...(mcpToolDeps && { operatorDeps: mcpToolDeps }),
       ...(marketplaceMcpDeps && { marketplaceDeps: marketplaceMcpDeps }),
       // Ordinary MCP surfaces expose only provider-neutral discovery. Private
@@ -4765,14 +4847,27 @@ async function start() {
   // the live `permissions` config section, read per call like everything else
   // this gate decides on. The agent's own overrides are read fresh off its
   // manifest file by the default source.
-  initPermissionGate({
-    readConfig: () => configManager.get('permissions'),
-    // Fresh off the manifest on every call, and compared with the last value
-    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
-    readAgentPermissions: observedPermissionReader(permissionObserver),
-    // The tool-list builders hide an action whose permission is Blocked; they
-    // read this catalog, per build, off the composed registry.
-    listActions: () => permissionActions(capabilityRegistry),
+  // A Files & commands stop moved through a general config door (the Runtimes
+  // settings, `PATCH /api/config`, or a config patch a person approved) is a
+  // permission change like any other, so it lands in the permission history
+  // (spec `agent-permissions` D10). The preset writes its stop itself and
+  // records it with the preset, so it does not come through here.
+  onTrustStopChange((moves, write) => {
+    void recordPermissionChange(activityService, {
+      changes: moves.map((move) => ({
+        target: { kind: 'default' },
+        key: { kind: 'files', ...(move.runtime ? { runtime: move.runtime } : {}) },
+        before: move.before,
+        after: move.after,
+      })),
+      surface: write.writer.kind === 'agent' ? 'agent-request' : 'api',
+      // A general config door cannot say who is behind it; an agent's patch
+      // reached a trust stop only because a person approved it on a card.
+      writer:
+        write.writer.kind === 'agent'
+          ? agentRequestWriter({ name: write.writer.agentName ?? 'An agent' })
+          : personWriter('local-trust'),
+    });
   });
   if (connectorRuntimePrincipals) {
     const agentScopedRuntimePrincipals = new AgentIdentitySnapshotPrincipalPort({

@@ -30,6 +30,10 @@ import {
   TaskRuntimeUnavailableError,
   type RunExecutionRuntimes,
 } from '../resolve-run-execution.js';
+import {
+  initPermissionGate,
+  resetPermissionGate,
+} from '../../../core/capabilities/permission-enforcement.js';
 
 // The server's per-runtime default tier reads the stored config through this
 // singleton, which is undefined until the server boots. Mocked so the tier can
@@ -77,7 +81,6 @@ const BASE_MANIFEST: AgentManifest = {
   registeredAt: new Date().toISOString(),
   registeredBy: 'test',
   personaEnabled: true,
-  enabledToolGroups: {},
   mcpServers: [],
 };
 
@@ -395,5 +398,31 @@ describe('resolveRunExecution — which model and effort', () => {
     );
     expect(resolved.runtimeType).toBe('claude-code');
     expect(resolved.settings.model).toBeUndefined();
+  });
+});
+
+describe("resolveRunExecution — the agent's own Files & commands stop", () => {
+  afterEach(() => resetPermissionGate());
+
+  it('reads it through the permission gate, so an unscreened folder cannot set it', async () => {
+    // The file says Full autonomy; the gate's reader (which narrows an arriving
+    // agent's folder settings) says the agent keeps no stop of its own.
+    const agentPath = await agentDir({ permissions: { filesAndCommands: 'autonomy' } });
+    initPermissionGate({ readAgentPermissions: async () => undefined });
+    const resolved = await resolveRunExecution(task(), {
+      runtimes: registry(['claude-code']),
+      agentPath,
+    });
+    expect(resolved.agent).toEqual({});
+  });
+
+  it('carries what the gate reader answers', async () => {
+    const agentPath = await agentDir();
+    initPermissionGate({ readAgentPermissions: async () => ({ filesAndCommands: 'ask' }) });
+    const resolved = await resolveRunExecution(task(), {
+      runtimes: registry(['claude-code']),
+      agentPath,
+    });
+    expect(resolved.agent).toEqual({ filesAndCommands: 'ask' });
   });
 });

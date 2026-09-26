@@ -102,7 +102,6 @@ async function pinAgentTo(runtime: string): Promise<void> {
     registeredAt: new Date().toISOString(),
     registeredBy: 'test',
     personaEnabled: true,
-    enabledToolGroups: {},
     mcpServers: [],
   } as AgentManifest);
 }

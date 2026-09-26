@@ -1,118 +1,55 @@
 // @vitest-environment jsdom
 /**
- * The Control Center's global dial, and the one sentence that has to travel
- * with its top stop (DOR-2102).
- *
- * The note's presence is asserted through the rendered DOM rather than through
- * a grep of this file's source. The picker list in
- * `shared/ui/__tests__/permission-mode-scope-note.test.tsx` is a source-text
- * guard: it proves the component is MENTIONED here, and it stayed green when
- * the review blanked the descriptor this site passes, because the note hangs
- * entirely off that lookup. So the behaviour needs its own assertion.
+ * The Control Center's power setting is the permission preset picker, with a
+ * way to the whole Permissions page (spec `agent-permissions`, task 3.8). What
+ * the picker itself does is pinned in `features/permissions/__tests__/PresetPicker.test.tsx`.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Transport } from '@dorkos/shared/transport';
-import type { ServerConfig } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+
+const openSettings = vi.fn();
+const setControlCenterOpen = vi.fn();
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useSettingsDeepLink: () => ({ open: openSettings }),
+    useAppStore: (
+      selector: (s: { setControlCenterOpen: typeof setControlCenterOpen }) => unknown
+    ) => selector({ setControlCenterOpen }),
+  };
+});
+
 import { ControlCenterDial } from '../ui/ControlCenterDial';
 
-/**
- * Claude Code's capability map, trimmed to what the dial reads: it resolves a
- * stored `null` through the default runtime's own starting mode.
- */
-const CAPABILITIES = {
-  capabilities: {
-    'claude-code': {
-      permissionModes: {
-        supported: true,
-        default: 'default',
-        values: [
-          {
-            id: 'default',
-            label: 'Default',
-            stop: 'ask',
-            asks: 'always',
-            reach: 'edit',
-            promise: 'Asks before it edits a file or runs a command.',
-          },
-        ],
-      },
-    },
-  },
-} as unknown as Awaited<ReturnType<Transport['getCapabilities']>>;
-
-function makeConfig(trustStop: 'ask' | 'act' | 'autonomy' | null): ServerConfig {
-  return {
-    executionDefaults: { runtime: 'claude-code', trustStop },
-  } as unknown as ServerConfig;
-}
-
-function harness(transport: Transport) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
-  });
-  function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <TransportProvider transport={transport}>{children}</TransportProvider>
-      </QueryClientProvider>
-    );
-  }
-  return Wrapper;
-}
-
-/** Render the dial with the stored stop this case is about. */
-async function renderDial(trustStop: 'ask' | 'act' | 'autonomy' | null) {
-  const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue(makeConfig(trustStop)),
-    getCapabilities: vi.fn().mockResolvedValue(CAPABILITIES),
-  });
-  render(<ControlCenterDial />, { wrapper: harness(transport) });
-  await screen.findByTestId('control-center-dial');
-  return transport;
-}
-
-/** The scope note, found by its slot rather than by a sentence that may be reworded. */
-const scopeNote = () => document.querySelector('[data-slot="permission-mode-scope-note"]');
-
-beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
-describe('ControlCenterDial — what Full autonomy does not cover', () => {
-  it('carries the note at the top stop', async () => {
-    await renderDial('autonomy');
-    await waitFor(() => expect(scopeNote()).toBeInTheDocument());
-    expect(scopeNote()).toHaveTextContent(/DorkOS’s own risky actions still stop for you/);
+function renderDial() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={createMockTransport()}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+  render(<ControlCenterDial />, { wrapper });
+}
+
+describe('ControlCenterDial', () => {
+  it('shows the preset picker', async () => {
+    renderDial();
+    expect(await screen.findByRole('radio', { name: 'Full power' })).toBeInTheDocument();
   });
 
-  it('points at the two places that stop the asking', async () => {
-    // The Standing permissions switch that used to sit below this dial is gone
-    // (spec `agent-permissions` phase 2), so the note names the card and the
-    // Permissions page, like every other pick site.
-    await renderDial('autonomy');
-    await waitFor(() => expect(scopeNote()).toBeInTheDocument());
-    expect(scopeNote()).toHaveTextContent(
-      'To stop being asked about one, choose Always allow on its card, or change it in Settings under Permissions.'
-    );
-    expect(scopeNote()).not.toHaveTextContent(/Standing permissions/);
-  });
-
-  it('says nothing at a stop that still asks', async () => {
-    await renderDial('ask');
-    // The dial is up and the config has landed, so the absence is the component's
-    // answer rather than a frame before one.
-    await screen.findByRole('radio', { name: 'Full autonomy' });
-    expect(scopeNote()).not.toBeInTheDocument();
-  });
-
-  it('says nothing at the middle stop either', async () => {
-    await renderDial('act');
-    await screen.findByRole('radio', { name: 'Full autonomy' });
-    expect(scopeNote()).not.toBeInTheDocument();
+  it('opens Settings → Permissions, closing the flyout first', async () => {
+    renderDial();
+    await userEvent.click(screen.getByRole('button', { name: /Edit permissions/ }));
+    expect(setControlCenterOpen).toHaveBeenCalledWith(false);
+    expect(openSettings).toHaveBeenCalledWith('permissions');
   });
 });

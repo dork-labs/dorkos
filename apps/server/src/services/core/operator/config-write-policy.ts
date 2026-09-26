@@ -115,17 +115,12 @@
  * hole in it. The wipe path is an ACCIDENT and it still refuses to reverse the
  * person's value; the agent path is a DELIBERATE write by something that is not
  * the person, and it had no bar at all. Nine leaves sat in exactly that state —
- * `agentContext.*`, `harness.autoSync`, `uploads.max*`,
- * `runtimes.claudeCode.persistentSession`, `scheduler.maxConcurrentRuns` — and an
- * agent-originated `PATCH /api/config` flipped every one of them back to the
- * permissive default with a 200 and nothing on screen. The `agentContext` four
- * are the ones that read worst out loud: an agent could undo a narrowing the
- * person made to its own tool groups. State that carefully, because the obvious
- * stronger sentence is not true — `resolveToolConfig`
- * (`claude-code/tooling/tool-filter.ts`) gates the CONTEXT BLOCKS and nothing
- * else, so the tools stay registered and callable either way (that module's own
- * TSDoc says so, and leaving them out at MCP registration is still open work).
- * The refusal copy for them is worded to match what they actually do.
+ * the four retired `agentContext.*` tool-doc switches, `harness.autoSync`,
+ * `uploads.max*`, `runtimes.claudeCode.persistentSession`,
+ * `scheduler.maxConcurrentRuns` — and an agent-originated `PATCH /api/config`
+ * flipped every one of them back to the permissive default with a 200 and
+ * nothing on screen. (The `agentContext` four are gone: a Blocked permission
+ * area replaced them, spec `agent-permissions` D13.)
  *
  * So the rule, pinned by a drift guard in
  * `__tests__/config-write-policy.test.ts`: **every `PROTECTIVE_CARRYOVERS` path
@@ -147,12 +142,11 @@
  *   terminal clears the operator bar outright (`LOCAL_OPERATOR_AUTHORITY`), and
  *   over HTTP a caller presenting no agent identity is let through by
  *   `trustedCaller` in `routes/config.ts` — the same escape every other
- *   operator-only setting rides. Every one of the nine already has a way in:
+ *   operator-only setting rides. Every one of them already has a way in:
  *   `persistentSession` and `scheduler.maxConcurrentRuns` are the Control
  *   Center's "Warm agents" switch and "Scheduled runs at once" stepper
  *   (`ControlCenterSwitches.tsx`, #1209 — `maxConcurrentRuns` is also in
- *   Settings → Tools), the four `agentContext.*` switches are Settings → Tools,
- *   and `uploads.max*` and `harness.autoSync` have no screen of their own and
+ *   Settings → Tools), and `uploads.max*` and `harness.autoSync` have no screen of their own and
  *   take `dorkos config set`. The person flips it where they already would; the
  *   agent cannot flip it back.
  * - **Versioned migrations are the one deliberate exception, and they are not a
@@ -209,6 +203,8 @@
  *
  * @module services/core/operator/config-write-policy
  */
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
+
 import { findGuardedPaths, prepareGuardedPaths } from './guarded-paths.js';
 
 /**
@@ -553,43 +549,6 @@ export const CONFIG_WRITE_POLICY = {
   'profile.displayNameSource.kind': 'operator-only',
   'profile.displayNameSource.agentName': 'operator-only',
 
-  // The four tool-group switches, all defaulting ON, all `PROTECTIVE_CARRYOVERS`
-  // leaves — so operator-only by the wipe-floor rule in this module's doc. While
-  // they were agent-writable, an agent could undo a narrowing the person had made
-  // to its own tool groups, on the surface they would least look at.
-  //
-  // What they actually do, stated because the flattering version is wrong and a
-  // refusal built on it would teach a model something false (DOR-1044).
-  // `resolveToolConfig` (`claude-code/tooling/tool-filter.ts`) feeds the CONTEXT
-  // BLOCKS and nothing else: turning `relayTools` off stops the Relay tools being
-  // documented to the agent, it does not unregister them, and access is decided
-  // by the tier gate below every caller. Leaving a disabled group out at MCP
-  // registration is open work in that module (its TSDoc carries the history —
-  // `allowedTools` was tried and ran backwards, ADR-0070). So this is a person's
-  // deliberate narrowing to protect, not a capability gate to defend, and
-  // `OPERATOR_ONLY_STAKES` words the refusal accordingly.
-  //
-  // ## THE PER-AGENT SEAM BESIDE THIS ONE, AND WHY IT HAD TO BE CLOSED TOO
-  //
-  // `resolveToolConfig` reads `agent.<group> ?? globalConfig.<group>Tools`, so an
-  // explicit PER-AGENT value BEATS the global switch. While these four were
-  // refused here and their per-agent twins were writable, an agent could restore
-  // its own context blocks through its manifest after a person turned the global
-  // switch off — a refusal undone one route over. Reproduced during the DOR-1497
-  // review, closed by DOR-1506: `agent-write-policy.ts` classifies all five
-  // `enabledToolGroups` keys operator-only, and `updateAgentManifest` enforces
-  // that table for `PATCH /api/agents/current` and the `update_agent` MCP tool
-  // alike.
-  //
-  // What remains is the residual every operator-only setting on this machine
-  // carries and no route guard can remove: with login off, a shell-capable agent
-  // can edit `~/.dork/config.json` and `.dork/agent.json` directly. The remedy is
-  // turning login on (`contributing/agent-operator-surface.md`).
-  'agentContext.relayTools': 'operator-only',
-  'agentContext.meshTools': 'operator-only',
-  'agentContext.adapterTools': 'operator-only',
-  'agentContext.tasksTools': 'operator-only',
-
   // The three upload leaves a person can tighten past the shipped default, and
   // so three `PROTECTIVE_CARRYOVERS` leaves: operator-only by the wipe floor. A
   // `safe`/`permissive` verdict on the default means the shipped value is
@@ -837,7 +796,6 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
  * - `reach` — who can reach this instance, and how far it reaches on this machine.
  * - `credentials` — which sign-in and which keys the work runs on.
  * - `code` — which code this server runs, and which outside tools it attaches to.
- * - `tools` — which DorkOS tool groups the agents here are told about.
  * - `disclosure` — what leaves this machine.
  * - `approvals` — whether a person is asked before something happens.
  * - `initiative` — when agents speak on their own, and what that spends.
@@ -852,22 +810,19 @@ export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settin
  * of WHO wrote the display name, and nothing else on this list guards a record
  * of authorship. It is not `disclosure` — nothing leaves the machine — and not
  * `attention` — nothing is waiting on anybody. It is the same principle as
- * `tools` and `resources` below: a near-neighbour would have been a refusal that
- * says something false about the setting.
+ * `resources` below: a near-neighbour would have been a refusal that says
+ * something false about the setting.
  *
- * `tools` and `resources` arrived with the wipe floor (DOR-1497) rather than
- * being carved out of the others, because neither claim was already on the list:
- * "your agents are told about fewer tool groups than they want" is not `code`
- * (nothing new is loaded or attached), and "this bound is about memory and disk"
- * is not `initiative` (nothing speaks on its own). Filing them under a
- * near-neighbour would have been the DOR-1044 failure again — a refusal that
- * overstates what a setting does is a lie the model then carries.
+ * `resources` arrived with the wipe floor (DOR-1497) rather than being carved out
+ * of the others, because its claim was not already on the list: "this bound is
+ * about memory and disk" is not `initiative` (nothing speaks on its own). Filing
+ * it under a near-neighbour would have been the DOR-1044 failure again — a
+ * refusal that overstates what a setting does is a lie the model then carries.
  */
 export type OperatorOnlyStake =
   | 'reach'
   | 'credentials'
   | 'code'
-  | 'tools'
   | 'disclosure'
   | 'approvals'
   | 'initiative'
@@ -876,10 +831,24 @@ export type OperatorOnlyStake =
   | 'authorship'
   | 'navigation';
 
+/**
+ * The floor permission area an operator-only setting is asked about in (spec
+ * `agent-permissions` D6). An agent's `config_patch` that touches one of these
+ * no longer bounces off a flat refusal: it asks the person in this area, which
+ * is never Allowed, so every such change is a person's yes.
+ */
+export type OperatorOnlyArea = Extract<PermissionAreaId, 'safety' | 'reach' | 'permissions'>;
+
 /** One stake, the sentence an agent reads for it, and the paths it covers. */
 interface OperatorOnlyStakeGroup {
   /** The stake these paths share. */
   readonly stake: OperatorOnlyStake;
+  /**
+   * The floor area a change to one of these paths asks in. Carried per stake
+   * because the stake already says what the setting guards, and the area is the
+   * person-facing name for that same thing.
+   */
+  readonly area: OperatorOnlyArea;
   /**
    * The clause the refusal quotes, written for a model and true of every path
    * below it. No trailing punctuation: the refusal appends `: <paths>.`
@@ -900,6 +869,7 @@ interface OperatorOnlyStakeGroup {
 export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   {
     stake: 'reach',
+    area: 'reach',
     description: 'Who can reach this instance, and how far it reaches on this machine',
     paths: [
       'auth.enabled',
@@ -943,6 +913,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'credentials',
+    area: 'reach',
     description: 'Which account and keys the work runs on, and who pays for it',
     paths: [
       'providers',
@@ -963,6 +934,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'code',
+    area: 'reach',
     // Covers both halves honestly: extension code and spawned binaries run
     // INSIDE this machine, while a raw-MCP server is an endpoint DorkOS reaches
     // out to and hands a session as a tool. Neither lets anybody IN, which is
@@ -983,23 +955,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     ],
   },
   {
-    stake: 'tools',
-    // "Told about" is the precise verb and the reason this stake exists. These
-    // switches feed the context blocks (`tool-filter.ts`), so a clause promising
-    // they decide what an agent MAY DO would be false — the tools stay registered
-    // and the tier gate decides access. It is still not `code` (nothing is loaded
-    // or attached) and not `reach` (nobody gets in), so a near-neighbour would
-    // have been the DOR-1044 failure by another route.
-    description: 'Which DorkOS tool groups your agents are told about',
-    paths: [
-      'agentContext.relayTools',
-      'agentContext.meshTools',
-      'agentContext.adapterTools',
-      'agentContext.tasksTools',
-    ],
-  },
-  {
     stake: 'disclosure',
+    area: 'reach',
     description: 'What leaves this machine',
     paths: [
       'telemetry.userHasDecided',
@@ -1019,6 +976,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'approvals',
+    area: 'permissions',
     description: 'Whether the person is asked before work happens on their behalf',
     paths: [
       'runtimes.defaultTrustStop',
@@ -1043,6 +1001,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'initiative',
+    area: 'safety',
     description: 'When your agents speak on their own, and how much that spends',
     paths: [
       'rooms.turnLimitsEnabled',
@@ -1079,6 +1038,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'resources',
+    area: 'safety',
     // Memory, disk and how many things run at once. None of these is a security
     // control and none of them decides whether an agent acts unbidden, so neither
     // `reach` nor `initiative` would be a true sentence about them. They are here
@@ -1106,6 +1066,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'authorship',
+    area: 'safety',
     // The narrowest stake here, and the only one that guards a RECORD rather
     // than a behaviour: these two leaves say whether the stored display name was
     // the person's own or an agent's suggestion (DOR-1022). Writing them changes
@@ -1118,6 +1079,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'navigation',
+    area: 'reach',
     // Not `reach` (nobody gets in) and not `authorship` (no name is shown as
     // anyone's). An agent able to write the owner key could file its own state
     // under the person's namespace, and one able to write the saved route could
@@ -1132,6 +1094,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
   },
   {
     stake: 'attention',
+    area: 'safety',
     description: 'Whether you are told that something is waiting on you',
     paths: [
       'notifications.escalation.phoneAfterMinutes',
@@ -1143,6 +1106,28 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
     ],
   },
 ];
+
+/**
+ * Every floor area an agent's config patch touches, each named once, or none
+ * when it touches no operator-only setting (it is then decided in DorkOS
+ * settings alone). The gate resolves EACH of them for the caller and decides the
+ * call by the strictest state it finds, so adding a path in one area can never
+ * carry a path in another past its own setting: a patch naming the tunnel and a
+ * trust stop is refused when Reach & secrets is Blocked, even though a
+ * Permissions change on its own would ask. A path with no stake on file (the
+ * drift guard keeps that out of normal use) counts as Permissions.
+ *
+ * @param patch - The raw patch a caller supplied.
+ */
+export function operatorOnlyAreasForPatch(patch: unknown): OperatorOnlyArea[] {
+  const areas = new Set<OperatorOnlyArea>(
+    findOperatorOnlyPaths(patch).map(
+      (path) =>
+        OPERATOR_ONLY_STAKES.find((group) => group.paths.includes(path))?.area ?? 'permissions'
+    )
+  );
+  return [...areas];
+}
 
 /**
  * The clause for a refused path with no stake on file. Deliberately says only

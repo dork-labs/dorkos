@@ -37,14 +37,6 @@ vi.mock('../context-builder.js', () => ({
 const GIT_BAG: AdditionalContext = [
   { kind: 'git_status', scope: 'per-turn', data: { isRepo: true, branch: 'main', clean: true } },
 ];
-vi.mock('../../tooling/tool-filter.js', () => ({
-  resolveToolConfig: vi.fn().mockReturnValue({
-    tasks: true,
-    relay: true,
-    mesh: true,
-    adapter: true,
-  }),
-}));
 vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn().mockResolvedValue('/mock/project'),
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue('/mock/project'),

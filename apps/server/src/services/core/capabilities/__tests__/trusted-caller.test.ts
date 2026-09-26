@@ -57,7 +57,6 @@ const IDENTITY: AgentIdentity = {
   agentId: 'agent_1',
   agentPath: '/tmp/agents/demo',
   displayName: 'Demo Agent',
-  tierCeiling: 'destructive',
   createdAt: new Date().toISOString(),
 };
 

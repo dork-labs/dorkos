@@ -484,18 +484,25 @@ type ApprovalRow = typeof approvals.$inferSelect;
  * too. So a card carrying that binding never offers it, whatever area a future
  * connector action is given.
  *
+ * A card that shows a change to read, old → new (`describeApprovalChange`,
+ * DOR-2328) or a text in full (`approvalDetailField`), never offers it either:
+ * the promise of those cards is that a person sees every such change before it
+ * happens, and a standing yes would let the next change through unseen.
+ *
  * @param row - The stored approval.
  */
 export function isAlwaysOffered(row: {
   requestedByPath: string | null;
   area: string | null;
   authorityBindingDigest: string | null;
+  detail?: string | null;
 }): boolean {
   return (
     row.requestedByPath !== null &&
     row.area !== null &&
     !isFloorArea(row.area) &&
-    row.authorityBindingDigest === null
+    row.authorityBindingDigest === null &&
+    (row.detail ?? null) === null
   );
 }
 

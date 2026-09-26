@@ -21,7 +21,6 @@ import {
 const DORKBOT = {
   agentPath: '/agents/dorkbot',
   displayName: 'DorkBot',
-  tierCeiling: 'destructive' as const,
   createdAt: new Date().toISOString(),
 };
 

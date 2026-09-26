@@ -115,7 +115,6 @@ describe('ensureDorkBot', () => {
       personaEnabled: true,
       isSystem,
       ...(namespace ? { namespace } : {}),
-      enabledToolGroups: {},
     };
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),
@@ -169,7 +168,6 @@ describe('ensureDorkBot', () => {
       registeredAt: '2026-01-01T00:00:00.000Z',
       registeredBy: 'dorkos-system',
       personaEnabled: true,
-      enabledToolGroups: {},
     };
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),
@@ -217,7 +215,6 @@ describe('ensureDorkBot', () => {
       registeredBy: 'dorkos-ui',
       personaEnabled: true,
       isSystem: false,
-      enabledToolGroups: {},
     };
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),
@@ -260,7 +257,6 @@ describe('ensureDorkBot', () => {
       personaEnabled: true,
       isSystem: true,
       namespace: 'system',
-      enabledToolGroups: {},
     };
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),
@@ -300,7 +296,6 @@ describe('ensureDorkBot', () => {
       personaEnabled: true,
       isSystem: true,
       namespace: 'system',
-      enabledToolGroups: {},
     };
     await fs.writeFile(
       path.join(dorkDir, 'agent.json'),

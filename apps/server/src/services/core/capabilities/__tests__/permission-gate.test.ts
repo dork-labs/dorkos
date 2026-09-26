@@ -55,7 +55,6 @@ function dorkbot(overrides: Partial<AgentIdentity> = {}): AgentIdentity {
   return {
     agentPath: DORKBOT_PATH,
     displayName: 'DorkBot',
-    tierCeiling: 'destructive',
     createdAt: new Date().toISOString(),
     ...overrides,
   };
@@ -419,13 +418,25 @@ describe('the permission decision at the tier gate', () => {
       expect(await viaRegistry('probe.plain')).toBe('ran');
     });
 
-    it('refuses an observe-ceiling agent rooms.create even on Full power', async () => {
+    it('refuses a revoked agent rooms.create even on Full power, with nothing to ask', async () => {
       preset = 'full';
 
-      const payload = await viaRegistry('rooms.create', dorkbot({ tierCeiling: 'observe' }));
+      const payload = await viaRegistry('rooms.create', dorkbot({ inactive: 'revoked' }));
 
-      expect(payload).toMatchObject({ reason: 'tier_ceiling', approvable: false });
+      expect(payload).toMatchObject({ reason: 'permission_blocked', approvable: false });
       expect(ran).toEqual([]);
+    });
+
+    it('refuses a revoked agent an act action with no area, but lets it read', async () => {
+      // Its areas are Blocked by the resolver; this is the rule that covers the
+      // actions no area governs (the retired ceiling's revoked rung).
+      preset = 'full';
+      expect(await viaRegistry('probe.plain', dorkbot({ inactive: 'revoked' }))).toMatchObject({
+        reason: 'permission_blocked',
+        approvable: false,
+      });
+      // An expired token is a clock, not an off switch: its no-area actions run.
+      expect(await viaRegistry('probe.plain', dorkbot({ inactive: 'expired' }))).toBe('ran');
     });
 
     it('lets a trusted caller past without resolving any permission', async () => {

@@ -1943,7 +1943,7 @@ export interface Transport
    *
    * `AgentManifestUpdate`, not `Partial<AgentManifest>`, because the route's
    * own schema ({@link UpdateAgentRequestSchema}) accepts `null` on `model`,
-   * `effort`, `account`, `tierCeiling`, `color` and `icon` to mean "go back to
+   * `effort`, `account`, `color` and `icon` to mean "go back to
    * inheriting" — and `undefined` cannot travel over JSON. The narrower type
    * left the one surface that has to say it (the profile's Account row) unable
    * to spell its own restore action.

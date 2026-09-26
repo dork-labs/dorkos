@@ -7,7 +7,7 @@
  * exceptions chip lists who differs and resets each one.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -52,6 +52,10 @@ const TESTER: PermissionException = {
   area: 'rooms',
   state: 'ask',
 };
+
+/** The two agents as the apply dialog lists them. */
+const DIFF_AUDITOR = { agentId: 'a1', agentName: 'security-auditor', detail: 'Blocked' };
+const DIFF_TESTER = { agentId: 'a2', agentName: 'test-bot', detail: 'Ask' };
 
 describe('PermissionRow', () => {
   it('shows where the state came from, and a Reset only when the agent has its own', async () => {
@@ -115,7 +119,7 @@ describe('ApplyToOverridesDialog', () => {
         onCancel={() => {}}
         subject="Rooms"
         next="allowed"
-        agents={[AUDITOR, TESTER]}
+        agents={[DIFF_AUDITOR, DIFF_TESTER]}
         affectedCount={33}
         onKeep={() => {}}
         onUpdate={onUpdate}
@@ -141,7 +145,7 @@ describe('ApplyToOverridesDialog', () => {
         onCancel={() => {}}
         subject="Reach & secrets"
         next="ask"
-        agents={[{ ...AUDITOR, area: 'reach' }]}
+        agents={[DIFF_AUDITOR]}
         affectedCount={1}
         onKeep={() => {}}
         onUpdate={() => {}}
@@ -158,7 +162,7 @@ describe('ApplyToOverridesDialog', () => {
         onCancel={() => {}}
         subject="Rooms"
         next="allowed"
-        agents={[AUDITOR]}
+        agents={[DIFF_AUDITOR]}
         affectedCount={2}
         onKeep={onKeep}
         onUpdate={() => {}}
@@ -203,6 +207,7 @@ describe('PermissionList (default scope)', () => {
     preset: 'full',
     defaults: { areas: {}, actions: {} },
     changeCount: 0,
+    filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
     areas: [
       {
         id: 'rooms',
@@ -234,15 +239,16 @@ describe('PermissionList (default scope)', () => {
     agentCount: 34,
   };
 
-  it('shows only areas that have actions, and asks before overriding a differing agent', async () => {
+  it('shows every area, and asks before overriding a differing agent', async () => {
     const { transport, wrapper } = wrap();
     vi.mocked(transport.getPermissions).mockResolvedValue(OVERVIEW);
     render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
 
-    expect(await screen.findByTestId('permission-row-rooms')).toBeInTheDocument();
-    expect(screen.queryByTestId('permission-row-tasks')).not.toBeInTheDocument();
+    const roomsRow = await screen.findByTestId('permission-row-rooms');
+    // An area with no fixed actions still takes a state.
+    expect(screen.getByTestId('permission-row-tasks')).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole('radio', { name: 'Ask' }));
+    await userEvent.click(within(roomsRow).getByRole('radio', { name: 'Ask' }));
 
     // One agent differs, so the question comes first and nothing is written yet.
     expect(await screen.findByText('Rooms will be set to Ask for everyone.')).toBeInTheDocument();
@@ -261,11 +267,165 @@ describe('PermissionList (default scope)', () => {
   });
 });
 
+describe('individual actions', () => {
+  const withActions = (
+    action: PermissionsResponse['areas'][number]['actions'][number]
+  ): PermissionsResponse => ({
+    preset: 'full',
+    defaults: { areas: {}, actions: {} },
+    changeCount: 0,
+    filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
+    areas: [
+      {
+        id: 'tasks',
+        label: 'Tasks & schedules',
+        description: 'Tasks',
+        floor: false,
+        kind: 'state',
+        actions: [action],
+        resolved: { state: 'allowed', source: 'preset', layer: 'default' },
+      },
+    ],
+    exceptions: [],
+    agentCount: 3,
+  });
+
+  it('opens every action with its own switch, and says a destructive one still asks', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getPermissions).mockResolvedValue(
+      withActions({
+        id: 'tasks.delete',
+        title: 'Delete a schedule',
+        tier: 'destructive',
+        resolved: {
+          area: 'tasks',
+          state: 'ask',
+          source: 'preset',
+          layer: 'default',
+          destructiveAsk: true,
+        },
+      })
+    );
+    render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Show individual actions' }));
+    const row = screen.getByTestId('permission-action-tasks.delete');
+    expect(within(row).getByText('Always asks unless you set it here')).toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('radio', { name: 'Allowed' }));
+    await waitFor(() =>
+      expect(transport.patchPermissionDefaults).toHaveBeenCalledWith({
+        actions: { 'tasks.delete': 'allowed' },
+        surface: 'settings',
+      })
+    );
+  });
+
+  it('shows a default action change while collapsed, with a Reset', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getPermissions).mockResolvedValue(
+      withActions({
+        id: 'tasks.create',
+        title: 'Create a schedule',
+        tier: 'act',
+        resolved: { area: 'tasks', state: 'ask', source: 'default-action', layer: 'default' },
+      })
+    );
+    render(<PermissionList scope={{ kind: 'default' }} />, { wrapper });
+
+    expect(await screen.findByText('Except Create a schedule: Ask')).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Put Create a schedule back to Tasks & schedules' })
+    );
+    await waitFor(() =>
+      expect(transport.patchPermissionDefaults).toHaveBeenCalledWith({
+        actions: { 'tasks.create': null },
+        surface: 'settings',
+      })
+    );
+  });
+});
+
+describe("an agent's Files & commands row", () => {
+  const view = (files: AgentPermissionsResponse['filesAndCommands']): AgentPermissionsResponse => ({
+    agentId: 'a1',
+    agentName: 'security-auditor',
+    overrides: files.source === 'agent' ? { filesAndCommands: files.stop ?? undefined } : {},
+    filesAndCommands: files,
+    areas: [],
+  });
+
+  it('follows everyone until changed, and a change writes the agent’s own stop', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue(
+      view({ stop: 'act', source: 'default', inherited: { stop: 'act', source: 'default' } })
+    );
+    render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
+
+    const row = await screen.findByTestId('permission-row-files');
+    expect(within(row).getByText('Same as everyone (Act)')).toBeVisible();
+    expect(within(row).queryByRole('button', { name: /Reset/ })).not.toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole('radio', { name: 'Ask first' }));
+    await waitFor(() =>
+      expect(transport.patchAgentPermissions).toHaveBeenCalledWith('a1', {
+        filesAndCommands: 'ask',
+        surface: 'agent-page',
+      })
+    );
+  });
+
+  it('resets its own stop back to the one everyone has', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue(
+      view({ stop: 'ask', source: 'agent', inherited: { stop: 'act', source: 'default' } })
+    );
+    render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
+
+    const row = await screen.findByTestId('permission-row-files');
+    expect(within(row).getByText('Everyone else: Act')).toBeVisible();
+    await userEvent.click(within(row).getByRole('button', { name: /Reset to default/ }));
+    await waitFor(() =>
+      expect(transport.patchAgentPermissions).toHaveBeenCalledWith('a1', {
+        filesAndCommands: null,
+        surface: 'agent-page',
+      })
+    );
+  });
+
+  it('asks before Full autonomy, and sends the yes with the change', async () => {
+    const { transport, wrapper } = wrap();
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue(
+      view({ stop: 'act', source: 'default', inherited: { stop: 'act', source: 'default' } })
+    );
+    render(<PermissionList scope={{ kind: 'agent', agentId: 'a1' }} />, { wrapper });
+
+    const row = await screen.findByTestId('permission-row-files');
+    await userEvent.click(within(row).getByRole('radio', { name: 'Full autonomy' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(transport.patchAgentPermissions).not.toHaveBeenCalled();
+
+    await userEvent.click(within(dialog).getByRole('button', { name: /Turn on|Full autonomy/ }));
+    await waitFor(() =>
+      expect(transport.patchAgentPermissions).toHaveBeenCalledWith('a1', {
+        filesAndCommands: 'autonomy',
+        surface: 'agent-page',
+        acknowledgeAutonomy: true,
+      })
+    );
+  });
+});
+
 describe('PermissionList (agent scope)', () => {
   const rooms = (changedOutsideAt: string | null): AgentPermissionsResponse => ({
     agentId: 'a1',
     agentName: 'security-auditor',
     overrides: { areas: { rooms: 'allowed' } },
+    filesAndCommands: {
+      stop: 'autonomy',
+      source: 'default',
+      inherited: { stop: 'autonomy', source: 'default' },
+    },
     areas: [
       {
         id: 'rooms',

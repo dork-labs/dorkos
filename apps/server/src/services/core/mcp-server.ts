@@ -101,7 +101,9 @@ export function createExternalMcpServer(
   // `server` directly: that is what puts the permission tier in front of each one
   // (DOR-468). The per-domain functions take a `ToolRegistrar`, so a new domain
   // file has nothing ungated to register against.
-  const registrar = gatedToolRegistrar(server, identity);
+  // A tool Blocked for this caller is gated and built but not listed (spec
+  // `agent-permissions` D15); the request tool reaches it through the reach.
+  const registrar = gatedToolRegistrar(server, identity, hiddenToolNames);
   registerCoreTools(registrar, deps);
   registerTaskTools(registrar, deps);
   registerRelayTools(registrar, deps, relayIdentity);
@@ -122,19 +124,20 @@ export function createExternalMcpServer(
   // asking, and reads its absence as "this surface could name nobody" rather
   // than as "the owner" (see `CapabilityInvocationContext.userId`).
   //
-  // `agentIdentityPresented` is in the guard as well as in the object, and that
-  // is the whole of DOR-1361 on this surface: a revoked agent presents a token
-  // that resolves to nothing and signs in as nobody, so it produced neither of
-  // the other two facts and the context collapsed to `undefined` — leaving
-  // `callerAuthor` to answer with the install owner.
-  const caller =
-    identity || userId || agentIdentityPresented
-      ? {
-          ...(identity ? { identity } : {}),
-          ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
-          ...(userId ? { userId } : {}),
-        }
-      : undefined;
+  // `agentIdentityPresented` rides on its own, and that is the whole of DOR-1361
+  // on this surface: an agent whose token resolves to nothing signs in as nobody,
+  // so it produces neither of the other two facts, and without this one
+  // `callerAuthor` would answer with the install owner.
+  //
+  // The hand-registered tools this server built ride along too, for the request
+  // tool alone (the registry forwards them only to a `forwardsApproval`
+  // capability), so an agent can ask past a Blocked one.
+  const caller = {
+    ...(identity ? { identity } : {}),
+    ...(agentIdentityPresented ? { agentIdentityPresented } : {}),
+    ...(userId ? { userId } : {}),
+    handTools: registrar.reach,
+  };
   registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external', caller, hiddenToolNames);
 
   // ── Read-only resources ──────────────────────────────────────────────────

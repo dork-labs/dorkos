@@ -433,11 +433,10 @@
       "id": "260828-123331",
       "slug": "the-first-hard-tool-filter-lives-at-registry-invoke",
       "title": "The first hard per-agent tool filter lives at registry.invoke, keyed on a grant only a person may write",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-08-28",
       "extractedFrom": "rooms-management-tools",
       "specSlug": "rooms-management-tools",
-      "amends": "260726-171347",
       "supersedes": null,
       "affects": [
         "apps/server/src/services/core/capabilities/capability-definition.ts",
@@ -447,7 +446,8 @@
         "apps/server/src/services/core/capabilities/tool-group-grants.ts",
         "apps/server/src/services/core/operator/agent-updater.ts",
         "packages/shared/src/mesh-schemas.ts"
-      ]
+      ],
+      "supersededBy": "260923-223904"
     },
     {
       "id": "260824-120429",
@@ -3381,12 +3381,13 @@
       "number": 71,
       "slug": "implicit-tool-group-hierarchy",
       "title": "Implicit Tool Group Hierarchy for User-Facing Toggles",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-03-04",
       "extractedFrom": "agent-tools-elevation",
       "specSlug": "agent-tools-elevation",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/mcp-tool-groups.ts", "packages/shared/src/mesh-schemas.ts"]
+      "affects": ["packages/shared/src/mcp-tool-groups.ts", "packages/shared/src/mesh-schemas.ts"],
+      "supersededBy": "260923-223904"
     },
     {
       "number": 70,
@@ -3402,12 +3403,13 @@
       "number": 69,
       "slug": "agent-context-config-independent-from-feature-flags",
       "title": "Agent Context Config Section Independent from Feature Flags",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-03-04",
       "extractedFrom": "agent-tool-context-injection",
       "specSlug": "agent-tool-context-injection",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/config-schema.ts"]
+      "affects": ["packages/shared/src/config-schema.ts"],
+      "supersededBy": "260923-223904"
     },
     {
       "number": 68,
@@ -4600,14 +4602,15 @@
       "id": "260726-171347",
       "slug": "tool-group-toggles-gate-context-not-access",
       "title": "Tool-group toggles gate context, not access",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-26",
       "supersedes": 70,
       "lastVerified": "2026-08-06",
       "affects": [
         "apps/server/src/services/runtimes/claude-code/tooling/tool-filter.ts",
         "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts"
-      ]
+      ],
+      "supersededBy": "260923-223904"
     },
     {
       "id": "260726-232221",
@@ -6109,7 +6112,7 @@
       "id": "260923-223904",
       "slug": "one-permission-model-for-agent-actions",
       "title": "One permission model for agent actions, areas with three states, a default and per-agent overrides",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-23",
       "extractedFrom": "agent-permissions",
       "specSlug": "agent-permissions",
@@ -6126,7 +6129,7 @@
       "id": "260923-223905",
       "slug": "permission-decisions-ride-the-tier-gate",
       "title": "Permission decisions ride the tier gate's three choke points and the existing approval machinery",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-23",
       "extractedFrom": "agent-permissions",
       "specSlug": "agent-permissions",
@@ -6142,7 +6145,7 @@
       "id": "260923-223907",
       "slug": "permission-area-lives-on-the-action",
       "title": "An action's permission area is declared on the action, and the compiler is the census",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-09-23",
       "extractedFrom": "agent-permissions",
       "specSlug": "agent-permissions",

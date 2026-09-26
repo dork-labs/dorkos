@@ -492,6 +492,17 @@ async function validatePackageFiles(
   //    that gate, never carried by the package.
   await checkPackagedMcpServers(packagePath, issues);
 
+  // 7a. Nor may it ship what it is allowed to do. A shipped `.dork/agent.json`
+  //     carrying `permissions` (or the retired `enabledToolGroups` /
+  //     `tierCeiling`, which DorkOS folds into permissions) would be adopted as
+  //     the agent's own settings, widening what it may do before a person was
+  //     asked (spec `agent-permissions`). A person sets permissions after
+  //     install, through DorkOS. Only before install: an installed agent's
+  //     file holds the person's own settings by design.
+  if ((options.tree ?? 'package') === 'package') {
+    await checkPackagedPermissions(packagePath, issues);
+  }
+
   // 7b. A root git would read as a repository (DOR-2326): its `config` can
   //     name a program git runs whenever it runs there. Only before install:
   //     a person may make their installed agent's folder a repository of
@@ -927,6 +938,50 @@ async function checkPackagedMcpServers(
       path: AGENT_MANIFEST_PATH,
     });
   }
+}
+
+/** The agent manifest fields that say what an agent may do, retired ones included. */
+const PACKAGED_PERMISSION_FIELDS = ['permissions', 'enabledToolGroups', 'tierCeiling'] as const;
+
+/**
+ * Reject a package that ships an agent identity manifest (`.dork/agent.json`)
+ * carrying any field that decides what the agent may do. Structural, for the
+ * reason {@link checkPackagedMcpServers} is: the key being present at all is
+ * the refusal, whatever its value, because an empty-looking value today is a
+ * place to put a wide one tomorrow.
+ *
+ * @param packagePath - Absolute path to the package root directory.
+ * @param issues - Mutable issue list to append a finding to.
+ * @internal
+ */
+async function checkPackagedPermissions(
+  packagePath: string,
+  issues: ValidationIssue[]
+): Promise<void> {
+  let content: string;
+  try {
+    content = await readPackageFile(packagePath, AGENT_MANIFEST_PATH);
+  } catch (err) {
+    if (err instanceof RefusedPackageFileError) throw err;
+    return;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+  const shipped = PACKAGED_PERMISSION_FIELDS.filter((field) => Object.hasOwn(parsed, field));
+  if (shipped.length === 0) return;
+  issues.push({
+    level: 'error',
+    code: 'PACKAGED_PERMISSIONS_FORBIDDEN',
+    message:
+      `A packaged agent may not ship what it is allowed to do (${shipped.join(', ')} in ` +
+      '.dork/agent.json). A person sets its permissions after install, in DorkOS.',
+    path: AGENT_MANIFEST_PATH,
+  });
 }
 
 /**

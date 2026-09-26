@@ -26,7 +26,6 @@ const REAL_SHAPED_TOKEN = 'a3f9c1e2b70d48a6915ce4d2f8b03c7e';
 const IDENTITY = {
   agentPath: '/Users/dev/agents/researcher',
   displayName: 'Researcher',
-  tierCeiling: 'act',
   createdAt: '2026-09-01T00:00:00.000Z',
 };
 

@@ -205,6 +205,20 @@ describe('Unchanged (no preset chosen)', () => {
     expect(r).toMatchObject({ state: 'allowed', source: 'unchanged' });
   });
 
+  it('keeps the boundaries tool asking, as its own card always did', () => {
+    // It sits in Safety limits, which Unchanged blocks; without its action entry
+    // an undecided install would lose a tool it had before choosing anything.
+    const r = resolvePermission(
+      input({
+        area: 'safety',
+        actionId: 'operator.update_agent_boundaries',
+        tier: 'destructive',
+        config,
+      })
+    );
+    expect(r).toMatchObject({ state: 'ask', source: 'unchanged' });
+  });
+
   it('allows the non-floor areas and blocks the floor ones', () => {
     expect(resolvePermission(input({ area: 'tasks', actionId: 'x.y', config })).state).toBe(
       'allowed'
@@ -238,5 +252,30 @@ describe('resolveFilesAndCommands', () => {
 
   it("falls back to the runtime's own default", () => {
     expect(resolveFilesAndCommands({})).toEqual({ stop: null, source: 'runtime-own' });
+  });
+});
+
+describe('an action that always asks (DOR-2328)', () => {
+  it('resolves a stored Allowed to Ask, and says why', () => {
+    const resolved = resolvePermission({
+      area: 'agents',
+      actionId: 'operator.update_agent_execution',
+      tier: 'destructive',
+      config: { preset: 'full', defaults: { areas: {}, actions: {} } },
+      agent: { actions: { 'operator.update_agent_execution': 'allowed' } },
+      alwaysAsks: true,
+    });
+    expect(resolved).toMatchObject({ state: 'ask', source: 'always-asks' });
+  });
+
+  it('leaves Blocked Blocked', () => {
+    const resolved = resolvePermission({
+      area: 'agents',
+      actionId: 'operator.update_agent_execution',
+      tier: 'destructive',
+      config: { preset: 'full', defaults: { areas: { agents: 'blocked' }, actions: {} } },
+      alwaysAsks: true,
+    });
+    expect(resolved.state).toBe('blocked');
   });
 });

@@ -102,7 +102,7 @@
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type { ApprovalOrigin } from '@dorkos/shared/approval-schemas';
 
@@ -114,15 +114,19 @@ import {
   canRaiseApproval,
   resolveCallPermission,
   type CapabilityApprovalHold,
+  type HandToolReach,
 } from './capabilities/index.js';
 import { approvalTokenArgument } from './capabilities/mcp-projection.js';
 import {
+  CapabilityGateRefusal,
   enforceCapabilityTier,
   isFreshApprovalAsk,
   splitApprovalToken,
   type ApprovalRequiredPayload,
   type GatedAction,
+  type TierEnforcementDecision,
 } from './capabilities/tier-enforcement.js';
+import { CapabilityToolError } from './capabilities/mcp-envelope.js';
 import { gatedActionForMcpTool } from './mcp-tool-tiers.js';
 
 /**
@@ -167,6 +171,12 @@ interface GateRun {
    * which has no session and therefore nowhere to deliver to.
    */
   requestingSession?: ApprovalRequestingSession;
+  /**
+   * Set only by `request_permission` reaching a hidden tool through
+   * {@link HandToolReach}: the agent is asking past a Blocked permission on
+   * purpose (spec `agent-permissions` D8). Never read off the wire.
+   */
+  blockedRequest?: { reason: string };
 }
 
 /**
@@ -188,6 +198,8 @@ type GateOutcome =
        * their payload unchanged.
        */
       fresh?: ApprovalRequiredPayload;
+      /** What the gate decided, for a caller that raises it as a refusal. */
+      decision: Extract<TierEnforcementDecision, { outcome: 'approval_required' | 'denied' }>;
       /**
        * The arguments this pass hashed, already split from any token.
        *
@@ -230,7 +242,11 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
   // same reason, and the same shape, as awaiting the identity above.
   const subject = await resolveApprovalSubject(action.approvalSubject, input);
   // The permission, resolved fresh for this call (spec `agent-permissions` D6).
-  const permission = await resolveCallPermission({ action, ...(identity ? { identity } : {}) });
+  const permission = await resolveCallPermission({
+    action,
+    input,
+    ...(identity ? { identity } : {}),
+  });
 
   const decision = enforceCapabilityTier({
     action,
@@ -251,6 +267,7 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     // Where to tell the answer if nobody is still holding for it. A delivery
     // address, never an authorization fact — see the field's own docblock.
     ...(requestingSession ? { requestingSession } : {}),
+    ...(run.blockedRequest ? { blockedRequest: run.blockedRequest } : {}),
   });
 
   if (decision.outcome !== 'allowed') {
@@ -261,6 +278,7 @@ async function runGate(run: GateRun): Promise<GateOutcome> {
     return {
       allowed: false,
       result: textResult(decision.payload),
+      decision,
       input,
       ...(fresh ? { fresh } : {}),
     };
@@ -488,6 +506,87 @@ export function gateHandRegisteredMcpTools<T extends SdkMcpTool>(
 }
 
 /**
+ * Read a hand-registered tool's result the way a capability returns one: the
+ * JSON its text carries (or the text itself), and an error result as a thrown
+ * {@link CapabilityToolError}, so the request tool answers exactly as the tool
+ * would have.
+ */
+function unwrapToolResult(result: CallToolResult): unknown {
+  const first = result.content?.[0];
+  const text = first && first.type === 'text' ? first.text : undefined;
+  let payload: unknown = text;
+  if (text !== undefined) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = text;
+    }
+  }
+  if (result.isError) throw new CapabilityToolError(payload ?? { error: 'The tool failed.' });
+  return payload ?? null;
+}
+
+/**
+ * Build the {@link HandToolReach} for one server's hand-registered tools: the
+ * tools it built, hidden ones included, which the request tool reaches when an
+ * agent asks past a Blocked permission (spec `agent-permissions` D8).
+ *
+ * Every request runs the SAME gate a direct call runs, marked `blockedRequest`,
+ * so the person is asked about exactly this tool and these arguments, the
+ * blocked-request limits apply, and a granted token is honored only on this
+ * path. A refusal is thrown as a {@link CapabilityGateRefusal}, which is how the
+ * request tool's in-session hold knows to wait.
+ *
+ * @param tools - The server's raw (ungated) hand-registered tool definitions,
+ *   read on every request (a registrar fills it after the reach exists).
+ * @param surface - What this server records on an approval: whether it can put
+ *   a card in front of the operator, where it arrived, and (in session) which
+ *   session to deliver a late verdict to.
+ * @returns The reach to hand to the request tool.
+ */
+export function createHandToolReach(
+  tools: readonly SdkMcpTool[],
+  surface: {
+    interactive: boolean;
+    origin: ApprovalOrigin;
+    resolveRequestingSession?: () => ApprovalRequestingSession | undefined;
+  }
+): HandToolReach {
+  // Read live, not snapshotted: the external registrar hands this its list
+  // before the domains have registered into it.
+  const find = (name: string) => tools.find((tool) => tool.name === name);
+  return {
+    has: (name) => find(name) !== undefined,
+    request: async (name, args, options) => {
+      const tool = find(name);
+      if (!tool) throw new Error(`No hand-registered tool called "${name}" on this server.`);
+      // Parsed the way the SDK parses a direct call, so the tool's handler sees
+      // what it would have, and the approval binds to the value that runs.
+      const parsed = z.object(tool.inputSchema).safeParse(args);
+      if (!parsed.success) {
+        throw new CapabilityToolError({
+          error: `Those arguments do not fit "${name}": ${z.prettifyError(parsed.error)}`,
+          code: 'INVALID_ARGUMENTS',
+        });
+      }
+      const requestingSession = surface.resolveRequestingSession?.();
+      const outcome = await runGate({
+        action: gatedActionForMcpTool(name),
+        args: parsed.data,
+        identity: options.identity,
+        interactive: surface.interactive,
+        origin: surface.origin,
+        blockedRequest: { reason: options.reason },
+        ...(options.approvalToken ? { approvalToken: options.approvalToken } : {}),
+        ...(requestingSession ? { requestingSession } : {}),
+      });
+      if (!outcome.allowed) throw new CapabilityGateRefusal(outcome.decision);
+      return unwrapToolResult(await tool.handler(outcome.input, undefined));
+    },
+  };
+}
+
+/**
  * The brand that makes {@link ToolRegistrar} mean "gated" rather than merely
  * "has a `registerTool` method".
  *
@@ -545,19 +644,39 @@ const _rawServerIsNotARegistrar: McpServer extends ToolRegistrar ? never : true 
  * Wrap an external `McpServer` so every tool registered through it runs the tier
  * gate first.
  *
+ * A tool whose permission is Blocked for this caller is gated all the same but
+ * NOT registered on the server, so it is not in the list the caller sees (spec
+ * `agent-permissions` D15); it stays reachable through {@link HandToolReach} for
+ * the request tool, exactly like the in-session server's hidden tools.
+ *
  * @param server - The real external `McpServer` to register against.
  * @param identity - The calling agent, when the request carried a resolved
  *   identity token. This server is rebuilt per request, so one identity covers
  *   every tool it registers.
- * @returns A registrar to hand to the per-domain registration functions.
+ * @param hiddenToolNames - Tools this caller is not shown.
+ * @returns A registrar to hand to the per-domain registration functions, and the
+ *   reach the request tool is handed.
  */
-export function gatedToolRegistrar(server: McpServer, identity?: AgentIdentity): ToolRegistrar {
+export function gatedToolRegistrar(
+  server: McpServer,
+  identity?: AgentIdentity,
+  hiddenToolNames: ReadonlySet<string> = new Set()
+): ToolRegistrar & { readonly reach: HandToolReach } {
+  const built: SdkMcpTool[] = [];
   const registerTool: ToolRegistrar['registerTool'] = ((
     name: string,
-    config: { inputSchema?: z.ZodRawShape },
+    config: { description?: string; inputSchema?: z.ZodRawShape },
     cb: (args: never, extra: unknown) => Promise<CallToolResult>
   ) => {
     const action = gatedActionForMcpTool(name);
+    built.push({
+      name,
+      description: config.description ?? '',
+      inputSchema: config.inputSchema ?? {},
+      handler: (args, extra) => cb(args as never, extra),
+    });
+    // Hidden, not unbuilt: the request tool still reaches it through `reach`.
+    if (hiddenToolNames.has(name)) return undefined as never;
     return server.registerTool(
       name,
       { ...config, inputSchema: gatedInputSchema(action, config.inputSchema ?? {}) },
@@ -586,5 +705,6 @@ export function gatedToolRegistrar(server: McpServer, identity?: AgentIdentity):
   // runtime value and writing `[GATED]: true` here would throw. The assertion is
   // the whole mechanism, and this factory is the one place entitled to make it,
   // because it is the one place that ran the gate.
-  return { registerTool } as ToolRegistrar;
+  const reach = createHandToolReach(built, { interactive: false, origin: 'external-mcp' });
+  return { registerTool, reach } as unknown as ToolRegistrar & { readonly reach: HandToolReach };
 }

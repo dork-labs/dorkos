@@ -111,7 +111,6 @@ vi.mock('@dorkos/shared/manifest', () => ({
     registeredBy: 'test',
     behavior: { responseMode: 'always' },
     personaEnabled: true,
-    enabledToolGroups: {},
   }),
 }));
 vi.mock('../../../../lib/logger.js', () => ({
@@ -465,7 +464,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 108 -> 109 for `update_agent_execution` (DOR-2328): no prompt block names
     // it, so it stays deferred and unprefixed.
-    expect(advertised.size).toBe(109);
+    // 109 -> 110 for `change_permission` (spec `agent-permissions` D9): the
+    // settings tool's description names it by its ENDING, never bare.
+    expect(advertised.size).toBe(110);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

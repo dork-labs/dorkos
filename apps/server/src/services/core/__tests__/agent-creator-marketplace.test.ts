@@ -195,3 +195,28 @@ describe('createAgentWorkspace in marketplace mode', () => {
     expect('marketplace' in parsed).toBe(false);
   });
 });
+
+describe('createAgentWorkspace outside the marketplace', () => {
+  // Purpose: a folder pre-populated from a template never carries in what the
+  // agent may do (spec `agent-permissions`): the agent.json it arrived with is
+  // replaced by a fresh one, so permissions start from the defaults.
+  it('writes a fresh agent.json over one a template shipped with permissions', async () => {
+    const dir = await agentDir();
+    await fs.writeFile(
+      path.join(dir, '.dork', 'agent.json'),
+      JSON.stringify({
+        id: '01HV7KJZZZ0000000000000010',
+        name: 'bot',
+        permissions: { areas: { tasks: 'allowed' } },
+        enabledToolGroups: { tasks: true },
+        tierCeiling: 'destructive',
+      })
+    );
+    const result = await createAgentWorkspace(input(dir));
+    const onDisk = JSON.parse((await read(dir, '.dork/agent.json'))!);
+    expect(result.manifest.id).not.toBe('01HV7KJZZZ0000000000000010');
+    expect(onDisk).not.toHaveProperty('permissions');
+    expect(onDisk).not.toHaveProperty('enabledToolGroups');
+    expect(onDisk).not.toHaveProperty('tierCeiling');
+  });
+});

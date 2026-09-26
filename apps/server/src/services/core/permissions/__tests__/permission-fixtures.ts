@@ -11,6 +11,8 @@ import type {
 } from '@dorkos/shared/permissions';
 import type { ActivityItem, ListActivityQuery } from '@dorkos/shared/activity-schemas';
 
+import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+
 import { PermissionService, type PermissionActionInfo } from '../permission-service.js';
 
 /** The actions the fixture world knows. */
@@ -20,6 +22,13 @@ const FIXTURE_ACTIONS: PermissionActionInfo[] = [
   { id: 'rooms.post', title: 'Post in a room', tier: 'act', area: null },
   { id: 'operator.config_patch', title: 'Change settings', tier: 'act', area: null },
   { id: 'permissions.change', title: 'Change a permission', tier: 'act', area: 'permissions' },
+  {
+    id: 'operator.update_agent_execution',
+    title: 'Change what an agent runs on',
+    tier: 'destructive',
+    area: 'agents',
+    alwaysAsks: true,
+  },
 ];
 
 /** One agent in the fixture world. */
@@ -37,6 +46,16 @@ export function createPermissionWorld(
     preset?: PermissionConfigInput['preset'];
     defaults?: PermissionConfigInput['defaults'];
     agents?: FixtureAgent[];
+    /** The global Files & commands stop; `act` (Balanced's) by default. */
+    trustStop?: PermissionStop | null;
+    /** Per-runtime stops, by runtime id. */
+    runtimeStops?: Record<string, PermissionStop | null>;
+    /** Whether an acknowledgement of Full autonomy is on file. */
+    autonomyAcknowledged?: boolean;
+    /** Make every agent write throw, as a read-only settings file would. */
+    writeFails?: boolean;
+    /** Whether the record of screened arrivals can be read. */
+    arrivalsHealthy?: boolean;
   } = {}
 ) {
   const config = {
@@ -48,6 +67,20 @@ export function createPermissionWorld(
     (options.agents ?? []).map((a) => [a.id, structuredClone(a)])
   );
   const events: ActivityItem[] = [];
+  /** The stored Files & commands stops. Balanced's stop by default. */
+  const stops: {
+    global: PermissionStop | null;
+    perRuntime: Record<string, PermissionStop | null>;
+  } = {
+    global: options.trustStop === undefined ? 'act' : options.trustStop,
+    perRuntime: { ...(options.runtimeStops ?? {}) },
+  };
+  /** Whether the person acknowledged Full autonomy. */
+  const autonomy = {
+    acknowledgedAt: options.autonomyAcknowledged ? '2026-08-01T00:00:00.000Z' : null,
+  } as {
+    acknowledgedAt: string | null;
+  };
   let clock = Date.parse('2026-09-01T00:00:00.000Z');
 
   const activity = {
@@ -87,7 +120,15 @@ export function createPermissionWorld(
     config: {
       get: () => structuredClone(config),
       set: (next) => Object.assign(config, structuredClone(next)),
-      trustStop: () => 'act',
+      trustStops: () => structuredClone(stops),
+      setGlobalTrustStop: (stop, acknowledge) => {
+        stops.global = stop;
+        if (acknowledge) autonomy.acknowledgedAt = new Date(clock).toISOString();
+      },
+      hasAutonomyAck: () => autonomy.acknowledgedAt !== null,
+      recordAutonomyAck: () => {
+        autonomy.acknowledgedAt = new Date(clock).toISOString();
+      },
     },
     agents: {
       list: () =>
@@ -102,18 +143,22 @@ export function createPermissionWorld(
         return agent?.permissions ? structuredClone(agent.permissions) : undefined;
       },
       writePermissions: async (agentId, next) => {
+        if (options.writeFails) throw new Error('EACCES: permission denied');
         const agent = agents.get(agentId)!;
         if (next) agent.permissions = structuredClone(next);
         else delete agent.permissions;
       },
     },
     actions: () => FIXTURE_ACTIONS,
+    arrivalsHealthy: () => options.arrivalsHealthy ?? true,
     activity,
   });
 
   return {
     service,
     config,
+    stops,
+    autonomy,
     agents,
     events,
     activity,

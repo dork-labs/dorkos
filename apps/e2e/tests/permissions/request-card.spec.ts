@@ -1,5 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { chooseFullPower, readPower, restorePower, type PowerSnapshot } from './full-power-preset';
 
 /**
  * The request card, phase 2 of agent permissions (spec `agent-permissions` D7,
@@ -90,6 +91,15 @@ async function gotoActivity(basePage: { page: Page; waitForAppReady(): Promise<v
 test.describe('The request card @permissions', () => {
   test.describe.configure({ mode: 'serial' });
 
+  // Full power moves the Files & commands stop too; read it first so it can be
+  // put back for the specs after this one.
+  let prior: PowerSnapshot;
+  test.beforeAll(async ({ playwright }, testInfo) => {
+    const request = await playwright.request.newContext({ baseURL: testInfo.project.use.baseURL });
+    prior = await readPower(request);
+    await request.dispose();
+  });
+
   // Put the requester back on the defaults afterwards, so no other spec on this
   // leg sees an agent set differently (the phase-1 spec counts them).
   test.afterAll(async ({ playwright }, testInfo) => {
@@ -97,6 +107,7 @@ test.describe('The request card @permissions', () => {
     const request = await playwright.request.newContext({
       baseURL: testInfo.project.use.baseURL,
     });
+    await restorePower(request, prior);
     const bot = await requester(request);
     await request.patch(`/api/agents/${bot.id}/permissions`, {
       data: { areas: { rooms: null }, actions: { 'rooms.create': null }, surface: 'api' },
@@ -105,10 +116,7 @@ test.describe('The request card @permissions', () => {
   });
 
   test.beforeEach(async ({ request }) => {
-    const preset = await request.put('/api/permissions/preset', {
-      data: { preset: 'full', surface: 'api' },
-    });
-    expect(preset.ok()).toBe(true);
+    await chooseFullPower(request);
     const bot = await requester(request);
     // The requester back on the defaults: no area and no action of its own.
     const reset = await request.patch(`/api/agents/${bot.id}/permissions`, {

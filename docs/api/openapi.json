@@ -7194,21 +7194,8 @@
             "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
             "example": "acme-corp"
           },
-          "enabledToolGroups": {
-            "$ref": "#/components/schemas/EnabledToolGroups"
-          },
           "permissions": {
             "$ref": "#/components/schemas/AgentPermissions"
-          },
-          "tierCeiling": {
-            "type": "string",
-            "enum": [
-              "observe",
-              "act",
-              "destructive"
-            ],
-            "description": "The most this agent is ever allowed to do. 'observe' is read-only, 'act' can change things but never delete them, 'destructive' has no extra limit. Absent means no extra limit. Nobody can approve past it — an agent capped at 'act' is refused a destructive capability outright. An agent may lower its own ceiling; only a person can raise one.",
-            "example": "act"
           },
           "mcpServers": {
             "type": "array",
@@ -7340,25 +7327,6 @@
             "default": true
           }
         }
-      },
-      "EnabledToolGroups": {
-        "type": "object",
-        "properties": {
-          "tasks": {
-            "type": "boolean"
-          },
-          "relay": {
-            "type": "boolean"
-          },
-          "mesh": {
-            "type": "boolean"
-          },
-          "adapter": {
-            "type": "boolean"
-          }
-        },
-        "default": {},
-        "description": "Per-agent tool groups. The four domain keys (tasks, relay, mesh, adapter) are documentation settings: undefined = inherit global default, and off means the agent is not told about the group, not that the tools are blocked. Binding tools follow adapter toggle. Trace tools follow relay toggle. Only a person sets any of the four: the agent-reachable write path refuses this object outright."
       },
       "AgentPermissions": {
         "type": "object",
@@ -7639,21 +7607,8 @@
                 "description": "Claude Code account new sessions for this agent run and bill on, as a registry id (runtimes.claudeCode.accounts[].id). Absent = inherit the server default. Operator-only: agents cannot set this on themselves or on each other.",
                 "example": "acme-corp"
               },
-              "enabledToolGroups": {
-                "$ref": "#/components/schemas/EnabledToolGroups"
-              },
               "permissions": {
                 "$ref": "#/components/schemas/AgentPermissions"
-              },
-              "tierCeiling": {
-                "type": "string",
-                "enum": [
-                  "observe",
-                  "act",
-                  "destructive"
-                ],
-                "description": "The most this agent is ever allowed to do. 'observe' is read-only, 'act' can change things but never delete them, 'destructive' has no extra limit. Absent means no extra limit. Nobody can approve past it — an agent capped at 'act' is refused a destructive capability outright. An agent may lower its own ceiling; only a person can raise one.",
-                "example": "act"
               },
               "mcpServers": {
                 "type": "array",
@@ -7799,21 +7754,6 @@
               "null"
             ],
             "minLength": 1
-          },
-          "enabledToolGroups": {
-            "$ref": "#/components/schemas/EnabledToolGroups"
-          },
-          "tierCeiling": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "enum": [
-              "observe",
-              "act",
-              "destructive",
-              null
-            ]
           }
         }
       },
@@ -8653,6 +8593,9 @@
             "type": "integer",
             "minimum": 0
           },
+          "filesAndCommands": {
+            "$ref": "#/components/schemas/DefaultFilesAndCommands"
+          },
           "areas": {
             "type": "array",
             "items": {
@@ -8668,12 +8611,19 @@
           "agentCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "newAgentRecordUnreadable": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         },
         "required": [
           "preset",
           "defaults",
           "changeCount",
+          "filesAndCommands",
           "areas",
           "exceptions",
           "agentCount"
@@ -8709,6 +8659,83 @@
             "default": {}
           }
         }
+      },
+      "DefaultFilesAndCommands": {
+        "type": "object",
+        "properties": {
+          "stop": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "presetStop": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "runtimes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "runtime": {
+                  "type": "string"
+                },
+                "stop": {
+                  "$ref": "#/components/schemas/PermissionStop"
+                }
+              },
+              "required": [
+                "runtime",
+                "stop"
+              ]
+            }
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "agentId": {
+                  "type": "string"
+                },
+                "agentName": {
+                  "type": "string"
+                },
+                "stop": {
+                  "$ref": "#/components/schemas/PermissionStop"
+                }
+              },
+              "required": [
+                "agentId",
+                "agentName",
+                "stop"
+              ]
+            }
+          }
+        },
+        "required": [
+          "stop",
+          "presetStop",
+          "runtimes",
+          "exceptions"
+        ]
       },
       "PermissionAreaEntry": {
         "type": "object",
@@ -8805,6 +8832,12 @@
               "destructive"
             ]
           },
+          "alwaysAsks": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
           "resolved": {
             "$ref": "#/components/schemas/ResolvedPermission"
           }
@@ -8860,7 +8893,8 @@
           "preset",
           "unchanged",
           "floor",
-          "inactive"
+          "inactive",
+          "always-asks"
         ]
       },
       "PermissionException": {
@@ -8905,6 +8939,12 @@
           },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
+          },
+          "acknowledgeAutonomy": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         },
         "required": [
@@ -9137,6 +9177,9 @@
                               "enum": [
                                 "files"
                               ]
+                            },
+                            "runtime": {
+                              "type": "string"
                             }
                           },
                           "required": [
@@ -9177,6 +9220,10 @@
               },
               "undoOf": {
                 "type": "string"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 500
               },
               "presetSnapshot": {
                 "type": "object",
@@ -9290,13 +9337,66 @@
                 }
               ]
             }
+          },
+          "filesAndCommands": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ResolvedFilesAndCommands"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "inherited": {
+                    "$ref": "#/components/schemas/ResolvedFilesAndCommands"
+                  }
+                },
+                "required": [
+                  "inherited"
+                ]
+              }
+            ]
           }
         },
         "required": [
           "agentId",
           "agentName",
           "overrides",
-          "areas"
+          "areas",
+          "filesAndCommands"
+        ]
+      },
+      "FilesAndCommandsSource": {
+        "type": "string",
+        "enum": [
+          "agent",
+          "runtime",
+          "default",
+          "runtime-own"
+        ]
+      },
+      "ResolvedFilesAndCommands": {
+        "type": "object",
+        "properties": {
+          "stop": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
+          "source": {
+            "$ref": "#/components/schemas/FilesAndCommandsSource"
+          }
+        },
+        "required": [
+          "stop",
+          "source"
         ]
       },
       "PatchAgentPermissionsBody": {
@@ -9334,8 +9434,27 @@
               ]
             }
           },
+          "filesAndCommands": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionStop"
+              },
+              {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            ]
+          },
           "surface": {
             "$ref": "#/components/schemas/PermissionSurface"
+          },
+          "acknowledgeAutonomy": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         },
         "required": [

@@ -9,12 +9,10 @@
  * revocation as "the operator's actual off switch" — this cascade is what
  * makes that claim true rather than aspirational.
  *
- * **Residual risk this does not close**, flagged in this change's adversarial
- * review: a mid-session revocation reads as `undefined` to
- * `describeAgent`, which `tier-enforcement.ts` cannot tell apart from "never
- * identified itself" — see {@link AgentIdentityService.describeAgent}'s TSDoc
- * for the widening scenario that follows once any caller mints a
- * `tierCeiling` below the anonymous default.
+ * A mid-session revocation is reported as `inactive: 'revoked'` rather than as
+ * no identity at all (DOR-486), so the gate resolves every permission area to
+ * Blocked for the agent instead of handing it the install's defaults — see
+ * {@link AgentIdentityService.describeAgent}'s TSDoc.
  *
  * @module services/core/agent-identity/unregister-cascade
  */

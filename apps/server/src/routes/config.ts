@@ -235,12 +235,6 @@ router.get('/', async (req, res) => {
     // Who the user is, in their own words (spec user-profile-onboarding).
     // Local-only; the fallback covers the pre-migration read window.
     profile: configManager.get('profile') ?? USER_PROFILE_DEFAULTS,
-    agentContext: configManager.get('agentContext') ?? {
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
-      tasksTools: true,
-    },
     // `defaultDirectory` goes out RESOLVED: the cockpit shows a person where a
     // new agent will live and probes that path for a `.dork` conflict, so it has
     // to be the directory the server will actually use. The stored value is the

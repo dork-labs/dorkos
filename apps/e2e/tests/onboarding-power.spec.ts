@@ -15,8 +15,9 @@ import { test, expect } from '../fixtures';
  *      across a reload — the server config gains `defaultTrustStop: 'autonomy'`
  *      with a recorded `autonomyAcknowledgedAt` and `fullPowerChoice: 'full'`,
  *      and the mesh opens; a reload does not undo any of it;
- *   3. DECLINE ("Keep asking me first") records `fullPowerChoice: 'supervised'`,
- *      touches nothing consent-gated, and PERSISTS across a reload.
+ *   3. DECLINE ("Keep asking me first") records `fullPowerChoice: 'supervised'`
+ *      and the Careful preset (Files & commands: Ask first), touches nothing
+ *      consent-gated, and PERSISTS across a reload.
  *
  * ## It RUNS in CI (no skip gate), and how it stays out of other specs' way
  *
@@ -197,7 +198,10 @@ test.describe('Onboarding power stage @full-power', () => {
     const config = await readPowerConfig(request);
     expect(config.fullPowerChoice).toBe('supervised');
     expect(config.fullPowerDecidedAt).not.toBeNull();
-    expect(config.defaultTrustStop).toBeNull();
+    // The Careful preset sets Files & commands to Ask first (spec
+    // `agent-permissions` D5): the answer is written down, never left to a
+    // runtime's own default.
+    expect(config.defaultTrustStop).toBe('ask');
     expect(config.autonomyAcknowledgedAt).toBeNull();
     expect(await readMeshOpen(request)).toBe(false);
 
@@ -205,7 +209,7 @@ test.describe('Onboarding power stage @full-power', () => {
     await basePage.waitForAppReady();
     const afterReload = await readPowerConfig(request);
     expect(afterReload.fullPowerChoice).toBe('supervised');
-    expect(afterReload.defaultTrustStop).toBeNull();
+    expect(afterReload.defaultTrustStop).toBe('ask');
     expect(afterReload.fullPowerDecidedAt).not.toBeNull();
   });
 

@@ -39,7 +39,6 @@ function dorkbot(overrides: Partial<AgentIdentity> = {}): AgentIdentity {
   return {
     agentPath: DORKBOT_PATH,
     displayName: 'DorkBot',
-    tierCeiling: 'destructive',
     createdAt: new Date().toISOString(),
     ...overrides,
   };

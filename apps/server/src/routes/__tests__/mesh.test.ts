@@ -768,7 +768,7 @@ describe('Mesh routes', () => {
 
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
-        .send({ tierCeiling: 'act' });
+        .send({ displayName: 'Ana' });
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('MANIFEST_UNREADABLE');
@@ -783,7 +783,7 @@ describe('Mesh routes', () => {
 
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
-        .send({ tierCeiling: 'act' });
+        .send({ displayName: 'Ana' });
 
       // It reaches the error middleware, which is where an unexpected failure
       // belongs — this route no longer relabels it. What the handler chooses to
@@ -808,28 +808,21 @@ describe('Mesh routes', () => {
       expect(meshCore.update).not.toHaveBeenCalled();
     });
 
-    it('refuses the retired roomsManage grant rather than silently dropping it', async () => {
-      const res = await request(fixtureServer)
-        .patch('/api/mesh/agents/agent-1')
-        .send({ enabledToolGroups: { tasks: false, roomsManage: true } });
+    it.each([
+      [{ enabledToolGroups: { tasks: false, roomsManage: true } }, 'enabledToolGroups'],
+      [{ tierCeiling: 'act' }, 'tierCeiling'],
+    ])(
+      'refuses a retired permission field rather than silently dropping it',
+      async (body, field) => {
+        // Stripped, it would answer 200 for a setting that no longer exists. Both
+        // folded into the agent's permissions (spec `agent-permissions` D13).
+        const res = await request(fixtureServer).patch('/api/mesh/agents/agent-1').send(body);
 
-      expect(res.status).toBe(400);
-      expect(res.body.fields).toEqual(['enabledToolGroups.roomsManage']);
-      expect(meshCore.update).not.toHaveBeenCalled();
-    });
-
-    it('still writes the four documentation tool groups', async () => {
-      meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, enabledToolGroups: { tasks: false } });
-
-      const res = await request(fixtureServer)
-        .patch('/api/mesh/agents/agent-1')
-        .send({ enabledToolGroups: { tasks: false } });
-
-      expect(res.status).toBe(200);
-      expect(meshCore.update).toHaveBeenCalledWith('agent-1', {
-        enabledToolGroups: { tasks: false },
-      });
-    });
+        expect(res.status).toBe(400);
+        expect(res.body.fields).toEqual([field]);
+        expect(meshCore.update).not.toHaveBeenCalled();
+      }
+    );
 
     it("carries an agent's model and effort through to the manifest write", async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet', effort: 'low' });

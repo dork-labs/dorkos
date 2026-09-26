@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { PermissionException, PermissionState } from '@dorkos/shared/permissions';
+import type { PermissionState } from '@dorkos/shared/permissions';
 import {
   Button,
   Checkbox,
@@ -14,6 +14,14 @@ import {
 } from '@/layers/shared/ui';
 import { STATE_LABEL } from '../lib/permission-copy';
 
+/** One agent set differently, with what is different about it in words. */
+export interface DifferingAgent {
+  agentId: string;
+  agentName: string;
+  /** e.g. "Blocked", "Allowed (one action)", "3 settings of its own". */
+  detail: string;
+}
+
 /** Props for {@link ApplyToOverridesDialog}. */
 export interface ApplyToOverridesDialogProps {
   /** Whether the dialog is open. */
@@ -22,10 +30,12 @@ export interface ApplyToOverridesDialogProps {
   onCancel: () => void;
   /** What is changing, e.g. "Rooms". */
   subject: string;
+  /** A title of its own, where "<subject> will be set to <next>" reads wrong (a preset). */
+  title?: string;
   /** The new default, or a preset name. */
   next: PermissionState | string;
   /** The agents set differently for this subject. */
-  agents: readonly PermissionException[];
+  agents: readonly DifferingAgent[];
   /** How many agents follow the default today and so change with it. */
   affectedCount: number;
   /** Write the default only; the agents set differently keep their settings. */
@@ -50,6 +60,7 @@ export function ApplyToOverridesDialog({
   open,
   onCancel,
   subject,
+  title,
   next,
   agents,
   affectedCount,
@@ -81,7 +92,7 @@ export function ApplyToOverridesDialog({
       <ResponsiveDialogContent className="!min-h-0 sm:max-w-md">
         <ResponsiveDialogHeader>
           <ResponsiveDialogTitle>
-            {subject} will be set to {nextLabel} for everyone.
+            {title ?? `${subject} will be set to ${nextLabel} for everyone.`}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription>
             {count === 1 ? '1 agent is' : `${count} agents are`} set differently. Choose any you
@@ -100,8 +111,7 @@ export function ApplyToOverridesDialog({
                     onCheckedChange={(value) => toggle(agent.agentId, value === true)}
                   />
                   <Label htmlFor={id} className="text-sm font-normal">
-                    {agent.agentName}: {STATE_LABEL[agent.state]}
-                    {agent.action ? ' (one action)' : ''}
+                    {agent.agentName}: {agent.detail}
                   </Label>
                 </li>
               );

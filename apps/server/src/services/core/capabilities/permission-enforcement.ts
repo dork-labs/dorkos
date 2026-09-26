@@ -35,6 +35,32 @@
  * a permission nobody can read is a permission that is not held. A missing
  * manifest is not a failure: the caller inherits the defaults.
  *
+ * ## Unidentified callers, and the residual they leave (spec D11)
+ *
+ * A caller that presents no agent identity and is not a trusted one (an
+ * external `/mcp` client with no token, `dorkos call` from a terminal without
+ * `DORKOS_AGENT_TOKEN`) resolves against the install's DEFAULTS: agent layers
+ * are skipped, Always allow is never offered, and `request_permission` is
+ * refused. Identity is never what decides WHETHER to gate; it only picks whose
+ * settings apply.
+ *
+ * That leaves one residual, stated here because a per-agent setting invites
+ * the wrong reading: an agent set STRICTER than the defaults that strips its own
+ * token (`env -u DORKOS_AGENT_TOKEN dorkos call …`, or a bare `curl`) arrives
+ * here unidentified and gets the defaults. It is still gated (a Blocked default
+ * still refuses, an Ask default still asks, and the card says an unidentified
+ * caller asked) and still audited; what it is not is held to its own, stricter
+ * setting.
+ *
+ * That is the same `local-trust` residual every per-agent setting carries (an
+ * agent with a shell can reach the person's own HTTP routes too), and it has
+ * the same remedy: turn login on, which makes every `/api/*` path demand a
+ * credential the agent has no way to mint. (An agent that can edit files can
+ * also edit its own `.dork/agent.json`, which login does not stop; the observer
+ * records that as a change made outside DorkOS.) **A Blocked permission stops an
+ * agent that plays by the rules; it is not a sandbox**, and no user-facing copy
+ * may promise otherwise.
+ *
  * @module services/core/capabilities/permission-enforcement
  */
 import fs from 'node:fs/promises';
@@ -44,6 +70,7 @@ import { MANIFEST_DIR, MANIFEST_FILE } from '@dorkos/shared/manifest';
 import { AgentManifestFileSchema } from '@dorkos/shared/mesh-schemas';
 import {
   getPermissionArea,
+  isFloorArea,
   resolvePermission,
   type AgentPermissions,
   type PermissionAreaId,
@@ -126,7 +153,12 @@ export async function readAgentPermissionsFromManifest(
 /** The sources used until boot wires the live config. */
 const DEFAULT_SOURCES: PermissionGateSources = {
   readConfig: () => UNCHOSEN,
-  readAgentPermissions: readAgentPermissionsFromManifest,
+  // Until the gate is wired, no agent's own settings are read at all: the
+  // wired reader is the one that narrows an arriving agent's unscreened folder
+  // settings (review D1), and anything that runs before it (a turn started
+  // early in boot) must not honour a folder as written. Every agent follows the
+  // defaults meanwhile.
+  readAgentPermissions: async () => undefined,
   listActions: () => [],
 };
 
@@ -162,10 +194,60 @@ export function permissionGateSources(): PermissionGateSources {
 }
 
 /** A gated action, with the area it declares. */
-export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier'> & {
+export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areasForInput'> & {
   /** The permission area, or `null` for an action that is always allowed on its tier. */
   area: PermissionAreaId | null;
+  /**
+   * Present on an action whose card shows the change it would make (DOR-2328):
+   * such an action is never Allowed, whatever is stored (`alwaysAsks`).
+   */
+  describeApprovalChange?: unknown;
 };
+
+/** How strict a state is: Blocked beats Ask beats Allowed. */
+const STATE_RANK: Record<ResolvedPermission['state'], number> = {
+  allowed: 0,
+  ask: 1,
+  blocked: 2,
+};
+
+/**
+ * Every area one call is decided in: the action's own area first, then each
+ * other area its input reaches (`areasForInput`, spec `agent-permissions` D6),
+ * each named once. An input that cannot be read for its areas adds Permissions,
+ * the strictest area DorkOS can name for any call.
+ *
+ * @param action - The gated action.
+ * @param input - The parsed input, when the caller has it.
+ * @returns The areas, own area first; empty for an action with no area.
+ */
+export function areasForCall(action: PermissionGatedAction, input: unknown): PermissionAreaId[] {
+  const own = action.area ?? null;
+  if (own === null) return [];
+  if (!action.areasForInput || input === undefined) return [own];
+  let reached: readonly PermissionAreaId[];
+  try {
+    reached = action.areasForInput(input);
+  } catch (err) {
+    logger.error('[capabilities] areasForInput threw; deciding the call in Permissions too', {
+      capabilityId: action.id,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    reached = ['permissions'];
+  }
+  return [...new Set<PermissionAreaId>([own, ...reached])];
+}
+
+/**
+ * The stricter of two resolved permissions: the higher state, and on a tie the
+ * floor area, so the card a person sees is the one that never offers Always
+ * allow when a floor area is in play.
+ */
+function stricter(a: ResolvedPermission, b: ResolvedPermission): ResolvedPermission {
+  const rank = STATE_RANK[b.state] - STATE_RANK[a.state];
+  if (rank !== 0) return rank > 0 ? b : a;
+  return !isFloorArea(a.area) && isFloorArea(b.area) ? b : a;
+}
 
 /**
  * Resolve the permission for one call, reading the config and the calling
@@ -177,17 +259,27 @@ export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier'> & {
  * resolves Blocked. A manifest read that fails resolves Blocked and
  * `unreadable`, which the gate refuses without an approval.
  *
- * @param request - The action and the calling identity.
+ * A call whose input reaches other areas is resolved in EVERY one of them and
+ * decided by the strictest answer, so no area can be carried past its own
+ * setting by what else the input touches. The action's own entries (an Always
+ * allow on it, say) apply only in its own area; in the others the area-level
+ * setting decides.
+ *
+ * @param request - The action, the calling identity, and the parsed input.
  * @returns The permission to hand the gate, or `null` when the action has no area.
  */
 export async function resolveCallPermission(request: {
   action: PermissionGatedAction;
   identity?: AgentIdentity;
+  /** The parsed input, so an action whose input reaches other areas is decided on it. */
+  input?: unknown;
 }): Promise<CallPermission | null> {
   const { action, identity } = request;
-  const area = action.area;
   // `undefined` too: a hand-built action from plain JS must not resolve an area it never named.
-  if (area === null || area === undefined) return null;
+  const areas = areasForCall(action, request.input);
+  if (areas.length === 0) return null;
+  // The strictest area DorkOS knows about, for the two refusals below.
+  const refusalArea = areas.find(isFloorArea) ?? areas[0]!;
 
   let config: PermissionConfigInput;
   try {
@@ -197,21 +289,17 @@ export async function resolveCallPermission(request: {
       capabilityId: action.id,
       err: err instanceof Error ? err.message : String(err),
     });
-    return { area, state: 'blocked', source: 'default-area', layer: 'default', unreadable: true };
-  }
-
-  if (identity?.inactive) {
-    return resolvePermission({
-      area,
-      actionId: action.id,
-      tier: action.tier,
-      config,
-      inactive: true,
-    });
+    return {
+      area: refusalArea,
+      state: 'blocked',
+      source: 'default-area',
+      layer: 'default',
+      unreadable: true,
+    };
   }
 
   let agent: AgentPermissions | undefined;
-  if (identity) {
+  if (identity && !identity.inactive) {
     try {
       agent = await sources.readAgentPermissions(identity.agentPath);
     } catch (err) {
@@ -220,17 +308,29 @@ export async function resolveCallPermission(request: {
         agentPath: identity.agentPath,
         err: err instanceof Error ? err.message : String(err),
       });
-      return { area, state: 'blocked', source: 'agent-area', layer: 'agent', unreadable: true };
+      return {
+        area: refusalArea,
+        state: 'blocked',
+        source: 'agent-area',
+        layer: 'agent',
+        unreadable: true,
+      };
     }
   }
 
-  return resolvePermission({
-    area,
-    actionId: action.id,
-    tier: action.tier,
-    config,
-    ...(agent ? { agent } : {}),
-  });
+  const [own, ...reached] = areas.map((area, index) =>
+    resolvePermission({
+      area,
+      // The action's own entries belong to its own area only.
+      ...(index === 0 ? { actionId: action.id } : {}),
+      ...(index === 0 && action.describeApprovalChange ? { alwaysAsks: true } : {}),
+      tier: action.tier,
+      config,
+      ...(agent ? { agent } : {}),
+      ...(identity?.inactive ? { inactive: true } : {}),
+    })
+  );
+  return reached.reduce(stricter, own!);
 }
 
 /**

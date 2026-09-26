@@ -86,12 +86,17 @@ describe('resolveToolVisibility', () => {
     expect(visibility.hiddenToolNames.size).toBe(0);
   });
 
-  it('never names an area with no members, like the floors on an undecided install', () => {
+  it('names only a Blocked area that actually hides something, on an undecided install', () => {
     preset = null;
     const visibility = resolveToolVisibility(undefined);
-    // Rooms has members and is Blocked under Unchanged; the three floors are
-    // Blocked too but have no members in this phase, so they earn no line.
-    expect(visibility.blockedAreas).toEqual(['rooms']);
+    // Unchanged blocks Rooms and the three floors. Rooms and Permissions hide
+    // tools, so each earns its line. Safety limits hides nothing (the
+    // boundaries tool keeps asking, as it always did), and Reach & secrets has
+    // no tool of its own, so neither is named: a line saying an area is blocked
+    // while nothing in it is hidden would be false.
+    expect(visibility.blockedAreas).toEqual(['rooms', 'permissions']);
+    expect(visibility.hiddenToolNames.has('update_agent_boundaries')).toBe(false);
+    expect(visibility.hiddenToolNames.has('change_permission')).toBe(true);
     // merge ran on every install before permissions, and still does.
     expect(visibility.hiddenToolNames.has('merge_to_room_main')).toBe(false);
   });

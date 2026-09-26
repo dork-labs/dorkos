@@ -225,9 +225,10 @@ function enrichAgent(
 
 /**
  * The permission fields a mesh agent PATCH names, which this route refuses: the
- * `permissions` object, and the retired `enabledToolGroups.roomsManage` grant it
- * replaced. The other four `enabledToolGroups` keys and `tierCeiling` stay
- * writable here until the permission model absorbs them.
+ * `permissions` object, and the two retired fields that used to carry the same
+ * answer, `enabledToolGroups` and `tierCeiling` (spec `agent-permissions` D13).
+ * Refused by name rather than stripped, so a caller still sending one learns
+ * where the setting went instead of hearing "done".
  *
  * @param body - The raw request body.
  * @returns The refused field paths, empty when the body names none.
@@ -235,18 +236,9 @@ function enrichAgent(
 function retiredPermissionFields(body: unknown): string[] {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
   const record = body as Record<string, unknown>;
-  const refused: string[] = [];
-  if (Object.hasOwn(record, 'permissions')) refused.push('permissions');
-  const groups = record.enabledToolGroups;
-  if (
-    groups &&
-    typeof groups === 'object' &&
-    !Array.isArray(groups) &&
-    Object.hasOwn(groups, 'roomsManage')
-  ) {
-    refused.push('enabledToolGroups.roomsManage');
-  }
-  return refused;
+  return ['permissions', 'enabledToolGroups', 'tierCeiling'].filter((field) =>
+    Object.hasOwn(record, field)
+  );
 }
 
 /**
@@ -626,8 +618,8 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
     //
     // It REFUSES when the manifest is present but unreadable, rather than
     // rebuilding one from the DB row, because that row cannot carry
-    // `enabledToolGroups`, `mcpServers`, `workspace` or `tierCeiling` and the
-    // rebuild would erase all four (DOR-486 review). Answered as a 409 with the
+    // `permissions`, `mcpServers` or `workspace` and the rebuild would erase all
+    // three (DOR-486 review). Answered as a 409 with the
     // reason: the request is fine, the state on disk is not, and the operator
     // can act on the sentence.
     // Narrowed to the sentinel class on purpose. An unconditional catch here

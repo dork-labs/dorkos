@@ -31,7 +31,13 @@ import {
 export interface ToolVisibility {
   /** MCP tool names to leave out of the list. */
   hiddenToolNames: ReadonlySet<string>;
-  /** Areas with at least one member where the whole area resolves to Blocked. */
+  /**
+   * Areas that resolve to Blocked as a whole and actually hide at least one of
+   * their actions. An area whose every action is let through by an action-level
+   * entry (Unchanged keeps the boundaries tool asking inside a blocked Safety
+   * limits) gets no line: telling an agent an area is blocked while every tool
+   * in it is listed would be false.
+   */
   blockedAreas: readonly PermissionAreaId[];
 }
 
@@ -61,10 +67,9 @@ export function resolveToolVisibility(
     return NOTHING_HIDDEN;
   }
   const hidden = new Set<string>();
-  const areasWithMembers = new Set<PermissionAreaId>();
+  const areasWithBlockedMembers = new Set<PermissionAreaId>();
   for (const action of sources.listActions()) {
     if (action.area === null) continue;
-    areasWithMembers.add(action.area);
     const resolved = resolvePermission({
       area: action.area,
       actionId: action.id,
@@ -73,9 +78,11 @@ export function resolveToolVisibility(
       ...(agent ? { agent } : {}),
       ...(options.inactive ? { inactive: true } : {}),
     });
-    if (resolved.state === 'blocked' && action.toolName) hidden.add(action.toolName);
+    if (resolved.state !== 'blocked') continue;
+    areasWithBlockedMembers.add(action.area);
+    if (action.toolName) hidden.add(action.toolName);
   }
-  const blockedAreas = [...areasWithMembers].filter(
+  const blockedAreas = [...areasWithBlockedMembers].filter(
     (area) =>
       resolvePermission({
         area,

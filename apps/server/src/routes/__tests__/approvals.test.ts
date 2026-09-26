@@ -40,7 +40,6 @@ const BINDING = {
 const AGENT_IDENTITY = {
   agentPath: '/Users/dev/agents/dorkbot',
   displayName: 'DorkBot',
-  tierCeiling: 'destructive' as const,
   createdAt: new Date().toISOString(),
 };
 

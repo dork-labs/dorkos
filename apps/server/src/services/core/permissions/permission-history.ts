@@ -81,6 +81,23 @@ export function personWriter(
   };
 }
 
+/**
+ * The writer for a change an agent asked for with `change_permission` and a
+ * person approved on its card: "DorkBot asked, you said yes" (spec
+ * `agent-permissions` D14). The person's yes is what made the change; the name
+ * says whose idea it was.
+ *
+ * @param agent - The agent that asked, by the name a person knows it by.
+ */
+export function agentRequestWriter(agent: { id?: string; name: string }): PermissionWriter {
+  return {
+    attribution: 'agent-request-approved',
+    actorType: 'agent',
+    ...(agent.id ? { actorId: agent.id } : {}),
+    actorLabel: `${agent.name} asked, you said yes`,
+  };
+}
+
 /** How a state reads in a sentence. */
 function stateWord(value: string | null): string {
   switch (value) {
@@ -183,6 +200,8 @@ export interface PermissionChangeRecord {
   presetSnapshot?: PermissionChangedMetadata['presetSnapshot'];
   /** The approval an agent request was answered through (phase 2). */
   approvalId?: string;
+  /** A sentence the history shows beside the change, when it alone would mislead. */
+  note?: string;
 }
 
 /**
@@ -215,6 +234,7 @@ export async function recordPermissionChange(
     attribution: record.writer.attribution,
     ...(record.approvalId ? { approvalId: record.approvalId } : {}),
     ...(record.presetSnapshot ? { presetSnapshot: record.presetSnapshot } : {}),
+    ...(record.note ? { note: record.note } : {}),
   };
   await activity.emit({
     actorType: record.writer.actorType,

@@ -23,7 +23,23 @@ import {
   OPERATOR_ONLY_STAKES,
   findOperatorOnlyPaths,
   describeOperatorOnlyRefusal,
+  operatorOnlyAreasForPatch,
 } from '../config-write-policy.js';
+
+/**
+ * A patch that writes exactly one policy path, `[]` segments turned into a
+ * one-element list, so the guard sees it the way a real patch reaches it.
+ */
+function pathPatch(path: string): Record<string, unknown> {
+  const segments = path.split('.');
+  let value: unknown = 'x';
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const segment = segments[i]!;
+    if (segment.endsWith('[]')) value = { [segment.slice(0, -2)]: [value] };
+    else value = { [segment]: value };
+  }
+  return value as Record<string, unknown>;
+}
 
 describe('CONFIG_WRITE_POLICY drift guard', () => {
   it('classifies every leaf of UserConfigSchema', () => {
@@ -51,14 +67,6 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       // it publishes a card describing every agent here and opens an address
       // outside clients post work to (DOR-1304).
       'a2a.enabled',
-      // The four tool-group switches. Carried across a config wipe, so the
-      // wipe floor makes them operator-only: an agent could otherwise undo a
-      // narrowing the person made to its own tool groups (DOR-1497). They feed
-      // the context blocks rather than tool access — see the module doc.
-      'agentContext.adapterTools',
-      'agentContext.meshTools',
-      'agentContext.relayTools',
-      'agentContext.tasksTools',
       'agents.defaultDirectory',
       'auth.enabled',
       'cloud.instanceName',
@@ -743,23 +751,18 @@ describe('describeOperatorOnlyRefusal', () => {
     );
   });
 
-  it('describes a tool-group switch as what it is, and not as more', () => {
-    // Three ways to get this clause wrong, all guarded here. It is not `code`
-    // (nothing is loaded or attached) and not `reach` (nobody gets in) — and it
-    // must not promise ACCESS either, because `resolveToolConfig` feeds the
-    // context blocks and the tier gate is what decides what a tool may do.
-    const message = describeOperatorOnlyRefusal([
-      'agentContext.relayTools',
-      'agentContext.tasksTools',
-    ]);
-    expect(message).toContain(
-      'Which DorkOS tool groups your agents are told about: ' +
-        'agentContext.relayTools, agentContext.tasksTools.'
-    );
-    expect(message).not.toMatch(/who can reach this instance/i);
-    expect(message).not.toMatch(/which code this server runs/i);
-    // The overstatement this stake was split out to avoid.
-    expect(message).not.toMatch(/tools your agents (are given|may use)/i);
+  it('asks every operator-only setting in a floor area (spec agent-permissions D6)', () => {
+    // An agent's config patch touching one of these asks the person in that
+    // area on a card instead of bouncing off a flat refusal. A stake with no
+    // area would leave its settings decided in DorkOS settings, which is Ask on
+    // every preset but Allowed on an undecided install: never acceptable for a
+    // setting only a person may change.
+    for (const group of OPERATOR_ONLY_STAKES) {
+      expect(['safety', 'reach', 'permissions'], group.stake).toContain(group.area);
+    }
+    for (const path of OPERATOR_ONLY_CONFIG_PATHS) {
+      expect(operatorOnlyAreasForPatch(pathPatch(path)), path).toHaveLength(1);
+    }
   });
 
   it('describes a memory bound as a memory bound, not as a security control', () => {

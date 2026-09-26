@@ -369,14 +369,20 @@ dorkos agent create --name <slug> --path <dir>       # Create a new agent
 dorkos agent create --name <slug> --path <dir> --template <ref> --display-name "<name>"
 dorkos agent update --path <dir> --display-name "<name>"   # Edit self-editable fields
 dorkos agent update --path <dir> --color "" --icon ""      # Pass "" to clear a field
-dorkos agent update --path <dir> --ceiling act             # Cap what this agent may ever do
 ```
 
 A template is copied into the new agent's folder, and that folder is where the agent's sessions run. So before it lands, DorkOS checks what it brings: settings files the sessions load (such as `.claude/settings.json` with its hooks and permission rules, or a `.mcp.json`), and skills that run commands or use tools without asking. If it brings any of those, `dorkos agent create` prints them and asks before creating the agent (`--yes` skips the question and still prints them). When an agent runs this command, a person has to approve it on a card first; the command prints the `--approval` retry. An agent from the marketplace is created from the Marketplace in the app, or with `dorkos marketplace install`, rather than as a template.
 
-`--ceiling` sets the most an agent is ever allowed to do: `observe` reads only, `act` changes things but never deletes them, and `destructive` is no extra limit, which is where every agent starts. Anything past the line is refused outright, and no approval unlocks it — so it is the way to say "read my repos, never uninstall anything." An agent can tighten its own limit; only you can loosen one.
+What an agent may do — Rooms, Tasks & schedules, Other agents, Messages, Chat connections, Tools & packages, DorkOS settings, Safety limits, Permissions, Reach & secrets, and Files & commands — is set with `dorkos agent permissions`, not `dorkos agent update`:
 
-One edge worth knowing: the limit covers what an agent asks DorkOS to do. An agent that can run terminal commands can still act outside DorkOS. If you want that closed too, turn on **Require login** (Settings, under Access), which makes every request prove it is you.
+```bash
+dorkos agent permissions <agent>                       # What one agent may do, and why
+dorkos agent permissions <agent> set rooms ask         # Give it its own setting for one area
+dorkos agent permissions <agent> set files ask         # Its own Files & commands stop
+dorkos agent permissions <agent> reset files           # Back to the setting everyone has
+```
+
+See the [Permissions guide](/docs/guides/permissions) for the areas, the presets, and the request-card flow. One edge worth knowing: a permission covers what an agent asks DorkOS to do. An agent that can run terminal commands can still act outside DorkOS. If you want that closed too, turn on **Require login** (Settings, under Access), which makes every request prove it is you.
 
 **`dorkos task`**: list, create, trigger, and inspect scheduled tasks.
 

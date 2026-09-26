@@ -167,7 +167,6 @@ const mockAgent: AgentManifest = {
   registeredBy: 'test',
   personaEnabled: true,
   isSystem: false,
-  enabledToolGroups: {},
   mcpServers: [],
   workspace: { mode: 'home' },
 };
@@ -1083,15 +1082,24 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       preset: null,
       defaults: { areas: {}, actions: {} },
       changeCount: 0,
+      filesAndCommands: { stop: null, presetStop: null, runtimes: [], exceptions: [] },
       areas: [],
       exceptions: [],
       agentCount: 0,
     }),
-    getAgentPermissions: vi
-      .fn()
-      .mockImplementation((agentId: string) =>
-        Promise.resolve({ agentId, agentName: agentId, overrides: {}, areas: [] })
-      ),
+    getAgentPermissions: vi.fn().mockImplementation((agentId: string) =>
+      Promise.resolve({
+        agentId,
+        agentName: agentId,
+        overrides: {},
+        areas: [],
+        filesAndCommands: {
+          stop: null,
+          source: 'runtime-own',
+          inherited: { stop: null, source: 'runtime-own' },
+        },
+      })
+    ),
     setPermissionPreset: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
