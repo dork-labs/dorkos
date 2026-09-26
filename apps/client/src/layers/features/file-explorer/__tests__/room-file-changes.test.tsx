@@ -112,12 +112,12 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-function renderSection(transport: Transport) {
+function renderSection(transport: Transport, canChange = true) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <RoomFilesSection roomId={ROOM_ID} />
+        <RoomFilesSection roomId={ROOM_ID} canChange={canChange} />
       </TransportProvider>
     </QueryClientProvider>
   );

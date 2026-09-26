@@ -179,6 +179,7 @@ describe('a chat attachment in a room', () => {
     transport.readRoomFiles = vi
       .fn()
       .mockResolvedValue({ path: '', commit: 'abc1234', entries: [] });
+    transport.getRoom = vi.fn().mockResolvedValue({ id: 'room-1', archived: false, members: [] });
     renderRow(entry({ authorId: 'person-1', attachments: [attachment] }), transport);
 
     expect(
@@ -199,6 +200,7 @@ describe('a chat attachment in a room', () => {
     transport.readRoomFiles = vi
       .fn()
       .mockResolvedValue({ path: '', commit: 'abc1234', entries: [] });
+    transport.getRoom = vi.fn().mockResolvedValue({ id: 'room-1', archived: false, members: [] });
     renderRow(entry({ authorId: 'person-1', attachments: [attachment] }), transport, false);
 
     expect(await screen.findByTestId('room-entry-attachments')).toBeInTheDocument();

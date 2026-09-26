@@ -33,6 +33,7 @@ import {
   Spinner,
 } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
+import { useRoom } from '@/layers/entities/room';
 import { freeCopyName } from '../lib/copy-name';
 import { roomChangeRefusalMessage } from '../lib/crud-errors';
 import { withoutHidden } from '../lib/listing-shape';
@@ -64,8 +65,11 @@ export function SaveToRoomFilesButton({ roomId, attachment }: SaveToRoomFilesBut
   // The same cache entry the Files section's root reads, by the same options.
   const root = useQuery(explorerDirQueryOptions(source, ROOT_KEY, false, queryClient));
   const [open, setOpen] = useState(false);
+  // An archived room refuses every change to its files, so it offers none.
+  const room = useRoom(roomId);
 
   if (!root.isSuccess || root.data.absent === true) return null;
+  if (room.data?.archived !== false) return null;
 
   return (
     <>
@@ -75,7 +79,7 @@ export function SaveToRoomFilesButton({ roomId, attachment }: SaveToRoomFilesBut
         size="icon-xs"
         aria-label={`Save ${attachment.name} to the room’s files`}
         title="Save to room files"
-        className="text-muted-foreground hover:text-foreground mt-0.5"
+        className="text-muted-foreground hover:text-foreground mt-0.5 pointer-coarse:size-11"
         onClick={() => setOpen(true)}
       >
         <FolderInput />

@@ -32,10 +32,23 @@ import { HiddenEntriesToggle } from './HiddenEntriesToggle';
 import { PendingWorkBadge } from './PendingWorkBadge';
 import { RoomMainWarning } from './RoomMainWarning';
 
+/**
+ * A thumb's reach on the header's add buttons: 44px on a touch screen, the
+ * compact icon size under a mouse — the same 44px the rest of the room panel
+ * gives a finger.
+ */
+const TOUCH_REACH = 'pointer-coarse:size-11';
+
 /** What {@link RoomFilesSection} browses. */
 export interface RoomFilesSectionProps {
   /** The room whose files to show. */
   roomId: string;
+  /**
+   * Whether the reader may change the room's files — a member of a room that
+   * is not archived. When false the section is a tree to read: no add or
+   * upload buttons, no row menus, no editing.
+   */
+  canChange: boolean;
 }
 
 /**
@@ -43,7 +56,7 @@ export interface RoomFilesSectionProps {
  *
  * @param props - The room.
  */
-export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
+export function RoomFilesSection({ roomId, canChange }: RoomFilesSectionProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const showHidden = useFileExplorerStore((s) => s.showHidden);
@@ -52,8 +65,8 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
   const [commands, setCommands] = useState<FileExplorerCommands | null>(null);
 
   const source = useMemo(
-    () => createRoomFilesSource({ transport, queryClient, roomId }),
-    [transport, queryClient, roomId]
+    () => createRoomFilesSource({ transport, queryClient, roomId, canChange }),
+    [transport, queryClient, roomId, canChange]
   );
 
   // The same query the explorer's own root level asks, by the same options — so
@@ -94,36 +107,45 @@ export function RoomFilesSection({ roomId }: RoomFilesSectionProps) {
         <div className="min-w-0 flex-1">
           <PendingWorkBadge roomId={roomId} />
         </div>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="New file"
-          title="New file"
-          disabled={commands === null}
-          onClick={() => commands?.newFile()}
-        >
-          <FilePlus className="text-muted-foreground" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="New folder"
-          title="New folder"
-          disabled={commands === null}
-          onClick={() => commands?.newFolder()}
-        >
-          <FolderPlus className="text-muted-foreground" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Upload files"
-          title="Upload files"
-          disabled={commands?.upload === undefined}
-          onClick={() => commands?.upload?.()}
-        >
-          <Upload className="text-muted-foreground" />
-        </Button>
+        {/* Only for somebody who may change the files: a member, while the
+            room is live. Anyone else gets a tree to read. */}
+        {canChange && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={TOUCH_REACH}
+              aria-label="New file"
+              title="New file"
+              disabled={commands === null}
+              onClick={() => commands?.newFile()}
+            >
+              <FilePlus className="text-muted-foreground" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={TOUCH_REACH}
+              aria-label="New folder"
+              title="New folder"
+              disabled={commands === null}
+              onClick={() => commands?.newFolder()}
+            >
+              <FolderPlus className="text-muted-foreground" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={TOUCH_REACH}
+              aria-label="Upload files"
+              title="Upload files"
+              disabled={commands?.upload === undefined}
+              onClick={() => commands?.upload?.()}
+            >
+              <Upload className="text-muted-foreground" />
+            </Button>
+          </>
+        )}
         <HiddenEntriesToggle />
       </header>
       {/* Above the tree, not inside it: what it says is true of the whole

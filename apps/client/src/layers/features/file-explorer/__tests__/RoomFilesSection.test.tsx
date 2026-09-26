@@ -82,7 +82,7 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
-function renderSection(transport: Transport) {
+function renderSection(transport: Transport, canChange = true) {
   const queryErrors: unknown[] = [];
   const queryCache = new QueryCache({ onError: (error) => queryErrors.push(error) });
   const queryClient = new QueryClient({
@@ -92,7 +92,7 @@ function renderSection(transport: Transport) {
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <RoomFilesSection roomId={ROOM_ID} />
+        <RoomFilesSection roomId={ROOM_ID} canChange={canChange} />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -230,6 +230,21 @@ describe('RoomFilesSection', () => {
     expect(screen.queryByText('Paste')).not.toBeInTheDocument();
     expect(screen.queryByText('Add to chat')).not.toBeInTheDocument();
     expect(screen.queryByText('Copy relative path')).not.toBeInTheDocument();
+  });
+
+  it('offers nothing that changes the files to somebody who may not change them', async () => {
+    // An archived room, or a reader who only sees the room: every change would
+    // be refused, so the section is a tree to read.
+    renderSection(roomWithFiles([entry({ name: 'ROOM.md' })]), false);
+
+    const row = await screen.findByRole('treeitem', { name: 'ROOM.md' });
+    expect(row).not.toHaveAttribute('draggable', 'true');
+    fireEvent.contextMenu(row);
+    expect(screen.queryByText('Rename')).not.toBeInTheDocument();
+    expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+    for (const name of ['New file', 'New folder', 'Upload files']) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+    }
   });
 
   it('looks again when the room stream delivers something, at most once a window', async () => {

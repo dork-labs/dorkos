@@ -52,6 +52,7 @@ function roomWith(tree: Record<string, RoomFileEntry[]>): Transport {
   transport.saveAttachmentToRoomFiles = vi
     .fn()
     .mockResolvedValue({ commit: 'new', paths: [], lastCommit: null });
+  transport.getRoom = vi.fn().mockResolvedValue({ id: ROOM_ID, archived: false, members: [] });
   return transport;
 }
 
@@ -141,6 +142,16 @@ describe('Save to room files', () => {
         expect.objectContaining({ name: 'screenshot copy.png', dir: '' })
       )
     );
+  });
+
+  it('is not offered in an archived room, which refuses every change to its files', async () => {
+    const transport = roomWith({ '': [] });
+    transport.getRoom = vi.fn().mockResolvedValue({ id: ROOM_ID, archived: true, members: [] });
+    renderButton(transport);
+
+    await waitFor(() => expect(transport.getRoom).toHaveBeenCalled());
+    await waitFor(() => expect(transport.readRoomFiles).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: /to the room’s files/ })).not.toBeInTheDocument();
   });
 
   it('says plainly when the attachment is gone', async () => {

@@ -47,6 +47,13 @@ export interface RoomFilesSourceDeps {
   queryClient: QueryClient;
   /** The room whose files to browse. */
   roomId: string;
+  /**
+   * Whether the reader may change these files: a member, in a room that is not
+   * archived. Defaults to true. False leaves a tree to read — no new files, no
+   * uploads, no renames, deletes or edits — because every one of those would
+   * be refused, and an affordance that always refuses is worse than none.
+   */
+  canChange?: boolean;
 }
 
 /**
@@ -91,7 +98,7 @@ const NOT_READABLE_COPY = new Map<string, string>([
  * @param deps - The transport, the query cache, and the room.
  */
 export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSource {
-  const { transport, queryClient, roomId } = deps;
+  const { transport, queryClient, roomId, canChange = true } = deps;
 
   /**
    * Run one change and say how it ended, in the outcome's words rather than
@@ -113,7 +120,7 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     // No working directory: a commit is not a place on disk. The tree is
     // written through `changes` below, never through the files API.
     cwd: null,
-    writable: true,
+    writable: canChange,
     provenance: true,
     // The API serves the tree as committed, with nothing dropped — so hiding
     // the plumbing is this client's job here.
@@ -128,21 +135,23 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
     },
     // A person's own edits go through §3.10's door, one save to one commit
     // with their name on it — any text file, not only markdown.
-    editable: true,
-    changes: {
-      maxUploadFiles: ROOM_UPLOAD_MAX_FILES,
-      upload: (input) =>
-        change(() =>
-          transport.uploadRoomFiles(roomId, {
-            dir: input.dir,
-            baseCommit: input.baseCommit,
-            replace: input.replace,
-            files: input.files,
-          })
-        ),
-      move: (input) => change(() => transport.moveRoomFile(roomId, input)),
-      remove: (input) => change(() => transport.deleteRoomFile(roomId, input)),
-    },
+    editable: canChange,
+    changes: !canChange
+      ? undefined
+      : {
+          maxUploadFiles: ROOM_UPLOAD_MAX_FILES,
+          upload: (input) =>
+            change(() =>
+              transport.uploadRoomFiles(roomId, {
+                dir: input.dir,
+                baseCommit: input.baseCommit,
+                replace: input.replace,
+                files: input.files,
+              })
+            ),
+          move: (input) => change(() => transport.moveRoomFile(roomId, input)),
+          remove: (input) => change(() => transport.deleteRoomFile(roomId, input)),
+        },
     async list(path: string): Promise<ExplorerListing> {
       try {
         const listing = await transport.readRoomFiles(roomId, path === '' ? undefined : path);
