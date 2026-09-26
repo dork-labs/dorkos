@@ -8803,6 +8803,12 @@
               "surface",
               "attribution"
             ]
+          },
+          "undoable": {
+            "type": "boolean"
+          },
+          "undone": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -8811,7 +8817,9 @@
           "actorLabel",
           "actorDetail",
           "summary",
-          "metadata"
+          "metadata",
+          "undoable",
+          "undone"
         ]
       },
       "UndoPermissionChangeResponse": {
@@ -8967,6 +8975,12 @@
             "items": {
               "$ref": "#/components/schemas/PermissionUndoSkip"
             }
+          },
+          "suggestionRestored": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         },
         "required": [
@@ -51283,7 +51297,7 @@
           "Permissions"
         ],
         "summary": "Undo one permission change",
-        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and moving Files & commands to Full autonomy needs the acknowledgement (428).",
+        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
         "parameters": [
           {
             "schema": {

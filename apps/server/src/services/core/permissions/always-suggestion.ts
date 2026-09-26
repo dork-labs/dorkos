@@ -2,7 +2,8 @@
  * The gentle suggestion (spec `agent-permissions`, User Experience): after a
  * person answers Allow (once) three times in seven days for the same agent and
  * action, the next card for it highlights Always allow. "Not now" stops it for
- * that agent and action for good. Never a badge, never a nag.
+ * that agent and action until that "Not now" is undone from the permission
+ * history. Never a badge, never a nag.
  *
  * Decided from the permission history itself, the `permission.answered` and
  * `permission.suggestion_dismissed` events, so there is no second store to
@@ -15,13 +16,14 @@
  *
  * @module services/core/permissions/always-suggestion
  */
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
 import { activityEvents, type Db } from '@dorkos/db';
 import {
   ALWAYS_SUGGESTION_THRESHOLD,
   ALWAYS_SUGGESTION_WINDOW_MS,
   PERMISSION_ANSWERED_EVENT,
   PERMISSION_SUGGESTION_DISMISSED_EVENT,
+  PERMISSION_SUGGESTION_RESTORED_EVENT,
 } from '@dorkos/shared/permissions';
 
 /** What a card is asking about, as the suggestion matches it. */
@@ -61,13 +63,23 @@ export function createAlwaysSuggestion(
       sql`${agentPathOf} = ${agentPath}`,
       sql`${actionOf} = ${capabilityId}`
     );
-    const dismissed = db
-      .select({ id: activityEvents.id })
+    // "Not now" and its Undo: the newest of the two decides.
+    const [latest] = db
+      .select({ eventType: activityEvents.eventType })
       .from(activityEvents)
-      .where(and(about, eq(activityEvents.eventType, PERMISSION_SUGGESTION_DISMISSED_EVENT)))
+      .where(
+        and(
+          about,
+          inArray(activityEvents.eventType, [
+            PERMISSION_SUGGESTION_DISMISSED_EVENT,
+            PERMISSION_SUGGESTION_RESTORED_EVENT,
+          ])
+        )
+      )
+      .orderBy(desc(activityEvents.occurredAt))
       .limit(1)
       .all();
-    if (dismissed.length > 0) return null;
+    if (latest?.eventType === PERMISSION_SUGGESTION_DISMISSED_EVENT) return null;
     const since = new Date(now() - ALWAYS_SUGGESTION_WINDOW_MS).toISOString();
     // Only a one-time Allow counts: a Deny says no, and an Always allow has
     // already been given, so neither is a reason to suggest it.

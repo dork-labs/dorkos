@@ -268,6 +268,18 @@ export const PermissionHistoryEntrySchema = z
     actorDetail: z.string().nullable(),
     summary: z.string(),
     metadata: PermissionChangedMetadataSchema,
+    /**
+     * Whether this line has an Undo: a permission change, or a "Not now" on
+     * the Always allow suggestion. An answer on a request card, an Undo of a
+     * "Not now", and a notice do not.
+     */
+    undoable: z.boolean(),
+    /**
+     * Whether this line is undone now: an Undo of it exists that has not
+     * itself been undone. Decided on the server across the whole history, so
+     * an undone Undo puts the line back in effect.
+     */
+    undone: z.boolean(),
   })
   .openapi('PermissionHistoryEntry');
 
@@ -339,6 +351,8 @@ export const UndoPermissionChangeResponseSchema = z
     changes: z.array(PermissionChangeSchema),
     /** The recorded changes it left alone. */
     skipped: z.array(PermissionUndoSkipSchema),
+    /** Set when the Undo was of a "Not now": the suggestion can come back. */
+    suggestionRestored: z.literal(true).optional(),
   })
   .openapi('UndoPermissionChangeResponse');
 

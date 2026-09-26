@@ -6,7 +6,11 @@
 import { describe, it, expect } from 'vitest';
 import type { PermissionChangedMetadata } from '@dorkos/shared/permissions';
 
-import { personWriter, recordPermissionChange } from '../permission-history.js';
+import {
+  listPermissionHistory,
+  personWriter,
+  recordPermissionChange,
+} from '../permission-history.js';
 import { TWO_AGENTS, createPermissionWorld } from './permission-fixtures.js';
 
 const LOCAL = personWriter('local-trust');
@@ -402,6 +406,56 @@ describe('PermissionService.undo', () => {
       code: 'UNKNOWN_EVENT',
       status: 404,
     });
+  });
+});
+
+describe('what the history says about Undo', () => {
+  it('marks a line undone only while its Undo stands, across pages', async () => {
+    const world = createPermissionWorld({ preset: 'careful' });
+    await world.service.setDefaults({ areas: { rooms: 'ask' }, surface: 'settings' }, LOCAL);
+    const first = world.events[0]!.id;
+    await world.service.undo(first, {}, LOCAL);
+    const undo = world.events[1]!.id;
+
+    // The Undo is newer than the page asked for; it still counts.
+    const older = await listPermissionHistory(world.activity, {
+      before: world.events[1]!.occurredAt,
+      limit: 1,
+    });
+    expect(older.items[0]).toMatchObject({ id: first, undoable: true, undone: true });
+
+    // Undo the Undo: the first change is in effect again.
+    await world.service.undo(undo, {}, LOCAL);
+    const all = await listPermissionHistory(world.activity, { limit: 10 });
+    const byId = new Map(all.items.map((item) => [item.id, item]));
+    expect(byId.get(first)).toMatchObject({ undone: false });
+    expect(byId.get(undo)).toMatchObject({ undone: true });
+  });
+
+  it('gives an answer on a request card no Undo', async () => {
+    const world = createPermissionWorld();
+    await world.activity.emit({
+      actorId: null,
+      resourceType: 'agent',
+      resourceId: null,
+      resourceLabel: null,
+      linkPath: null,
+      category: 'permissions',
+      actorType: 'user',
+      actorLabel: 'Someone on this computer',
+      eventType: 'permission.answered',
+      summary: 'allowed once',
+      metadata: {
+        action: 'rooms.create',
+        area: 'rooms',
+        answer: 'once',
+        approvalId: 'a1',
+        blockedRequest: false,
+        posture: 'local-trust',
+      },
+    });
+    const history = await listPermissionHistory(world.activity, { limit: 10 });
+    expect(history.items[0]).toMatchObject({ undoable: false, undone: false });
   });
 });
 

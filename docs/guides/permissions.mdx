@@ -100,7 +100,7 @@ After a yes, the agent carries on by itself. If it was waiting in the conversati
 
 Safety limits, permissions, and reach and secrets never offer **Always allow**. Their cards show Allow and Deny, and one line: "Always allow isn't offered here. Changing this needs your yes every time."
 
-If you keep saying **Allow** to the same thing, the card offers to remember it. After you allow the same action for the same agent three times in a week, the next card for it shows **Always allow** a little more clearly, with one line: "You've allowed this 3 times this week." **Not now** turns that off for that agent and that action for good. Allow stays the first answer, and the card never offers this where Always allow isn't offered at all.
+If you keep saying **Allow** to the same thing, the card offers to remember it. After you allow the same action for the same agent three times in a week, the next card for it shows **Always allow** a little more clearly, with one line: "You've allowed this 3 times this week." It stays highlighted until you answer **Always allow** or tap **Not now**, which turns it off for that agent and that action. **Not now** shows in the history, and its **Undo** turns the suggestion back on. Allow stays the first answer, and the card never offers this where Always allow isn't offered at all.
 
 When an agent asks for something that is Blocked, the card says so and quotes the reason the agent gave. An agent can only ask about one thing per area at a time, cannot ask for the same thing again for a day after you say no, and can ask at most five times an hour. [Action Approvals](/docs/guides/action-approvals#when-something-is-blocked) has the details.
 
@@ -172,7 +172,7 @@ Every change DorkOS makes or notices is recorded, and the history is kept for go
 
 ### Undo
 
-Every change in the history has an **Undo**. It puts things back the way they were before that change, and it is recorded as a change of its own, so you can undo an Undo too. A line you already undid says **Undone** instead.
+Every change in the history has an **Undo**. It puts things back the way they were before that change, and it is recorded as a change of its own, so you can undo an Undo too. A line you undid says **Undone**; if you later undo that Undo, the line is in effect again and offers its Undo again. If something is already back the way it was, Undo says so and changes nothing.
 
 - **If something changed since**, Undo asks before it overwrites it, with the value it would put back: "This has changed since. Set it back to Ask anyway?" Choose **Set it back** to go ahead, or **Cancel** to leave it.
 - **A change that reached several agents** at once (a new default, with the agents you chose to bring along) puts back everything that still matches and tells you what it left alone: "Undid 3 changes. 1 had changed since and was left alone."

@@ -10,5 +10,5 @@ covers:
 - Undo any permission change from its history, in Settings → Permissions or on an agent's Permissions page. If something changed since, Undo asks before it sets it back, and a change that reached several agents undoes what still matches and tells you what it left alone (DOR-2278)
 - Tap **Why?** next to any permission to see where it comes from and who last changed it, when, and where
 - See how many agents a change reaches before you make it: every default row, single action, preset and Files & commands says "affects 33 agents"
-- If you keep allowing the same thing, the request card offers to remember it: after three Allows in a week for the same agent and action, Always allow is highlighted once, and **Not now** turns that off for good
+- If you keep allowing the same thing, the request card offers to remember it: after three Allows in a week for the same agent and action, Always allow stays highlighted until you answer **Not now** or **Always allow**. **Not now** is in the history, and you can undo it there
 - Undo a change from a terminal with `dorkos permissions undo <id>`. `dorkos permissions history` now shows each change's id

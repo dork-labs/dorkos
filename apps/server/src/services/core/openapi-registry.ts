@@ -4126,7 +4126,9 @@ registry.registerPath({
     'conflict) and writes nothing, while a change that reached several targets sets back the ' +
     'ones that still match and reports the rest in `skipped`. `force` sets every key back. A ' +
     'preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and ' +
-    'moving Files & commands to Full autonomy needs the acknowledgement (428).',
+    'moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a ' +
+    '"Not now" on the Always allow suggestion lets the suggestion come back ' +
+    '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
   request: {
     params: z.object({ eventId: z.string() }),
     body: { content: { 'application/json': { schema: UndoPermissionChangeBodySchema } } },

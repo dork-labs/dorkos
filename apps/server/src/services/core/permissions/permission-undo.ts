@@ -12,7 +12,11 @@ import {
   PERMISSION_ANSWERED_EVENT,
   PERMISSION_AREA_IDS,
   PERMISSION_CHANGED_EVENT,
+  PERMISSION_SUGGESTION_DISMISSED_EVENT,
+  PERMISSION_SUGGESTION_RESTORED_EVENT,
   PermissionChangedMetadataSchema,
+  PermissionSuggestionDismissedMetadataSchema,
+  type PermissionSuggestionRestoredMetadata,
   isFloorArea,
   type AgentPermissions,
   type PermissionAreaId,
@@ -23,6 +27,7 @@ import {
   type UndoPermissionChangeResponse,
 } from '@dorkos/shared/permissions';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import type { ActivityItem } from '@dorkos/shared/activity-schemas';
 import { PERMISSION_STOPS } from '@dorkos/shared/permission-semantics';
 
 import type { PermissionChangeRecord, PermissionWriter } from './permission-history.js';
@@ -124,6 +129,9 @@ export async function undoPermissionChange(
       'An answer on a request card already happened, so it can’t be undone. Change the setting instead.',
       409
     );
+  }
+  if (event.eventType === PERMISSION_SUGGESTION_DISMISSED_EVENT) {
+    return undoSuggestionDismissal(deps, event, writer);
   }
   const parsed =
     event.eventType === PERMISSION_CHANGED_EVENT
@@ -428,4 +436,86 @@ export async function undoPermissionChange(
       : {}),
   });
   return { changes, skipped };
+}
+
+/**
+ * Undo a "Not now" on the Always allow suggestion: record a
+ * `permission.suggestion_restored` event, so the suggestion can come back for
+ * that agent and action. The latest of the two events decides, so a "Not now"
+ * given again later wins again. Nothing to do when the latest is already a
+ * restore.
+ *
+ * @param deps - The service's dependencies.
+ * @param event - The `permission.suggestion_dismissed` event.
+ * @param writer - Who is undoing it.
+ */
+async function undoSuggestionDismissal(
+  deps: PermissionServiceDeps,
+  event: ActivityItem,
+  writer: PermissionWriter
+): Promise<UndoPermissionChangeResponse> {
+  const parsed = PermissionSuggestionDismissedMetadataSchema.safeParse(event.metadata);
+  if (!parsed.success || !deps.activity) {
+    throw new PermissionError(
+      'NOT_UNDOABLE',
+      'This line in the history is not a change to undo.',
+      409
+    );
+  }
+  const { agentPath, action } = parsed.data;
+  if (
+    (await latestSuggestionEvent(deps.activity, agentPath, action)) !==
+    PERMISSION_SUGGESTION_DISMISSED_EVENT
+  ) {
+    return { changes: [], skipped: [] };
+  }
+  const metadata: PermissionSuggestionRestoredMetadata = { ...parsed.data, undoOf: event.id };
+  await deps.activity.emit({
+    actorType: writer.actorType,
+    actorLabel: writer.actorLabel,
+    ...(writer.actorId ? { actorId: writer.actorId } : {}),
+    category: 'permissions',
+    eventType: PERMISSION_SUGGESTION_RESTORED_EVENT,
+    resourceType: event.resourceType,
+    resourceId: event.resourceId,
+    resourceLabel: event.resourceLabel,
+    summary: `Undo: ${event.summary}`,
+    linkPath: null,
+    metadata: metadata as unknown as Record<string, unknown>,
+  });
+  return { changes: [], skipped: [], suggestionRestored: true };
+}
+
+/**
+ * The newest "Not now" or its Undo for one agent and action, by event type.
+ *
+ * @param activity - The Activity reader.
+ * @param agentPath - The agent's project directory.
+ * @param action - The capability id or tool name.
+ */
+async function latestSuggestionEvent(
+  activity: Pick<NonNullable<PermissionServiceDeps['activity']>, 'list'>,
+  agentPath: string,
+  action: string
+): Promise<string | undefined> {
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await activity.list({
+      limit: 100,
+      categories: 'permissions',
+      ...(cursor ? { before: cursor } : {}),
+    });
+    for (const row of page.items) {
+      cursor = row.occurredAt;
+      if (
+        row.eventType !== PERMISSION_SUGGESTION_DISMISSED_EVENT &&
+        row.eventType !== PERMISSION_SUGGESTION_RESTORED_EVENT
+      ) {
+        continue;
+      }
+      const meta = row.metadata as { agentPath?: unknown; action?: unknown } | null;
+      if (meta?.agentPath === agentPath && meta.action === action) return row.eventType;
+    }
+    if (page.nextCursor === null) return undefined;
+  }
 }

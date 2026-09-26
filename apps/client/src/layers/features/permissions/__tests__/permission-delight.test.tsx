@@ -261,13 +261,20 @@ function entry(overrides: Partial<PermissionHistoryEntry> = {}): PermissionHisto
       surface: 'settings',
       attribution: 'local-trust',
     },
+    undoable: true,
+    undone: false,
     ...overrides,
   };
 }
 
 describe('Undo in the history', () => {
   it('undoes a change, and has no Undo for an answer or a change already undone', async () => {
-    const undone = entry({ id: 'evt-0', summary: 'Tasks set to Blocked for everyone' });
+    // Undone, as the server says: an Undo of it stands.
+    const undone = entry({
+      id: 'evt-0',
+      summary: 'Tasks set to Blocked for everyone',
+      undone: true,
+    });
     const undo = entry({
       id: 'evt-2',
       summary: 'Undo: Tasks set back to the preset for everyone',
@@ -277,6 +284,7 @@ describe('Undo in the history', () => {
       id: 'evt-3',
       summary: 'Someone on this computer allowed DorkBot to run "Open a room" once',
       metadata: { changes: [], surface: 'request-card', attribution: 'local-trust' },
+      undoable: false,
     });
     const undoPermissionChange = vi.fn().mockResolvedValue({ changes: [], skipped: [] });
     const { wrapper } = wrap(

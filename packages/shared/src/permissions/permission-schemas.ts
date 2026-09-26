@@ -293,6 +293,25 @@ export type PermissionSuggestionDismissedMetadata = z.infer<
 export const PERMISSION_SUGGESTION_DISMISSED_EVENT = 'permission.suggestion_dismissed';
 
 /**
+ * The metadata a `permission.suggestion_restored` Activity event carries: an
+ * Undo of a "Not now", so the suggestion can come back for that agent and
+ * action. The latest of the two events for an agent and action decides.
+ */
+export const PermissionSuggestionRestoredMetadataSchema =
+  PermissionSuggestionDismissedMetadataSchema.extend({
+    /** The `permission.suggestion_dismissed` event this undid. */
+    undoOf: z.string(),
+  });
+
+/** The metadata of a `permission.suggestion_restored` Activity event. */
+export type PermissionSuggestionRestoredMetadata = z.infer<
+  typeof PermissionSuggestionRestoredMetadataSchema
+>;
+
+/** The Activity event type an undone "Not now" lands as. */
+export const PERMISSION_SUGGESTION_RESTORED_EVENT = 'permission.suggestion_restored';
+
+/**
  * How many one-time Allows for the same agent and action, inside
  * {@link ALWAYS_SUGGESTION_WINDOW_MS}, make the next card suggest Always allow.
  */

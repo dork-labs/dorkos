@@ -21,8 +21,12 @@
 import {
   PERMISSION_ANSWERED_EVENT,
   PERMISSION_CHANGED_EVENT,
+  PERMISSION_SUGGESTION_DISMISSED_EVENT,
+  PERMISSION_SUGGESTION_RESTORED_EVENT,
   PermissionAnsweredMetadataSchema,
   PermissionChangedMetadataSchema,
+  PermissionSuggestionDismissedMetadataSchema,
+  PermissionSuggestionRestoredMetadataSchema,
   getPermissionArea,
   type PermissionAttribution,
   type PermissionChange,
@@ -34,7 +38,7 @@ import {
   type PermissionSource,
   type PermissionSurface,
 } from '@dorkos/shared/permissions';
-import type { ActorType } from '@dorkos/shared/activity-schemas';
+import type { ActivityItem, ActorType } from '@dorkos/shared/activity-schemas';
 
 import type { ActivityService } from '../../activity/activity-service.js';
 
@@ -296,13 +300,169 @@ function actorDetailFor(attribution: PermissionAttribution): string | null {
 /** How many rows the history scans per page while filtering for one agent. */
 const SCAN_PAGE = 100;
 
+/** One history line before its `undone` is known. */
+type HistoryLine = Omit<PermissionHistoryEntry, 'undone'>;
+
+/**
+ * One Activity row as a history line, or `undefined` for a row the history
+ * does not show (or one not about `agentId`, when given).
+ *
+ * @param row - The Activity row.
+ * @param agentId - Narrow to lines about one agent.
+ */
+function toHistoryLine(row: ActivityItem, agentId: string | undefined): HistoryLine | undefined {
+  const base = {
+    id: row.id,
+    occurredAt: row.occurredAt,
+    actorLabel: row.actorLabel,
+    summary: row.summary,
+  };
+  const ownRow = !agentId || row.resourceId === agentId;
+  switch (row.eventType) {
+    case PERMISSION_CHECK_UNAVAILABLE_EVENT:
+      if (!ownRow) return undefined;
+      // A notice, not a change: no rows, and the outside-check's own labels.
+      return {
+        ...base,
+        actorDetail: UNCHECKABLE_ACTOR_DETAIL,
+        metadata: { changes: [], surface: 'file-edit', attribution: 'outside' },
+        undoable: false,
+      };
+    case STANDING_GRANT_ENDED_EVENT:
+      // An upgrade line, not a change to a setting: a standing permission had
+      // no area and no state, so it carries no `changes` rows.
+      if (!ownRow) return undefined;
+      return {
+        ...base,
+        actorDetail: null,
+        metadata: { changes: [], surface: 'upgrade', attribution: 'upgrade' },
+        undoable: false,
+      };
+    case PERMISSION_ANSWERED_EVENT: {
+      // An answer on a request card. Its own `permission.changed` row (for an
+      // Always allow) sits beside it; this one records the answer itself, and
+      // has no Undo: the answer already happened.
+      const answered = PermissionAnsweredMetadataSchema.safeParse(row.metadata);
+      if (!answered.success || !ownRow) return undefined;
+      const attribution = postureAttribution(answered.data.posture);
+      return {
+        ...base,
+        actorDetail: actorDetailFor(attribution),
+        metadata: {
+          changes: [],
+          surface: 'request-card',
+          attribution,
+          approvalId: answered.data.approvalId,
+        },
+        undoable: false,
+      };
+    }
+    case PERMISSION_SUGGESTION_DISMISSED_EVENT:
+    case PERMISSION_SUGGESTION_RESTORED_EVENT: {
+      // "Not now" on the Always allow suggestion, and its Undo. The first is
+      // undoable, so the suggestion can come back; the second is not, because
+      // "Not now" on the next card says the same thing again.
+      const restored = row.eventType === PERMISSION_SUGGESTION_RESTORED_EVENT;
+      const meta = (
+        restored
+          ? PermissionSuggestionRestoredMetadataSchema
+          : PermissionSuggestionDismissedMetadataSchema
+      ).safeParse(row.metadata);
+      if (!meta.success || !ownRow) return undefined;
+      const attribution: PermissionAttribution =
+        row.actorLabel === LOCAL_TRUST_ACTOR_LABEL ? 'local-trust' : 'signed-in';
+      return {
+        ...base,
+        actorDetail: actorDetailFor(attribution),
+        metadata: {
+          changes: [],
+          surface: restored ? 'undo' : 'request-card',
+          attribution,
+          approvalId: meta.data.approvalId,
+          ...(restored ? { undoOf: undoOfRow(row) } : {}),
+        },
+        undoable: !restored,
+      };
+    }
+    case PERMISSION_CHANGED_EVENT: {
+      const parsed = PermissionChangedMetadataSchema.safeParse(row.metadata);
+      if (!parsed.success) return undefined;
+      if (agentId && !touchesAgent(row.resourceId, parsed.data, agentId)) return undefined;
+      return {
+        ...base,
+        actorDetail: actorDetailFor(parsed.data.attribution),
+        metadata: parsed.data,
+        undoable: parsed.data.changes.length > 0,
+      };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** How a card answer's posture reads as an attribution. */
+function postureAttribution(posture: 'signed-in-operator' | 'local-trust'): PermissionAttribution {
+  return posture === 'signed-in-operator' ? 'signed-in' : 'local-trust';
+}
+
+/** The event an Undo line undid, read off its metadata. */
+function undoOfRow(row: ActivityItem): string | undefined {
+  const undoOf = (row.metadata as { undoOf?: unknown } | null)?.undoOf;
+  return typeof undoOf === 'string' ? undoOf : undefined;
+}
+
+/**
+ * Which of these lines are undone now. A line is undone when an Undo of it
+ * exists that is not itself undone, so an Undo of an Undo puts the first line
+ * back in effect. An Undo is always newer than the line it undid, so reading
+ * every line newer than the oldest one shown finds every Undo that matters,
+ * across the whole history rather than one page of it.
+ *
+ * @param activity - The Activity reader.
+ * @param lines - The lines shown, newest first.
+ */
+async function undoneLines(
+  activity: Pick<ActivityService, 'list'>,
+  lines: readonly HistoryLine[]
+): Promise<Set<string>> {
+  const oldest = lines.at(-1);
+  if (!oldest) return new Set();
+  const undosOf = new Map<string, string[]>();
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await activity.list({
+      limit: SCAN_PAGE,
+      categories: 'permissions',
+      since: oldest.occurredAt,
+      ...(cursor ? { before: cursor } : {}),
+    });
+    for (const row of page.items) {
+      cursor = row.occurredAt;
+      const undid = undoOfRow(row);
+      if (undid) undosOf.set(undid, [...(undosOf.get(undid) ?? []), row.id]);
+    }
+    if (page.nextCursor === null) break;
+  }
+  const memo = new Map<string, boolean>();
+  const isUndone = (id: string): boolean => {
+    const known = memo.get(id);
+    if (known !== undefined) return known;
+    memo.set(id, false);
+    const undone = (undosOf.get(id) ?? []).some((undo) => !isUndone(undo));
+    memo.set(id, undone);
+    return undone;
+  };
+  return new Set(lines.filter((line) => isUndone(line.id)).map((line) => line.id));
+}
+
 /**
  * Read the permission history, newest first.
  *
  * With `agentId`, returns the events about that agent: single-agent events by
  * their `resourceId`, and default or bulk events whose `changes` touched it. The
  * category is low volume, so the filter runs over pages of the category rather
- * than a JSON query.
+ * than a JSON query. Each line says whether it has an Undo and whether it is
+ * undone now.
  *
  * @param activity - The Activity reader.
  * @param query - Optional agent, cursor and page size.
@@ -311,10 +471,10 @@ export async function listPermissionHistory(
   activity: Pick<ActivityService, 'list'>,
   query: { agentId?: string; before?: string; limit: number }
 ): Promise<PermissionHistoryResponse> {
-  const items: PermissionHistoryEntry[] = [];
+  const lines: HistoryLine[] = [];
   let cursor = query.before;
   let exhausted = false;
-  while (items.length < query.limit && !exhausted) {
+  while (lines.length < query.limit && !exhausted) {
     const page = await activity.list({
       limit: SCAN_PAGE,
       categories: 'permissions',
@@ -322,75 +482,15 @@ export async function listPermissionHistory(
     });
     for (const row of page.items) {
       cursor = row.occurredAt;
-      if (row.eventType === PERMISSION_CHECK_UNAVAILABLE_EVENT) {
-        if (query.agentId && row.resourceId !== query.agentId) continue;
-        items.push({
-          id: row.id,
-          occurredAt: row.occurredAt,
-          actorLabel: row.actorLabel,
-          actorDetail: UNCHECKABLE_ACTOR_DETAIL,
-          summary: row.summary,
-          // A notice, not a change: no rows, and the outside-check's own labels.
-          metadata: { changes: [], surface: 'file-edit', attribution: 'outside' },
-        });
-        if (items.length === query.limit) break;
-        continue;
-      }
-      if (row.eventType === STANDING_GRANT_ENDED_EVENT) {
-        // An upgrade line, not a change to a setting: a standing permission had
-        // no area and no state, so it carries no `changes` rows.
-        if (query.agentId && row.resourceId !== query.agentId) continue;
-        items.push({
-          id: row.id,
-          occurredAt: row.occurredAt,
-          actorLabel: row.actorLabel,
-          actorDetail: null,
-          summary: row.summary,
-          metadata: { changes: [], surface: 'upgrade', attribution: 'upgrade' },
-        });
-        if (items.length === query.limit) break;
-        continue;
-      }
-      if (row.eventType === PERMISSION_ANSWERED_EVENT) {
-        // An answer on a request card. Its own `permission.changed` row (for an
-        // Always allow) sits beside it; this one records the answer itself.
-        const answered = PermissionAnsweredMetadataSchema.safeParse(row.metadata);
-        if (!answered.success) continue;
-        if (query.agentId && row.resourceId !== query.agentId) continue;
-        const attribution: PermissionAttribution =
-          answered.data.posture === 'signed-in-operator' ? 'signed-in' : 'local-trust';
-        items.push({
-          id: row.id,
-          occurredAt: row.occurredAt,
-          actorLabel: row.actorLabel,
-          actorDetail: actorDetailFor(attribution),
-          summary: row.summary,
-          metadata: {
-            changes: [],
-            surface: 'request-card',
-            attribution,
-            approvalId: answered.data.approvalId,
-          },
-        });
-        if (items.length === query.limit) break;
-        continue;
-      }
-      if (row.eventType !== PERMISSION_CHANGED_EVENT) continue;
-      const parsed = PermissionChangedMetadataSchema.safeParse(row.metadata);
-      if (!parsed.success) continue;
-      if (query.agentId && !touchesAgent(row.resourceId, parsed.data, query.agentId)) continue;
-      items.push({
-        id: row.id,
-        occurredAt: row.occurredAt,
-        actorLabel: row.actorLabel,
-        actorDetail: actorDetailFor(parsed.data.attribution),
-        summary: row.summary,
-        metadata: parsed.data,
-      });
-      if (items.length === query.limit) break;
+      const line = toHistoryLine(row, query.agentId);
+      if (!line) continue;
+      lines.push(line);
+      if (lines.length === query.limit) break;
     }
     exhausted = page.nextCursor === null;
   }
+  const undone = await undoneLines(activity, lines);
+  const items = lines.map((line) => ({ ...line, undone: undone.has(line.id) }));
   // A full page may be followed by an empty one; that costs a reader one extra
   // request and never hides a row.
   const last = items.at(-1);

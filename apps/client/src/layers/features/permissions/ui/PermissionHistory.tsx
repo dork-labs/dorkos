@@ -53,6 +53,8 @@ export function conflictQuestion(conflicts: readonly PermissionUndoSkip[]): stri
  * @param result - The Undo's answer.
  */
 export function partialUndoNote(result: UndoPermissionChangeResponse): string | null {
+  // Undoing a "Not now" changes no setting; the line reading "Undone" says it.
+  if (result.suggestionRestored) return null;
   if (result.changes.length === 0 && result.skipped.length === 0) {
     return 'Nothing to undo. It was already back the way it was.';
   }
@@ -82,20 +84,15 @@ export function partialUndoNote(result: UndoPermissionChangeResponse): string | 
 }
 
 /** One history row, with its Undo. */
-function HistoryRow({
-  item,
-  undone,
-  consent,
-}: {
-  item: PermissionHistoryEntry;
-  undone: boolean;
-  consent: AutonomyConsent;
-}) {
+function HistoryRow({ item, consent }: { item: PermissionHistoryEntry; consent: AutonomyConsent }) {
   const undo = useUndoPermission();
   const [conflicts, setConflicts] = useState<PermissionUndoSkip[] | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  // A change is undoable; an answer on a request card, or a notice, is not.
-  const undoable = item.metadata.changes.length > 0 && !undone;
+  // The server says which lines have an Undo (a change, or a "Not now") and
+  // which are undone now, across the whole history: an undone Undo puts the
+  // line it undid back in effect.
+  const undone = item.undone;
+  const undoable = item.undoable && !undone;
   const when = formatRelativeTime(item.occurredAt);
 
   const send = (force: boolean) => {
@@ -206,12 +203,11 @@ export function PermissionHistory({ agentId }: PermissionHistoryProps) {
   if (items.length === 0) {
     return <p className="text-muted-foreground text-sm">No permission changes yet.</p>;
   }
-  const undoneIds = new Set(items.flatMap((item) => item.metadata.undoOf ?? []));
   return (
     <>
       <ul className="@container space-y-3" aria-label="Permission history">
         {items.map((item) => (
-          <HistoryRow key={item.id} item={item} undone={undoneIds.has(item.id)} consent={consent} />
+          <HistoryRow key={item.id} item={item} consent={consent} />
         ))}
       </ul>
       <AutonomyConfirmDialog

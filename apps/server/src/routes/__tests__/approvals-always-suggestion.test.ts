@@ -21,6 +21,11 @@ import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { createAlwaysSuggestion } from '../../services/core/permissions/always-suggestion.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
+import {
+  PermissionService,
+  listPermissionHistory,
+  personWriter,
+} from '../../services/core/permissions/index.js';
 import { createApprovalsRouter } from '../approvals.js';
 
 const AGENT_PATH = '/agents/dorkbot';
@@ -119,6 +124,56 @@ describe('the Always allow suggestion', () => {
       actorLabel: 'Someone on this computer',
       metadata: { agentPath: AGENT_PATH, action: 'rooms.create', approvalId: fourth },
     });
+  });
+
+  it('shows "Not now" in the history, and its Undo brings the suggestion back', async () => {
+    for (let i = 0; i < 3; i++) await answer('once');
+    const fourth = ask();
+    await request(app).post(`/api/approvals/${fourth}/dismiss-suggestion`).expect(200);
+    const [dismissal] = (await listPermissionHistory(activity, { limit: 10 })).items;
+    expect(dismissal).toMatchObject({ undoable: true, undone: false });
+    expect(dismissal!.summary).toMatch(/^Stopped suggesting Always allow/);
+
+    // The same Undo every other history line uses.
+    const service = new PermissionService({
+      config: {
+        get: () => ({
+          preset: null,
+          defaults: { areas: {}, actions: {} },
+          upgradeSweptVersion: null,
+        }),
+        set: () => {},
+        trustStops: () => ({ global: null, perRuntime: {} }),
+        setGlobalTrustStop: () => {},
+        setRuntimeTrustStop: () => false,
+        hasAutonomyAck: () => false,
+        recordAutonomyAck: () => {},
+      },
+      agents: {
+        list: () => [],
+        readPermissions: async () => undefined,
+        writePermissions: async () => {},
+      },
+      actions: () => [],
+      activity,
+    });
+    const writer = personWriter('local-trust');
+    await expect(service.undo(dismissal!.id, {}, writer)).resolves.toEqual({
+      changes: [],
+      skipped: [],
+      suggestionRestored: true,
+    });
+    expect(approvals.getPending(fourth)?.suggestAlways).toBe(true);
+    const history = await listPermissionHistory(activity, { limit: 10 });
+    expect(history.items.find((i) => i.id === dismissal!.id)).toMatchObject({ undone: true });
+    // Undoing it again finds nothing to do.
+    await expect(service.undo(dismissal!.id, {}, writer)).resolves.toEqual({
+      changes: [],
+      skipped: [],
+    });
+    // A later "Not now" wins again.
+    await request(app).post(`/api/approvals/${fourth}/dismiss-suggestion`).expect(200);
+    expect(approvals.getPending(fourth)?.suggestAlways).toBeUndefined();
   });
 
   it('is only about the same agent and the same action', async () => {
