@@ -35,14 +35,14 @@
     "@dorkos/operating-skills": "workspace:*",
     "@dorkos/shared": "workspace:*",
     "@dorkos/skills": "workspace:*",
-    "smol-toml": "^1.8.0",
+    "smol-toml": "^1.9.0",
     "zod": "^4.6.2"
   },
   "devDependencies": {
     "@dorkos/eslint-config": "workspace:*",
     "@dorkos/typescript-config": "workspace:*",
     "@types/node": "^24",
-    "fast-check": "^4.10.1",
+    "fast-check": "^4.10.2",
     "vitest": "^4.1.11"
   }
 }
