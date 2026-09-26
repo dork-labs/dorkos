@@ -10,7 +10,7 @@ against it, and neither side gets to change the wire without changing it here fi
 npm install @dork-labs/cloud-api zod
 ```
 
-## Two entry points
+## Three entry points
 
 ```ts
 // Schemas, types and route paths. No network code, so you can validate
@@ -28,6 +28,11 @@ const cloud = createCloudApiClient({
 
 const entitlements = await cloud.get(V1_ROUTES.entitlements, EntitlementsSchema);
 const seat = await cloud.get(v1Path.seat(seatId), SeatSchema);
+```
+
+```ts
+// One way to render an amount for a person. No Zod, no network code.
+import { formatCharge, formatPosition } from '@dork-labs/cloud-api/display';
 ```
 
 Every response is either the route's success schema or the `Problem` envelope. The client throws
@@ -196,7 +201,80 @@ Every link to a community is a runtime value.
 ### Money is never a number
 
 Every amount is an **integer count of micro-units carried as a string** (`MicroAmountSchema`). A
-`z.number()` on an amount is a precision bug, not a style choice.
+`z.number()` on an amount is a precision bug, not a style choice. A micro-unit is a millionth of
+the major unit of the currency the response names.
+
+### Money or credits: every amount says which
+
+An amount is one of two kinds, and a renderer has to know which before it shows it: the same
+string read the wrong way prints a price as a credit balance.
+
+- **`MoneyMicroSchema`** (and `PositiveMoneyMicroSchema` for an amount to pay): money paid,
+  refunded, offered or capped. The auto-reload ceiling, the usage list price, the nudge's
+  suggested plan price and saving and the top-up amount are money, and so is the amount on the
+  withdrawn refund answer.
+- **`CreditMicroSchema`**: credits held, spent or priced. Included credits, the balance's
+  granted, remaining, pending, held and owed amounts, the usage DorkOS price, the price-list
+  rates and the nudge's trailing spend are credits.
+
+Both have exactly the wire shape of `MicroAmountSchema` and both infer `string`, so nothing on
+the wire or in a consumer's types moves. The kind is a `.meta({ amountKind })` mark
+(`AMOUNT_KIND_META`), which reaches the JSON Schema as an `amountKind` keyword.
+`src/__tests__/amount-kinds.test.ts` fails on an amount field without a mark or with the wrong
+one.
+
+### The denomination is served, never assumed
+
+The entitlements, balance, usage, price-list and nudge responses carry an optional
+`denomination` (`DenominationSchema`):
+
+- `currency`, an ISO 4217 code: what the micro-units are millionths of;
+- `microPerCredit`, a positive integer string: how many micro-units one credit is.
+
+This package publishes no value for either. The service sends them, so the scale can change
+without a client release and two clients can never disagree about it. **A client that receives
+no `denomination` must not guess one**: show the surface's "could not read this" state instead.
+The fixtures use the ISO 4217 test code `XTS` and a placeholder scale, and a test fails if any
+fixture carries another.
+
+```json
+{ "heldMicro": "4700", "denomination": { "currency": "XTS", "microPerCredit": "250" } }
+```
+
+### Rendering an amount: `@dork-labs/cloud-api/display`
+
+One formatter for every client, so the same balance reads the same everywhere. Each function
+takes the amount string and the response's `denomination`, and returns a string, or `null` for
+a malformed amount or a missing or malformed denomination. It never guesses.
+
+| Function                                            | Kind                                           | Rounding                                                                                                                                           |
+| --------------------------------------------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `formatPosition(micro, denomination)`               | what someone has or may still spend            | down to whole credits, so no page shows credit that cannot be spent                                                                                |
+| `formatCharge(micro, denomination)`                 | what someone spent, was charged or is held for | half away from zero to whole credits; `0` for zero; `<1` (or `-<1`) for a non-zero amount under half a credit                                      |
+| `formatRate(micro, denomination)`                   | a price per unit of something                  | never rounded: every significant digit, trailing zeros trimmed (`null` if the scale cannot write it as a finite decimal)                           |
+| `formatMoney(micro, { currency })`                  | money paid, refunded or offered                | to the currency's minor unit, half away from zero; an exactly whole amount has no minor digits; a tiny non-zero amount reads `<` the smallest unit |
+| `formatCap(micro, { currency })`                    | a money limit                                  | as money, but rounded down, so a limit never reads higher than the one enforced                                                                    |
+| `formatMoneyRate(micro, { currency })`              | a price in money                               | exact, with at least the currency's minor digits                                                                                                   |
+| `formatCreditsWithMoney(micro, denomination, kind)` | a credit figure with its money value beside it | `<n> credits (<money>)`; the money comes from the rounded credit count, so the two always agree                                                    |
+| `formatTotal(lines, denomination, kind)`            | a total                                        | the exact sum of the lines, rounded once; never the sum of rounded lines, so it may differ from them by a credit or two                            |
+
+```ts
+import { formatCharge, formatCreditsWithMoney } from '@dork-labs/cloud-api/display';
+
+const balance = BalanceSchema.parse(body);
+if (!balance.denomination) return couldNotRead();
+formatCharge(balance.heldMicro, balance.denomination); // "19" for the example above
+formatCreditsWithMoney(balance.allowance.remainingMicro, balance.denomination, 'position');
+```
+
+A rate's money always shows the minor digits and a position's or charge's money drops them
+when the amount is whole, so one credit can read `1 credit (XTS 1.00)` as a rate and
+`1 credit (XTS 1)` as a position. That is deliberate: a price keeps its precision, a quantity
+reads plainly.
+
+Digits come from `BigInt` alone, so no amount ever becomes a JavaScript number. `Intl` is asked
+only for a currency's symbol and its minor-unit digits, never to format an amount. Numbers are
+grouped the way `en-US` groups them. The module imports nothing.
 
 ### No origin baked in
 
@@ -222,6 +300,11 @@ would be a comfortable claim and a false one:
   being the intent, the field to drop is `listPriceMicro`, and dropping it is a `/v2` change.
 - **`GET /v1/nudge`** returns one already-computed comparison — one subscription, one price, one
   subtraction the server already did. The client renders it and computes nothing.
+
+Each of those, and the balance and the entitlements, carries the optional
+`denomination` above. The price list's entries also carry optional cache-read and cache-write
+rates (`cacheReadMicro`, `cacheWriteMicro`) beside input and output, in the entry's existing
+`unit`.
 
 Nothing else carries an amount. In particular, no inference route does: not a rate, not a
 multiplier, not a unit cost. And no route anywhere carries a supplier's terms.

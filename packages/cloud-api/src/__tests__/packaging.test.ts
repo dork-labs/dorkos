@@ -65,7 +65,7 @@ describe('packaging', () => {
     expect(manifest.publishConfig?.access).toBe('public');
   });
 
-  it('ships its declarations, its client and its fixtures', () => {
+  it('ships its declarations, its client, its display formatter and its fixtures', () => {
     expect(manifest.files).toContain('dist');
     expect(manifest.files).toContain('fixtures');
     expect(manifest.exports?.['.']).toEqual({
@@ -75,6 +75,10 @@ describe('packaging', () => {
     expect(manifest.exports?.['./client']).toEqual({
       types: './dist/client.d.ts',
       default: './dist/client.js',
+    });
+    expect(manifest.exports?.['./display']).toEqual({
+      types: './dist/display.d.ts',
+      default: './dist/display.js',
     });
   });
 
