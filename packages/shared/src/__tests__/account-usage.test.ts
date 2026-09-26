@@ -536,6 +536,13 @@ describe('runtime-neutral ledger', () => {
       expect(toAccountUsage(opencode({ spend: spend() }, stale), who, NOW).state).toBe('ok');
     });
 
+    it("takes the runtime from the identity (the ledger's folder) over the ledger's own field", () => {
+      const misfiled = { ...ledger({ five_hour: entry() }), runtime: 'codex' as const };
+      expect(toAccountUsage(misfiled, { ...who, runtime: 'claude-code' }, NOW).runtime).toBe(
+        'claude-code'
+      );
+    });
+
     it('carries plan and credits, and takes the runtime from the identity with no ledger', () => {
       const credits = { hasCredits: true, unlimited: true, balance: null };
       const out = toAccountUsage(opencode({ plan: 'pro', credits }), who, NOW);
