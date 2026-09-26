@@ -45,7 +45,12 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import { configManager } from '../../../core/config-manager.js';
 import { resolveClaudeCredentialEnv } from '../../../core/credential-env.js';
-import { resolveAgentTokenEnv } from '../../../core/agent-identity/index.js';
+import {
+  anchorPath,
+  createInSessionContextResolver,
+  resolveAgentTokenEnv,
+  resolveIdentityAnchor,
+} from '../../../core/agent-identity/index.js';
 import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import { isTasksEnabled } from '../../../tasks/task-state.js';
@@ -102,7 +107,10 @@ export interface ResolvedLaunch {
    * ADR-0273 keeps the person's own words unmutated.
    */
   enrichedContent: string;
-  /** The mesh agent this working directory hosts, for `last_seen` stamping. */
+  /**
+   * The mesh agent this launch acts as, for `last_seen` stamping — the agent a
+   * room worktree belongs to when the turn stands in one (DOR-2091).
+   */
   meshAgentId: string | undefined;
   /**
    * Events the caller must yield BEFORE the turn's own, in this order. Only the
@@ -155,8 +163,18 @@ export async function resolveLaunch(args: {
   const { sessionId, content, session, opts, messageOpts, effectiveCwd } = args;
   const statusEvents: StreamEvent[] = [];
 
+  // **Who this launch acts as, resolved from who the turn is FOR and where it
+  // stands — never from a path prefix** (DOR-2091). A turn in a room with files
+  // runs in the agent's WORKTREE, which hosts no registered agent, so the exact
+  // `getByPath(effectiveCwd)` this used to be minted no token and left every
+  // DorkOS tool to refuse the agent as `UNIDENTIFIED_CALLER`. The anchor maps a
+  // worktree to the agent the worktree manager handed it to, and when a room
+  // names the turn's agent it must be that agent or nobody. See
+  // `core/agent-identity/identity-anchor.ts` for the whole rule.
+  const forAgent = messageOpts?.roomTurn?.agentPath;
+  const turnAgentPath = anchorPath(resolveIdentityAnchor(effectiveCwd, forAgent));
   // Stamp agent last_seen_at when a message is dispatched
-  const meshAgent = opts.meshCore?.getByPath(effectiveCwd);
+  const meshAgent = turnAgentPath ? opts.meshCore?.getByPath(turnAgentPath) : undefined;
   const meshAgentId = meshAgent?.id;
   if (opts.meshCore && meshAgentId) {
     opts.meshCore.updateLastSeen(meshAgentId, 'message_sent');
@@ -205,15 +223,24 @@ export async function resolveLaunch(args: {
   // there would claim the tools are loaded for a session whose tool server had
   // already decided otherwise — the failure inverted, and worse than the
   // original, because a wrong "no lookup needed" costs the whole turn.
+  //
+  // Anchored rather than read raw (DOR-2091): a room session created in the
+  // agent's worktree has THAT as its `session.cwd`, and the tools act as the
+  // agent the worktree belongs to. One anchor feeds the tool server, the
+  // approval gate and the prose below, so none of the three can disagree.
+  const toolIdentity = resolveIdentityAnchor(session.cwd, forAgent);
+  const toolAgentPath = anchorPath(toolIdentity);
   // What a Blocked permission hides from this agent (spec `agent-permissions`
   // D15), resolved against the SAME cwd the tool server keys the session's
   // identity on, for the reason the agent-to-agent flag above gives. The list
   // and the one context line per Blocked area come from one resolution, so the
   // prompt never names an area the tools disagree with.
-  const toolVisibility = await resolveToolVisibilityFor(session.cwd ?? effectiveCwd);
+  const toolVisibility = await resolveToolVisibilityFor(
+    toolAgentPath ?? session.cwd ?? effectiveCwd
+  );
   const baseAppend = await buildSystemPromptAppend(effectiveCwd, toolConfig, {
     agentSession: loadsAgentToAgentTools(
-      !!(session.cwd && opts.meshCore?.getByPath(session.cwd)),
+      !!(toolAgentPath && opts.meshCore?.getByPath(toolAgentPath)),
       isRelayEnabled()
     ),
     blockedAreaLines: renderBlockedAreaLines(toolVisibility.blockedAreas),
@@ -258,9 +285,9 @@ export async function resolveLaunch(args: {
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
   // stays a credential for the tools the agent runs (`dorkos call ...`) rather
-  // than text in the model's context and the transcript. Yields `{}` when the
-  // working directory hosts no registered agent, leaving the session
-  // unattributed exactly as before.
+  // than text in the model's context and the transcript. Minted for the
+  // anchored agent above — so a room worktree carries its agent's token — and
+  // `{}` when there is none, leaving the session unattributed exactly as before.
   //
   // The name it is minted under is the one a PERSON reads, never the slug.
   // `agents.name` is the address an `@` reaches; `display_name` is the label,
@@ -270,7 +297,7 @@ export async function resolveLaunch(args: {
   // mid-conversation, in every message and in the member list (DOR-1264).
   const agentDisplayName = meshAgent?.displayName ?? meshAgent?.name;
   const agentTokenEnv = await resolveAgentTokenEnv(
-    meshAgent ? effectiveCwd : undefined,
+    meshAgent ? turnAgentPath : undefined,
     agentDisplayName
   );
 
@@ -527,6 +554,7 @@ export async function resolveLaunch(args: {
   if (opts.mcpServerFactory) {
     sdkOptions.mcpServers = opts.mcpServerFactory(session, sessionId, {
       hiddenToolNames: toolVisibility.hiddenToolNames,
+      identity: toolIdentity,
     });
   }
 
@@ -539,7 +567,15 @@ export async function resolveLaunch(args: {
   // The toggles still take effect through `buildSystemPromptAppend` above, which
   // leaves a disabled group's tool block out of the agent's context.
   const editBaselineCapture = createEditBaselineCapture(sessionId, effectiveCwd);
-  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture);
+  // The gate answers "does this session have an agent identity?" off the SAME
+  // anchor the tool server acts as, so a call it waves through is never one the
+  // tool then runs as somebody else (DOR-2091).
+  sdkOptions.canUseTool = createCanUseTool(
+    session,
+    logger,
+    editBaselineCapture,
+    createInSessionContextResolver(toolIdentity)
+  );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
   // hooks fire in every mode, before the tool runs. The matcher confines the
@@ -616,24 +652,27 @@ export async function resolveLaunch(args: {
   // token value — `mint()` returns fresh bytes every call, so pinning the value
   // would relaunch on every dispatch and warmth would never exist
   // (`launch-fingerprint.ts`).
-  const agentIdentity: AgentIdentityPin | undefined = meshAgent
-    ? {
-        agentPath: effectiveCwd,
-        // The same string the mint above was given: the pin describes who this
-        // launch was minted FOR, so a second name here would be a fingerprint
-        // of something that never happened.
-        //
-        // It is also the ONLY thing that keeps a token's label fresh, which
-        // makes it load-bearing rather than bookkeeping. `describeAgentIdentity`
-        // (`launch-fingerprint.ts`) folds this name into a `relaunch` pin, so
-        // renaming an agent ends the warm process and the next turn mints a new
-        // token under the new name. Drop it from the descriptor and a long-lived
-        // warm session would keep attributing every room message that agent
-        // writes to the name it had when the process started.
-        displayName: agentDisplayName,
-        attributed: Object.keys(agentTokenEnv).length > 0,
-      }
-    : undefined;
+  const agentIdentity: AgentIdentityPin | undefined =
+    meshAgent && turnAgentPath
+      ? {
+          // The ANCHORED agent, not the directory: two launches standing in the
+          // same worktree for the same agent are the same identity.
+          agentPath: turnAgentPath,
+          // The same string the mint above was given: the pin describes who this
+          // launch was minted FOR, so a second name here would be a fingerprint
+          // of something that never happened.
+          //
+          // It is also the ONLY thing that keeps a token's label fresh, which
+          // makes it load-bearing rather than bookkeeping. `describeAgentIdentity`
+          // (`launch-fingerprint.ts`) folds this name into a `relaunch` pin, so
+          // renaming an agent ends the warm process and the next turn mints a new
+          // token under the new name. Drop it from the descriptor and a long-lived
+          // warm session would keep attributing every room message that agent
+          // writes to the name it had when the process started.
+          displayName: agentDisplayName,
+          attributed: Object.keys(agentTokenEnv).length > 0,
+        }
+      : undefined;
 
   return {
     sdkOptions,

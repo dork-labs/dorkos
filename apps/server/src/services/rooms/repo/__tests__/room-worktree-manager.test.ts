@@ -780,6 +780,84 @@ describe('RoomWorktreeManager', () => {
     });
   });
 
+  describe('whose working copy it is (DOR-2091)', () => {
+    // The record a session standing in a worktree acts as its agent from. The
+    // name ends in a 32-bit digest, which is not a thing to authenticate by, so
+    // the owner is recorded when the tree is HANDED OUT and read back from
+    // nowhere else. Seeded defects, each red before the code stood:
+    //
+    // - Recording only in the caller that started the resolution (the shared
+    //   in-flight promise) reddens "poisons a directory two agents were handed".
+    // - Answering "not a working copy" for a tree with no record — failing OPEN,
+    //   so the anchor looks the directory up as itself — reddens "vouches for
+    //   nobody in a working copy it did not hand out", "after a restart" and
+    //   "forgets a tree the reap removed".
+    // - Dropping the forget from the reap reddens "forgets a tree the reap
+    //   removed", alone.
+
+    it('answers the agent the tree was handed to, and only for that exact directory', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await worktreeFor('ana');
+
+      expect(manager.ownerOf(dir)).toEqual({ owner: agentPath('ana') });
+      expect(manager.ownerOf(`${dir}/`)).toEqual({ owner: agentPath('ana') });
+      // Beneath it, beside it, and the agent's own folder are NOT working
+      // copies: a prefix is never an identity.
+      expect(manager.ownerOf(path.join(dir, 'src'))).toBeNull();
+      expect(manager.ownerOf(store.repoPath(ROOM_ID))).toBeNull();
+      expect(manager.ownerOf(agentPath('ana'))).toBeNull();
+    });
+
+    it('vouches for nobody in a working copy it did not hand out', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      const stray = path.join(store.worktreesPath(ROOM_ID), 'ana-00000000');
+      await mkdir(stray, { recursive: true });
+
+      // A working copy by location, so it is some agent's; nothing says whose.
+      expect(manager.ownerOf(stray)).toEqual({ owner: null });
+    });
+
+    it('vouches for nobody after a restart until the tree is asked for again', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await worktreeFor('ana');
+
+      // A fresh instance over the same disk is a restarted server.
+      manager = makeManager();
+      expect(manager.ownerOf(dir)).toEqual({ owner: null });
+
+      await worktreeFor('ana');
+      expect(manager.ownerOf(dir)).toEqual({ owner: agentPath('ana') });
+    });
+
+    it('poisons a directory two agents were handed, so it acts as neither', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      // Force the collision a digest-and-name clash would cause.
+      vi.spyOn(RoomWorktreeManager, 'slugFor').mockReturnValue('ana-deadbeef');
+
+      const [first, second] = await Promise.all([
+        manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana'),
+        manager.ensureWorktree(ROOM_ID, agentPath('ana-two'), 'Ana'),
+      ]);
+
+      expect(first.path).toBe(second.path);
+      expect(manager.ownerOf(first.path)).toEqual({ owner: null });
+      // And asking again as the first agent does not un-poison it.
+      await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
+      expect(manager.ownerOf(first.path)).toEqual({ owner: null });
+    });
+
+    it('forgets a tree the reap removed', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await ancientWorktree('ana');
+      expect(manager.ownerOf(dir)).toEqual({ owner: agentPath('ana') });
+
+      const swept = await manager.reapRoom(ROOM_ID);
+
+      expect(swept.reaped).toEqual([path.basename(dir)]);
+      expect(manager.ownerOf(dir)).toEqual({ owner: null });
+    });
+  });
+
   describe('worktreeStatus', () => {
     it('is null for a worktree that was never made', async () => {
       await service.enable(ROOM_ID, OPERATOR);

@@ -27,6 +27,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
+  setWorkingCopyOwnerPort,
 } from '../../../core/agent-identity/index.js';
 import { CodexRuntime } from '../codex-runtime.js';
 import { CodexThreadMap } from '../thread-map.js';
@@ -706,7 +707,7 @@ describe('the dorkos tool server on a Codex turn', () => {
 
     it('answers FALSE for a directory hosting no registered agent — the mute this closes', async () => {
       // **The divergence, and it was a silent mute rather than an untidy room.**
-      // `sendMessage` gates the injection on `meshAgent ? cwd : undefined`, so a
+      // `sendMessage` gates the injection on `meshAgent ? agentPath : undefined`, so a
       // `getByPath` miss withholds the entry. `carriesRoomTools` was handing the
       // posture a bare `cwd` string, which made the `'no-agent'` answer
       // structurally unreachable from that caller — so it said `true` for a
@@ -760,6 +761,81 @@ describe('the dorkos tool server on a Codex turn', () => {
         asserted += 1;
       }
       expect(asserted).toBe(3);
+    });
+  });
+
+  describe('a turn in a room with files (DOR-2091)', () => {
+    // Such a turn stands in the agent's WORKTREE, which hosts no registered
+    // agent. The injection gate used to look that directory up exactly, so a
+    // codex agent in a room with files got no `dorkos` server and no token —
+    // it could read the room and never answer it. The worktree now anchors to
+    // the agent the worktree manager handed it to, and only for a turn that
+    // is for that agent. Seeded: reverting the gate to `getByPath(cwd)` reddens
+    // the first case; dropping the room-turn cross-check reddens the second.
+    let worktree: string;
+
+    beforeEach(async () => {
+      worktree = path.join(agentDir, 'rooms', '01ROOM', 'worktrees', 'researcher-1a2b3c4d');
+      await mkdir(worktree, { recursive: true });
+      setWorkingCopyOwnerPort({
+        ownerOf: (dir) =>
+          path.dirname(dir) === path.dirname(worktree)
+            ? { owner: dir === worktree ? agentDir : null }
+            : null,
+      });
+    });
+
+    afterEach(() => {
+      setWorkingCopyOwnerPort(undefined);
+    });
+
+    /** A room turn for `agentPath`, standing in `cwd`. */
+    function roomTurn(cwd: string, agentPath: string) {
+      return {
+        cwd,
+        roomTurn: { roomId: '01ROOM', authorId: 'author-1', turnId: 'turn-1', cwd, agentPath },
+      };
+    }
+
+    it("gives the agent its dorkos server and token, bound to the AGENT's identity", async () => {
+      const principals = connectorPort();
+      const runtime = makeRuntime({ runtimeTools: principals });
+
+      await drain(runtime.sendMessage('s1', 'hello', roomTurn(worktree, agentDir)));
+
+      expect(lastMcpServers()['dorkos']?.['url']).toBe('http://127.0.0.1:4341/agent-mcp');
+      const env = (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env;
+      expect(env?.['DORKOS_AGENT_TOKEN']).toEqual(expect.any(String));
+      // Identity is the agent; where the turn stands is still the worktree.
+      expect(principals.openTurn).toHaveBeenCalledWith(
+        expect.objectContaining({ agentPath: agentDir, canonicalCwd: worktree }),
+        expect.anything()
+      );
+      expect(await runtime.carriesRoomTools({ cwd: worktree, agentPath: agentDir })).toBe(true);
+    });
+
+    it("gives a turn for ANOTHER agent nothing in this agent's worktree", async () => {
+      const principals = connectorPort();
+      const runtime = makeRuntime({ runtimeTools: principals });
+      const someoneElse = path.join(agentDir, '..', 'someone-else');
+
+      await drain(runtime.sendMessage('s1', 'hello', roomTurn(worktree, someoneElse)));
+
+      expect(lastMcpServers()['dorkos']).toBeUndefined();
+      const env = (sdkMocks.constructorOptions.at(-1) as { env?: Record<string, string> }).env;
+      expect(env?.['DORKOS_AGENT_TOKEN']).toBeUndefined();
+      expect(principals.openTurn).not.toHaveBeenCalled();
+      expect(await runtime.carriesRoomTools({ cwd: worktree, agentPath: someoneElse })).toBe(false);
+    });
+
+    it('gives a working copy nobody vouches for nothing either', async () => {
+      const stray = path.join(path.dirname(worktree), 'researcher-00000000');
+      await mkdir(stray, { recursive: true });
+      const runtime = makeRuntime();
+
+      await drain(runtime.sendMessage('s1', 'hello', roomTurn(stray, agentDir)));
+
+      expect(lastMcpServers()['dorkos']).toBeUndefined();
     });
   });
 });

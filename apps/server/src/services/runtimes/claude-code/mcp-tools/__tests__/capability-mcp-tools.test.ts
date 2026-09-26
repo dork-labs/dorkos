@@ -26,6 +26,7 @@ import {
   initAgentIdentityService,
   resetAgentIdentityService,
   resolveAgentTokenEnv,
+  resolveIdentityAnchor,
 } from '../../../../core/agent-identity/index.js';
 import { capabilityMcpTools } from '../capability-mcp-tools.js';
 
@@ -66,7 +67,7 @@ async function callTool(registry: CapabilityRegistry, agentPath: string | undefi
   const [projected] = capabilityMcpTools(
     registry,
     'in-session',
-    createInSessionContextResolver(agentPath)
+    createInSessionContextResolver(resolveIdentityAnchor(agentPath))
   );
   return (
     projected as unknown as { handler: (args: unknown, extra: unknown) => Promise<unknown> }

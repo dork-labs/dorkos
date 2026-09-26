@@ -187,7 +187,10 @@ export class OpenCodeMcpManager {
    * headers; the loopback listener derives identity and session facts from the
    * verified binding.
    *
-   * @param cwd - The directory being reconciled.
+   * @param cwd - The agent lookup key — the ANCHORED agent path the runtime
+   *   resolved for this turn (DOR-2091), which is the agent's own directory even
+   *   when the turn stands in its room worktree. Looked up exactly: the prefix
+   *   of a path is never an identity.
    */
   private async resolveDorkosServer(
     cwd: string,
@@ -291,6 +294,10 @@ export class OpenCodeMcpManager {
    *
    * @param client - The live sidecar client for this turn.
    * @param cwd - The session/agent working directory (the `directory` scope).
+   * @param connectorTools - This turn's runtime binding, when it has one.
+   * @param agentCwd - Whose managed servers and `dorkos` entry this turn gets:
+   *   the agent path the runtime anchored the turn to (DOR-2091), defaulting to
+   *   `cwd`.
    */
   async ensureManaged(
     client: OpencodeClient,

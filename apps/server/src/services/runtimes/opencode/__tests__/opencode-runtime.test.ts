@@ -20,6 +20,7 @@ import {
 } from '../../../session/session-state-projector.js';
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import { OpenCodeRuntime } from '../opencode-runtime.js';
+import { setWorkingCopyOwnerPort } from '../../../core/agent-identity/index.js';
 import { OPENCODE_CAPABILITIES } from '../runtime-constants.js';
 import {
   checkOpenCodeDependencies,
@@ -2730,6 +2731,73 @@ describe('OpenCodeRuntime', () => {
       } finally {
         fixture.close();
       }
+    });
+
+    describe('in a room with files (DOR-2091)', () => {
+      // The turn stands in the agent's WORKTREE, which hosts no registered
+      // agent. Looked up exactly, it got no binding and no `dorkos` server, so
+      // an opencode agent in a room with files could never answer. The worktree
+      // anchors to the agent the manager handed it to, and only for a turn for
+      // that agent. Seeded: reverting to `getByPath(cwd)` reddens the first;
+      // dropping the room-turn cross-check reddens the second.
+      const WORKTREE = path.join(path.dirname(DIRECTORY), 'rooms', '01ROOM', 'worktrees', 'a-1a2b');
+
+      beforeEach(() => {
+        setWorkingCopyOwnerPort({
+          ownerOf: (dir) =>
+            path.dirname(dir) === path.dirname(WORKTREE)
+              ? { owner: dir === WORKTREE ? DIRECTORY : null }
+              : null,
+        });
+      });
+
+      afterEach(() => {
+        setWorkingCopyOwnerPort(undefined);
+      });
+
+      /** Run one room turn for `agentPath` standing in the worktree, to completion. */
+      async function roomTurnFor(harness: ReturnType<typeof makeRuntime>, agentPath: string) {
+        const { finished } = consume(
+          harness.runtime.sendMessage(nextSessionId(), 'hello', {
+            cwd: WORKTREE,
+            roomTurn: {
+              roomId: '01ROOM',
+              authorId: 'author-1',
+              turnId: 'turn-1',
+              cwd: WORKTREE,
+              agentPath,
+            },
+          })
+        );
+        const connection = await openTurn(harness);
+        for (const event of opencodeSimpleTurn(OC_SESSION_A, 'done')) {
+          connection.push(globalEvent(DIRECTORY, event));
+        }
+        await finished;
+      }
+
+      it('binds the turn to the AGENT and asks for its dorkos server', async () => {
+        const harness = makeRuntime();
+        const principals = enableConnectorTools(harness);
+
+        await roomTurnFor(harness, DIRECTORY);
+
+        expect(principals.openTurn).toHaveBeenCalledWith(
+          expect.objectContaining({ agentPath: DIRECTORY }),
+          expect.anything()
+        );
+        expect(resolveDorkosMcpInjection).toHaveBeenCalledWith(DIRECTORY, expect.anything());
+      });
+
+      it("gives a turn for ANOTHER agent no binding in this agent's worktree", async () => {
+        const harness = makeRuntime();
+        const principals = enableConnectorTools(harness);
+
+        await roomTurnFor(harness, '/agents/someone-else');
+
+        expect(principals.openTurn).not.toHaveBeenCalled();
+        expect(resolveDorkosMcpInjection).not.toHaveBeenCalledWith(DIRECTORY, expect.anything());
+      });
     });
   });
 });

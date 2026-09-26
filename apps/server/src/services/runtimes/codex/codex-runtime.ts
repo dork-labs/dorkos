@@ -75,7 +75,11 @@ import { SessionLockManager } from '../../session/session-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { buildAgentContextAppend } from '../shared/agent-context.js';
-import { resolveAgentTokenEnv } from '../../core/agent-identity/index.js';
+import {
+  anchorPath,
+  resolveAgentTokenEnv,
+  resolveIdentityAnchor,
+} from '../../core/agent-identity/index.js';
 import { checkCodexDependencies, resolveCodexBinaryPath } from './check-dependencies.js';
 import { createCodexEventContext, mapCodexThread } from './event-mapper.js';
 import { captureCodexMedia } from './media-capture.js';
@@ -574,9 +578,14 @@ export class CodexRuntime implements AgentRuntime {
     // carries the first turn's metadata with the row instead.
     this.persistSessionMetadata(sessionId);
 
-    // Does this working directory host a registered agent? Everything below
-    // that mints, injects or names a tool is gated on the answer.
-    const meshAgent = this.meshCore?.getByPath(cwd);
+    // Which registered agent does this turn act as? Everything below that
+    // mints, injects or names a tool is gated on the answer. Anchored rather
+    // than read off `cwd` (DOR-2091): a turn in a room with files stands in the
+    // agent's worktree, which hosts no agent, and the anchor is the agent the
+    // worktree was handed to — and nobody when a room names a different agent.
+    // `cwd` stays where the thread runs; `agentPath` is whose identity it has.
+    const agentPath = this.identityPathFor(cwd, opts?.roomTurn?.agentPath);
+    const meshAgent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
 
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
@@ -586,12 +595,12 @@ export class CodexRuntime implements AgentRuntime {
     let connectorRuntimeFailed = false;
     try {
       let connectorTools: ConnectorRuntimeMcpInjection | null = null;
-      if (this.connectorRuntimeTools && meshAgent) {
+      if (this.connectorRuntimeTools && meshAgent && agentPath) {
         connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
           {
             runtime: this.type,
             canonicalSessionId: sessionId,
-            agentPath: cwd,
+            agentPath,
             canonicalCwd: cwd,
             signal: controller.signal,
           },
@@ -631,7 +640,7 @@ export class CodexRuntime implements AgentRuntime {
       // is replayed onto the agent's author row by every room tool it calls, so
       // the slug there renames a live agent mid-conversation (DOR-1264).
       const agentTokenEnv = await resolveAgentTokenEnv(
-        meshAgent ? cwd : undefined,
+        meshAgent ? agentPath : undefined,
         meshAgent?.displayName ?? meshAgent?.name
       );
 
@@ -647,17 +656,17 @@ export class CodexRuntime implements AgentRuntime {
       // Resolved BEFORE the managed servers because it decides whether the name
       // `dorkos` is reserved against them this turn — see below.
       const dorkosTools = await resolveDorkosMcpInjection(
-        meshAgent ? cwd : undefined,
+        meshAgent ? agentPath : undefined,
         connectorTools
       );
 
-      // The agent's ENABLED managed MCP servers for this cwd, injected inline via
-      // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Resolved
-      // at turn time because the resolver keys on the session cwd; a non-agent
-      // session has no manifest and contributes none.
+      // The agent's ENABLED managed MCP servers, injected inline via
+      // `config.mcp_servers` (spec `mcp-server-management` §6, DOR-892). Keyed
+      // on the agent the turn acts as — its own folder even when it stands in a
+      // room worktree (DOR-2091) — and a non-agent session contributes none.
       const managedMcpServers = resolveManagedMcpServers(
         this.managedMcpServers,
-        cwd,
+        agentPath ?? cwd,
         dorkosTools !== null
       );
 
@@ -708,7 +717,9 @@ export class CodexRuntime implements AgentRuntime {
         ? [
             neutralContextSelection.text,
             buildRoomToolsBlock(CODEX_DORKOS_TOOL_PREFIX),
-            renderBlockedAreaLines((await resolveToolVisibilityFor(cwd)).blockedAreas),
+            // The agent's own Blocked areas, read where its manifest lives —
+            // the listener hides the same areas keyed on the same anchor.
+            renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath ?? cwd)).blockedAreas),
           ]
             .filter(Boolean)
             .join('\n\n')
@@ -1144,7 +1155,7 @@ export class CodexRuntime implements AgentRuntime {
    *
    * **It asks the question the exact way the injection site asks it**, and the
    * `meshCore` hop is the part that has to match rather than merely resemble.
-   * `sendMessage` gates on `meshAgent ? cwd : undefined`, so a directory that
+   * `sendMessage` gates on `meshAgent ? agentPath : undefined`, so a directory that
    * hosts no registered agent — an absent registry, or a `getByPath` miss —
    * withholds the entry. Handing this a bare `cwd` string instead made the
    * `'no-agent'` answer structurally unreachable from here: the posture said
@@ -1165,13 +1176,30 @@ export class CodexRuntime implements AgentRuntime {
    * than a claim that they are harmless.
    *
    * @param session.cwd - The session's working directory.
+   * @param session.agentPath - The agent a room turn is for, when a room asks;
+   *   the same cross-check `sendMessage` applies (DOR-2091).
    * @returns Whether the `dorkos` entry is configured for it.
    */
-  async carriesRoomTools(session: { cwd: string }): Promise<boolean> {
+  async carriesRoomTools(session: { cwd: string; agentPath?: string }): Promise<boolean> {
+    const agentPath = this.identityPathFor(session.cwd, session.agentPath);
     return dorkosToolsPosture(
-      this.meshCore?.getByPath(session.cwd) ? session.cwd : undefined,
+      agentPath && this.meshCore?.getByPath(agentPath) ? agentPath : undefined,
       this.connectorRuntimeTools !== undefined
     ).wired;
+  }
+
+  /**
+   * The directory whose identity a turn standing in `cwd` carries, or
+   * `undefined` when it carries none (DOR-2091).
+   *
+   * One helper for {@link sendMessage} and {@link carriesRoomTools}, so the
+   * posture this reports and the injection the turn makes read one answer.
+   *
+   * @param cwd - Where the turn stands.
+   * @param forAgent - The agent a room turn is for, when a room dispatched it.
+   */
+  private identityPathFor(cwd: string, forAgent: string | undefined): string | undefined {
+    return anchorPath(resolveIdentityAnchor(cwd, forAgent));
   }
 
   /**

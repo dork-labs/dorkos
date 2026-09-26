@@ -10,6 +10,11 @@ import { jsonContent } from './types.js';
 import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
 import type { RelayBudget } from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../../lib/logger.js';
+import {
+  anchorPath,
+  resolveIdentityAnchor,
+  type IdentityAnchor,
+} from '../../../core/agent-identity/index.js';
 
 /** Sender identity injected on the external `/mcp` surface (no per-session context). */
 export const EXTERNAL_MCP_SENDER = 'relay.external.mcp';
@@ -61,12 +66,27 @@ export interface SenderIdentity {
  *   the question the label exists to answer. `${basename}-${hash}` keeps
  *   both: legible AND distinct even when two projects share a leaf name.
  *
+ * **The registry is asked about the session's identity ANCHOR, not its
+ * directory** (DOR-2091). A room turn in a room with files stands in the agent's
+ * worktree, which hosts no agent; the anchor is the agent that worktree was
+ * handed to. A REFUSED anchor — a working copy nobody can vouch for, or one that
+ * is not the turn's agent's — asks the registry nothing and gets the non-agent
+ * session subject, so it can neither send as an agent nor as anybody's
+ * integration owner.
+ *
  * @param deps - Tool dependencies, for the Mesh registry lookup
  * @param cwd - The session's working directory, when known
+ * @param anchor - Whose identity the session carries; defaults to the anchor of
+ *   `cwd` itself
  */
-export function resolveSenderIdentity(deps: McpToolDeps, cwd: string | undefined): SenderIdentity {
-  if (cwd && deps.meshCore) {
-    const identity = deps.meshCore.getSubjectByPath(cwd);
+export function resolveSenderIdentity(
+  deps: McpToolDeps,
+  cwd: string | undefined,
+  anchor: IdentityAnchor = resolveIdentityAnchor(cwd)
+): SenderIdentity {
+  const agentPath = anchorPath(anchor);
+  if (agentPath && deps.meshCore) {
+    const identity = deps.meshCore.getSubjectByPath(agentPath);
     if (identity) return identity;
   }
   return { subject: cwd ? `relay.session.${sessionSubjectSegment(cwd)}` : EXTERNAL_MCP_SENDER };

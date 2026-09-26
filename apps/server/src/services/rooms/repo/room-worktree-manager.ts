@@ -620,6 +620,26 @@ export class RoomWorktreeManager {
   private readonly packChecked = new Set<string>();
 
   /**
+   * Which agent each working copy this process handed out belongs to, keyed by
+   * its resolved directory (DOR-2091).
+   *
+   * **The record that lets a session standing in a worktree act as its agent.**
+   * A worktree's name ends in a 32-bit digest of its agent's path, and a digest
+   * is not a thing to authenticate by — there is, by design, no way back from a
+   * directory to its owner (see {@link RoomWorktreeManagerDeps.busyAgentPaths}).
+   * So the answer is recorded at the one moment it is a fact: when
+   * {@link ensureWorktree} hands the directory to an agent. Every room turn and
+   * every app-resumed room session asks for its directory that way before it
+   * launches, so a restart empties this map and the next turn refills it before
+   * anything needs to read it.
+   *
+   * `null` is a POISONED entry: two different agents were handed one directory,
+   * which only a digest-and-name collision can cause. Neither may act as the
+   * other, so the directory vouches for nobody until the reap removes it.
+   */
+  private readonly owners = new Map<string, string | null>();
+
+  /**
    * Bind the manager to one install's store and settings.
    *
    * @param deps - The seams above.
@@ -728,13 +748,71 @@ export class RoomWorktreeManager {
     // the lookup and the insert. Every path — reuse, heal, create — runs inside
     // this one promise.
     const key = `${roomId}/${slug}`;
-    const inFlight = this.creating.get(key);
-    if (inFlight) return inFlight;
-    const resolution = this.resolveWorktree(roomId, dir, slug, branch).finally(() => {
-      this.creating.delete(key);
+    let resolution = this.creating.get(key);
+    if (!resolution) {
+      resolution = this.resolveWorktree(roomId, dir, slug, branch).finally(() => {
+        this.creating.delete(key);
+      });
+      this.creating.set(key, resolution);
+    }
+    const handle = await resolution;
+    // Recorded by EVERY caller, the one that shared an in-flight resolution
+    // included: that caller is exactly the one a slug collision would put here
+    // on behalf of a different agent, and the collision has to be seen.
+    this.recordOwner(handle.path, agentPath);
+    return handle;
+  }
+
+  /**
+   * Whether `dir` is one of this install's room working copies, and whose.
+   *
+   * The rooms domain's half of `resolveIdentityAnchor`
+   * (`core/agent-identity/identity-anchor.ts`, DOR-2091). A working copy is
+   * recognized by WHERE it is — a direct child of some room's `worktrees/`
+   * directory, as the store lays them out — and that recognition only ever
+   * narrows: it decides that a directory is some agent's, never which. Which
+   * agent is read off the record {@link ensureWorktree} wrote, and a working
+   * copy with no record answers `owner: null`, which the anchor refuses.
+   *
+   * @param dir - An absolute directory.
+   * @returns `null` when `dir` is not a room working-copy location; otherwise
+   *   the agent path it was handed to, or `null` when nothing vouches for one.
+   */
+  ownerOf(dir: string): { owner: string | null } | null {
+    const resolved = path.resolve(dir);
+    const parent = path.dirname(resolved);
+    if (path.basename(parent) !== 'worktrees') return null;
+    let worktreesRoot: string;
+    try {
+      worktreesRoot = path.resolve(
+        this.deps.store.worktreesPath(path.basename(path.dirname(parent)))
+      );
+    } catch {
+      // Not a room id the store would ever have made, so not a room's tree.
+      return null;
+    }
+    if (worktreesRoot !== parent) return null;
+    return { owner: this.owners.get(resolved) ?? null };
+  }
+
+  /**
+   * Remember that `dir` was handed to `agentPath`, poisoning it on a conflict.
+   *
+   * @param dir - The working copy handed out.
+   * @param agentPath - The agent it was handed to.
+   */
+  private recordOwner(dir: string, agentPath: string): void {
+    const key = path.resolve(dir);
+    const existing = this.owners.get(key);
+    if (existing === undefined) {
+      this.owners.set(key, agentPath);
+      return;
+    }
+    if (existing === null || path.resolve(existing) === path.resolve(agentPath)) return;
+    this.owners.set(key, null);
+    logger.warn('[rooms] two agents were handed one room worktree; it now acts as neither', {
+      worktree: path.basename(key),
     });
-    this.creating.set(key, resolution);
-    return resolution;
   }
 
   /**
@@ -1079,6 +1157,8 @@ export class RoomWorktreeManager {
         // A DIFFERENT half of the question from `branch -d` below — see the
         // module doc on why the gates are not interchangeable.
         await removeWorktree(repoDir, dir, ceiling);
+        // Gone, so it vouches for nobody. A tree made here later records afresh.
+        this.owners.delete(path.resolve(dir));
       } catch (err) {
         logger.warn('[rooms] git would not remove an idle room worktree; keeping it', {
           roomId,
