@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./account-usage": {
+      "types": "./src/account-usage.ts",
+      "default": "./dist/account-usage.js"
+    },
     "./capabilities": {
       "types": "./src/capabilities.ts",
       "default": "./dist/capabilities.js"

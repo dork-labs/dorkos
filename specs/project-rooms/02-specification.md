@@ -14,6 +14,15 @@ follow-up work outside this programme.
 **Tracker:** [DOR-1588](https://linear.app/dorkspace/issue/DOR-1588) - Project Rooms umbrella
 **Prerequisite:** `specs/agent-workspace-binding/` (implemented as Phase 0 of this programme)
 
+> **Amended 2026-09-26 by [`specs/agent-home-desk/`](../agent-home-desk/02-specification.md)** (ADRs
+> 260926-172251, 260926-180223, 260926-172252, 260926-180308), proposed at the time of writing. A room turn runs in the agent's own
+> home, with its worktree granted as a folder it writes to and `repo/` granted read-only; §3.5 rung 2
+> is retired. The server fast-forwards a clean worktree with nothing ahead of `main` at turn start
+> (§3.4's "the server never mutates a worktree" is retired for that case). Skills committed to a room
+> repo are no longer discovered (§3.8). People gain every file operation (§3.10). Read §3.4, §3.5,
+> §3.7, §3.8 and §3.10 below as the design that shipped in 2026-08, and the superseding spec for the
+> current one.
+
 ## Overview
 
 A room gains a working space of its own: a home directory under the DorkOS data dir, an **owned git repo** that is the room's integration tree, and a `ROOM.md` that carries its conventions to every participating agent. Agents collaborate on the repo the way agents already collaborate on this repository — one clean main, one standing worktree per (room, agent), work merged back through a serialized, server-mediated merge. A unified file explorer serves agent sessions and rooms alike.
@@ -115,6 +124,9 @@ operating instructions, never a replacement.
 
 ### 3.5 Turn cwd resolution
 
+> **Retired rung (2026-09-26):** rung 2 below is removed by `specs/agent-home-desk/` §5.1. A room
+> turn's cwd is the agent's home in every room.
+
 The agent-workspace-binding resolver gains one rung. Final chain, first match wins:
 
 1. explicit `cwd` on the request
@@ -155,6 +167,9 @@ History is append-only: no force-push, no reset verbs exist on any surface.
 - Sync is plain `git merge main` in the agent's worktree — deliberately not a tool.
 
 ### 3.8 Skills and commands
+
+> **Amended (2026-09-26):** repo-carried skills are no longer discovered by any harness, and
+> nothing is projected into worktrees (`specs/agent-home-desk/` §5.5, §5.8, I11).
 
 Project rooms: **native**. The repo may carry `.agents/skills/` and commands like any project; the worktree cwd makes every harness discover them normally. Harness projection runs in each worktree at create and after the agent's sync (Q5). Repo-carried skills are member-authored content — covered by §3.11's trust posture.
 

@@ -13,6 +13,15 @@ superseded-by: null
 
 Accepted. Written after the fact on 2026-07-26; the decision was made in code during DOR-447.
 
+**Amended by
+[260926-172251](260926-172251-an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy.md)
+(proposed); this record stays `accepted`.** The working directory remains the lookup key, and no
+token is presented, but it is resolved to the agent's registered **home** before anything is read: a
+git worktree of that home, or a `managed` workspace it owns, resolves to the home, and nothing
+identity-bearing is read from the working directory itself. The sentence "Anything running in that
+session's working directory is that agent" now reads "anything running in that agent's home or a
+private copy of it". The trust reasoning, the expiry carve-out and the memoization all stand.
+
 ## Context
 
 Agent identity is delivered as a bearer token: the runtime env seam puts `DORKOS_AGENT_TOKEN` into a spawned session's process env, and surfaces that receive it over the wire resolve it through an `X-DorkOS-Agent` header. That works for the CLI, the HTTP API, and the external MCP server, because in every one of those a caller arrives from outside and has to say who it is.

@@ -210,6 +210,28 @@ export function resolveLaunchAccountRoot(
 }
 
 /**
+ * Whether a registry id names a registered Claude account — the question
+ * {@link resolveLaunchAccountRoot} asks before it falls through a rung.
+ *
+ * Asked ahead of a launch by a caller that has to SAY the id will not be used
+ * (a scheduled run's Activity entry, DOR-2384), so it reads the same registry
+ * the ladder reads and never throws.
+ *
+ * @param id - The registry id to look up.
+ * @param config - Config reader (defaults to the module singleton).
+ * @returns True or false, or `undefined` when the registry could not be read —
+ *   "nobody can say", which a caller must not report as "not registered".
+ */
+export function isRegisteredClaudeAccount(
+  id: string,
+  config: ConfigReader = configManager
+): boolean | undefined {
+  const { accounts, unavailable } = readClaudeCodeConfig(config);
+  if (unavailable) return undefined;
+  return accounts.some((account) => account.id === id);
+}
+
+/**
  * Resolve every Claude root DorkOS should enumerate — what listing and search
  * read across, as opposed to the single root a new session runs in.
  *

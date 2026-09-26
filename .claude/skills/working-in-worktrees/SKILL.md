@@ -167,6 +167,8 @@ When you've already committed on a shared `main` that has diverged from `origin/
 
 Better still: start the work in a worktree from the outset (the steps above, minus the cherry-pick) so the divergence never happens.
 
+**Local `main` keeps itself level.** When a session starts (not on resume, `/clear` or compaction), `.claude/hooks/sync-main-checkout.sh` fast-forwards the main checkout's `main` to `origin/main` when it is behind and has no tracked changes, and prints one `[Harness]` line instead when it is dirty (move that work to a worktree) or diverged (land it with the steps above). It never moves a tree with tracked changes, and untracked files it would overwrite stop the fast-forward. Pause it per clone with `git config dorkos.mainSync warn` (report only) or `off`; `git config --unset dorkos.mainSync` restores it.
+
 ## Best Practices
 
 - **Key by unit of work, not session.** `spec-<slug>` or `DOR-123` — a workspace outlives any one session and can be reattached. Use `DOR-123` only when the branch will **complete** that ticket; merging a branch whose name carries the id closes the issue (step 3).

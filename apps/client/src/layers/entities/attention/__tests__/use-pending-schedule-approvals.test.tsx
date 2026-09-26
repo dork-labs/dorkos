@@ -37,6 +37,7 @@ function task(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: `/tmp/${overrides.id}/SKILL.md`,
     createdAt: '2026-08-19T09:00:00.000Z',

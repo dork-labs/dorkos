@@ -1,0 +1,95 @@
+<style>
+  .card-image{display:block!important;height:auto!important;min-height:0!important;aspect-ratio:auto!important;overflow:visible!important}
+  .row{display:flex;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid #eee}
+  .logo{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:14px;flex:none}
+  .nm{font-weight:600;font-size:14px}
+  .ds{font-size:12px;color:#777}
+  .btn{margin-left:auto;font-size:12px;padding:6px 12px;border-radius:7px;border:1px solid #ddd;background:#fff;white-space:nowrap}
+  .btn.dark{background:#111;color:#fff;border-color:#111}
+  .ok{margin-left:auto;font-size:12px;color:#1a7f37;white-space:nowrap}
+  .search{margin:12px 14px;padding:9px 12px;border:1px solid #ddd;border-radius:8px;color:#999;font-size:13px}
+  .tag{font-size:10px;padding:2px 6px;border-radius:5px;background:#f1f1f1;color:#666;margin-left:6px;font-weight:500}
+  .sec{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#999;padding:14px 14px 4px}
+  .tabs{display:flex;gap:4px;margin:12px 14px 0;background:#f3f3f3;border-radius:8px;padding:3px;width:max-content}
+  .tabs span{font-size:12px;padding:5px 12px;border-radius:6px;color:#666}
+  .tabs span.on{background:#fff;color:#111;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+  .h1{font-size:18px;font-weight:700;padding:16px 14px 0}
+  .sub{font-size:13px;color:#777;padding:2px 14px 0}
+  .journey{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 20px}
+  .step{flex:1;min-width:150px;border:1px solid #e5e5e5;border-radius:10px;padding:12px;background:#fafafa}
+  .step b{display:block;font-size:13px;margin-bottom:4px}
+  .step span{font-size:12px;color:#666}
+  .bad{border:1px solid #f0c9c9;background:#fff6f6;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px}
+  .bad li{margin:3px 0}
+</style>
+
+<h2>Step 1 — What is this page, in one sentence?</h2>
+<p class="subtitle">Before any pixels: what does a person come here to do?</p>
+
+<h3>The person's journey</h3>
+<div class="journey">
+  <div class="step"><b>1. "I want my agent to use my Gmail."</b><span>Or: "I want to text my agent on Telegram."</span></div>
+  <div class="step"><b>2. Find it</b><span>Scan a list or type a name. One place.</span></div>
+  <div class="step"><b>3. Connect</b><span>One button. Sign in on Google's page. Back.</span></div>
+  <div class="step"><b>4. Pick agents</b><span>"Which agents can use this?" One question.</span></div>
+  <div class="step"><b>5. Forget about it</b><span>It just works. The page only speaks up if something breaks.</span></div>
+</div>
+
+<div class="bad">
+  <b>Today's page asks you to learn all of this first:</b>
+  <ul>
+    <li>Messaging vs Accounts vs Communities (3 regions, 6 stacked sections)</li>
+    <li>Managed vs your-own-key, Composio vs Nango</li>
+    <li>"internal", "Serving 35 agents · Chat + Tasks", "HMAC-signed", "installation"</li>
+    <li>Session limits and timeouts, sitting in the middle of the page</li>
+    <li>And the search for "Gmail" says <i>No matching services</i>, because Composio isn't set up — and never says so</li>
+  </ul>
+</div>
+
+<h3>The big choice: one list, or two?</h3>
+<p class="subtitle">Everything here answers the same question — <b>"which agents get this?"</b> Gmail: which agents can use it. Telegram: which agent answers. So they can share one list. Or we can split them.</p>
+
+<div class="cards">
+  <div class="card" data-choice="one-list" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fff;padding:0;text-align:left">
+      <div class="h1">Connections</div>
+      <div class="sub">Apps your agents can use, and places you can reach them.</div>
+      <div class="search">🔍  Search 1,000+ apps</div>
+      <div class="sec">Connected</div>
+      <div class="row"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">you@gmail.com · 2 agents</div></div><div class="ok">● On</div></div>
+      <div class="row"><div class="logo" style="background:#229ED9">✈</div><div><div class="nm">Telegram <span class="tag">Chat</span></div><div class="ds">@lifeos_bot · answers as DorkBot</div></div><div class="ok">● On</div></div>
+      <div class="sec">Popular</div>
+      <div class="row"><div class="logo" style="background:#4285f4">31</div><div><div class="nm">Google Calendar</div><div class="ds">Read and add events</div></div><div class="btn dark">Connect</div></div>
+      <div class="row"><div class="logo" style="background:#4a154b">#</div><div><div class="nm">Slack <span class="tag">Chat</span></div><div class="ds">Talk to agents in Slack</div></div><div class="btn dark">Connect</div></div>
+      <div class="row"><div class="logo" style="background:#000">N</div><div><div class="nm">Notion</div><div class="ds">Read and write pages</div></div><div class="btn dark">Connect</div></div>
+    </div>
+    <div class="card-body">
+      <h3>A · One list (recommended)</h3>
+      <p>Like Composio, Notion, Perplexity. Your connected things on top, everything else below. Chat apps (Telegram, Slack) are just rows with a small "Chat" tag. Nothing to learn.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="two-tabs" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#fff;padding:0;text-align:left">
+      <div class="h1">Connections</div>
+      <div class="tabs"><span class="on">Apps</span><span>Chat</span></div>
+      <div class="sub" style="padding-top:8px">Apps your agents can use for you.</div>
+      <div class="search">🔍  Search 1,000+ apps</div>
+      <div class="sec">Connected</div>
+      <div class="row"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">you@gmail.com · 2 agents</div></div><div class="ok">● On</div></div>
+      <div class="sec">Popular</div>
+      <div class="row"><div class="logo" style="background:#4285f4">31</div><div><div class="nm">Google Calendar</div><div class="ds">Read and add events</div></div><div class="btn dark">Connect</div></div>
+      <div class="row"><div class="logo" style="background:#000">N</div><div><div class="nm">Notion</div><div class="ds">Read and write pages</div></div><div class="btn dark">Connect</div></div>
+      <div class="row"><div class="logo" style="background:#181717">⌥</div><div><div class="nm">GitHub</div><div class="ds">Issues and pull requests</div></div><div class="btn dark">Connect</div></div>
+    </div>
+    <div class="card-body">
+      <h3>B · Two tabs: Apps and Chat</h3>
+      <p>"Apps" = things agents act on (Gmail). "Chat" = places you talk to agents (Telegram, Slack). Clearer split, but one more idea to learn, and Slack lives in both worlds.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px">
+  <p class="label">Either way, these leave the page</p>
+  <p style="font-size:13px;color:#555">Composio / Nango keys → Settings › Advanced. Session limits &amp; timeouts → Settings. Communities → its own place (it's a different idea). Agent requests → your Inbox, where requests already live.</p>
+</div>

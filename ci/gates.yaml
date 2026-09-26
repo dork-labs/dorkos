@@ -256,7 +256,7 @@ gates:
     purpose: Runs Prettier over the files changed in the turn, once, at turn end.
   - id: claude.SessionStart.session-maintenance
     source: .claude/settings.json
-    purpose: Prints short nags at session start about ADR drift, backlog and stale state.
+    purpose: Prints short nags at session start about ADR drift, backlog and stale state, and fast-forwards the main checkout's clean main to origin/main on startup.
 
   # --- ruleset 19893973 "main: merge queue" ---
   - id: ruleset.merge_queue
