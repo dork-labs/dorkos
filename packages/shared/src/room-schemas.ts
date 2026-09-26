@@ -222,6 +222,15 @@ export const SESSION_POINTER_NOTICE_CODES: readonly RoomNoticeCode[] = [
   'awaiting_approval',
 ];
 
+/**
+ * The words in a session-pointer notice that send the reader there — "Open
+ * Ana's session". A client turns exactly these words into the link, so the line
+ * says it once rather than once as a sentence and again as a button. The
+ * server's notice-copy test holds every notice in
+ * {@link SESSION_POINTER_NOTICE_CODES} to containing them.
+ */
+export const SESSION_POINTER_PHRASE = /Open .+?'s session/;
+
 // === Authors ===
 
 /**

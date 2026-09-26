@@ -147,7 +147,9 @@ describe('RoomMessage — a notice that sends you to a session links to it', () 
     // The path AND the id: an id without `/session` in front of it is the
     // other half of what DOR-2077 was filed about.
     expect(link).toHaveAttribute('href', '/session?session=sess-kai');
-    expect(link).toHaveTextContent('Open session');
+    // The notice's own words are the link, so the line says it once.
+    expect(link).toHaveTextContent("Open Kai's session");
+    expect(screen.getByTestId('room-notice').textContent).toBe(TURN_FAILED.text);
     expect(transport.listRoomSessions).toHaveBeenCalledWith('room-1');
   });
 
@@ -183,6 +185,45 @@ describe('RoomMessage — a notice that sends you to a session links to it', () 
     await waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: '/session', search: { session: 'sess-new' } })
     );
+  });
+
+  it('goes nowhere when the room has let the session go since the row drew', async () => {
+    // Following the old id lands on "Session not found" (review of DOR-2077).
+    const transport = transportWith([{ authorId: 'kai', sessionId: 'sess-old' }], []);
+    renderNotice(notice(TURN_FAILED), transport);
+
+    fireEvent.click(await screen.findByTestId('room-notice-session-link'));
+
+    // The fresh read refilled the cache, so the row redraws as a plain sentence.
+    await waitFor(() =>
+      expect(screen.queryByTestId('room-notice-session-link')).not.toBeInTheDocument()
+    );
+    expect(screen.getByTestId('room-notice').textContent).toBe(TURN_FAILED.text);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('still opens the session on screen when the fresh read fails', async () => {
+    // A failed read learned nothing new, so the id the row shows is the best answer.
+    const transport = transportWith([{ authorId: 'kai', sessionId: 'sess-kai' }]);
+    vi.mocked(transport.listRoomSessions).mockRejectedValueOnce(new Error('offline'));
+    renderNotice(notice(TURN_FAILED), transport);
+
+    fireEvent.click(await screen.findByTestId('room-notice-session-link'));
+
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: '/session', search: { session: 'sess-kai' } })
+    );
+  });
+
+  it('adds the link after a line that does not name the session in the usual words', async () => {
+    // A notice written before the phrase was a rule still gets its way there.
+    const transport = transportWith([{ authorId: 'kai', sessionId: 'sess-kai' }]);
+    renderNotice(
+      notice({ text: 'Kai ran into a problem.', notice: 'turn_failed', subjectAuthorId: 'kai' }),
+      transport
+    );
+
+    expect(await screen.findByTestId('room-notice-session-link')).toHaveTextContent('Open session');
   });
 
   it('leaves a new-tab click to the browser', async () => {

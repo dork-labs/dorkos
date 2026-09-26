@@ -20,11 +20,11 @@
  */
 import { z } from 'zod';
 import { SESSION_ROUTE, sessionPath } from '@dorkos/shared/session-link';
-
-export { SESSION_ROUTE };
 // The leaf rather than the `shared/model` barrel, so a link builder never pulls
 // the model layer's React hooks in with it.
 import { mergeDialogSearch } from '../model/dialog-search-schema';
+
+export { SESSION_ROUTE };
 
 /**
  * Search params for the `/session` route.

@@ -55,13 +55,32 @@ function isHandBuiltUrl(text: string): boolean {
   return text.startsWith('/session?') || /[?&]session=/.test(text);
 }
 
-/** Whether a node is the session route written out as a navigation target. */
+/**
+ * The expression under any wrapping that does not change its value:
+ * parentheses, `as`, `satisfies`, `<T>x` and `x!`.
+ */
+function unwrap(node: ts.Node): ts.Node {
+  let current = node;
+  while (
+    ts.isParenthesizedExpression(current) ||
+    ts.isAsExpression(current) ||
+    ts.isSatisfiesExpression(current) ||
+    ts.isTypeAssertionExpression(current) ||
+    ts.isNonNullExpression(current)
+  ) {
+    current = current.expression;
+  }
+  return current;
+}
+
+/** Whether a node is the session route itself: `'/session'` or `SESSION_ROUTE`. */
 function isSessionRouteValue(node: ts.Node | undefined): boolean {
   if (node === undefined) return false;
-  if (ts.isStringLiteralLike(node)) return node.text === '/session';
-  if (ts.isIdentifier(node)) return node.text === 'SESSION_ROUTE';
-  if (ts.isLiteralTypeNode(node)) return isSessionRouteValue(node.literal);
-  if (ts.isJsxExpression(node)) return isSessionRouteValue(node.expression);
+  const inner = unwrap(node);
+  if (ts.isStringLiteralLike(inner)) return inner.text === '/session';
+  if (ts.isIdentifier(inner)) return inner.text === 'SESSION_ROUTE';
+  if (ts.isLiteralTypeNode(inner)) return isSessionRouteValue(inner.literal);
+  if (ts.isJsxExpression(inner)) return isSessionRouteValue(inner.expression);
   return false;
 }
 
@@ -102,6 +121,30 @@ function findHandBuiltSessionLinks(path: string, source: string): string[] {
     } else if (
       ts.isJsxAttribute(node) &&
       isToName(node.name) &&
+      isSessionRouteValue(node.initializer)
+    ) {
+      report(node);
+    } else if (
+      // `${SESSION_ROUTE}?${query}` — the route, then a query glued onto it.
+      ts.isTemplateExpression(node) &&
+      node.templateSpans.some(
+        (span) => isSessionRouteValue(span.expression) && span.literal.text.startsWith('?')
+      )
+    ) {
+      report(node);
+    } else if (
+      // '/session' + '?' + query — the route as the left of a concatenation.
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.PlusToken &&
+      isSessionRouteValue(node.left)
+    ) {
+      report(node);
+    } else if (
+      // const route = '/session' — a second name for the route, which is how a
+      // hand-built target hides from every check above.
+      ts.isVariableDeclaration(node) &&
+      node.initializer !== undefined &&
+      ts.isStringLiteralLike(unwrap(node.initializer)) &&
       isSessionRouteValue(node.initializer)
     ) {
       report(node);
@@ -163,6 +206,14 @@ describe('session link boundary (DOR-2077)', () => {
     expect(hits(`navigate({ to: SESSION_ROUTE, search: { session: id } });`)).toBe(true);
     expect(hits(`type T = { to: '${route}'; search: S };`)).toBe(true);
     expect(hits(`const x = <Link to="${route}" />;`)).toBe(true);
+    // Wrapped, concatenated, templated, or given a second name (review of DOR-2077).
+    expect(hits(`navigate({ to: '${route}' as const, search });`)).toBe(true);
+    expect(hits(`navigate({ to: ('${route}') satisfies string, search });`)).toBe(true);
+    expect(hits('const u = `${SESSION_ROUTE}?${new URLSearchParams(p)}`;')).toBe(true);
+    expect(hits("const u = '" + route + "' + '?' + params;")).toBe(true);
+    expect(hits('const u = SESSION_ROUTE + `?session=${id}`;')).toBe(true);
+    expect(hits(`const r = '${route}'; navigate({ to: r });`)).toBe(true);
+    expect(hits(`const r = '${route}' as const;`)).toBe(true);
 
     // Comments, API paths, comparisons and look-alike params are not links.
     expect(hits(`// opens ${route}?session=abc`)).toBe(false);
@@ -170,5 +221,7 @@ describe('session link boundary (DOR-2077)', () => {
     expect(hits(`if (pathname === '${route}') go();`)).toBe(false);
     expect(hits('const u = `/api/test?sessionId=${id}`;')).toBe(false);
     expect(hits(`navigate(toSession({ session: id }));`)).toBe(false);
+    expect(hits('const u = `${SESSION_ROUTE}`;')).toBe(false);
+    expect(hits(`const onSession = pathname === SESSION_ROUTE;`)).toBe(false);
   });
 });

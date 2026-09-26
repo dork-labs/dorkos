@@ -18,7 +18,7 @@ export {
   resolveRoomBoundSession,
   resolveRoomSessionForAuthor,
 } from './model/use-room-bound-session';
-export type { ResolveRoomSessionDeps } from './model/use-room-bound-session';
+export type { ResolveRoomSessionDeps, RoomSessionLookup } from './model/use-room-bound-session';
 export { roomBoundSessionId } from './lib/room-bound-session';
 export { useTeamRoom } from './model/use-team-room';
 export type { TeamRoomState } from './model/use-team-room';

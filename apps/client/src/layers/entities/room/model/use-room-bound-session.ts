@@ -87,6 +87,15 @@ export async function resolveRoomBoundSession(
 }
 
 /**
+ * What a room said about one member's session: bound to one, bound to none, or
+ * the question could not be asked. The last two are kept apart because a caller
+ * holding an older answer does different things with them — "none" means the
+ * room let the session go, "failed" means nothing new was learned.
+ */
+export type RoomSessionLookup =
+  { kind: 'bound'; sessionId: string } | { kind: 'none' } | { kind: 'failed' };
+
+/**
  * Ask which session a room has bound for one of its own members, by the author
  * id the room knows them by.
  *
@@ -96,28 +105,28 @@ export async function resolveRoomBoundSession(
  * bindings are read fresh for the reason given there: they move after every
  * turn, and a cached pair names a session the transcript is no longer under.
  *
- * Every failure answers `null`, for the same reasons.
+ * A failed read is reported, not shown, and answers `failed`.
  *
  * @param deps - Query client to read and fill, transport to ask over.
  * @param roomId - The room the member belongs to.
  * @param authorId - That member's author id in this room.
- * @returns The bound session id, or `null` when this room has none for it.
  */
 export async function resolveRoomSessionForAuthor(
   deps: ResolveRoomSessionDeps,
   roomId: string,
   authorId: string
-): Promise<string | null> {
+): Promise<RoomSessionLookup> {
   try {
     const sessions = await deps.queryClient.fetchQuery<RoomSessionsResponse>({
       queryKey: roomKeys.sessions(roomId),
       queryFn: () => deps.transport.listRoomSessions(roomId),
       staleTime: 0,
     });
-    return sessions.bindings.find((binding) => binding.authorId === authorId)?.sessionId ?? null;
+    const sessionId = sessions.bindings.find((binding) => binding.authorId === authorId)?.sessionId;
+    return sessionId === undefined ? { kind: 'none' } : { kind: 'bound', sessionId };
   } catch (error) {
     reportClientError(deps.transport, error);
-    return null;
+    return { kind: 'failed' };
   }
 }
 

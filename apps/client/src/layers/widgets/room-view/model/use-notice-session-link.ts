@@ -36,8 +36,10 @@ import type { NoticeSessionLink } from '@/layers/features/conversation';
  * the one the live lane's "Open its session" already makes, enabled only when a
  * notice like this is on screen, so an ordinary room open still asks for
  * nothing. A plain click then re-reads the bindings before it navigates, so the
- * link follows a rebind that happened after the row was drawn; a middle click or
- * a copied link uses the address the row shows.
+ * link follows a rebind that happened after the row was drawn, and goes nowhere
+ * when the room has let the session go since (the row then redraws without it);
+ * only a read that FAILED falls back to the id on screen. A middle click or a
+ * copied link uses the address the row shows.
  *
  * @param roomId - The room the entry is in.
  * @param entry - The entry being drawn.
@@ -68,8 +70,18 @@ export function useNoticeSessionLink(roomId: string, entry: RoomEntry): NoticeSe
       }
       event.preventDefault();
       if (sessionId === null || authorId === undefined) return;
-      void resolveRoomSessionForAuthor({ queryClient, transport }, roomId, authorId).then((fresh) =>
-        navigate(toSession({ session: fresh ?? sessionId }))
+      void resolveRoomSessionForAuthor({ queryClient, transport }, roomId, authorId).then(
+        (fresh) => {
+          // The room let the session go since the row drew. Opening the old id
+          // lands on "Session not found"; the fresh read has already refilled
+          // the cache, so the row redraws as a plain sentence instead.
+          if (fresh.kind === 'none') return;
+          // A failed read learned nothing new, so the id on screen is still the
+          // best answer there is.
+          void navigate(
+            toSession({ session: fresh.kind === 'bound' ? fresh.sessionId : sessionId })
+          );
+        }
       );
     },
     [authorId, navigate, queryClient, roomId, sessionId, transport]

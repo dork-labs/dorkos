@@ -37,8 +37,8 @@ import {
   WifiOff,
   type LucideIcon,
 } from 'lucide-react';
-import type { MouseEvent } from 'react';
-import type { RoomNoticeCode } from '@dorkos/shared/room-schemas';
+import type { MouseEvent, ReactNode } from 'react';
+import { SESSION_POINTER_PHRASE, type RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import { feedArticleProps, type FeedPosition } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import type { RoomEntry } from '@/layers/entities/room';
@@ -196,6 +196,52 @@ function noticeName(text: string): string {
 }
 
 /**
+ * A notice's words with the ones that send the reader to a session made into
+ * the link to it (DOR-2077).
+ *
+ * The line already says "Open Ana's session", so those words ARE the link — a
+ * separate "Open session" after them said the same thing twice. The server's
+ * notice-copy test holds every session-pointer notice to containing the phrase;
+ * a line written before that rule, which does not, gets the link after it
+ * rather than none.
+ *
+ * **The hit area is taller than the text.** Vertical padding on an inline
+ * element grows what can be pressed without moving a single line: 8px each way
+ * turns a 16px line into a 32px target, past the 24px minimum, and stops at the
+ * row's own 8px padding so it never reaches over the words of the next row.
+ *
+ * @param text - What the notice says.
+ * @param link - Where the session is.
+ */
+function linkedText(text: string, link: NoticeSessionLink): ReactNode {
+  const match = SESSION_POINTER_PHRASE.exec(text);
+  const anchor = (words: string) => (
+    <a
+      href={link.href}
+      onClick={link.onOpen}
+      data-testid="room-notice-session-link"
+      className="focus-ring hover:text-foreground rounded py-2 font-medium underline underline-offset-2"
+    >
+      {words}
+    </a>
+  );
+  if (match === null) {
+    return (
+      <>
+        {text} {anchor('Open session')}
+      </>
+    );
+  }
+  return (
+    <>
+      {text.slice(0, match.index)}
+      {anchor(match[0])}
+      {text.slice(match.index + match[0].length)}
+    </>
+  );
+}
+
+/**
  * One line of the room talking about itself.
  *
  * It renders as a quiet full-width line with no author beside it: attributing
@@ -240,22 +286,7 @@ export function NoticeRow({ entry, feedPosition, rowId, sessionLink }: NoticeRow
           screen reader read "warning" before a sentence that goes on to
           explain itself. */}
       <Icon aria-hidden className="mt-px size-3.5 shrink-0" />
-      <span>
-        {entry.body.text}
-        {sessionLink && (
-          <>
-            {' '}
-            <a
-              href={sessionLink.href}
-              onClick={sessionLink.onOpen}
-              data-testid="room-notice-session-link"
-              className="focus-ring hover:text-foreground rounded font-medium whitespace-nowrap underline underline-offset-2"
-            >
-              Open session
-            </a>
-          </>
-        )}
-      </span>
+      <span>{sessionLink ? linkedText(entry.body.text, sessionLink) : entry.body.text}</span>
     </p>
   );
 }
