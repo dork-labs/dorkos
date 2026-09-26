@@ -29,8 +29,11 @@ import {
   ConnectorConnectionSummarySchema,
   ConnectorDisconnectImpactSchema,
   ConnectorAgentConnectionsSchema,
+  ConnectorEveryAgentGrantsSchema,
   ConnectorSessionConnectionsSchema,
   type ConnectorAgentConnections,
+  type ConnectorEveryAgentAccess,
+  type ConnectorEveryAgentGrants,
   type ConnectorAuthoritySyncState,
   type ConnectorCatalogResourcePage,
   type ConnectorConnectionDetail,
@@ -50,6 +53,7 @@ import type {
   ManagedConnectorUsageResponse,
 } from '@dorkos/shared/connector-managed-usage-schemas';
 import { custodyDisclosure } from '../custody-disclosure.js';
+import { everyAgentGrantSubject } from '../every-agent-grants.js';
 import type { ConnectorAgentOwnershipPort } from '../execution/authorization-service.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
@@ -564,6 +568,7 @@ export class ConnectorOperatorQueryService {
     return ConnectorDisconnectImpactSchema.parse({
       connectionId,
       affectedAgentCount: new Set(agents.flatMap((row) => (row.agentId ? [row.agentId] : []))).size,
+      everyAgent: this.everyAgentAccess(connectionId) !== null,
       affectedSessionCount: new Set(sessions.map((row) => row.sessionId)).size,
       affectedSubscriptionCount: subscriptions.length,
       pendingDeliveryCount: pendingDeliveries,
@@ -610,10 +615,55 @@ export class ConnectorOperatorQueryService {
         )
       )
       .all();
-    const grouped = new Map<string, (typeof rows)[number] & { operationRevisionIds: string[] }>();
-    for (const row of rows) {
-      const current = grouped.get(row.connectionId) ?? { ...row, operationRevisionIds: [] };
-      current.operationRevisionIds.push(row.revisionId);
+    // Every agent inherits the owner's every-agent grants, so they belong in
+    // this agent's effective access exactly as the authorization check counts
+    // them: connections that are not managed, no per-agent exclusion.
+    const inherited = this.db
+      .select({
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        lifecycleState: connections.lifecycleState,
+        externalCleanupState: connections.externalCleanupState,
+        enabled: connections.enabled,
+        authenticationStatus: connections.status,
+        reconciliationStatus: connections.grantReconciliationStatus,
+        externalAccountRef: connections.externalAccountRef,
+        mode: connectorProviderInstances.mode,
+        revisionId: connectionOperationGrants.operationRevisionId,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          everyAgentGrantSubject(),
+          isNull(connectionOperationGrants.revokedAt),
+          isNull(connections.removedAt),
+          eq(connectorProviderInstances.mode, 'byo'),
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
+        )
+      )
+      .all();
+    const grouped = new Map<
+      string,
+      (typeof rows)[number] & { operationRevisionIds: Set<string>; everyAgent: boolean }
+    >();
+    for (const [row, everyAgent] of [
+      ...rows.map((row) => [row, false] as const),
+      ...inherited.map((row) => [row, true] as const),
+    ]) {
+      const current = grouped.get(row.connectionId) ?? {
+        ...row,
+        operationRevisionIds: new Set<string>(),
+        everyAgent: false,
+      };
+      current.operationRevisionIds.add(row.revisionId);
+      current.everyAgent ||= everyAgent;
       grouped.set(row.connectionId, current);
     }
     return ConnectorAgentConnectionsSchema.parse({
@@ -625,9 +675,65 @@ export class ConnectorOperatorQueryService {
         lifecycle: lifecycle(row),
         authenticationStatus: row.authenticationStatus,
         reconciliationStatus: row.reconciliationStatus,
-        operationRevisionIds: row.operationRevisionIds.sort(),
+        operationRevisionIds: [...row.operationRevisionIds].sort(),
+        everyAgent: row.everyAgent,
         authoritySync: this.authoritySync(row.mode, row.externalAccountRef),
       })),
+    });
+  }
+
+  /**
+   * Return what any agent of this owner inherits from every-agent grants: the
+   * answer to "what will a new agent get?" (ADR 260926-192625). There is no
+   * per-agent exclusion, so this needs no agent id and holds for an agent that
+   * has not been created yet. Disconnected and removed connections carry no
+   * live grant and are left out.
+   */
+  everyAgentGrants(owner: ConnectorOwnerAuthority): ConnectorEveryAgentGrants {
+    const owned = ownerColumns(owner);
+    const rows = this.db
+      .select({
+        connectionId: connections.id,
+        toolkit: connections.toolkit,
+        label: connections.label,
+        enabled: connections.enabled,
+      })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(
+        and(
+          isNull(connections.removedAt),
+          eq(connections.lifecycleState, 'connected'),
+          eq(connectorProviderInstances.mode, 'byo'),
+          eq(connectorProviderInstances.ownerKind, owned.ownerKind),
+          eq(connectorProviderInstances.ownerId, owned.ownerId)
+        )
+      )
+      .all();
+    return ConnectorEveryAgentGrantsSchema.parse({
+      connections: rows
+        .flatMap((row) => {
+          const access = this.everyAgentAccess(row.connectionId);
+          return access
+            ? [
+                {
+                  connectionId: row.connectionId,
+                  toolkit: row.toolkit,
+                  label: row.label,
+                  lifecycle: row.enabled ? ('connected' as const) : ('paused' as const),
+                  access,
+                },
+              ]
+            : [];
+        })
+        .sort(
+          (left, right) =>
+            left.label.localeCompare(right.label) ||
+            left.connectionId.localeCompare(right.connectionId)
+        ),
     });
   }
 
@@ -858,6 +964,7 @@ export class ConnectorOperatorQueryService {
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       agentCount: new Set(grants.flatMap((grant) => (grant.agentId ? [grant.agentId] : []))).size,
+      everyAgent: row.mode === 'managed' ? null : this.everyAgentAccess(row.connectionId),
       subscriptionCount: subscriptions.length,
       usage,
       warnings: [],
@@ -977,6 +1084,33 @@ export class ConnectorOperatorQueryService {
         .where(eq(connectorProviderInstances.id, provider.instanceId))
         .get()?.displayName ?? provider.type
     );
+  }
+
+  /** The live every-agent grant on one connection, or null when there is none. */
+  private everyAgentAccess(connectionId: string): ConnectorEveryAgentAccess | null {
+    const rows = this.db
+      .select({
+        revisionId: connectionOperationGrants.operationRevisionId,
+        classification: connectorOperationRevisions.capabilityClassification,
+      })
+      .from(connectionOperationGrants)
+      .innerJoin(
+        connectorOperationRevisions,
+        eq(connectorOperationRevisions.id, connectionOperationGrants.operationRevisionId)
+      )
+      .where(
+        and(
+          eq(connectionOperationGrants.connectionId, connectionId),
+          everyAgentGrantSubject(),
+          isNull(connectionOperationGrants.revokedAt)
+        )
+      )
+      .all();
+    if (rows.length === 0) return null;
+    return {
+      operationRevisionIds: [...new Set(rows.map((row) => row.revisionId))].sort(),
+      classifications: [...new Set(rows.map((row) => row.classification))].sort(),
+    };
   }
 
   private connectionNotFound(): never {

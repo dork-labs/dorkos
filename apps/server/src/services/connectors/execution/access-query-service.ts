@@ -35,6 +35,7 @@ import {
 } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorAgentOwnershipPort } from './authorization-service.js';
+import { everyAgentGrantSubject } from '../every-agent-grants.js';
 
 /** Bounded cursor input shared by agent and operator usage views. */
 export interface ConnectorUsageQuery {
@@ -81,6 +82,47 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
   return owner.kind === 'user'
     ? { ownerKind: owner.kind, ownerId: owner.userId }
     : { ownerKind: owner.kind, ownerId: owner.installationId };
+}
+
+/**
+ * Grant rows that can speak for one agent: its own named grants (and, with a
+ * session, that session's grants), plus every-agent grants on connections that
+ * are not managed. Hosted authority keys managed grants per named agent, so an
+ * every-agent row never counts there (ADR 260926-192625).
+ */
+function agentGrantRows(agentId: string, sessionId?: string) {
+  const named = and(
+    eq(connectionOperationGrants.subjectType, 'agent'),
+    eq(connectionOperationGrants.subjectId, agentId)
+  );
+  return or(
+    and(
+      eq(connectionOperationGrants.agentId, agentId),
+      sessionId
+        ? or(
+            named,
+            and(
+              eq(connectionOperationGrants.subjectType, 'session'),
+              eq(connectionOperationGrants.subjectId, sessionId)
+            )
+          )
+        : named
+    ),
+    and(everyAgentGrantSubject(), eq(connectorProviderInstances.mode, 'byo'))
+  );
+}
+
+/** Keep the first row for each exact connection and revision. */
+function uniqueRevisions<T extends { connectionId: string; operationRevisionId: string }>(
+  rows: readonly T[]
+): T[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = `${row.connectionId}\0${row.operationRevisionId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function encodeUsageCursor(startedAt: string, attemptId: string): string {
@@ -137,17 +179,7 @@ export class ConnectorAccessQueryService {
       )
       .where(
         and(
-          eq(connectionOperationGrants.agentId, agentId),
-          or(
-            and(
-              eq(connectionOperationGrants.subjectType, 'agent'),
-              eq(connectionOperationGrants.subjectId, agentId)
-            ),
-            and(
-              eq(connectionOperationGrants.subjectType, 'session'),
-              eq(connectionOperationGrants.subjectId, sessionId)
-            )
-          ),
+          agentGrantRows(agentId, sessionId),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
         )
@@ -189,9 +221,7 @@ export class ConnectorAccessQueryService {
       )
       .where(
         and(
-          eq(connectionOperationGrants.subjectType, 'agent'),
-          eq(connectionOperationGrants.subjectId, agentId),
-          eq(connectionOperationGrants.agentId, agentId),
+          agentGrantRows(agentId),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
@@ -252,9 +282,7 @@ export class ConnectorAccessQueryService {
         and(
           eq(connections.id, connectionId),
           eq(connections.lifecycleState, 'connected'),
-          eq(connectionOperationGrants.subjectType, 'agent'),
-          eq(connectionOperationGrants.subjectId, agentId),
-          eq(connectionOperationGrants.agentId, agentId),
+          agentGrantRows(agentId),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
@@ -282,7 +310,7 @@ export class ConnectorAccessQueryService {
     }
     return ConnectorAccessibleOperationsResponseSchema.parse({
       connectionId,
-      operations: rows
+      operations: uniqueRevisions(rows.map((row) => ({ ...row, connectionId })))
         .map((row) => ({
           operationRevisionId: row.operationRevisionId,
           toolkit: row.toolkit,
@@ -465,17 +493,7 @@ export class ConnectorAccessQueryService {
       .where(
         and(
           isNull(connectionOperationGrants.revokedAt),
-          eq(connectionOperationGrants.agentId, agentId),
-          or(
-            and(
-              eq(connectionOperationGrants.subjectType, 'agent'),
-              eq(connectionOperationGrants.subjectId, agentId)
-            ),
-            and(
-              eq(connectionOperationGrants.subjectType, 'session'),
-              eq(connectionOperationGrants.subjectId, sessionId)
-            )
-          ),
+          agentGrantRows(agentId, sessionId),
           eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
           eq(connectorProviderInstances.ownerId, ownerKey.ownerId),
           eq(connectorProviderInstances.status, 'available'),
@@ -489,7 +507,7 @@ export class ConnectorAccessQueryService {
         )
       )
       .all();
-    return rows.filter((row) => {
+    const executable = rows.filter((row) => {
       const provider = this.registry.resolveProviderInstance(
         row.providerInstanceId as ConnectorProviderInstanceId
       );
@@ -500,8 +518,11 @@ export class ConnectorAccessQueryService {
       ) {
         return false;
       }
+      // The same precedence as `ConnectorExecutionAuthorizationService.hasGrant`:
+      // a session override decides alone; without one, named-agent and
+      // every-agent grants both count.
       const override = overrides.get(row.connectionId);
-      if (!override) return row.subjectType === 'agent';
+      if (!override) return row.subjectType === 'agent' || row.subjectType === 'every_agent';
       if (
         override.agentId !== agentId ||
         override.needsReconciliation ||
@@ -511,6 +532,7 @@ export class ConnectorAccessQueryService {
       }
       return row.subjectType === 'session';
     });
+    return uniqueRevisions(executable);
   }
 
   private listUsage(

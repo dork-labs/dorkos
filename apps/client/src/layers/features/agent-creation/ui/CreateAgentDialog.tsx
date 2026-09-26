@@ -12,6 +12,7 @@ import {
 } from '@/layers/shared/ui';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { OpenMeshNotice } from '@/layers/entities/mesh';
+import { EveryAgentAccessNotice } from '@/layers/entities/connectors';
 import { useConfig } from '@/layers/entities/config';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
@@ -352,12 +353,27 @@ export function CreateAgentDialog() {
               </motion.div>
             </AnimatePresence>
 
-            {/* The wall this agent is about to hit, said before it hits it: a
-                new agent lands in its own project and cannot message the ones
-                already here. Only on the steps that end in a Create button —
-                the gallery is still browsing — and only when there is another
-                agent to be cut off from and the switch is off. */}
-            {step !== 'gallery' && <OpenMeshNotice className="mt-6" />}
+            {/* What this agent is about to get and the wall it is about to
+                hit, said before Create: only on the steps that end in a Create
+                button — the gallery is still browsing. */}
+            {step !== 'gallery' && (
+              <div className="mt-6 space-y-3 empty:hidden">
+                {/* Apps given to every agent reach this one too, so it never
+                    gets access silently. "Change" leaves creation for the page
+                    where access is set. */}
+                <EveryAgentAccessNotice
+                  agentName={form.displayName || seed?.template.displayName || ''}
+                  onChange={() => {
+                    handleOpenChange(false);
+                    void navigate({ to: '/connections', search: { region: 'accounts' } });
+                  }}
+                />
+                {/* A new agent lands in its own project and cannot message the
+                    ones already here; shown only when there is another agent to
+                    be cut off from and the switch is off. */}
+                <OpenMeshNotice />
+              </div>
+            )}
           </div>
         </div>
 

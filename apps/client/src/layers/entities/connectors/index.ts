@@ -27,6 +27,7 @@ export {
   useConnectorConnection,
   useConnectorDisconnectImpact,
   useAgentConnectorConnections,
+  useEveryAgentConnectorGrants,
   useSessionConnectorConnections,
   useConnectorUsage,
   useStartConnectorAuthentication,
@@ -83,8 +84,13 @@ export type {
   ConnectorConnectionDetail,
   ConnectorConnectionSummary,
   ConnectorDisconnectImpact,
+  ConnectorEveryAgentAccess,
+  ConnectorEveryAgentGrant,
+  ConnectorEveryAgentGrants,
   ConnectorSessionConnections,
   ConnectorSessionEffectiveAccess,
 } from '@dorkos/shared/connector-resource-schemas';
 
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
+export { EveryAgentAccessNotice } from './ui/EveryAgentAccessNotice';
+export type { EveryAgentAccessNoticeProps } from './ui/EveryAgentAccessNotice';

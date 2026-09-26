@@ -1,4 +1,4 @@
-/** Complete operation discovery and exact named-agent grant reconciliation. */
+/** Complete operation discovery and exact named-agent and every-agent grant reconciliation. */
 import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import {
@@ -14,6 +14,7 @@ import {
   eq,
   inArray,
   isNull,
+  or,
   type Db,
 } from '@dorkos/db';
 import {
@@ -30,6 +31,7 @@ import {
   type ConnectorReconciliationPreview,
   type ConnectorReconciliationPreviewRequest,
 } from '@dorkos/shared/connector-schemas';
+import { everyAgentGrantSubject, replaceEveryAgentGrants } from './every-agent-grants.js';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
 import type { ConnectorRegistry } from './registry.js';
 import type { ManagedAuthoritySyncService } from './resources/managed-authority-sync-service.js';
@@ -44,7 +46,8 @@ export type ConnectorReconciliationErrorCode =
   | 'operations_unsupported'
   | 'catalog_incomplete'
   | 'preview_stale'
-  | 'invalid_selection';
+  | 'invalid_selection'
+  | 'every_agent_unavailable';
 
 /** A secret-free, typed reconciliation refusal. */
 export class ConnectorReconciliationError extends Error {
@@ -217,7 +220,9 @@ export class ConnectorReconciliationService {
       .where(
         and(
           eq(connectionOperationGrants.connectionId, request.connectionId),
-          eq(connectionOperationGrants.subjectType, 'agent'),
+          // Every-agent revisions are re-verified exactly like named-agent ones,
+          // so a revision the provider no longer offers shows as unsupported.
+          or(eq(connectionOperationGrants.subjectType, 'agent'), everyAgentGrantSubject()),
           isNull(connectionOperationGrants.revokedAt),
           eq(connectorOperationRevisions.providerInstanceId, context.providerInstanceId),
           eq(connectorOperationRevisions.toolkit, context.toolkit)
@@ -366,7 +371,14 @@ export class ConnectorReconciliationService {
     });
 
     return ConnectorReconciliationPreviewSchema.parse(
-      this.readPreview(previewId, request.connectionId, agents, candidateIds, createdAt)
+      this.readPreview(
+        previewId,
+        request.connectionId,
+        agents,
+        candidateIds,
+        createdAt,
+        context.mode !== 'managed'
+      )
     );
   }
 
@@ -531,6 +543,22 @@ export class ConnectorReconciliationService {
           );
         }
       }
+      if (request.everyAgent) {
+        // Hosted authority keys grants per named agent and has no owner-wide
+        // subject, so a managed connection cannot honor "every agent" yet.
+        if (provider.mode === 'managed') {
+          throw new ConnectorReconciliationError(
+            'every_agent_unavailable',
+            'Every agent isn’t available for apps connected through your DorkOS account yet. Pick the agents one by one.'
+          );
+        }
+        if (request.everyAgent.operationRevisionIds.some((id) => !supported.has(id))) {
+          throw new ConnectorReconciliationError(
+            'invalid_selection',
+            'The selected action was not part of this complete permission review.'
+          );
+        }
+      }
 
       const consumed = tx
         .update(connectorReconciliationPreviews)
@@ -631,6 +659,15 @@ export class ConnectorReconciliationService {
             .run();
         }
       }
+      if (request.everyAgent) {
+        replaceEveryAgentGrants(tx, {
+          connectionId: preview.connectionId,
+          operationRevisionIds: request.everyAgent.operationRevisionIds,
+          createdBy: ownerRow.ownerId,
+          now,
+          createId: this.createId,
+        });
+      }
       if (provider.mode !== 'managed' || managedCommandIds.length === 0) {
         tx.update(connections)
           .set({ grantReconciliationStatus: 'ready', updatedAt: now })
@@ -659,6 +696,7 @@ export class ConnectorReconciliationService {
       authoritySync:
         failed?.authoritySync ?? (pending ? { status: 'pending' } : { status: 'ready' }),
       grants: request.grants,
+      ...(request.everyAgent ? { everyAgent: request.everyAgent } : {}),
     });
   }
 
@@ -675,6 +713,7 @@ export class ConnectorReconciliationService {
         enabled: connections.enabled,
         reconciliationStatus: connections.grantReconciliationStatus,
         custody: connectorProviderInstances.custody,
+        mode: connectorProviderInstances.mode,
         providerStatus: connectorProviderInstances.status,
         ownerKind: connectorProviderInstances.ownerKind,
         ownerId: connectorProviderInstances.ownerId,
@@ -712,7 +751,8 @@ export class ConnectorReconciliationService {
     connectionId: string,
     agents: ConnectorReconciliationAgent[],
     candidateIds: string[],
-    createdAt: Date
+    createdAt: Date,
+    everyAgentAvailable: boolean
   ) {
     const connection = this.resolveConnectionView(connectionId);
     const supportedById = new Map(
@@ -762,6 +802,25 @@ export class ConnectorReconciliationService {
           operationRevisionIds: operationRevisionIds.sort(),
         }))
         .sort((a, b) => a.agentId.localeCompare(b.agentId)),
+      everyAgent: {
+        available: everyAgentAvailable,
+        operationRevisionIds: everyAgentAvailable
+          ? this.db
+              .select({ id: connectionOperationGrants.operationRevisionId })
+              .from(connectionOperationGrants)
+              .where(
+                and(
+                  eq(connectionOperationGrants.connectionId, connectionId),
+                  everyAgentGrantSubject(),
+                  isNull(connectionOperationGrants.revokedAt)
+                )
+              )
+              .all()
+              .map((row) => row.id)
+              .filter((id) => candidateIds.includes(id))
+              .sort()
+          : [],
+      },
       catalogComplete: true as const,
       createdAt: createdAt.toISOString(),
       expiresAt: new Date(createdAt.getTime() + this.previewTtlMs).toISOString(),
@@ -806,6 +865,13 @@ export class ConnectorReconciliationService {
   }
 
   private assertUniqueSelections(request: ConnectorReconciliationApplyRequest): void {
+    const everyAgentIds = request.everyAgent?.operationRevisionIds ?? [];
+    if (new Set(everyAgentIds).size !== everyAgentIds.length) {
+      throw new ConnectorReconciliationError(
+        'invalid_selection',
+        'Each selected action may appear only once for every agent.'
+      );
+    }
     const agentIds = new Set<string>();
     for (const selection of request.grants) {
       if (agentIds.has(selection.agentId)) {

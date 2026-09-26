@@ -215,7 +215,7 @@ function sendManagementError(res: Response, error: unknown): void {
     const status =
       error.code === 'connection_not_found'
         ? 404
-        : error.code === 'operations_unsupported'
+        : error.code === 'operations_unsupported' || error.code === 'every_agent_unavailable'
           ? 422
           : 409;
     res.status(status).json({ error: error.message, code: error.code });

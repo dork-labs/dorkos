@@ -482,6 +482,38 @@ export type ConnectorReconciliationGrantSelection = z.infer<
   typeof ConnectorReconciliationGrantSelectionSchema
 >;
 
+/**
+ * Complete replacement set for the owner-wide "every agent" grant on one
+ * connection (ADR 260926-192625). It covers every agent the owner has, including
+ * agents added later, for exactly these reviewed revisions. An empty list turns
+ * "every agent" off.
+ */
+export const ConnectorReconciliationEveryAgentSelectionSchema = z
+  .object({
+    operationRevisionIds: z.array(z.string().min(1)),
+  })
+  .strict();
+/** Complete replacement set for the owner-wide "every agent" grant on one connection. */
+export type ConnectorReconciliationEveryAgentSelection = z.infer<
+  typeof ConnectorReconciliationEveryAgentSelectionSchema
+>;
+
+/**
+ * The every-agent grant as a reconciliation snapshot sees it. `available` is
+ * false where "every agent" cannot be offered for this connection (a connection
+ * through a DorkOS account today), and then `operationRevisionIds` is empty.
+ */
+export const ConnectorReconciliationEveryAgentStateSchema = z
+  .object({
+    available: z.boolean(),
+    operationRevisionIds: z.array(z.string().min(1)),
+  })
+  .strict();
+/** The every-agent grant as a reconciliation snapshot sees it. */
+export type ConnectorReconciliationEveryAgentState = z.infer<
+  typeof ConnectorReconciliationEveryAgentStateSchema
+>;
+
 /** One current agent included in a server-owned reconciliation snapshot. */
 export const ConnectorReconciliationAgentSchema = z
   .object({
@@ -509,6 +541,7 @@ export const ConnectorReconciliationPreviewSchema = z
     candidates: z.array(ConnectorReconciliationCandidateSchema),
     agents: z.array(ConnectorReconciliationAgentSchema),
     currentGrants: z.array(ConnectorReconciliationGrantSelectionSchema),
+    everyAgent: ConnectorReconciliationEveryAgentStateSchema,
     catalogComplete: z.literal(true),
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
@@ -522,6 +555,8 @@ export const ConnectorReconciliationApplyRequestSchema = z
   .object({
     previewId: z.string().min(1),
     grants: z.array(ConnectorReconciliationGrantSelectionSchema),
+    /** Replaces the every-agent grant when present; leaves it untouched when absent. */
+    everyAgent: ConnectorReconciliationEveryAgentSelectionSchema.optional(),
   })
   .strict();
 /** Owner request to atomically consume a reconciliation preview. */
@@ -540,6 +575,7 @@ export const ConnectorReconciliationApplyResponseSchema = z
       z.object({ status: z.literal('failed'), reason: z.string().min(1).max(1_000) }).strict(),
     ]),
     grants: z.array(ConnectorReconciliationGrantSelectionSchema),
+    everyAgent: ConnectorReconciliationEveryAgentSelectionSchema.optional(),
   })
   .strict();
 /** Exact grant state written after a reconciliation preview is consumed. */

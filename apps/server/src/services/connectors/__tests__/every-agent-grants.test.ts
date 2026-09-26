@@ -1,0 +1,557 @@
+/**
+ * Owner-wide "every agent" grants (ADR 260926-192625), end to end over one real
+ * database: the owner's reviewed write path, the one authorization check, the
+ * runtime tool list and per-turn awareness, the owner reads, and the lifecycle
+ * rules (disconnect clears it, removing an agent never does).
+ */
+import { beforeEach, describe, expect, it } from 'vitest';
+import {
+  and,
+  connectionOperationGrants,
+  connections,
+  connectorOperationRevisions,
+  connectorProviderInstances,
+  createDb,
+  eq,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
+  isNull,
+  runMigrations,
+  sessionConnectionOverrides,
+  type Db,
+} from '@dorkos/db';
+import {
+  ConnectionIdSchema,
+  ConnectorExecutionTargetSchema,
+  ConnectorProviderInstanceIdSchema,
+  type ConnectorReconciliationPreview,
+} from '@dorkos/shared/connector-schemas';
+import { FakeConnectorProvider } from '@dorkos/test-utils';
+import { ConnectorAccessQueryService } from '../execution/access-query-service.js';
+import { ConnectorExecutionAuthorizationService } from '../execution/authorization-service.js';
+import { createServerPrincipal } from '../principal/server-principal.js';
+import {
+  ConnectorReconciliationError,
+  ConnectorReconciliationService,
+} from '../reconciliation-service.js';
+import { ConnectorRegistry } from '../registry.js';
+import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
+
+const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
+const NOW = new Date('2026-09-26T12:00:00.000Z');
+const CONNECTION_ID = ConnectionIdSchema.parse('connection-a');
+/** Agents the owner has. `agent-new` is never part of any preview: it arrives later. */
+const OWNED_AGENTS = new Set(['agent-a', 'agent-new', 'dorkbot']);
+
+/** The stable refusal code a connector error carries, wherever it keeps it. */
+function codeOf(error: unknown): string {
+  const value = error as { code?: string; payload?: { code?: string } };
+  return value.payload?.code ?? value.code ?? String(error);
+}
+
+describe('every-agent grants', () => {
+  let db: Db;
+  let provider: FakeConnectorProvider;
+  let registry: ConnectorRegistry;
+  let reconciliation: ConnectorReconciliationService;
+  let authorization: ConnectorExecutionAuthorizationService;
+  let access: ConnectorAccessQueryService;
+  let query: ConnectorOperatorQueryService;
+  let nextId: number;
+
+  beforeEach(() => {
+    db = createDb(':memory:');
+    runMigrations(db);
+    provider = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('provider-a'),
+      type: 'fake',
+      custody: 'self-host',
+      toolkitVersion: 'v1',
+    });
+    registry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: 'local_install', ownerId: OWNER.installationId },
+    });
+    registry.register(provider, 'material-a');
+    db.insert(connections)
+      .values({
+        id: CONNECTION_ID,
+        providerInstanceId: provider.instanceId,
+        externalAccountRef: 'external-a',
+        toolkit: 'gmail',
+        label: 'Work Gmail',
+        status: 'active',
+        lifecycleState: 'connected',
+        enabled: true,
+        grantReconciliationStatus: 'ready',
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+      })
+      .run();
+    nextId = 0;
+    const ownership = {
+      ownsAgent: (_owner: unknown, agentId: string) => OWNED_AGENTS.has(agentId),
+    };
+    reconciliation = new ConnectorReconciliationService({
+      db,
+      registry,
+      bootEpoch: 'boot-a',
+      listAgents: () => [{ agentId: 'agent-a', displayName: 'Alpha' }],
+      now: () => NOW,
+      createId: () => `generated-${++nextId}`,
+    });
+    authorization = new ConnectorExecutionAuthorizationService(db, registry, ownership);
+    access = new ConnectorAccessQueryService(db, ownership, registry, {
+      revalidatePrincipal: async () => true,
+    });
+    query = new ConnectorOperatorQueryService({
+      db,
+      registry,
+      sessions: { resolveSessionAgent: () => undefined },
+      agentOwnership: ownership,
+    });
+  });
+
+  async function preview(): Promise<ConnectorReconciliationPreview> {
+    return reconciliation.preview(
+      OWNER,
+      { connectionId: CONNECTION_ID },
+      new AbortController().signal
+    );
+  }
+
+  function revisionId(snapshot: ConnectorReconciliationPreview, slug: string): string {
+    const candidate = snapshot.candidates.find((entry) => entry.operationSlug === slug);
+    if (!candidate) throw new Error(`No ${slug} candidate in the preview.`);
+    return candidate.operationRevisionId;
+  }
+
+  /** Review the current catalog and give every agent `slugs`; returns the preview used. */
+  async function giveEveryAgent(slugs: string[]): Promise<ConnectorReconciliationPreview> {
+    const snapshot = await preview();
+    await reconciliation.apply(OWNER, {
+      previewId: snapshot.previewId,
+      grants: [],
+      everyAgent: { operationRevisionIds: slugs.map((slug) => revisionId(snapshot, slug)) },
+    });
+    return snapshot;
+  }
+
+  function agentPrincipal(agentId: string) {
+    return createServerPrincipal({
+      kind: 'agent',
+      owner: OWNER,
+      agentId,
+      agentPath: `/agents/${agentId}`,
+    });
+  }
+
+  function runtimePrincipal(agentId: string, sessionId: string) {
+    return createServerPrincipal({
+      kind: 'runtime',
+      owner: OWNER,
+      bindingId: `binding-${sessionId}`,
+      runtime: 'codex',
+      canonicalSessionId: sessionId,
+      agentId,
+      agentPath: `/agents/${agentId}`,
+    });
+  }
+
+  function execute(
+    principal: ReturnType<typeof agentPrincipal>,
+    operationRevisionId: string,
+    classification: 'read' | 'write' | 'destructive'
+  ) {
+    return authorization.prepare({
+      capabilityId: `connectors.execute_${classification}`,
+      principal,
+      target: ConnectorExecutionTargetSchema.parse({
+        connectionId: CONNECTION_ID,
+        operationRevisionId,
+        arguments: {},
+      }),
+    });
+  }
+
+  async function refusal(promise: Promise<unknown>): Promise<string | undefined> {
+    try {
+      await promise;
+      return undefined;
+    } catch (error) {
+      return codeOf(error);
+    }
+  }
+
+  function everyAgentRows() {
+    return db
+      .select()
+      .from(connectionOperationGrants)
+      .where(eq(connectionOperationGrants.subjectType, 'every_agent'))
+      .all();
+  }
+
+  it('gives an agent created after the grant exactly the reviewed revisions, and nothing newer', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const read = revisionId(snapshot, 'gmail.read');
+    const write = revisionId(snapshot, 'gmail.write');
+
+    expect(everyAgentRows()).toEqual([
+      expect.objectContaining({
+        subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+        agentId: null,
+        operationRevisionId: read,
+        createdBy: OWNER.installationId,
+        revokedAt: null,
+      }),
+    ]);
+    await expect(execute(agentPrincipal('agent-new'), read, 'read')).resolves.toMatchObject({
+      agentId: 'agent-new',
+    });
+    expect(await refusal(execute(agentPrincipal('agent-new'), write, 'write'))).toBe(
+      'CONNECTOR_GRANT_REQUIRED'
+    );
+
+    // The provider ships a new version of the same operation: it stays off until reviewed.
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'gmail-read-v2',
+        providerInstanceId: provider.instanceId,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.read',
+        toolkitVersion: 'v2',
+        schemaHash: 'sha256:fake-read-v2',
+        capabilityClassification: 'read',
+        retryPolicy: 'never',
+        inputSchemaJson: JSON.stringify({ type: 'object', additionalProperties: false }),
+        discoveredAt: NOW.toISOString(),
+      })
+      .run();
+    expect(await refusal(execute(agentPrincipal('agent-new'), 'gmail-read-v2', 'read'))).toBe(
+      'CONNECTOR_GRANT_REQUIRED'
+    );
+    // An every-agent grant never lets a call change its classification.
+    expect(await refusal(execute(agentPrincipal('agent-new'), read, 'write'))).toBe(
+      'CONNECTOR_CAPABILITY_MISMATCH'
+    );
+  });
+
+  it('covers system agents such as DorkBot, because they are agents', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    await expect(
+      execute(agentPrincipal('dorkbot'), revisionId(snapshot, 'gmail.read'), 'read')
+    ).resolves.toMatchObject({ agentId: 'dorkbot' });
+  });
+
+  it('adds to a named-agent grant without narrowing it', async () => {
+    const first = await preview();
+    await reconciliation.apply(OWNER, {
+      previewId: first.previewId,
+      grants: [{ agentId: 'agent-a', operationRevisionIds: [revisionId(first, 'gmail.write')] }],
+      everyAgent: { operationRevisionIds: [revisionId(first, 'gmail.read')] },
+    });
+
+    await expect(
+      execute(agentPrincipal('agent-a'), revisionId(first, 'gmail.write'), 'write')
+    ).resolves.toBeDefined();
+    await expect(
+      execute(agentPrincipal('agent-a'), revisionId(first, 'gmail.read'), 'read')
+    ).resolves.toBeDefined();
+    expect(
+      await refusal(execute(agentPrincipal('agent-new'), revisionId(first, 'gmail.write'), 'write'))
+    ).toBe('CONNECTOR_GRANT_REQUIRED');
+  });
+
+  it('lets a session override decide alone: detached denies and attached never widens', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const read = revisionId(snapshot, 'gmail.read');
+    const write = revisionId(snapshot, 'gmail.write');
+    db.insert(sessionConnectionOverrides)
+      .values([
+        {
+          sessionId: 'session-detached',
+          agentId: 'agent-new',
+          connectionId: CONNECTION_ID,
+          state: 'detached',
+          updatedAt: NOW.toISOString(),
+        },
+        {
+          sessionId: 'session-attached',
+          agentId: 'agent-new',
+          connectionId: CONNECTION_ID,
+          state: 'attached',
+          updatedAt: NOW.toISOString(),
+        },
+      ])
+      .run();
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'session-write',
+        subjectType: 'session',
+        subjectId: 'session-attached',
+        agentId: 'agent-new',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: write,
+        createdBy: 'operator',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+
+    // No override: the every-agent grant applies.
+    await expect(
+      execute(runtimePrincipal('agent-new', 'session-plain'), read, 'read')
+    ).resolves.toBeDefined();
+    expect(
+      await refusal(execute(runtimePrincipal('agent-new', 'session-detached'), read, 'read'))
+    ).toBe('CONNECTOR_GRANT_REQUIRED');
+    expect(
+      await refusal(execute(runtimePrincipal('agent-new', 'session-attached'), read, 'read'))
+    ).toBe('CONNECTOR_GRANT_REQUIRED');
+    await expect(
+      execute(runtimePrincipal('agent-new', 'session-attached'), write, 'write')
+    ).resolves.toBeDefined();
+
+    // The runtime tool list agrees with the check, session by session.
+    await expect(
+      access.listRuntimeConnections(runtimePrincipal('agent-new', 'session-detached'))
+    ).resolves.toEqual({ connections: [] });
+    const attached = await access.listRuntimeOperations(
+      runtimePrincipal('agent-new', 'session-attached'),
+      CONNECTION_ID
+    );
+    expect(attached.operations.map((operation) => operation.operationRevisionId)).toEqual([write]);
+  });
+
+  it('revokes for every agent at once, including a call already prepared inside a turn', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const read = revisionId(snapshot, 'gmail.read');
+    const principal = runtimePrincipal('agent-new', 'session-running');
+    const input = {
+      capabilityId: 'connectors.execute_read' as const,
+      principal,
+      target: ConnectorExecutionTargetSchema.parse({
+        connectionId: CONNECTION_ID,
+        operationRevisionId: read,
+        arguments: {},
+      }),
+    };
+    const prepared = await authorization.prepare(input);
+
+    const off = await preview();
+    await reconciliation.apply(OWNER, {
+      previewId: off.previewId,
+      grants: [],
+      everyAgent: { operationRevisionIds: [] },
+    });
+
+    let recheck: string | undefined;
+    try {
+      authorization.recheckPreparedSynchronously(input, prepared);
+    } catch (error) {
+      recheck = codeOf(error);
+    }
+    expect(recheck).toBe('CONNECTOR_GRANT_REQUIRED');
+    expect(await refusal(execute(agentPrincipal('dorkbot'), read, 'read'))).toBe(
+      'CONNECTOR_GRANT_REQUIRED'
+    );
+    await expect(access.listRuntimeConnections(principal)).resolves.toEqual({ connections: [] });
+    expect(everyAgentRows().every((row) => row.revokedAt !== null)).toBe(true);
+  });
+
+  it('counts in per-turn awareness exactly like a named-agent grant', async () => {
+    const before = await access.accessSnapshot(OWNER, 'agent-new', 'session-1');
+    expect(before.accountCount).toBe(0);
+
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const granted = await access.accessSnapshot(OWNER, 'agent-new', 'session-1');
+    expect(granted.accountCount).toBe(1);
+    expect(granted.revision).not.toBe(before.revision);
+    await expect(
+      access.listRuntimeConnections(runtimePrincipal('agent-new', 'session-1'))
+    ).resolves.toMatchObject({ connections: [{ connectionId: CONNECTION_ID }] });
+
+    // Also granted by name: the agent still sees one account and one operation, not two.
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'named-read',
+        subjectType: 'agent',
+        subjectId: 'agent-new',
+        agentId: 'agent-new',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: revisionId(snapshot, 'gmail.read'),
+        createdBy: 'operator',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+    const both = await access.listRuntimeOperations(
+      runtimePrincipal('agent-new', 'session-1'),
+      CONNECTION_ID
+    );
+    expect(both.operations).toHaveLength(1);
+    await expect(access.listOperations(OWNER, 'agent-new', CONNECTION_ID)).resolves.toMatchObject({
+      operations: [{ operationSlug: 'gmail.read' }],
+    });
+    await expect(access.listConnections(OWNER, 'agent-new')).resolves.toMatchObject({
+      connections: [{ connectionId: CONNECTION_ID }],
+    });
+
+    db.delete(connectionOperationGrants)
+      .where(eq(connectionOperationGrants.id, 'named-read'))
+      .run();
+    const off = await preview();
+    await reconciliation.apply(OWNER, {
+      previewId: off.previewId,
+      grants: [],
+      everyAgent: { operationRevisionIds: [] },
+    });
+    const revoked = await access.accessSnapshot(OWNER, 'agent-new', 'session-1');
+    expect(revoked.accountCount).toBe(0);
+    expect(revoked.revision).not.toBe(granted.revision);
+  });
+
+  it('survives removing an agent, and ends when the connection is disconnected', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const read = revisionId(snapshot, 'gmail.read');
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'named-write',
+        subjectType: 'agent',
+        subjectId: 'agent-a',
+        agentId: 'agent-a',
+        connectionId: CONNECTION_ID,
+        operationRevisionId: revisionId(snapshot, 'gmail.write'),
+        createdBy: 'operator',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+
+    registry.recordAgentRemoval('agent-a');
+    registry.removeAgentAccess('agent-a');
+    registry.removeAgentConnectionAccess('agent-a', CONNECTION_ID);
+    expect(
+      db
+        .select({ revokedAt: connectionOperationGrants.revokedAt })
+        .from(connectionOperationGrants)
+        .where(eq(connectionOperationGrants.id, 'named-write'))
+        .get()?.revokedAt
+    ).not.toBeNull();
+    expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([null]);
+    await expect(execute(agentPrincipal('agent-new'), read, 'read')).resolves.toBeDefined();
+
+    registry.recordDisconnect(CONNECTION_ID);
+    expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([expect.any(String)]);
+    expect(query.everyAgentGrants(OWNER)).toEqual({ connections: [] });
+    expect(await refusal(execute(agentPrincipal('agent-new'), read, 'read'))).toBe(
+      'CONNECTOR_NOT_EXECUTABLE'
+    );
+  });
+
+  it('refuses a revision the owner did not review in this preview', async () => {
+    const snapshot = await preview();
+    await expect(
+      reconciliation.apply(OWNER, {
+        previewId: snapshot.previewId,
+        grants: [],
+        everyAgent: { operationRevisionIds: ['not-reviewed'] },
+      })
+    ).rejects.toMatchObject({ code: 'invalid_selection' });
+    await expect(
+      reconciliation.apply(OWNER, {
+        previewId: snapshot.previewId,
+        grants: [],
+        everyAgent: {
+          operationRevisionIds: [
+            revisionId(snapshot, 'gmail.read'),
+            revisionId(snapshot, 'gmail.read'),
+          ],
+        },
+      })
+    ).rejects.toMatchObject({ code: 'invalid_selection' });
+    expect(everyAgentRows()).toEqual([]);
+  });
+
+  it('is unavailable on a connection through a DorkOS account, and ignored there if present', async () => {
+    db.update(connectorProviderInstances)
+      .set({ mode: 'managed' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    const snapshot = await preview();
+    expect(snapshot.everyAgent).toEqual({ available: false, operationRevisionIds: [] });
+    const refused = reconciliation.apply(OWNER, {
+      previewId: snapshot.previewId,
+      grants: [],
+      everyAgent: { operationRevisionIds: [revisionId(snapshot, 'gmail.read')] },
+    });
+    await expect(refused).rejects.toBeInstanceOf(ConnectorReconciliationError);
+    await expect(refused).rejects.toMatchObject({ code: 'every_agent_unavailable' });
+    expect(everyAgentRows()).toEqual([]);
+
+    // A row that somehow exists still grants nothing: hosted authority cannot see it.
+    db.insert(connectionOperationGrants)
+      .values({
+        id: 'stray-every-agent',
+        subjectType: 'every_agent',
+        subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+        agentId: null,
+        connectionId: CONNECTION_ID,
+        operationRevisionId: revisionId(snapshot, 'gmail.read'),
+        createdBy: 'operator',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+    expect(
+      await refusal(
+        execute(agentPrincipal('agent-new'), revisionId(snapshot, 'gmail.read'), 'read')
+      )
+    ).toBe('CONNECTOR_GRANT_REQUIRED');
+    await expect(access.listConnections(OWNER, 'agent-new')).resolves.toEqual({ connections: [] });
+    expect((await query.listConnections(OWNER))[0]?.everyAgent).toBeNull();
+    expect(query.everyAgentGrants(OWNER)).toEqual({ connections: [] });
+  });
+
+  it('shows the owner what every agent, including a new one, will get', async () => {
+    expect(query.everyAgentGrants(OWNER)).toEqual({ connections: [] });
+    const snapshot = await giveEveryAgent(['gmail.read', 'gmail.write']);
+    const ids = [revisionId(snapshot, 'gmail.read'), revisionId(snapshot, 'gmail.write')].sort();
+    const expectedAccess = { operationRevisionIds: ids, classifications: ['read', 'write'] };
+
+    expect(query.everyAgentGrants(OWNER)).toEqual({
+      connections: [
+        {
+          connectionId: CONNECTION_ID,
+          toolkit: 'gmail',
+          label: 'Work Gmail',
+          lifecycle: 'connected',
+          access: expectedAccess,
+        },
+      ],
+    });
+    const [summary] = await query.listConnections(OWNER);
+    expect(summary?.everyAgent).toEqual(expectedAccess);
+    expect(query.disconnectImpact(OWNER, CONNECTION_ID).everyAgent).toBe(true);
+    await expect(query.agentConnections(OWNER, 'agent-new')).resolves.toMatchObject({
+      connections: [{ connectionId: CONNECTION_ID, operationRevisionIds: ids, everyAgent: true }],
+    });
+    const again = await preview();
+    expect(again.everyAgent).toEqual({ available: true, operationRevisionIds: ids });
+
+    // Another owner sees none of it.
+    expect(query.everyAgentGrants({ kind: 'local_install', installationId: 'install-b' })).toEqual({
+      connections: [],
+    });
+    // Paused still inherits once resumed, so it is still disclosed, marked paused.
+    db.update(connections).set({ enabled: false }).where(eq(connections.id, CONNECTION_ID)).run();
+    expect(query.everyAgentGrants(OWNER).connections[0]?.lifecycle).toBe('paused');
+    expect(
+      db
+        .select()
+        .from(connectionOperationGrants)
+        .where(
+          and(
+            eq(connectionOperationGrants.subjectType, 'agent'),
+            isNull(connectionOperationGrants.revokedAt)
+          )
+        )
+        .all()
+    ).toEqual([]);
+  });
+});

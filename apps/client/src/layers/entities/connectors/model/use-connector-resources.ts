@@ -64,6 +64,20 @@ export function useAgentConnectorConnections(agentId: string | null) {
   });
 }
 
+/**
+ * Read what every agent, including one not created yet, inherits from the
+ * owner's every-agent grants. Lives under the connections key, so any grant
+ * change that refreshes connections refreshes this too.
+ */
+export function useEveryAgentConnectorGrants(enabled = true) {
+  const transport = useTransport();
+  return useQuery({
+    queryKey: connectorKeys.everyAgentGrants(),
+    queryFn: () => transport.getEveryAgentConnectorGrants(),
+    enabled,
+  });
+}
+
 /** Read effective canonical connection access for one session. */
 export function useSessionConnectorConnections(sessionId: string | null) {
   const transport = useTransport();

@@ -9,6 +9,7 @@ import {
   ConnectorProgramReviewStatusSchema,
   ConnectorProgramExecutionRequestSchema,
   ConnectorProviderExecuteResultSchema,
+  ConnectorReconciliationApplyRequestSchema,
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReviewActionSchema,
   ConnectorUsageItemSchema,
@@ -50,6 +51,46 @@ describe('connector reconciliation apply contracts', () => {
     { ...base, authoritySync: { status: 'unknown' } },
   ])('rejects an incomplete or unknown authority sync result', (candidate) => {
     expect(ConnectorReconciliationApplyResponseSchema.safeParse(candidate).success).toBe(false);
+  });
+});
+
+describe('every-agent grant contracts (ADR 260926-192625)', () => {
+  it('replaces the every-agent set only when the owner names one', () => {
+    expect(
+      ConnectorReconciliationApplyRequestSchema.parse({ previewId: 'preview-a', grants: [] })
+    ).not.toHaveProperty('everyAgent');
+    expect(
+      ConnectorReconciliationApplyRequestSchema.parse({
+        previewId: 'preview-a',
+        grants: [],
+        everyAgent: { operationRevisionIds: [] },
+      }).everyAgent
+    ).toEqual({ operationRevisionIds: [] });
+  });
+
+  it.each([
+    { everyAgent: { operationRevisionIds: ['revision-a'], agentIds: ['agent-a'] } },
+    { everyAgent: { operationRevisionIds: [''] } },
+    { everyAgent: true },
+  ])('rejects any every-agent selection beyond an exact revision list', (extra) => {
+    expect(
+      ConnectorReconciliationApplyRequestSchema.safeParse({
+        previewId: 'preview-a',
+        grants: [],
+        ...extra,
+      }).success
+    ).toBe(false);
+  });
+
+  it('has no management review action that could create one', () => {
+    expect(
+      ConnectorReviewActionSchema.safeParse({
+        version: 1,
+        kind: 'set_every_agent_access',
+        connectionId: 'connection-a',
+        operationRevisionIds: ['revision-a'],
+      }).success
+    ).toBe(false);
   });
 });
 

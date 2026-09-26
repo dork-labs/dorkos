@@ -47,6 +47,7 @@ import type {
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import type {
   ConnectorAgentConnections,
+  ConnectorEveryAgentGrants,
   ConnectorAuthenticationFlowCreateRequest,
   ConnectorAuthenticationFlowState,
   ConnectorCatalogResourcePage,
@@ -254,6 +255,10 @@ export function createConnectorMethods(baseUrl: string) {
         baseUrl,
         `/connectors/agents/${encodeURIComponent(agentId)}/connections`
       );
+    },
+
+    getEveryAgentConnectorGrants(): Promise<ConnectorEveryAgentGrants> {
+      return fetchJSON<ConnectorEveryAgentGrants>(baseUrl, '/connectors/every-agent-grants');
     },
 
     getSessionConnectorConnections(sessionId: string): Promise<ConnectorSessionConnections> {

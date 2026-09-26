@@ -54,6 +54,7 @@ function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorCo
     custody: 'managed',
     payer: 'dorkos_managed',
     agentCount: 2,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 3, attemptCount: 4 },
     warnings: [],
@@ -276,6 +277,7 @@ describe('ConnectionDetailSheet', () => {
     vi.mocked(transport.getConnectorDisconnectImpact).mockResolvedValue({
       connectionId: 'connection-1' as never,
       affectedAgentCount: 1,
+      everyAgent: false,
       affectedSessionCount: 3,
       affectedSubscriptionCount: 0,
       pendingDeliveryCount: 2,

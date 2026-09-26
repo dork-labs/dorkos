@@ -272,6 +272,56 @@ describe('connector management routes', () => {
     expect(reconciliation.preview).not.toHaveBeenCalled();
   });
 
+  it('lets only the owner turn on "every agent" (ADR 260926-192625)', async () => {
+    const body = {
+      previewId: 'preview-a',
+      grants: [],
+      everyAgent: { operationRevisionIds: ['read-v1'] },
+    };
+    const program = fixtureTarget.mount(
+      buildApp({
+        user: { userId: 'user-a', credential: 'api-key', credentialId: 'credential-a' },
+        loginEnabled: true,
+      })
+    );
+    await request(program)
+      .post('/api/connectors/reconciliation/apply')
+      .set('Authorization', 'Bearer verified')
+      .send(body)
+      .expect(403);
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reconciliation/apply')
+      .set('X-DorkOS-Agent', 'agent-a')
+      .send(body)
+      .expect(403);
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reconciliation/apply')
+      .set('x-dorkos-approval', 'approval-token')
+      .send(body)
+      .expect(403);
+    // A review is the path an agent or program can start; it has no every-agent action.
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reviews')
+      .send({
+        action: {
+          version: 1,
+          kind: 'set_every_agent_access',
+          connectionId: 'connection-a',
+          operationRevisionIds: ['read-v1'],
+        },
+        idempotencyKey: 'every-agent-a',
+      })
+      .expect(400);
+    expect(reconciliation.apply).not.toHaveBeenCalled();
+    expect(reviews.create).not.toHaveBeenCalled();
+
+    await request(fixtureTarget.mount(buildApp()))
+      .post('/api/connectors/reconciliation/apply')
+      .send(body)
+      .expect(200);
+    expect(reconciliation.apply).toHaveBeenCalledWith(OWNER, body, expect.any(AbortSignal));
+  });
+
   it('allows owner decisions from the app without accepting owner selectors', async () => {
     const list = await request(fixtureTarget.mount(buildApp()))
       .get('/api/connectors/reviews?state=pending')

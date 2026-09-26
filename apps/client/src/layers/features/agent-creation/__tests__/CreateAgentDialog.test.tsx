@@ -962,6 +962,53 @@ describe('CreateAgentDialog', () => {
     expect(screen.getByTestId('arrival-needs-name')).toBeInTheDocument();
   });
 
+  it('says what an arriving agent inherits from apps given to every agent (DOR-2420)', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getEveryAgentConnectorGrants).mockResolvedValue({
+      connections: [
+        {
+          connectionId: 'connection-gmail' as never,
+          toolkit: 'gmail',
+          label: 'Work Gmail',
+          lifecycle: 'connected',
+          access: { operationRevisionIds: ['gmail-read'], classifications: ['read'] },
+        },
+        {
+          connectionId: 'connection-calendar' as never,
+          toolkit: 'calendar',
+          label: 'Calendar',
+          lifecycle: 'connected',
+          access: { operationRevisionIds: ['calendar-read'], classifications: ['read'] },
+        },
+      ],
+    });
+    renderDialog(transport);
+    useAgentCreationStore.getState().openWithSeed(seedFor());
+
+    // Named for the arriving agent, before its Create button (marketplace agents arrive here too).
+    expect(await screen.findByTestId('every-agent-access-notice')).toHaveTextContent(
+      'Linear Keeper will get: Gmail (read), Calendar (read).'
+    );
+
+    // The naming step keeps saying it, for whatever name the person types.
+    await user.click(screen.getByTestId('arrival-customize'));
+    const name = await screen.findByLabelText('Name');
+    await user.clear(name);
+    await user.type(name, 'Research Bot');
+    expect(screen.getByTestId('every-agent-access-notice')).toHaveTextContent(
+      'Research Bot will get: Gmail (read), Calendar (read).'
+    );
+
+    // "Change" leaves creation for the page where access is set.
+    await user.click(screen.getByRole('button', { name: 'Change' }));
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/connections',
+      search: { region: 'accounts' },
+    });
+    expect(useAgentCreationStore.getState().isOpen).toBe(false);
+  });
+
   it('Customize first opens naming pre-filled from the seed', async () => {
     const user = userEvent.setup();
     renderDialog();

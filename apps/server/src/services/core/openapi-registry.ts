@@ -228,6 +228,7 @@ import {
 } from '@dorkos/shared/connector-schemas';
 import {
   ConnectorAgentConnectionsSchema,
+  ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
   ConnectorCatalogResourcePageSchema,
@@ -3811,6 +3812,21 @@ registry.registerPath({
     404: {
       description: 'Agent absent or owned by someone else',
       content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/connectors/every-agent-grants',
+  tags: ['Connectors'],
+  summary: 'Read what every agent, including a new one, inherits',
+  description:
+    'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
+  responses: {
+    200: {
+      description: 'Connections every agent can use, and at which level',
+      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
     },
   },
 });

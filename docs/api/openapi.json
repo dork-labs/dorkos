@@ -26322,6 +26322,42 @@
                             "type": "integer",
                             "minimum": 0
                           },
+                          "everyAgent": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "operationRevisionIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "minItems": 1,
+                                "maxItems": 100000
+                              },
+                              "classifications": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "read",
+                                    "write",
+                                    "destructive"
+                                  ]
+                                },
+                                "minItems": 1,
+                                "maxItems": 3
+                              }
+                            },
+                            "required": [
+                              "operationRevisionIds",
+                              "classifications"
+                            ],
+                            "additionalProperties": false
+                          },
                           "subscriptionCount": {
                             "type": "integer",
                             "minimum": 0
@@ -26415,6 +26451,7 @@
                           "custody",
                           "payer",
                           "agentCount",
+                          "everyAgent",
                           "subscriptionCount",
                           "usage",
                           "warnings"
@@ -27328,6 +27365,42 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "everyAgent": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "operationRevisionIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 200
+                              },
+                              "minItems": 1,
+                              "maxItems": 100000
+                            },
+                            "classifications": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "enum": [
+                                  "read",
+                                  "write",
+                                  "destructive"
+                                ]
+                              },
+                              "minItems": 1,
+                              "maxItems": 3
+                            }
+                          },
+                          "required": [
+                            "operationRevisionIds",
+                            "classifications"
+                          ],
+                          "additionalProperties": false
+                        },
                         "subscriptionCount": {
                           "type": "integer",
                           "minimum": 0
@@ -27421,6 +27494,7 @@
                         "custody",
                         "payer",
                         "agentCount",
+                        "everyAgent",
                         "subscriptionCount",
                         "usage",
                         "warnings"
@@ -28281,6 +28355,9 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "everyAgent": {
+                      "type": "boolean"
+                    },
                     "affectedSessionCount": {
                       "type": "integer",
                       "minimum": 0
@@ -28297,6 +28374,7 @@
                   "required": [
                     "connectionId",
                     "affectedAgentCount",
+                    "everyAgent",
                     "affectedSessionCount",
                     "affectedSubscriptionCount",
                     "pendingDeliveryCount"
@@ -29122,6 +29200,9 @@
                             },
                             "maxItems": 100000
                           },
+                          "everyAgent": {
+                            "type": "boolean"
+                          },
                           "authoritySync": {
                             "oneOf": [
                               {
@@ -29186,6 +29267,7 @@
                           "authenticationStatus",
                           "reconciliationStatus",
                           "operationRevisionIds",
+                          "everyAgent",
                           "authoritySync"
                         ],
                         "additionalProperties": false
@@ -29208,6 +29290,104 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/every-agent-grants": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Read what every agent, including a new one, inherits",
+        "description": "Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.",
+        "responses": {
+          "200": {
+            "description": "Connections every agent can use, and at which level",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "connectionId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "toolkit": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "lifecycle": {
+                            "type": "string",
+                            "enum": [
+                              "connected",
+                              "paused"
+                            ]
+                          },
+                          "access": {
+                            "type": "object",
+                            "properties": {
+                              "operationRevisionIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                "minItems": 1,
+                                "maxItems": 100000
+                              },
+                              "classifications": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "enum": [
+                                    "read",
+                                    "write",
+                                    "destructive"
+                                  ]
+                                },
+                                "minItems": 1,
+                                "maxItems": 3
+                              }
+                            },
+                            "required": [
+                              "operationRevisionIds",
+                              "classifications"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "connectionId",
+                          "toolkit",
+                          "label",
+                          "lifecycle",
+                          "access"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 500
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
@@ -52950,6 +53130,26 @@
                         "additionalProperties": false
                       }
                     },
+                    "everyAgent": {
+                      "type": "object",
+                      "properties": {
+                        "available": {
+                          "type": "boolean"
+                        },
+                        "operationRevisionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "available",
+                        "operationRevisionIds"
+                      ],
+                      "additionalProperties": false
+                    },
                     "catalogComplete": {
                       "type": "boolean",
                       "enum": [
@@ -52971,6 +53171,7 @@
                     "candidates",
                     "agents",
                     "currentGrants",
+                    "everyAgent",
                     "catalogComplete",
                     "createdAt",
                     "expiresAt"
@@ -53032,6 +53233,22 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "everyAgent": {
+                    "type": "object",
+                    "properties": {
+                      "operationRevisionIds": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      }
+                    },
+                    "required": [
+                      "operationRevisionIds"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -53140,6 +53357,22 @@
                         ],
                         "additionalProperties": false
                       }
+                    },
+                    "everyAgent": {
+                      "type": "object",
+                      "properties": {
+                        "operationRevisionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      },
+                      "required": [
+                        "operationRevisionIds"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
