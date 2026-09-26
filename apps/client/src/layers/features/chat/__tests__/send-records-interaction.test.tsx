@@ -120,6 +120,7 @@ function announceRekey(retired: string, canonical: string): void {
       runningSubagentCount: 0,
       lifecycle: 'streaming',
       lastError: null,
+      limit: null,
     },
   });
 }

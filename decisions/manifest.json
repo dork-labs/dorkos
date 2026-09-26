@@ -6584,6 +6584,74 @@
         "apps/server/src/services/extensions/extension-discovery.ts",
         "apps/server/src/services/marketplace/flows/uninstall.ts"
       ]
+    },
+    {
+      "id": "260926-172251",
+      "slug": "an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy",
+      "title": "An agent's identity comes from its home, and its desk is its home or a private copy of it",
+      "status": "proposed",
+      "created": "2026-09-26",
+      "extractedFrom": "agent-home-desk",
+      "specSlug": "agent-home-desk",
+      "amends": ["260726-022251", "260829-115621"],
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/core/agent-identity/**",
+        "apps/server/src/services/runtimes/claude-code/messaging/launch-resolver.ts",
+        "apps/server/src/services/runtimes/shared/agent-context.ts",
+        "apps/server/src/services/workspace/resolve-session-cwd.ts"
+      ]
+    },
+    {
+      "id": "260926-172252",
+      "slug": "people-change-a-rooms-files-through-the-server",
+      "title": "People change a room's files through the server, one named commit and one quiet entry each",
+      "status": "proposed",
+      "created": "2026-09-26",
+      "extractedFrom": "agent-home-desk",
+      "specSlug": "agent-home-desk",
+      "amends": "260829-115626",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/routes/rooms.ts",
+        "apps/server/src/services/rooms/repo/room-file-editor.ts",
+        "apps/server/src/services/rooms/messages/room-system-posts.ts",
+        "apps/client/src/layers/features/file-explorer/**"
+      ]
+    },
+    {
+      "id": "260926-180223",
+      "slug": "a-turn-reaches-shared-folders-through-per-turn-grants-on-the-runtime-port",
+      "title": "A turn reaches shared folders through per-turn grants on the runtime port, and room turns stand at home",
+      "status": "proposed",
+      "created": "2026-09-26",
+      "extractedFrom": "agent-home-desk",
+      "specSlug": "agent-home-desk",
+      "amends": "260807-233816",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/agent-runtime.ts",
+        "packages/test-utils/src/runtime-conformance.ts",
+        "apps/server/src/services/runtimes/*/**/directory-grants.ts",
+        "apps/server/src/services/rooms/repo/room-turn-place.ts",
+        "apps/server/src/services/rooms/room-trigger.ts"
+      ]
+    },
+    {
+      "id": "260926-180308",
+      "slug": "a-clean-room-worktree-is-fast-forwarded-when-its-agents-turn-launches",
+      "title": "A clean room worktree is fast-forwarded when its agent's turn launches; otherwise the turn is told what moved",
+      "status": "proposed",
+      "created": "2026-09-26",
+      "extractedFrom": "agent-home-desk",
+      "specSlug": "agent-home-desk",
+      "amends": "260829-115621",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/repo/room-worktree-refresh.ts",
+        "apps/server/src/services/session/message-dispatcher.ts",
+        "apps/server/src/services/runtimes/shared/room-context-block.ts"
+      ]
     }
   ]
 }

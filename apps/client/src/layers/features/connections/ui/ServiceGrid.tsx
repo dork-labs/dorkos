@@ -1,9 +1,13 @@
 import { useDeferredValue, useState } from 'react';
 import { Cable, MessageSquare, Search } from 'lucide-react';
-import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import { useConnectorCatalog, useConnectorProviders } from '@/layers/entities/connectors';
-import { useOpenConnections, useSettingsDeepLink } from '@/layers/shared/model';
+import type {
+  ConnectorAppConnections,
+  ConnectorCatalogService,
+} from '@dorkos/shared/connector-resource-schemas';
+import { useConnectorCatalog } from '@/layers/entities/connectors';
+import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
+  Badge,
   Button,
   Input,
   QueryErrorState,
@@ -15,27 +19,37 @@ import {
   ResponsiveDialogTitle,
   Skeleton,
 } from '@/layers/shared/ui';
-import { FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
+import { ServiceMark } from './ServiceMark';
 
-/** Search the bounded catalog and choose one service or native messaging setup. */
+/**
+ * Search the catalog and choose an app to connect, or a chat app to set up.
+ *
+ * The popular apps are always listed, even before any way to reach apps is set
+ * up; connecting one of those starts with the one-time setup step in the
+ * connect dialog. A chat app goes to its own setup, never that step.
+ */
 export function ServiceGrid({
   onConnect,
+  onConnectChat,
 }: {
-  /** Opens the account authentication flow for the chosen service. */
+  /** Opens the account sign-in flow for the chosen app. */
   onConnect: (service: ConnectorCatalogService) => void;
+  /** Opens the chat app's own setup for the chosen chat app type. */
+  onConnectChat: (chatAppType: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query);
   const catalog = useConnectorCatalog(deferredQuery);
-  const openConnections = useOpenConnections();
-  const settings = useSettingsDeepLink();
-  // Someone who already saved a key of their own is not told to go set one up.
-  const providers = useConnectorProviders();
-  const offerOwnKey =
-    providers.isSuccess && !(providers.data ?? []).some((provider) => provider.configured);
   const services = catalog.data?.pages.flatMap((page) => page.services) ?? [];
   const warnings = catalog.data?.pages.flatMap((page) => page.warnings) ?? [];
+  const newApps = catalog.data?.pages[0]?.appConnections?.newApps;
+  const emptyHint = emptySearchHint(newApps);
+  // Only when the person's own key is the thing in the way does the fix live
+  // in Settings › Connections; every other reason is answered by connecting.
+  const keyNeedsFixing =
+    newApps?.status === 'setup_needed' && newApps.reason === 'own_key_unavailable';
+  const settings = useSettingsDeepLink();
 
   return (
     <>
@@ -81,47 +95,51 @@ export function ServiceGrid({
               />
             ) : services.length === 0 ? (
               <div className="bg-muted/40 rounded-lg p-6 text-center">
-                <p className="text-sm font-medium">No matching services</p>
-                {!offerOwnKey ? (
-                  <p className="text-muted-foreground mt-1 text-xs">Try another name.</p>
-                ) : (
-                  <>
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      Try another name. To reach more apps through your own Composio or Nango
-                      account, set it up in Settings.
-                    </p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-3"
-                      onClick={() => {
-                        setOpen(false);
-                        settings.open('connections', 'ways');
-                      }}
-                    >
-                      Open Settings › Connections
-                    </Button>
-                  </>
+                <p className="text-sm font-medium">No app matches “{deferredQuery.trim()}”</p>
+                <p className="text-muted-foreground mt-1 text-xs">{emptyHint}</p>
+                {keyNeedsFixing && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => {
+                      setOpen(false);
+                      settings.open('connections', 'ways');
+                    }}
+                  >
+                    Open Settings › Connections
+                  </Button>
                 )}
               </div>
             ) : (
               <ul className="space-y-2" data-testid="service-catalog-results">
                 {services.map((service) => {
-                  const Icon =
-                    SERVICE_ICONS[service.iconKey.toLowerCase()] ??
-                    SERVICE_ICONS[service.serviceSlug.toLowerCase()] ??
-                    FALLBACK_SERVICE_ICON;
+                  const chat = service.intents.some((intent) => intent.kind === 'messages');
                   return (
                     <li
                       key={service.serviceSlug}
                       data-testid={`service-result-${service.serviceSlug}`}
                       className="bg-muted/40 rounded-lg p-3"
                     >
-                      <div className="flex items-center gap-2">
-                        <Icon className="text-muted-foreground size-4" aria-hidden />
-                        <p className="text-sm font-semibold">{service.displayName}</p>
+                      <div className="flex items-start gap-3">
+                        <ServiceMark iconKey={service.iconKey} displayName={service.displayName} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold">{service.displayName}</p>
+                            {chat && (
+                              <Badge variant="secondary" className="text-[11px]">
+                                Chat
+                              </Badge>
+                            )}
+                          </div>
+                          {service.description && (
+                            <p className="text-muted-foreground mt-0.5 text-xs">
+                              {service.description}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                      <div className="mt-2 flex flex-wrap gap-2 sm:pl-11">
                         {service.intents.map((intent) =>
                           intent.kind === 'messages' ? (
                             <Button
@@ -130,7 +148,7 @@ export function ServiceGrid({
                               variant="secondary"
                               onClick={() => {
                                 setOpen(false);
-                                openConnections('messaging');
+                                onConnectChat(intent.relayAdapterType);
                               }}
                             >
                               <MessageSquare className="size-3.5" aria-hidden />
@@ -181,4 +199,20 @@ export function ServiceGrid({
       </ResponsiveDialog>
     </>
   );
+}
+
+/**
+ * Why a search found nothing, in the one case it is not just the name: while
+ * no way to reach apps works, only the popular apps can be listed.
+ */
+function emptySearchHint(newApps: ConnectorAppConnections['newApps'] | undefined): string {
+  if (newApps?.status !== 'setup_needed') return 'Try another name.';
+  switch (newApps.reason) {
+    case 'nothing_set_up':
+      return 'Only popular apps are listed until you connect your first one. After that, search reaches every app DorkOS can connect.';
+    case 'own_key_unavailable':
+      return 'Only popular apps are listed while your saved key isn’t working.';
+    case 'dorkos_account_unavailable':
+      return 'Only popular apps are listed while your DorkOS account can’t connect apps.';
+  }
 }

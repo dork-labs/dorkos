@@ -747,6 +747,12 @@ export interface DispatchMessageOpts {
    */
   systemPromptAppend?: string;
   /**
+   * The folders this turn may reach beyond its cwd (spec `agent-home-desk` §4).
+   * Passed straight through to the turn; absent means none, so a queued turn
+   * that lost it would silently run with fewer folders than it was given.
+   */
+  additionalDirectories?: MessageOpts['additionalDirectories'];
+  /**
    * Claude account registry id this LAUNCH should bill to, when the sender made
    * an explicit pre-launch choice. Passed straight through to the turn.
    */
@@ -961,6 +967,7 @@ interface DispatchPlan {
     | 'seedContext'
     | 'approvalVerdict'
     | 'systemPromptAppend'
+    | 'additionalDirectories'
     | 'accountHint'
     | 'settings'
     | 'newSessionPermissionMode'
@@ -1242,6 +1249,9 @@ function launchDispatch(
       ...(turn.approvalVerdict ? { approvalVerdict: turn.approvalVerdict } : {}),
       ...(turn.systemPromptAppend !== undefined
         ? { systemPromptAppend: turn.systemPromptAppend }
+        : {}),
+      ...(turn.additionalDirectories !== undefined
+        ? { additionalDirectories: turn.additionalDirectories }
         : {}),
       ...(turn.accountHint ? { accountHint: turn.accountHint } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),

@@ -419,6 +419,19 @@ export const TaskDispatchPayloadSchema = z
      * no effort, so a receiver never has to know which those are.
      */
     effort: EffortLevelSchema.optional(),
+    /**
+     * Which Claude account this run should start on, as a registry id
+     * (DOR-2384) — the schedule's own `account`, carried so a run dispatched
+     * over relay launches on the same subscription a direct run would.
+     *
+     * The receiver hands it to the runtime as the launch `accountHint`, the top
+     * rung of the account ladder. No guard applies: a schedule's account is the
+     * operator's approved choice. Only a run that starts a conversation reads
+     * it, and an id no longer registered falls through the ladder. Absent means
+     * the agent's account, then the default — every envelope written before
+     * this field existed.
+     */
+    account: z.string().min(1).optional(),
   })
   .openapi('TaskDispatchPayload');
 

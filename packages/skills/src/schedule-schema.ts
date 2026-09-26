@@ -237,6 +237,22 @@ export const ScheduleBlockSchema = z.object({
    * drops it rather than pretending — see `resolveSessionDefaults`.
    */
   effort: z.enum(EFFORT_LEVELS).optional().catch(undefined),
+
+  /**
+   * Which Claude account a fire of this schedule runs on, as a registry id —
+   * which subscription pays for the run (DOR-2384).
+   *
+   * Only claude-code runs use it; every other runtime ignores it. Absent means
+   * the agent's own account, then the default — the same launch ladder every
+   * new session walks. It is read only when a run STARTS a conversation: a
+   * sticky schedule's later runs stay on the account their conversation began
+   * on.
+   *
+   * **Not validated against the registry**, for the reason `model` gives: the
+   * accounts are the machine's, and an id nobody registered falls through the
+   * ladder at run time with a warning rather than making the file unreadable.
+   */
+  account: z.string().min(1).optional().catch(undefined),
 });
 
 /**
@@ -400,5 +416,6 @@ export function scheduleToFrontmatter(schedule: ScheduleBlock): Record<string, u
   if (schedule.runtime !== undefined) out.runtime = schedule.runtime;
   if (schedule.model !== undefined) out.model = schedule.model;
   if (schedule.effort !== undefined) out.effort = schedule.effort;
+  if (schedule.account !== undefined) out.account = schedule.account;
   return out;
 }

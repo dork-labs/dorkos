@@ -378,6 +378,7 @@ describe('upgradeLegacyContentKey', () => {
     effort: 'low',
     maxRuntime: 60_000,
     sticky: true,
+    account: null,
   };
 
   it('extends a three-part key with the settings it runs with now', () => {

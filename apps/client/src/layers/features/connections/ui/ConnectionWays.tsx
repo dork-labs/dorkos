@@ -19,7 +19,7 @@ import {
   Skeleton,
 } from '@/layers/shared/ui';
 import { groupAppsByWay, keyWayName } from '../lib/connection-ways';
-import { ConnectionKeyForm } from './ConnectionKeyForm';
+import { KeyEntry } from './KeyEntry';
 import { KeyWayRow } from './KeyWayRow';
 import { WayRow, type WayStatus } from './WayRow';
 
@@ -94,8 +94,10 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
     <AddWays keys={keysToAdd} offerAccount={accountToAdd} onManageAccount={onManageAccount} />
   );
 
-  // Never a loop: the page's first connect asks how to reach apps, and this
-  // state also sets a way up right here, in the open, so neither place only
+  // Never a loop. On the page, connecting an app no way reaches opens the
+  // one-time step (`FirstConnectStep` inside `ConnectDialog`), which takes a
+  // key in place and goes straight on to that app's sign-in; chat apps skip it.
+  // And this state sets a way up right here, in the open. Neither place only
   // sends people to the other.
   if (nothingSetUp) {
     return (
@@ -104,7 +106,8 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
           <div className="space-y-1">
             <p className="text-sm font-medium">Set up when you connect your first app</p>
             <p className="text-muted-foreground text-sm">
-              Pick an app on the Connections page and DorkOS asks how to reach it, once.
+              Connect an app on the Connections page and DorkOS asks how to reach it before you sign
+              in. You only answer once.
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={onOpenConnectionsPage}>
@@ -235,14 +238,7 @@ function AddWays({
           className="space-y-2 px-4 py-3"
         >
           <p className="text-sm font-medium">{keyWayName(status.type)}</p>
-          <p className="text-muted-foreground text-xs leading-relaxed">{status.disclosure}</p>
-          {status.type === 'composio' && (
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              Any Composio key works: the project key from your dashboard or the account key the
-              composio CLI uses.
-            </p>
-          )}
-          <ConnectionKeyForm type={status.type} submitLabel="Save key" />
+          <KeyEntry status={status} />
         </li>
       ))}
     </ul>

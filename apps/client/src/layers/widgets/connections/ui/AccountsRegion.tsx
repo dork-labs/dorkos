@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import { HostedAccountSetup } from './HostedAccountSetup';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
 import {
   AccountsList,
@@ -10,6 +9,9 @@ import {
   ManagementReviews,
   ServiceGrid,
 } from '@/layers/features/connections';
+import { useSettingsDeepLink } from '@/layers/shared/model';
+import { Button } from '@/layers/shared/ui';
+import { useChatAppSetup } from './ChatAppSetup';
 
 interface AccountsRegionProps {
   /** URL-selected management request. */
@@ -50,6 +52,7 @@ export function AccountsRegion({
   const [accessConnectionId, setAccessConnectionId] = useState<string | null>(null);
   const [connectingForRequest, setConnectingForRequest] = useState(false);
   const detailOpenerRef = useRef<HTMLElement | null>(null);
+  const chatAppSetup = useChatAppSetup();
 
   return (
     <section aria-labelledby="region-accounts" className="space-y-6">
@@ -61,11 +64,10 @@ export function AccountsRegion({
           <p className="text-muted-foreground mt-1 text-sm">
             Services your agents can act on for you.
           </p>
+          <OwnKeyPointer />
         </div>
-        <ServiceGrid onConnect={setSelectedService} />
+        <ServiceGrid onConnect={setSelectedService} onConnectChat={chatAppSetup.open} />
       </header>
-
-      <HostedAccountSetup />
 
       <AccountsList
         onOpenDetail={(connectionId) => {
@@ -133,6 +135,7 @@ export function AccountsRegion({
           onSelectFlow(flowId);
         }}
       />
+      {chatAppSetup.dialog}
       <ConnectionAccessDialog
         key={accessConnectionId ?? 'closed'}
         connectionId={accessConnectionId}
@@ -142,5 +145,28 @@ export function AccountsRegion({
         }}
       />
     </section>
+  );
+}
+
+/**
+ * The page's one pointer to Settings › Connections, where your own Composio or
+ * Nango key lives. It sits under the region's heading in every state (linked
+ * or not, with or without apps), so the way to use your own key is never
+ * hidden behind a failure or a first connect. Static on purpose: it reads
+ * nothing, so it can't fail and it never waits on a server call.
+ */
+function OwnKeyPointer() {
+  const settings = useSettingsDeepLink();
+  return (
+    <p className="text-muted-foreground mt-1 text-xs">
+      Prefer your own Composio or Nango account?{' '}
+      <Button
+        variant="link"
+        className="h-auto p-0 text-xs"
+        onClick={() => settings.open('connections', 'ways')}
+      >
+        Set it up in Settings › Connections
+      </Button>
+    </p>
   );
 }

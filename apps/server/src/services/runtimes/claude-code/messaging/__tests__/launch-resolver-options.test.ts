@@ -7,10 +7,12 @@
  * real model would have stopped sending. Each case here pins one such setting
  * against the reason it exists.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import { configManager } from '../../../../core/config-manager.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
@@ -68,13 +70,16 @@ function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts
 }
 
 /** Drive one turn and hand back the options the SDK was launched with. */
-async function captureSdkOptions(): Promise<Options> {
+async function captureSdkOptions(
+  messageOpts?: MessageOpts,
+  session: AgentSession = makeSession()
+): Promise<Options> {
   let capturedOptions: Options | undefined;
   vi.mocked(query).mockImplementation((args) => {
     capturedOptions = args.options;
     return { [Symbol.asyncIterator]: async function* () {} } as unknown as ReturnType<typeof query>;
   });
-  for await (const _event of executeSdkQuery('s1', 'hello', makeSession(), makeOpts())) {
+  for await (const _event of executeSdkQuery('s1', 'hello', session, makeOpts(), messageOpts)) {
     // Drained: the launch is what is under test, not the stream.
   }
   return capturedOptions!;
@@ -139,5 +144,68 @@ describe('the launch options every Claude Code turn is given', () => {
         'argv that list is an unbounded count of absolute paths — past Windows\u2019 command-line ' +
         'length limit the CLI simply stops starting'
     ).toBe('initialize');
+  });
+});
+
+describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
+  const CLAUDE_MD_VAR = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('never hands a turn the variable that loads a granted folder’s CLAUDE.md, even when the server has it and the owner chose to pass it on', async () => {
+    // The strongest way it could arrive: set in the server's environment AND
+    // named in the owner's inheritance list, which is the one route the
+    // environment projection lets a name through.
+    vi.stubEnv(CLAUDE_MD_VAR, '1');
+    vi.mocked(configManager.get).mockImplementation(((key: string) =>
+      key === 'runtimes'
+        ? { environment: { inherit: { claudeCode: [CLAUDE_MD_VAR], codex: [], opencode: [] } } }
+        : undefined) as typeof configManager.get);
+
+    const options = await captureSdkOptions({
+      additionalDirectories: [{ path: '/rooms/r1/worktrees/ana', access: 'write' }],
+    });
+
+    expect(Object.keys(options.env ?? {})).not.toContain(CLAUDE_MD_VAR);
+  });
+
+  it('merges the grants into the settings the launch already carries', async () => {
+    const options = await captureSdkOptions(
+      {
+        additionalDirectories: [
+          { path: '/rooms/r1/worktrees/ana', access: 'write' },
+          { path: '/rooms/r1/repo', access: 'read' },
+        ],
+      },
+      { ...makeSession(), fastMode: true }
+    );
+
+    expect(options.settings).toEqual({
+      fastMode: true,
+      permissions: {
+        additionalDirectories: ['/rooms/r1/worktrees/ana', '/rooms/r1/repo'],
+        deny: [
+          'Edit(//rooms/r1/repo/**)',
+          'Write(//rooms/r1/repo/**)',
+          'NotebookEdit(//rooms/r1/repo/**)',
+        ],
+      },
+    });
+    // The SDK option is `--add-dir`, which loads the folder's skills (I11).
+    expect(options.additionalDirectories).toBeUndefined();
+  });
+
+  it('refuses an invalid set before anything launches', async () => {
+    vi.mocked(query).mockClear();
+    await expect(
+      captureSdkOptions({ additionalDirectories: [{ path: 'relative/dir', access: 'read' }] })
+    ).rejects.toThrow(/not an absolute path/);
+    expect(query).not.toHaveBeenCalled();
   });
 });
