@@ -6,7 +6,7 @@ status: specified
 tracker: DOR-2379, DOR-2380, DOR-2381, DOR-2382, DOR-2383, DOR-2384, DOR-2385, DOR-2386 (and the server half of DOR-2388)
 project: Flow CLI & Account Fleet
 ideation: dork-labs/marketplace specs/flow-fleet/01-ideation.md (§4, §6) and 04-design-decisions.md
-contracts: dork-labs/marketplace specs/flow-cli-core/02-specification.md §1 (revision 5)
+contracts: dork-labs/marketplace specs/flow-cli-core/02-specification.md §1 (revision 6)
 ---
 
 # Claude account fleet: per-account usage, limits, and launching work on a chosen account
@@ -18,7 +18,7 @@ contracts: dork-labs/marketplace specs/flow-cli-core/02-specification.md §1 (re
 
 DorkOS already runs Claude Code sessions on different accounts and sees usage on every turn, but it keeps that usage per session, forgets it on restart, hides a hard limit, and only a person at the HTTP API can start a session on a chosen account. This spec makes the account something the server knows about:
 
-- one **usage record per account**, fed by every session, persisted to the shared ledger `<dorkHome>/usage/<id>.json`, and readable over REST, MCP and `/api/events` (D2);
+- one **usage record per account**, fed by every session, persisted to the shared ledger `<dorkHome>/runtimes/claude-code/usage/<id>.json`, and readable over REST, MCP and `/api/events` (D2);
 - a **probe** that reads an idle account's usage without a model turn (D3);
 - a hard limit shown as a **`limit` on the session**, plus one notification per limit (D4);
 - an **MCP tool that starts a session** on a named account (D5), and an **account on schedules and relay messages** (D6);
@@ -33,14 +33,14 @@ Operator direction, 2026-09-26:
 | Concern                                                                     | Owner                                      | Where it lives                                                                             |
 | --------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | Account identity: `id`, `path`, `label`, `color`                            | DorkOS core                                | `config.json` → `runtimes.claudeCode.accounts[]` (contract §1.1a)                          |
-| Usage per account                                                           | DorkOS core and flow both write            | `<dorkHome>/usage/<id>.json` (contract §1.2)                                               |
+| Usage per account                                                           | DorkOS core and flow both write            | `<dorkHome>/runtimes/claude-code/usage/<id>.json` (contract §1.2)                          |
 | Routing policy: role, reserve, spend-down window, repo scope, handoff       | **flow**                                   | `<dorkHome>/flow/fleet.json` (contract §1.1b), edited in the Flow extension's Settings tab |
 | Which item a session serves                                                 | **flow** writes, DorkOS reads              | `<main checkout>/.dork/flow/flow-state.json` (contract §1.3)                               |
 | Out-of-usage notice, "Continue on another account", "Wait for reset"        | **DorkOS core** (D9), works without flow   | core ranks accounts by weekly headroom and seeds the new session with a summary            |
 | Changing that behavior: which accounts, automatic handoff, the handoff seed | **flow**, through the account advisor (X3) | the Flow extension's server side                                                           |
 | flow's own dispatch of new work                                             | **flow**                                   | flow's dispatcher, calling D5                                                              |
 
-**The contracts are the marketplace spec `flow-cli-core` §1, revision 5.** This spec adopts them exactly: field names, window keys, source names, merge and lock rules. Where this spec restates a rule, the contract wins; a mismatch found later is fixed here, never in code. DorkOS core **never reads `fleet.json`**. Where core must respect a routing rule (an agent or a relay message naming an account), it asks the account advisor the Flow extension registers (X3); with no advisor registered, an agent's or a relay message's account pick is refused, and everything a person does uses core defaults.
+**The contracts are the marketplace spec `flow-cli-core` §1, revision 6.** This spec adopts them exactly: field names, window keys, source names, merge and lock rules. Where this spec restates a rule, the contract wins; a mismatch found later is fixed here, never in code. DorkOS core **never reads `fleet.json`**. Where core must respect a routing rule (an agent or a relay message naming an account), it asks the account advisor the Flow extension registers (X3); with no advisor registered, an agent's or a relay message's account pick is refused, and everything a person does uses core defaults.
 
 ## 3. Goals and non-goals
 
@@ -160,7 +160,7 @@ New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay un
 ### D1. Account color, and the identity rules the contract asks of DorkOS (DOR-2379, core part)
 
 - **Rows keep what they do not know.** `ClaudeCodeAccountSchema` becomes a `z.looseObject` (`applyConfigPatch` re-parses the whole config, and a plain object strips per-row fields the contract says writers preserve). That alone is not enough: the client builds its PATCH from `GET /api/config`, which never shows unknown fields or rows skipped on read, and a PATCH replaces the array. So `applyConfigPatch`, for a patch naming `runtimes.claudeCode.accounts`, **merges each patched row onto the stored row with the same id** (a field the patch sets wins, `color: null` included; a field it leaves out survives) and **keeps every stored row the client could not see** (rows skipped by the read rules below). Removal stays by omission, only for rows the client was shown. The client's `toWritableAccounts` also sends each row's `color` (`null` when `colorIsDefault`), so an add or remove never resets a color. A test stores a row with an unknown field plus a skipped hand-edited row, PATCHes an add from the client's view, and asserts both survive.
-- **Read rules** (contract §1.1a): `readClaudeAccountSettings` first mints missing ids over EVERY object row in array order (existing ids reserved first), exactly as `backfillMissingAccountIds` already does, and only then skips a row whose `path` is missing or not absolute (skipping first would shift later ids, so flow and DorkOS would write different ledger files; contract revision 5), keeps the first of two rows sharing an id, and reads a bad `color` as `null`, each with one warning. The write path keeps its existing duplicate-id refusal.
+- **Read rules** (contract §1.1a): `readClaudeAccountSettings` first mints missing ids over EVERY object row in array order (existing ids reserved first), exactly as `backfillMissingAccountIds` already does, and only then skips a row whose `path` is missing or not absolute (skipping first would shift later ids, so flow and DorkOS would write different ledger files; contract revision 6), keeps the first of two rows sharing an id, and reads a bad `color` as `null`, each with one warning. The write path keeps its existing duplicate-id refusal.
 - Schema per §5.1. `readClaudeAccountSettings` returns `color: resolveAccountColor(row.color, index)`; `describeClaudeCodeAccounts` puts the resolved color and a `colorIsDefault: boolean` on each `ServerConfig.claudeCode.accounts[]` row (synthesized unregistered rows get the next default).
 - **No config migration.** An absent `color` already means `null` means "default by position", so there is nothing to seed, and seeding would freeze S5's palette into every config file (§12). The adding-config-fields checklist still applies: `config-disclosure.ts` gets `'runtimes.claudeCode.accounts[].color': 'expose'`; the write policy keeps `accounts` operator-only (verify, and pin it with a test); `contributing/configuration.md` and `docs/getting-started/configuration.mdx` gain the row.
 - **Id pattern on write** (contract "What DorkOS must do"): a `PATCH /api/config` that ADDS a registry row, or changes a row's id, must use an id matching `ACCOUNT_ID_PATTERN`, else `400` naming the row. Existing rows are never rejected for an old id (that would block every settings write); such a row simply gets no ledger file, logged once.
@@ -461,7 +461,7 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 
 ## 12. Decisions and assumptions (autonomy grant; all reversible)
 
-- **Contracts adopted as written** (marketplace `flow-cli-core` §1, revision 5). Differences from S4's earlier draft (token colors, a top-level `limit`, `schemaVersion`, dash window keys, a `probe` source, a session_metadata tracker column) were dropped in favor of the contract.
+- **Contracts adopted as written** (marketplace `flow-cli-core` §1, revision 6). Differences from S4's earlier draft (token colors, a top-level `limit`, `schemaVersion`, dash window keys, a `probe` source, a session_metadata tracker column) were dropped in favor of the contract.
 - **DOR-2379 core part is `color` only;** the policy fields and their UI are flow's (operator, 2026-09-26).
 - **No config migration for `color`.** The issue asked for one, but absent already means default-by-position, and a seeding migration would freeze a palette the UI track has not chosen into every config file. The adding-config-fields steps that do apply (disclosure, docs, tests) are in the task.
 - **Store keyed by config dir; a file only for a registered, pattern-valid id.** An unregistered root has no id to name a file.
