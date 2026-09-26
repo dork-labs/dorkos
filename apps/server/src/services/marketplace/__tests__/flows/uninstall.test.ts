@@ -553,10 +553,11 @@ describe('UninstallFlow', () => {
     });
   });
 
-  it('leaves a copy of the same id running from another plugin alone (DOR-2383)', async () => {
-    // A person approved `foo` from plugin A. An agent installs plugin B, which
-    // also carries `foo`, then uninstalls B. B's copy was never the one running,
-    // so removing B must neither stop A's copy nor forget A's approval.
+  it('leaves a copy of the same id running from another plugin on (DOR-2383)', async () => {
+    // Plugin B carries `foo`, but the live `foo` is plugin A's. B's copy was
+    // never the one running, so removing B must not turn the id off. It still
+    // asks the manager to forget any approval recorded for B's own copy; the
+    // manager keeps an approval recorded for A's (extension-load-policy.test.ts).
     const deps = await buildDeps();
     cleanupDirs.push(deps.dorkHome);
     const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-b');
@@ -585,10 +586,7 @@ describe('UninstallFlow', () => {
     await new UninstallFlow(deps).uninstall({ name: 'plugin-b' });
 
     expect(deps.extensionManager.disable).not.toHaveBeenCalledWith('foo');
-    expect(deps.extensionManager.forgetRunApproval).not.toHaveBeenCalledWith(
-      'foo',
-      expect.anything()
-    );
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('foo', installRoot);
     // B's own extension still goes.
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('only-b');
     expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('only-b', installRoot);

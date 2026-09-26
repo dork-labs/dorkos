@@ -927,18 +927,20 @@ export class UninstallFlow {
     for (const id of ids) {
       // The id is live from another copy (another plugin carries it, or it is
       // installed directly), and that copy is what discovery resolved: turning
-      // the id off would stop it, and forgetting would drop an approval given to
-      // it. This package's copy was never the one running, so there is nothing
-      // of it to stop (DOR-2383).
+      // the id off would stop it. This package's copy was never the one
+      // running, so there is nothing of it to stop (DOR-2383).
       const live = this.deps.extensionManager.get(id);
       if (live && !isPathWithin(live.path, installRoot)) {
         this.deps.logger.info(
-          `[marketplace/uninstall] Left '${id}' alone: the running copy is ${live.path}, ` +
+          `[marketplace/uninstall] Left '${id}' running: the live copy is ${live.path}, ` +
             `not the one in ${installRoot}`
         );
-        continue;
+      } else {
+        await this.deps.extensionManager.disable(id);
       }
-      await this.deps.extensionManager.disable(id);
+      // Always asked, whichever copy is live: an approval recorded for THIS
+      // package's copy must not survive it (a reinstall would run unasked), and
+      // the manager keeps any approval recorded for a copy outside `installRoot`.
       await this.deps.extensionManager.forgetRunApproval(id, installRoot);
     }
   }

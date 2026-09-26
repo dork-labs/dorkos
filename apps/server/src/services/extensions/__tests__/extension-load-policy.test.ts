@@ -605,6 +605,28 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     expect(stored.value.approvedSources).toEqual({});
   });
 
+  it('forgets the approval of a removed plugin even while another copy of the id is live', async () => {
+    // The person approved `flow` from plugin B; later a direct install of `flow`
+    // became the live copy. Uninstalling B must still drop B's approval, or
+    // reinstalling B would run with nothing asked. The live copy stays enabled.
+    const direct = '/fake/dork-home/extensions/flow';
+    stored.value = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: OTHER_PLUGIN_COPY, plugin: 'aaa-other' } },
+    };
+    mockDiscover.mockResolvedValue([makeRecord('flow', { path: direct })]);
+    await manager.initialize(null);
+
+    await manager.forgetRunApproval('flow', '/fake/dork-home/plugins/aaa-other');
+
+    expect(stored.value.approvedToRun).toEqual([]);
+    expect(stored.value.approvedSources).toEqual({});
+    expect(stored.value.enabled).toEqual(['flow']);
+    expect(manager.get('flow')?.path).toBe(direct);
+  });
+
   it('re-scans before enabling an id it has not seen, as a fresh plugin install does', async () => {
     stored.value = { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} };
     mockDiscover.mockResolvedValueOnce([]);
