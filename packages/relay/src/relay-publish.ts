@@ -9,11 +9,8 @@
  */
 import { monotonicFactory } from 'ulidx';
 import { validateSubject, matchesPattern } from './subject-matcher.js';
-import {
-  isAgentPrincipal,
-  reachesServerDestination,
-  SERVER_DESTINATION_REFUSAL,
-} from './lib/reserved-subjects.js';
+import { mayReachServerDestination } from './lib/reserved-subjects.js';
+import { reachesServerDestination, SERVER_DESTINATION_REFUSAL } from '@dorkos/shared/relay-schemas';
 import { requiresInitiateConsent, BRIDGE_PRINCIPAL_PREFIX } from './lib/consent-scope.js';
 import { createDefaultBudget, enforceBudget } from './budget-enforcer.js';
 import { checkRateLimit } from './rate-limiter.js';
@@ -442,11 +439,11 @@ export class RelayPublishPipeline {
 
     // 1b. Server-owned destinations (DOR-2432). The agent-facing tools and the
     // HTTP route refuse these before they publish; this is the same rule held
-    // by the bus, so a path that forgets to ask cannot hand an agent the
-    // scheduler's or an approval bridge's address. Keyed on agent principals
-    // rather than on server ones so no server publisher can be caught by it.
-    if (isAgentPrincipal(options.from) && reachesServerDestination(subject)) {
-      throw new Error(SERVER_DESTINATION_REFUSAL);
+    // by the bus, so a path that forgets to ask cannot hand anybody the
+    // scheduler's or an approval bridge's address. Only a sender on the
+    // server allowlist gets through — see `SERVER_DESTINATION_SENDERS`.
+    if (reachesServerDestination(subject) && !mayReachServerDestination(options.from)) {
+      throw new Error(`Refused sender "${options.from}": ${SERVER_DESTINATION_REFUSAL}`);
     }
 
     // 2. Access control check

@@ -6,12 +6,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import {
-  reachesServerDestination,
-  SERVER_DESTINATION_REFUSAL,
-  type RelayCore,
-  type DeadLetterEntry,
-} from '@dorkos/relay';
+import type { RelayCore, DeadLetterEntry } from '@dorkos/relay';
 import {
   extractSessionIdFromSubject,
   isServerManagedSubject,
@@ -23,6 +18,8 @@ import {
   InboxQuerySchema,
   DeadLetterQuerySchema,
   EndpointRegistrationSchema,
+  reachesServerDestination,
+  SERVER_DESTINATION_REFUSAL,
 } from '@dorkos/shared/relay-schemas';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';

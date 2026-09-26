@@ -3,14 +3,12 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { RelayCore } from '../relay-core.js';
+import { SERVER_DESTINATION_SENDERS, mayReachServerDestination } from '../lib/reserved-subjects.js';
 import {
   AGENT_SENDABLE_SERVER_SUBJECTS,
   SERVER_DESTINATION_PREFIXES,
   SERVER_DESTINATION_REFUSAL,
-  isAgentPrincipal,
   reachesServerDestination,
-} from '../lib/reserved-subjects.js';
-import {
   A2A_GATEWAY_PRINCIPAL,
   AGENT_CANCEL_SUBJECT_PREFIX,
   TASK_CANCEL_SUBJECT_PREFIX,
@@ -68,22 +66,40 @@ describe('the server-destination rule', () => {
     expect(reachesServerDestination(subject)).toBe(false);
   });
 
+  it('pins the senders allowed to reach a server destination', () => {
+    // An allowlist, so a sender nobody thought of is refused by default.
+    // Adding a prefix is a security decision: its reason must say who mints
+    // it and why no agent or remote caller can.
+    expect(SERVER_DESTINATION_SENDERS.map((sender) => sender.prefix)).toEqual([
+      'relay.system.',
+      'slack:',
+      'telegram:',
+    ]);
+    for (const sender of SERVER_DESTINATION_SENDERS)
+      expect(sender.reason.length).toBeGreaterThan(40);
+  });
+
   it.each([
-    ['relay.agent.ns.agent-1', true],
-    ['relay.session.project-1a2b3c4d', true],
-    ['relay.external.mcp', true],
-    ['agent:session-1', true],
-    [TASK_SCHEDULER_PRINCIPAL, false],
-    [A2A_GATEWAY_PRINCIPAL, false],
-    ['slack:U123', false],
-    ['telegram:42', false],
+    [TASK_SCHEDULER_PRINCIPAL, true],
+    [A2A_GATEWAY_PRINCIPAL, true],
+    ['relay.system.chat.notice', true],
+    ['slack:U123', true],
+    ['telegram:42', true],
+    ['relay.agent.ns.agent-1', false],
+    ['relay.session.project-1a2b3c4d', false],
+    ['relay.external.mcp', false],
+    ['agent:session-1', false],
+    ['relay.webhook.hook-1', false],
     ['relay.human.console', false],
-  ])('classifies %s as an agent principal: %s', (from, expected) => {
-    expect(isAgentPrincipal(from)).toBe(expected);
+    ['relay.bridge.reply.tg1.chat-42', false],
+    ['plugin.my-adapter', false],
+    ['a2a-gateway', false],
+  ])('%s may reach a server destination: %s', (from, expected) => {
+    expect(mayReachServerDestination(from)).toBe(expected);
   });
 });
 
-describe('publish pipeline — agents cannot send to server-owned addresses', () => {
+describe('publish pipeline — only server senders reach server-owned addresses', () => {
   let tmpDir: string;
   let relay: RelayCore;
 
@@ -113,6 +129,10 @@ describe('publish pipeline — agents cannot send to server-owned addresses', ()
     // subject by whoever sent it.
     ['agent:session-1', 'relay.system.approval.agent-1'],
     ['relay.agent.ns.agent-1', `${TASK_CANCEL_SUBJECT_PREFIX}run-1`],
+    // Not an agent, and still refused: a webhook whose inbound subject was
+    // aimed here, and the console route's caller-chosen sender.
+    ['relay.webhook.hook-1', 'relay.system.tasks.task-1'],
+    ['relay.human.console', 'relay.system.approval.agent-1'],
   ])('refuses %s -> %s with the rule named, delivering nothing', async (from, subject) => {
     const received = collect(subject);
     await expect(relay.publish(subject, { type: 'forged' }, { from })).rejects.toThrow(

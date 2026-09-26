@@ -7,13 +7,12 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
+import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
 import {
-  isServerManagedSubject,
-  parseAgentSubject,
   reachesServerDestination,
   SERVER_DESTINATION_REFUSAL,
-} from '@dorkos/relay';
-import type { RelayBudget } from '@dorkos/shared/relay-schemas';
+  type RelayBudget,
+} from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../../lib/logger.js';
 import {
   anchorPath,
