@@ -477,6 +477,7 @@ Data: `settings-mock-data.ts` gains `color`/`colorIsDefault` on `MOCK_SERVER_CON
 - **Spend-down choices 6/12/24/48/72 h;** a stored custom value is kept.
 - **The status-bar pre-launch picker moves out of `RuntimeItem`** (one place for one choice).
 - **`TurnFailedNotice` is replaced by the banner** for a limited turn (one notice, not two).
+- **Usage and context always show when there is a reading** (§6.8), a deliberate change to the status bar's quiet-by-default rule for these two items, from the operator's ask (04 §4c).
 - **Flow's automatic countdown is 10 seconds** (the mockup), set by the advisor's `delaySeconds`.
 
 ## 16. Draft ADRs seeded
