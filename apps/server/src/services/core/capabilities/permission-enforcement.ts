@@ -153,7 +153,12 @@ export async function readAgentPermissionsFromManifest(
 /** The sources used until boot wires the live config. */
 const DEFAULT_SOURCES: PermissionGateSources = {
   readConfig: () => UNCHOSEN,
-  readAgentPermissions: readAgentPermissionsFromManifest,
+  // Until the gate is wired, no agent's own settings are read at all: the
+  // wired reader is the one that narrows an arriving agent's unscreened folder
+  // settings (review D1), and anything that runs before it (a turn started
+  // early in boot) must not honour a folder as written. Every agent follows the
+  // defaults meanwhile.
+  readAgentPermissions: async () => undefined,
   listActions: () => [],
 };
 

@@ -29,6 +29,7 @@ import {
 } from '../resolve-session-defaults.js';
 import {
   initPermissionGate,
+  readAgentPermissionsFromManifest,
   resetPermissionGate,
 } from '../../core/capabilities/permission-enforcement.js';
 
@@ -474,13 +475,18 @@ describe('readAgentExecutionDefaults', () => {
     expect(await readAgentExecutionDefaults(dir)).toEqual({ runtime: 'claude-code' });
   });
 
-  it("reads the agent's own Files & commands stop", async () => {
+  it("reads the agent's own Files & commands stop, through the wired gate reader", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'agent-defaults-'));
     await writeManifest(dir, { ...BASE_MANIFEST, permissions: { filesAndCommands: 'ask' } });
-    expect(await readAgentExecutionDefaults(dir)).toEqual({
-      runtime: 'claude-code',
-      filesAndCommands: 'ask',
-    });
+    initPermissionGate({ readAgentPermissions: readAgentPermissionsFromManifest });
+    try {
+      expect(await readAgentExecutionDefaults(dir)).toEqual({
+        runtime: 'claude-code',
+        filesAndCommands: 'ask',
+      });
+    } finally {
+      resetPermissionGate();
+    }
   });
 
   it("reads the stop through the permission gate's reader, never off the file", async () => {

@@ -1057,6 +1057,39 @@ async function start() {
     activity: activityService,
     logger,
   });
+
+  // The single boot-composed Capability Registry — operator + marketplace +
+  // self-description folded into one immutable registry (spec
+  // `capability-registry`). Composed once below, after the dependency bags above
+  // are settled, then shared by both MCP servers and the `/api/capabilities/catalog`
+  // route. The factory/router closures below capture this `let` and read it lazily
+  // (they run per request, after boot has assigned it) — assigned once, but after
+  // those closures are defined, so it cannot be a `const` initialized in place.
+  // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
+  let capabilityRegistry: CapabilityRegistry | undefined;
+
+  // The permission gate's sources, wired right after the observer and the
+  // arrival record exist, before anything that can start a session, a
+  // scheduled run or a room turn (relay connections, community subscriptions,
+  // the task scheduler): all of them read an agent's own settings through this
+  // reader, the one place an arriving agent's unscreened folder settings are
+  // narrowed (review D1). Mesh and the registry are read lazily, when a read
+  // happens; until the gate is wired its default reader reads no agent's own
+  // settings at all.
+  initPermissionGate({
+    readConfig: () => configManager.get('permissions'),
+    // Fresh off the manifest on every call, and compared with the last value
+    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
+    readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
+      arrivals: arrivalRecord,
+      agentAt: (agentPath) =>
+        meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
+      context: () => narrowingContext(configManager, capabilityRegistry),
+    }),
+    // The tool-list builders hide an action whose permission is Blocked; they
+    // read this catalog, per build, off the composed registry.
+    listActions: () => permissionActions(capabilityRegistry),
+  });
   const retentionDays = env.DORKOS_ACTIVITY_RETENTION_DAYS ?? 30;
   try {
     const pruned = await activityService.prune(retentionDays);
@@ -2664,35 +2697,6 @@ async function start() {
   // by the time the first MCP request arrives this is either populated or
   // intentionally undefined (relay disabled).
   let marketplaceMcpDeps: MarketplaceMcpDeps | undefined;
-  // The single boot-composed Capability Registry — operator + marketplace +
-  // self-description folded into one immutable registry (spec
-  // `capability-registry`). Composed once below, after the dependency bags above
-  // are settled, then shared by both MCP servers and the `/api/capabilities/catalog`
-  // route. The factory/router closures below capture this `let` and read it lazily
-  // (they run per request, after boot has assigned it) — assigned once, but after
-  // those closures are defined, so it cannot be a `const` initialized in place.
-  // eslint-disable-next-line prefer-const -- late assignment captured by the MCP closures defined above the composition point
-  let capabilityRegistry: CapabilityRegistry | undefined;
-
-  // The permission gate's sources, wired as soon as the registry slot exists
-  // and before anything that starts a session, a scheduled run or a room turn
-  // is started: all of them read an agent's own settings through this reader,
-  // the one place an arriving agent's unscreened folder settings are narrowed
-  // (review D1). The registry is read lazily, once it is composed.
-  initPermissionGate({
-    readConfig: () => configManager.get('permissions'),
-    // Fresh off the manifest on every call, and compared with the last value
-    // DorkOS saw, so an edit made outside DorkOS is recorded (not blocked).
-    readAgentPermissions: narrowingReader(observedPermissionReader(permissionObserver), {
-      arrivals: arrivalRecord,
-      agentAt: (agentPath) =>
-        meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)?.id,
-      context: () => narrowingContext(configManager, capabilityRegistry),
-    }),
-    // The tool-list builders hide an action whose permission is Blocked; they
-    // read this catalog, per build, off the composed registry.
-    listActions: () => permissionActions(capabilityRegistry),
-  });
 
   // Approval primitive (spec `agent-trust` §3.3) — one instance, injected into
   // the marketplace confirmation provider and the approvals router so they share
