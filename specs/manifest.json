@@ -3305,6 +3305,15 @@
       "status": "specified",
       "project": "Cloud-Hosted Communities",
       "linearIssue": "DOR-2283"
+    },
+    {
+      "id": "260926-141330",
+      "slug": "claude-account-fleet",
+      "title": "Claude account fleet: per-account usage, limits, and launching work on a chosen account",
+      "created": "2026-09-26",
+      "status": "specified",
+      "project": "Flow CLI & Account Fleet",
+      "linearIssue": "DOR-2379"
     }
   ]
 }
