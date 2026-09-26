@@ -29,7 +29,7 @@ const OVERVIEW: PermissionsResponse = {
     presetStop: 'act',
     runtimes: [],
     exceptions: [],
-    followingCount: 0,
+    followingAgentIds: [],
   },
   areas: [],
   exceptions: [],
@@ -153,7 +153,7 @@ describe('PresetPicker', () => {
         presetStop: 'autonomy',
         runtimes: [],
         exceptions: [],
-        followingCount: 0,
+        followingAgentIds: [],
       },
     });
     await waitFor(() => expect(scopeNote()).toBeInTheDocument());

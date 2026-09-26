@@ -178,7 +178,7 @@ const OVERVIEW: PermissionsResponse = {
     presetStop: 'autonomy',
     runtimes: [],
     exceptions: [],
-    followingCount: 4,
+    followingAgentIds: ['a1', 'a2', 'a3', 'a4'],
   },
   areas: [ROOMS],
   exceptions: [

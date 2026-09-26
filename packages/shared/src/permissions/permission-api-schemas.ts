@@ -136,10 +136,10 @@ export const DefaultFilesAndCommandsSchema = z
       })
     ),
     /**
-     * How many agents follow the global stop: no stop of their own, and no stop
-     * set for their runtime. What a change to it reaches.
+     * The agents that follow the global stop: no stop of their own, and no stop
+     * set for their runtime. What a change to it (or to the preset) reaches.
      */
-    followingCount: z.number().int().min(0),
+    followingAgentIds: z.array(z.string()),
     /** The last change to the global stop. */
     lastChange: PermissionLastChangeSchema.optional(),
   })

@@ -28,7 +28,7 @@ const OVERVIEW: PermissionsResponse = {
     presetStop: 'autonomy',
     runtimes: [],
     exceptions: [],
-    followingCount: 0,
+    followingAgentIds: [],
   },
   areas: [],
   exceptions: [

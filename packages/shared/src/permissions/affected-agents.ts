@@ -30,10 +30,11 @@ export type PermissionDefaultKey =
  *   rest of its actions, so it counts.
  * - an **action**: every agent with neither its own setting for that action nor
  *   its own setting for the action's area, since either one wins over a default.
- * - the **preset**: every agent that follows it anywhere, which is every agent
- *   that has not set every area of its own.
- * - **Files & commands**: the server's count of agents with no stop of their
- *   own and no stop set for their runtime.
+ * - the **preset**: every agent that follows it anywhere. A preset sets every
+ *   area and the global Files & commands stop, so only an agent that has set
+ *   every area of its own AND does not follow the global stop is out of reach.
+ * - **Files & commands**: the agents the server lists as following the global
+ *   stop (no stop of their own, and no stop set for their runtime).
  *
  * @param overview - The `GET /api/permissions` body.
  * @param key - The default about to change.
@@ -43,7 +44,8 @@ export function countAgentsFollowing(
   overview: Pick<PermissionsResponse, 'agentCount' | 'exceptions' | 'filesAndCommands'>,
   key: PermissionDefaultKey
 ): number {
-  if (key.kind === 'files') return overview.filesAndCommands.followingCount;
+  const followsStop = new Set(overview.filesAndCommands.followingAgentIds);
+  if (key.kind === 'files') return followsStop.size;
   const areaLevel = overview.exceptions.filter((e) => e.action === undefined);
   const excluded = new Set<string>();
   if (key.kind === 'preset') {
@@ -54,7 +56,9 @@ export function countAgentsFollowing(
       areasByAgent.set(e.agentId, set);
     }
     for (const [agentId, areas] of areasByAgent) {
-      if (areas.size >= PERMISSION_AREA_IDS.length) excluded.add(agentId);
+      if (areas.size >= PERMISSION_AREA_IDS.length && !followsStop.has(agentId)) {
+        excluded.add(agentId);
+      }
     }
   } else {
     for (const e of areaLevel) if (e.area === key.area) excluded.add(e.agentId);

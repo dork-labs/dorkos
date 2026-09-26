@@ -571,6 +571,6 @@ describe('the last change behind each state (the "why?" lines)', () => {
     const overview = await world.service.getOverview();
 
     // codex has its own stop and test-bot has its own: only agent-c follows.
-    expect(overview.filesAndCommands.followingCount).toBe(1);
+    expect(overview.filesAndCommands.followingAgentIds).toEqual(['agent-c']);
   });
 });

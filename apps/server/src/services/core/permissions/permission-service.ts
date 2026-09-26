@@ -748,7 +748,7 @@ export class PermissionService {
     const stops = this.deps.config.trustStops();
     const exceptions: PermissionException[] = [];
     const filesExceptions: DefaultFilesException[] = [];
-    let followingCount = 0;
+    const followingAgentIds: string[] = [];
     for (const agent of agents) {
       let stored: AgentPermissions | undefined;
       try {
@@ -767,7 +767,7 @@ export class PermissionService {
           )
         );
       } else if (!(agent.runtime && stops.perRuntime[agent.runtime])) {
-        followingCount += 1;
+        followingAgentIds.push(agent.id);
       }
       for (const [area, state] of Object.entries(stored?.areas ?? {})) {
         if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area) || !isState(state)) continue;
@@ -824,7 +824,7 @@ export class PermissionService {
           presetStop,
           runtimes: runtimeStops,
           exceptions: filesExceptions,
-          followingCount,
+          followingAgentIds,
         },
         lastChanges.get('default:files')
       ),

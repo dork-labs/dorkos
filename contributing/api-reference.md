@@ -595,9 +595,9 @@ What agents may do on their own, what waits for a person's yes, and what they ca
 
 The default layer: the chosen preset, the changes on top of it, every area with its actions resolved, the Files & commands row, and which agents differ.
 
-- `200` - `PermissionsResponse`: `{ preset, presetLastChange?, defaults, changeCount, filesAndCommands: { stop, presetStop, runtimes: [{ runtime, stop }], exceptions: [{ agentId, agentName, stop, lastChange? }], followingCount, lastChange? }, areas: [...], exceptions: [...], agentCount }`
+- `200` - `PermissionsResponse`: `{ preset, presetLastChange?, defaults, changeCount, filesAndCommands: { stop, presetStop, runtimes: [{ runtime, stop }], exceptions: [{ agentId, agentName, stop, lastChange? }], followingAgentIds, lastChange? }, areas: [...], exceptions: [...], agentCount }`
 
-Every area, action, exception and Files & commands entry carries an optional `lastChange` (`{ eventId, occurredAt, actorLabel, attribution, surface }`): the newest recorded change to any setting the resolver reads for that state, from the last 200 permission events (`readLastChanges`). It is what the app's "Why?" line names; absent when nothing in that window touched it. `followingCount` is how many agents follow the global Files & commands stop (no stop of their own, none set for their runtime). "Affects N agents" everywhere is `countAgentsFollowing` in `@dorkos/shared/permissions`, one function shared by the app and the CLI.
+Every area, action, exception and Files & commands entry carries an optional `lastChange` (`{ eventId, occurredAt, actorLabel, attribution, surface }`): the newest recorded change to any setting the resolver reads for that state, from the last 200 permission events (`readLastChanges`). It is what the app's "Why?" line names; absent when nothing in that window touched it. `followingAgentIds` lists the agents that follow the global Files & commands stop (no stop of their own, none set for their runtime). "Affects N agents" everywhere is `countAgentsFollowing` in `@dorkos/shared/permissions`, one function shared by the app and the CLI.
 
 ### GET /api/permissions/history
 

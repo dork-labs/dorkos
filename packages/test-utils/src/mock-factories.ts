@@ -1084,7 +1084,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
         presetStop: null,
         runtimes: [],
         exceptions: [],
-        followingCount: 0,
+        followingAgentIds: [],
       },
       areas: [],
       exceptions: [],

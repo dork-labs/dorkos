@@ -212,7 +212,7 @@ describe('PermissionList (default scope)', () => {
       presetStop: 'autonomy',
       runtimes: [],
       exceptions: [],
-      followingCount: 0,
+      followingAgentIds: [],
     },
     areas: [
       {
@@ -285,7 +285,7 @@ describe('individual actions', () => {
       presetStop: 'autonomy',
       runtimes: [],
       exceptions: [],
-      followingCount: 0,
+      followingAgentIds: [],
     },
     areas: [
       {

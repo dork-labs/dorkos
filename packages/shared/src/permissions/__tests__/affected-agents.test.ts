@@ -4,7 +4,11 @@ import { countAgentsFollowing, describeAffectedAgents } from '../affected-agents
 import type { PermissionException } from '../permission-api-schemas.js';
 
 /** An overview with `agentCount` agents and these exceptions. */
-function overview(agentCount: number, exceptions: PermissionException[], followingCount = 0) {
+function overview(
+  agentCount: number,
+  exceptions: PermissionException[],
+  followingAgentIds: string[] = []
+) {
   return {
     agentCount,
     exceptions,
@@ -13,7 +17,7 @@ function overview(agentCount: number, exceptions: PermissionException[], followi
       presetStop: 'act' as const,
       runtimes: [],
       exceptions: [],
-      followingCount,
+      followingAgentIds,
     },
   };
 }
@@ -59,8 +63,15 @@ describe('countAgentsFollowing', () => {
     expect(countAgentsFollowing(view, { kind: 'preset' })).toBe(2);
   });
 
+  it('the preset still reaches an agent with every area set when its stop follows the preset', () => {
+    const everything = PERMISSION_AREA_IDS.map((area) => own('a', area));
+    // The preset moves the global stop, and `a` follows it.
+    expect(countAgentsFollowing(overview(3, everything, ['a']), { kind: 'preset' })).toBe(3);
+    expect(countAgentsFollowing(overview(3, everything, []), { kind: 'preset' })).toBe(2);
+  });
+
   it('Files & commands is the server’s count', () => {
-    expect(countAgentsFollowing(overview(10, [], 4), { kind: 'files' })).toBe(4);
+    expect(countAgentsFollowing(overview(10, [], ['a', 'b', 'c', 'd']), { kind: 'files' })).toBe(4);
   });
 });
 

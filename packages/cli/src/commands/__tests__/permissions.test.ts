@@ -34,7 +34,7 @@ const OVERVIEW = {
     presetStop: 'autonomy',
     runtimes: [],
     exceptions: [],
-    followingCount: 2,
+    followingAgentIds: ['a1', 'a2'],
   },
   areas: [
     {

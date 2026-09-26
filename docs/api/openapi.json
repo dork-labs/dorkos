@@ -8282,9 +8282,11 @@
               ]
             }
           },
-          "followingCount": {
-            "type": "integer",
-            "minimum": 0
+          "followingAgentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "lastChange": {
             "$ref": "#/components/schemas/PermissionLastChange"
@@ -8295,7 +8297,7 @@
           "presetStop",
           "runtimes",
           "exceptions",
-          "followingCount"
+          "followingAgentIds"
         ]
       },
       "PermissionAreaEntry": {
