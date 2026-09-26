@@ -56,8 +56,17 @@ describe('read-grant rules and glob characters', () => {
     ['a question mark', '/rooms/R ?q'],
     ['a backslash', '/rooms/R \\ q'],
     ['a newline', '/rooms/R\nq'],
+    ['a trailing space', '/rooms/R ok '],
+    ['a trailing non-breaking space', '/rooms/R ok\u00a0'],
+    ['a trailing tab', '/rooms/R ok\t'],
   ])('refuses a read grant whose name has %s, which no escaping was seen to make safe', (_l, p) => {
-    expect(() => launch([{ path: p, access: 'read' }])).toThrow(/cannot match literally/);
+    expect(() => launch([{ path: p, access: 'read' }])).toThrow(
+      /can't keep the folder .* read-only.*Rename or move the folder/s
+    );
+  });
+
+  it('still takes a read grant with a space inside its name, which the CLI keeps', () => {
+    expect(() => launch([{ path: '/rooms/R ok/inner', access: 'read' }])).not.toThrow();
   });
 
   it('still takes a write grant with a question mark, which needs no rule', () => {

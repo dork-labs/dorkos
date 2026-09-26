@@ -73,6 +73,20 @@ const GLOB_METACHARACTERS = /[[\]*{}!]/g;
 const UNSAFE_IN_RULE = /[?\\\u0000-\u001f\u007f]/;
 
 /**
+ * A folder name ending in whitespace (a space, a non-breaking space, …): the
+ * CLI trims the rule, so it names a folder without the space and the real one
+ * fails open — run live in the DOR-2408 re-review, `…/R ok ` let `Write`
+ * through under `bypassPermissions`.
+ */
+const TRAILING_WHITESPACE = /\s$/u;
+
+/** Whether Claude Code's rule syntax can name `folder` exactly. */
+function ruleCanName(folder: string): boolean {
+  const { body } = splitRulePath(folder);
+  return !UNSAFE_IN_RULE.test(body) && !TRAILING_WHITESPACE.test(body);
+}
+
+/**
  * The absolute-path rule root for a folder, escaped. Claude Code reads a rule
  * path with ONE leading slash as relative to the project and with TWO as
  * absolute, so `/abs/path` becomes `//abs/path`; a single slash would fail
@@ -128,9 +142,14 @@ export function applyDirectoryGrants(
   if (!grants || grants.length === 0) return;
   assertValidDirectoryGrants(grants, cwd);
   for (const grant of grants) {
-    if (grant.access === 'read' && UNSAFE_IN_RULE.test(splitRulePath(grant.path).body)) {
+    // Fail closed, in words the person reading the failed turn can act on:
+    // the grant comes from where DorkOS keeps its data, so that is what moves.
+    if (grant.access === 'read' && !ruleCanName(grant.path)) {
       throw new DirectoryGrantError(
-        `Folder grant "${grant.path}" is read-only, and its name has a character Claude Code's permission rules cannot match literally.`
+        `Claude Code can't keep the folder "${grant.path}" read-only, because its name has a character ` +
+          `its safety rules can't match: a question mark, a backslash, a hidden control character, ` +
+          `or a space at the very end. So this turn was not started. Rename or move the folder ` +
+          `(usually your DorkOS data folder) to a path without those characters, then try again.`
       );
     }
   }
