@@ -401,14 +401,22 @@ describe('RoomMemberRow', () => {
 describe('a retired agent on a direct message roster (DOR-2095)', () => {
   const RETIRED = member({ kind: 'agent', agentRef: 'ref-ana', retired: true });
 
-  it('says so in words, and offers nothing to tune or remove', () => {
+  it('says so in words, and offers nothing to tune', () => {
     viewport('desktop');
     renderRow({ member: RETIRED, roomKind: 'dm' });
 
     expect(screen.getByTestId('retired-mark')).toHaveTextContent('Retired');
     expect(screen.getByText('No longer on your team. Its messages stay.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'How loud Ana is here' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Ana actions' })).not.toBeInTheDocument();
+  });
+
+  it.each(['desktop', 'phone'] as const)('can still be taken out of the room on %s', (width) => {
+    // A channel can hold a retired agent the repair sweep left seated because
+    // its folder says it is coming back; a person must be able to overrule it.
+    viewport(width);
+    renderRow({ member: RETIRED, roomKind: 'channel' });
+
+    expect(screen.getByRole('button', { name: 'Ana actions' })).toBeInTheDocument();
   });
 
   it('keeps an active agent’s controls', () => {

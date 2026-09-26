@@ -50,7 +50,8 @@ import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
 import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
-import type { DepartedAgentsDrop } from './manage/room-membership.js';
+import type { ChannelSeat } from './manage/departed-seat-store.js';
+import type { DepartedAgentsDrop } from './manage/room-departures.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
 import type { RoomCanvasService } from './canvas/room-canvas-service.js';
@@ -332,28 +333,47 @@ export class RoomService {
 
   /**
    * The unregister cascade (DOR-2095): take whatever agent lived at this
-   * directory out of every channel, in one transaction. Wired to
-   * `MeshCore.onUnregister`, which fires after the registry row is gone — so
-   * the author rows found here fail the liveness check and are dropped, while
-   * any row still answered for by a registered agent keeps its seats. See
-   * {@link RoomMembership.dropDepartedAgents}.
+   * directory out of every channel, in one transaction that records each seat
+   * for a possible return. Wired to `MeshCore.onUnregister`, which fires after
+   * the registry row is gone — so the author rows found here fail the liveness
+   * check and are dropped, while any row a registered agent still answers for
+   * keeps its seats. See `RoomDepartures.drop`.
    *
    * @param agentPath - The unregistered agent's project directory.
+   * @param manifestId - The unregistered agent's manifest id.
    */
-  dropDepartedAgentAt(agentPath: string): DepartedAgentsDrop {
-    return this.parts.membership.dropDepartedAgents(
+  dropDepartedAgentAt(agentPath: string, manifestId: string): DepartedAgentsDrop {
+    return this.parts.departures.drop(
+      this.authorRegistry.agentRowsAt(agentPath).map((author) => author.id),
+      manifestId
+    );
+  }
+
+  /**
+   * Give back the channel seats of whatever agent returned to this directory,
+   * if it is the agent that left them. See `RoomDepartures.restore`.
+   *
+   * @param agentPath - The directory an agent was just registered at.
+   */
+  restoreReturningAgentAt(agentPath: string): ChannelSeat[] {
+    return this.parts.departures.restore(
       this.authorRegistry.agentRowsAt(agentPath).map((author) => author.id)
     );
   }
 
-  /** Drop named departed agents from every channel. See {@link RoomMembership.dropDepartedAgents}. */
-  dropDepartedAgents(authorIds: readonly string[]): DepartedAgentsDrop {
-    return this.parts.membership.dropDepartedAgents(authorIds);
+  /** Give back every waiting seat whose agent is live again. See `RoomDepartures.restore`. */
+  restoreAllReturningAgents(): ChannelSeat[] {
+    return this.parts.departures.restore(this.parts.departures.listWaitingAuthorIds());
   }
 
-  /** Agents on a channel roster that nobody answers for. See {@link RoomMembership.listDepartedChannelAgents}. */
+  /** Drop named departed agents from every channel. See `RoomDepartures.drop`. */
+  dropDepartedAgents(authorIds: readonly string[]): DepartedAgentsDrop {
+    return this.parts.departures.drop(authorIds);
+  }
+
+  /** Agents on a channel roster that nobody answers for. See `RoomDepartures.listDepartedChannelAgents`. */
   listDepartedChannelAgents(): AuthorRecord[] {
-    return this.parts.membership.listDepartedChannelAgents();
+    return this.parts.departures.listDepartedChannelAgents();
   }
 
   /** Remove a member because an agent asked. See {@link RoomMembership.removeMemberFromTool}. */

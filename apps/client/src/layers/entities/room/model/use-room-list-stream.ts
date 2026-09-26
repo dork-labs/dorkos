@@ -262,6 +262,18 @@ export function useRoomListStream(): void {
     void queryClient.invalidateQueries({ queryKey: roomKeys.detail(payload.roomId) });
   });
 
+  // A roster that moved somewhere other than this client — an agent
+  // unregistered and taken off every channel (DOR-2095), a member removed or
+  // added from another window — changes what the OPEN room says about who will
+  // answer, its head count and its `@` picker. Same reason as `room_updated`
+  // above: nothing else refetches the detail. Both events carry the `roomId`.
+  const refreshRoster = (payload: unknown) => {
+    if (!isRoomUpdated(payload)) return;
+    void queryClient.invalidateQueries({ queryKey: roomKeys.detail(payload.roomId) });
+  };
+  useEventSubscription('room_member_added', refreshRoster);
+  useEventSubscription('room_member_removed', refreshRoster);
+
   // Presence is the one room-list event that must NOT refetch. It fires when a
   // claim is taken and again every ten seconds while the work runs, so treating
   // it like the five above would turn every busy room into a poll of the whole

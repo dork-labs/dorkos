@@ -792,6 +792,13 @@
       "when": 1790383917897,
       "tag": "0112_account_drop_issuer",
       "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "6",
+      "when": 1790428169307,
+      "tag": "0113_room_departed_seats",
+      "breakpoints": true
     }
   ]
 }

@@ -158,6 +158,21 @@ describe('useRoomListStream', () => {
     expect(invalidated).toContainEqual(roomKeys.detail('room-1'));
   });
 
+  it.each(['room_member_removed', 'room_member_added'])(
+    'invalidates the open room itself on %s, so its roster and head count follow (DOR-2095)',
+    (event) => {
+      // An agent unregistered elsewhere leaves every channel with only a
+      // membership event. Without this the open room kept listing it, kept
+      // saying "Two agents will answer you here", and kept offering its @.
+      const { invalidated, queryClient } = setup();
+      seedOpenRoom(queryClient, 'me', 0);
+
+      handlers.get(event)!({ roomId: 'room-1', authorId: 'agent-1' });
+
+      expect(invalidated).toContainEqual(roomKeys.detail('room-1'));
+    }
+  );
+
   it('leaves a room nobody has open alone on room_updated, minting no cache entry', () => {
     const { queryClient } = setup();
 

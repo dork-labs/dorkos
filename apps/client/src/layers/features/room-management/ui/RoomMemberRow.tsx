@@ -291,9 +291,10 @@ export function RoomMemberRow({
   const removeDragGuard = useDragVsTapGuard();
   const { author } = member;
   const isAgent = author.kind === 'agent';
-  // A retired agent stays on a direct message's roster only because a DM is
-  // named by who is in it (DOR-2095). It answers nothing, so there is nothing
-  // to tune and nothing to take it out of: every per-agent control is withheld.
+  // A retired agent answers nothing (DOR-2095), so it has no loudness to tune.
+  // It can still be taken out of the room: a channel may hold one the repair
+  // sweep left seated because its folder says it is coming back, and a person
+  // must be able to decide otherwise.
   const retired = author.retired === true;
   const tunable = isAgent && !retired;
   const rung = rungOf(member.responseMode, roomKind);
@@ -430,7 +431,9 @@ export function RoomMemberRow({
           </button>
         )}
 
-        {tunable && !isMobile && dormantReasonId === null && (
+        {/* The menu is the only way to Remove on a phone for a retired row,
+            because the scale that carries Remove there never opens for it. */}
+        {isAgent && (!isMobile || retired) && dormantReasonId === null && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

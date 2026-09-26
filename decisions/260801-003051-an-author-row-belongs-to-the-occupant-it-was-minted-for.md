@@ -17,7 +17,7 @@ recorded in the Status of that ADR.
 
 **Amended by [260926-124159](260926-124159-an-unregistered-agent-leaves-every-channel-and-a-dm-keeps-it-retired.md)**
 (DOR-2095): a ghost no longer stays on a channel roster. Unregistering an agent removes it from
-every channel, while a direct message keeps it and marks it retired. Everything else here stands.
+every channel (giving the seats back if the same agent returns), while a direct message keeps it and marks it retired. Everything else here stands.
 
 ## Context
 

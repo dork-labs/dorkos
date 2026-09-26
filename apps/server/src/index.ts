@@ -2048,9 +2048,10 @@ async function start() {
 
     // An unregistered agent leaves every channel roster in the same moment
     // (DOR-2095); its direct messages keep it, drawn as retired, and its
-    // messages keep their author. Registered before startup reconciliation,
-    // because the reconciler's orphan sweep unregisters through this same
-    // signal and must not leave a seat behind either.
+    // messages keep their author. Its seats are kept aside and given back if
+    // the same agent is registered again. Registered before startup
+    // reconciliation, because the reconciler's orphan sweep unregisters
+    // through this same signal and must not leave a seat behind either.
     registerRoomUnregisterCascade(meshCore, roomService, logger);
 
     // Wire the cwd -> agent lookup notification emitters read from (session

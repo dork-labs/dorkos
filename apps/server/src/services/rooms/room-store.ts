@@ -49,6 +49,7 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { RoomSessionLedger } from './session-bindings/room-session-ledger.js';
+import { DepartedSeatStore } from './manage/departed-seat-store.js';
 import {
   parseEntryBody,
   toEntry,
@@ -215,9 +216,17 @@ export class RoomStore {
    * else on this store — see `room-session-ledger.ts`.
    */
   readonly sessionLedger: RoomSessionLedger;
+  /**
+   * The channel seats departed agents left, and their return (DOR-2095). Public
+   * for the same reason `sessionLedger` is: one event in an agent's life, a
+   * different subject from everything else on this store — see
+   * `departed-seat-store.ts`.
+   */
+  readonly departedSeats: DepartedSeatStore;
 
   constructor(private readonly db: Db) {
     this.sessionLedger = new RoomSessionLedger(db);
+    this.departedSeats = new DepartedSeatStore(db);
   }
 
   // === Rooms ===
@@ -839,91 +848,6 @@ export class RoomStore {
   }
 
   /**
-   * Take a set of authors out of every CHANNEL they are in, in ONE transaction
-   * (DOR-2095) — the write an unregistered agent's cascade and the boot-time
-   * repair sweep both end in.
-   *
-   * **Channels only, and that is the whole policy.** A channel roster is live
-   * state: it is what an agent reads to learn who will see a message, and a
-   * member who can never answer again makes it lie. A direct message is the
-   * opposite case — it is NAMED by who is in it (`dm_member_key`), so taking one
-   * person out would turn a DM with them into a different conversation, or
-   * collide with one that already exists. A DM keeps its roster, and the member
-   * reads as retired off their author instead (`RoomRoster.list`).
-   *
-   * Each membership leaves with its per-room session binding, exactly as
-   * {@link RoomStore.removeMember} does, and a room whose fallback seat was one of
-   * these authors has the seat cleared in the same write — the seat is not a
-   * foreign key, and one naming somebody who is not on the roster reaches nobody.
-   * No `dm_member_key` moves, because no channel carries one.
-   *
-   * @param authorIds - The authors to take out. Duplicates and an empty list are fine.
-   * @returns Every membership that was removed, so the caller can tell the rooms.
-   */
-  removeFromChannels(authorIds: readonly string[]): Array<{ roomId: string; authorId: string }> {
-    const ids = [...new Set(authorIds)];
-    if (ids.length === 0) return [];
-    let removed: Array<{ roomId: string; authorId: string }> = [];
-    this.db.transaction(
-      (tx) => {
-        removed = tx
-          .select({ roomId: roomMembers.roomId, authorId: roomMembers.authorId })
-          .from(roomMembers)
-          .innerJoin(rooms, eq(rooms.id, roomMembers.roomId))
-          .where(and(inArray(roomMembers.authorId, ids), eq(rooms.kind, 'channel')))
-          .all();
-        for (const { roomId, authorId } of removed) {
-          tx.delete(roomMembers)
-            .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
-            .run();
-          tx.delete(roomSessions)
-            .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
-            .run();
-          tx.update(rooms)
-            .set({ fallbackSeatAuthorId: null })
-            .where(and(eq(rooms.id, roomId), eq(rooms.fallbackSeatAuthorId, authorId)))
-            .run();
-        }
-      },
-      { behavior: 'immediate' }
-    );
-    return removed;
-  }
-
-  /**
-   * The direct messages any of these authors is in — the rooms whose roster
-   * keeps a departed agent and so has to be told it now reads as retired.
-   *
-   * @param authorIds - The authors to look for.
-   */
-  listDmIdsWith(authorIds: readonly string[]): string[] {
-    const ids = [...new Set(authorIds)];
-    if (ids.length === 0) return [];
-    return this.db
-      .selectDistinct({ roomId: roomMembers.roomId })
-      .from(roomMembers)
-      .innerJoin(rooms, eq(rooms.id, roomMembers.roomId))
-      .where(and(inArray(roomMembers.authorId, ids), eq(rooms.kind, 'dm')))
-      .all()
-      .map((row) => row.roomId);
-  }
-
-  /**
-   * Every AGENT author that holds a seat in at least one channel — the set the
-   * repair sweep asks "is this one still registered?" of (DOR-2095).
-   */
-  listChannelAgentMemberIds(): string[] {
-    return this.db
-      .selectDistinct({ authorId: roomMembers.authorId })
-      .from(roomMembers)
-      .innerJoin(rooms, eq(rooms.id, roomMembers.roomId))
-      .innerJoin(authors, eq(authors.id, roomMembers.authorId))
-      .where(and(eq(rooms.kind, 'channel'), eq(authors.kind, 'agent')))
-      .all()
-      .map((row) => row.authorId);
-  }
-
-  /**
    * Who wrote in a room and is no longer on its roster — the authors a reader
    * still needs a name and a face for, because their messages stay
    * (DOR-2095: membership is live state, history is archive).
@@ -932,8 +856,15 @@ export class RoomStore {
    * that found it here would stop drawing the SUBJECT of a line the room wrote
    * about somebody (`displayAuthorIdOf`).
    *
-   * One probe of `idx_room_entries_author_room` per candidate author, rather than
-   * a scan of the room's whole log for its distinct authors.
+   * **The cost is per AUTHOR on the install, not per entry in the room.** One
+   * probe of `idx_room_entries_author_room` for each non-system author, rather
+   * than a scan of the room's whole log for its distinct authors — so a room
+   * with a long history costs nothing extra. What grows it is the authors table:
+   * agents, people, and everybody a bridged Telegram or Slack chat has ever
+   * projected. At a few thousand rows that is a few thousand indexed lookups on
+   * a room open (not measured at scale); if bridged chats ever make it tens of
+   * thousands, the fix is a per-room authors table maintained on write, not a
+   * different query here.
    *
    * @param roomId - The room.
    */

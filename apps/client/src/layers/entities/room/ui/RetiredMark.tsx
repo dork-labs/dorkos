@@ -29,7 +29,7 @@ export function RetiredMark({ retired, className }: RetiredMarkProps) {
     <span
       data-slot="retired-mark"
       data-testid="retired-mark"
-      title="This agent was unregistered. Its messages stay."
+      title="No longer on your team. Its messages stay."
       className={cn('text-muted-foreground inline-flex items-center gap-1 text-xs', className)}
     >
       <span aria-hidden className="inline-flex items-center gap-1">

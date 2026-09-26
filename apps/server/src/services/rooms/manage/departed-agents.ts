@@ -22,18 +22,24 @@ import { realpathSync } from 'node:fs';
 import { readManifest } from '@dorkos/shared/manifest';
 import type { Logger } from '@dorkos/shared/logger';
 import type { AuthorRecord } from '../author-registry.js';
-import type { DepartedAgentsDrop } from './room-membership.js';
+import type { ChannelSeat } from './departed-seat-store.js';
+import type { DepartedAgentsDrop } from './room-departures.js';
 
 /** The slice of the room service departures need. */
 export interface DepartedAgentRooms {
-  dropDepartedAgentAt(agentPath: string): DepartedAgentsDrop;
+  dropDepartedAgentAt(agentPath: string, manifestId: string): DepartedAgentsDrop;
+  restoreReturningAgentAt(agentPath: string): ChannelSeat[];
+  restoreAllReturningAgents(): ChannelSeat[];
   dropDepartedAgents(authorIds: readonly string[]): DepartedAgentsDrop;
   listDepartedChannelAgents(): AuthorRecord[];
 }
 
-/** The one Mesh lifecycle signal the cascade listens to. */
-export interface MeshUnregisterSignal {
+/** The two Mesh lifecycle signals departures listen to. */
+export interface MeshLifecycleSignals {
   onUnregister(callback: (agentId: string, projectPath: string) => void): void;
+  onAgentsChanged(
+    callback: (change: { kind: string; agentId: string; projectPath?: string }) => void
+  ): void;
 }
 
 /**
@@ -44,25 +50,42 @@ export interface MeshUnregisterSignal {
  * transaction. Synchronous, like the database under it: by the time the
  * unregister call returns, no roster names the agent.
  *
- * **What registering the same directory again means.** The agent comes back to
- * your team and to #team (`ensureTeamRoom` seats every registered agent), and
- * any direct message with it reads as active again, because its author row still
- * answers for the directory. It does NOT come back into the other channels: a
- * channel seat is an invitation, and unregistering spent it. A different agent
- * registered at the same directory is a different party entirely and inherits
- * nothing (ADR 260801-003051).
+ * **What registering the same agent again means.** Every seat taken is kept in
+ * a tombstone, and the moment Mesh registers an agent at the directory whose
+ * manifest id matches the one that left, those seats come back — its channels,
+ * its per-room settings, its read position and its fallback seat, wherever the
+ * room is still open and nobody has taken the fallback seat since. Its direct
+ * messages read as active again on their own, because the author row answers
+ * for the directory again. That is the reconciler's case — a folder unreachable
+ * for more than 24 hours, back with the same manifest — and a re-scan of a
+ * folder whose manifest survived. A person's own unregister usually deletes the
+ * manifest, so what is registered there next has a new id: a different agent,
+ * which inherits nothing (ADR 260801-003051).
  *
- * @param mesh - Where unregisters are announced.
+ * @param mesh - Where registrations and unregisters are announced.
  * @param rooms - The room service.
  * @param logger - Where a cascade that moved something says so.
  */
 export function registerRoomUnregisterCascade(
-  mesh: MeshUnregisterSignal,
-  rooms: Pick<DepartedAgentRooms, 'dropDepartedAgentAt'>,
+  mesh: MeshLifecycleSignals,
+  rooms: Pick<DepartedAgentRooms, 'dropDepartedAgentAt' | 'restoreReturningAgentAt'>,
   logger: Pick<Logger, 'info'>
 ): void {
+  mesh.onAgentsChanged((change) => {
+    // `updated` as well as `registered`: an agent that relocates back to the
+    // directory it left arrives as an update to its existing row.
+    if (change.kind === 'removed' || !change.projectPath) return;
+    const restored = rooms.restoreReturningAgentAt(change.projectPath);
+    if (restored.length === 0) return;
+    logger.info('[rooms] a returning agent got its channels back', {
+      event: 'rooms.agent_returned',
+      agentId: change.agentId,
+      seatsRestored: restored.length,
+      roomIds: [...new Set(restored.map((seat) => seat.roomId))],
+    });
+  });
   mesh.onUnregister((agentId, projectPath) => {
-    const { authorIds, removed } = rooms.dropDepartedAgentAt(projectPath);
+    const { authorIds, removed } = rooms.dropDepartedAgentAt(projectPath, agentId);
     if (removed.length === 0) return;
     logger.info('[rooms] an unregistered agent left its channels', {
       event: 'rooms.agent_departed',
@@ -91,6 +114,8 @@ export interface DepartedSweepResult {
   removed: number;
   /** Unregistered agents left seated because their manifest says they are coming back. */
   pending: number;
+  /** Seats given back to agents that returned while nothing was listening. */
+  restored: number;
 }
 
 /**
@@ -117,15 +142,24 @@ export interface DepartedSweepResult {
  *
  * A directory that cannot be read at all counts as gone, not pending: an agent
  * whose drive is merely unmounted is still in the registry (rule 1), so one that
- * is not has already been unregistered.
+ * is not has already been unregistered. Even then nothing is lost for good — the
+ * seat goes to a tombstone and comes back if the same agent does.
+ *
+ * It first gives back any waiting seat whose agent is live again, so a return
+ * that happened while nothing was listening (a registration before this process
+ * wired its hooks) is not left waiting for a registration that already came.
  *
  * @param deps - The room service, the disk evidence, and a logger.
  */
 export async function sweepDepartedAgentSeats(deps: {
-  rooms: Pick<DepartedAgentRooms, 'dropDepartedAgents' | 'listDepartedChannelAgents'>;
+  rooms: Pick<
+    DepartedAgentRooms,
+    'dropDepartedAgents' | 'listDepartedChannelAgents' | 'restoreAllReturningAgents'
+  >;
   evidence: DepartedAgentEvidence;
   logger: Pick<Logger, 'info'>;
 }): Promise<DepartedSweepResult> {
+  const restored = deps.rooms.restoreAllReturningAgents().length;
   const departed: string[] = [];
   let pending = 0;
   for (const author of deps.rooms.listDepartedChannelAgents()) {
@@ -138,15 +172,16 @@ export async function sweepDepartedAgentSeats(deps: {
   // Liveness is asked again inside, at write time — an agent registered while
   // the disk reads above were in flight keeps every seat.
   const { authorIds, removed } = deps.rooms.dropDepartedAgents(departed);
-  if (removed.length > 0 || pending > 0) {
+  if (removed.length > 0 || pending > 0 || restored > 0) {
     deps.logger.info('[rooms] repaired channel rosters holding agents no longer on your team', {
       event: 'rooms.departed_sweep',
       authorIds,
       seatsRemoved: removed.length,
+      seatsRestored: restored,
       pending,
     });
   }
-  return { removed: removed.length, pending };
+  return { removed: removed.length, pending, restored };
 }
 
 /**

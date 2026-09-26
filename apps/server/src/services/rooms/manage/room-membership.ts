@@ -19,25 +19,16 @@ import { directMessageTitle, isDirectMessageTitleDerived } from '@dorkos/shared/
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
-import type { AuthorRecord, AuthorRegistry } from '../author-registry.js';
-import { isLiveAuthor } from '../handles/author-handles.js';
+import type { AuthorRecord } from '../author-registry.js';
 import { buildBridgeSecondAgentRefusedNotice } from '../notices/notice-copy.js';
 import type { RoomAuthority } from '../service/room-authority.js';
 import type { RoomCore } from '../service/room-core.js';
-import { RoomError, type RoomAgentLookup } from '../room-errors.js';
+import { RoomError } from '../room-errors.js';
 import { dmTitleNames, type AddMemberInput, type RoomRoster } from '../room-roster.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomSystemPosts } from '../messages/room-system-posts.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
-
-/** What taking departed agents out of their channels changed (DOR-2095). */
-export interface DepartedAgentsDrop {
-  /** The authors that failed the liveness check and were taken out. */
-  authorIds: string[];
-  /** Every channel seat they lost. */
-  removed: Array<{ roomId: string; authorId: string }>;
-}
 
 /** Every write that changes who is in a room. */
 export class RoomMembership {
@@ -49,9 +40,6 @@ export class RoomMembership {
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   /** The record-based twin of {@link RoomMembership.isOwnerAuthor}. */
   private readonly isOwnerRecord: (record: AuthorRecord) => boolean;
-  private readonly authors: AuthorRegistry;
-  /** Which agent occupies a directory right now — the liveness question. */
-  private readonly agents: RoomAgentLookup;
 
   constructor(
     core: RoomCore,
@@ -65,8 +53,6 @@ export class RoomMembership {
     this.triggers = core.triggers;
     this.isOwnerAuthor = core.isOwnerAuthor;
     this.isOwnerRecord = core.isOwnerRecord;
-    this.authors = core.authors;
-    this.agents = core.agents;
   }
 
   /**
@@ -402,61 +388,6 @@ export class RoomMembership {
     // durable, visible sibling.
     this.triggers.abandonHolds(roomId, authorId);
     eventFanOut.broadcast('room_member_removed', { roomId, authorId });
-  }
-
-  /**
-   * Take agents nobody answers for any more out of every channel, in one
-   * transaction (DOR-2095) — what an unregister cascades into, and what the
-   * boot-time repair sweep ends in.
-   *
-   * **Membership is live state; history is archive.** A channel roster is the
-   * trust surface — "who will read this before I post it" — so a member that can
-   * never read again comes off it. Their messages stay, and read as retired
-   * through `RoomWithRoster.formerAuthors`. A direct message keeps its roster,
-   * because it is named by who is in it (`RoomStore.removeFromChannels` says why);
-   * the member there reads as retired instead.
-   *
-   * **Liveness is asked again here, whoever called.** Only an author that
-   * {@link isLiveAuthor} fails is touched: an agent still registered — an
-   * `unreachable` one on a sleeping laptop included — keeps every seat, however
-   * the caller came to name it. That makes the method safe to call twice, and
-   * makes a stale sweep unable to take out an agent that was re-registered in the
-   * meantime.
-   *
-   * No refusal from {@link RoomMembership.removeMemberFrom} applies: each of them
-   * protects the owner's seat or a person's choice to leave, and neither is in
-   * play for an agent that no longer exists. What IS shared is what a removal
-   * owes the room afterwards — its holds abandoned, and every open window told.
-   *
-   * @param authorIds - Candidate authors. Anything live, or not an agent, is ignored.
-   * @returns The authors taken out, and every channel seat they lost.
-   */
-  dropDepartedAgents(authorIds: readonly string[]): DepartedAgentsDrop {
-    const candidates = this.authors.getMany(authorIds);
-    const departed = [...candidates.values()]
-      .filter((author) => author.kind === 'agent' && !isLiveAuthor(author, this.agents))
-      .map((author) => author.id);
-    const removed = this.store.removeFromChannels(departed);
-    for (const { roomId, authorId } of removed) {
-      this.triggers.abandonHolds(roomId, authorId);
-      eventFanOut.broadcast('room_member_removed', { roomId, authorId });
-    }
-    // A direct message's roster did not move, but what it SAYS about the member
-    // did: an open window re-reads it and draws them as retired.
-    for (const roomId of this.store.listDmIdsWith(departed)) {
-      eventFanOut.broadcast('room_updated', { roomId });
-    }
-    return { authorIds: departed, removed };
-  }
-
-  /**
-   * Every agent author that still holds a channel seat and that nobody at its
-   * directory answers for — the ghosts an unregister before DOR-2095 left behind,
-   * and the candidates the repair sweep weighs. A pure read.
-   */
-  listDepartedChannelAgents(): AuthorRecord[] {
-    const authors = this.authors.getMany(this.store.listChannelAgentMemberIds());
-    return [...authors.values()].filter((author) => !isLiveAuthor(author, this.agents));
   }
 
   /**
