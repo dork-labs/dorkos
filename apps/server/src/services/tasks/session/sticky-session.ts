@@ -110,7 +110,7 @@ function freshSession(): RunSession {
  */
 export function resolveRunSession(
   lookup: StickySessionLookup,
-  task: Task,
+  task: Pick<Task, 'id' | 'sticky'>,
   opts: { runtimeType: string }
 ): RunSession {
   if (!task.sticky) return freshSession();
@@ -136,31 +136,69 @@ export const STICKY_ACCOUNT_LOCKED_MESSAGE =
   "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it.";
 
 /**
- * Refuse moving a sticky schedule to another Claude account once its
- * conversation has started (DOR-2384).
+ * Whether moving a schedule to another Claude account would be a promise no run
+ * keeps (DOR-2384): the schedule, as it will stand after the change, is sticky,
+ * and its next run would resume a conversation that has already started.
  *
- * A sticky schedule resumes ONE conversation every run, and a conversation
- * cannot change accounts: once it exists, its account comes from its transcript
- * on disk, and the launch ladder that reads a schedule's `account` never runs
- * for it again. Accepting the change would store an account no run would use.
+ * A conversation cannot change accounts. Once it exists, its account comes from
+ * its transcript on disk and the launch ladder that reads a schedule's
+ * `account` never runs for it again, so a new account on such a schedule would
+ * be stored and never used.
  *
- * "Started" is the question {@link resolveRunSession} asks before it resumes:
- * the task is sticky and has a prior run to resume. A sticky schedule that has
- * never run can still change accounts, and so can a request that turns sticky
- * off in the same write.
+ * Judged on the schedule AFTER the write, through {@link resolveRunSession}
+ * itself, so it cannot disagree with the runner: a request that turns sticky ON
+ * for a task that has already run is locked too (its next run resumes that
+ * run's conversation), one that turns sticky off is not, and one that moves
+ * the task to a runtime its last run did not use starts fresh and is not. A
+ * schedule that follows its agent's runtime (`runtime: null`) is taken to stay
+ * where its last run was, the direction that refuses rather than misleads.
+ *
+ * @param lookup - The resume-target lookup (the task store).
+ * @param taskId - The schedule being changed.
+ * @param change - The account it has now, and the account, sticky switch and
+ *   runtime it would have after the write.
+ * @returns True when the change must be refused.
+ */
+export function stickyAccountLocked(
+  lookup: StickySessionLookup,
+  taskId: string,
+  change: {
+    fromAccount: string | null;
+    toAccount: string | null;
+    sticky: boolean;
+    runtime: string | null;
+  }
+): boolean {
+  if (change.toAccount === change.fromAccount || !change.sticky) return false;
+  const previous = lookup.latestStickyRun(taskId);
+  if (!previous) return false;
+  // A prior run with no runtime on record resumes whatever it is asked, so any
+  // string answers "same runtime" there.
+  const runtimeType = change.runtime ?? previous.runtime ?? 'claude-code';
+  return resolveRunSession(lookup, { id: taskId, sticky: true }, { runtimeType }).hasStarted;
+}
+
+/**
+ * Refuse an update that moves a started sticky conversation to another Claude
+ * account ({@link stickyAccountLocked}), with the sentence the route and the
+ * MCP tool both answer.
  *
  * @param lookup - The resume-target lookup (the task store).
  * @param existing - The task as it stands.
- * @param data - The update's `account` and `sticky`, as sent.
+ * @param data - The update's `account`, `sticky` and `runtime`, as sent.
  * @returns The refusal to send, or `null` to let the update through.
  */
 export function refuseStickyAccountChange(
   lookup: StickySessionLookup,
   existing: Task,
-  data: { account?: string | null; sticky?: boolean }
+  data: { account?: string | null; sticky?: boolean; runtime?: string | null }
 ): { code: typeof STICKY_ACCOUNT_LOCKED_CODE; error: string } | null {
-  if (data.account === undefined || data.account === (existing.account ?? null)) return null;
-  if (!existing.sticky || data.sticky === false) return null;
-  if (lookup.latestStickyRun(existing.id) === null) return null;
-  return { code: STICKY_ACCOUNT_LOCKED_CODE, error: STICKY_ACCOUNT_LOCKED_MESSAGE };
+  if (data.account === undefined) return null;
+  const locked = stickyAccountLocked(lookup, existing.id, {
+    fromAccount: existing.account ?? null,
+    toAccount: data.account,
+    sticky: data.sticky ?? existing.sticky,
+    runtime: data.runtime !== undefined ? data.runtime : (existing.runtime ?? null),
+  });
+  return locked ? { code: STICKY_ACCOUNT_LOCKED_CODE, error: STICKY_ACCOUNT_LOCKED_MESSAGE } : null;
 }

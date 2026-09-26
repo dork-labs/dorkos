@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
+import { TaskDispatchPayloadSchema, TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
 import {
@@ -249,11 +249,24 @@ export async function handleTasksMessage(
   const executionSettings = {
     ...(payload.model !== undefined ? { model: payload.model } : {}),
     ...(payload.effort !== undefined ? { effort: payload.effort } : {}),
-    // The schedule's own Claude account as the launch hint (DOR-2384). No guard:
-    // it is the operator's approved choice, and the runtime's launch ladder is
-    // what skips it for a conversation that already has an account.
-    ...(payload.account !== undefined ? { accountHint: payload.account } : {}),
+    // The schedule's own Claude account as the launch hint (DOR-2384) — but
+    // only off an envelope the SCHEDULER published. The account is the
+    // operator's approved choice for that schedule, and that is the whole of
+    // why no account guard applies here; a dispatch anyone else put on this
+    // subject (an agent's `relay_send` can reach `relay.system.tasks.*`) is no
+    // one's approved choice, and honoring it would let a message pick whose
+    // subscription pays. `from` is stamped by the publish pipeline, the same
+    // fact `task-cancel-handler.ts` trusts.
+    ...(payload.account !== undefined && envelope.from === TASK_SCHEDULER_PRINCIPAL
+      ? { accountHint: payload.account }
+      : {}),
   };
+  if (payload.account !== undefined && envelope.from !== TASK_SCHEDULER_PRINCIPAL) {
+    deps.logger?.warn(
+      `[CCA] task dispatch from ${envelope.from} named an account; ignored, ` +
+        `only ${TASK_SCHEDULER_PRINCIPAL} may choose one`
+    );
+  }
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
   // The session this run runs on, decided on the scheduler side and carried here
   // on every envelope (DOR-1571). A STICKY task resolves a resume target — the

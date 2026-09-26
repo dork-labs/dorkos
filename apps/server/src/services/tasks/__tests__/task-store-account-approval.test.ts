@@ -25,13 +25,14 @@ import {
   upgradeLegacyContentKey,
 } from '../schedule-permission-clamp.js';
 import { AGENT_SETTINGS_CHANGE_REASON } from '../timing/effective-timing.js';
+import { STICKY_ACCOUNT_LOCKED_MESSAGE } from '../session/sticky-session.js';
 
 const FILE_PATH = `/home/u/.dork/skills/digest/${SKILL_FILENAME}`;
 const PROMPT = 'Post the overnight digest.';
 const CRON = '0 7 * * *';
 
 /** A parsed SKILL.md for an ordinary schedule, optionally naming an account. */
-function definition(opts: { account?: string; model?: string } = {}) {
+function definition(opts: { account?: string; model?: string; sticky?: boolean } = {}) {
   return {
     name: 'digest',
     meta: {
@@ -41,7 +42,7 @@ function definition(opts: { account?: string; model?: string } = {}) {
         cron: CRON,
         timezone: 'UTC',
         enabled: true,
-        sticky: false,
+        sticky: opts.sticky ?? false,
         permissions: 'acceptEdits',
         ...(opts.model && { model: opts.model }),
         ...(opts.account && { account: opts.account }),
@@ -221,6 +222,79 @@ describe('the account is part of the approval', () => {
 
       expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(1);
       expect(store.approvals.upgradeLegacyApprovalKeys()).toBe(0);
+    });
+  });
+
+  describe('a file that moves a started sticky conversation to another account', () => {
+    /** An approved sticky schedule whose conversation has started. */
+    function startedSticky(): string {
+      const id = store.fileSync.upsertFromFile(definition({ sticky: true })).id;
+      const run = store.createRun(id, 'scheduled');
+      store.updateRun(run.id, { sessionId: '0f6c1d7e-7d0e-4c55-9f55-000000000005' });
+      return id;
+    }
+
+    it('parks with the sentence the API refuses with, and keeps the account it runs on', () => {
+      // Purpose: a SKILL.md edit is the door the API lock does not cover; the
+      // conversation stays on its account, so the file's new one must not be
+      // stored as if a run would use it.
+      const id = startedSticky();
+
+      const synced = store.fileSync.upsertFromFile(
+        definition({ sticky: true, account: 'work' }),
+        undefined,
+        DISCOVERY
+      );
+
+      expect(synced).toMatchObject({
+        status: 'pending_approval',
+        reason: STICKY_ACCOUNT_LOCKED_MESSAGE,
+        account: null,
+      });
+      expect(row(id).account).toBeNull();
+    });
+
+    it('keeps refusing on every later sync of the same file', () => {
+      const id = startedSticky();
+      store.fileSync.upsertFromFile(
+        definition({ sticky: true, account: 'work' }),
+        undefined,
+        DISCOVERY
+      );
+      store.approvals.recordApproval(id);
+
+      expect(
+        store.fileSync.upsertFromFile(
+          definition({ sticky: true, account: 'work' }),
+          undefined,
+          DISCOVERY
+        )
+      ).toMatchObject({ status: 'pending_approval', reason: STICKY_ACCOUNT_LOCKED_MESSAGE });
+    });
+
+    it('takes the account once the file stops keeping one conversation', () => {
+      const id = startedSticky();
+
+      store.fileSync.upsertFromFile(
+        definition({ sticky: false, account: 'work' }),
+        undefined,
+        DISCOVERY
+      );
+
+      expect(row(id).account).toBe('work');
+      expect(store.getTask(id)!.reason).not.toBe(STICKY_ACCOUNT_LOCKED_MESSAGE);
+    });
+
+    it('lets a sticky schedule that has never run take the file’s account', () => {
+      const id = store.fileSync.upsertFromFile(definition({ sticky: true })).id;
+
+      store.fileSync.upsertFromFile(
+        definition({ sticky: true, account: 'work' }),
+        undefined,
+        DISCOVERY
+      );
+
+      expect(row(id).account).toBe('work');
     });
   });
 });

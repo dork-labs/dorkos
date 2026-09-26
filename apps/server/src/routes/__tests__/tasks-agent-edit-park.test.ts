@@ -466,6 +466,36 @@ describe('PATCH /api/tasks/:id — an agent edits a file-backed schedule (DOR-23
       expect(res.body).toMatchObject({ sticky: false, account: 'work' });
     });
 
+    it('refuses turning one conversation on and changing the account together, once it has run', async () => {
+      // The merged schedule is what runs: its next run resumes the last run's
+      // conversation, so the account cannot move with it.
+      const task = await approvedTask();
+      const run = store.createRun(task.id, 'scheduled');
+      store.updateRun(run.id, { sessionId: '0f6c1d7e-7d0e-4c55-9f55-000000000003' });
+
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ sticky: true, account: 'work' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('STICKY_ACCOUNT_LOCKED');
+      expect(store.getTask(task.id)).toMatchObject({ sticky: false, account: null });
+    });
+
+    it('lets a move to another runtime change the account, since that run starts fresh', async () => {
+      const task = await stickyTask({ hasRun: false });
+      const run = store.createRun(task.id, 'scheduled');
+      store.recordRunExecution(run.id, { runtime: 'claude-code' });
+      store.updateRun(run.id, { sessionId: '0f6c1d7e-7d0e-4c55-9f55-000000000004' });
+
+      const res = await request(fixtureTarget.server)
+        .patch(`/api/tasks/${task.id}`)
+        .send({ runtime: 'codex', account: 'work' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ runtime: 'codex', account: 'work' });
+    });
+
     it('does not refuse a request that re-sends the account it already has', async () => {
       const task = await stickyTask({ hasRun: true });
 

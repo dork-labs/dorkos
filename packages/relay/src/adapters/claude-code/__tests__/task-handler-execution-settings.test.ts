@@ -8,7 +8,11 @@
  * not read off the envelope, it does not know.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { RelayEnvelope, TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
+import {
+  TASK_SCHEDULER_PRINCIPAL,
+  type RelayEnvelope,
+  type TaskDispatchPayload,
+} from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { handleTasksMessage } from '../task-handler.js';
 import type { TasksHandlerDeps, TasksHandlerConfig } from '../task-handler.js';
@@ -30,11 +34,14 @@ function mockAgentManager(): AgentRuntimeLike {
   } as unknown as AgentRuntimeLike;
 }
 
-function envelopeFor(payload: TaskDispatchPayload): RelayEnvelope {
+function envelopeFor(
+  payload: TaskDispatchPayload,
+  from: string = TASK_SCHEDULER_PRINCIPAL
+): RelayEnvelope {
   return {
     id: 'msg-1',
     subject: `relay.system.tasks.${payload.taskId}`,
-    from: 'system:tasks',
+    from,
     budget: { hopCount: 0, ttl: Date.now() + 60_000 },
     payload,
   } as unknown as RelayEnvelope;
@@ -162,6 +169,24 @@ describe('handleTasksMessage execution settings (DOR-1615/DOR-1347)', () => {
       'do the thing',
       expect.objectContaining({ accountHint: 'work' })
     );
+  });
+
+  it('ignores an account on a dispatch the scheduler did not publish (DOR-2384)', async () => {
+    // An agent's relay_send can reach this subject. A made-up dispatch must not
+    // choose whose subscription pays; the run still runs on the usual ladder.
+    await handleTasksMessage(
+      'sub',
+      envelopeFor(basePayload({ account: 'someone-elses-plan' }), 'relay.agent.mallory'),
+      undefined,
+      Date.now(),
+      config,
+      deps
+    );
+
+    const [, ensureOpts] = vi.mocked(agentManager.ensureSession).mock.calls[0]!;
+    const [, , sendOpts] = vi.mocked(agentManager.sendMessage).mock.calls[0]!;
+    expect(ensureOpts).not.toHaveProperty('accountHint');
+    expect(sendOpts).not.toHaveProperty('accountHint');
   });
 
   it('mentions no account hint when the envelope names no account (DOR-2384)', async () => {

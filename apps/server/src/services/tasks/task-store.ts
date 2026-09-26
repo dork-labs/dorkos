@@ -219,7 +219,7 @@ export class TaskStore {
   constructor(db: Db) {
     this.db = db;
     this.approvals = new TaskApprovals(db);
-    this.fileSync = new TaskFileSync(db, (id) => this.getTask(id));
+    this.fileSync = new TaskFileSync(db, (id) => this.getTask(id), this);
   }
 
   /**

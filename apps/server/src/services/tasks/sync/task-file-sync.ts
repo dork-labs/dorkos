@@ -29,6 +29,11 @@ import {
 import { mapTaskRow } from '../task-row-mappers.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
 import { effectiveContentKey } from '../timing/effective-timing.js';
+import {
+  STICKY_ACCOUNT_LOCKED_MESSAGE,
+  stickyAccountLocked,
+  type StickySessionLookup,
+} from '../session/sticky-session.js';
 
 /**
  * What {@link TaskFileSync.upsertFromFile} needs to know beyond the file itself:
@@ -59,10 +64,13 @@ export class TaskFileSync {
    * @param db - The store's database handle.
    * @param getTask - The store's own row reader, so an upsert answers with the
    *   task exactly as every other store read maps it.
+   * @param stickyRuns - The store's resume-target lookup, so a file cannot move
+   *   a started sticky conversation to another account (DOR-2384).
    */
   constructor(
     private readonly db: Db,
-    private readonly getTask: (id: string) => Task | null
+    private readonly getTask: (id: string) => Task | null,
+    private readonly stickyRuns?: StickySessionLookup
   ) {}
 
   /**
@@ -110,8 +118,27 @@ export class TaskFileSync {
     // What a file on disk may do to this row, decided in one place so the
     // permission clamp and the arm gate cannot disagree — see
     // `file-sync-gates.ts` and `schedule-permission-clamp.ts`.
+    // A file that moves a started sticky conversation to another account asks
+    // for something no run will do (DOR-2384, `stickyAccountLocked`). The row
+    // keeps the account the conversation runs on, and a discovered file parks
+    // with the same sentence the API refuses with, through the ordinary
+    // complaint path, until it is changed back or stops keeping one
+    // conversation.
+    const accountLocked =
+      existing !== undefined &&
+      this.stickyRuns !== undefined &&
+      stickyAccountLocked(this.stickyRuns, existing.id, {
+        fromAccount: existing.account ?? null,
+        toAccount: schedule.account ?? null,
+        sticky: schedule.sticky,
+        runtime: schedule.runtime ?? null,
+      });
+    const gateOptions =
+      accountLocked && options?.source === 'discovery' && !options.problem
+        ? { ...options, problem: STICKY_ACCOUNT_LOCKED_MESSAGE }
+        : options;
     const { permissionMode, arm, keepsRowEnabled, dropsTimingOverride, packageOwned } =
-      this.fileGates.resolve(def, existing, options);
+      this.fileGates.resolve(def, existing, gateOptions);
 
     if (existing) {
       this.db
@@ -139,7 +166,7 @@ export class TaskFileSync {
           runtime: schedule.runtime ?? null,
           model: schedule.model ?? null,
           effort: schedule.effort ?? null,
-          account: schedule.account ?? null,
+          account: accountLocked ? existing.account : (schedule.account ?? null),
           // The file is no longer a package's, so it is the one source of
           // timing again (DOR-2302, `FileSyncGates.dropsTimingOverride`).
           ...(dropsTimingOverride ? { cronOverride: null, timezoneOverride: null } : {}),
