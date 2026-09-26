@@ -175,7 +175,10 @@ export function RoomLiveLane({
   // by what this client can see rather than by the server refusing to say.
   const rooms = useRooms();
   const agents = useRoomAgentDirectory();
-  const authors = useMemo(() => authorsById(room.members), [room.members]);
+  const authors = useMemo(
+    () => authorsById(room.members, room.formerAuthors),
+    [room.members, room.formerAuthors]
+  );
   const nameOf = useCallback(
     (authorId: string): string => authors.get(authorId)?.displayName ?? UNKNOWN_AGENT,
     [authors]

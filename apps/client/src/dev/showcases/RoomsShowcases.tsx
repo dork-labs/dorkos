@@ -255,6 +255,16 @@ export function RoomMemberRowShowcase() {
       <ShowcaseDemo>
         <MemberRowDemo member={MEMBER.miguel} />
       </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Retired — an unregistered agent a direct message keeps, with nothing left to tune (DOR-2095)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <MemberRowDemo
+          member={{ ...MEMBER.code, author: { ...MEMBER.code.author, retired: true } }}
+          visual={{ color: '#3ca078', emoji: '🔔' }}
+        />
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }

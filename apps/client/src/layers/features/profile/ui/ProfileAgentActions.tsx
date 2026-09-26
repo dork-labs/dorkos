@@ -183,8 +183,9 @@ export function ProfileAgentActions({
             <ResponsiveDialogHeader>
               <ResponsiveDialogTitle>Unregister {name}?</ResponsiveDialogTitle>
               <ResponsiveDialogDescription>
-                It disappears from your team and any schedules it has are paused. Your project files
-                stay exactly as they are, and a re-scan brings it back.
+                It leaves your team and every channel it was in, and any schedules it has are
+                paused. Its messages stay. Your project files stay exactly as they are, and a
+                re-scan brings it back to your team.
               </ResponsiveDialogDescription>
             </ResponsiveDialogHeader>
             <ResponsiveDialogFooter>

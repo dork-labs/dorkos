@@ -364,6 +364,7 @@ export function RoomSurface({
         viewerAuthorId={room.viewerAuthorId}
         entries={entries}
         members={room.members}
+        formerAuthors={room.formerAuthors}
         lastReadSeq={frozenReadSeq}
         reactionFrequents={room.reactionFrequents}
         streamStalled={stream.stalled}

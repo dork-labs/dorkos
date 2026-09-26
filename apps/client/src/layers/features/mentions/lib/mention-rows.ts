@@ -58,9 +58,13 @@ export interface MentionRow {
 /**
  * Build the picker's rows from a room's roster.
  *
- * Three members never appear: the room's own voice (the `system` author, which
+ * Four members never appear: the room's own voice (the `system` author, which
  * is not a participant), the reader themself (`@You` is the top row of every
- * room and means nothing), and anybody the roster lost the author record for.
+ * room and means nothing), anybody the roster lost the author record for, and a
+ * RETIRED agent — one that was unregistered and kept only because a direct
+ * message is named by who is in it (DOR-2095). A retired agent is not a member
+ * who lacks an address, which is what a disabled row says; it is nobody who can
+ * be reached at all, and a row for it would be a dead handle in the list.
  *
  * **Ownership is not re-derived here.** `handle` is already the answer to
  * "what reaches this member", decided server-side over the same name list and
@@ -81,7 +85,7 @@ export function buildMentionRows(
   const rows: MentionRow[] = [];
 
   for (const { author } of members) {
-    if (author.kind === 'system' || author.id === viewerAuthorId) continue;
+    if (author.kind === 'system' || author.id === viewerAuthorId || author.retired) continue;
 
     const handle = author.handle;
     rows.push({

@@ -186,6 +186,7 @@ export { ResponseModeControl } from './ui/ResponseModeControl';
 export { RoomAvatar } from './ui/RoomAvatar';
 export { RoomTitle } from './ui/RoomTitle';
 export { OriginMark } from './ui/OriginMark';
+export { RetiredMark } from './ui/RetiredMark';
 export { BridgeVisibilityBadge } from './ui/BridgeVisibilityBadge';
 export type {
   AuthorOrigin,
@@ -194,6 +195,7 @@ export type {
   RoomBridgeInfo,
   RoomEntry,
   RoomEntryReaction,
+  RoomFormerAuthor,
   RoomKind,
   RoomRosterEntry,
   RoomSummary,

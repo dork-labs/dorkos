@@ -441,6 +441,11 @@ import {
   type TeamRoomDeps,
 } from './services/rooms/ensure-team-room.js';
 import { createMomentDetectors } from './services/rooms/moments/index.js';
+import {
+  diskEvidence,
+  registerRoomUnregisterCascade,
+  sweepDepartedAgentSeats,
+} from './services/rooms/manage/departed-agents.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer, selectSearchSources } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
@@ -2026,6 +2031,13 @@ async function start() {
       registerRemoteCommunityUnregisterCascade(meshCore, roomAuthors, remoteCommunitySubscriptions);
     }
 
+    // An unregistered agent leaves every channel roster in the same moment
+    // (DOR-2095); its direct messages keep it, drawn as retired, and its
+    // messages keep their author. Registered before startup reconciliation,
+    // because the reconciler's orphan sweep unregisters through this same
+    // signal and must not leave a seat behind either.
+    registerRoomUnregisterCascade(meshCore, roomService, logger);
+
     // Wire the cwd -> agent lookup notification emitters read from (session
     // lifecycle, ask resolution): both fire from module-level projector
     // subscriptions registered before this line runs, so they read this
@@ -2222,6 +2234,23 @@ async function start() {
     defaultAgentName: () => configManager.getAll().agents.defaultAgent,
   };
   ensureTeamRoom(teamRoomDeps);
+
+  // Repair the channel rosters unregisters left behind before the cascade above
+  // existed (DOR-2095). Only once the registry has been reconciled against disk:
+  // "no longer registered" is a question the registry answers, and a sweep
+  // reading one that has not caught up would be guessing. Idempotent, so it runs
+  // every boot; non-blocking and non-fatal, because a roster repair is never a
+  // reason for the server not to start.
+  if (meshCore && meshStartupReconciled) {
+    const mesh = meshCore;
+    sweepDepartedAgentSeats({
+      rooms: roomService,
+      evidence: diskEvidence(() => mesh.listDenied()),
+      logger,
+    }).catch((err: unknown) => {
+      logger.warn('[rooms] could not repair channel rosters', logError(err));
+    });
+  }
 
   // Typing in #team without addressing anybody reaches your DEFAULT agent, and
   // that is an `always` membership on an ordinary room rather than a routing

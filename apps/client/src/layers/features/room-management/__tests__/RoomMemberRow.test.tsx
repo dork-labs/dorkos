@@ -397,3 +397,25 @@ describe('RoomMemberRow', () => {
     });
   });
 });
+
+describe('a retired agent on a direct message roster (DOR-2095)', () => {
+  const RETIRED = member({ kind: 'agent', agentRef: 'ref-ana', retired: true });
+
+  it('says so in words, and offers nothing to tune or remove', () => {
+    viewport('desktop');
+    renderRow({ member: RETIRED, roomKind: 'dm' });
+
+    expect(screen.getByTestId('retired-mark')).toHaveTextContent('Retired');
+    expect(screen.getByText('No longer on your team. Its messages stay.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'How loud Ana is here' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ana actions' })).not.toBeInTheDocument();
+  });
+
+  it('keeps an active agent’s controls', () => {
+    viewport('desktop');
+    renderRow({ member: AGENT, roomKind: 'dm' });
+
+    expect(screen.queryByTestId('retired-mark')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'How loud Ana is here' })).toBeInTheDocument();
+  });
+});

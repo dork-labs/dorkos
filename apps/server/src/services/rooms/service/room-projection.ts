@@ -136,6 +136,11 @@ export class RoomProjection {
     return {
       ...room,
       members: this.roster.list(room.id),
+      // Whoever left the roster but not the log (DOR-2095). Here, beside the
+      // roster, because this one method feeds every way of arriving at a room —
+      // the read, the create response and the stream's hydration snapshot — and
+      // a message whose author could not be named used to read as "Unknown".
+      formerAuthors: this.roster.formerAuthors(room.id),
       viewerAuthorId,
       // Computed here rather than on a route of its own: this is the one place
       // every surface that draws a message capsule already asks for — the room

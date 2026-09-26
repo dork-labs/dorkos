@@ -50,6 +50,7 @@ import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
 import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
+import type { DepartedAgentsDrop } from './manage/room-membership.js';
 import type { ActiveClaimView, HeldView } from './room-claims.js';
 import { createRoomCollaborators, type RoomCollaborators } from './service/room-collaborators.js';
 import type { RoomCanvasService } from './canvas/room-canvas-service.js';
@@ -328,6 +329,33 @@ export class RoomService {
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
     this.parts.membership.removeMember(roomId, viewerAuthorId, authorId);
   }
+
+  /**
+   * The unregister cascade (DOR-2095): take whatever agent lived at this
+   * directory out of every channel, in one transaction. Wired to
+   * `MeshCore.onUnregister`, which fires after the registry row is gone — so
+   * the author rows found here fail the liveness check and are dropped, while
+   * any row still answered for by a registered agent keeps its seats. See
+   * {@link RoomMembership.dropDepartedAgents}.
+   *
+   * @param agentPath - The unregistered agent's project directory.
+   */
+  dropDepartedAgentAt(agentPath: string): DepartedAgentsDrop {
+    return this.parts.membership.dropDepartedAgents(
+      this.authorRegistry.agentRowsAt(agentPath).map((author) => author.id)
+    );
+  }
+
+  /** Drop named departed agents from every channel. See {@link RoomMembership.dropDepartedAgents}. */
+  dropDepartedAgents(authorIds: readonly string[]): DepartedAgentsDrop {
+    return this.parts.membership.dropDepartedAgents(authorIds);
+  }
+
+  /** Agents on a channel roster that nobody answers for. See {@link RoomMembership.listDepartedChannelAgents}. */
+  listDepartedChannelAgents(): AuthorRecord[] {
+    return this.parts.membership.listDepartedChannelAgents();
+  }
+
   /** Remove a member because an agent asked. See {@link RoomMembership.removeMemberFromTool}. */
   removeMemberFromTool(roomId: string, viewerAuthorId: string, authorId: string): void {
     this.parts.membership.removeMemberFromTool(roomId, viewerAuthorId, authorId);

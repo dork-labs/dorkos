@@ -381,6 +381,12 @@ export const AuthorRefSchema = z
       .describe(
         "This author's address: what to type after an `@` to reach them. Globally unique on this install (case-folded), lowercase, 2–32 characters of `[a-z0-9._-]`, starting and ending alphanumeric. A mention picker inserts it verbatim, so the string written is the string the server resolves. `null` means this author cannot be addressed by `@` at all — a person who has not chosen one yet, or an agent whose name spells nothing legal. Never fall back to the display name: that is not an address, it is unrestricted text, and it routinely contains spaces the mention pattern cannot span."
       ),
+    retired: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when this is an agent that is no longer on your team — it was unregistered, or its directory now holds a different agent. Its messages keep its name and face; it answers to no `@`, receives no turns, and is on no channel roster (DOR-2095). Absent means active: only a source that asked the liveness question ever sends it, and it is never sent as `false`.'
+      ),
   })
   .openapi('AuthorRef');
 
@@ -615,6 +621,20 @@ export const RoomRosterEntrySchema = RoomMemberSchema.extend({
 export type RoomRosterEntry = z.infer<typeof RoomRosterEntrySchema>;
 
 /**
+ * Somebody whose words are in a room's log but who is no longer on its roster
+ * (DOR-2095). The same author-and-origin pair a roster entry carries, without a
+ * membership to hang it on.
+ */
+export const RoomFormerAuthorSchema = z
+  .object({
+    author: AuthorRefSchema,
+    origin: AuthorOriginSchema,
+  })
+  .openapi('RoomFormerAuthor');
+
+export type RoomFormerAuthor = z.infer<typeof RoomFormerAuthorSchema>;
+
+/**
  * One agent that is mid-turn in a room, read straight off the dispatcher's claim
  * map at the moment of the request.
  *
@@ -651,6 +671,12 @@ export type RoomWorkingClaim = z.infer<typeof RoomWorkingClaimSchema>;
  */
 export const RoomWithRosterSchema = RoomSchema.extend({
   members: z.array(RoomRosterEntrySchema),
+  formerAuthors: z
+    .array(RoomFormerAuthorSchema)
+    .optional()
+    .describe(
+      'Everybody who wrote in this room and is no longer on its roster, oldest author first — so their messages keep their name and face instead of reading as "Unknown". An agent that was unregistered is here with `author.retired: true`; a person or agent who was only taken out of the room is here without it. Never the room\'s own system voice. Membership is live state and history is archive (DOR-2095): nothing on this list can be addressed or can answer. Optional so a caller that predates it still parses; absent means the same as empty.'
+    ),
   viewerAuthorId: z
     .string()
     .min(1)

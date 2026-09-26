@@ -48,6 +48,20 @@ function openRows() {
 }
 
 describe('buildMentionRows', () => {
+  it('leaves a retired agent out entirely — it is nobody who can be reached (DOR-2095)', () => {
+    const RETIRED = author({
+      id: 'old',
+      kind: 'agent',
+      displayName: 'Old Ana',
+      handle: null,
+      retired: true,
+    });
+    const rows = buildMentionRows([...ROSTER, RETIRED], 'you');
+    expect(rows.map((row) => row.authorId)).not.toContain('old');
+    // An unaddressable but LIVE agent is still shown, disabled, saying why.
+    expect(rows.find((row) => row.authorId === 'ab')).toMatchObject({ disabled: true });
+  });
+
   it('leaves out the room’s own voice and the person reading', () => {
     const ids = buildMentionRows(ROSTER, 'you').map((row) => row.authorId);
     expect(ids).toEqual(['priya', 'ana', 'mio', 'ab']);
