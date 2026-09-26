@@ -643,21 +643,13 @@ export async function commitChangeSet(
     }
     for (const change of writes) {
       undo.folders.push(...(await makeParents(repoDir, change.path)));
-      if (!change.existed) {
-        // **A path the tree does not hold must not exist on disk either.** If it
-        // does, it is another name for something that is there — a different
-        // Unicode spelling or case of a real file — and writing would overwrite
-        // it, and undoing the write would delete it. Refused before a byte is
-        // written, and never recorded as ours to remove.
-        if (await existsOnDisk(path.join(repoDir, change.path))) {
-          throw new RoomError(
-            'ROOM_FILE_EXISTS',
-            `This room already has a file at \`${change.path}\` under another spelling. Replace it, or choose another name.`
-          );
-        }
-        undo.files.push(change.path);
-      }
-      await writeContent(repoDir, ceiling, change);
+      // **A path the tree does not hold must not exist on disk either.** If it
+      // does, it is another name for something that is there — a different
+      // Unicode spelling or case of a real file — and writing would overwrite
+      // it, and undoing the write would delete it. `writeContent` creates such
+      // a path `O_EXCL`, so the refusal is the kernel's and atomic, and a file
+      // is recorded as ours to remove only once the create has succeeded.
+      await writeContent(repoDir, ceiling, change, () => undo.files.push(change.path));
     }
 
     await inBatches(
@@ -682,20 +674,6 @@ interface ChangeSetUndo {
   folders: string[];
   /** Files it created where nothing stood on disk. */
   files: string[];
-}
-
-/**
- * Whether anything — a file, a folder, a link — stands at a path.
- *
- * @param target - The absolute path.
- */
-async function existsOnDisk(target: string): Promise<boolean> {
-  try {
-    await fs.lstat(target);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -814,19 +792,39 @@ async function pruneEmptyParents(repoDir: string, filePath: string): Promise<voi
  * @param repoDir - The room's main checkout.
  * @param ceiling - The room home directory git's search may not climb past.
  * @param change - The write.
+ * @param onCreated - Called once a new path has been created, so a rollback
+ *   removes it — and only then.
  */
 async function writeContent(
   repoDir: string,
   ceiling: string,
-  change: RoomFileChange
+  change: RoomFileChange,
+  onCreated: () => void
 ): Promise<void> {
   // `O_NOFOLLOW` on the final component: the lstat walk cannot close the window
-  // between looking and writing, and the kernel can.
-  const handle = await fs.open(
-    path.join(repoDir, change.path),
-    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW,
-    change.executable ? 0o755 : 0o644
-  );
+  // between looking and writing, and the kernel can. A path `main` does not hold
+  // is created `O_EXCL`: anything already standing there — another spelling of
+  // a real file — is refused rather than truncated.
+  const flags = change.existed
+    ? fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC | O_NOFOLLOW
+    : fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | O_NOFOLLOW;
+  let handle;
+  try {
+    handle = await fs.open(
+      path.join(repoDir, change.path),
+      flags,
+      change.executable ? 0o755 : 0o644
+    );
+  } catch (err) {
+    if (!change.existed && (err as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new RoomError(
+        'ROOM_FILE_EXISTS',
+        `This room already has a file at \`${change.path}\` under another spelling. Replace it, or choose another name.`
+      );
+    }
+    throw err;
+  }
+  if (!change.existed) onCreated();
   try {
     const content = change.content as RoomFileContent;
     if (Buffer.isBuffer(content)) await handle.writeFile(content);

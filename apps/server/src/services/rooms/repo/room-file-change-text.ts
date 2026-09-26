@@ -61,6 +61,36 @@ export function codeSpan(text: string): string {
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
+/**
+ * A person's display name made inert as markdown, for the start of a line the
+ * room writes in its own voice.
+ *
+ * A name is the person's own text, and with login on it is not the operator's:
+ * `[x](https:evil)` would render as a link, `**SYSTEM**` as bold, `# Admin` as a
+ * heading — all in the room's voice. Escaped with backslashes rather than put in
+ * a code span, because a name reads as a name. Inline, every character that can
+ * open markup is escaped (backslash, backtick, `*`, `_`, `[`, `]`, `!`, `~`,
+ * `|`; `<` and `>` never reach here, `sanitizeIdentity` removed them). At the
+ * start, where a block could open, `-` `+` `=` `#` `>` are escaped too, and a
+ * leading `1.` or `1)` has its punctuation escaped so it cannot open a list.
+ * Hyphens and dots in the middle of a name are left alone, so `Ana-Lima` still
+ * reads as `Ana-Lima` in a bridge or an agent's context. A bare `https://` or
+ * `www.` — which GFM links with no brackets at all — has its `:` or `.` escaped.
+ *
+ * @param who - The display name, already sanitized.
+ */
+export function escapeMarkdown(who: string): string {
+  return (
+    who
+      .replace(/[\\`*_[\]!~|]/g, (char) => `\\${char}`)
+      .replace(/^[-+=#>]/, (char) => `\\${char}`)
+      .replace(/^(\d+)([.)])/, '$1\\$2')
+      // GFM links a bare `https://…` or `www.…` with no brackets at all.
+      .replace(/:\/\//g, '\\://')
+      .replace(/\bwww\./gi, (match) => `${match.slice(0, 3)}\\.`)
+  );
+}
+
 /** What an upload or a copy from the chat says when it went to the root of the room. */
 export const ROOT_FOLDER_LABEL = 'the top folder';
 
@@ -69,7 +99,8 @@ export const ROOT_FOLDER_LABEL = 'the top folder';
  * `agent-home-desk` §7.2) — plain words, the person's name first, every path
  * rebuilt from sanitized segments and set in a code span ({@link codeSpan}).
  *
- * @param who - The person's display name, already sanitized.
+ * @param who - The person's display name, already sanitized; escaped here
+ *   ({@link escapeMarkdown}).
  * @param change - What changed.
  * @param target - The folder an upload went to (`''` for the root), or the path
  *   a rename went to / a delete removed, with `/` on a folder.
@@ -79,6 +110,7 @@ export function fileChangeSentence(
   change: Pick<RoomFileChangeEvent, 'kind' | 'paths' | 'pathCount' | 'from'>,
   target: string
 ): string {
+  who = escapeMarkdown(who);
   const file = (filePath: string): string => codeSpan(sanitizePath(filePath));
   const name = (filePath: string): string => codeSpan(sanitizeSegment(basename(filePath)));
   const first = change.paths[0] ?? '';

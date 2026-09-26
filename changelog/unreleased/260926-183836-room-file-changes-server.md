@@ -2,6 +2,7 @@
 covers:
   - "feat(rooms): let people upload, rename, delete and keep chat files in a room's files (DOR-2412)"
   - 'fix(rooms): refuse other spellings of a room file and of .git, always lock moves and deletes, keep paths inert in entries (DOR-2412)'
+  - "fix(rooms): escape the person's name in file-change entries and create new files exclusively (DOR-2412)"
 ---
 
 ### Added

@@ -38,10 +38,11 @@ import {
   type RoomFileActor,
   type RoomFileAnnouncement,
   type RoomFileChangeOutcome,
+  type RoomFileEditorDeps,
 } from '../room-file-editor.js';
 import { commitAll, runGit } from '../room-repo-git.js';
 import { commitChangeSet } from '../room-file-ops.js';
-import { codeSpan, fileChangeSentence } from '../room-file-change-text.js';
+import { codeSpan, escapeMarkdown, fileChangeSentence } from '../room-file-change-text.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const ROOM_ID = '01ROOMAAAAAAAAAAAAAAAAAAAA';
@@ -55,6 +56,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
   let stagingRoot: string;
   let store: RoomRepoStore;
   let editor: RoomFileEditor;
+  let editorDeps: RoomFileEditorDeps;
   let repoDir: string;
   let mutex: RoomRepoMutex;
   let caps: RoomRepoCaps;
@@ -158,7 +160,7 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       hasRepo: () => true,
       maxFileBytes: () => caps.maxFileBytes,
     });
-    editor = new RoomFileEditor({
+    editorDeps = {
       store,
       mutex,
       enabled: () => true,
@@ -174,7 +176,8 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       },
       uploadStagingRoot: () => stagingRoot,
       files,
-    });
+    };
+    editor = new RoomFileEditor(editorDeps);
   });
 
   afterEach(async () => {
@@ -727,6 +730,33 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
       for (const run of inner.match(/`+/g) ?? []) expect(run.length).not.toBe(fence.length);
       const unpadded = inner.startsWith(' ') && inner.endsWith(' ') ? inner.slice(1, -1) : inner;
       expect(unpadded).toBe(name);
+    });
+
+    it.each([
+      ['[x](https://evil.example)', '\\[x\\](https\\://evil.example)'],
+      ['**SYSTEM**', '\\*\\*SYSTEM\\*\\*'],
+      ['# Admin', '\\# Admin'],
+      ['- Ana', '\\- Ana'],
+      ['1. Ana', '1\\. Ana'],
+      ['`Ana`', '\\`Ana\\`'],
+      ['visit www.evil.example', 'visit www\\.evil.example'],
+      ['Ana-Lima Jr.', 'Ana-Lima Jr.'],
+    ])('makes the display name %s inert as markdown', (name, escaped) => {
+      expect(escapeMarkdown(name)).toBe(escaped);
+      expect(
+        fileChangeSentence(name, { kind: 'edit', paths: ['ROOM.md'], pathCount: 1 }, 'ROOM.md')
+      ).toBe(`${escaped} edited \`ROOM.md\``);
+    });
+
+    it('escapes a signed-in person’s name in the entry the room posts', async () => {
+      const mallory: RoomFileActor = { authorId: 'mallory', signedIn: true };
+      const named = new RoomFileEditor({
+        ...editorDeps,
+        personName: () => '[x](https://evil.example)',
+      });
+      await named.save(ROOM_ID, mallory, { path: 'm.md', baseCommit: null, text: 'm\n' });
+
+      expect(announced.at(-1)?.text).toBe('\\[x\\](https\\://evil.example) added `m.md`');
     });
 
     it('calls the root of the room one thing everywhere', () => {
