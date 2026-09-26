@@ -234,6 +234,20 @@ describe('RoomThreadSplit', () => {
     expect(handle()).toHaveAttribute('tabindex', '-1');
   });
 
+  it('ignores Home and End while the handle is disabled', () => {
+    // Its own remap of Home and End runs before the library's gate, so it
+    // must honour the disabled state itself.
+    measuredWidth = 641;
+    renderSplit();
+    const before = threadSize();
+
+    // Not taken: the key is neither acted on nor swallowed.
+    expect(fireEvent.keyDown(handle(), { key: 'End' })).toBe(true);
+    expect(fireEvent.keyDown(handle(), { key: 'Home' })).toBe(true);
+    expect(threadSize()).toBe(before);
+    expect(localStorage.getItem(KEY)).toBeNull();
+  });
+
   it('offers the handle once there is real range', () => {
     measuredWidth = 700;
     renderSplit();

@@ -364,8 +364,8 @@
      hand-off is paced to read as ONE gesture — the "working" line leaving as
      the answer rises into the space it left, rather than two things happening
      near each other. Both well inside the 300ms every motion here resolves
-     within, and every call site gates them with `motion-safe:`. (The connector
-     draw these sat beside went with the connector, DOR-2110.) */
+     within, and every call site gates them with `motion-safe:`. §5.3's other
+     half, the connector drawing downward, went with the connector (DOR-2110). */
   --msg-thread-reply: 220ms;
   --msg-presence-handoff: 200ms;
   --msg-count-flip: 220ms;
@@ -1133,7 +1133,8 @@ body {
   animation: press-release var(--msg-press-release) cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 
-/* A reply landing in the thread panel (design record §5.3): it comes down from
+/* A reply landing in the thread panel (design record §5.3 — the bounce, all
+   that remains of it since DOR-2110 removed the connector): it comes down from
    above, overshoots 2px, and settles. The bounce is stated as a KEYFRAME for
    the same reason `capsule-in`'s pixel is — a curve alone cannot carry a 7px
    travel 2px past its landing and have it read as weight. */

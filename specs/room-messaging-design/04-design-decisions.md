@@ -97,6 +97,9 @@ against the live playground bench, nothing more):
    outward. Count increments roll. Removal fades.
 3. **Thread line draws** — connector extends downward ~140ms; the arriving reply
    lands with a 2px bounce.
+   _2026-09-26 (DOR-2110):_ the connector and its draw are removed. Replies now
+   sit flush with the root under a quiet "N replies" line, so only the reply's
+   2px bounce remains of this motion.
 4. **Presence hand-off** — "working…" cross-fades out as the reply settles
    **upward** 4px into place; the indicator visibly becomes the answer.
 5. **Reply-row count flip** — on increment, the count flips up 3px with a scale

@@ -149,6 +149,9 @@ export function RoomThreadSplit({
                 if (dragging) startPct.current = threadPane.current?.getSize() ?? null;
               }}
               onKeyDownCapture={(event) => {
+                // Runs before the library's own gate, so it keeps the disabled
+                // state itself: a handle with no range takes no keys.
+                if (fixed) return;
                 startPct.current = threadPane.current?.getSize() ?? null;
                 // Home and End, the thread's way round. The library moves the
                 // pane BEFORE the line to its smallest on Home — the room — which
