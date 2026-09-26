@@ -42,7 +42,7 @@ body is neither.
 | Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                               |
 | Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                            |
 | Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                              |
-| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/refunds`, `/v1/portal`, `GET /v1/statement`    |
+| Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                   |
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                |
 | Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                          |
 | Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation, instance credentials, the command stream and its acknowledgement, event batches |
@@ -56,6 +56,11 @@ The browser-facing `/api/auth/*` endpoints, the account and admin pages, and
 machine-to-machine wire. Publishing them would freeze a dependency's internals into a machine
 contract. The two device-code endpoints are the one exception: they live under `/api/auth/` today
 but are a machine wire, so they are here.
+
+Refunds are not offered through this API.
+Earlier releases published `POST /v1/refunds` with `RefundRequestSchema` and
+`RefundResponseSchema`; no release of the service ever answered it, and it is **withdrawn**. See
+[Withdrawn within `/v1`](#withdrawn-within-v1).
 
 The closed-address browser surface — the page an address serves while the machine is asleep,
 and the authorized reopen path on it — is excluded on the same grounds. The omission is a
@@ -99,6 +104,22 @@ has to keep working while the row lands. Equally, a grammar the service already 
 published as its own export (`HandleSchema`) rather than applied to a field a caller already
 sends — narrowing `handle` would make a request that parsed before fail afterwards, which is a
 `/v2` change however sensible it looks.
+
+### Withdrawn within `/v1`
+
+Because nothing published is deleted within `/v1`, a shape the service stops offering is
+**withdrawn** rather than removed: it stays exported and parses exactly as it did, it carries
+`@deprecated` in the types and `"deprecated": true` in its JSON Schema, and the service answers its
+route with `not_found`. Do not build against a withdrawn shape. It is deleted in `/v2`.
+
+| Withdrawn                                                                               | Why                                                                                  |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `POST /v1/refunds` (`V1_ROUTES.refunds`, `RefundRequestSchema`, `RefundResponseSchema`) | Refunds are not offered through the API. No release of the service ever answered it. |
+
+Two things stay with it for the same reason. The `refund_window_closed` problem code stays in
+`ProblemCodeSchema`, because taking a member out narrows a published type; no release of the service
+sends it. And its two example payloads, `fixtures/v1/billing/refund-request.json` and `refund.json`,
+stay in the fixture corpus, because a fixture path is an export too.
 
 ### Catalog blindness
 
@@ -205,10 +226,9 @@ would be a comfortable claim and a false one:
 Nothing else carries an amount. In particular, no inference route does: not a rate, not a
 multiplier, not a unit cost. And no route anywhere carries a supplier's terms.
 
-`POST /v1/topup` carries an amount in the request (`TopupRequestSchema`), and `POST /v1/refunds`
-answers with the amount that came back. Neither publishes a minimum, a first-purchase ceiling or
-a refund window: those are server policy, and a request that misses one is refused with
-`topup_below_minimum`, `first_purchase_cap` or `refund_window_closed` rather than described here.
+`POST /v1/topup` carries an amount in the request (`TopupRequestSchema`). It publishes neither a
+minimum nor a first-purchase ceiling: those are server policy, and a request that misses one is
+refused with `topup_below_minimum` or `first_purchase_cap` rather than described here.
 
 Fields typed `SecretValueSchema` are returned **once**: hold them as credential references, never
 as configuration strings, and never log them.
@@ -221,7 +241,7 @@ the same examples; `src/__tests__/fixtures.test.ts` proves every example is vali
 manifest and the directory have not drifted apart.
 
 The corpus covers responses, stream events, and the request shapes a caller has to build itself
-(a top-up, a refund, a command acknowledgement). Every example is synthetic: opaque identifiers,
+(a top-up, a command acknowledgement). Every example is synthetic: opaque identifiers,
 RFC 2606 `.invalid` hosts, and no real catalog value anywhere.
 
 ```ts
