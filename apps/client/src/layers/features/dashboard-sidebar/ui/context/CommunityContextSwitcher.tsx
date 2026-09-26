@@ -13,7 +13,6 @@ import {
   communityRefFromRouteDestination,
   getCommunityRouteEpoch,
   useIsMobile,
-  useOpenConnections,
   useTransport,
 } from '@/layers/shared/model';
 import {
@@ -56,6 +55,7 @@ import {
   COMMUNITY_DEPLOY_GUIDE_URL,
 } from './community-context-actions';
 import { DisconnectCommunityDialog, JoinCommunityDialog } from './CommunityActionDialogs';
+import { ConnectCommunityDialog, type ConnectCommunityRequest } from './ConnectCommunityDialog';
 import { SheetActionsMenu } from './SheetActionsMenu';
 import { useSwitchContextShortcut } from '../../model/use-switch-context-shortcut';
 
@@ -164,7 +164,6 @@ export function CommunityContextSwitcher({
   const transport = useTransport();
   const isMobile = useIsMobile();
   const navigate = useNavigate();
-  const openConnections = useOpenConnections();
   const location = useRouterState({ select: (state) => state.location }) as {
     pathname: string;
     community?: string;
@@ -194,6 +193,7 @@ export function CommunityContextSwitcher({
   const [filter, setFilter] = useState('');
   const [open, setOpen] = useState(false);
   const [joinOpen, setJoinOpen] = useState(false);
+  const [connectRequest, setConnectRequest] = useState<ConnectCommunityRequest | null>(null);
   const [disconnecting, setDisconnecting] = useState<CommunityConnectionDescriptor | null>(null);
   // Hosted communities: `null` while this DorkOS is not linked to an account,
   // and then no row is drawn and nothing is asked of the account.
@@ -233,7 +233,7 @@ export function CommunityContextSwitcher({
     onOpenSettings: () => selected && openOnCommunity(selected),
     onLeave: () => selected && openOnCommunity(selected, 'account'),
     onDisconnect: () => setDisconnecting(selected),
-    onConnect: () => openConnections('messaging'),
+    onConnect: () => setConnectRequest({ ref: null }),
     onJoin: () => setJoinOpen(true),
     creationOrigins: communityCreationOrigins(destinations),
     // The pinned origin again: the only host these connections talked to.
@@ -302,7 +302,11 @@ export function CommunityContextSwitcher({
   async function selectCommunity(connection: CommunityConnectionDescriptor) {
     if (connection.ref === selectedRef || pendingSelection.current) return;
     if (connection.status !== 'connected') {
-      openConnections('messaging');
+      // Still waiting for approval, or needing to be connected again: both
+      // are finished in the connect dialog, which takes focus as the menu
+      // closes, so the menu must not hand it back to the trigger.
+      holdCloseFocus.current = true;
+      setConnectRequest({ ref: connection.ref });
       return;
     }
     const owner = getCommunityAuthority();
@@ -615,6 +619,14 @@ export function CommunityContextSwitcher({
           )}
         </ResponsiveDropdownMenuContent>
       </ResponsiveDropdownMenu>
+      <ConnectCommunityDialog
+        request={connectRequest}
+        onOpenChange={(next) => {
+          if (!next) setConnectRequest(null);
+        }}
+        installName={installationLabelPending ? 'My DorkOS' : installationLabel}
+        onConnected={(ref) => void selectConnected(ref)}
+      />
       <JoinCommunityDialog open={joinOpen} onOpenChange={setJoinOpen} />
       <CommunityHostingDialogs
         entry={hosting}
