@@ -17,6 +17,7 @@ Critical path: 1.1 → 2.1 → 3.1 → 3.2.
 - apps/server/src/services/core/mcp-tool-tiers.ts, mcp-tool-metadata.ts, packages/shared/src/mcp-tool-groups.ts (2.1, 2.2, 3.2): one-entry additions; rebase, never overwrite.
 - packages/shared/src/schemas.ts (1.2, 1.3, 3.3, 3.5).
 - apps/server/src/routes/sessions.ts (2.5, 3.5, 5.1): 2.5, then 3.5, then 5.1.
+- packages/db Drizzle migrations and journal (2.3, 3.3, 5.1, 5.2, 5.4): land in that order; each later one rebases and renumbers its migration.
 
 ## Phase 1: Shared contracts
 
@@ -359,12 +360,12 @@ Tests (fake timers, FakeAgentRuntime, fake probe): a restart between wait and re
 Tracker: DOR-2380 (and DOR-2385). Spec §6 U. Works for every runtime and for one account.
 
 1. `SessionStatusSchema` (packages/shared/src/session-stream.ts) gains `accountUsage: AccountUsageSchema.nullable().default(null)` (TSDoc: account-wide cached usage for the account this session bills; `updatedAt`/`observedAt` show freshness).
-2. `services/session/fleet/session-account.ts#billingAccountFor(sessionId)`: claude-code → the session's derived `account` root, else the root `resolveLaunchAccountRoot` would pick for it (hint/agent from its metadata), mapped to a registry id or `default` (memory-only roots map to their memory key); codex/opencode → `default`. Cache per session; invalidate on registry change.
-3. On projector creation (subscribe, snapshot, first send) stamp `accountUsage` from `store.peek` so the cold snapshot carries it. Subscribe to `store.onChange`: for every LIVE projector whose session bills that account, emit a partial `status_change { accountUsage }`, throttled per account (2 s trailing). A watcher-picked CLI reading and a probe go through the same path.
+2. `services/session/fleet/session-account.ts#billingAccountFor(sessionId)`: claude-code → the session's derived `account` root, else the root `resolveLaunchAccountRoot` would pick from the agent and default rungs (the per-session hint only arrives with the first send: re-stamp then), mapped to a registry id or `default`; a memory-only root is read with a new `store.peekByRoot(runtime, root)`; codex/opencode → `default`. Cache per session; invalidate on registry change and on the first send.
+3. On projector creation (subscribe, snapshot, first send) stamp `accountUsage` from `store.peek` so the cold snapshot carries it. Updates NEVER go through session streams (codex/opencode projectors persist every event; a usage delta there would pile up in session_events and replay on reconnect): they travel only on the global `account_usage` event (task 2.1), which carries runtime and accountId; clients apply it to every session whose accountUsage names that account. On `store.onChange`, live projectors whose session bills that account update their held `accountUsage` IN MEMORY only (no event), so the next snapshot is current. A watcher-picked CLI reading and a probe go through the same path.
 4. Write-through: claude-code's subscription `session_status.usage` is derived from the store record (the binding window, the rule `mapSdkUsageResponse` uses today, now over the store's windows) plus the session's own cost; `session.lastSubscriptionUsage` is no longer the source (keep it only as a fallback while the store has no record). OpenCode's pay-as-you-go `usage` stays per session.
 5. `GET /api/sessions/:id` includes `status.accountUsage`.
 
-Tests: open a session (no turn) → snapshot has accountUsage (registered account; implicit default; codex default); two live sessions on one account both get a status_change when one records a reading; a CLI-written ledger picked up by the watcher reaches both; a session on another account does not; claude-code usage shows the store's binding window without a turn of its own; throttle.
+Tests: open a session (no turn) → snapshot has accountUsage (registered account; implicit default; codex default; memory-only root via peekByRoot); one reading → one account_usage event, and both live sessions' next snapshots carry it; a watcher-picked CLI ledger likewise; an idle codex (history-mode) session writes ZERO session_events rows for usage changes; a session on another account is unaffected; the first send re-stamps with the hint's account; claude-code usage shows the store's binding window without a turn of its own; throttle.
 
 ### Task 5.4: Keep each session's context usage so it shows on open and after a restart
 
@@ -374,11 +375,11 @@ Tests: open a session (no turn) → snapshot has accountUsage (registered accoun
 
 Tracker: DOR-2385. Spec §6 U "Context usage is per session".
 
-1. `session_metadata` gains nullable `context_tokens`, `context_max_tokens`, `context_observed_at` (Drizzle migration); `rekeySessionSettings` moves them.
+1. New `session_context` table (`session_id` PK, `context_tokens`, `context_max_tokens`, `observed_at`; Drizzle migration), NOT columns on session_metadata: writing there could create a runtime-less row that persistSessionRuntime reads as an existing conversation, changing first-launch seeding. `rekeySessionSettings` moves the row (add it beside the session_metadata move).
 2. Write-through: when a session's status carries context figures (contextTokens and contextMaxTokens, typically the terminal status of a turn), upsert them with observedAt now.
-3. Hydrate: a projector created with a cold status fills `contextUsage` from the row. With no row, derive once from the runtime's own record: claude-code from the transcript tail's last main-thread assistant usage (reuse the bounded tail read behind the list's `contextTokens`) plus the model's context window; codex from the rollout's last token_count record via `readCodexTurnContextUsage` (needs the thread id); opencode none. Write the derived value to the row.
+3. Hydrate: a projector created with a cold status fills `contextUsage` from the row. With no row, derive once from the runtime's own record: claude-code from the transcript tail's last main-thread assistant usage (reuse the bounded tail read behind the list's `contextTokens`) plus the model's context window; codex from the rollout's last token_count record via `readCodexTurnContextUsage` (needs the thread id); opencode none. Write the derived value to session_context.
 
-Tests: after a turn the row holds the figures; a new projector after a simulated restart shows them with no transcript read (spy); no row → derived from a transcript fixture and written; codex derivation from a rollout fixture; rekey moves the columns.
+Tests: after a turn the row holds the figures; a new projector after a simulated restart shows them with no transcript read (spy); no row → derived from a transcript fixture and written; codex derivation from a rollout fixture; rekey moves the row; opening a session with no session_metadata row creates none.
 
 ## Phase 4: Contract conformance
 
