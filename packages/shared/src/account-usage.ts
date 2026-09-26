@@ -24,6 +24,14 @@ extendZodWithOpenApiOnce();
  */
 export const ACCOUNT_ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+/**
+ * The id of a runtime's one implicit account: the ambient environment (Claude
+ * Code's inherited root, Codex's `CODEX_HOME`, OpenCode's configured provider)
+ * when that runtime has no registered accounts. It matches
+ * {@link ACCOUNT_ID_PATTERN}, so it names a ledger file like any other id.
+ */
+export const IMPLICIT_ACCOUNT_ID = 'default';
+
 /** A stored account color: lowercase `#rrggbb` (contract §1.1a). */
 const ACCOUNT_COLOR_PATTERN = /^#[0-9a-f]{6}$/;
 
@@ -85,8 +93,28 @@ export const FLOW_FLEET_SETTINGS_TAB_ID = 'flow:fleet';
 
 // === The usage ledger (contract §1.2) ===
 
-/** Where a ledger reading came from. Writers convert each into one unit. */
-export const LEDGER_SOURCES = ['statusline', 'sdk_event', 'sdk_usage', 'transcript'] as const;
+/**
+ * The runtimes that keep a usage ledger, as the slugs of their ledger folders
+ * (`<dorkHome>/runtimes/<runtime>/usage/`).
+ */
+export const LEDGER_RUNTIMES = ['claude-code', 'codex', 'opencode'] as const;
+
+/** Inferred type for one member of {@link LEDGER_RUNTIMES}. */
+export type LedgerRuntime = (typeof LEDGER_RUNTIMES)[number];
+
+/**
+ * Where a ledger reading came from. Writers convert each into one unit.
+ * `rollout` is a Codex rollout's `token_count` record; `error` is a turn that
+ * ended on a rate-limit or credit error (OpenCode).
+ */
+export const LEDGER_SOURCES = [
+  'statusline',
+  'sdk_event',
+  'sdk_usage',
+  'transcript',
+  'rollout',
+  'error',
+] as const;
 
 /** Inferred type for one member of {@link LEDGER_SOURCES}. */
 export type LedgerSource = (typeof LEDGER_SOURCES)[number];
@@ -115,6 +143,11 @@ export const LedgerEntrySchema = z
     observedAt: z.string().datetime({ offset: true }),
     /** Which source produced the reading. */
     source: z.enum(LEDGER_SOURCES),
+    /**
+     * The window's length in minutes, when the source reports it (Codex does).
+     * Absent means the length its key implies.
+     */
+    windowMinutes: z.number().int().positive().optional(),
   })
   .refine((e) => e.usedPct !== null || e.status !== null, {
     message: 'At least one of usedPct and status must be non-null',
@@ -125,9 +158,52 @@ export type LedgerEntry = z.infer<typeof LedgerEntrySchema>;
 
 /**
  * A ledger window key: a known window (`five_hour`, `seven_day`, …), any
- * future snake_case window, or a per-model bucket `model:<slug>`.
+ * future snake_case window, a per-model bucket `model:<slug>`, or a window
+ * known only by its length, `window:<minutes>` (a Codex window that is neither
+ * 5 hours nor 7 days).
  */
-export const WINDOW_KEY_PATTERN = /^(model:[a-z0-9][a-z0-9._-]*|[a-z][a-z0-9_]*)$/;
+export const WINDOW_KEY_PATTERN =
+  /^(model:[a-z0-9][a-z0-9._-]*|window:[1-9][0-9]*|[a-z][a-z0-9_]*)$/;
+
+/**
+ * Prepaid credits an account reports (Codex). `balance` is the source's own
+ * rendering, or `null` when it gave none.
+ */
+export const LedgerCreditsSchema = z
+  .object({
+    /** Whether the account has credits to draw on. */
+    hasCredits: z.boolean(),
+    /** Whether the credits are unlimited. */
+    unlimited: z.boolean(),
+    /** The remaining balance as the source reported it, or `null`. */
+    balance: z.string().nullable(),
+  })
+  .openapi('LedgerCredits');
+
+/** Inferred type for {@link LedgerCreditsSchema}. */
+export type LedgerCredits = z.infer<typeof LedgerCreditsSchema>;
+
+/**
+ * Metered spend in one billing period (OpenCode): what the account's turns
+ * cost since `periodStart`, and the budget when one is known.
+ */
+export const LedgerSpendSchema = z
+  .object({
+    /** Start of the period the cost adds up over, ISO-8601 (a calendar month, UTC). */
+    periodStart: z.string().datetime({ offset: true }),
+    /** Spend so far in the period, in USD. */
+    costUsd: z.number().min(0),
+    /** The period's budget in USD, when known. Reaching it makes the account limited. */
+    limitUsd: z.number().min(0).optional(),
+    /** When the source observed this total. */
+    observedAt: z.string().datetime({ offset: true }),
+    /** Which source produced the total. */
+    source: z.enum(LEDGER_SOURCES),
+  })
+  .openapi('LedgerSpend');
+
+/** Inferred type for {@link LedgerSpendSchema}. */
+export type LedgerSpend = z.infer<typeof LedgerSpendSchema>;
 
 /**
  * One account's usage ledger file. Loose, so fields a newer writer adds
@@ -136,12 +212,20 @@ export const WINDOW_KEY_PATTERN = /^(model:[a-z0-9][a-z0-9._-]*|[a-z][a-z0-9_]*)
 export const UsageLedgerSchema = z.looseObject({
   /** Contract version. */
   v: z.literal(1),
-  /** The registry id this ledger belongs to. */
+  /** The runtime this account belongs to. */
+  runtime: z.enum(LEDGER_RUNTIMES),
+  /** The registry id this ledger belongs to ({@link IMPLICIT_ACCOUNT_ID} for the implicit one). */
   accountId: z.string().regex(ACCOUNT_ID_PATTERN),
   /** The last write, any window. */
   updatedAt: z.string().datetime({ offset: true }),
   /** Readings by window key. */
   windows: z.record(z.string().regex(WINDOW_KEY_PATTERN), LedgerEntrySchema),
+  /** The plan the source reported (Codex `plan_type`), when it reported one. */
+  plan: z.string().nullable().optional(),
+  /** Prepaid credits, when the source reports them. */
+  credits: LedgerCreditsSchema.nullable().optional(),
+  /** Metered spend in the current period, when the runtime bills per turn. */
+  spend: LedgerSpendSchema.nullable().optional(),
 });
 
 /** Inferred type for {@link UsageLedgerSchema}. */
@@ -162,8 +246,12 @@ const SEVEN_DAY_MS = 7 * 24 * HOUR_MS;
 /** How far past `now` an observation's clock may run before it is dropped. */
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 
-/** The span after which a reading with no `resetsAt` is stale. */
-function windowLengthMs(key: string): number {
+/**
+ * The span after which a reading with no `resetsAt` is stale: the length the
+ * entry reports, else `five_hour` 5 h and every other key 7 days.
+ */
+function windowLengthMs(key: string, entry: LedgerEntry): number {
+  if (entry.windowMinutes !== undefined) return entry.windowMinutes * 60 * 1000;
   return key === 'five_hour' ? FIVE_HOUR_MS : SEVEN_DAY_MS;
 }
 
@@ -172,8 +260,9 @@ function windowLengthMs(key: string): number {
  *
  * - Expired (`resetsAt` set and `now ≥ resetsAt`): reads as `usedPct 0`,
  *   `status 'allowed'`, `expired: true`.
- * - Stale (`resetsAt` null and older than the window length: `five_hour` 5 h,
- *   every other key 7 days): reads as no reading, `null`.
+ * - Stale (`resetsAt` null and older than the window length: `windowMinutes`
+ *   when the entry has it, else `five_hour` 5 h and every other key 7 days):
+ *   reads as no reading, `null`.
  * - Otherwise: as stored.
  *
  * @param key - The window key, which decides the stale length.
@@ -188,7 +277,7 @@ export function readWindow(key: string, entry: LedgerEntry, now: Date): ReadWind
     }
     return { ...entry, expired: false };
   }
-  if (nowMs - Date.parse(entry.observedAt) > windowLengthMs(key)) return null;
+  if (nowMs - Date.parse(entry.observedAt) > windowLengthMs(key, entry)) return null;
   return { ...entry, expired: false };
 }
 
@@ -206,8 +295,50 @@ export interface MergeLedgerResult {
   ledger: UsageLedger;
   /** Whether anything changed. A writer that sees `false` does not rewrite the file. */
   changed: boolean;
-  /** Observations set aside, with why. The rest still merged. */
+  /**
+   * Observations set aside, with why. The rest still merged. A rejected
+   * account-level reading is reported under the key `plan`, `credits` or `spend`.
+   */
   dropped: DroppedObservation[];
+}
+
+/**
+ * Account-level readings to merge beside the windows. Each is optional: an
+ * absent field leaves the stored value alone.
+ */
+export interface LedgerAccountReadings {
+  /** The plan the source reports, replacing the stored one when it differs. */
+  plan?: string | null;
+  /** Credits the source reports, replacing the stored ones when they differ. */
+  credits?: LedgerCredits | null;
+  /** The period's spend, replacing the stored one only when strictly later (like a window). */
+  spend?: LedgerSpend;
+}
+
+/** Which ledger an observation belongs to, used when there is no ledger yet. */
+export interface LedgerOwner {
+  /** The account's registry id ({@link IMPLICIT_ACCOUNT_ID} for the implicit one). */
+  accountId: string;
+  /** The account's runtime. */
+  runtime: LedgerRuntime;
+}
+
+/** Whether an `observedAt` runs more than the allowed skew past `now`. */
+function isFromTheFuture(observedAt: string, now: Date): boolean {
+  return Date.parse(observedAt) - now.getTime() > MAX_FUTURE_SKEW_MS;
+}
+
+/** Whether `candidate` should replace `stored`: strictly later, or stored unreadable. */
+function isStrictlyLater(candidate: string, stored: string | undefined): boolean {
+  if (stored === undefined) return true;
+  const storedMs = Date.parse(stored);
+  // A stored reading whose own time cannot be read loses to any valid one.
+  return Number.isNaN(storedMs) || Date.parse(candidate) > storedMs;
+}
+
+/** Structural equality for the small JSON values a ledger holds. */
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
@@ -219,21 +350,25 @@ export interface MergeLedgerResult {
  * `usedPct` (the window reset). An observation more than 5 minutes after `now`
  * is dropped, so one bad clock cannot pin a window. An invalid one is dropped
  * while the rest merge. `usedPct` is clamped to 0 to 100 before validation.
+ * `spend` follows the same rules as a window; `plan` and `credits` carry no
+ * time of their own and replace the stored value when they differ.
  * `updatedAt` becomes `now` only when something changed. Unknown window keys
  * and unknown top-level fields are kept.
  *
  * Pure: it never logs. Callers log `dropped`.
  *
  * @param existing - The stored ledger, or `null` when there is none yet.
- * @param observations - The readings to merge, in order.
+ * @param observations - The window readings to merge, in order.
  * @param now - The moment of the write.
- * @param accountId - The registry id, used when `existing` is `null`.
+ * @param owner - The account and runtime, used when `existing` is `null`.
+ * @param account - Account-level readings (plan, credits, spend), if any.
  */
 export function mergeLedger(
   existing: UsageLedger | null,
   observations: LedgerObservation[],
   now: Date,
-  accountId: string
+  owner: LedgerOwner,
+  account: LedgerAccountReadings = {}
 ): MergeLedgerResult {
   const windows: Record<string, LedgerEntry> = { ...(existing?.windows ?? {}) };
   const dropped: DroppedObservation[] = [];
@@ -255,24 +390,52 @@ export function mergeLedger(
       continue;
     }
     const entry = parsed.data;
-    const observedMs = Date.parse(entry.observedAt);
-    if (observedMs - now.getTime() > MAX_FUTURE_SKEW_MS) {
+    if (isFromTheFuture(entry.observedAt, now)) {
       dropped.push({ key, reason: 'observedAt more than 5 minutes in the future' });
       continue;
     }
-    const stored = windows[key];
-    // A stored entry whose own time cannot be read loses to any valid reading.
-    const storedMs = stored ? Date.parse(stored.observedAt) : Number.NaN;
-    if (stored && !Number.isNaN(storedMs) && observedMs <= storedMs) continue;
+    if (!isStrictlyLater(entry.observedAt, windows[key]?.observedAt)) continue;
     windows[key] = entry;
     changed = true;
   }
 
+  const next: Partial<Pick<UsageLedger, 'plan' | 'credits' | 'spend'>> = {};
+
+  if (account.plan !== undefined) {
+    const plan = z.string().nullable().safeParse(account.plan);
+    if (!plan.success) dropped.push({ key: 'plan', reason: 'invalid plan' });
+    else if (plan.data !== (existing?.plan ?? null)) next.plan = plan.data;
+  }
+
+  if (account.credits !== undefined) {
+    const credits = LedgerCreditsSchema.nullable().safeParse(account.credits);
+    if (!credits.success) dropped.push({ key: 'credits', reason: 'invalid credits' });
+    else if (!sameJson(credits.data, existing?.credits ?? null)) next.credits = credits.data;
+  }
+
+  if (account.spend !== undefined) {
+    const spend = LedgerSpendSchema.safeParse(account.spend);
+    if (!spend.success) dropped.push({ key: 'spend', reason: 'invalid spend' });
+    else if (isFromTheFuture(spend.data.observedAt, now)) {
+      dropped.push({ key: 'spend', reason: 'observedAt more than 5 minutes in the future' });
+    } else if (isStrictlyLater(spend.data.observedAt, existing?.spend?.observedAt)) {
+      next.spend = spend.data;
+    }
+  }
+
+  if (Object.keys(next).length > 0) changed = true;
   if (existing && !changed) return { ledger: existing, changed: false, dropped };
 
   const ledger: UsageLedger = existing
-    ? { ...existing, windows, updatedAt: changed ? now.toISOString() : existing.updatedAt }
-    : { v: 1, accountId, updatedAt: now.toISOString(), windows };
+    ? { ...existing, ...next, windows, updatedAt: now.toISOString() }
+    : {
+        v: 1,
+        runtime: owner.runtime,
+        accountId: owner.accountId,
+        updatedAt: now.toISOString(),
+        windows,
+        ...next,
+      };
   return { ledger, changed, dropped };
 }
 
@@ -301,7 +464,13 @@ export function modelWindowKey(displayName: string): string | null {
  */
 export const AccountUsageSchema = z
   .object({
-    /** Registry id, or `null` for an unregistered root (the inherited default). */
+    /** The runtime the account belongs to. */
+    runtime: z.enum(LEDGER_RUNTIMES),
+    /**
+     * Registry id ({@link IMPLICIT_ACCOUNT_ID} for a runtime's implicit
+     * account), or `null` for an unregistered root while other accounts are
+     * registered.
+     */
     accountId: z.string().nullable(),
     /** The account's Claude config directory. */
     path: z.string(),
@@ -311,6 +480,12 @@ export const AccountUsageSchema = z
     color: z.string(),
     /** The plan a usage call reported, held in memory only; `null` until one does. */
     subscriptionType: z.string().nullable(),
+    /** The plan the ledger holds (Codex `plan_type`), or `null`. */
+    plan: z.string().nullable(),
+    /** Prepaid credits the ledger holds, or `null`. */
+    credits: LedgerCreditsSchema.nullable(),
+    /** The current period's metered spend, or `null` for an account not billed per turn. */
+    spend: LedgerSpendSchema.nullable(),
     /** The readable windows, stale ones left out, in display order. */
     windows: z.array(
       z.object({
@@ -333,12 +508,17 @@ export const AccountUsageSchema = z
       })
     ),
     /**
-     * `unknown` with no readable window, `limited` when a window is rejected,
+     * `limited` when a window is rejected or the spend reached its budget,
      * `warning` when any window is at 90% or more or reports `allowed_warning`,
-     * else `ok`.
+     * `unknown` when nothing is known (no ledger, or only stale windows and no
+     * spend), else `ok` (including a ledger with neither windows nor spend: a
+     * local model).
      */
     state: z.enum(['ok', 'warning', 'limited', 'unknown']),
-    /** The first readable window that rejected work, or `null`. */
+    /**
+     * The first readable window that rejected work, else the spend budget
+     * (`window: 'spend'`, `resetsAt: null`) when it is reached, else `null`.
+     */
     limit: z.object({ window: z.string(), resetsAt: z.string().nullable() }).nullable(),
     /** The ledger's last write, or `null` when there is no ledger. */
     updatedAt: z.string().nullable(),
@@ -350,6 +530,11 @@ export type AccountUsage = z.infer<typeof AccountUsageSchema>;
 
 /** The identity half of an {@link AccountUsage}, already resolved by the caller. */
 export interface AccountUsageIdentity {
+  /**
+   * The account's runtime. Read from the ledger when there is one; this is the
+   * fallback when there is none. Defaults to `claude-code`.
+   */
+  runtime?: LedgerRuntime;
   /** Registry id, or `null` for an unregistered root. */
   accountId: string | null;
   /** The account's Claude config directory. */
@@ -393,13 +578,19 @@ function compareWindowKeys(a: string, b: string): number {
 /** The share of a window at which an account's chip turns to a warning. */
 const WARNING_USED_PCT = 90;
 
+/** The `limit.window` an account reports when its spend reached its budget. */
+export const SPEND_LIMIT_WINDOW = 'spend';
+
 /**
  * Build the wire shape for one account from its ledger, read at `now`.
  *
  * Stale windows are left out. `limit` is the first readable window (in display
- * order) whose status is `rejected`. `state` is `unknown` with no readable
- * window, `limited` with a `limit`, `warning` when any window's `usedPct` is
- * 90 or more or its status is `allowed_warning`, else `ok`.
+ * order) whose status is `rejected`, else {@link SPEND_LIMIT_WINDOW} when
+ * `spend.costUsd` reached `spend.limitUsd`. `state` is `limited` with a
+ * `limit`; `warning` when any window's `usedPct` is 90 or more or its status
+ * is `allowed_warning`; `unknown` with no ledger, or with windows that are all
+ * stale and no spend; else `ok`. A ledger with neither windows nor spend (a
+ * local model) is `ok`.
  *
  * @param ledger - The account's ledger, or `null` when it has none.
  * @param identity - Who the account is, with its color already resolved.
@@ -429,11 +620,20 @@ export function toAccountUsage(
     });
   }
 
+  const spend = ledger?.spend ?? null;
   const rejected = windows.find((w) => w.status === 'rejected');
-  const limit = rejected ? { window: rejected.key, resetsAt: rejected.resetsAt } : null;
+  const spendReached =
+    spend !== null && spend.limitUsd !== undefined && spend.costUsd >= spend.limitUsd;
+  const limit = rejected
+    ? { window: rejected.key, resetsAt: rejected.resetsAt }
+    : spendReached
+      ? { window: SPEND_LIMIT_WINDOW, resetsAt: null }
+      : null;
+  const nothingKnown =
+    ledger === null || (windows.length === 0 && keys.length > 0 && spend === null);
   let state: AccountUsage['state'];
-  if (windows.length === 0) state = 'unknown';
-  else if (limit) state = 'limited';
+  if (limit) state = 'limited';
+  else if (nothingKnown) state = 'unknown';
   else if (
     windows.some(
       (w) => (w.usedPct !== null && w.usedPct >= WARNING_USED_PCT) || w.status === 'allowed_warning'
@@ -443,11 +643,15 @@ export function toAccountUsage(
   else state = 'ok';
 
   return {
+    runtime: ledger?.runtime ?? identity.runtime ?? 'claude-code',
     accountId: identity.accountId,
     path: identity.path,
     label: identity.label,
     color: identity.color,
     subscriptionType,
+    plan: ledger?.plan ?? null,
+    credits: ledger?.credits ?? null,
+    spend,
     windows,
     state,
     limit,

@@ -1010,6 +1010,14 @@
       "AccountUsage": {
         "type": "object",
         "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "codex",
+              "opencode"
+            ]
+          },
           "accountId": {
             "type": [
               "string",
@@ -1033,6 +1041,18 @@
               "string",
               "null"
             ]
+          },
+          "plan": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "credits": {
+            "$ref": "#/components/schemas/LedgerCredits"
+          },
+          "spend": {
+            "$ref": "#/components/schemas/LedgerSpend"
           },
           "windows": {
             "type": "array",
@@ -1072,7 +1092,9 @@
                     "statusline",
                     "sdk_event",
                     "sdk_usage",
-                    "transcript"
+                    "transcript",
+                    "rollout",
+                    "error"
                   ]
                 }
               },
@@ -1126,15 +1148,85 @@
           }
         },
         "required": [
+          "runtime",
           "accountId",
           "path",
           "label",
           "color",
           "subscriptionType",
+          "plan",
+          "credits",
+          "spend",
           "windows",
           "state",
           "limit",
           "updatedAt"
+        ]
+      },
+      "LedgerCredits": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "hasCredits": {
+            "type": "boolean"
+          },
+          "unlimited": {
+            "type": "boolean"
+          },
+          "balance": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "hasCredits",
+          "unlimited",
+          "balance"
+        ]
+      },
+      "LedgerSpend": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "periodStart": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "costUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "limitUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "statusline",
+              "sdk_event",
+              "sdk_usage",
+              "transcript",
+              "rollout",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "periodStart",
+          "costUsd",
+          "observedAt",
+          "source"
         ]
       },
       "RateLimitStatus": {

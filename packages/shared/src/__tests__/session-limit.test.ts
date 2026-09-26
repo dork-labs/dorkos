@@ -121,11 +121,15 @@ describe('SessionListResponseSchema accountUsage', () => {
     expect(SessionListResponseSchema.parse({ sessions: [] })).not.toHaveProperty('accountUsage');
     const accountUsage = [
       {
+        runtime: 'claude-code',
         accountId: null,
         path: '/home/u/.claude',
         label: null,
         color: '#3b82f6',
         subscriptionType: null,
+        plan: null,
+        credits: null,
+        spend: null,
         windows: [],
         state: 'unknown',
         limit: null,

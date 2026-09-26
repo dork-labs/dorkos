@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   ACCOUNT_ID_PATTERN,
   DEFAULT_ACCOUNT_COLORS,
+  IMPLICIT_ACCOUNT_ID,
+  SPEND_LIMIT_WINDOW,
   FLOW_FLEET_SETTINGS_TAB_ID,
   UsageLedgerSchema,
   mergeLedger,
@@ -35,12 +37,15 @@ function entry(overrides: Partial<LedgerEntry> = {}): LedgerEntry {
 function ledger(windows: Record<string, LedgerEntry>, extra: Record<string, unknown> = {}) {
   return {
     v: 1 as const,
+    runtime: 'claude-code' as const,
     accountId: 'claude3',
     updatedAt: at(-HOUR),
     windows,
     ...extra,
   } satisfies UsageLedger;
 }
+
+const OWNER = { accountId: 'claude3', runtime: 'claude-code' } as const;
 
 const identity = {
   accountId: 'claude3',
@@ -96,11 +101,12 @@ describe('mergeLedger', () => {
   });
 
   it('creates a ledger from nothing', () => {
-    const { ledger: out, changed, dropped } = mergeLedger(null, [obs('five_hour')], NOW, 'claude3');
+    const { ledger: out, changed, dropped } = mergeLedger(null, [obs('five_hour')], NOW, OWNER);
     expect(changed).toBe(true);
     expect(dropped).toEqual([]);
     expect(out).toEqual({
       v: 1,
+      runtime: 'claude-code',
       accountId: 'claude3',
       updatedAt: NOW.toISOString(),
       windows: { five_hour: entry() },
@@ -114,7 +120,7 @@ describe('mergeLedger', () => {
       stored,
       [obs('five_hour', { usedPct: 50, observedAt: at(-5 * MIN) })],
       NOW,
-      'claude3'
+      OWNER
     );
     expect(newer.changed).toBe(true);
     expect(newer.ledger.windows.five_hour!.usedPct).toBe(50);
@@ -124,7 +130,7 @@ describe('mergeLedger', () => {
       stored,
       [obs('five_hour', { usedPct: 60, observedAt: at(-20 * MIN) })],
       NOW,
-      'claude3'
+      OWNER
     );
     expect(older.changed).toBe(false);
     expect(older.ledger.windows.five_hour!.usedPct).toBe(40);
@@ -136,7 +142,7 @@ describe('mergeLedger', () => {
       stored,
       [obs('five_hour', { usedPct: 70, observedAt: at(-10 * MIN) })],
       NOW,
-      'claude3'
+      OWNER
     );
     expect(out.changed).toBe(false);
     expect(out.ledger).toEqual(stored);
@@ -149,7 +155,7 @@ describe('mergeLedger', () => {
       stored,
       [obs('seven_day', { usedPct: 3, observedAt: at(-MIN) })],
       NOW,
-      'claude3'
+      OWNER
     );
     expect(out.ledger.windows.seven_day!.usedPct).toBe(3);
   });
@@ -162,7 +168,7 @@ describe('mergeLedger', () => {
         obs('seven_day', { observedAt: at(5 * MIN - 1000) }),
       ],
       NOW,
-      'claude3'
+      OWNER
     );
     expect(out.dropped).toEqual([{ key: 'five_hour', reason: expect.any(String) }]);
     expect(Object.keys(out.ledger.windows)).toEqual(['seven_day']);
@@ -178,7 +184,7 @@ describe('mergeLedger', () => {
         obs('seven_day_opus', { usedPct: 12 }),
       ],
       NOW,
-      'claude3'
+      OWNER
     );
     expect(out.dropped.map((d) => d.key)).toEqual(['Bad Key', 'five_hour', 'seven_day']);
     expect(Object.keys(out.ledger.windows)).toEqual(['seven_day_opus']);
@@ -190,7 +196,7 @@ describe('mergeLedger', () => {
       null,
       [obs('five_hour', { usedPct: 104.2 }), obs('seven_day', { usedPct: -3 })],
       NOW,
-      'claude3'
+      OWNER
     );
     expect(out.dropped).toEqual([]);
     expect(out.ledger.windows.five_hour!.usedPct).toBe(100);
@@ -199,7 +205,7 @@ describe('mergeLedger', () => {
 
   it('leaves updatedAt and the ledger untouched when nothing changed', () => {
     const stored = ledger({ five_hour: entry() });
-    const out = mergeLedger(stored, [], NOW, 'claude3');
+    const out = mergeLedger(stored, [], NOW, OWNER);
     expect(out.changed).toBe(false);
     expect(out.ledger).toBe(stored);
   });
@@ -209,7 +215,7 @@ describe('mergeLedger', () => {
       { future_window: entry({ usedPct: 7 }), 'model:opus': entry({ usedPct: 8 }) },
       { writer: 'flow 1.2' }
     );
-    const out = mergeLedger(stored, [obs('five_hour', { observedAt: at(0) })], NOW, 'claude3');
+    const out = mergeLedger(stored, [obs('five_hour', { observedAt: at(0) })], NOW, OWNER);
     expect(out.changed).toBe(true);
     expect(out.ledger.windows.future_window!.usedPct).toBe(7);
     expect(out.ledger.windows['model:opus']!.usedPct).toBe(8);
@@ -240,7 +246,11 @@ describe('toAccountUsage', () => {
   it('is unknown with no ledger', () => {
     expect(toAccountUsage(null, identity, NOW)).toEqual({
       ...identity,
+      runtime: 'claude-code',
       subscriptionType: null,
+      plan: null,
+      credits: null,
+      spend: null,
       windows: [],
       state: 'unknown',
       limit: null,
@@ -354,5 +364,142 @@ describe('account colors and ids', () => {
       expect(ACCOUNT_ID_PATTERN.test(bad)).toBe(false);
     }
     expect(FLOW_FLEET_SETTINGS_TAB_ID).toBe('flow:fleet');
+  });
+});
+
+describe('runtime-neutral ledger', () => {
+  const CODEX = { accountId: IMPLICIT_ACCOUNT_ID, runtime: 'codex' } as const;
+  const spend = (overrides: Record<string, unknown> = {}) => ({
+    periodStart: '2026-09-01T00:00:00.000Z',
+    costUsd: 4.2,
+    observedAt: at(-MIN),
+    source: 'error' as const,
+    ...overrides,
+  });
+
+  it('names the implicit account default, a valid ledger id', () => {
+    expect(IMPLICIT_ACCOUNT_ID).toBe('default');
+    expect(ACCOUNT_ID_PATTERN.test(IMPLICIT_ACCOUNT_ID)).toBe(true);
+  });
+
+  it('accepts a Codex ledger with a length-keyed window, plan and credits', () => {
+    const codex = {
+      v: 1,
+      runtime: 'codex',
+      accountId: 'default',
+      updatedAt: at(0),
+      windows: {
+        five_hour: entry({ source: 'rollout', windowMinutes: 300 }),
+        'window:60': entry({ source: 'rollout', windowMinutes: 60 }),
+      },
+      plan: 'pro',
+      credits: { hasCredits: true, unlimited: false, balance: '12.50' },
+    };
+    expect(UsageLedgerSchema.parse(codex)).toEqual(codex);
+  });
+
+  it('refuses a ledger with no runtime or an unknown one', () => {
+    const base = { v: 1, accountId: 'default', updatedAt: at(0), windows: {} };
+    expect(UsageLedgerSchema.safeParse(base).success).toBe(false);
+    expect(UsageLedgerSchema.safeParse({ ...base, runtime: 'gemini' }).success).toBe(false);
+    expect(UsageLedgerSchema.safeParse({ ...base, runtime: 'opencode' }).success).toBe(true);
+  });
+
+  it('reads a window with no reset as stale after its own windowMinutes', () => {
+    const e = (ms: number) => entry({ windowMinutes: 60, observedAt: at(-ms) });
+    expect(readWindow('window:60', e(HOUR), NOW)).not.toBeNull();
+    expect(readWindow('window:60', e(HOUR + 1), NOW)).toBeNull();
+  });
+
+  it('starts a new ledger for the given runtime and accepts the new sources', () => {
+    const out = mergeLedger(
+      null,
+      [{ key: 'window:60', ...entry({ source: 'rollout', windowMinutes: 60 }) }],
+      NOW,
+      CODEX
+    );
+    expect(out.dropped).toEqual([]);
+    expect(out.ledger).toMatchObject({ runtime: 'codex', accountId: 'default' });
+    expect(UsageLedgerSchema.safeParse(out.ledger).success).toBe(true);
+  });
+
+  it('replaces plan and credits only when they differ', () => {
+    const credits = { hasCredits: true, unlimited: false, balance: '3' };
+    const stored = { ...ledger({}), runtime: 'codex' as const, plan: 'pro', credits };
+    expect(mergeLedger(stored, [], NOW, CODEX, { plan: 'pro', credits }).changed).toBe(false);
+    const out = mergeLedger(stored, [], NOW, CODEX, {
+      plan: 'plus',
+      credits: { ...credits, balance: '2' },
+    });
+    expect(out.changed).toBe(true);
+    expect(out.ledger).toMatchObject({ plan: 'plus', credits: { balance: '2' } });
+    expect(out.ledger.updatedAt).toBe(NOW.toISOString());
+  });
+
+  it('merges spend like a window: strictly later wins, equal keeps, future and invalid dropped', () => {
+    const stored = { ...ledger({}), runtime: 'opencode' as const, spend: spend() };
+    const later = mergeLedger(stored, [], NOW, CODEX, {
+      spend: spend({ costUsd: 5, observedAt: at(0) }),
+    });
+    expect(later.ledger.spend?.costUsd).toBe(5);
+    expect(mergeLedger(stored, [], NOW, CODEX, { spend: spend({ costUsd: 9 }) }).changed).toBe(
+      false
+    );
+    const future = mergeLedger(stored, [], NOW, CODEX, {
+      spend: spend({ observedAt: at(5 * MIN + 1000) }),
+    });
+    expect(future.changed).toBe(false);
+    expect(future.dropped).toEqual([{ key: 'spend', reason: expect.any(String) }]);
+    const invalid = mergeLedger(stored, [], NOW, CODEX, { spend: spend({ costUsd: -1 }) });
+    expect(invalid.dropped).toEqual([{ key: 'spend', reason: 'invalid spend' }]);
+  });
+
+  describe('toAccountUsage for metered and local accounts', () => {
+    const opencode = (
+      extra: Record<string, unknown>,
+      windows: Record<string, LedgerEntry> = {}
+    ) => ({ ...ledger(windows), runtime: 'opencode' as const, accountId: 'default', ...extra });
+    const who = { accountId: 'default', path: '', label: null, color: '#123456' };
+
+    it('is limited when spend reaches its budget, and ok below it', () => {
+      const reached = toAccountUsage(
+        opencode({ spend: spend({ costUsd: 10, limitUsd: 10 }) }),
+        who,
+        NOW
+      );
+      expect(reached.state).toBe('limited');
+      expect(reached.limit).toEqual({ window: SPEND_LIMIT_WINDOW, resetsAt: null });
+      const below = toAccountUsage(
+        opencode({ spend: spend({ costUsd: 9.99, limitUsd: 10 }) }),
+        who,
+        NOW
+      );
+      expect(below.state).toBe('ok');
+      expect(below.limit).toBeNull();
+      expect(below.spend).toMatchObject({ costUsd: 9.99, limitUsd: 10 });
+    });
+
+    it('is ok for spend with no budget', () => {
+      expect(toAccountUsage(opencode({ spend: spend() }), who, NOW).state).toBe('ok');
+    });
+
+    it('is ok with neither windows nor spend (a local model)', () => {
+      const out = toAccountUsage(opencode({}), who, NOW);
+      expect(out.state).toBe('ok');
+      expect(out.runtime).toBe('opencode');
+    });
+
+    it('is unknown when every window is stale and there is no spend, ok with spend', () => {
+      const stale = { five_hour: entry({ observedAt: at(-6 * HOUR) }) };
+      expect(toAccountUsage(opencode({}, stale), who, NOW).state).toBe('unknown');
+      expect(toAccountUsage(opencode({ spend: spend() }, stale), who, NOW).state).toBe('ok');
+    });
+
+    it('carries plan and credits, and takes the runtime from the identity with no ledger', () => {
+      const credits = { hasCredits: true, unlimited: true, balance: null };
+      const out = toAccountUsage(opencode({ plan: 'pro', credits }), who, NOW);
+      expect(out).toMatchObject({ plan: 'pro', credits });
+      expect(toAccountUsage(null, { ...who, runtime: 'codex' }, NOW).runtime).toBe('codex');
+    });
   });
 });
