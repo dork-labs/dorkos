@@ -34,6 +34,15 @@ export interface SourceChangeDialogsProps {
   changes: SourceChangesApi;
   /** Show the file somebody else changed first. */
   onOpenTheirs: (path: string) => void;
+  /**
+   * Put the keyboard back in the tree once a dialog closes.
+   *
+   * These dialogs are opened by the pane rather than by a button, so Radix has
+   * no trigger to hand focus back to and drops it on `<body>` — a keyboard user
+   * who confirmed a delete was left nowhere, and the next Tab started again at
+   * the top of the page.
+   */
+  onReturnFocus: () => void;
 }
 
 /** How "do it anyway" reads for each kind of change. */
@@ -78,7 +87,20 @@ export function deleteSentence(pending: PendingDelete): string {
  *
  * @param props - The changes, and how to show somebody else's version.
  */
-export function SourceChangeDialogs({ changes, onOpenTheirs }: SourceChangeDialogsProps) {
+export function SourceChangeDialogs({
+  changes,
+  onOpenTheirs,
+  onReturnFocus,
+}: SourceChangeDialogsProps) {
+  // Radix's own restore would land on `<body>` — there was no trigger. It is
+  // replaced, unless something else already took focus as this one closed
+  // (their version opening in the preview, say), which must keep it.
+  const returnFocus = (event: Event) => {
+    event.preventDefault();
+    const active = document.activeElement;
+    if (active !== null && active !== document.body) return;
+    onReturnFocus();
+  };
   const { pendingDelete, pendingClash, conflict } = changes;
   const clashFolder =
     pendingClash === null
@@ -94,7 +116,7 @@ export function SourceChangeDialogs({ changes, onOpenTheirs }: SourceChangeDialo
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && changes.cancelDelete()}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={returnFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingDelete?.entry.type === 'dir' ? 'Delete this folder?' : 'Delete this file?'}
@@ -119,7 +141,7 @@ export function SourceChangeDialogs({ changes, onOpenTheirs }: SourceChangeDialo
         open={pendingClash !== null}
         onOpenChange={(open) => !open && changes.cancelClash()}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={returnFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {clashOne
@@ -148,7 +170,7 @@ export function SourceChangeDialogs({ changes, onOpenTheirs }: SourceChangeDialo
         open={conflict !== null}
         onOpenChange={(open) => !open && changes.dismissConflict()}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onCloseAutoFocus={returnFocus}>
           <AlertDialogHeader>
             <AlertDialogTitle>Somebody changed this first</AlertDialogTitle>
             <AlertDialogDescription>

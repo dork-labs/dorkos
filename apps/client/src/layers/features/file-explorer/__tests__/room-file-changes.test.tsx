@@ -319,6 +319,22 @@ describe('deleting from a room’s files', () => {
     expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
   });
 
+  it('hands the keyboard back to the tree when the confirmation closes, either way', async () => {
+    const transport = roomWith({ '': [file('notes.md'), file('plan.md')] });
+    renderSection(transport);
+    const tree = await screen.findByRole('tree', { name: 'File explorer' });
+
+    await press('notes.md', 'Delete');
+    fireEvent.keyDown(await screen.findByRole('alertdialog'), { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(tree));
+
+    await press('plan.md', 'Delete');
+    fireEvent.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    );
+    await waitFor(() => expect(document.activeElement).toBe(tree));
+  });
+
   it('cancelling deletes nothing', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
     renderSection(transport);

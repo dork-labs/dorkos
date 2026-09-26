@@ -161,6 +161,12 @@ export function FileExplorer({
     [changes, explorer]
   );
 
+  // The pane's own element, for handing the keyboard back to its tree.
+  const paneRef = useRef<HTMLDivElement>(null);
+  const returnFocusToTree = useCallback(() => {
+    paneRef.current?.querySelector<HTMLElement>('[role="tree"]')?.focus();
+  }, []);
+
   const pickUpload = useCallback((dir: string) => {
     uploadDirRef.current = dir;
     fileInputRef.current?.click();
@@ -293,6 +299,7 @@ export function FileExplorer({
     // the Upload button and the row menu, so this container needs no role.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
+      ref={paneRef}
       className={cn(
         'flex h-full flex-col',
         rootDropTarget && 'ring-ring/60 bg-accent/30 ring-1 ring-inset',
@@ -430,7 +437,11 @@ export function FileExplorer({
       )}
 
       {changes !== null && (
-        <SourceChangeDialogs changes={changes} onOpenTheirs={(path) => setPreviewPath(path)} />
+        <SourceChangeDialogs
+          changes={changes}
+          onOpenTheirs={(path) => setPreviewPath(path)}
+          onReturnFocus={returnFocusToTree}
+        />
       )}
 
       <AlertDialog
