@@ -1,0 +1,82 @@
+<style>
+  .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+  .box{background:#fff;border:1px solid #d9d9d9;border-radius:14px;width:380px;font-size:13px;overflow:hidden}
+  .pad{padding:16px}
+  .row{display:flex;gap:12px;align-items:center;padding:10px 16px;border-bottom:1px solid #f3f3f3}
+  .logo{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:13px;flex:none}
+  .nm{font-weight:600}
+  .ds{font-size:12px;color:#777}
+  .right{margin-left:auto}
+  .btn{font-size:12px;padding:5px 12px;border-radius:7px;border:1px solid #ddd;background:#fff;display:inline-block}
+  .btn.d{background:#111;color:#fff;border-color:#111}
+  .tag{font-size:10px;padding:2px 6px;border-radius:5px;background:#f1f1f1;color:#666;margin-left:6px;font-weight:500}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#999;padding:14px 16px 4px}
+  .t{font-weight:700;font-size:15px;display:flex;gap:8px;align-items:center;margin-bottom:10px}
+  .choice{border:1px solid #e5e5e5;border-radius:10px;padding:12px;margin-top:8px}
+  .choice b{display:block}
+  .choice small{color:#888}
+  .inp{border:1px solid #ddd;border-radius:8px;padding:8px 10px;color:#aaa;margin:6px 0}
+  .help{font-size:12px;color:#2563eb}
+  .step{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+  .cap{font-size:12px;color:#6d28d9;margin-top:8px;max-width:380px}
+  .muted{color:#888}
+  .sel{border:1px solid #ddd;border-radius:8px;padding:7px 10px;display:flex;margin-top:6px}
+  .sel span{margin-left:auto;color:#999}
+</style>
+
+<h2>Step 9 — Our own chat apps: Telegram, Slack, Webhook</h2>
+<p class="subtitle">They're ours, so they work with <b>nothing set up</b> — no DorkOS account, no Composio. Good news: the one list already handles them. They're just rows. Four small rules keep them simple.</p>
+
+<div class="wrap">
+  <div>
+    <div class="box">
+      <div class="pad" style="padding-bottom:6px"><b style="font-size:15px">Connections</b><div class="ds">First visit. Nothing set up yet.</div></div>
+      <div class="lbl">Popular</div>
+      <div class="row"><div class="logo" style="background:#229ED9">✈</div><div><div class="nm">Telegram <span class="tag">Chat</span></div><div class="ds">Talk to your agents in Telegram</div></div><div class="right"><span class="btn d">Connect</span></div></div>
+      <div class="row"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">Read and send email</div></div><div class="right"><span class="btn d">Connect</span></div></div>
+      <div class="row"><div class="logo" style="background:#4a154b">#</div><div><div class="nm">Slack</div><div class="ds">Talk to agents, or let them post</div></div><div class="right"><span class="btn d">Connect</span></div></div>
+      <div class="row"><div class="logo" style="background:#000">N</div><div><div class="nm">Notion</div><div class="ds">Read and write pages</div></div><div class="right"><span class="btn d">Connect</span></div></div>
+      <div class="lbl">For developers</div>
+      <div class="row" style="border:none"><div class="logo" style="background:#555">⇄</div><div><div class="nm">Webhook</div><div class="ds">Send messages in and out over HTTP</div></div><div class="right"><span class="btn">Set up</span></div></div>
+    </div>
+    <div class="cap">① Same list, same button. Telegram's Connect goes straight to its own setup — never the one-time Composio step. Webhook sits in a small "For developers" group at the bottom, so it doesn't confuse everyone else.</div>
+  </div>
+
+  <div>
+    <div class="box pad">
+      <div class="t"><div class="logo" style="background:#4a154b;width:24px;height:24px;font-size:11px">#</div>Connect Slack</div>
+      <div class="muted">What do you want to do?</div>
+      <div class="choice"><b>Talk to my agents in Slack</b><small>Your agents get a Slack bot. You message it, they answer.</small></div>
+      <div class="choice"><b>Let agents use my Slack</b><small>Agents can read channels and post as you.</small></div>
+    </div>
+    <div class="cap">② One row per app, even when it does two things. Only apps with two uses ask this, and they ask it in plain words. Pick one; you can add the other later. Today Slack shows up twice in two places.</div>
+  </div>
+
+  <div>
+    <div class="box pad">
+      <div class="step">Step 1 of 2</div>
+      <div class="t"><div class="logo" style="background:#229ED9;width:24px;height:24px;font-size:11px">✈</div>Connect Telegram</div>
+      <div class="muted">Paste your bot's token.</div>
+      <div class="inp">123456:ABC-…</div>
+      <div class="help">How do I get one? (2 minutes, with @BotFather) ›</div>
+      <div class="step" style="margin-top:16px">Step 2 of 2</div>
+      <div><b>Who answers?</b></div>
+      <div class="sel">🦋 DorkBot<span>▾</span></div>
+      <div style="margin-top:12px"><span class="btn d">Connect</span></div>
+    </div>
+    <div class="cap">③ Two steps: token, then who answers. Everything else (who's allowed to message the bot, group chats, notices) is in the side panel under More, like every other app.</div>
+  </div>
+</div>
+
+<h3 style="margin-top:28px">The four rules</h3>
+<ol style="font-size:13px;color:#444;max-width:880px">
+  <li><b>They're rows, like everything else.</b> A small "Chat" tag is the only difference. No separate Messaging section.</li>
+  <li><b>They skip the one-time setup.</b> Connect goes straight to the app's own steps. So on a brand-new install, Telegram works in two minutes with nothing else set up.</li>
+  <li><b>One row per app, even when it does two things.</b> Slack asks "talk to agents" or "let agents use it". Everything else just connects.</li>
+  <li><b>Plumbing stays hidden.</b> The internal "Claude Code · internal · Serving 35 agents" row disappears — it's how DorkOS works inside, not something you connect. Webhook goes under "For developers". Chat apps added from the Marketplace show up as rows too.</li>
+</ol>
+
+<div class="options" style="margin-top:14px">
+  <div class="option" data-choice="yes" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>Yes, these four rules</h3></div></div>
+  <div class="option" data-choice="change" onclick="toggleSelect(this)"><div class="letter">~</div><div class="content"><h3>Change something</h3><p>Tell me in the terminal.</p></div></div>
+</div>

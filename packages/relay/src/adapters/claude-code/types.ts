@@ -26,7 +26,15 @@ import type { ApprovalAuthorizer } from './approval-handler.js';
  * carry a permission mode would be a second answer to a question that already
  * has one.
  */
-export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'>;
+export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'> & {
+  /**
+   * Which Claude account (registry id) the turn should LAUNCH on, handed to the
+   * runtime as `MessageOpts.accountHint` (DOR-2384). Read only when the turn
+   * starts a conversation; an existing one keeps its account, and every other
+   * runtime ignores it.
+   */
+  accountHint?: string;
+};
 
 /**
  * What model, effort and fast-mode a relay-triggered turn should start with.

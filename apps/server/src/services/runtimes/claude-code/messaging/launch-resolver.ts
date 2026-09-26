@@ -58,6 +58,7 @@ import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
+import { applyDirectoryGrants } from './directory-grants.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
 import { loadsAgentToAgentTools } from '../mcp-tools/tool-exposure.js';
 import { env } from '../../../../env.js';
@@ -555,6 +556,10 @@ export async function resolveLaunch(args: {
       fastMode: true,
     };
   }
+  // This turn's folder grants, merged into the same settings object, and the
+  // variable that would make a granted folder's CLAUDE.md load stripped from the
+  // env (spec `agent-home-desk` §4.2). Throws on an invalid set, before launch.
+  applyDirectoryGrants(sdkOptions, messageOpts?.additionalDirectories, effectiveCwd);
 
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.

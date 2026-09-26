@@ -33,6 +33,7 @@ function buildTask(overrides: Partial<Task> = {}): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'active',
     filePath: '/tasks/morning-standup.md',
     createdAt: '2026-08-01T09:00:00.000Z',

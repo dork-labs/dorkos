@@ -35,7 +35,7 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runtimeConformance } from '@dorkos/test-utils';
+import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   makeMockThread,
@@ -103,6 +103,15 @@ const sdkPrompts = vi.hoisted(() => [] as string[]);
 const threadMints = vi.hoisted(() => [] as Array<'start' | 'resume'>);
 
 /**
+ * The `ThreadOptions` each minted thread was given, in order — what the SDK
+ * turns into `--add-dir` and `--sandbox` for that run. The `agent-home-desk`
+ * §4.6 gate reads folder grants off it.
+ */
+const threadOptionsSeen = vi.hoisted(
+  () => [] as Array<{ additionalDirectories?: string[]; sandboxMode?: string }>
+);
+
+/**
  * One-shot selector for the media gate: when set, the next minted thread streams
  * a turn whose MCP tool answers with a picture, then the flag self-clears.
  *
@@ -138,12 +147,14 @@ vi.mock('@openai/codex-sdk', async (importOriginal) => {
     // mockReturnValue here (a spent generator would end multi-turn tests with
     // zero events).
     Codex: class {
-      startThread = vi.fn(() => {
+      startThread = vi.fn((options?: (typeof threadOptionsSeen)[number]) => {
         threadMints.push('start');
+        threadOptionsSeen.push(options ?? {});
         return recordPrompts(makeMockThread(mintTurnEvents()));
       });
-      resumeThread = vi.fn(() => {
+      resumeThread = vi.fn((_id: string, options?: (typeof threadOptionsSeen)[number]) => {
         threadMints.push('resume');
+        threadOptionsSeen.push(options ?? {});
         return recordPrompts(makeMockThread(mintTurnEvents()));
       });
     },
@@ -405,8 +416,45 @@ runtimeConformance(
           // is proven; saying so beats a case that quietly asserts nothing.
           systemPromptAppendUnprovenReason:
             'a live codex binary is a subprocess this suite hands a prompt and cannot read back, so what it received is only observable in the mocked run',
+          directoryGrantsUnprovenReason:
+            'a live codex binary is a subprocess this suite hands thread options and cannot read back, so which folders it was granted is only observable in the mocked run',
         }
       : {
+          // The `agent-home-desk` §4.6 gate. Codex hands a write grant as
+          // `additionalDirectories` (the SDK's `--add-dir`, per run) and a read
+          // grant as nothing, because its sandbox already reads everywhere —
+          // so a read grant is read-open exactly when the options handed say
+          // the sandbox reads (every mode codex has). Both turns on ONE thread:
+          // the second resumes the first, the way a later room turn does.
+          directoryGrantTurns: async (runtime, sessionId, grants) => {
+            const optionsBefore = threadOptionsSeen.length;
+            const mintedBefore = threadMints.length;
+            for (const additionalDirectories of grants) {
+              for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+                cwd: projectDir,
+                additionalDirectories,
+              })) {
+                // Drained: the assertion is about the SDK's input.
+              }
+            }
+            expect(
+              threadMints.slice(mintedBefore),
+              'the second turn was supposed to resume the first turn’s thread'
+            ).toEqual(['start', 'resume']);
+            const handed = threadOptionsSeen.slice(optionsBefore);
+            const handedFor = (turn: 0 | 1): HandedGrants => {
+              const options = handed[turn] ?? {};
+              const sandboxReads = options.sandboxMode !== undefined;
+              return {
+                writable: [...(options.additionalDirectories ?? [])],
+                readOnly: [],
+                readOpen: sandboxReads
+                  ? grants[turn].filter((grant) => grant.access === 'read').map((g) => g.path)
+                  : [],
+              };
+            };
+            return [handedFor(0), handedFor(1)] as const;
+          },
           systemPromptAppendTurns: async (runtime, sessionId, [first, second]) => {
             const before = sdkPrompts.length;
             const mintedBefore = threadMints.length;

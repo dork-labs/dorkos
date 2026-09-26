@@ -774,10 +774,32 @@ export interface SessionOpts extends SessionSettings {
   unattended?: boolean;
 }
 
+/**
+ * A folder a turn may reach without standing in it (spec `agent-home-desk` §4).
+ * Validated by `@dorkos/shared/directory-grants`.
+ */
+export interface DirectoryGrant {
+  /** Absolute, `realpath`-resolved. Never the turn's own cwd, never inside it. */
+  path: string;
+  /** `write` lets file tools create and change files there; `read` asks the backend to refuse them. */
+  access: 'read' | 'write';
+}
+
 /** Options for sending a message to a session. */
 export interface MessageOpts extends SessionSettings {
   cwd?: string;
   systemPromptAppend?: string;
+  /**
+   * Folders this turn may reach beyond its cwd, recomputed by the dispatcher for
+   * every turn. A runtime hands exactly this set to its backend on this turn — a
+   * grant absent here is absent from the turn, even if an earlier turn of the
+   * same session carried it. Absent means none.
+   *
+   * File tools only: a shell command reaches whatever its permission mode
+   * allows on every runtime, grant or not. The shared runtime conformance suite
+   * pins that each runtime hands the set per turn (`agent-home-desk` §4.6).
+   */
+  additionalDirectories?: readonly DirectoryGrant[];
   /**
    * Neutral additional-context bag for this turn (git_status, ui_state,
    * queue_note, env, relay_context). Delivered OUT-OF-BAND relative to

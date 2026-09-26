@@ -54,6 +54,7 @@ import {
   taskWorkOf,
 } from '../services/tasks/schedule-permission-clamp.js';
 import { changesApprovedWork } from '../services/tasks/task-file-update.js';
+import { refuseStickyAccountChange } from '../services/tasks/session/sticky-session.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { readAgentExecutionDefaults } from '../services/session/resolve-session-defaults.js';
 import {
@@ -346,6 +347,11 @@ export function createTasksRouter(
     // one question; the request has to pick (DOR-2302).
     const timingConflict = conflictingTimingRequest(data);
     if (timingConflict) return res.status(400).json({ error: timingConflict });
+
+    // A sticky schedule's conversation cannot move to another account once it
+    // has started (DOR-2384). Refused before the file is touched.
+    const accountLocked = refuseStickyAccountChange(store, existing, data);
+    if (accountLocked) return res.status(400).json(accountLocked);
 
     // The MERGED schedule is what gets registered, so the merged schedule is
     // what has to read: a new cron runs in the task's existing timezone unless

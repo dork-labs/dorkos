@@ -42,7 +42,7 @@ These are intake briefs, not frozen specifications. Acceptance below describes t
 
 **Outcome:** an ideation/specification for a minimal lock-ownership and cancellation contract that can serve HTTP-triggered, streamed and internal callers without passing a response object into the runtime port.
 
-**Start with:** [AgentRuntime](../packages/shared/src/agent-runtime.ts), [Transport](../packages/shared/src/transport.ts), [MessageDispatcher](../apps/server/src/services/session/message-dispatcher.ts), every `acquireLock` / `acquireRuntimeLock` implementation and caller, and runtime conformance tests. Reconcile the separately requested Obsidian retirement before removing or redesigning client-facing interfaces; do not assume that retirement has shipped. DOR-2065 is adjacent runtime lifecycle work and must be checked for overlap.
+**Start with:** [AgentRuntime](../packages/shared/src/agent-runtime.ts), [Transport](../packages/shared/src/transport.ts), [MessageDispatcher](../apps/server/src/services/session/message-dispatcher.ts), every `acquireLock` / `acquireRuntimeLock` implementation and caller, and runtime conformance tests. Obsidian retirement shipped in PR #2126 (merge `535a642c2be407b14517258e4dd58fd74bfc2817`); it is no longer an in-flight prerequisite. DOR-2065 is adjacent runtime lifecycle work and must be checked for overlap.
 
 **First-chunk acceptance:** caller inventory; explicit ownership, cancellation and stale-release semantics; compatibility/migration plan for each runtime; meaningful conformance cases for competing callers, stale completion, disconnect and replacement ownership. Identify any required ADR. A consumer capability map may recommend later interface splits, but do not manufacture interfaces solely to reduce file size.
 
@@ -88,7 +88,7 @@ These are intake briefs, not frozen specifications. Acceptance below describes t
 
 1. Select one tracker item and read its live status, comments and typed relations. Search for successors or shipped work; this dated roadmap does not override them. Re-read current Flow configuration and the adapter skill.
 2. Use the brief above as context, then run TRIAGE. Captured ideas are intentionally unassigned, unestimated and without `agent/ready`. Apply readiness only when deliberately selecting/routing work under Flow; saving this roadmap is not dispatch approval.
-3. Pin a fresh base commit. Put every file change in an isolated worktree. Coordinate shared files with active sessions, including shared UI adoption and Obsidian retirement. Neither adjacent programme is claimed complete here.
+3. Pin a fresh base commit. Put every file change in an isolated worktree. Coordinate shared files with active sessions, including shared UI adoption. Obsidian retirement is complete; recheck other adjacent programmes live.
 4. Use `specs/<specific-change>/` for ideation, specification, `03-tasks.json` and verification evidence when Flow calls for them. Keep small tasks in their owning issue/checklist. Create ADRs in `decisions/` only when an architectural decision has actually been made.
 5. Put genuine prerequisites in typed blocking relations when tasks are decomposed. Original rank is not a dependency: none of these intake briefs has an established hard dependency on another. Shared evidence or related programmes use related links, not artificial blockers.
 6. Require separate-agent review using `REVIEW.md`, relevant verification, reviewed PRs and merge-queue completion before reporting implementation shipped. Clean up only clean worktrees whose work is merged or otherwise safely preserved. Never close the coordination issue merely because the roadmap PR merges.
@@ -96,3 +96,11 @@ These are intake briefs, not frozen specifications. Acceptance below describes t
 ## Maintaining the record
 
 Update this file when rationale, boundaries, evidence assumptions or workstream ownership change. Record the review date and source revision. Keep live status and detailed tasks in Linear and each spec; link superseding work instead of copying its checklist here. Link accepted ADRs and merged evidence back to the owning issue. Close the coordination record only after all five recommendations have an explicit disposition: shipped, superseded, rejected with rationale, or deliberately deferred with an owner and revisit condition.
+
+## Local evidence and lifecycle shaping, 2026-09-26
+
+Reviewed against `7168a5b7c69def16bb2cb48319b24285c9894a3f`. The [local marketplace evidence matrix](../research/20260926-local-marketplace-recovery-evidence.md) is the bounded DOR-2427 slice of DOR-2349. It credits shipped recovery tests and prior SIGKILL proof, documents update's uninstall/reinstall boundary, and records DOR-2340/DOR-2341 triage without changing approvals or discovery. DOR-2349 remains broader than this local delivery; Cloud, Community and shared reconnect guarantees are not certified here.
+
+The [lifecycle ownership map and pilot specification](../specs/local-workspace-lifecycle/02-specification.md) deliver DOR-2347's shaping outcome. Ordered central teardown and the concurrent-signal guard already exist. The proposed local workspace reconciler pilot addresses tracked work and bounded disposal; implementation and adoption into central startup/shutdown remain separately selected follow-ups. The spec remains `specified`, not `implemented`.
+
+This slice changes documentation only. Protected Cloud/Community work, authentication, runtime/transport contracts, shared UI, server composition and CI configuration remain outside its implementation scope. Live ownership and follow-up dispositions stay in the linked tracker records.

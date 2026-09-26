@@ -225,8 +225,8 @@ export const AGENT_CONTENT_CHANGE_REASON =
 
 /**
  * Why a schedule is waiting again after an agent changed how it runs: its name,
- * the runtime or model that runs it, its effort, its time limit, or whether it
- * remembers earlier runs (DOR-2323). The approval card lists what changed.
+ * the runtime or model that runs it, its effort, its time limit, whether it
+ * remembers earlier runs (DOR-2323), or the account it runs on (DOR-2384). The approval card lists what changed.
  */
 export const AGENT_SETTINGS_CHANGE_REASON =
   'An agent changed how this schedule runs, so it is waiting for you again. ' +

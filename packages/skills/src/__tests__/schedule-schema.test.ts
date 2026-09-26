@@ -331,6 +331,24 @@ describe('scheduleToFrontmatter', () => {
     expect(reparsed.model).toBe('anthropic/claude-sonnet-4-5');
   });
 
+  // The account a fire runs on (DOR-2384): a registry id, taken at face value,
+  // written back like `model`, and degraded to absent when unreadable.
+  it('round-trips an account id through parse, write and parse (DOR-2384)', () => {
+    const block = ScheduleBlockSchema.parse({ cron: '0 9 * * *', account: 'work' });
+    expect(block.account).toBe('work');
+    const written = scheduleToFrontmatter(block);
+    expect(written).toEqual({ cron: '0 9 * * *', account: 'work' });
+    expect(ScheduleBlockSchema.parse(written).account).toBe('work');
+    expect(scheduleToFrontmatter(ScheduleBlockSchema.parse({ cron: '0 9 * * *' }))).toEqual({
+      cron: '0 9 * * *',
+    });
+  });
+
+  it('degrades an unreadable account to absent instead of failing the block (DOR-2384)', () => {
+    expect(ScheduleBlockSchema.parse({ account: '' }).account).toBeUndefined();
+    expect(ScheduleBlockSchema.parse({ account: 7 }).account).toBeUndefined();
+  });
+
   it('reads YAML 1.1 boolean words for sticky, defaulting off (DOR-1571)', () => {
     expect(ScheduleBlockSchema.parse({ sticky: 'yes' }).sticky).toBe(true);
     expect(ScheduleBlockSchema.parse({ sticky: 'off' }).sticky).toBe(false);
