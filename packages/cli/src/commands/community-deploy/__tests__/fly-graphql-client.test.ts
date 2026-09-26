@@ -224,4 +224,46 @@ describe('Fly Tigris GraphQL HTTP boundary', () => {
       provider: 'tigris',
     });
   });
+
+  it('reads one app provenance by exact name and refuses an unsafe name before any request', async () => {
+    const app = {
+      id: 'community-fixture-app',
+      internalNumericId: 4817203,
+      name: 'community-fixture-app',
+      network: 'dorkos-7f3e0b9c4d2a41e8a6c5b3f1d0e9c21a',
+      createdAt: '2026-09-23T10:31:07Z',
+      organization: { slug: 'fixture-org' },
+      machines: { totalCount: 0 },
+      volumes: { totalCount: 0 },
+      ipAddresses: { totalCount: 0 },
+      certificates: { totalCount: 0 },
+      secrets: [{ name: 'AWS_ACCESS_KEY_ID' }],
+    };
+    const request = vi.fn(async (_input: string | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string; variables: unknown };
+      expect(body.query).toContain('DorkosReadAppProvenance');
+      expect(body.variables).toEqual({ name: 'community-fixture-app' });
+      return json({ data: { app } });
+    });
+    const client = new FlyTigrisGraphqlClient({ accessToken: 'token', fetch: request });
+
+    await expect(client.readAppProvenance('community-fixture-app')).resolves.toMatchObject({
+      internalNumericId: '4817203',
+      network: app.network,
+      secretNames: ['AWS_ACCESS_KEY_ID'],
+    });
+    await expect(client.readAppProvenance('bad name')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+    expect(request).toHaveBeenCalledOnce();
+
+    // A read never classifies a failure as a possible create.
+    const failing = new FlyTigrisGraphqlClient({
+      accessToken: 'token',
+      fetch: vi.fn(async () => json({ data: { app: { ...app, network: 7 } } })),
+    });
+    await expect(failing.readAppProvenance('community-fixture-app')).rejects.toMatchObject({
+      code: 'INVALID_RESPONSE',
+    });
+  });
 });

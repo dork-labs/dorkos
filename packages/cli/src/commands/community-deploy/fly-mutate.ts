@@ -7,9 +7,9 @@ import { z } from 'zod';
 import { ExternalIdentifierSchema, parseExternalJson } from './provider-contract.js';
 import { ProviderMutationError, runProviderMutation } from './provider-mutation.js';
 import type { FlySessionReadOptions, FlySecretInventoryItem } from './tigris-session.js';
+import type { FlyAppProvenance } from './fly-graphql-contract.js';
 import {
   FlyAppResponseSchema,
-  readFlyApps,
   toFlyAppIdentity,
   type FlyAppIdentity,
   type FlyRuntimeInventory,
@@ -33,24 +33,45 @@ export interface FlyMutationReceipt {
 }
 
 /**
- * Create one planned Fly app and retain only its non-secret identity.
+ * Create one planned Fly app on its own private network and retain only its non-secret identity.
  *
- * The created app is bound by its name and the organization slug the operator selected. When the
- * command succeeds but its JSON cannot be read, the app is identified by the same name and slug
- * through a read-only listing instead of being reported as uncertain: preflight already proved the
- * name was absent from that organization, so an exact match there is the app this call created.
- * A response naming a different app or organization is never adopted.
+ * The network name carries the run's provenance marker, which the journal recorded before this
+ * call. The created app is bound by its name and the organization slug the operator selected. When
+ * the command succeeds but its JSON cannot be read, the app is identified through a provenance read
+ * instead of being reported as uncertain, and only when its name, organization slug and network all
+ * match: the network carries a 128-bit marker only this run knew, so a match is the app this call
+ * created. `apps list` is never used for this, because it always reports an empty network. A
+ * response naming a different app or organization is never adopted.
+ *
+ * @param options - Pinned Fly executable and bounded process settings.
+ * @param appName - Planned app name.
+ * @param organizationSlug - Planned organization slug.
+ * @param network - Private network name carrying the run's provenance marker.
+ * @param readProvenance - Provenance read by app name, used only when create output is unreadable.
  */
 export async function createFlyApp(
   options: FlySessionReadOptions,
   appName: string,
-  organizationSlug: string
+  organizationSlug: string,
+  network: string,
+  readProvenance: (appName: string) => Promise<FlyAppProvenance | null>
 ): Promise<FlyAppIdentity> {
   const app = parseInput(ExternalIdentifierSchema, appName);
   const organization = parseInput(ExternalIdentifierSchema, organizationSlug);
+  const networkName = parseInput(ExternalIdentifierSchema, network);
   const created = await runProviderMutation({
     ...options,
-    args: ['apps', 'create', app, '--org', organization, '--json', '--yes'],
+    args: [
+      'apps',
+      'create',
+      app,
+      '--org',
+      organization,
+      '--network',
+      networkName,
+      '--json',
+      '--yes',
+    ],
     parse: (stdout) => {
       let document: unknown;
       try {
@@ -67,12 +88,18 @@ export async function createFlyApp(
     },
   });
   if (created) return created;
-  const matches = await readFlyApps(options, organization).catch(() => {
+  const found = await readProvenance(app).catch(() => {
     throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
   });
-  const exact = matches.filter((candidate) => candidate.name === app);
-  if (exact.length !== 1) throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
-  return exact[0]!;
+  if (
+    !found ||
+    found.name !== app ||
+    found.organizationSlug !== organization ||
+    found.network !== networkName
+  ) {
+    throw new ProviderMutationError('CREATION_OUTCOME_UNCERTAIN');
+  }
+  return { id: found.id, name: found.name, organizationSlug: found.organizationSlug, status: '' };
 }
 
 /** Stage secrets over stdin; completion must be proved through secret inventory readback. */

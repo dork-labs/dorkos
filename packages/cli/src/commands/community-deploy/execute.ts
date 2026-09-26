@@ -3,8 +3,9 @@
  *
  * @module commands/community-deploy/execute
  */
-import type { LaunchJournal } from './journal.js';
+import { ProvenanceMarkerSchema, type LaunchJournal } from './journal.js';
 import type { LaunchPlan } from './plan.js';
+import { createProvenanceMarker } from './provenance/provenance-gate.js';
 import { ProviderMutationError } from './provider-mutation.js';
 
 type CreationService = 'fly' | 'neon' | 'tigris';
@@ -25,16 +26,29 @@ export interface CreatedResourceIdentity {
   relatedResources?: Partial<LaunchJournal['resources']>;
   /** Additional non-secret bindings proven during the same readback. */
   verifiedBindings?: LaunchJournal['verifiedBindings'];
+  /** Provenance values exactly as the service reported them in this readback. */
+  provenance?: NonNullable<LaunchJournal['provenance']>;
+}
+
+/** What an exact-ID readback may check besides the identity itself. */
+export interface CreationInspectContext {
+  /** Journal revision the readback runs against. */
+  journal: LaunchJournal;
+  /**
+   * Marker recorded with this step's own creation intent. Absent once the step has completed, and
+   * on an intent written before markers shipped.
+   */
+  provenanceMarker?: string;
 }
 
 /** One creation boundary with exact-identity readback. */
 export interface CreationBoundary {
   /** Complete any read-only prerequisites before a creation intent is recorded. */
   prepare?(): Promise<void>;
-  /** Submit one create request. */
-  create(): Promise<CreatedResourceIdentity>;
-  /** Read the returned exact identity and reject any binding drift. */
-  inspect(id: string): Promise<CreatedResourceIdentity>;
+  /** Submit one create request carrying the marker already recorded with its intent. */
+  create(provenanceMarker: string): Promise<CreatedResourceIdentity>;
+  /** Read the returned exact identity and reject any binding or provenance drift. */
+  inspect(id: string, context: CreationInspectContext): Promise<CreatedResourceIdentity>;
 }
 
 /** Journal and service boundaries for the first provisioning phase. */
@@ -51,6 +65,8 @@ export interface CommunityCreationDependencies {
   now(): string;
   /** Render the current secret-free service step before it may block. */
   progress?(service: CreationService): void;
+  /** Marker source for each creation intent; defaults to 128 random bits. */
+  createProvenanceMarker?(): string;
 }
 
 /** Durable stop when a prior create may have succeeded without provable identity. */
@@ -131,7 +147,7 @@ async function executeCreationStep(
   }
   if (journal.completedSteps.includes(step.state)) {
     if (!existingId) throw new ProviderMutationError('INVALID_RESPONSE');
-    const inspected = await step.boundary.inspect(existingId);
+    const inspected = await step.boundary.inspect(existingId, { journal });
     assertIdentity(step, inspected, expectedBindingId);
     assertJournalIdentity(journal, step, inspected, expectedBindingId);
     return journal;
@@ -144,18 +160,25 @@ async function executeCreationStep(
   let createdId = existingId;
   if (!journal.pendingIntent) {
     await step.boundary.prepare?.();
+    const provenanceMarker = ProvenanceMarkerSchema.parse(
+      (dependencies.createProvenanceMarker ?? createProvenanceMarker)()
+    );
+    // The marker and request time are durable before any provider request, so a create whose
+    // outcome is lost can still be matched to this run later.
     current = await persistNext(dependencies, journal, {
       pendingIntent: {
         provider: step.service,
         organizationId: step.organizationId,
         resourceName: step.resourceName,
+        provenanceMarker,
+        requestedAt: dependencies.now(),
       },
       lastSafeError: null,
     });
 
     let created: CreatedResourceIdentity;
     try {
-      created = await step.boundary.create();
+      created = await step.boundary.create(provenanceMarker);
       assertIdentity(step, created, expectedBindingId);
     } catch (error) {
       const safeCode = safeErrorCode(error);
@@ -175,19 +198,26 @@ async function executeCreationStep(
     });
   }
 
+  const provenanceMarker = current.pendingIntent?.provenanceMarker;
   let inspected: CreatedResourceIdentity;
   try {
-    inspected = await step.boundary.inspect(createdId!);
+    inspected = await step.boundary.inspect(createdId!, { journal: current, provenanceMarker });
     assertIdentity(step, inspected, expectedBindingId);
     if (inspected.id !== createdId) throw new ProviderMutationError('INVALID_RESPONSE');
+    if (step.service === 'fly' && provenanceMarker && !inspected.provenance?.flyNetwork) {
+      throw new ProviderMutationError('INVALID_RESPONSE');
+    }
   } catch {
     await persistUncertain(dependencies, current);
     throw new CommunityCreationUncertainError(step.service);
   }
 
+  // Only the Fly step reads provenance back; it is stored as read, never derived from the intent.
+  const flyNetwork = step.service === 'fly' ? inspected.provenance?.flyNetwork : undefined;
   return persistNext(dependencies, current, {
     state: step.state,
     pendingIntent: null,
+    ...(flyNetwork === undefined ? {} : { provenance: { ...current.provenance, flyNetwork } }),
     resources: {
       ...current.resources,
       [step.resourceKey]: inspected.id,
@@ -249,6 +279,14 @@ function assertJournalIdentity(
   expectedBindingId: string | undefined
 ): void {
   if (inspected.id !== journal.resources[step.resourceKey]) {
+    throw new ProviderMutationError('INVALID_RESPONSE');
+  }
+  const journaledNetwork = journal.provenance?.flyNetwork;
+  if (
+    step.service === 'fly' &&
+    journaledNetwork !== undefined &&
+    inspected.provenance?.flyNetwork !== journaledNetwork
+  ) {
     throw new ProviderMutationError('INVALID_RESPONSE');
   }
   for (const key of step.relatedResourceKeys ?? []) {

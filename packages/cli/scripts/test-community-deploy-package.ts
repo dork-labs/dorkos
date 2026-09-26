@@ -58,7 +58,10 @@ const initialState = {
   neonCreates: 0,
   tigrisCreates: 0,
   flyApp: null,
+  flyNetwork: null,
+  flyCreatedAt: null,
   neonProject: null,
+  neonRole: null,
   tigris: null,
   secrets: {
     AWS_ACCESS_KEY_ID: { digest: 'aws-access-digest', status: 'Deployed' },
@@ -83,10 +86,11 @@ ${commonPrelude}
 const state=read();
 let value;
 if(args[0]==='version') value={Name:'fly',Version:'0.4.104'};
+else if(args[0]==='orgs'&&args[1]==='show') value={ID:'fly-org-id',Slug:args[2],Name:'Dork Labs'};
 else if(args[0]==='orgs') value={'dork-labs':'Dork Labs'};
 else if(args[0]==='platform') value=[{code:'ord',name:'Chicago',latitude:41.8,longitude:-87.6,gateway_available:true,requires_paid_plan:false,deprecated:false}];
 else if(args[0]==='apps'&&args[1]==='list') value=state.flyApp?[state.flyApp]:[];
-else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyApp={ID:'app-id-1',Name:args[2],Status:'deployed',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); value=state.flyApp; }
+else if(args[0]==='apps'&&args[1]==='create') { state.flyCreates++; state.flyNetwork=at('--network'); state.flyCreatedAt=new Date().toISOString(); state.flyApp={ID:'app-id-1',Name:args[2],Status:'deployed',Network:'',Organization:{ID:'fly-org-id',Slug:at('--org'),Name:'Dork Labs'}}; write(state); value=state.flyApp; }
 else if(args[0]==='auth'&&args[1]==='token') value={token:'fixture-fly-token'};
 else if(args[0]==='secrets'&&args[1]==='list') value=Object.entries(state.secrets).map(([name,item])=>({name,digest:item.digest,status:item.status}));
 else if(args[0]==='secrets'&&args[1]==='import') { const input=fs.readFileSync(0,'utf8'); for(const line of input.trim().split('\\n')) { const name=line.slice(0,line.indexOf('=')); state.secrets[name]={digest:'digest-'+name.toLowerCase().replaceAll('_','-')+'-'+Date.now(),status:'Staged'}; } write(state); value={}; }
@@ -107,12 +111,12 @@ if(args[0]==='--version') { process.stdout.write('5.0.0'); process.exit(0); }
 else if(args[0]==='orgs') value=[{id:'org-dorian',name:'Dorian'}];
 else if(args[0]==='api'&&args[1]==='/regions') value={regions:[{region_id:'aws-us-east-2',name:'AWS US East 2',default:false,geo_lat:40.4,geo_long:-82.9}]};
 else if(args[0]==='projects'&&args[1]==='list') value=state.neonProject?[state.neonProject]:[];
-else if(args[0]==='projects'&&args[1]==='create') { state.neonCreates++; state.neonProject={id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version'))}; write(state); value={project:state.neonProject}; }
+else if(args[0]==='projects'&&args[1]==='create') { state.neonCreates++; state.neonRole=at('--role'); state.neonProject={id:'neon-project-1',org_id:at('--org-id'),name:at('--name'),region_id:at('--region-id'),pg_version:Number(at('--pg-version')),created_at:new Date().toISOString()}; write(state); value={project:state.neonProject}; }
 else if(args[0]==='branches') value=[{id:'branch-1',project_id:'neon-project-1',name:'main',default:true}];
-else if(args[0]==='databases') value=[{id:'database-1',branch_id:'branch-1',name:'community',owner_name:'community_owner'}];
-else if(args[0]==='roles') value=[{branch_id:'branch-1',name:'community_owner'}];
+else if(args[0]==='databases') value=[{id:'database-1',branch_id:'branch-1',name:'community',owner_name:state.neonRole}];
+else if(args[0]==='roles') value=[{branch_id:'branch-1',name:state.neonRole}];
 else if(args[0]==='api'&&args[1].endsWith('/endpoints')) value={endpoints:[{id:'ep-fixture',project_id:'neon-project-1',branch_id:'branch-1',region_id:'aws-us-east-2',host:'ep-fixture.aws-us-east-2.aws.neon.tech',type:'read_write'}]};
-else if(args[0]==='connection-string') { process.stdout.write('postgresql://community_owner:fixture-password@ep-fixture.aws-us-east-2.aws.neon.tech/community?sslmode=require&channel_binding=require'); process.exit(0); }
+else if(args[0]==='connection-string') { if(at('--role-name')!==state.neonRole) process.exit(4); process.stdout.write('postgresql://'+state.neonRole+':fixture-password@ep-fixture.aws-us-east-2.aws.neon.tech/community?sslmode=require&channel_binding=require'); process.exit(0); }
 else process.exit(3);
 process.stdout.write(JSON.stringify(value));
 `;
@@ -139,6 +143,11 @@ globalThis.fetch=async (input,init={})=>{
   if(query.includes('DorkosTigrisTerms')) return json({data:{viewer:{agreedToProviderTos:true}}});
   if(query.includes('DorkosCreateTigris')) { state.tigrisCreates++; state.tigris={id:'tigris-1',name:${JSON.stringify(appName)},status:'ready',options:{public:false},organization:{slug:'dork-labs'},addOnProvider:{name:'tigris'},app:{id:'app-id-1',name:${JSON.stringify(appName)}}}; fs.writeFileSync(statePath,JSON.stringify(state)); return json({data:{createAddOn:{addOn:state.tigris}}}); }
   if(query.includes('DorkosReadTigris')) return json({data:{node:state.tigris}});
+  if(query.includes('DorkosReadAppProvenance')) {
+    const app=state.flyApp;
+    if(!app||app.Name!==body.variables?.name) return json({data:{app:null},errors:[{message:'Could not find App'}]});
+    return json({data:{app:{id:app.ID,internalNumericId:4817203,name:app.Name,network:state.flyNetwork,createdAt:state.flyCreatedAt,organization:{slug:app.Organization.Slug},machines:{totalCount:state.deployed?1:0},volumes:{totalCount:0},ipAddresses:{totalCount:state.deployed?1:0},certificates:{totalCount:0},secrets:Object.keys(state.secrets).map((name)=>({name}))}}});
+  }
   return json({},500);
 };
 `;
@@ -265,6 +274,7 @@ try {
 
   const first = await runInteractive(interactiveHelper, binary, args(), environment);
   if (first.code !== 0 || !first.output.includes('waiting for owner completion')) {
+    process.stderr.write(first.output);
     throw new Error(`Packaged provisioning did not reach owner-pending (${first.code})`);
   }
   const journalDirectory = join(dorkHome, 'launches/community');
@@ -286,6 +296,8 @@ try {
     flyCreates: number;
     neonCreates: number;
     tigrisCreates: number;
+    flyNetwork: string | null;
+    neonRole: string | null;
     config: string | null;
     imageDigest: string | null;
   };
@@ -302,11 +314,27 @@ try {
     throw new Error('Packaged deployment did not use the exact digest');
   const journal = JSON.parse(await readFile(join(journalDirectory, journalName), 'utf8')) as {
     state: string;
+    provenance?: { flyNetwork?: string };
+    resources: { neonRoleId?: string };
   };
   if (journal.state !== 'owner_pending')
     throw new Error('Packaged resume did not retain owner-pending state');
+  // Each create carried a fresh marker: the Fly app its own private network, the Neon project a
+  // marker role. The journal keeps the network the provenance read reported, not a copy of the intent.
+  if (!/^dorkos-[a-f0-9]{32}$/u.test(state.flyNetwork ?? '')) {
+    throw new Error('Packaged launch did not create the Fly app on a marker network');
+  }
+  if (journal.provenance?.flyNetwork !== state.flyNetwork) {
+    throw new Error('Packaged journal did not record the Fly network read back from the service');
+  }
+  if (
+    !/^community_[a-f0-9]{32}$/u.test(state.neonRole ?? '') ||
+    journal.resources.neonRoleId !== state.neonRole
+  ) {
+    throw new Error('Packaged launch did not create and record the Neon marker role');
+  }
   process.stdout.write(
-    'Packaged Community launcher proof passed: dry-run, exact release, provisioning, resume, pinned config, owner-pending.\n'
+    'Packaged Community launcher proof passed: dry-run, exact release, provisioning with provenance markers, resume, pinned config, owner-pending.\n'
   );
 } finally {
   await rm(temporary, { recursive: true, force: true });

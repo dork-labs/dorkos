@@ -34,6 +34,13 @@ const SafeIdentifierSchema = z
 const Sha256DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const SecretDigestSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9:+/=_-]{0,255}$/);
 const HexHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const SecretNameSchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/);
+/**
+ * Random, non-secret marker a run records before one create and sends with it: 128 bits as 32
+ * lowercase hex characters, so `dorkos-<marker>` and `community_<marker>` stay valid Fly network
+ * and Postgres role names.
+ */
+export const ProvenanceMarkerSchema = z.string().regex(/^[a-f0-9]{32}$/);
 const JournalLockSchema = z
   .object({ ownerId: z.uuid(), pid: z.number().int().positive(), createdAt: z.iso.datetime() })
   .strict();
@@ -124,10 +131,32 @@ export const LaunchJournalSchema = z
         organizationId: SafeIdentifierSchema,
         resourceName: SafeIdentifierSchema,
         idempotencyKey: SafeIdentifierSchema.optional(),
-        provenanceMarker: SafeIdentifierSchema.optional(),
+        // Both are absent on an intent written before provenance markers shipped.
+        provenanceMarker: ProvenanceMarkerSchema.optional(),
+        requestedAt: z.iso.datetime().optional(),
       })
       .strict()
       .nullable(),
+    // Values read back from the service when a create step completed, never copied from an intent.
+    provenance: z.object({ flyNetwork: SafeIdentifierSchema.optional() }).strict().optional(),
+    // Resources a verified uncertain-create removal deleted. Nothing writes this yet; the Tigris
+    // create step already reads it so a re-created bucket can never reuse removed credentials.
+    removals: z
+      .array(
+        z
+          .object({
+            provider: z.enum(['fly', 'neon', 'tigris']),
+            token: SafeIdentifierSchema,
+            resourceName: SafeIdentifierSchema,
+            proof: z.enum(['marker', 'binding']),
+            priorSecretDigests: z.record(SecretNameSchema, SecretDigestSchema).optional(),
+            requestedAt: z.iso.datetime(),
+            removedAt: z.iso.datetime(),
+          })
+          .strict()
+      )
+      .max(8)
+      .optional(),
     resources: z
       .object({
         flyAppId: SafeIdentifierSchema.optional(),
@@ -142,12 +171,8 @@ export const LaunchJournalSchema = z
         tigrisBucketId: SafeIdentifierSchema.optional(),
       })
       .strict(),
-    secretDigests: z
-      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
-      .optional(),
-    secretBaseline: z
-      .record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/), SecretDigestSchema)
-      .optional(),
+    secretDigests: z.record(SecretNameSchema, SecretDigestSchema).optional(),
+    secretBaseline: z.record(SecretNameSchema, SecretDigestSchema).optional(),
     ownerBootstrapRotated: z.boolean().optional(),
     verifiedBindings: z
       .array(

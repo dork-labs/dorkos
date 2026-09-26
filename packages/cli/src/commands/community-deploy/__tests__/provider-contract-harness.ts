@@ -92,8 +92,37 @@ function collectFixtureStrings(value: unknown): string[] {
   return [];
 }
 
+/**
+ * Drop Fly's `secrets { name }` selection: a list of names only, which the provenance read needs
+ * and whose key would otherwise match the credential pattern. Any other shape under `secrets` is
+ * kept, so a fixture carrying a secret value still fails.
+ */
+function withoutSecretNameLists(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutSecretNameLists);
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([key, child]) =>
+          !(
+            key === 'secrets' &&
+            Array.isArray(child) &&
+            child.every(
+              (item) =>
+                typeof item === 'object' &&
+                item !== null &&
+                Object.keys(item).length === 1 &&
+                'name' in item
+            )
+          )
+      )
+      .map(([key, child]) => [key, withoutSecretNameLists(child)])
+  );
+}
+
 /** Prove a checked-in provider fixture has no credential shape, URL, or terminal control. */
-export function expectSanitizedProviderFixture(value: unknown, label: string): void {
+export function expectSanitizedProviderFixture(fixture: unknown, label: string): void {
+  const value = withoutSecretNameLists(fixture);
   const serialized = JSON.stringify(value);
   expect(serialized, label).not.toMatch(
     /password|secret|access[_-]?key|session[_-]?token|postgres(?:ql)?:\/\/|https?:\/\//iu

@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import { SAFE_PROVIDER_IDENTIFIER_PATTERN } from './provider-identifiers.js';
+import { ProviderMutationError } from './provider-mutation.js';
 import { runProviderCommand } from './provider-process.js';
 
 const SAFE_SECRET_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
@@ -172,4 +173,30 @@ export function verifyTigrisSecretNames(
   const secretKey = byName.get(EXPECTED_TIGRIS_SECRET_NAMES[1]);
   if (!accessKey || !secretKey) throw new TigrisSessionError('MISSING_TIGRIS_SECRETS');
   return [accessKey, secretKey];
+}
+
+/**
+ * Prove both Tigris credential names exist and neither carries a value from a removed bucket.
+ *
+ * After a verified removal of an earlier bucket, the journal keeps the digests its credentials had.
+ * A re-created bucket must set new values for both names, so a digest equal to any removed one means
+ * the app still holds stale credentials and the step must stop instead of deploying with them.
+ *
+ * @param inventory - Validated non-secret Fly app-secret inventory.
+ * @param removedDigests - Credential digests recorded for each removed bucket, oldest first.
+ * @returns Only the two expected Tigris inventory rows in stable order.
+ */
+export function verifyFreshTigrisSecrets(
+  inventory: readonly FlySecretInventoryItem[],
+  removedDigests: readonly Readonly<Record<string, string>>[]
+): [FlySecretInventoryItem, FlySecretInventoryItem] {
+  const rows = verifyTigrisSecretNames(inventory);
+  if (
+    removedDigests.some((digests) =>
+      rows.some((row) => digests[row.name] !== undefined && digests[row.name] === row.digest)
+    )
+  ) {
+    throw new ProviderMutationError('INVALID_RESPONSE');
+  }
+  return rows;
 }
