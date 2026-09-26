@@ -1,9 +1,10 @@
 /**
  * `operator.update_agent_execution` (DOR-2328) under the permission model
- * (spec `agent-permissions`): it lives in Other agents and is destructive, so an
- * area-level Allowed still asks, an Allowed set on the action itself runs it
- * with no card, and a Blocked area refuses it. The Ask path keeps its old → new
- * card and the approval bound to it.
+ * (spec `agent-permissions`): it lives in Other agents and shows the change it
+ * would make, old → new, so it always asks: an area-level Allowed asks, Always
+ * allow is never offered, and even an Allowed stored on the action resolves to
+ * Ask. A Blocked area refuses it. The Ask path keeps its card and the approval
+ * bound to it.
  *
  * (The DOR-2328 behaviour on its own is pinned in `agent-execution-gate.test.ts`,
  * which this file's setup copies.)
@@ -139,16 +140,23 @@ describe('changing what an agent runs on, under permissions', () => {
     expect((await manifestOnDisk()).model).toBe('claude-opus-4');
   });
 
-  it('runs with no card once Always allow set this action for the agent', async () => {
+  it('never offers Always allow, since the card shows what changes', async () => {
+    await callTool('operator.update_agent_execution', { cwd: agentPath, ...ARGS });
+    expect(approvals.listPending()[0]).toMatchObject({ alwaysOffered: false });
+  });
+
+  it('still asks when an Allowed for this action is stored anyway (a hand-edited file)', async () => {
     own = { actions: { 'operator.update_agent_execution': 'allowed' } };
-    const { payload, isError } = await callTool('operator.update_agent_execution', {
+    const { payload } = await callTool('operator.update_agent_execution', {
       cwd: agentPath,
       ...ARGS,
     });
-    expect(isError).toBe(false);
-    expect(payload.status).not.toBe('approval_required');
-    expect(approvals.listPending()).toEqual([]);
-    expect((await manifestOnDisk()).model).toBe('claude-opus-4');
+    expect(payload.status).toBe('approval_required');
+    expect(approvals.listPending()[0]).toMatchObject({
+      detail: 'Model: claude-sonnet-4 → claude-opus-4',
+      alwaysOffered: false,
+    });
+    expect((await manifestOnDisk()).model).toBe('claude-sonnet-4');
   });
 
   it('refuses with no card when Other agents is Blocked', async () => {

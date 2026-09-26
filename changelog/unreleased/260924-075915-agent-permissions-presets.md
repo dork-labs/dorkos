@@ -34,7 +34,7 @@ covers:
 ### Added
 
 - Pick Careful, Balanced or Full power in Settings → Permissions or the Control Center, and every area follows: rooms, tasks and schedules, other agents, messages, chat connections, tools and packages, DorkOS settings, safety limits, permissions, and reach and secrets. The picker shows how many changes you made on top, with a Reset (DOR-2278)
-- Open any area to set its single actions one by one. An action that deletes or removes something asks you even when its area is Allowed, unless you set that one action yourself
+- Open any area to set its single actions one by one. An action whose card shows what it would change, like the model an agent runs on, always asks and never offers Always allow. An action that deletes or removes something asks you even when its area is Allowed, unless you set that one action yourself
 - Give one agent its own Files & commands setting (Ask first, Act or Full autonomy). It applies to that agent's conversations, scheduled runs and room turns
 - Let agents ask you to change a permission, or a setting only you may change, like remote access or login. Each one raises a card, never offers Always allow, and changes nothing until you say yes
 - See and reset each agent's own permissions from the Control Center, in one tap

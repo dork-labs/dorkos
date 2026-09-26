@@ -254,3 +254,28 @@ describe('resolveFilesAndCommands', () => {
     expect(resolveFilesAndCommands({})).toEqual({ stop: null, source: 'runtime-own' });
   });
 });
+
+describe('an action that always asks (DOR-2328)', () => {
+  it('resolves a stored Allowed to Ask, and says why', () => {
+    const resolved = resolvePermission({
+      area: 'agents',
+      actionId: 'operator.update_agent_execution',
+      tier: 'destructive',
+      config: { preset: 'full', defaults: { areas: {}, actions: {} } },
+      agent: { actions: { 'operator.update_agent_execution': 'allowed' } },
+      alwaysAsks: true,
+    });
+    expect(resolved).toMatchObject({ state: 'ask', source: 'always-asks' });
+  });
+
+  it('leaves Blocked Blocked', () => {
+    const resolved = resolvePermission({
+      area: 'agents',
+      actionId: 'operator.update_agent_execution',
+      tier: 'destructive',
+      config: { preset: 'full', defaults: { areas: { agents: 'blocked' }, actions: {} } },
+      alwaysAsks: true,
+    });
+    expect(resolved.state).toBe('blocked');
+  });
+});

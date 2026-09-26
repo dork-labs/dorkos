@@ -33,6 +33,11 @@ export const PermissionActionEntrySchema = z
     id: z.string(),
     title: z.string(),
     tier: z.enum(CAPABILITY_TIERS),
+    /**
+     * Never Allowed: its card shows the change it would make, so a person sees
+     * every one. Offers Blocked and Ask only, like a floor area.
+     */
+    alwaysAsks: z.literal(true).optional(),
     /** What this action resolves to at the layer being viewed. */
     resolved: ResolvedPermissionSchema,
   })

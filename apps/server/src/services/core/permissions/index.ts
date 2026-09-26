@@ -65,6 +65,7 @@ export function permissionActions(
     tier: cap.tier,
     area: cap.area,
     ...(cap.surfaces.mcp ? { toolName: cap.surfaces.mcp.toolName } : {}),
+    ...(cap.describeApprovalChange ? { alwaysAsks: true as const } : {}),
   }));
   const tools: PermissionActionInfo[] = Object.entries(
     MCP_TOOL_TIERS as Record<string, McpToolTier>

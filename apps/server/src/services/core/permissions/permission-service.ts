@@ -94,6 +94,8 @@ export interface PermissionActionInfo {
   area: PermissionAreaId | null;
   /** The MCP tool name the action is listed under, when it has one. */
   toolName?: string;
+  /** Its card shows the change it would make, so it is never Allowed (DOR-2328). */
+  alwaysAsks?: true;
 }
 
 /** One registered agent, as the service needs it. */
@@ -274,6 +276,12 @@ export class PermissionService {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
           `"${action.title}" is in an area that is never Allowed. Choose Ask or Blocked.`
+        );
+      }
+      if (state === 'allowed' && action.alwaysAsks) {
+        throw new PermissionError(
+          'ALWAYS_ASKS',
+          `"${action.title}" always shows you what it would change, so it is never Allowed. Choose Ask or Blocked.`
         );
       }
     }
@@ -485,6 +493,7 @@ export class PermissionService {
         actionId: id,
         tier: info.tier,
         config,
+        ...(info.alwaysAsks ? { alwaysAsks: true } : {}),
       }).state;
       if (rank[state] >= rank[baseline]) {
         kept.actions = { ...kept.actions, [id]: state };
@@ -771,9 +780,17 @@ export class PermissionService {
     area: PermissionAreaId,
     actionId: string,
     tier: CapabilityTier,
-    agent?: AgentPermissions
+    agent?: AgentPermissions,
+    alwaysAsks?: true
   ): ResolvedPermission {
-    return resolvePermission({ area, actionId, tier, config, ...(agent ? { agent } : {}) });
+    return resolvePermission({
+      area,
+      actionId,
+      tier,
+      config,
+      ...(agent ? { agent } : {}),
+      ...(alwaysAsks ? { alwaysAsks } : {}),
+    });
   }
 
   /**
@@ -801,7 +818,8 @@ export class PermissionService {
             id: a.id,
             title: a.title,
             tier: a.tier,
-            resolved: this.resolveDefault(config, id, a.id, a.tier, agent),
+            ...(a.alwaysAsks ? { alwaysAsks: true as const } : {}),
+            resolved: this.resolveDefault(config, id, a.id, a.tier, agent, a.alwaysAsks),
           })),
         resolved: { state: resolved.state, source: resolved.source, layer: resolved.layer },
       };

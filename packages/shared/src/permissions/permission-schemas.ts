@@ -97,6 +97,8 @@ export const PERMISSION_SOURCES = [
   'unchanged',
   'floor',
   'inactive',
+  /** A stored Allowed on an action whose card shows what changes, kept at Ask. */
+  'always-asks',
 ] as const;
 
 /** One of {@link PERMISSION_SOURCES}. */

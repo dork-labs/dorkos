@@ -22,6 +22,13 @@ const FIXTURE_ACTIONS: PermissionActionInfo[] = [
   { id: 'rooms.post', title: 'Post in a room', tier: 'act', area: null },
   { id: 'operator.config_patch', title: 'Change settings', tier: 'act', area: null },
   { id: 'permissions.change', title: 'Change a permission', tier: 'act', area: 'permissions' },
+  {
+    id: 'operator.update_agent_execution',
+    title: 'Change what an agent runs on',
+    tier: 'destructive',
+    area: 'agents',
+    alwaysAsks: true,
+  },
 ];
 
 /** One agent in the fixture world. */

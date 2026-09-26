@@ -8350,6 +8350,12 @@
               "destructive"
             ]
           },
+          "alwaysAsks": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
           "resolved": {
             "$ref": "#/components/schemas/ResolvedPermission"
           }
@@ -8405,7 +8411,8 @@
           "preset",
           "unchanged",
           "floor",
-          "inactive"
+          "inactive",
+          "always-asks"
         ]
       },
       "PermissionException": {

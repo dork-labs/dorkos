@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest';
 import type { PermissionChangedMetadata } from '@dorkos/shared/permissions';
 
 import { ARRIVAL_NOTE } from '../permission-service.js';
+import { isAlwaysOffered } from '../../approvals/index.js';
 import { createPermissionWorld } from './permission-fixtures.js';
 
 const WIDE = {
@@ -71,5 +72,60 @@ describe('screening an arriving agent', () => {
     });
     expect(await world.service.screenArrivedAgent('agent-new')).toEqual([]);
     expect(world.agents.get('agent-new')?.permissions).toEqual(WIDE.permissions);
+  });
+});
+
+describe('an action that always shows what it would change', () => {
+  it('cannot be set to Allowed, for everyone or for one agent', async () => {
+    const world = createPermissionWorld({ agents: [WIDE] });
+    const writer = {
+      attribution: 'local-trust' as const,
+      actorType: 'user' as const,
+      actorLabel: 'Someone on this computer',
+    };
+    await expect(
+      world.service.setDefaults(
+        { actions: { 'operator.update_agent_execution': 'allowed' }, surface: 'settings' },
+        writer
+      )
+    ).rejects.toMatchObject({ code: 'ALWAYS_ASKS' });
+    await expect(
+      world.service.setAgent(
+        'agent-new',
+        { actions: { 'operator.update_agent_execution': 'allowed' }, surface: 'agent-page' },
+        writer
+      )
+    ).rejects.toMatchObject({ code: 'ALWAYS_ASKS' });
+  });
+
+  it('shows Ask with its reason when an Allowed is stored anyway', async () => {
+    const world = createPermissionWorld({
+      preset: 'full',
+      agents: [
+        { ...WIDE, permissions: { actions: { 'operator.update_agent_execution': 'allowed' } } },
+      ],
+    });
+    const view = await world.service.getAgent('agent-new');
+    const action = view.areas
+      .find((a) => a.id === 'agents')!
+      .actions.find((a) => a.id === 'operator.update_agent_execution')!;
+    expect(action).toMatchObject({
+      alwaysAsks: true,
+      resolved: { state: 'ask', source: 'always-asks' },
+    });
+  });
+});
+
+describe('which cards offer Always allow', () => {
+  const card = {
+    requestedByPath: '/agents/newcomer',
+    area: 'agents',
+    authorityBindingDigest: null,
+  };
+  it('offers it on an ordinary card', () => {
+    expect(isAlwaysOffered({ ...card, detail: null })).toBe(true);
+  });
+  it('never on a card that shows what would change', () => {
+    expect(isAlwaysOffered({ ...card, detail: 'Model: a → b' })).toBe(false);
   });
 });

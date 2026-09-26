@@ -104,9 +104,11 @@ export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) 
             const here = setHere(action, scope);
             const hint = here
               ? 'Set on its own'
-              : action.resolved.destructiveAsk
-                ? 'Always asks unless you set it here'
-                : `Follows ${area.label}`;
+              : action.alwaysAsks
+                ? 'Always asks, so you see what it would change'
+                : action.resolved.destructiveAsk
+                  ? 'Always asks unless you set it here'
+                  : `Follows ${area.label}`;
             return (
               <li
                 key={action.id}
@@ -121,7 +123,7 @@ export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) 
                   {here ? reset(action) : null}
                   <PermissionStateSwitch
                     value={action.resolved.state}
-                    floor={area.floor}
+                    floor={area.floor || action.alwaysAsks === true}
                     disabled={write.isPending}
                     aria-label={action.title}
                     onChange={(next) => {
