@@ -84,7 +84,7 @@ Each invariant has at least one test in §11 that fails if it is broken.
   carry the same grant) and, when none of those is running, by the §6 fast-forward.
 - **I7 — The refresh cannot lose work.** The server moves a worktree only when it is on its own
   branch, has no tracked or untracked changes, has no commits `main` lacks, and has no ignored or
-  untracked file at any path the fast-forward would write; it only fast-forwards; and it runs at the
+  untracked file at, inside, or above any path the fast-forward would touch; it only fast-forwards; and it runs at the
   moment a room turn is launched, never while any session bound to that (room, agent) has a turn
   running.
 - **I8 — Files never change during a turn.** The refresh happens at launch, before the runtime is
@@ -208,8 +208,18 @@ in `agent-home.ts`. Checked in this order:
    `forAgent`'s home.
 5. Anything else → refuse.
 
-`binding` is the rung `resolveSessionCwd` already reports for the placement; callers pass it through
-rather than re-deriving it. A refusal throws `DeskNotOwnError` (`DESK_NOT_OWN`).
+`binding` is a mapping, not a value `resolveSessionCwd` reports: it reports one rung, `'default'`, for
+both an agent configured `workspace.mode: 'none'` and an agent whose home the boundary refused (the
+refusal carries a `degraded` reason). The caller maps `agent-home` → `'home'`, `agent-managed` →
+`'managed'`, `default` with a boundary `degraded` reason → `'boundary-refused'`, and `default`
+otherwise → `'none'`; the mapping lives beside `assertOwnDesk` and is unit-tested.
+
+**Step 2 wins over step 4, on purpose.** Outside the CLI and the desktop app, `DORKOS_DEFAULT_CWD` is
+unset and `DEFAULT_CWD` falls back to the repo root (`lib/resolve-root.ts:58-59`) — which, in a
+DorkOS dev checkout, is the `dorkos` agent's own home. A `none` agent's task or relay turn there
+resolves to another agent's home and is refused at step 2, before step 4 could pass it. That is I3
+working as intended: standing in the `dorkos` agent's home would read and write that agent's folder.
+The refusal names the fix in plain words (set a default folder, or give the agent a home binding). A refusal throws `DeskNotOwnError` (`DESK_NOT_OWN`).
 Called at the three named-agent dispatch points, immediately before `runtime.sendMessage`:
 
 - rooms: `apps/server/src/services/rooms/room-turn-runner.ts` before `dispatchMessage` (`:864`);
@@ -539,6 +549,18 @@ launch, inside `prepareLaunch` and under the same "no bound session busy" check 
 - when no worktree of the repo still holds a DorkOS-written path, remove the marker block from
   `info/exclude`. Until then the block stays, frozen at its last contents.
 
+### 5.10 Queued room turns across a restart (T4)
+
+`prepareLaunch`, the grants and `forAgent` live on the in-memory turn. That is safe because the
+dispatcher does not persist a queued room turn today: a room's trigger writes no queue row
+(DOR-1242), and `adoptQueuedMessages` sweeps any room row an older build left behind rather than
+adopting it (`message-dispatcher.ts`, the DOR-1242 comment in `adoptQueuedMessages`). So after a
+restart a queued room turn is gone, never resurrected with missing grants, and the room's own
+recovery (the claim and hold state it rebuilds) decides whether it is triggered again — at which
+point it is placed, granted and refreshed from scratch. T4 pins this with the restart test in §11;
+if a later change starts persisting room turns, it must persist `additionalDirectories` and
+`forAgent` with the row and re-run the room's `prepareLaunch` on adoption.
+
 ## 6. Turn-start refresh and heads-up (T5)
 
 ### 6.1 The refresh
@@ -557,9 +579,12 @@ turn field (§4.1). The room turn runner supplies it; it runs the refresh and se
 sees matches the files on disk). Before touching git, it asks the dispatcher whether **any session
 bound to this (room, agent)** (`room_sessions`) has a turn in flight other than this one; if so it
 answers `held: busy` without a single git call. The question is a new read,
-`message-dispatcher.ts` `isTurnInFlight(sessionId)` (true from launch until settle, the same slot
-`inFlight` already tracks), asked for each session id `room_sessions` holds for the (room, author)
-pair.
+`message-dispatcher.ts` `isTurnInFlight(sessionId)`, asked for each session id `room_sessions` holds
+for the (room, author) pair. It is true when **either** the dispatcher's `inFlight` slot is held
+**or** the runtime reports a live turn (`AgentRuntime.isLocked(sessionId)` with no client, or the
+session is streaming) — the same authority `deliverSteer` uses, because `inFlight` alone is lossy: a
+turn launched with its queue budget exhausted runs holding the real session lock with no `inFlight`
+entry (`message-dispatcher.ts`, the `deliverSteer` TSDoc and `launchDispatch`).
 
 ```ts
 export type WorktreeRefreshOutcome =
@@ -592,13 +617,17 @@ Steps, each a git query under `--no-optional-locks` except the one write:
 3. `git status --porcelain=v1 --untracked-files=all` must be empty; otherwise `held: changes`.
 4. `git rev-list --count <mainTip>..HEAD` must be `0`; otherwise `held: ahead`.
 5. If `HEAD === mainTip`, `current`.
-6. **Nothing on disk in the way.** Let `P` be `git diff --name-only HEAD <mainTip>` (every path the
-   fast-forward would add, change or remove). If any path in `P`, or any parent folder of one, is
-   present on disk as an ignored or untracked file (`git ls-files -o -i --exclude-standard` together
-   with `git ls-files -o --exclude-standard`, intersected with `P` and its parents), answer
-   `held: changes`. Git's fast-forward silently overwrites an ignored file that `main` now tracks
-   (measured by the reviewer: a private `notes.log` overwritten, exit 0); this step is the only thing
-   that stops it.
+6. **Nothing on disk in the way, in either direction.** Let `P` be `git diff --name-only HEAD
+<mainTip>` (every path the fast-forward would add, change or remove) and `U` the ignored and
+   untracked paths on disk (`git ls-files -o -i --exclude-standard` together with
+   `git ls-files -o --exclude-standard`, listed file by file, never collapsed to folders). Answer
+   `held: changes` when any `u` in `U` and `p` in `P` are related at all: `u === p`, `u` is inside `p`
+   (`u` starts with `p + '/'`), or `u` is a parent of `p` (`p` starts with `u + '/'`). Git's
+   fast-forward silently overwrites an ignored file that `main` now tracks (a private `notes.log`
+   overwritten, exit 0), and silently deletes ignored files under a folder `main` turns into a
+   tracked file (`.gitignore` has `build/`, the worktree holds ignored `build/keep.txt`, `main`
+   commits a file named `build` and drops `build/` from `.gitignore`: `P = {.gitignore, build}`, and
+   the ff exits 0 having deleted `build/keep.txt`). This step is the only thing that stops either.
 7. `git merge --ff-only <mainTip>` in the worktree (the only write). A failure answers
    `held: unreadable` and logs; nothing else is attempted.
 
@@ -652,7 +681,10 @@ existing codes plus two new ones.
 `operator@dorkos.local` (`room-file-editor.ts:377-384`, `room-repo-git.ts:141-150`), whoever is
 signed in. From T6: when login is on and the request carries a signed-in person, the commit author is
 that person — name = their display name, email = `person-<authorId>@dorkos.local`, a stable
-non-address so no real email lands in the room's history. When login is off, the person is the
+non-address so no real email lands in the room's history. Git refuses a name made only of characters
+it strips (`fatal: name consists only of disallowed characters: <>`), so a display name that is empty
+after stripping `<`, `>` and newlines falls back to `FALLBACK_OPERATOR_GIT_NAME` exactly as the
+operator path does (`room-repo-git.ts:141`). When login is off, the person is the
 operator, and the operator identity is used as today. The server never names anyone from git: the
 room entry (§7.2) carries the person's author id and is what every surface — including the §6.2
 heads-up — reads names from.
@@ -840,7 +872,13 @@ T8 flips 260926-172251, 260926-180223, 260926-172252 and 260926-180308 to `accep
   never called; the same for a relay binding and a task whose cwd resolves to a different agent. The
   agent's own linked worktree and own managed workspace pass. A task and a relay binding for an agent
   configured `workspace.mode: 'none'` run at `DEFAULT_CWD` and pass, with identity from the home; the
-  same agent at `DEFAULT_CWD` with binding `home` is refused.
+  same agent at `DEFAULT_CWD` with binding `home` is refused. With `DEFAULT_CWD` equal to another
+  registered agent's home (the dev-checkout fallback), the `none` agent's task is refused
+  `DESK_NOT_OWN` at step 2. The rung-to-binding mapping is tested for all four outcomes, including
+  `default` with and without a boundary `degraded` reason.
+- **Restart (T4).** A room turn queued behind a running turn is in memory only; after a simulated
+  restart nothing re-runs it through queue adoption, and no `runtime.sendMessage` happens without
+  that turn's grants and `forAgent` (§5.10).
 - **Resolver hardening (T1).** A hand-written `.git` file pointing into another agent's repo's
   `worktrees/<name>` gitdir (no matching backlink) → `none`; a submodule `.git` file (no `commondir`)
   → `none`; `git worktree remove` then `git worktree add` of a different repo at the same path → the
@@ -859,10 +897,14 @@ T8 flips 260926-172251, 260926-180223, 260926-172252 and 260926-180308 to `accep
   now tracks** (e.g. `notes.log` ignored in the worktree, then committed on `main`) → `held: changes`
   and the file's bytes are unchanged; the same for an untracked file at a parent-folder path.
   `current` when at tip. `refreshed` moves exactly to the captured tip even if `main` advances after
-  step 1. **Busy:** an app-resumed turn running on a session bound to the same (room, agent) → the
-  room turn queues behind it and, when launched, answers `held: busy` with zero git calls if the
-  resumed turn is still running, and refreshes if it has finished; a refresh never runs while any
-  bound session has a turn in flight. The refresh runs at launch, not at placement: a turn placed
+  step 1. **Two-directional overlap:** ignored `build/keep.txt` under a `build/` rule, then `main`
+  commits a tracked file `build` and drops the rule → `held: changes` and `build/keep.txt` still
+  exists. **Busy:** the (room, agent) has two bound sessions (the room turn's own, and a second one a
+  person app-resumed); while a turn runs on the second, a room turn launched on the first answers
+  `held: busy` with zero git calls, and refreshes once the second has settled. (A turn on the SAME
+  session never overlaps: the room turn only launches after it settles.) **Lossy `inFlight`:** a turn
+  on the second session launched with its queue budget exhausted (holding the runtime lock with no
+  `inFlight` entry) still makes the refresh answer `held: busy`. The refresh runs at launch, not at placement: a turn placed
   while `main` is at A and launched after `main` moved to B lands on B. Baselines forgotten for moved
   paths only.
 - **Heads-up (T5).** With `--first-parent`, a merge of a 12-commit agent branch is one listed commit;

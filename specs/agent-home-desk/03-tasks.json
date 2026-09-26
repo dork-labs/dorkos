@@ -187,7 +187,7 @@
       "phaseName": "Room turns at home",
       "subject": "[agent-home-desk] [P2] Room turns run in the agent's own folder with the room's files granted",
       "activeForm": "Moving room turns back to the agent's home",
-      "description": "Spec §5 and §3.4. The agent-facing truth flips atomically here: resolveRoomTurnPlace (cwd = home, three grants), dispatcher/runner/app-resume carry grants and forAgent, the rewritten context-block files section, the rewritten working-in-room-repos skill (OPERATING_SKILLS_VERSION bump), canvas resolveTree by source path, the desk guard (DOR-2356) at room/relay/task dispatch, the §5.8 removal list, §5.9 legacy plumbing retirement, and the §8.1 wiring: run the T3 migration at startup before the room dispatcher starts, and switch extraDirs to the frozen list (or delete it) per the T3 measurement. Adds the eval case (room turn edits a room file by absolute path) to the policed tier array. Changelog fragment: in a room with files, an agent now works from its own folder, so it can also change its own code in that conversation; it reaches the room's files by path. Also: add DispatchMessageOpts.prepareLaunch (awaited by message-dispatcher.ts where an immediate or dequeued turn is about to call runtime.sendMessage, forwarded by name in the whitelist and launch spread) and message-dispatcher isTurnInFlight(sessionId); T4 uses it for §5.9 legacy clean-up, T5 for the refresh. The desk guard takes the placement's binding rung so workspace.mode 'none' at DEFAULT_CWD passes (§3.4). The skill gains the own-code rule: change your own code in a private worktree of your repo, never in the home checkout (§5.5).",
+      "description": "Spec §5 and §3.4. The agent-facing truth flips atomically here: resolveRoomTurnPlace (cwd = home, three grants), dispatcher/runner/app-resume carry grants and forAgent, the rewritten context-block files section, the rewritten working-in-room-repos skill (OPERATING_SKILLS_VERSION bump), canvas resolveTree by source path, the desk guard (DOR-2356) at room/relay/task dispatch, the §5.8 removal list, §5.9 legacy plumbing retirement, and the §8.1 wiring: run the T3 migration at startup before the room dispatcher starts, and switch extraDirs to the frozen list (or delete it) per the T3 measurement. Adds the eval case (room turn edits a room file by absolute path) to the policed tier array. Changelog fragment: in a room with files, an agent now works from its own folder, so it can also change its own code in that conversation; it reaches the room's files by path. Also: add DispatchMessageOpts.prepareLaunch (awaited by message-dispatcher.ts where an immediate or dequeued turn is about to call runtime.sendMessage, forwarded by name in the whitelist and launch spread) and message-dispatcher isTurnInFlight(sessionId); T4 uses it for §5.9 legacy clean-up, T5 for the refresh. The desk guard takes the placement's binding rung so workspace.mode 'none' at DEFAULT_CWD passes (§3.4). The skill gains the own-code rule: change your own code in a private worktree of your repo, never in the home checkout (§5.5). The changelog fragment also says: an agent set to use no folder of its own can no longer run in another agent's folder (in a DorkOS dev checkout, where the default folder is the dorkos agent's home, such tasks now stop with a message saying to set a default folder).",
       "validation": [
         "Every §11 Room placement, Desk guard, Canvas, Legacy plumbing and negative I2 test passes.",
         "Integration test (§11 Integration, first half): each room turn's sendMessage has cwd === agentPath and exactly the three grants; no-files room has none.",
@@ -200,7 +200,10 @@
         "Desk guard: an agent configured workspace.mode 'none' passes at DEFAULT_CWD for a task and a relay binding with identity from its home; the same cwd with binding 'home' is refused; another agent's linked worktree is refused.",
         "prepareLaunch runs for a dequeued turn at launch (not at enqueue) and its result reaches runtime.sendMessage; removing it from the whitelist or launch spread fails the test.",
         "Legacy clean-up runs inside prepareLaunch and is skipped while a session bound to the (room, agent) has a turn in flight.",
-        "The skill text states the own-code-in-a-private-worktree rule (pinned)."
+        "The skill text states the own-code-in-a-private-worktree rule (pinned).",
+        "isTurnInFlight is true for a turn launched with its queue budget exhausted (runtime lock held, no inFlight entry).",
+        "Dev-checkout fallback: with DEFAULT_CWD equal to the dorkos agent's home, a workspace.mode 'none' agent's task is refused DESK_NOT_OWN at step 2 with a plain-words reason; the rung-to-binding mapping is tested for agent-home, agent-managed, default with a boundary reason, and default without.",
+        "Restart test (§5.10): a room turn queued behind a running turn does not survive a simulated restart; no runtime.sendMessage is made without its grants and forAgent."
       ],
       "filesOwned": [
         "apps/server/src/services/rooms/repo/room-turn-place.ts (new; replaces room-worktree-cwd.ts)",
@@ -226,7 +229,7 @@
         "packages/operating-skills/src/skills/working-in-room-repos.ts + pack references",
         "packages/evals (one case)",
         "contributing/room-repos.md (placement sections)",
-        "apps/server/src/services/session/message-dispatcher.ts (prepareLaunch field, its awaited call at launch, isTurnInFlight export)"
+        "apps/server/src/services/session/message-dispatcher.ts (prepareLaunch field, its awaited call at launch, isTurnInFlight export (inFlight-only stub is NOT acceptable; T4 ships the inFlight OR runtime-lock read))"
       ],
       "size": "large",
       "priority": "high",
@@ -251,7 +254,9 @@
       "validation": [
         "Every §11 Refresh and Heads-up unit test passes, each held reason red-before/green-after.",
         "Ignored-file test: notes.log ignored in the worktree, then committed on main → held: changes and notes.log bytes unchanged; the same for an untracked file at a parent-folder path.",
-        "Busy test: an app-resumed turn running on a session bound to the same (room, agent) → the room turn launched behind it answers held: busy with zero git calls while it runs, and refreshes once it has finished.",
+        "Folder-becomes-file test: ignored build/keep.txt under a build/ rule; main commits a tracked file `build` and drops the rule → held: changes, build/keep.txt still exists (step 6 checks equal, inside and parent in both directions).",
+        "Busy test with two bound sessions: while a turn runs on a second session bound to the same (room, agent) (e.g. app-resumed), a room turn launched on the first answers held: busy with zero git calls, and refreshes after the second settles.",
+        "Lossy-inFlight test: the second session's turn launched with its queue budget exhausted (runtime lock held, no inFlight entry) still yields held: busy — isTurnInFlight reads inFlight OR the runtime lock/streaming state.",
         "Launch-not-placement test: a turn placed while main is at A and launched after main moved to B lands on B.",
         "main advancing after mainTip is captured: worktree lands exactly on the captured tip.",
         "--first-parent test: merging a 12-commit agent branch lists one commit; people named from room entries (two signed-in people told apart); a hand commit is 'other'.",
@@ -293,7 +298,8 @@
         "Case collision per segment: saving Notes/plan.md when notes/ exists is refused naming notes/ (save, upload, move, from-attachment).",
         "Commit author is the signed-in person with login on (two people get two authors) and the operator with login off.",
         "Upload uses disk storage; the temp folder is gone after success and after failure.",
-        "A path containing </room_context> and markdown renders inert in the entry text."
+        "A path containing </room_context> and markdown renders inert in the entry text.",
+        "Author fallback: a signed-in person whose display name is only '<>' commits with the fallback operator name (git accepts it); test pins it."
       ],
       "filesOwned": [
         "apps/server/src/routes/rooms.ts (files routes block ~:936-1124)",

@@ -27,7 +27,7 @@ who changed what, and not whether the agent's own work overlaps.
 We will fast-forward an agent's room worktree at the moment its room turn launches, before the runtime
 is called, only when: no session bound to that (room, agent) has a turn running; the worktree is on its
 own branch with no tracked or untracked changes and no commits `main` lacks; and no ignored or
-untracked file sits at a path the fast-forward would write. Otherwise the worktree is untouched, and
+untracked file sits at, inside, or above a path the fast-forward would touch. Otherwise the worktree is untouched, and
 the turn's room context lists what moved on `main` since the branch point (first-parent history, named
 from the room log) and any file the agent has also changed.
 
