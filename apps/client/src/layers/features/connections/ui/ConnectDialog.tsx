@@ -26,7 +26,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
-import { ConnectionAccessCard } from './ConnectionAccessCard';
+import { ConnectionAccessCard } from './access/ConnectionAccessCard';
 
 interface ConnectDialogProps {
   /** Service selected from the account-free catalog. */

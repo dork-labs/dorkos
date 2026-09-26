@@ -20,8 +20,8 @@ import {
   revisionIdsForAccessLevel,
   selectionsFromPreview,
   type AgentOperationSelections,
-} from '../lib/reconciliation-selection';
-import { useAccessReconciliation } from '../model/use-access-reconciliation';
+} from '../../lib/reconciliation-selection';
+import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { AccessOutcome } from './AccessOutcome';
 
 interface ConnectionAccessDialogProps {

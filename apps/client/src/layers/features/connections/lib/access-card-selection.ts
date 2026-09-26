@@ -47,18 +47,19 @@ export function heldAccess(
 }
 
 /**
- * The level a card should start on: the one every preset-holding agent already
- * shares, otherwise the safer Read.
+ * The level a card's switch should start on: the preset every preset-holding
+ * agent already shares, Read when nobody holds one, and `null` ("mixed", no
+ * segment selected) when they differ. A mixed switch changes nobody until the
+ * person picks a level for everyone on purpose.
  *
  * @param held - Current access of the agents the card is about.
  */
-export function initialCardLevel(held: HeldAccess[]): CardAccessLevel {
-  const presets = held.filter(
-    (level): level is CardAccessLevel => level === 'read' || level === 'read-write'
+export function initialCardLevel(held: HeldAccess[]): CardAccessLevel | null {
+  const presets = new Set(
+    held.filter((level): level is CardAccessLevel => level === 'read' || level === 'read-write')
   );
-  return presets.length > 0 && presets.every((level) => level === 'read-write')
-    ? 'read-write'
-    : 'read';
+  if (presets.size === 0) return 'read';
+  return presets.size === 1 ? [...presets][0] : null;
 }
 
 /**
@@ -92,39 +93,77 @@ export function rankAgents(
     .map(({ agent }) => agent);
 }
 
+/** Everything one card decision would do, before it is saved. */
+export interface CardDecision {
+  /** Exact replacement sets for agents whose access changes. */
+  changes: ConnectorReconciliationGrantSelection[];
+  /** Agents that hold access now and would lose all of it. */
+  removedAgentIds: string[];
+  /** A newly picked agent has no level yet because the switch is mixed. */
+  needsLevel: boolean;
+}
+
 /**
- * The exact replacement sets a card decision writes, limited to agents whose
- * set actually changes.
+ * The exact replacement sets a card decision writes, limited to the agents the
+ * card is about (`scope`) and to those whose set actually changes. An agent
+ * outside the scope is never written, whatever it holds.
  *
- * - A picked agent that had no access gets the chosen level.
+ * - A picked agent that had no access gets the chosen level. With a mixed
+ *   switch it gets nothing yet and {@link CardDecision.needsLevel} is set.
  * - A picked agent on a preset moves to the chosen level only once the person
  *   has touched the level switch, so opening the card and adding one agent
  *   never quietly changes anyone else.
  * - A picked agent with exact per-action access keeps it untouched: the card
  *   cannot express that set, so it never overwrites it.
- * - An agent that had access and is no longer picked loses it.
+ * - An agent in scope that had access and is no longer picked loses it, and
+ *   is named in {@link CardDecision.removedAgentIds} so the card can say so.
  *
  * @param preview - Server snapshot the decision is made against.
- * @param picked - Agents the person picked.
- * @param level - The chosen level.
- * @param levelTouched - Whether the person changed the level switch.
+ * @param decision - What the person chose.
+ * @param decision.scope - Agents this card decides for; everyone else is left alone.
+ * @param decision.picked - Agents the person picked.
+ * @param decision.level - The chosen level, or `null` while the switch is mixed.
+ * @param decision.levelTouched - Whether the person picked a level on the switch.
  */
-export function cardGrantChanges(
+export function cardDecision(
   preview: ConnectorReconciliationPreview,
-  picked: ReadonlySet<string>,
-  level: CardAccessLevel,
-  levelTouched: boolean
-): ConnectorReconciliationGrantSelection[] {
+  {
+    scope,
+    picked,
+    level,
+    levelTouched,
+  }: {
+    scope: readonly string[];
+    picked: ReadonlySet<string>;
+    level: CardAccessLevel | null;
+    levelTouched: boolean;
+  }
+): CardDecision {
   const current = selectionsFromPreview(preview);
-  const target = revisionIdsForAccessLevel(preview.candidates, level);
-  return preview.agents.flatMap((agent) => {
+  const target = level ? revisionIdsForAccessLevel(preview.candidates, level) : null;
+  const inScope = new Set(scope);
+  const changes: ConnectorReconciliationGrantSelection[] = [];
+  const removedAgentIds: string[] = [];
+  let needsLevel = false;
+  for (const agent of preview.agents) {
+    if (!inScope.has(agent.agentId)) continue;
     const before = current[agent.agentId] ?? [];
     const held = heldAccess(preview.candidates, before);
     let after: string[];
-    if (!picked.has(agent.agentId)) after = [];
-    else if (held === 'none') after = target;
-    else if (held === 'custom' || !levelTouched) after = before;
-    else after = target;
-    return sameIds(before, after) ? [] : [{ agentId: agent.agentId, operationRevisionIds: after }];
-  });
+    if (!picked.has(agent.agentId)) {
+      after = [];
+      if (before.length > 0) removedAgentIds.push(agent.agentId);
+    } else if (held === 'none') {
+      if (!target) needsLevel = true;
+      after = target ?? before;
+    } else if (held === 'custom' || !levelTouched || !target) {
+      after = before;
+    } else {
+      after = target;
+    }
+    if (!sameIds(before, after)) {
+      changes.push({ agentId: agent.agentId, operationRevisionIds: after });
+    }
+  }
+  return { changes, removedAgentIds, needsLevel };
 }

@@ -1,33 +1,35 @@
 import { useId, useMemo, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
-import { useConnectorConnections } from '@/layers/entities/connectors';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
-import { cn } from '@/layers/shared/lib';
 import {
   Badge,
   Button,
   Checkbox,
   Label,
   QueryErrorState,
-  RadioGroup,
-  RadioGroupItem,
   SegmentedControl,
   SegmentedControlItem,
   Skeleton,
 } from '@/layers/shared/ui';
 import {
-  cardGrantChanges,
+  cardDecision,
   heldAccess,
   initialCardLevel,
   rankAgents,
   VISIBLE_AGENT_LIMIT,
   type CardAccessLevel,
-} from '../lib/access-card-selection';
-import { FALLBACK_SERVICE_ICON, SERVICE_ICONS } from '../lib/presentation';
-import { revisionIdsForAccessLevel, selectionsFromPreview } from '../lib/reconciliation-selection';
-import { useAccessReconciliation } from '../model/use-access-reconciliation';
+  type CardDecision,
+  type HeldAccess,
+} from '../../lib/access-card-selection';
+import {
+  revisionIdsForAccessLevel,
+  selectionsFromPreview,
+} from '../../lib/reconciliation-selection';
+import { useAccessReconciliation } from '../../model/use-access-reconciliation';
+import { AccessCardFrame } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
+import { AccountChoice } from './AccountChoice';
 
 interface SharedCardProps {
   /** The app's display name, e.g. "Gmail". */
@@ -78,6 +80,19 @@ const LEVEL_LABELS: Record<CardAccessLevel, string> = {
   'read-write': 'Read and write',
 };
 
+/** What a row says an agent holds today. */
+const HELD_LABELS: Record<Exclude<HeldAccess, 'none'>, string> = {
+  ...LEVEL_LABELS,
+  custom: 'Exact actions',
+};
+
+/** "Ada", "Ada and Bo", "Ada, Bo and Cy". */
+function joinNames(names: string[]): string {
+  return names.length <= 1
+    ? (names[0] ?? '')
+    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 /**
  * "Who can use this app, and what can they do?" as one card, shared by the
  * chat (one fixed agent) and the Connections page (pick agents).
@@ -89,162 +104,52 @@ const LEVEL_LABELS: Record<CardAccessLevel, string> = {
  */
 export function ConnectionAccessCard(props: ConnectionAccessCardProps) {
   if (props.mode === 'agent' && !props.connectionId) {
-    return <AgentAccountChoice {...props} />;
+    return (
+      <AccountChoice
+        props={props}
+        renderAccess={(connectionId, onChangeAccount) => (
+          <AccessStep
+            key={connectionId}
+            {...props}
+            connectionId={connectionId}
+            onChangeAccount={onChangeAccount}
+          />
+        )}
+      />
+    );
   }
   return (
     <AccessStep key={props.connectionId} {...props} connectionId={props.connectionId as string} />
   );
 }
 
-function CardFrame({
-  titleId,
-  toolkit,
-  title,
-  subtitle,
-  className,
-  children,
-}: {
-  titleId: string;
-  toolkit: string | undefined;
-  title: string;
-  subtitle?: ReactNode;
-  className?: string;
-  children: ReactNode;
-}) {
-  const Icon = (toolkit ? SERVICE_ICONS[toolkit] : undefined) ?? FALLBACK_SERVICE_ICON;
-  return (
-    <section
-      aria-labelledby={titleId}
-      data-testid="connection-access-card"
-      className={cn('bg-card space-y-4 rounded-xl border p-4', className)}
-    >
-      <header className="flex items-start gap-3">
-        <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg">
-          <Icon className="text-muted-foreground size-4" aria-hidden />
-        </span>
-        <div className="min-w-0">
-          <h3 id={titleId} className="text-sm font-semibold">
-            {title}
-          </h3>
-          {subtitle && <div className="text-muted-foreground mt-0.5 text-xs">{subtitle}</div>}
-        </div>
-      </header>
-      {children}
-    </section>
-  );
-}
-
-/** Fixed-agent mode without a known account: find it, and ask which one when there are two. */
-function AgentAccountChoice(props: AgentAccessCardProps) {
-  const titleId = useId();
-  const query = useConnectorConnections();
-  const accounts = (query.data?.connections ?? []).filter(
-    (connection) => connection.toolkit === props.toolkit && connection.lifecycle !== 'disconnected'
-  );
-  const [picked, setPicked] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<string | null>(null);
-
-  const only = accounts.length === 1 ? accounts[0].connectionId : null;
-  const connectionId = only ?? chosen;
-  if (connectionId) {
-    return (
-      <AccessStep
-        key={connectionId}
-        {...props}
-        connectionId={connectionId}
-        onChangeAccount={only ? undefined : () => setChosen(null)}
-      />
-    );
-  }
-
-  const title = `Which ${props.serviceName} account?`;
-  return (
-    <CardFrame titleId={titleId} toolkit={props.toolkit} title={title} className={props.className}>
-      {query.isPending ? (
-        <Skeleton className="h-16 rounded-lg" aria-label="Loading accounts" />
-      ) : query.isError ? (
-        <QueryErrorState
-          title="Couldn’t load your accounts"
-          description="Nothing changed. Try again."
-          onRetry={() => void query.refetch()}
-          isRetrying={query.isFetching}
-        />
-      ) : accounts.length === 0 ? (
-        <p className="text-muted-foreground text-sm">
-          No {props.serviceName} account is connected yet.
-        </p>
-      ) : (
-        <RadioGroup
-          aria-labelledby={titleId}
-          value={picked ?? ''}
-          onValueChange={setPicked}
-          className="gap-2"
-        >
-          {accounts.map((account) => {
-            const id = `${titleId}-${account.connectionId}`;
-            return (
-              <div
-                key={account.connectionId}
-                className="bg-muted/40 flex min-h-11 items-center gap-3 rounded-lg px-3"
-              >
-                <RadioGroupItem id={id} value={account.connectionId} />
-                <Label
-                  htmlFor={id}
-                  className="min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 py-2 leading-snug font-normal"
-                >
-                  <span className="block max-w-full truncate text-sm font-medium">
-                    {account.label}
-                  </span>
-                  {account.identityHint && (
-                    <span className="text-muted-foreground block max-w-full truncate text-xs">
-                      {account.identityHint}
-                    </span>
-                  )}
-                </Label>
-              </div>
-            );
-          })}
-        </RadioGroup>
-      )}
-      <div className="flex flex-wrap justify-end gap-2">
-        {props.onSkip && (
-          <Button variant="ghost" onClick={props.onSkip}>
-            Not now
-          </Button>
-        )}
-        {accounts.length > 1 && (
-          <Button disabled={!picked} onClick={() => setChosen(picked)}>
-            Continue
-          </Button>
-        )}
-      </div>
-    </CardFrame>
-  );
-}
-
-/** Who the saved change reaches, for the confirmed-save line. */
+/** Who the saved change reaches, including anyone who lost access, for the confirmed-save line. */
 function savedSummary(
   props: ConnectionAccessCardProps,
   preview: ConnectorReconciliationPreview,
   picked: ReadonlySet<string>,
-  level: CardAccessLevel
+  level: CardAccessLevel | null,
+  decision: CardDecision
 ): string {
+  const nameOf = (agentId: string) =>
+    preview.agents.find((agent) => agent.agentId === agentId)?.displayName ?? 'The agent';
   if (props.mode === 'agent') {
-    const name =
-      preview.agents.find((agent) => agent.agentId === props.agentId)?.displayName ?? 'The agent';
-    return level === 'read'
-      ? `${name} can read ${props.serviceName}.`
-      : `${name} can read and write in ${props.serviceName}.`;
+    const name = nameOf(props.agentId);
+    return level === 'read-write'
+      ? `${name} can read and write in ${props.serviceName}.`
+      : `${name} can read ${props.serviceName}.`;
   }
-  const names = preview.agents
+  const kept = preview.agents
     .filter((agent) => picked.has(agent.agentId))
     .map((agent) => agent.displayName);
-  if (names.length === 0) return `No agent can use ${props.serviceName}.`;
-  const list =
-    names.length === 1
-      ? names[0]
-      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-  return `${list} can use ${props.serviceName}.`;
+  const removed = decision.removedAgentIds.map(nameOf);
+  const lines = [
+    kept.length > 0
+      ? `${joinNames(kept)} can use ${props.serviceName}.`
+      : `No agent can use ${props.serviceName}.`,
+  ];
+  if (removed.length > 0) lines.push(`${joinNames(removed)} can no longer use it.`);
+  return lines.join(' ');
 }
 
 /** The access question for one known account. */
@@ -253,7 +158,7 @@ function AccessStep(
 ) {
   const titleId = useId();
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [level, setLevel] = useState<CardAccessLevel>('read');
+  const [level, setLevel] = useState<CardAccessLevel | null>('read');
   const [levelTouched, setLevelTouched] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const { data: meshAgents } = useRegisteredAgents(undefined, props.mode === 'page');
@@ -285,12 +190,19 @@ function AccessStep(
   });
   const { preview } = access;
 
-  const changes = useMemo(
+  const fixedAgentId = props.mode === 'agent' ? props.agentId : null;
+  const decision = useMemo<CardDecision>(
     () =>
       preview
-        ? cardGrantChanges(preview, picked, level, props.mode === 'agent' || levelTouched)
-        : [],
-    [preview, picked, level, levelTouched, props.mode]
+        ? cardDecision(preview, {
+            // One-agent mode decides for that agent only; nobody else is ever written.
+            scope: fixedAgentId ? [fixedAgentId] : preview.agents.map((agent) => agent.agentId),
+            picked,
+            level,
+            levelTouched: fixedAgentId !== null || levelTouched,
+          })
+        : { changes: [], removedAgentIds: [], needsLevel: false },
+    [preview, picked, level, levelTouched, fixedAgentId]
   );
 
   const agentName =
@@ -315,7 +227,7 @@ function AccessStep(
   );
 
   return (
-    <CardFrame
+    <AccessCardFrame
       titleId={titleId}
       toolkit={connection?.toolkit ?? (props.mode === 'agent' ? props.toolkit : undefined)}
       title={title}
@@ -328,16 +240,21 @@ function AccessStep(
           <Skeleton className="h-8 rounded-lg" />
         </div>
       ) : access.loadFailed ? (
-        <QueryErrorState
-          title="Couldn’t load who can use it"
-          description="Nothing changed. Try loading the current access again."
-          onRetry={access.refresh}
-          isRetrying={access.isLoading}
-        />
+        <div className="space-y-2">
+          <QueryErrorState
+            title="Couldn’t load who can use it"
+            description="Nothing changed. Try loading the current access again."
+            onRetry={access.refresh}
+            isRetrying={access.isLoading}
+          />
+          {props.onEditExactActions && (
+            <ExactActionsLink onClick={() => props.onEditExactActions?.(props.connectionId)} />
+          )}
+        </div>
       ) : outcome ? (
         <AccessOutcome
           access={access}
-          savedDetail={preview ? savedSummary(props, preview, picked, level) : undefined}
+          savedDetail={preview ? savedSummary(props, preview, picked, level, decision) : undefined}
         />
       ) : preview ? (
         <AccessEditor
@@ -345,6 +262,7 @@ function AccessStep(
           preview={preview}
           picked={picked}
           setPicked={setPicked}
+          decision={decision}
           level={level}
           setLevel={(next) => {
             setLevel(next);
@@ -369,29 +287,39 @@ function AccessStep(
             {access.isCheckingSync ? 'Checking…' : 'Check sync status'}
           </Button>
         ) : null}
-        {outcome
-          ? props.onFinished && (
-              <Button variant={access.saved ? 'default' : 'ghost'} onClick={props.onFinished}>
-                {access.saved ? 'Done' : 'Close'}
+        {outcome ? (
+          props.onFinished ? (
+            <Button variant={access.saved ? 'default' : 'ghost'} onClick={props.onFinished}>
+              {access.saved ? 'Done' : 'Close'}
+            </Button>
+          ) : (
+            access.saveOutcome && (
+              // A card with nowhere to go (a panel, not a dialog) returns to
+              // the question, reading the current access fresh.
+              <Button variant="ghost" onClick={access.refresh}>
+                Edit again
               </Button>
             )
-          : preview && (
-              <>
-                {props.onSkip && (
-                  <Button variant="ghost" onClick={props.onSkip}>
-                    {props.mode === 'page' ? 'Skip' : 'Not now'}
-                  </Button>
-                )}
-                <Button
-                  onClick={() => access.apply(changes)}
-                  disabled={changes.length === 0 || access.isSaving}
-                >
-                  {access.isSaving ? 'Saving…' : props.mode === 'page' ? 'Save' : 'Allow'}
+          )
+        ) : (
+          preview && (
+            <>
+              {props.onSkip && (
+                <Button variant="ghost" onClick={props.onSkip}>
+                  {props.mode === 'page' ? 'Skip' : 'Not now'}
                 </Button>
-              </>
-            )}
+              )}
+              <Button
+                onClick={() => access.apply(decision.changes)}
+                disabled={decision.changes.length === 0 || decision.needsLevel || access.isSaving}
+              >
+                {access.isSaving ? 'Saving…' : props.mode === 'page' ? 'Save' : 'Allow'}
+              </Button>
+            </>
+          )
+        )}
       </div>
-    </CardFrame>
+    </AccessCardFrame>
   );
 }
 
@@ -400,6 +328,7 @@ function AccessEditor({
   preview,
   picked,
   setPicked,
+  decision,
   level,
   setLevel,
   showAll,
@@ -410,7 +339,8 @@ function AccessEditor({
   preview: ConnectorReconciliationPreview;
   picked: Set<string>;
   setPicked: (next: Set<string>) => void;
-  level: CardAccessLevel;
+  decision: CardDecision;
+  level: CardAccessLevel | null;
   setLevel: (next: CardAccessLevel) => void;
   showAll: boolean;
   setShowAll: (next: boolean) => void;
@@ -425,14 +355,7 @@ function AccessEditor({
   const nothingToGrant = readWriteIds.length === 0;
 
   const exactActionsLink = props.onEditExactActions && (
-    <Button
-      variant="link"
-      size="xs"
-      className="h-auto p-0"
-      onClick={() => props.onEditExactActions?.(props.connectionId)}
-    >
-      Choose exact actions
-    </Button>
+    <ExactActionsLink onClick={() => props.onEditExactActions?.(props.connectionId)} />
   );
 
   let who: ReactNode;
@@ -469,7 +392,7 @@ function AccessEditor({
         <legend className="sr-only">Agents that can use {props.serviceName}</legend>
         {visible.map((agent) => {
           const id = `${baseId}-${agent.agentId}`;
-          const custom = heldAccess(preview.candidates, current[agent.agentId] ?? []) === 'custom';
+          const held = heldAccess(preview.candidates, current[agent.agentId] ?? []);
           return (
             <div
               key={agent.agentId}
@@ -488,9 +411,9 @@ function AccessEditor({
               <Label htmlFor={id} className="min-w-0 flex-1 cursor-pointer py-2 font-normal">
                 <span className="truncate">{agent.displayName}</span>
               </Label>
-              {custom && (
-                <Badge size="xs" variant="secondary">
-                  Exact actions
+              {held !== 'none' && (
+                <Badge size="xs" variant="secondary" aria-label={`Now: ${HELD_LABELS[held]}`}>
+                  {HELD_LABELS[held]}
                 </Badge>
               )}
             </div>
@@ -501,6 +424,12 @@ function AccessEditor({
             Show all {ranked.length}
           </Button>
         )}
+        {decision.removedAgentIds.map((agentId) => (
+          <p key={agentId} className="text-warning px-2 text-xs">
+            {preview.agents.find((agent) => agent.agentId === agentId)?.displayName} will lose
+            access to {props.serviceName}.
+          </p>
+        ))}
       </fieldset>
     );
   }
@@ -528,7 +457,8 @@ function AccessEditor({
             {levels.length > 1 ? (
               <SegmentedControl
                 aria-labelledby={`${baseId}-level`}
-                value={level}
+                // Mixed: no segment is selected until the person picks one for everyone.
+                value={level ?? ''}
                 onValueChange={(next) => setLevel(next as CardAccessLevel)}
               >
                 {levels.map((option) => (
@@ -540,6 +470,11 @@ function AccessEditor({
             ) : (
               <p className="text-sm">Read</p>
             )}
+            {level === null && (
+              <p className="text-muted-foreground text-xs">
+                Your agents have different access. Pick one to give it to every ticked agent.
+              </p>
+            )}
           </div>
         )
       )}
@@ -550,5 +485,13 @@ function AccessEditor({
         </div>
       )}
     </div>
+  );
+}
+
+function ExactActionsLink({ onClick }: { onClick: () => void }) {
+  return (
+    <Button variant="link" size="xs" className="h-auto p-0" onClick={onClick}>
+      Choose exact actions
+    </Button>
   );
 }

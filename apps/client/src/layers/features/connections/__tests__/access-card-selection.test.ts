@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
-  cardGrantChanges,
+  cardDecision,
   heldAccess,
   initialCardLevel,
   rankAgents,
@@ -60,10 +60,10 @@ describe('heldAccess', () => {
 });
 
 describe('initialCardLevel', () => {
-  it('starts on read-write only when every preset holder already has it', () => {
+  it('starts on the shared preset, on Read with none, and mixed when presets differ', () => {
     expect(initialCardLevel([])).toBe('read');
     expect(initialCardLevel(['read-write', 'custom'])).toBe('read-write');
-    expect(initialCardLevel(['read-write', 'read'])).toBe('read');
+    expect(initialCardLevel(['read-write', 'read'])).toBeNull();
   });
 });
 
@@ -84,37 +84,114 @@ describe('rankAgents', () => {
   });
 });
 
-describe('cardGrantChanges', () => {
+const ALL = ['ada', 'bo', 'cy'];
+
+describe('cardDecision', () => {
   it('gives a newly picked agent the level without touching agents already on a preset', () => {
     const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'] }]);
-    expect(cardGrantChanges(snapshot, new Set(['ada', 'bo']), 'read-write', false)).toEqual([
-      { agentId: 'bo', operationRevisionIds: ['read', 'send'] },
-    ]);
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['ada', 'bo']),
+        level: 'read-write',
+        levelTouched: false,
+      }).changes
+    ).toEqual([{ agentId: 'bo', operationRevisionIds: ['read', 'send'] }]);
   });
 
-  it('moves every picked preset holder once the level is changed, never adding sensitive actions', () => {
+  it('moves every picked preset holder once a level is picked, never adding sensitive actions', () => {
     const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'] }]);
-    expect(cardGrantChanges(snapshot, new Set(['ada', 'bo']), 'read-write', true)).toEqual([
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['ada', 'bo']),
+        level: 'read-write',
+        levelTouched: true,
+      }).changes
+    ).toEqual([
       { agentId: 'ada', operationRevisionIds: ['read', 'send'] },
       { agentId: 'bo', operationRevisionIds: ['read', 'send'] },
     ]);
   });
 
-  it('keeps exact per-action access but revokes it when the agent is unpicked', () => {
+  it('keeps exact per-action access, but names and revokes an unpicked agent', () => {
     const snapshot = preview([
       { agentId: 'ada', operationRevisionIds: ['read', 'delete'] },
       { agentId: 'bo', operationRevisionIds: ['read'] },
     ]);
-    expect(cardGrantChanges(snapshot, new Set(['ada', 'bo']), 'read-write', true)).toEqual([
-      { agentId: 'bo', operationRevisionIds: ['read', 'send'] },
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['ada', 'bo']),
+        level: 'read-write',
+        levelTouched: true,
+      }).changes
+    ).toEqual([{ agentId: 'bo', operationRevisionIds: ['read', 'send'] }]);
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['bo']),
+        level: 'read',
+        levelTouched: false,
+      })
+    ).toEqual({
+      changes: [{ agentId: 'ada', operationRevisionIds: [] }],
+      removedAgentIds: ['ada'],
+      needsLevel: false,
+    });
+  });
+
+  it('writes only the agents in scope, whatever everyone else holds', () => {
+    const snapshot = preview([
+      { agentId: 'ada', operationRevisionIds: ['read', 'delete'] },
+      { agentId: 'cy', operationRevisionIds: ['read', 'send'] },
     ]);
-    expect(cardGrantChanges(snapshot, new Set(['bo']), 'read', false)).toEqual([
-      { agentId: 'ada', operationRevisionIds: [] },
+    expect(
+      cardDecision(snapshot, {
+        scope: ['bo'],
+        picked: new Set(['bo']),
+        level: 'read',
+        levelTouched: true,
+      })
+    ).toEqual({
+      changes: [{ agentId: 'bo', operationRevisionIds: ['read'] }],
+      removedAgentIds: [],
+      needsLevel: false,
+    });
+  });
+
+  it('changes nobody on a mixed switch and asks for a level before adding someone', () => {
+    const snapshot = preview([
+      { agentId: 'ada', operationRevisionIds: ['read', 'send'] },
+      { agentId: 'bo', operationRevisionIds: ['read'] },
     ]);
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['ada', 'bo']),
+        level: null,
+        levelTouched: false,
+      })
+    ).toEqual({ changes: [], removedAgentIds: [], needsLevel: false });
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['ada', 'bo', 'cy']),
+        level: null,
+        levelTouched: false,
+      })
+    ).toEqual({ changes: [], removedAgentIds: [], needsLevel: true });
   });
 
   it('writes nothing when the decision matches what the server already holds', () => {
     const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read'] }]);
-    expect(cardGrantChanges(snapshot, new Set(['ada']), 'read', true)).toEqual([]);
+    expect(
+      cardDecision(snapshot, {
+        scope: ALL,
+        picked: new Set(['ada']),
+        level: 'read',
+        levelTouched: true,
+      }).changes
+    ).toEqual([]);
   });
 });

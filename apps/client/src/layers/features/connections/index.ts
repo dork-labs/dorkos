@@ -17,12 +17,12 @@ export { ClaimFeed } from './ui/ClaimFeed';
 export { ClaimCard } from './ui/ClaimCard';
 export { MessagePolicyCard } from './ui/MessagePolicyCard';
 export { SessionConnectorsGroup } from './ui/SessionConnectorsGroup';
-export { ConnectionAccessDialog } from './ui/ConnectionAccessDialog';
-export { ConnectionAccessCard } from './ui/ConnectionAccessCard';
+export { ConnectionAccessDialog } from './ui/access/ConnectionAccessDialog';
+export { ConnectionAccessCard } from './ui/access/ConnectionAccessCard';
 export type {
   ConnectionAccessCardProps,
   PageAccessCardProps,
   AgentAccessCardProps,
-} from './ui/ConnectionAccessCard';
+} from './ui/access/ConnectionAccessCard';
 export { ManagementReviews } from './ui/ManagementReviews';
 export { AgentRequests } from './ui/AgentRequests';

@@ -153,7 +153,9 @@ export function ConnectionAccessCardShowcase() {
       title="ConnectionAccessCard"
       description="Who can use an app, and what can they do. The page picks agents; the chat answers for one agent and asks which account when there are two."
     >
-      <ShowcaseLabel>Page: pick agents (mailroom already reads)</ShowcaseLabel>
+      <ShowcaseLabel>
+        Page: pick agents (mailroom already reads; untick it to see the warning)
+      </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <CardDemo
           answer="ready"

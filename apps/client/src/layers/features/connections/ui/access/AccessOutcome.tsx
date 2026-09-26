@@ -1,6 +1,6 @@
 import { Check, Clock3, RefreshCw, ShieldAlert } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
-import type { AccessReconciliation } from '../model/use-access-reconciliation';
+import type { AccessReconciliation } from '../../model/use-access-reconciliation';
 
 interface AccessOutcomeProps {
   /** The access decision whose outcome is reported. */

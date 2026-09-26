@@ -9,7 +9,10 @@ import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-sc
 import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { ConnectionAccessCard, type ConnectionAccessCardProps } from '../ui/ConnectionAccessCard';
+import {
+  ConnectionAccessCard,
+  type ConnectionAccessCardProps,
+} from '../ui/access/ConnectionAccessCard';
 
 afterEach(cleanup);
 
@@ -297,5 +300,178 @@ describe('ConnectionAccessCard — one agent', () => {
       serviceName: 'Gmail',
     });
     expect(await screen.findByText('No Gmail account is connected yet.')).toBeInTheDocument();
+  });
+});
+
+describe('ConnectionAccessCard — deciding for one agent never touches anyone else', () => {
+  const OTHERS: ConnectorReconciliationPreview['currentGrants'] = [
+    { agentId: 'agent-ada', operationRevisionIds: ['read-v1'] },
+    { agentId: 'agent-gus', operationRevisionIds: ['read-v1', 'delete-v1'] },
+  ];
+
+  it('writes exactly one grant, for the fixed agent, while others hold preset and exact access', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview(OTHERS));
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-bo',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await waitFor(() => expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1));
+    expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+      previewId: 'preview-connection-1',
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    expect(await screen.findByText('Bo can read Gmail.')).toBeInTheDocument();
+  });
+
+  it('keeps Allow disabled when nothing would change for the fixed agent', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([...OTHERS, { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+    );
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-bo',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+    });
+    expect(await screen.findByText('Bo can already do this.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
+  });
+
+  it('keeps Allow disabled for an agent that is not registered here', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview(OTHERS));
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-unknown',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+    });
+    expect(await screen.findByText(/isn’t registered/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
+  });
+});
+
+describe('ConnectionAccessCard — removals and mixed access are visible before saving', () => {
+  it('says who will lose access before Save and after it', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1'] },
+        { agentId: 'agent-gus', operationRevisionIds: ['read-v1', 'delete-v1'] },
+      ])
+    );
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      grants: [{ agentId: 'agent-gus', operationRevisionIds: [] }],
+    });
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    expect(await screen.findByLabelText('Now: Exact actions')).toBeInTheDocument();
+    expect(screen.queryByText(/will lose access/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Gus' }));
+    expect(screen.getByText('Gus will lose access to Gmail.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+        previewId: 'preview-connection-1',
+        grants: [{ agentId: 'agent-gus', operationRevisionIds: [] }],
+      })
+    );
+    expect(
+      await screen.findByText('Ada can use Gmail. Gus can no longer use it.')
+    ).toBeInTheDocument();
+  });
+
+  it('shows each current level, selects no level while they differ, and only changes them on an explicit pick', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'] },
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] },
+      ])
+    );
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    expect(await screen.findByLabelText('Now: Read and write')).toBeInTheDocument();
+    expect(screen.getByLabelText('Now: Read')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Read' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Read and write' })).not.toBeChecked();
+    expect(screen.getByText(/Your agents have different access/)).toBeInTheDocument();
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+
+    // Adding someone while the level is mixed still needs an explicit level.
+    await user.click(screen.getByRole('checkbox', { name: 'Cy' }));
+    expect(save).toBeDisabled();
+
+    await user.click(screen.getByRole('radio', { name: 'Read' }));
+    await user.click(save);
+    await waitFor(() =>
+      expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
+        previewId: 'preview-connection-1',
+        grants: [
+          { agentId: 'agent-ada', operationRevisionIds: ['read-v1'] },
+          { agentId: 'agent-cy', operationRevisionIds: ['read-v1'] },
+        ],
+      })
+    );
+  });
+});
+
+describe('ConnectionAccessCard — ways out', () => {
+  it('keeps the exact action editor reachable when access cannot be loaded', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockRejectedValue(new Error('offline'));
+    const onEditExactActions = vi.fn();
+    renderCard(transport, {
+      mode: 'page',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+      onEditExactActions,
+    });
+    expect(await screen.findByText('Couldn’t load who can use it')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Choose exact actions' }));
+    expect(onEditExactActions).toHaveBeenCalledWith('connection-1');
+  });
+
+  it('returns to the question after a save when the card has nowhere to close to', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      grants: [{ agentId: 'agent-ada', operationRevisionIds: ['read-v1'] }],
+    });
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Ada' }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(await screen.findByRole('button', { name: 'Edit again' }));
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(transport.previewConnectorReconciliation).toHaveBeenCalledTimes(2);
   });
 });
