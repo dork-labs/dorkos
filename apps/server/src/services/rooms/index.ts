@@ -329,10 +329,15 @@ function readMaxCanvasOpsPerTurn(): number {
  * How many conversations one agent may work in at once, read live from
  * `rooms.maxConcurrentTurnsPerAgent` (DOR-2104).
  *
- * Fails to ONE rather than the shipped default, because one is the direction
- * that cannot hurt: an unreadable config may make an agent wait for its other
- * turn to finish, but must never let more turns loose in one folder than a
- * person asked for (the contention ADR `260726-170125` measured).
+ * Two different failures, and only one of them is handled here. A value in the
+ * file that the schema refuses (`0`, `99`, `"x"`) never reaches this function:
+ * the config manager repairs it to the shipped default, three, when it loads the
+ * file. What this catch covers is a config that cannot be read at all, and that
+ * answers ONE rather than three, because one is the direction that cannot hurt:
+ * it may make an agent wait for its other turn to finish, but never lets more
+ * turns loose in one folder than a person asked for (the contention ADR
+ * `260726-170125` measured). `claimBusyWith` reads anything below one as one
+ * too, so no path ends with an unbounded ceiling.
  */
 function readMaxConcurrentTurnsPerAgent(): number {
   try {

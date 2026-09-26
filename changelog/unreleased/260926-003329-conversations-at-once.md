@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): let one agent work in several conversations at once, set in Settings (DOR-2104)'
+  - 'fix(rooms): keep waiting messages first when the per-agent limit rises (DOR-2104)'
 ---
 
 ### Changed

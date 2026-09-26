@@ -986,7 +986,7 @@ An agent's rooms and chats all run in its own folder (only a repo-enabled room g
 Three things it never changes:
 
 - **One turn per room.** The `(room, agent)` ceiling bounds one transcript, and no setting buys a second turn on it. A follow-up in the same room becomes the agent's next turn there.
-- **Turns already running.** It is read at every claim decision, so a change binds the very next message and needs no restart. Lowering it stops nothing: new turns wait until the count is back under. Raising it frees waiting messages within one republish beat (ten seconds), because nothing else re-arms a hold without a turn ending.
+- **Turns already running.** It is read at every claim decision, so a change binds the very next message and needs no restart. Lowering it stops nothing: new turns wait until the count is back under. Raising it frees a slot with no turn ending, so waiting messages are re-armed on the next republish beat (ten seconds) and, sooner, whenever a fresh message arrives for the same agent — before that message is decided, so the older wait takes the slot first.
 - **The automatic-reply limits.** It applies to every turn, yours included, so it is not disabled by `rooms.turnLimitsEnabled`.
 
 Three is the default because most room turns are chat rather than edits, and three covers one person talking to one agent in two or three rooms without approaching the measured collision regime. The ceiling of eight keeps a deliberate choice from becoming an accident. Operator-only: an agent that could raise it would be voting itself more turns in a shared folder.

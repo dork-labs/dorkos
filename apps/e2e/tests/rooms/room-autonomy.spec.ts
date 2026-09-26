@@ -144,6 +144,28 @@ async function requireTestModeLeg(request: APIRequestContext): Promise<void> {
  * @param request - The test's API context.
  * @param name - The scenario to install.
  */
+/**
+ * Set how many conversations one agent may work in at once
+ * (`rooms.maxConcurrentTurnsPerAgent`, DOR-2104).
+ *
+ * The cross-room hold only exists when the agent is AT its limit, and the
+ * shipped limit is three — so a test about the hold pins one, and every test
+ * that pins it puts the shipped value back, because config is server-global and
+ * the next file on this leg would otherwise inherit a limit it never asked for.
+ *
+ * @param request - The test's API context.
+ * @param limit - The number to set.
+ */
+async function setTurnsPerAgent(request: APIRequestContext, limit: number): Promise<void> {
+  const res = await request.patch('/api/config', {
+    data: { rooms: { maxConcurrentTurnsPerAgent: limit } },
+  });
+  if (!res.ok()) throw new Error(`Could not set conversations at once: ${await res.text()}`);
+}
+
+/** What `rooms.maxConcurrentTurnsPerAgent` ships as, restored after every test that moves it. */
+const TURNS_PER_AGENT_DEFAULT = 3;
+
 async function useScenario(request: APIRequestContext, name: string): Promise<void> {
   const res = await request.post('/api/test/scenario', { data: { name } });
   if (!res.ok()) throw new Error(`Could not set the scenario to ${name}: ${await res.text()}`);
@@ -451,11 +473,14 @@ test.describe('A room gathers what is said at once @smoke', () => {
     roomsApi,
     roomsPage,
   }) => {
-    // The bug this shipped for. One agent is one working directory, so it can
-    // only run one turn at a time — and a message that arrived for it while it
-    // was busy in a different room used to be dropped with a line asking the
-    // person to send it again. Now it waits, the room says so while it is still
-    // true, and the answer lands here.
+    // The bug this shipped for. One agent is one working directory, so it runs
+    // a bounded number of turns at once — and a message that arrived for it
+    // while it was at that bound in a different room used to be dropped with a
+    // line asking the person to send it again. Now it waits, the room says so
+    // while it is still true, and the answer lands here.
+    //
+    // At a limit of ONE, because the hold only exists at the limit and the
+    // shipped limit is three (DOR-2104); the test after this one covers three.
     //
     // What only a browser can add: the LINE. The ordering across three rooms and
     // the promote path are pinned in units, because both need a deterministic
@@ -468,6 +493,7 @@ test.describe('A room gathers what is said at once @smoke', () => {
     await seatThatAnswers(roomsApi, busy, name);
     const seat = await seatThatAnswers(roomsApi, asking, name);
 
+    await setTurnsPerAgent(request, 1);
     await useScenario(request, 'long-turn');
     try {
       // The agent takes a turn in the OTHER room and stays in it.
@@ -545,6 +571,44 @@ test.describe('A room gathers what is said at once @smoke', () => {
     } finally {
       await request.post('/api/test/finish-turn').catch(() => {});
       await useScenario(request, 'simple-text').catch(() => {});
+      await setTurnsPerAgent(request, TURNS_PER_AGENT_DEFAULT).catch(() => {});
+    }
+  });
+
+  test('below its limit, an agent busy in another room starts here at once', async ({
+    page,
+    basePage,
+    request,
+    roomsApi,
+    roomsPage,
+  }) => {
+    // The other half of DOR-2104. At three conversations at once, one turn
+    // elsewhere is not in the way: the second room starts its own turn beside
+    // the first and never shows the waiting line.
+    const tag = roomsApi.runId;
+    const name = `Parallel${tag}`;
+    const agent = await roomsApi.registerAgent(name, '🔀', '#0ea5e9');
+    const first = await roomsApi.createChannel(`first-${tag}`, `First ${tag}`, [agent]);
+    const second = await roomsApi.createChannel(`second-${tag}`, `Second ${tag}`, [agent]);
+    await seatThatAnswers(roomsApi, first, name);
+    await seatThatAnswers(roomsApi, second, name);
+
+    await setTurnsPerAgent(request, 3);
+    await useScenario(request, 'long-turn');
+    try {
+      await openRoom(page, basePage, roomsPage, first.id);
+      await roomsApi.postEntries(first.id, [`over here ${tag}`]);
+      await expectRoomBusy(page);
+
+      // The first turn is still running, and the second room starts anyway.
+      await openRoom(page, basePage, roomsPage, second.id);
+      await roomsApi.postEntries(second.id, [`and over here ${tag}`]);
+      await expectRoomBusy(page);
+      await expect(page.getByTestId('room-held')).toHaveCount(0);
+    } finally {
+      await request.post('/api/test/finish-turn').catch(() => {});
+      await useScenario(request, 'simple-text').catch(() => {});
+      await setTurnsPerAgent(request, TURNS_PER_AGENT_DEFAULT).catch(() => {});
     }
   });
 });

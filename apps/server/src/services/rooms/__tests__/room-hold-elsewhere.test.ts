@@ -843,30 +843,50 @@ describe('a message for an agent working elsewhere', () => {
     });
 
     it('raised while a message is waiting, lets the next message start without a restart', async () => {
+      // With nothing else arriving, the republish beat is what notices the
+      // freed slot: no turn ended, so nothing else would re-arm the wait.
       let limit = 1;
-      const [a, b, c] = open(3, { maxConcurrentTurnsPerAgent: () => limit });
+      const [a, b] = open(2, { maxConcurrentTurnsPerAgent: () => limit });
       service.post(a!.id, { authorId: human, text: '@ana check the build' });
       await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana mid-turn in room A');
       service.post(b!.id, { authorId: human, text: '@ana and the styles?' });
       await quiet();
       expect(runner.turns).toHaveLength(1);
 
-      limit = 3;
-      service.post(c!.id, { authorId: human, text: '@ana and here?' });
-      await settleUntil(() => runner.turns.length === 2, 'room C to start beside room A');
-      expect(runner.turns[1]!.roomId).toBe(c!.id);
-
-      // And the room that was already waiting does not stay parked behind a turn
-      // it no longer needs to wait for: the next beat re-arms it, with no turn
-      // having ended. Driven directly rather than slept through, like the
-      // expiry tests above.
-      expect(service.listHolds().map((hold) => hold.roomId)).toEqual([b!.id]);
+      limit = 2;
+      // Driven directly rather than slept through, like the expiry tests above.
       (service as unknown as { triggers: { republishPresence(): void } }).triggers[
         'republishPresence'
       ]();
-      await settleUntil(() => runner.turns.length === 3, 'room B to start once there is room');
-      expect(runner.turns[2]!.roomId).toBe(b!.id);
+      await settleUntil(() => runner.turns.length === 2, 'room B to start once there is room');
+      expect(runner.turns[1]!.roomId).toBe(b!.id);
       expect(service.listHolds()).toEqual([]);
+
+      runner.release(ana);
+      runner.release(ana);
+      await service.triggersIdle();
+    });
+
+    it('raised while a message is waiting, still answers the older message first', async () => {
+      // First come, first served across a raised limit: a message sent the
+      // instant the slot frees must not take it from one that was already
+      // waiting. Red before `collectOne` re-armed the waits: room C started and
+      // room B kept waiting.
+      let limit = 1;
+      const [a, b, c] = open(3, { maxConcurrentTurnsPerAgent: () => limit });
+      service.post(a!.id, { authorId: human, text: '@ana check the build' });
+      await settleUntil(() => runner.holdsFor(ana) === 1, 'Ana mid-turn in room A');
+      service.post(b!.id, { authorId: human, text: '@ana and the styles?' });
+      await quiet();
+      expect(service.listHolds().map((hold) => hold.roomId)).toEqual([b!.id]);
+
+      limit = 2;
+      service.post(c!.id, { authorId: human, text: '@ana and here?' });
+      await settleUntil(() => runner.turns.length === 2, 'one more turn to start');
+      await quiet();
+
+      expect(runner.turns.map((turn) => turn.roomId)).toEqual([a!.id, b!.id]);
+      expect(service.listHolds().map((hold) => hold.roomId)).toEqual([c!.id]);
 
       for (let turn = 0; turn < 3; turn += 1) {
         await settleUntil(() => runner.holdsFor(ana) > 0, 'a turn to release');

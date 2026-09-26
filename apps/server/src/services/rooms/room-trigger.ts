@@ -805,6 +805,13 @@ export class RoomTriggerDispatcher {
     candidate: TriggerCandidate,
     arrivedAt: number
   ): void {
+    // Older waits first. A raised `rooms.maxConcurrentTurnsPerAgent` frees a
+    // slot with no turn ending, and until the next republish beat nothing has
+    // re-armed the messages already waiting for this agent — so a message sent
+    // now would take the slot ahead of one that has waited minutes. Re-arming
+    // them here, before this message is decided, puts them in the sweep first:
+    // a resumed collection is due at once, and the sweep takes the oldest.
+    this.resumeFreedHolds(candidate.agentPath);
     const busyWith = this.busyWith(room.id, candidate.authorId, candidate.agentPath);
     const opened = this.collector.collect({
       room,
@@ -3505,10 +3512,19 @@ export class RoomTriggerDispatcher {
    * Nothing is decided here: re-arming routes each collection back through
    * `claimCollected`, which asks the ceiling again and re-parks any that still
    * do not fit.
+   *
+   * Also called by {@link RoomTriggerDispatcher.collectOne} for the one agent a
+   * fresh message is for, which is what keeps the order first-come: without it,
+   * a message sent inside that beat would take the freed slot ahead of one that
+   * had been waiting.
+   *
+   * @param onlyPath - Consider only this agent's waits. Omitted on the beat,
+   *   which considers every agent's.
    */
-  private resumeFreedHolds(): void {
+  private resumeFreedHolds(onlyPath?: string): void {
     const freed = new Set<string>();
     for (const record of this.held.values()) {
+      if (onlyPath !== undefined && record.agentPath !== onlyPath) continue;
       if (freed.has(record.agentPath)) continue;
       if (this.busyWith(record.roomId, record.authorId, record.agentPath) === null) {
         freed.add(record.agentPath);

@@ -1,5 +1,6 @@
 /**
- * Rooms settings — how far agents may carry a conversation on their own.
+ * Rooms settings — how far agents may carry a conversation on their own, and
+ * how many conversations one agent may work in at once (DOR-2104).
  *
  * The four numbers behind the cascade guard and the turn budget, offered for the
  * first time (DOR-1430). Before this panel they were reachable only by editing
@@ -99,9 +100,10 @@ export function RoomsTab() {
     <div className="space-y-6">
       {/* No heading: the Settings dialog draws the panel's own header. */}
       <p className="text-muted-foreground text-xs">
-        Agents in a room can answer each other without being asked. These limits decide how far that
-        goes before the room steps in, and every message you send starts the counts over. A single
-        room can be given limits of its own, in the panel beside it.
+        How your agents work in rooms: how far they may answer each other without being asked, and
+        how many conversations one agent may work in at once. Every message you send starts the
+        reply counts over, and a single room can be given reply limits of its own, in the panel
+        beside it.
       </p>
 
       {limits === null ? (

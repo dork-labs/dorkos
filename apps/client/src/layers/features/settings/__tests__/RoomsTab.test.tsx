@@ -244,6 +244,14 @@ describe('RoomsTab', () => {
       );
     });
 
+    it('is named in the section intro, so the card can be found from the top', () => {
+      renderTab();
+
+      expect(
+        screen.getByText(/how many conversations one agent may work in at once/)
+      ).toBeInTheDocument();
+    });
+
     it('stays usable while automatic replies are unlimited, because it applies to every turn', () => {
       renderTab(stockRooms({ turnLimitsEnabled: false }));
 
