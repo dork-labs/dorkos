@@ -157,6 +157,7 @@ describe('UserConfigSchema', () => {
         // honestly knows and what draws no "Suggested by …" note (DOR-1022).
         displayNameSource: null,
         rolePromptDismissedAt: null,
+        identityPromptDismissedAt: null,
       },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },
@@ -526,6 +527,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         // honestly knows and what draws no "Suggested by …" note (DOR-1022).
         displayNameSource: null,
         rolePromptDismissedAt: null,
+        identityPromptDismissedAt: null,
       },
       agentContext: { relayTools: true, meshTools: true, adapterTools: true, tasksTools: true },
       uploads: { maxFileSize: 10 * 1024 * 1024, maxFiles: 10, allowedTypes: ['*/*'] },

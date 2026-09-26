@@ -25,6 +25,15 @@ export type { ProfilePromptCardProps } from './ui/ProfilePromptCard';
 // `sidebar-simplification` D4).
 export { useProfilePrompt } from './model/use-profile-prompt';
 export type { ProfilePromptApi, ProfilePromptPhase } from './model/use-profile-prompt';
+// The one-time name-and-handle card (DOR-677), arbitrated by the same slot.
+export { useIdentityPrompt } from './model/use-identity-prompt';
+export type {
+  IdentityPromptApi,
+  IdentityPromptPhase,
+  IdentityQuestion,
+} from './model/use-identity-prompt';
+export { IdentityPromptCard } from './ui/IdentityPromptCard';
+export type { IdentityPromptCardProps } from './ui/IdentityPromptCard';
 // Exported for `features/profile`'s Settings › Profile tab (DOR-1972): the
 // role beat, the existing-user card and the Settings field all read and write
 // the same `profile.roles`, through the same picker, so an answer given in any

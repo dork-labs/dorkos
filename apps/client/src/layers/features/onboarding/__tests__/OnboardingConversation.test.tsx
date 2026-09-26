@@ -107,6 +107,7 @@ vi.mock('../model/use-onboarding', () => ({
 }));
 
 const mockSaveRoles = vi.fn().mockResolvedValue(undefined);
+const mockDismissIdentityPrompt = vi.fn().mockResolvedValue(undefined);
 vi.mock('../model/use-profile', () => ({
   useProfile: () => ({
     roles: [],
@@ -114,7 +115,48 @@ vi.mock('../model/use-profile', () => ({
     isLoading: false,
     saveRoles: mockSaveRoles,
     dismissRolePrompt: vi.fn(),
+    identityPromptDismissedAt: null,
+    dismissIdentityPrompt: mockDismissIdentityPrompt,
   }),
+}));
+
+/**
+ * Whether the name-and-handle beat is asked (DOR-677). `settled` by default,
+ * so the cases about the later beats open on personality exactly as before;
+ * the identity cases set `ask`.
+ */
+let mockIdentityQuestion: 'pending' | 'ask' | 'settled' = 'settled';
+vi.mock('../model/use-identity-prompt', () => ({
+  useIdentityQuestion: () => mockIdentityQuestion,
+}));
+
+/**
+ * The form itself is the profile feature's, tested there; here it only has to
+ * report a save or a skip back to the beat.
+ */
+vi.mock('@/layers/features/profile', () => ({
+  OperatorIdentityForm: ({
+    onSaved,
+    onSkip,
+    confirmLabel,
+    skipLabel,
+  }: {
+    onSaved: () => void;
+    onSkip?: () => void;
+    confirmLabel?: string;
+    skipLabel?: string;
+  }) => (
+    <div data-testid="operator-identity-form">
+      <button type="button" onClick={onSaved}>
+        {confirmLabel}
+      </button>
+      {onSkip && (
+        <button type="button" onClick={onSkip}>
+          {skipLabel}
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 const mockStartScan = vi.fn();
@@ -311,9 +353,55 @@ describe('OnboardingConversation', () => {
     useAppStore.setState({ requestedTour: null });
     mockAgentsState = 'resolved';
     mockDorkbotManifest = DORKBOT_MANIFEST;
+    mockIdentityQuestion = 'settled';
+    mockDismissIdentityPrompt.mockResolvedValue(undefined);
   });
 
   afterEach(() => cleanup());
+
+  describe('the name-and-handle beat (DOR-677)', () => {
+    it('asks for a name and handle right after arrival when they are missing', async () => {
+      mockIdentityQuestion = 'ask';
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+
+      await screen.findByTestId('operator-identity-form');
+      expect(screen.getByText(DORKBOT_ONBOARDING_LINES.identityPrompt[0])).toBeTruthy();
+      // Nothing is written by being asked: the question is only closed by an answer.
+      expect(mockDismissIdentityPrompt).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('pick-personality')).toBeNull();
+    });
+
+    it('a save closes the question and moves on to personality', async () => {
+      mockIdentityQuestion = 'ask';
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+      await screen.findByTestId('operator-identity-form');
+
+      fireEvent.click(screen.getByText('That’s me'));
+
+      await screen.findByTestId('pick-personality');
+      expect(mockDismissIdentityPrompt).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(DORKBOT_ONBOARDING_LINES.identitySaved)).toBeTruthy();
+    });
+
+    it('a skip closes the question too, so no later surface asks again', async () => {
+      mockIdentityQuestion = 'ask';
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+      await screen.findByTestId('operator-identity-form');
+
+      fireEvent.click(screen.getByText('Skip this'));
+
+      await screen.findByTestId('pick-personality');
+      expect(mockDismissIdentityPrompt).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(DORKBOT_ONBOARDING_LINES.identitySkip)).toBeTruthy();
+    });
+
+    it('is never asked of someone who already has both', async () => {
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+      await screen.findByTestId('pick-personality');
+      expect(screen.queryByTestId('operator-identity-form')).toBeNull();
+      expect(screen.queryByText(DORKBOT_ONBOARDING_LINES.identityPrompt[0])).toBeNull();
+    });
+  });
 
   it('shows first light, then reveals DorkBot arriving with the composer disabled', async () => {
     render(<OnboardingConversation onComplete={vi.fn()} />);

@@ -196,6 +196,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'profile.displayNameSource.kind',
   'profile.displayNameSource.agentName',
   'profile.rolePromptDismissedAt',
+  'profile.identityPromptDismissedAt',
   'agents.defaultDirectory',
   'agents.defaultAgent',
   'workspace.enabled',

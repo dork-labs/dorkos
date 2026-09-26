@@ -58,6 +58,7 @@ import {
   seedRoomRepoDefaults,
   dropRetiredDorkosTools,
   seedDisplayNameSourceDefault,
+  seedIdentityPromptDismissedDefault,
   seedHarnessAutoAdopt,
   seedHarnessGlobal,
   seedHarnessRefusedHooks,
@@ -555,6 +556,7 @@ describe('ConfigManager', () => {
       displayName: null,
       displayNameSource: null,
       rolePromptDismissedAt: null,
+      identityPromptDismissedAt: null,
     });
     // Existing user data survives the upgrade untouched.
     expect(configManager.getDot('server.port')).toBe(5000);
@@ -571,6 +573,7 @@ describe('ConfigManager', () => {
       // would be worse than none.
       displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-07-29T00:00:00.000Z',
+      identityPromptDismissedAt: '2026-09-25T00:00:00.000Z',
     };
     fs.mkdirSync(testDir, { recursive: true });
     fs.writeFileSync(
@@ -1240,6 +1243,99 @@ describe('seedRoomCanvasOps migration (room-canvas §3.4, DOR-1999)', () => {
       // The upgrade adds one leaf; it changes nothing the person had set.
       expect(onDisk.rooms.maxAgentDepth).toBe(12);
       expect(onDisk.rooms.maxPostsPerTurn).toBe(1);
+      expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('seedIdentityPromptDismissedDefault migration (DOR-677)', () => {
+  it('reserves the leaf on a `profile` block that predates it', () => {
+    // conf's pre-migration merge is shallow, so a stored `profile` never gains
+    // a new member on its own. Drop the body and this reads `undefined`.
+    const store = createMockStore({ profile: { roles: ['Engineer'], displayName: 'Dorian' } });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toEqual({
+      roles: ['Engineer'],
+      displayName: 'Dorian',
+      identityPromptDismissedAt: null,
+    });
+  });
+
+  it('seeds "never asked" even beside a stored name, never a dismissal nobody made', () => {
+    // Every surface that asks also checks what is missing, so a person who
+    // already has a name and a handle is never shown the question; recording a
+    // dismissal here would claim an answer the person never gave.
+    const store = createMockStore({ profile: { displayName: 'Dorian' } });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toEqual({ displayName: 'Dorian', identityPromptDismissedAt: null });
+  });
+
+  it('never overwrites a dismissal already on file (idempotent)', () => {
+    const store = createMockStore({
+      profile: { identityPromptDismissedAt: '2026-09-25T00:00:00.000Z' },
+    });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toEqual({ identityPromptDismissedAt: '2026-09-25T00:00:00.000Z' });
+  });
+
+  it('leaves a stored `null` alone rather than rewriting it', () => {
+    // By identity: the body spreads into a fresh object, so only `toBe` can
+    // tell a skipped write from a rewrite. Swap `in` for `== null` and this
+    // goes red.
+    const profile = { identityPromptDismissedAt: null };
+    const store = createMockStore({ profile });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toBe(profile);
+  });
+
+  it('does nothing when there is no `profile` block to extend', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    seedIdentityPromptDismissedDefault(store);
+    expect(store.data.profile).toBeUndefined();
+  });
+
+  it('a real pre-0.84.0 config file gains the leaf on disk (full conf path)', () => {
+    // Read from the FILE: Ajv's `useDefaults` answers `null` from a discarded
+    // copy, so a `getDot` assertion would pass with the body deleted (DOR-1496).
+    const dir = path.join(os.tmpdir(), 'test-dork-identity-prompt-mig-' + Date.now());
+    const cfgPath = path.join(dir, 'config.json');
+    fs.mkdirSync(dir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        cfgPath,
+        JSON.stringify({
+          version: 1,
+          profile: {
+            roles: ['Engineer'],
+            tools: [],
+            displayName: 'Dorian',
+            displayNameSource: null,
+            rolePromptDismissedAt: '2026-08-01T00:00:00.000Z',
+          },
+          __internal__: { migrations: { version: '0.83.0' } },
+        }),
+        'utf-8'
+      );
+
+      new Conf({
+        configName: 'config',
+        cwd: dir,
+        schema: CONF_JSON_SCHEMA as unknown as Schema<Record<string, unknown>>,
+        defaults: USER_CONFIG_DEFAULTS,
+        clearInvalidConfig: false,
+        projectVersion: '0.84.0',
+        migrations: CONFIG_MIGRATIONS,
+      });
+
+      const onDisk = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as {
+        profile: Record<string, unknown>;
+      };
+      expect(onDisk.profile).toHaveProperty('identityPromptDismissedAt', null);
+      // The upgrade adds one leaf; everything the person had set is untouched.
+      expect(onDisk.profile.displayName).toBe('Dorian');
+      expect(onDisk.profile.rolePromptDismissedAt).toBe('2026-08-01T00:00:00.000Z');
       expect(() => UserConfigSchema.parse(onDisk)).not.toThrow();
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -3721,7 +3817,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(30);
+    expect(Object.keys(bodies)).toHaveLength(31);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')

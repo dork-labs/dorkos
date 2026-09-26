@@ -296,6 +296,7 @@ export const CONFIG_DISCLOSURE = {
   'profile.displayNameSource.kind': 'expose',
   'profile.displayNameSource.agentName': 'expose',
   'profile.rolePromptDismissedAt': 'expose',
+  'profile.identityPromptDismissedAt': 'expose',
 
   'agentContext.relayTools': 'expose',
   'agentContext.meshTools': 'expose',

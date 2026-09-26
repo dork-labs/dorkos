@@ -45,6 +45,7 @@ vi.mock('../model/use-onboarding', () => ({
 
 /** The roles write — must stay untouched when the profile beat is skipped. */
 const mockSaveRoles = vi.fn().mockResolvedValue(undefined);
+const mockDismissIdentityPrompt = vi.fn().mockResolvedValue(undefined);
 vi.mock('../model/use-profile', () => ({
   useProfile: () => ({
     roles: [],
@@ -52,7 +53,46 @@ vi.mock('../model/use-profile', () => ({
     isLoading: false,
     saveRoles: mockSaveRoles,
     dismissRolePrompt: vi.fn(),
+    identityPromptDismissedAt: null,
+    dismissIdentityPrompt: mockDismissIdentityPrompt,
   }),
+}));
+
+/**
+ * The name-and-handle beat (DOR-677) is covered in `OnboardingConversation.test`;
+ * here it is already answered, so the flow opens on personality as before.
+ */
+vi.mock('../model/use-identity-prompt', () => ({
+  useIdentityQuestion: () => 'settled',
+}));
+
+/**
+ * The form itself is the profile feature's, tested there; here it only has to
+ * report a save or a skip back to the beat.
+ */
+vi.mock('@/layers/features/profile', () => ({
+  OperatorIdentityForm: ({
+    onSaved,
+    onSkip,
+    confirmLabel,
+    skipLabel,
+  }: {
+    onSaved: () => void;
+    onSkip?: () => void;
+    confirmLabel?: string;
+    skipLabel?: string;
+  }) => (
+    <div data-testid="operator-identity-form">
+      <button type="button" onClick={onSaved}>
+        {confirmLabel}
+      </button>
+      {onSkip && (
+        <button type="button" onClick={onSkip}>
+          {skipLabel}
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 /** The traits write — must stay untouched when the personality beat is skipped. */

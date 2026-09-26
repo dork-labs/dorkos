@@ -42,6 +42,10 @@ export function useUpdateProfileName() {
   return useMutation({
     mutationFn: (displayName: string) => transport.updateProfile(displayName),
     onSuccess: () => invalidateProfileReaders(queryClient),
+    // Every surface that draws this write says why it was refused, in place,
+    // under the field (`nameErrorMessage` / `handleErrorMessage`). The global
+    // toast would say the same thing a second time, in a corner.
+    meta: { suppressErrorToast: true },
   });
 }
 
@@ -114,5 +118,9 @@ export function useSetAuthorHandle() {
     mutationFn: ({ authorId, handle }: { authorId: string; handle: string }) =>
       transport.setAuthorHandle(authorId, handle),
     onSuccess: () => invalidateProfileReaders(queryClient),
+    // Every surface that draws this write says why it was refused, in place,
+    // under the field (`nameErrorMessage` / `handleErrorMessage`). The global
+    // toast would say the same thing a second time, in a corner.
+    meta: { suppressErrorToast: true },
   });
 }
