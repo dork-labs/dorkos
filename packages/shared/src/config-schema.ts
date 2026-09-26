@@ -48,7 +48,6 @@ const CommunityNavigationRefSchema = z
   .string()
   .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
 
-/** One canonical route inside the local DorkOS installation. */
 /**
  * The one copy of an extension a person approved to run code (DOR-2383).
  *
@@ -72,6 +71,7 @@ export const ExtensionApprovedSourceSchema = z.object({
 /** The one copy of an extension a person approved to run code. */
 export type ExtensionApprovedSource = z.infer<typeof ExtensionApprovedSourceSchema>;
 
+/** One canonical route inside the local DorkOS installation. */
 export const CommunityInstallationPathSchema = z.enum([
   '/',
   '/activity',

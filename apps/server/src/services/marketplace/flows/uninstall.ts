@@ -174,6 +174,12 @@ export interface UninstallAgentRegistry {
  * Avoids importing the concrete class so tests can mock with `vi.fn()`.
  */
 export interface UninstallExtensionManager {
+  /**
+   * The copy of this extension id discovery currently resolved, if any. Read so
+   * that removing a package never touches a copy of the same id that lives
+   * somewhere else (DOR-2383: another plugin, or a direct install).
+   */
+  get(id: string): { path: string } | undefined;
   disable(id: string): Promise<unknown>;
   /**
    * Drop the person's standing approval for this extension to run code inside
@@ -919,6 +925,19 @@ export class UninstallFlow {
     installRoot: string
   ): Promise<void> {
     for (const id of ids) {
+      // The id is live from another copy (another plugin carries it, or it is
+      // installed directly), and that copy is what discovery resolved: turning
+      // the id off would stop it, and forgetting would drop an approval given to
+      // it. This package's copy was never the one running, so there is nothing
+      // of it to stop (DOR-2383).
+      const live = this.deps.extensionManager.get(id);
+      if (live && !isPathWithin(live.path, installRoot)) {
+        this.deps.logger.info(
+          `[marketplace/uninstall] Left '${id}' alone: the running copy is ${live.path}, ` +
+            `not the one in ${installRoot}`
+        );
+        continue;
+      }
       await this.deps.extensionManager.disable(id);
       await this.deps.extensionManager.forgetRunApproval(id, installRoot);
     }
@@ -996,4 +1015,15 @@ async function keptEntries(root: string): Promise<string[]> {
   };
   await walk(root);
   return kept.sort();
+}
+
+/**
+ * Whether `target` is `root` or lies inside it, compared lexically.
+ *
+ * @param target - Path to test.
+ * @param root - Directory that may contain it.
+ */
+function isPathWithin(target: string, root: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(target));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }

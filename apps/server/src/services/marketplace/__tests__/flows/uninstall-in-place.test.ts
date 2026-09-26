@@ -53,6 +53,7 @@ function deps(dorkHome: string, extra: Partial<Omit<UninstallFlowDeps, 'extensio
   return {
     dorkHome,
     extensionManager: {
+      get: vi.fn().mockReturnValue(undefined),
       disable: vi.fn().mockResolvedValue(undefined),
       forgetRunApproval: vi.fn().mockResolvedValue(undefined),
     },

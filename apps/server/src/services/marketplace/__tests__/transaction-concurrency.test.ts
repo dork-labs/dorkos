@@ -361,6 +361,7 @@ describe('UninstallFlow vs runTransaction (same package)', () => {
     const flow = new UninstallFlow({
       dorkHome,
       extensionManager: {
+        get: () => undefined,
         disable: async () => undefined,
         forgetRunApproval: async () => undefined,
       },

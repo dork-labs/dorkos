@@ -178,6 +178,7 @@ async function stageInstalledPackage(opts: {
 async function buildDeps(): Promise<{
   dorkHome: string;
   extensionManager: {
+    get: ReturnType<typeof vi.fn>;
     disable: ReturnType<typeof vi.fn>;
     forgetRunApproval: ReturnType<typeof vi.fn>;
   };
@@ -188,6 +189,7 @@ async function buildDeps(): Promise<{
   return {
     dorkHome,
     extensionManager: {
+      get: vi.fn().mockReturnValue(undefined),
       disable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
       forgetRunApproval: vi.fn().mockResolvedValue(undefined),
     },
@@ -549,6 +551,47 @@ describe('UninstallFlow', () => {
 
       expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('flow', installRoot);
     });
+  });
+
+  it('leaves a copy of the same id running from another plugin alone (DOR-2383)', async () => {
+    // A person approved `foo` from plugin A. An agent installs plugin B, which
+    // also carries `foo`, then uninstalls B. B's copy was never the one running,
+    // so removing B must neither stop A's copy nor forget A's approval.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-b');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-b', extensions: ['foo', 'only-b'] }),
+      extensions: [
+        { id: 'foo', manifest: { id: 'foo' } },
+        { id: 'only-b', manifest: { id: 'only-b' } },
+      ],
+    });
+    const liveElsewhere = path.join(
+      deps.dorkHome,
+      'plugins',
+      'plugin-a',
+      '.dork',
+      'extensions',
+      'foo'
+    );
+    deps.extensionManager.get.mockImplementation((id: string) =>
+      id === 'foo'
+        ? { path: liveElsewhere }
+        : { path: path.join(installRoot, '.dork', 'extensions', id) }
+    );
+
+    await new UninstallFlow(deps).uninstall({ name: 'plugin-b' });
+
+    expect(deps.extensionManager.disable).not.toHaveBeenCalledWith('foo');
+    expect(deps.extensionManager.forgetRunApproval).not.toHaveBeenCalledWith(
+      'foo',
+      expect.anything()
+    );
+    // B's own extension still goes.
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('only-b');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('only-b', installRoot);
   });
 
   it('removes a Shape installed under shapes/ (DOR-355 regression)', async () => {
