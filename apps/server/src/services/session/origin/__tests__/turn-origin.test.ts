@@ -51,6 +51,10 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   [{ kind: 'relay-binding' }, 'none'],
   [{ kind: 'agent-dm' }, 'none'],
   [{ kind: 'connector-event' }, 'none'],
+  // An agent started it through `session_start`: the agent is not the person
+  // the operator's stop was set for, so power comes only from the tool's own
+  // clamped mode.
+  [{ kind: 'agent-launch' }, 'none'],
   // Not a surface anybody ships to.
   [{ kind: 'test-harness' }, 'none'],
 ];

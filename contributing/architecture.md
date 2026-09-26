@@ -399,7 +399,7 @@ const { sessions, warnings } = await aggregateSessionList({
 });
 ```
 
-For a **new** session, `resolveRuntimeTypeForNewSession` (`routes/sessions.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it there, on the first message.
+For a **new** session, `resolveRuntimeTypeForNewSession` (`services/session/launch/launch-session.ts`) picks the type — explicit `body.runtime` hint (or `?runtime=` launch param) > agent manifest `runtime` field > registry default — and `persistSessionRuntime` freezes it there, on the first message.
 
 A session that has not sent one yet has **no** runtime, and `session_metadata.runtime` is NULL to say so. Changing a setting before the first message (the pre-launch picker) creates the row, and that write deliberately names no runtime and seeds no defaults: it does not know which runtime the session will run on, and every default is a per-runtime answer. Reads resolve an unbound row exactly like a row-less one — by inference, never persisted — so nothing is blocked in the meantime (DOR-812).
 

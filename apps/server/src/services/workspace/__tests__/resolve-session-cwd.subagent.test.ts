@@ -42,7 +42,9 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  *
  * Each is a place where a TURN BEGINS and no turn is yet running:
  *
- * - the session route's message-send path — a person pressing enter;
+ * - the session launch service's message-send path — a person pressing enter
+ *   (`POST /api/sessions/:id/messages` calls it; the route only names the
+ *   port's type now);
  * - the task scheduler — a cron tick starting a scheduled run;
  * - the relay binding router — an inbound chat message opening or feeding a
  *   session;
@@ -63,7 +65,7 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * request, the context describing it has already been built.
  */
 const ALLOWED = new Set([
-  'routes/sessions.ts',
+  'services/session/launch/launch-session.ts',
   'services/tasks/task-scheduler-service.ts',
   'services/relay/binding-router.ts',
   'services/rooms/room-trigger.ts',
