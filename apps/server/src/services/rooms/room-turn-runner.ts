@@ -169,24 +169,30 @@ export interface RoomTurnRunnerOptions {
  * @param opts.cwd - **Where the turn will actually RUN**, which since DOR-1597
  *   is not the agent's identity path: a turn in a room with files stands in that
  *   agent's worktree. It has to be the run cwd, because that is what the two
- *   runtimes that can be given these tools gate their injection on — asking
- *   about the identity path would answer for a session nobody configured.
+ *   runtimes that can be given these tools key their MCP configuration on —
+ *   asking about the identity path would answer for a session nobody
+ *   configured. The runtime anchors it back to its agent itself (DOR-2091).
  * @param opts.sessionId - The session the turn will run on.
+ * @param opts.agentPath - The agent the turn is FOR, which the runtime checks
+ *   the directory's owner against exactly as its turn will (DOR-2091).
  */
 export async function warnIfTurnCannotPost(opts: {
   runtime: Pick<AgentRuntime, 'carriesRoomTools'>;
   cwd: string;
   sessionId: string;
+  agentPath: string;
 }): Promise<void> {
-  if (opts.runtime.carriesRoomTools === undefined) return;
+  const { runtime, ...session } = opts;
+  if (runtime.carriesRoomTools === undefined) return;
   try {
-    if (await opts.runtime.carriesRoomTools({ cwd: opts.cwd, sessionId: opts.sessionId })) return;
+    if (await runtime.carriesRoomTools(session)) return;
     logger.warn('[rooms] this turn has no way to post, so it can only stay silent', {
       sessionId: opts.sessionId,
       cwd: opts.cwd,
-      // Named rather than implied: the two reachable causes are an unregistered
-      // directory (a worktree, most often) and a runtime boundary that is not
-      // up, and both are wiring an operator can act on.
+      // Named rather than implied: the reachable causes are a directory that
+      // anchors to no registered agent — or to a different one than the turn is
+      // for — and a runtime boundary that is not up, and both are wiring an
+      // operator can act on.
       reason: 'the runtime reports that this session does not carry the DorkOS room tools',
     });
   } catch (err) {
@@ -509,24 +515,33 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // {@link warnIfTurnCannotPost} for why the honest answer to a wiring gap
       // is a log line rather than a second delivery.
       //
-      // **`request.cwd`, never `request.agentPath`** (DOR-1597). Since the cwd
-      // rung split identity from where a turn stands, a turn in a room with
-      // files runs in that agent's WORKTREE, and both runtimes that can be given
-      // the room tools gate their injection on the directory the session
-      // actually launches in: codex asks `meshCore.getByPath(cwd)` before it
-      // builds the `dorkos` entry, and opencode's reconcile is keyed by the same
-      // cwd. Asking about the IDENTITY path would answer for a session nobody
-      // configured, which is a warning that names the wrong thing — or, worse,
-      // no warning where there is a real gap.
+      // **`request.cwd` for where, `request.agentPath` for whom** (DOR-1597,
+      // DOR-2091). Since the cwd rung split identity from where a turn stands, a
+      // turn in a room with files runs in that agent's WORKTREE, and both
+      // runtimes that can be given the room tools key their MCP configuration on
+      // the directory the session actually launches in — so that is the `cwd`
+      // asked about. Asking about the identity path instead would answer for a
+      // session nobody configured.
       //
-      // **The standing consequence, so nobody rediscovers it as a bug.**
-      // `AgentRegistry.getByPath` is an exact match on `agents.project_path`
-      // with no prefix rule, so a codex or opencode agent taking a turn in a
-      // room WITH FILES gets no `dorkos` server and no identity token. It will
-      // keep warning here until the injection gate learns that a worktree
-      // belongs to the agent that owns it — a change to the WIRING (DOR-1597),
-      // not to this line.
-      await warnIfTurnCannotPost({ runtime, cwd: request.cwd, sessionId });
+      // **Who the worktree belongs to is no longer a gap.** It used to be: the
+      // injection gate was an exact `meshCore.getByPath(cwd)`, a worktree hosts
+      // no agent, and so every agent taking a turn in a room with files got no
+      // identity token and — for codex and opencode — no `dorkos` server. For
+      // claude-code the tools still LOOKED available and refused every call as
+      // `UNIDENTIFIED_CALLER`, which is how two agents went silent in one room on
+      // 2026-09-16. Every runtime now resolves identity through
+      // `resolveIdentityAnchor` (`core/agent-identity/identity-anchor.ts`): a
+      // worktree anchors to the agent the worktree manager handed it to — a
+      // record, never a prefix or a name match — and when this turn names its
+      // agent, as it does below and on `roomTurn`, anything else is refused
+      // rather than reading as the operator. This line warns only when that
+      // wiring genuinely fails.
+      await warnIfTurnCannotPost({
+        runtime,
+        cwd: request.cwd,
+        sessionId,
+        agentPath: request.agentPath,
+      });
       const roomContext: RoomContextData = request.roomContext;
 
       // A room turn is the one place a session's first turn runs BEFORE its
@@ -861,6 +876,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           authorId: request.authorId,
           turnId: canvasTurnId,
           cwd: request.cwd,
+          // Who this turn is FOR. The runtime resolves the turn's identity
+          // against it, so a turn can act as this agent and no other, wherever
+          // it stands (DOR-2091).
+          agentPath: request.agentPath,
           // Measured once, here, by the code that already measured it for the
           // context block. `null` means git could not be asked — never "level".
           aheadOfMain: request.roomContext.files?.ahead ?? null,

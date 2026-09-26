@@ -817,6 +817,16 @@ export interface MessageOpts extends SessionSettings {
      */
     cwd?: string;
     /**
+     * The directory of the agent this turn is FOR — its identity anchor, which
+     * since DOR-1597 is not where it stands in a room with files.
+     *
+     * Runtimes resolve the turn's identity against it (DOR-2091): the agent a
+     * worktree belongs to is accepted only when it is this agent, so a turn for
+     * one agent can never be minted another's identity, whatever directory it
+     * ended up in. Server-derived, like every field here.
+     */
+    agentPath?: string;
+    /**
      * Commits this agent's working copy has that the room's `main` does not, as
      * the dispatcher measured them for THIS turn.
      *
@@ -1830,15 +1840,24 @@ export interface AgentRuntime {
    * question is not asserting anything. Since the answer only steers a log line,
    * a wrong one now costs a diagnostic rather than an answer.
    *
-   * @param session.cwd - The session's working directory, which is the agent's
-   *   directory for every agent-bound session. The two production runtimes that
-   *   answer this key on it, because MCP configuration is per directory.
+   * @param session.cwd - The session's working directory: the agent's own
+   *   directory, or — in a room with files — its worktree there. The two
+   *   production runtimes that answer this key on it, because MCP configuration
+   *   is per directory.
    * @param session.sessionId - The session about to take the turn, for a runtime
    *   whose answer is per session rather than per directory.
+   * @param session.agentPath - The agent the room turn is for, when a room asks.
+   *   A runtime that resolves identity from it (DOR-2091) must apply the SAME
+   *   cross-check here that its turn applies, or the answer describes a
+   *   different turn.
    * @returns `true` only when the tools are known to be reachable from a turn on
    *   that session right now.
    */
-  carriesRoomTools?(session: { cwd: string; sessionId: string }): Promise<boolean>;
+  carriesRoomTools?(session: {
+    cwd: string;
+    sessionId: string;
+    agentPath?: string;
+  }): Promise<boolean>;
 
   // --- Dependency injection (optional) ---
 
