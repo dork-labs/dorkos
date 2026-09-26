@@ -1673,13 +1673,14 @@ describe('GET /api/config', () => {
 
     it('drops a runtime the person turned off from the runtimes list', async () => {
       const { configManager } = await import('../../services/core/config-manager.js');
+      const prior = configManager.getDot('runtimes.codex.enabled');
       configManager.setDot('runtimes.codex.enabled', false);
       try {
         const res = await request(server).get('/api/config').expect(200);
 
         expect(res.body.runtimes).toEqual(['claude-code', 'opencode']);
       } finally {
-        configManager.setDot('runtimes.codex.enabled', true);
+        configManager.setDot('runtimes.codex.enabled', prior);
       }
     });
   });
