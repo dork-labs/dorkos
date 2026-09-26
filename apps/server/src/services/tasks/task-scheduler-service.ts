@@ -1118,6 +1118,7 @@ export class TaskSchedulerService {
                   runs: this.runs,
                   // Already resolved, once, above — see `resolveRunPlacement`.
                   resolveCwd: () => Promise.resolve(placement.cwd),
+                  ...(placement.agentPath !== undefined ? { forAgent: placement.agentPath } : {}),
                 },
                 task,
                 run,

@@ -35,6 +35,8 @@ export interface RelayDispatchDeps {
   runs: RunAccounting;
   /** Resolves the task's effective working directory; throws when its agent is gone. */
   resolveCwd: (task: Task) => Promise<string>;
+  /** The home of the task's agent, resolved with the cwd; absent for an agent-less task. */
+  forAgent?: string;
 }
 
 /** Fallback deadline for a dispatch envelope when the task sets none. */
@@ -138,6 +140,9 @@ export async function dispatchRunViaRelay(
     runId: run.id,
     prompt: task.prompt,
     cwd: effectiveCwd,
+    // The task's agent, so the receiving runtime reads identity from its home
+    // (spec `agent-home-desk` §3.2 row 12). Absent for an agent-less task.
+    ...(deps.forAgent !== undefined ? { forAgent: deps.forAgent } : {}),
     // Defence in depth, symmetric with the direct path (`executeRunDirect`): the
     // `??` branch is unreachable through the shipped store, where
     // `pulse_schedules.permission_mode` is NOT NULL DEFAULT, but a row that

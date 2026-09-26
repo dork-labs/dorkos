@@ -419,6 +419,15 @@ export const TaskDispatchPayloadSchema = z
      * no effort, so a receiver never has to know which those are.
      */
     effort: EffortLevelSchema.optional(),
+    /**
+     * The home of the task's agent, when it has one (spec `agent-home-desk`
+     * §3.2 row 12). The receiver hands it to the runtime as
+     * `MessageOpts.forAgent`, so identity is read from that home and a `cwd`
+     * that resolves to another agent's home is refused. Carried beside `cwd`,
+     * which alone would already decide identity, so it can only narrow what a
+     * forged envelope could claim. Absent for an agent-less task.
+     */
+    forAgent: z.string().min(1).optional(),
   })
   .openapi('TaskDispatchPayload');
 

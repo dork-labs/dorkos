@@ -1094,6 +1094,14 @@ describe('BindingRouter', () => {
       );
     });
 
+    it('names the bound agent as the turn`s agent beside the cwd (DOR-2355)', async () => {
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+      await capturedHandler!(makeEnvelope());
+
+      const payload = vi.mocked(mockRelayCore.publish).mock.calls[0]![1] as Record<string, unknown>;
+      expect(payload.forAgent).toBe(AGENT_PATH);
+    });
+
     it('includes canReply=false in __bindingPermissions when set', async () => {
       vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding({ canReply: false }));
       await capturedHandler!(makeEnvelope());
