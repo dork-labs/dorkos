@@ -628,9 +628,13 @@ const ENTRIES: NotificationRegistryMap = {
   'mention.received': {
     // Wired in `services/rooms/room-service.ts`'s `writePost` (spec task T11,
     // DOR-1388): raised whenever an entry's resolved mentions name the
-    // operator, in any room kind. Pierces mute on purpose — an @-mention is a
-    // directed call-out, not the room's ambient chatter. Dedupes per ENTRY,
-    // unlike `dm.received`: each mention is its own event worth its own row.
+    // operator, in any room kind except a one-to-one DM with the operator.
+    // There the entry raises `dm.received` only, so a muted 1:1 DM swallows the
+    // mention with the rest of the conversation (see `dm.received` and
+    // `RoomMessageNotifier.notifyRoomMessage`). Everywhere else it pierces mute
+    // on purpose — an @-mention is a directed call-out, not the room's ambient
+    // chatter. Dedupes per ENTRY, unlike `dm.received`: each mention is its own
+    // event worth its own row.
     //
     // **Inert until the operator has set their own handle.** A mention is
     // resolved from `@handle` text against the roster (`mentions.ts`), and the
