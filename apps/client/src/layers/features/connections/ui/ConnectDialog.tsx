@@ -26,6 +26,7 @@ import {
   ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import {
   accountRoutes,
   chooseConnectRoute,
@@ -182,7 +183,12 @@ export function ConnectDialog({
       >
         <ResponsiveDialogContent
           data-testid="connect-auth-dialog"
-          className="max-h-[90vh] sm:max-w-lg [&>[data-slot=dialog-content-close]]:absolute [&>[data-slot=dialog-content-close]]:top-4 [&>[data-slot=dialog-content-close]]:right-4 [&>[data-slot=dialog-content-close]]:m-0 [&>[data-slot=dialog-content-close]]:opacity-100"
+          className={cn(
+            'max-h-[90vh] sm:max-w-lg [&>[data-slot=dialog-content-close]]:absolute [&>[data-slot=dialog-content-close]]:top-4 [&>[data-slot=dialog-content-close]]:right-4 [&>[data-slot=dialog-content-close]]:m-0 [&>[data-slot=dialog-content-close]]:opacity-100',
+            // The one-time step is short; the dialog's default half-screen floor
+            // would leave a blank band above Cancel.
+            firstConnect && 'min-h-0'
+          )}
         >
           <ResponsiveDialogHeader>
             <ResponsiveDialogTitle>Connect {serviceName}</ResponsiveDialogTitle>
@@ -190,12 +196,13 @@ export function ConnectDialog({
               {activeFlow
                 ? 'Finish this connection, then choose which agents may use it.'
                 : firstConnect
-                  ? 'First, pick how DorkOS reaches your apps. You’ll only do this once.'
+                  ? 'First, pick how DorkOS reaches your apps. Once a way works, Connect goes straight to sign-in.'
                   : 'Name the account and review who handles its sign-in.'}
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
           <ResponsiveDialogBody className="space-y-4 pb-4">
             {firstConnect &&
+            routes.length === 0 &&
             isCatalogOutage(firstPage) &&
             appConnections?.newApps.status === 'ready' ? (
               <QueryErrorState

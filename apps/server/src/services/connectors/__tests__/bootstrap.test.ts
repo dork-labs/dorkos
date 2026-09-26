@@ -815,7 +815,7 @@ describe('ConnectorProviderBootstrapper', () => {
       });
     });
 
-    it('does not count a linked DorkOS account that answers but cannot sign in to apps yet', async () => {
+    it('does not count a registered way whose provider reports sign-in unavailable', async () => {
       const managed = new FakeConnectorProvider({
         instanceId: 'managed-provider' as never,
         type: 'dorkos-managed',

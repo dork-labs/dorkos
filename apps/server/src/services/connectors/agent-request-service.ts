@@ -351,17 +351,18 @@ function unavailableServiceMessage(
 ): string {
   const quoted = JSON.stringify(serviceSlug);
   const listed = directory.services.find((service) => service.serviceSlug === serviceSlug);
-  // A partial catalog comes first: a missing route may be the outage itself.
-  if (directory.warnings.length > 0) {
-    return (
-      `DorkOS could not load the full list of services just now, so ${quoted} could not be ` +
-      'checked. Try again in a moment.'
-    );
-  }
   if (listed && !listed.requestable && listed.unavailableBecause === 'messaging_only') {
     return (
       `${listed.displayName} connects through Messaging, not an account, so an agent cannot ` +
       'request it. Ask the person to set it up under Messaging in Connections in the DorkOS app.'
+    );
+  }
+  // A chat-only app does not depend on the catalog; anything else missing a
+  // route may be missing it because of the outage itself.
+  if (directory.warnings.length > 0) {
+    return (
+      `DorkOS could not load the full list of services just now, so ${quoted} could not be ` +
+      'checked. Try again in a moment.'
     );
   }
   if (listed && !listed.requestable) {

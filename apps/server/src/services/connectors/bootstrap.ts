@@ -428,10 +428,13 @@ export class ConnectorProviderBootstrapper {
 
   /**
    * Every way the person has set up to reach apps, and the one new apps use
-   * ({@link chooseNewAppsWay}). A way is ready only while its route is
-   * registered (it answered its last check) AND reports that it can sign in to
-   * apps — a linked DorkOS account whose app sign-in is not available yet, or a
-   * key that failed, is set up but unavailable.
+   * ({@link chooseNewAppsWay}). A way is ready while its route is registered
+   * (it answered its last check) and its provider reports sign-in available at
+   * the provider level; a key that failed its check is set up but unavailable.
+   * Today every real provider reports sign-in available, so that second half
+   * only bites for a provider that says otherwise. Whether one particular app
+   * can be signed in to is a per-route fact the client reads from the catalog
+   * route's own authentication status (`needsFirstConnectStep`).
    */
   async appConnections(): Promise<ConnectorAppConnections> {
     const ways: ConnectorAppWay[] = [];

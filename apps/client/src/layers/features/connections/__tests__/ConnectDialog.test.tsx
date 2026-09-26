@@ -596,6 +596,54 @@ describe('ConnectDialog', () => {
       );
     });
 
+    it('keeps a route’s real reason when an unrelated catalog warning arrives beside it', async () => {
+      const transport = createMockTransport({
+        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+      });
+      const way = {
+        kind: 'own_key' as const,
+        type: 'composio',
+        status: 'ready' as const,
+        providerInstanceId: 'composio-1' as never,
+        signInThrough: 'Composio',
+      };
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [
+          {
+            ...builtInGmail,
+            intents: [
+              {
+                kind: 'account',
+                displayName: 'Use a Gmail account',
+                routes: [
+                  {
+                    ...composioRoute,
+                    capabilities: {
+                      ...capabilities,
+                      authentication: {
+                        status: 'unsupported',
+                        reason: 'Gmail sign-in is not available through this key.',
+                      },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        warnings: [
+          { code: 'catalog_provider_unavailable', message: 'nango is temporarily unavailable.' },
+        ],
+        appConnections: { ways: [way], newApps: { status: 'ready', way } },
+      });
+      renderDialog(transport, builtInGmail);
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Gmail sign-in is not available through this key.'
+      );
+      expect(screen.queryByText('Couldn’t reach Gmail just now')).not.toBeInTheDocument();
+    });
+
     it('names the DorkOS account, not Composio, when that account cannot reach the app', async () => {
       const transport = createMockTransport({
         getConnectorProviders: vi.fn().mockResolvedValue(statuses),

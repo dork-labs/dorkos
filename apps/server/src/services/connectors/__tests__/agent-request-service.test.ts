@@ -663,6 +663,10 @@ describe('ConnectorAgentRequestService', () => {
       expect(message).toContain('Try again');
       expect(message).not.toContain('Messaging');
       expect(message).not.toContain('cannot reach Gmail');
+      // A chat-only app does not depend on the catalog: same outage, Messaging guidance.
+      const telegram = await refusal(service({ services: bareDirectory(registry) }), 'telegram');
+      expect(telegram).toContain('Telegram connects through Messaging');
+      expect(telegram).not.toContain('Try again');
     });
   });
 

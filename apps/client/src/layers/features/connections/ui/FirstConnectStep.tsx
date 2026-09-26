@@ -66,7 +66,7 @@ export function FirstConnectStep({ reason }: FirstConnectStepProps) {
               Use my Composio key
             </Button>
             <p className="text-muted-foreground text-center text-xs">
-              You have a Composio account. Paste its key.
+              If you have a Composio account, paste its key.
             </p>
           </div>
         ))}

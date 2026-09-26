@@ -2,6 +2,7 @@
 covers:
   - 'feat(connections): always list popular apps and ask how to reach them on the first connect (DOR-2421)'
   - 'fix(connections): keep the first connect honest when a way to reach apps is down or cannot sign in (DOR-2421)'
+  - 'fix(connections): tighten first-connect copy, refusal order and step layout (DOR-2421)'
 ---
 
 ### Added
