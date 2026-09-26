@@ -480,6 +480,33 @@ describe('codexObservations', () => {
     expect(tie).toEqual([expect.objectContaining({ key: 'model:premium', windowMinutes: 10080 })]);
   });
 
+  it('rejects only the windows that hit a reached limit', () => {
+    const statuses = (rateLimits: Record<string, unknown>) =>
+      codexObservations(
+        { rate_limit_reached_type: 'rate_limit_reached', ...rateLimits },
+        OBSERVED,
+        'rollout'
+      ).map((o) => ('key' in o ? [o.key, o.status] : null));
+    // Every window at 100% or more.
+    expect(statuses({ primary: window(100, 300), secondary: window(40, 10080) })).toEqual([
+      ['five_hour', 'rejected'],
+      ['seven_day', null],
+    ]);
+    // None at 100%: the single tightest, a tie going to the shorter window.
+    expect(statuses({ primary: window(70, 300), secondary: window(90, 10080) })).toEqual([
+      ['five_hour', null],
+      ['seven_day', 'rejected'],
+    ]);
+    expect(statuses({ primary: window(80, 300), secondary: window(80, 10080) })).toEqual([
+      ['five_hour', 'rejected'],
+      ['seven_day', null],
+    ]);
+    // A model bucket's one window.
+    expect(
+      statuses({ limit_id: 'premium', primary: window(10, 300), secondary: window(20, 10080) })
+    ).toEqual([['model:premium', 'rejected']]);
+  });
+
   it('marks a reached limit rejected and skips unusable windows and bad facts', () => {
     const reached = codexObservations(
       { primary: window(100, 300), rate_limit_reached_type: 'rate_limit_reached' },

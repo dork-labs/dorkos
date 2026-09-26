@@ -7,7 +7,7 @@
  * it against one fixture set (marketplace `specs/flow-cli-core` §1.2). The
  * names below are spelled exactly as that contract spells them. Everything in
  * this module is pure: no filesystem, no clock, no logging. Callers pass `now`
- * and log whatever a function reports as dropped.
+ * and log whatever `warnings` a function reports.
  *
  * @module shared/account-usage
  */
@@ -225,7 +225,7 @@ export type LedgerCredits = z.infer<typeof LedgerCreditsSchema>;
 /**
  * Metered spend in one billing period (OpenCode): what the account's turns
  * cost since `periodStart`, and the cap when there is one. A spend reading
- * never goes stale in the ledger; {@link readSpend} decides what it means now.
+ * never goes stale.
  */
 export const LedgerSpendSchema = z
   .object({
