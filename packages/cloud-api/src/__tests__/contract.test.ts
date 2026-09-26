@@ -302,6 +302,78 @@ describe('the balance additions', () => {
   });
 });
 
+describe('charges that are not inference', () => {
+  const inferenceOnly = {
+    from: '2026-09-15T12:00:00.000Z',
+    to: '2026-10-15T12:00:00.000Z',
+    groupBy: 'seat',
+    state: 'active',
+    rows: [],
+    totals: { listPriceMicro: '0', dorkosPriceMicro: '0' },
+  };
+  const storageRow = {
+    periodStart: '2026-09-15T12:00:00.000Z',
+    periodEnd: '2026-10-15T12:00:00.000Z',
+    units: 2.5,
+    unit: 'GB-month',
+    displayName: 'Extra storage',
+    dorkosPriceMicro: '1250000',
+    costBasis: 'published_price',
+  };
+  const withStorage = (row: Record<string, unknown>) => ({
+    ...inferenceOnly,
+    storage: { rows: [row], dorkosPriceMicro: '1250000' },
+  });
+
+  it('leaves a response without them valid, which is what an older service sends', () => {
+    const parsed = contract.UsageResponseSchema.safeParse(inferenceOnly);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.storage).toBeUndefined();
+  });
+
+  it('carries each billing period with the server`s own words for it', () => {
+    const parsed = contract.UsageResponseSchema.safeParse(withStorage(storageRow));
+    expect(parsed.success && parsed.data.storage?.rows[0]).toEqual(storageRow);
+  });
+
+  it('refuses negative units and more than three decimal places', () => {
+    const units = (value: number) =>
+      contract.UsageResponseSchema.safeParse(withStorage({ ...storageRow, units: value })).success;
+    expect(units(0)).toBe(true);
+    expect(units(12.345)).toBe(true);
+    expect(units(-1)).toBe(false);
+    expect(units(-0.001)).toBe(false);
+    expect(units(12.3456)).toBe(false);
+    expect(units(0.0001)).toBe(false);
+  });
+
+  it('carries no list price, no seat and no model, because nothing upstream is resold', () => {
+    expect(Object.keys(contract.StorageUsageRowSchema.shape).sort()).toEqual([
+      'costBasis',
+      'displayName',
+      'dorkosPriceMicro',
+      'periodEnd',
+      'periodStart',
+      'unit',
+      'units',
+    ]);
+    // An amount is a micro-unit string here like everywhere else.
+    expect(
+      contract.UsageResponseSchema.safeParse(withStorage({ ...storageRow, dorkosPriceMicro: 1.25 }))
+        .success
+    ).toBe(false);
+  });
+
+  it('names no unit: `unit` is any string the service sends', () => {
+    // A hard-coded unit would publish something about the catalog. The app
+    // renders whatever arrives.
+    expect(
+      contract.UsageResponseSchema.safeParse(withStorage({ ...storageRow, unit: 'a new unit' }))
+        .success
+    ).toBe(true);
+  });
+});
+
 describe('a member`s display name', () => {
   const member = {
     id: 'mem_0001',

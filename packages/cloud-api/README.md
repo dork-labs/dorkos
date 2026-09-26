@@ -199,6 +199,11 @@ would be a comfortable claim and a false one:
   difference, and that is the point rather than an accident: somebody paying for inference
   through us can see exactly what the routing costs them without asking. If that ever stops
   being the intent, the field to drop is `listPriceMicro`, and dropping it is a `/v2` change.
+  Its optional `storage` block is the one exception to the pair: a charge that is not inference,
+  such as storage past what an account includes, carries only `dorkosPriceMicro`, because
+  nothing upstream is resold and there is no list price to show. Each storage row is one billing
+  period, its `unit` and `displayName` are server-supplied strings the app renders as given, and
+  `totals` stays inference only, so a client that predates the block sums what it always did.
 - **`GET /v1/nudge`** returns one already-computed comparison — one subscription, one price, one
   subtraction the server already did. The client renders it and computes nothing.
 

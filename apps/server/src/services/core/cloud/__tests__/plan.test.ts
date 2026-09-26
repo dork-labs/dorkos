@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import balanceFixture from '@dork-labs/cloud-api/fixtures/v1/billing/balance.json' with { type: 'json' };
 import entitlementsFixture from '@dork-labs/cloud-api/fixtures/v1/billing/entitlements-free.json' with { type: 'json' };
 import usageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-by-model.json' with { type: 'json' };
+import usageWithStorageFixture from '@dork-labs/cloud-api/fixtures/v1/billing/usage-with-storage.json' with { type: 'json' };
 import nudgeFixture from '@dork-labs/cloud-api/fixtures/v1/billing/nudge.json' with { type: 'json' };
 import seatFixture from '@dork-labs/cloud-api/fixtures/v1/seats/seat.json' with { type: 'json' };
 import seatRequiredFixture from '@dork-labs/cloud-api/fixtures/v1/problem/person-seat-required.json' with { type: 'json' };
@@ -89,6 +90,18 @@ describe('the plan reads', () => {
     const asked = new URL(fetchMock.mock.calls[0]![0] as string);
     expect(asked.searchParams.get('groupBy')).toBe('seat');
     expect(asked.searchParams.get('from')).toBeTruthy();
+  });
+
+  it('passes charges that are not inference through, and leaves them out when absent', async () => {
+    // The contract's parse drops any key it does not define, so this fails if
+    // the server reads usage against a schema without the storage block.
+    stubFetch({ '/v1/usage': { status: 200, body: usageWithStorageFixture } });
+    const withStorage = await readUsage('seat');
+    expect(withStorage?.storage).toEqual(usageWithStorageFixture.storage);
+
+    stubFetch({ '/v1/usage': { status: 200, body: usageFixture } });
+    const without = await readUsage('seat');
+    expect(without).not.toHaveProperty('storage');
   });
 
   it('reads the nudge as the service reduced it', async () => {
