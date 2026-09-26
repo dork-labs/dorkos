@@ -40,6 +40,7 @@ import type {
   ConnectorProgramExecutionRequest,
   ConnectorReconciliationApplyRequest,
   ConnectorReconciliationApplyResponse,
+  ConnectorEveryAgentRevokeResponse,
   ConnectorReconciliationPreview,
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
@@ -330,6 +331,16 @@ export function createConnectorMethods(baseUrl: string) {
         baseUrl,
         '/connectors/reconciliation/apply',
         { method: 'POST', body: JSON.stringify(input) }
+      );
+    },
+
+    stopSharingConnectorWithEveryAgent(
+      connectionId: string
+    ): Promise<ConnectorEveryAgentRevokeResponse> {
+      return fetchJSON<ConnectorEveryAgentRevokeResponse>(
+        baseUrl,
+        `/connectors/connections/${encodeURIComponent(connectionId)}/every-agent`,
+        { method: 'DELETE' }
       );
     },
 

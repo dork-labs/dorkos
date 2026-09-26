@@ -292,6 +292,7 @@ import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
+import { createEveryAgentArrivalReaction } from './services/connectors/every-agent-activity.js';
 import {
   startSkillsWatcher,
   startTurnEndReprojection,
@@ -2876,6 +2877,13 @@ async function start() {
         displayName: agent.displayName ?? agent.name,
       })),
     managedAuthority: managedConnectorAuthority,
+    activity: activityService,
+    // With login off DorkOS cannot tell the app from a program on this
+    // computer, so the trail says exactly that rather than "You".
+    writer: () =>
+      configManager.get('auth')?.enabled === true
+        ? { actorType: 'user', actorLabel: 'Your signed-in account' }
+        : { actorType: 'user', actorLabel: 'Someone on this computer' },
   });
   const connectorUsage = new ConnectorUsageStore(db);
   const recoveredConnectorAttempts = connectorUsage.recoverPending(new Date().toISOString());
@@ -3948,8 +3956,18 @@ async function start() {
   // after the seat and in that order deliberately: "tangerines joined your team"
   // is a line about a member of the room, so the roster is settled before the
   // room says so (team-room-home spec D5.1).
+  const announceEveryAgentInheritance = createEveryAgentArrivalReaction({
+    activity: activityService,
+    everyAgentGrants: () => connectorOperatorQueries.everyAgentGrants(connectorOwner),
+  });
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
     joinTeamRoom(teamRoomDeps, agent.path);
+    // Every arrival path funnels here, so this is where an agent that inherits
+    // apps shared with every agent is announced — never silently (ADR
+    // 260926-192625). A failure must not fail the arrival.
+    await announceEveryAgentInheritance(agent).catch((err: unknown) =>
+      logger.warn('[Connectors] Could not record every-agent inheritance', { err })
+    );
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
     // watch its `.agents/skills/` — NOW rather than at the next restart. Boot

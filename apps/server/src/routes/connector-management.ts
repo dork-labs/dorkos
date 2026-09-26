@@ -7,6 +7,7 @@ import {
   ConnectorAgentRequestDecisionSchema,
 } from '@dorkos/shared/connector-agent-request-schemas';
 import {
+  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorManagementReviewCreateRequestSchema,
   ConnectorManagementReviewDecisionSchema,
   ConnectorReconciliationApplyRequestSchema,
@@ -57,7 +58,10 @@ export interface ConnectorManagementRouterDeps extends ConnectorOwnerBoundaryDep
     'create' | 'get' | 'getProgramStatus' | 'list' | 'resolve'
   >;
   /** Complete-catalog exact grant reconciliation. */
-  readonly reconciliation: Pick<ConnectorReconciliationService, 'preview' | 'apply'>;
+  readonly reconciliation: Pick<
+    ConnectorReconciliationService,
+    'preview' | 'apply' | 'revokeEveryAgent'
+  >;
   /** Owner-only review and resolution for requests raised by runtime agents. */
   readonly agentRequests?: Pick<
     ConnectorAgentRequestService,
@@ -400,6 +404,23 @@ export function createConnectorManagementRouter(deps: ConnectorManagementRouterD
     res.once('close', () => controller.abort());
     try {
       res.status(201).json(await deps.reconciliation.preview(owner, input, controller.signal));
+    } catch (error) {
+      sendManagementError(res, error);
+    }
+  });
+
+  // Stop sharing a connection with every agent. Owner-only like every grant
+  // change, but with no preview: taking access away needs no reviewed catalog,
+  // so it works while the provider is down (ADR 260926-192625).
+  router.delete('/connections/:connectionId/every-agent', async (req, res) => {
+    const owner = resolveConnectorOperator(req, res, deps);
+    if (!owner) return;
+    try {
+      res.json(
+        ConnectorEveryAgentRevokeResponseSchema.parse(
+          await deps.reconciliation.revokeEveryAgent(owner, req.params.connectionId)
+        )
+      );
     } catch (error) {
       sendManagementError(res, error);
     }

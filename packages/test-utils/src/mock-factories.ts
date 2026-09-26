@@ -1272,6 +1272,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     getOperatorConnectorUsage: vi.fn().mockResolvedValue({ items: [] }),
     previewConnectorReconciliation: vi.fn(),
     applyConnectorReconciliation: vi.fn(),
+    stopSharingConnectorWithEveryAgent: vi.fn(),
     createConnectorManagementReview: vi.fn(),
     getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
     getConnectorManagementReview: vi.fn(),

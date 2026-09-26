@@ -15,6 +15,7 @@ import {
   connectionOperationGrants,
   eq,
   EVERY_AGENT_GRANT_SUBJECT_ID,
+  inArray,
   isNull,
   type DbTransaction,
 } from '@dorkos/db';
@@ -91,4 +92,33 @@ export function replaceEveryAgentGrants(
       })
       .run();
   }
+}
+
+/**
+ * Revoke every live every-agent row on the given connections inside the
+ * caller's transaction. Taking access away needs no reviewed catalog, so this
+ * works while the provider is down.
+ *
+ * @param tx - The open connector transaction.
+ * @param connectionIds - Connections whose every-agent grant ends.
+ * @param now - Revocation timestamp.
+ * @returns How many rows were revoked.
+ */
+export function revokeEveryAgentGrants(
+  tx: DbTransaction,
+  connectionIds: readonly string[],
+  now: string
+): number {
+  if (connectionIds.length === 0) return 0;
+  return tx
+    .update(connectionOperationGrants)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        inArray(connectionOperationGrants.connectionId, [...connectionIds]),
+        everyAgentGrantSubject(),
+        isNull(connectionOperationGrants.revokedAt)
+      )
+    )
+    .run().changes;
 }

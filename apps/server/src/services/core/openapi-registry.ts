@@ -224,6 +224,7 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
+  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
@@ -3974,6 +3975,26 @@ registry.registerPath({
     },
     409: {
       description: 'The connection must be reconciled before it can be edited',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/connectors/connections/{connectionId}/every-agent',
+  tags: ['Connectors'],
+  summary: 'Stop sharing one connection with every agent',
+  description:
+    'Owner only. Ends the every-agent grant at once, for every agent. Needs no permission review, so it works while the service is unavailable.',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'How many shared actions ended',
+      content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

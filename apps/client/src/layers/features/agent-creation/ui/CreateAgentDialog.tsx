@@ -12,7 +12,7 @@ import {
 } from '@/layers/shared/ui';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
 import { OpenMeshNotice } from '@/layers/entities/mesh';
-import { EveryAgentAccessNotice } from '@/layers/entities/connectors';
+import { EveryAgentAccessNotice, useEveryAgentConnectorGrants } from '@/layers/entities/connectors';
 import { useConfig } from '@/layers/entities/config';
 import { useAgentCreationStore } from '../model/store';
 import { useCreateAgent } from '../model/use-create-agent';
@@ -266,6 +266,14 @@ export function CreateAgentDialog() {
     }
   }
 
+  // Apps shared with every agent reach this one too, so what it inherits is
+  // said right above Create, and Create waits until DorkOS knows (ADR
+  // 260926-192625). A failed check does not block: the notice says it failed.
+  const inheritance = useEveryAgentConnectorGrants(isOpen);
+  const inheritanceNotice = (
+    <EveryAgentAccessNotice agentName={form.displayName || seed?.template.displayName || ''} />
+  );
+
   const header = STEP_HEADERS[step];
   // Per-step canvas width: the gallery spreads across the fullscreen frame,
   // naming holds a tighter two-column composition, arrival stays narrow.
@@ -318,6 +326,8 @@ export function CreateAgentDialog() {
                     resolvedDirectory={packageDirectory ?? form.resolvedDirectory}
                     canSubmit={form.canSubmit}
                     isCreating={createAgent.isPending}
+                    inheritance={inheritanceNotice}
+                    isCheckingInheritance={inheritance.isPending}
                     onCreate={() => handleCreate()}
                     onCustomize={() => setStep('naming')}
                     onNotNow={() => handleOpenChange(false)}
@@ -338,6 +348,8 @@ export function CreateAgentDialog() {
                     offerRefusal={offerSchedules.refusal}
                     isCheckingOffer={offerSchedules.isChecking}
                     packageDirectory={packageDirectory}
+                    inheritance={inheritanceNotice}
+                    isCheckingInheritance={inheritance.isPending}
                     templateReview={
                       templateReview ? (
                         <TemplateReviewNotice
@@ -353,27 +365,12 @@ export function CreateAgentDialog() {
               </motion.div>
             </AnimatePresence>
 
-            {/* What this agent is about to get and the wall it is about to
-                hit, said before Create: only on the steps that end in a Create
-                button — the gallery is still browsing. */}
-            {step !== 'gallery' && (
-              <div className="mt-6 space-y-3 empty:hidden">
-                {/* Apps given to every agent reach this one too, so it never
-                    gets access silently. "Change" leaves creation for the page
-                    where access is set. */}
-                <EveryAgentAccessNotice
-                  agentName={form.displayName || seed?.template.displayName || ''}
-                  onChange={() => {
-                    handleOpenChange(false);
-                    void navigate({ to: '/connections', search: { region: 'accounts' } });
-                  }}
-                />
-                {/* A new agent lands in its own project and cannot message the
-                    ones already here; shown only when there is another agent to
-                    be cut off from and the switch is off. */}
-                <OpenMeshNotice />
-              </div>
-            )}
+            {/* The wall this agent is about to hit, said before it hits it: a
+                new agent lands in its own project and cannot message the ones
+                already here. Only on the steps that end in a Create button —
+                the gallery is still browsing — and only when there is another
+                agent to be cut off from and the switch is off. */}
+            {step !== 'gallery' && <OpenMeshNotice className="mt-6" />}
           </div>
         </div>
 

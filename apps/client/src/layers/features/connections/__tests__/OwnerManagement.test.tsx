@@ -369,6 +369,7 @@ describe('ManagementReviews', () => {
         kind: 'disconnect',
         connection: CONNECTION_CONTEXT,
         affectedAgentCount: 1,
+        everyAgent: false,
         affectedOperations: [],
       },
       targetStatus: 'available',
@@ -393,6 +394,86 @@ describe('ManagementReviews', () => {
     expect(await screen.findByText('Composio keeps this sign-in')).toBeInTheDocument();
     expect(screen.getByText('1 affected agent')).toBeInTheDocument();
     expect(screen.getByText('This will remove this account from 1 agent.')).toBeInTheDocument();
+  });
+
+  it('says plainly when an agent keeps access through every agent, and when every agent loses it', async () => {
+    const removal: ConnectorManagementReviewItem = {
+      reviewRequestId: 'review-remove',
+      requesterKind: 'program',
+      action: {
+        version: 1,
+        kind: 'remove_agent_access',
+        connectionId: 'connection-1' as never,
+        agentId: 'agent-a',
+      },
+      context: {
+        kind: 'remove_agent_access',
+        connection: CONNECTION_CONTEXT,
+        agent: { agentId: 'agent-a', displayName: 'Research Bot' },
+        affectedOperations: [],
+        keptThroughEveryAgent: [
+          {
+            operationRevisionId: 'read-v1',
+            operationSlug: 'gmail.read',
+            toolkitVersion: 'v1',
+            capabilityClassification: 'read',
+          },
+        ],
+      },
+      targetStatus: 'available',
+      state: 'pending',
+      createdAt: '2026-09-06T00:00:00.000Z',
+      expiresAt: '2099-09-06T01:00:00.000Z',
+    };
+    const disconnect: ConnectorManagementReviewItem = {
+      ...removal,
+      reviewRequestId: 'review-disconnect-all',
+      action: { version: 1, kind: 'disconnect', connectionId: 'connection-1' as never },
+      context: {
+        kind: 'disconnect',
+        connection: CONNECTION_CONTEXT,
+        affectedAgentCount: 0,
+        everyAgent: true,
+        affectedOperations: [],
+      },
+    };
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorManagementReviews).mockImplementation(async (state) =>
+      state === 'pending' ? [removal, disconnect] : []
+    );
+    vi.mocked(transport.getConnectorManagementReview).mockImplementation(async (id) =>
+      id === 'review-remove' ? removal : disconnect
+    );
+    const view = renderWith(
+      transport,
+      <ManagementReviews
+        selectedReviewId="review-remove"
+        onSelectReview={vi.fn()}
+        onCloseReview={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByTestId('connector-review-every-agent-kept')).toHaveTextContent(
+      'Research Bot keeps 1 action on'
+    );
+    expect(screen.getByTestId('connector-review-every-agent-kept')).toHaveTextContent(
+      'stop sharing'
+    );
+    expect(screen.getAllByText(/still shared with every agent/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Every agent loses access')).toBeInTheDocument();
+
+    view.unmount();
+    renderWith(
+      transport,
+      <ManagementReviews
+        selectedReviewId="review-disconnect-all"
+        onSelectReview={vi.fn()}
+        onCloseReview={vi.fn()}
+      />
+    );
+    expect(await screen.findByTestId('connector-review-impact')).toHaveTextContent(
+      'This will remove this account from every agent.'
+    );
   });
 
   it('offers deny only when the frozen target is unavailable', async () => {

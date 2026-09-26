@@ -57,6 +57,7 @@ export {
   useResolveConnectorManagementReview,
   usePreviewConnectorReconciliation,
   useApplyConnectorReconciliation,
+  useStopSharingWithEveryAgent,
   useConnectorReviewAuthentication,
 } from './model/use-connector-management';
 

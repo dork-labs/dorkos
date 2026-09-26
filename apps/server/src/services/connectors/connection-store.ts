@@ -16,6 +16,7 @@ import {
   sessionConnectionOverrides,
   type Db,
 } from '@dorkos/db';
+import { revokeEveryAgentGrants } from './every-agent-grants.js';
 import type {
   ConnectedAccount,
   ConnectedAccountStatus,
@@ -188,6 +189,21 @@ export class ConnectionStore {
           .set({ grantReconciliationStatus: 'migration_needs_reconcile', updatedAt: now })
           .where(eq(connections.providerInstanceId, provider.instanceId))
           .run();
+      }
+      if (existing && existing.mode !== 'managed' && mode === 'managed') {
+        // Hosted authority cannot honor an every-agent grant (ADR 260926-192625),
+        // so moving an instance to managed ends it for good rather than leaving
+        // it dormant to reappear if the instance ever moves back.
+        revokeEveryAgentGrants(
+          tx,
+          tx
+            .select({ id: connections.id })
+            .from(connections)
+            .where(eq(connections.providerInstanceId, provider.instanceId))
+            .all()
+            .map((row) => row.id),
+          now
+        );
       }
       return executionConfigGeneration;
     });

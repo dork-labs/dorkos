@@ -1,9 +1,10 @@
 ---
 covers:
   - 'feat(connectors): let one app be used by every agent, including agents added later (DOR-2420)'
+  - 'fix(connectors): be honest about every-agent access everywhere it applies (DOR-2420)'
 ---
 
 ### Added
 
-- An app can now be given to every agent at once, including agents you add later, for exactly the actions you picked. New actions an app adds later still stay off until you allow them, and taking the access away stops every agent at once, even one in the middle of a task (DOR-2420).
-- When you create an agent, or add one from the Marketplace, DorkOS now says what it will get from apps you gave to every agent, for example "Research Bot will get: Gmail (read)", with a link to change it (DOR-2420).
+- An app can now be shared with every agent at once, including agents you add later, for exactly the actions you picked. New actions an app adds later still stay off until you allow them. Stopping the sharing takes effect for every agent at once, even one in the middle of a task, and works even while the app's service is down (DOR-2420).
+- When you create an agent, or add one from the Marketplace, DorkOS says what it will get from apps shared with every agent before you create it, for example "Research Bot will get: Gmail (read)". An agent that arrives any other way gets a line in Activity saying what it can use (DOR-2420).

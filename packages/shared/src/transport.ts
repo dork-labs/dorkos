@@ -230,6 +230,7 @@ import type {
   ConnectorProgramExecutionRequest,
   ConnectorReconciliationApplyRequest,
   ConnectorReconciliationApplyResponse,
+  ConnectorEveryAgentRevokeResponse,
   ConnectorReconciliationPreview,
   ConnectorReconciliationPreviewRequest,
   ConnectorUsagePage,
@@ -3145,6 +3146,14 @@ export interface Transport
   applyConnectorReconciliation(
     input: ConnectorReconciliationApplyRequest
   ): Promise<ConnectorReconciliationApplyResponse>;
+
+  /**
+   * Stop sharing one connection with every agent, at once and without a
+   * permission review (owner only).
+   */
+  stopSharingConnectorWithEveryAgent(
+    connectionId: string
+  ): Promise<ConnectorEveryAgentRevokeResponse>;
 
   /** Submit a strict connector management action for an owner decision. */
   createConnectorManagementReview(

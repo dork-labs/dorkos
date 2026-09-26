@@ -6599,7 +6599,9 @@
         "apps/server/src/services/connectors/execution/authorization-service.ts",
         "apps/server/src/services/connectors/execution/access-query-service.ts",
         "apps/server/src/services/connectors/reconciliation-service.ts",
-        "apps/server/src/services/connectors/resources/operator-query-service.ts"
+        "apps/server/src/services/connectors/resources/operator-query-service.ts",
+        "apps/server/src/services/connectors/every-agent-activity.ts",
+        "apps/server/src/services/connectors/management-review-context.ts"
       ]
     }
   ]

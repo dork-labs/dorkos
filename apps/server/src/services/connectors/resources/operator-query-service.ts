@@ -524,7 +524,8 @@ export class ConnectorOperatorQueryService {
     owner: ConnectorOwnerAuthority,
     connectionId: string
   ): ConnectorDisconnectImpact {
-    if (!this.ownedConnection(owner, connectionId)) this.connectionNotFound();
+    const owned = this.ownedConnection(owner, connectionId);
+    if (!owned) this.connectionNotFound();
     const agents = this.db
       .select({ agentId: connectionOperationGrants.agentId })
       .from(connectionOperationGrants)
@@ -568,7 +569,8 @@ export class ConnectorOperatorQueryService {
     return ConnectorDisconnectImpactSchema.parse({
       connectionId,
       affectedAgentCount: new Set(agents.flatMap((row) => (row.agentId ? [row.agentId] : []))).size,
-      everyAgent: this.everyAgentAccess(connectionId) !== null,
+      // The same managed rule as the summary: hosted authority never honors it.
+      everyAgent: owned.mode !== 'managed' && this.everyAgentAccess(connectionId) !== null,
       affectedSessionCount: new Set(sessions.map((row) => row.sessionId)).size,
       affectedSubscriptionCount: subscriptions.length,
       pendingDeliveryCount: pendingDeliveries,

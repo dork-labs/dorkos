@@ -119,8 +119,10 @@ export function AccountRow({
             </Badge>
           </span>
           <span className="text-muted-foreground mt-0.5 block text-xs">
-            {connection.agentCount} {connection.agentCount === 1 ? 'agent' : 'agents'} ·{' '}
-            {connection.mode === 'managed' ? 'Managed' : 'Your account'}
+            {connection.everyAgent
+              ? 'Every agent'
+              : `${connection.agentCount} ${connection.agentCount === 1 ? 'agent' : 'agents'}`}{' '}
+            · {connection.mode === 'managed' ? 'Managed' : 'Your account'}
           </span>
         </span>
         <ChevronRight className="text-muted-foreground size-4 shrink-0" aria-hidden />

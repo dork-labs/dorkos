@@ -514,6 +514,19 @@ export type ConnectorReconciliationEveryAgentState = z.infer<
   typeof ConnectorReconciliationEveryAgentStateSchema
 >;
 
+/** Result of stopping sharing one connection with every agent. */
+export const ConnectorEveryAgentRevokeResponseSchema = z
+  .object({
+    connectionId: ConnectionIdSchema,
+    /** Shared actions that ended; zero when the connection was not shared. */
+    revokedCount: z.number().int().nonnegative(),
+  })
+  .strict();
+/** Result of stopping sharing one connection with every agent. */
+export type ConnectorEveryAgentRevokeResponse = z.infer<
+  typeof ConnectorEveryAgentRevokeResponseSchema
+>;
+
 /** One current agent included in a server-owned reconciliation snapshot. */
 export const ConnectorReconciliationAgentSchema = z
   .object({
@@ -859,6 +872,12 @@ export const ConnectorManagementReviewContextSchema = z.discriminatedUnion('kind
       kind: z.literal('disconnect'),
       connection: ConnectorManagementReviewConnectionContextSchema,
       affectedAgentCount: z.number().int().nonnegative(),
+      /**
+       * True when the connection is shared with every agent, so disconnecting
+       * takes it from every agent, not only the counted ones. Absent on a
+       * review stored before every-agent grants existed, when it was false.
+       */
+      everyAgent: z.boolean().default(false),
       affectedOperations: z.array(ConnectorManagementReviewOperationContextSchema),
     })
     .strict(),
@@ -876,6 +895,13 @@ export const ConnectorManagementReviewContextSchema = z.discriminatedUnion('kind
       connection: ConnectorManagementReviewConnectionContextSchema,
       agent: ConnectorManagementReviewAgentContextSchema,
       affectedOperations: z.array(ConnectorManagementReviewOperationContextSchema),
+      /**
+       * Actions the agent KEEPS after this removal, because the connection
+       * shares them with every agent (ADR 260926-192625). Removing one agent
+       * cannot take these away; only turning off "every agent" can. Absent on a
+       * review stored before every-agent grants existed, when it was empty.
+       */
+      keptThroughEveryAgent: z.array(ConnectorManagementReviewOperationContextSchema).default([]),
     })
     .strict(),
   z

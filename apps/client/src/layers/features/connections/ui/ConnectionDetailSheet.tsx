@@ -10,6 +10,7 @@ import {
   useRenameConnectorConnection,
   useReconnectConnectorConnection,
   useResumeConnectorConnection,
+  useStopSharingWithEveryAgent,
 } from '@/layers/entities/connectors';
 import {
   AlertDialog,
@@ -70,6 +71,7 @@ export function ConnectionDetailSheet({
   const resume = useResumeConnectorConnection();
   const disconnect = useDisconnectConnectorConnection();
   const remove = useRemoveConnectorConnection();
+  const stopSharing = useStopSharingWithEveryAgent();
   const [editedLabel, setEditedLabel] = useState<{ connectionId: string; value: string } | null>(
     null
   );
@@ -83,6 +85,7 @@ export function ConnectionDetailSheet({
     resume.reset();
     disconnect.reset();
     remove.reset();
+    stopSharing.reset();
     setConfirmDisconnect(false);
     setConfirmRemove(false);
   }, [
@@ -93,9 +96,11 @@ export function ConnectionDetailSheet({
     resume.reset,
     disconnect.reset,
     remove.reset,
+    stopSharing.reset,
   ]);
 
   const mutationError =
+    stopSharing.error ??
     remove.error ??
     rename.error ??
     reconnect.error ??
@@ -246,10 +251,40 @@ export function ConnectionDetailSheet({
                       Edit access
                     </Button>
                   </div>
+                  {connection?.everyAgent && (
+                    <div
+                      data-testid="connection-every-agent"
+                      className="bg-muted/40 flex min-h-10 items-center justify-between gap-2 rounded-lg px-3 py-2"
+                    >
+                      <span className="min-w-0 text-sm">
+                        <span className="font-medium">Every agent</span>
+                        <span className="text-muted-foreground">
+                          {' '}
+                          · including agents you add later ·{' '}
+                          {connection.everyAgent.operationRevisionIds.length}{' '}
+                          {connection.everyAgent.operationRevisionIds.length === 1
+                            ? 'action'
+                            : 'actions'}
+                        </span>
+                      </span>
+                      {/* Taking access away needs no review, so this works even
+                          while the service is unavailable. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={stopSharing.isPending}
+                        onClick={() => connectionId && stopSharing.mutate({ connectionId })}
+                      >
+                        Stop sharing
+                      </Button>
+                    </div>
+                  )}
                   {detail.data.agents.length === 0 ? (
-                    <p className="bg-muted/40 rounded-lg p-3 text-sm">
-                      No agents can use this account.
-                    </p>
+                    connection?.everyAgent ? null : (
+                      <p className="bg-muted/40 rounded-lg p-3 text-sm">
+                        No agents can use this account.
+                      </p>
+                    )
                   ) : (
                     <ul className="space-y-1.5">
                       {detail.data.agents.map((agent) => (
@@ -451,7 +486,13 @@ export function ConnectionDetailSheet({
               {impact.isPending
                 ? 'Checking what will lose access…'
                 : impact.data
-                  ? `${impact.data.affectedAgentCount} agents, ${impact.data.affectedSessionCount} sessions, and ${impact.data.affectedSubscriptionCount} subscriptions will lose access. ${impact.data.pendingDeliveryCount} pending deliveries will stop.`
+                  ? `${
+                      impact.data.everyAgent
+                        ? 'Every agent'
+                        : `${impact.data.affectedAgentCount} ${
+                            impact.data.affectedAgentCount === 1 ? 'agent' : 'agents'
+                          }`
+                    }, ${impact.data.affectedSessionCount} sessions, and ${impact.data.affectedSubscriptionCount} subscriptions will lose access. ${impact.data.pendingDeliveryCount} pending deliveries will stop.`
                   : 'We could not confirm the impact yet.'}
             </AlertDialogDescription>
           </AlertDialogHeader>

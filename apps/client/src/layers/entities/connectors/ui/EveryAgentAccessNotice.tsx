@@ -1,5 +1,4 @@
 import { Cable } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { useEveryAgentConnectorGrants } from '../model/use-connector-resources';
 import { accessLevelWords, serviceName } from '../lib/access-copy';
@@ -8,31 +7,39 @@ import { accessLevelWords, serviceName } from '../lib/access-copy';
 export interface EveryAgentAccessNoticeProps {
   /** The arriving agent's name, as the person sees it; blank reads "This agent". */
   agentName: string;
-  /** Opens the place where the person can change who can use each app. */
-  onChange: () => void;
   /** Layout classes from the host surface. */
   className?: string;
 }
 
 /**
- * Says what a new agent inherits the moment it arrives: "Research Bot will get:
- * Gmail (read), Calendar (read). Change." (ADR 260926-192625, guardrail 2).
+ * Says what a new agent inherits before it is created: "Research Bot will get:
+ * Gmail (read), Calendar (read). You can change this in Connections." (ADR
+ * 260926-192625, guardrail 2).
  *
- * An app someone gave to every agent reaches this agent too, with no further
- * yes, so this line is how a new agent never gets access silently. It renders
- * nothing while there is nothing to say, and says so plainly when the check
- * itself failed rather than implying the agent gets nothing.
+ * An app shared with every agent reaches this agent too, with no further yes,
+ * so this line is how a new agent never gets access silently. While the answer
+ * is still loading it says so (the host holds Create until it knows); when the
+ * check failed it says that plainly rather than implying the agent gets
+ * nothing; with nothing shared it renders nothing. It deliberately has no link:
+ * leaving creation would throw the draft away, and the Activity entry recorded
+ * when the agent arrives links to Connections.
  *
- * @param props - The arriving agent's name and the change action.
+ * @param props - The arriving agent's name.
  */
-export function EveryAgentAccessNotice({
-  agentName,
-  onChange,
-  className,
-}: EveryAgentAccessNoticeProps) {
+export function EveryAgentAccessNotice({ agentName, className }: EveryAgentAccessNoticeProps) {
   const query = useEveryAgentConnectorGrants();
   const who = agentName.trim() || 'This agent';
 
+  if (query.isPending) {
+    return (
+      <p
+        className={cn('text-muted-foreground text-center text-xs', className)}
+        data-testid="every-agent-access-checking"
+      >
+        Checking which apps every agent can use…
+      </p>
+    );
+  }
   if (query.isError) {
     return (
       <p
@@ -56,7 +63,8 @@ export function EveryAgentAccessNotice({
       (toolkitCounts.get(grant.toolkit) ?? 0) > 1
         ? `${serviceName(grant.toolkit)} · ${grant.label}`
         : serviceName(grant.toolkit);
-    return `${name} (${accessLevelWords(grant.access.classifications)})`;
+    const level = accessLevelWords(grant.access.classifications);
+    return `${name} (${grant.lifecycle === 'paused' ? `${level}, paused` : level})`;
   });
 
   return (
@@ -66,11 +74,9 @@ export function EveryAgentAccessNotice({
     >
       <Cable className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
       <p className="min-w-0 flex-1">
-        <span className="font-medium">{who} will get:</span> {items.join(', ')}.
+        <span className="font-medium">{who} will get:</span> {items.join(', ')}.{' '}
+        <span className="text-muted-foreground">You can change this in Connections.</span>
       </p>
-      <Button variant="link" size="sm" className="h-auto shrink-0 p-0" onClick={onChange}>
-        Change
-      </Button>
     </div>
   );
 }

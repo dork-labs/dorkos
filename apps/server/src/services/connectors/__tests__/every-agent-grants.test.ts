@@ -4,7 +4,7 @@
  * runtime tool list and per-turn awareness, the owner reads, and the lifecycle
  * rules (disconnect clears it, removing an agent never does).
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   and,
   connectionOperationGrants,
@@ -35,6 +35,14 @@ import {
 } from '../reconciliation-service.js';
 import { ConnectorRegistry } from '../registry.js';
 import { ConnectorOperatorQueryService } from '../resources/operator-query-service.js';
+import { ConnectorManagementReviewContextBuilder } from '../management-review-context.js';
+import {
+  createEveryAgentArrivalReaction,
+  EVERY_AGENT_CHANGED_EVENT,
+  EVERY_AGENT_INHERITED_EVENT,
+  type EveryAgentActivitySink,
+} from '../every-agent-activity.js';
+import { notifyAgentCreated, setOnAgentCreated } from '../../core/agent-created-hook.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const NOW = new Date('2026-09-26T12:00:00.000Z');
@@ -57,8 +65,12 @@ describe('every-agent grants', () => {
   let access: ConnectorAccessQueryService;
   let query: ConnectorOperatorQueryService;
   let nextId: number;
+  let activity: { emit: ReturnType<typeof vi.fn<EveryAgentActivitySink['emit']>> };
+
+  afterEach(() => setOnAgentCreated(null));
 
   beforeEach(() => {
+    activity = { emit: vi.fn<EveryAgentActivitySink['emit']>() };
     db = createDb(':memory:');
     runMigrations(db);
     provider = new FakeConnectorProvider({
@@ -98,6 +110,8 @@ describe('every-agent grants', () => {
       listAgents: () => [{ agentId: 'agent-a', displayName: 'Alpha' }],
       now: () => NOW,
       createId: () => `generated-${++nextId}`,
+      activity,
+      writer: () => ({ actorType: 'user', actorLabel: 'Someone on this computer' }),
     });
     authorization = new ConnectorExecutionAuthorizationService(db, registry, ownership);
     access = new ConnectorAccessQueryService(db, ownership, registry, {
@@ -553,5 +567,321 @@ describe('every-agent grants', () => {
         )
         .all()
     ).toEqual([]);
+  });
+
+  function grantNamed(id: string, agentId: string, operationRevisionId: string) {
+    db.insert(connectionOperationGrants)
+      .values({
+        id,
+        subjectType: 'agent',
+        subjectId: agentId,
+        agentId,
+        connectionId: CONNECTION_ID,
+        operationRevisionId,
+        createdBy: 'operator',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+  }
+
+  function insertConnection(id: string, providerInstanceId: string) {
+    db.insert(connections)
+      .values({
+        id,
+        providerInstanceId,
+        externalAccountRef: `external-${id}`,
+        toolkit: 'gmail',
+        label: `Mail ${id}`,
+        status: 'active',
+        lifecycleState: 'connected',
+        enabled: true,
+        grantReconciliationStatus: 'ready',
+        createdAt: NOW.toISOString(),
+        updatedAt: NOW.toISOString(),
+      })
+      .run();
+  }
+
+  function strayEveryAgentRow(id: string, connectionId: string, operationRevisionId: string) {
+    db.insert(connectionOperationGrants)
+      .values({
+        id,
+        subjectType: 'every_agent',
+        subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+        agentId: null,
+        connectionId,
+        operationRevisionId,
+        createdBy: 'operator',
+        createdAt: NOW.toISOString(),
+      })
+      .run();
+  }
+
+  it('comes back after being turned off and on again (a revoked row is restored)', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const read = revisionId(snapshot, 'gmail.read');
+    const off = await preview();
+    await reconciliation.apply(OWNER, {
+      previewId: off.previewId,
+      grants: [],
+      everyAgent: { operationRevisionIds: [] },
+    });
+    expect(await refusal(execute(agentPrincipal('agent-new'), read, 'read'))).toBe(
+      'CONNECTOR_GRANT_REQUIRED'
+    );
+
+    await giveEveryAgent(['gmail.read']);
+    expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([null]);
+    await expect(execute(agentPrincipal('agent-new'), read, 'read')).resolves.toBeDefined();
+  });
+
+  it('re-verifies every-agent revisions from an older version in the next preview', async () => {
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'old-read-v0',
+        providerInstanceId: provider.instanceId,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.read',
+        toolkitVersion: 'v0',
+        schemaHash: 'sha256:fake-read-v1',
+        capabilityClassification: 'read',
+        retryPolicy: 'never',
+        inputSchemaJson: JSON.stringify({ type: 'object', additionalProperties: false }),
+        discoveredAt: NOW.toISOString(),
+      })
+      .run();
+    strayEveryAgentRow('every-old', CONNECTION_ID, 'old-read-v0');
+
+    const snapshot = await preview();
+    expect(
+      snapshot.candidates.find((candidate) => candidate.operationRevisionId === 'old-read-v0')
+    ).toMatchObject({ toolkitVersion: 'v0', supported: true });
+    expect(snapshot.everyAgent).toEqual({ available: true, operationRevisionIds: ['old-read-v0'] });
+    // Keeping it is a valid selection from this preview.
+    await reconciliation.apply(OWNER, {
+      previewId: snapshot.previewId,
+      grants: [],
+      everyAgent: { operationRevisionIds: ['old-read-v0'] },
+    });
+    expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([null]);
+  });
+
+  it("counts it in an agent's own list only for this owner and never on a managed connection", async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    const read = revisionId(snapshot, 'gmail.read');
+    // A second owner's provider instance with its own every-agent row.
+    const foreign = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('provider-foreign'),
+      type: 'fake-foreign',
+      custody: 'self-host',
+      toolkitVersion: 'v1',
+    });
+    const foreignRegistry = new ConnectorRegistry({
+      db,
+      configuredOwner: { ownerKind: 'local_install', ownerId: 'install-b' },
+    });
+    foreignRegistry.register(foreign, 'material-foreign');
+    insertConnection('connection-foreign', foreign.instanceId);
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'foreign-read',
+        providerInstanceId: foreign.instanceId,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.read',
+        toolkitVersion: 'v1',
+        schemaHash: 'sha256:foreign',
+        capabilityClassification: 'read',
+        retryPolicy: 'never',
+        inputSchemaJson: JSON.stringify({ type: 'object' }),
+        discoveredAt: NOW.toISOString(),
+      })
+      .run();
+    strayEveryAgentRow('every-foreign', 'connection-foreign', 'foreign-read');
+    // A managed instance of this owner with a stray every-agent row.
+    const managed = new FakeConnectorProvider({
+      instanceId: ConnectorProviderInstanceIdSchema.parse('provider-managed'),
+      type: 'fake-managed',
+      custody: 'managed',
+      toolkitVersion: 'v1',
+    });
+    registry.register(managed, 'material-managed', 'managed');
+    insertConnection('connection-managed', managed.instanceId);
+    db.insert(connectorOperationRevisions)
+      .values({
+        id: 'managed-read',
+        providerInstanceId: managed.instanceId,
+        toolkit: 'gmail',
+        operationSlug: 'gmail.read',
+        toolkitVersion: 'v1',
+        schemaHash: 'sha256:managed',
+        capabilityClassification: 'read',
+        retryPolicy: 'never',
+        inputSchemaJson: JSON.stringify({ type: 'object' }),
+        discoveredAt: NOW.toISOString(),
+      })
+      .run();
+    strayEveryAgentRow('every-managed', 'connection-managed', 'managed-read');
+
+    const own = await query.agentConnections(OWNER, 'agent-new');
+    expect(own.connections.map((connection) => connection.connectionId)).toEqual([CONNECTION_ID]);
+    expect(own.connections[0]?.operationRevisionIds).toEqual([read]);
+    expect(query.disconnectImpact(OWNER, 'connection-managed').everyAgent).toBe(false);
+  });
+
+  it('ends for good when the instance moves to a DorkOS account', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    registry.register(provider, 'material-a', 'managed');
+    expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([expect.any(String)]);
+    registry.register(provider, 'material-a', 'byo');
+    expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([expect.any(String)]);
+    expect(
+      await refusal(
+        execute(agentPrincipal('agent-new'), revisionId(snapshot, 'gmail.read'), 'read')
+      )
+    ).not.toBeUndefined();
+    expect(query.disconnectImpact(OWNER, CONNECTION_ID).everyAgent).toBe(false);
+  });
+
+  it('stops sharing with no preview, even while the provider is unavailable', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read', 'gmail.write']);
+    activity.emit.mockClear();
+    db.update(connectorProviderInstances)
+      .set({ status: 'unavailable' })
+      .where(eq(connectorProviderInstances.id, provider.instanceId))
+      .run();
+    await expect(
+      reconciliation.preview(OWNER, { connectionId: CONNECTION_ID }, new AbortController().signal)
+    ).rejects.toMatchObject({ code: 'connection_not_found' });
+
+    await expect(
+      reconciliation.revokeEveryAgent(
+        { kind: 'local_install', installationId: 'install-b' },
+        CONNECTION_ID
+      )
+    ).rejects.toMatchObject({ code: 'connection_not_found' });
+    expect(everyAgentRows().every((row) => row.revokedAt === null)).toBe(true);
+
+    await expect(reconciliation.revokeEveryAgent(OWNER, CONNECTION_ID)).resolves.toEqual({
+      connectionId: CONNECTION_ID,
+      revokedCount: 2,
+    });
+    expect(everyAgentRows().every((row) => row.revokedAt !== null)).toBe(true);
+    expect(activity.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: EVERY_AGENT_CHANGED_EVENT,
+        summary: 'Stopped sharing Gmail (Work Gmail) with every agent',
+        actorLabel: 'Someone on this computer',
+      })
+    );
+    await expect(reconciliation.revokeEveryAgent(OWNER, CONNECTION_ID)).resolves.toEqual({
+      connectionId: CONNECTION_ID,
+      revokedCount: 0,
+    });
+    expect(
+      await refusal(
+        execute(agentPrincipal('agent-new'), revisionId(snapshot, 'gmail.read'), 'read')
+      )
+    ).not.toBeUndefined();
+  });
+
+  it('leaves a trail when sharing starts or widens, whoever sent it', async () => {
+    await giveEveryAgent(['gmail.read']);
+    expect(activity.emit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        category: 'permissions',
+        eventType: EVERY_AGENT_CHANGED_EVENT,
+        resourceId: CONNECTION_ID,
+        summary: 'Shared Gmail (Work Gmail) with every agent, including agents added later: read',
+        actorLabel: 'Someone on this computer',
+      })
+    );
+    await giveEveryAgent(['gmail.read', 'gmail.write']);
+    expect(activity.emit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        summary: 'Changed what every agent can do with Gmail (Work Gmail): read and write',
+      })
+    );
+    activity.emit.mockClear();
+    await giveEveryAgent(['gmail.read', 'gmail.write']);
+    expect(activity.emit).not.toHaveBeenCalled();
+  });
+
+  it('tells the owner what an agent added on any path inherits (the shared arrival hook)', async () => {
+    const reaction = createEveryAgentArrivalReaction({
+      activity,
+      everyAgentGrants: () => query.everyAgentGrants(OWNER),
+    });
+    setOnAgentCreated(reaction);
+    const arrival = {
+      id: 'agent-adopted',
+      name: 'research-bot',
+      displayName: 'Research Bot',
+      path: '/agents/research-bot',
+      origin: 'registered' as const,
+    };
+    await notifyAgentCreated(arrival);
+    expect(activity.emit).not.toHaveBeenCalled();
+
+    await giveEveryAgent(['gmail.read']);
+    db.update(connections).set({ enabled: false }).where(eq(connections.id, CONNECTION_ID)).run();
+    activity.emit.mockClear();
+    await notifyAgentCreated(arrival);
+    expect(activity.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: EVERY_AGENT_INHERITED_EVENT,
+        resourceId: 'agent-adopted',
+        summary:
+          'Research Bot can use Gmail (Work Gmail, read, paused), because it is shared with every agent',
+        linkPath: '/connections?region=accounts',
+      })
+    );
+  });
+
+  it('tells the owner, before a removal, what the agent keeps through every agent', async () => {
+    const snapshot = await giveEveryAgent(['gmail.read']);
+    grantNamed('named-write', 'agent-a', revisionId(snapshot, 'gmail.write'));
+    const builder = new ConnectorManagementReviewContextBuilder(db, () => ({
+      displayName: 'Alpha',
+    }));
+
+    const removal = builder.build(OWNER, {
+      version: 1,
+      kind: 'remove_agent_access',
+      connectionId: CONNECTION_ID,
+      agentId: 'agent-a',
+    });
+    expect(removal).toMatchObject({
+      kind: 'remove_agent_access',
+      affectedOperations: [{ operationRevisionId: revisionId(snapshot, 'gmail.write') }],
+      keptThroughEveryAgent: [{ operationRevisionId: revisionId(snapshot, 'gmail.read') }],
+    });
+    const disconnect = builder.build(OWNER, {
+      version: 1,
+      kind: 'disconnect',
+      connectionId: CONNECTION_ID,
+    });
+    expect(disconnect).toMatchObject({
+      kind: 'disconnect',
+      everyAgent: true,
+      affectedAgentCount: 1,
+    });
+
+    const off = await preview();
+    await reconciliation.apply(OWNER, {
+      previewId: off.previewId,
+      grants: [],
+      everyAgent: { operationRevisionIds: [] },
+    });
+    expect(
+      builder.build(OWNER, {
+        version: 1,
+        kind: 'remove_agent_access',
+        connectionId: CONNECTION_ID,
+        agentId: 'agent-a',
+      })
+    ).toMatchObject({ keptThroughEveryAgent: [] });
+    expect(
+      builder.build(OWNER, { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID })
+    ).toMatchObject({ everyAgent: false });
   });
 });

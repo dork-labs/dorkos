@@ -16,6 +16,7 @@ import {
   type ConnectorManagementReviewAction,
   type ConnectorManagementReviewContext,
 } from '@dorkos/shared/connector-schemas';
+import { everyAgentGrantSubject } from './every-agent-grants.js';
 import type { ConnectorOwnerAuthority } from './principal/server-principal.js';
 
 /** Resolve one verified owner agent into stable presentation data. */
@@ -63,6 +64,7 @@ export class ConnectorManagementReviewContextBuilder {
         custody: connectorProviderInstances.custody,
         providerDisplayName: connectorProviderInstances.displayName,
         providerStatus: connectorProviderInstances.status,
+        providerMode: connectorProviderInstances.mode,
         reconciliationStatus: connections.grantReconciliationStatus,
       })
       .from(connections)
@@ -121,6 +123,11 @@ export class ConnectorManagementReviewContextBuilder {
         affectedOperations: this.readOperationContext(
           [...new Set(grants.map((grant) => grant.operationRevisionId))].sort()
         ),
+        keptThroughEveryAgent: this.readOperationContext(
+          connection.providerMode === 'managed'
+            ? []
+            : this.everyAgentRevisionIds(action.connectionId)
+        ),
       };
     }
 
@@ -149,10 +156,33 @@ export class ConnectorManagementReviewContextBuilder {
       kind: action.kind,
       connection: publicConnection,
       affectedAgentCount: agentIds.size,
+      everyAgent:
+        connection.providerMode !== 'managed' &&
+        this.everyAgentRevisionIds(action.connectionId).length > 0,
       affectedOperations: this.readOperationContext(
         [...new Set(grants.map((grant) => grant.operationRevisionId))].sort()
       ),
     };
+  }
+
+  /** Live revisions the connection shares with every agent, sorted. */
+  private everyAgentRevisionIds(connectionId: string): string[] {
+    return [
+      ...new Set(
+        this.db
+          .select({ id: connectionOperationGrants.operationRevisionId })
+          .from(connectionOperationGrants)
+          .where(
+            and(
+              eq(connectionOperationGrants.connectionId, connectionId),
+              everyAgentGrantSubject(),
+              isNull(connectionOperationGrants.revokedAt)
+            )
+          )
+          .all()
+          .map((row) => row.id)
+      ),
+    ].sort();
   }
 
   private requireAgent(
