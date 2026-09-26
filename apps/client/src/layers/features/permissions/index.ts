@@ -9,6 +9,7 @@
  */
 export { PermissionList, type PermissionListProps } from './ui/PermissionList';
 export { PermissionHistory, type PermissionHistoryProps } from './ui/PermissionHistory';
+export { NewAgentRecordNotice } from './ui/NewAgentRecordNotice';
 export { PresetPicker, type PresetPickerProps } from './ui/PresetPicker';
 export {
   DefaultFilesAndCommandsRow,

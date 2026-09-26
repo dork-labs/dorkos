@@ -51,4 +51,32 @@ describe('ArrivalRecord', () => {
     record.markPending('a1');
     expect(record.isPending('someone-else')).toBe(true);
   });
+
+  it('reads the record again on the next write once it can, instead of waiting for a restart', () => {
+    const file = path.join(tmp(), 'pending.json');
+    fs.writeFileSync(file, '{ not json');
+    const record = new ArrivalRecord({ file, logger: quiet });
+    expect(record.isHealthy()).toBe(false);
+
+    fs.writeFileSync(file, JSON.stringify(['earlier']));
+    record.markPending('a1');
+
+    expect(record.isHealthy()).toBe(true);
+    expect(record.isPending('earlier')).toBe(true);
+    expect(record.isPending('a1')).toBe(true);
+    expect(record.isPending('someone-else')).toBe(false);
+  });
+});
+
+describe('the permissions overview', () => {
+  it('says when the record of new agents cannot be read, and not otherwise', async () => {
+    const { createPermissionWorld } = await import('./permission-fixtures.js');
+    expect(
+      (await createPermissionWorld({ arrivalsHealthy: false }).service.getOverview())
+        .newAgentRecordUnreadable
+    ).toBe(true);
+    expect(
+      (await createPermissionWorld().service.getOverview()).newAgentRecordUnreadable
+    ).toBeUndefined();
+  });
 });

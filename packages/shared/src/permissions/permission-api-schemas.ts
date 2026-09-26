@@ -123,6 +123,12 @@ export const PermissionsResponseSchema = z
     exceptions: z.array(PermissionExceptionSchema),
     /** How many registered agents the defaults reach. */
     agentCount: z.number().int().min(0),
+    /**
+     * Set when DorkOS cannot read or save its record of which new agents it has
+     * screened: until it can, every agent's own settings count only where they
+     * are stricter than the defaults.
+     */
+    newAgentRecordUnreadable: z.literal(true).optional(),
   })
   .openapi('PermissionsResponse');
 

@@ -40,16 +40,39 @@ export class ArrivalRecord {
    * @param deps - Where it lives and where to report.
    */
   constructor(private readonly deps: ArrivalRecordDeps) {
+    this.load();
+  }
+
+  /** Read the record from disk, merging it into what is held. Returns whether it could. */
+  private load(): boolean {
     try {
-      const raw = JSON.parse(fs.readFileSync(deps.file, 'utf-8')) as unknown;
-      if (Array.isArray(raw)) {
-        for (const id of raw) if (typeof id === 'string') this.pending.add(id);
-      } else {
+      const raw = JSON.parse(fs.readFileSync(this.deps.file, 'utf-8')) as unknown;
+      if (!Array.isArray(raw)) {
         this.fail(new Error('the record is not a list'));
+        return false;
       }
+      for (const id of raw) if (typeof id === 'string') this.pending.add(id);
+      return true;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') this.fail(err);
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return true;
+      this.fail(err);
+      return false;
     }
+  }
+
+  /**
+   * A record that broke is read again on the next write, not only at the next
+   * restart: once it reads cleanly the agents it does not name are no longer
+   * narrowed.
+   */
+  private recover(): void {
+    if (!this.broken) return;
+    if (this.load()) this.broken = false;
+  }
+
+  /** Whether the record could be read and saved; `false` means every agent is narrowed. */
+  isHealthy(): boolean {
+    return !this.broken;
   }
 
   /** Report a failure once, and treat every agent as pending from now on. */
@@ -82,6 +105,7 @@ export class ArrivalRecord {
    * @param agentId - The arriving agent.
    */
   markPending(agentId: string): void {
+    this.recover();
     this.pending.add(agentId);
     this.save();
   }
@@ -92,6 +116,7 @@ export class ArrivalRecord {
    * @param agentId - The screened agent.
    */
   clear(agentId: string): void {
+    this.recover();
     if (!this.pending.delete(agentId)) return;
     this.save();
   }

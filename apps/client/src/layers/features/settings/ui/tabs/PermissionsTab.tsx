@@ -12,6 +12,7 @@ import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import {
   BLOCKED_IS_NOT_A_SANDBOX,
   DefaultFilesAndCommandsRow,
+  NewAgentRecordNotice,
   PermissionHistory,
   PermissionList,
   PresetPicker,
@@ -62,6 +63,7 @@ export function PermissionsTab() {
 
   return (
     <div className="space-y-6">
+      <NewAgentRecordNotice />
       <FieldCard>
         <FieldCardContent className="@container space-y-2">
           <PresetPicker surface="settings" />

@@ -17,6 +17,7 @@ import type { PermissionsResponse } from '@dorkos/shared/permissions';
 import type { ServerConfig } from '@dorkos/shared/types';
 import { TransportProvider } from '@/layers/shared/model';
 import { PresetPicker } from '../ui/PresetPicker';
+import { NewAgentRecordNotice } from '../ui/NewAgentRecordNotice';
 
 afterEach(() => cleanup());
 
@@ -184,5 +185,34 @@ describe('PresetPicker', () => {
       </QueryClientProvider>
     );
     expect(await screen.findByText('Couldn’t read the permissions.')).toBeInTheDocument();
+  });
+});
+
+describe('NewAgentRecordNotice', () => {
+  function renderNotice(overview: PermissionsResponse) {
+    const transport = createMockTransport({
+      getPermissions: vi.fn().mockResolvedValue(overview),
+    });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <NewAgentRecordNotice />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+  }
+
+  it('says so when DorkOS cannot read its record of new agents', async () => {
+    renderNotice({ ...OVERVIEW, newAgentRecordUnreadable: true });
+    expect(await screen.findByTestId('permissions-record-unreadable')).toHaveTextContent(
+      /couldn’t read its record/
+    );
+  });
+
+  it('says nothing while the record is fine', async () => {
+    renderNotice(OVERVIEW);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByTestId('permissions-record-unreadable')).not.toBeInTheDocument();
   });
 });

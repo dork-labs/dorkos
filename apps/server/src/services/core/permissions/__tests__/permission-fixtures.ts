@@ -54,6 +54,8 @@ export function createPermissionWorld(
     autonomyAcknowledged?: boolean;
     /** Make every agent write throw, as a read-only settings file would. */
     writeFails?: boolean;
+    /** Whether the record of screened arrivals can be read. */
+    arrivalsHealthy?: boolean;
   } = {}
 ) {
   const config = {
@@ -148,6 +150,7 @@ export function createPermissionWorld(
       },
     },
     actions: () => FIXTURE_ACTIONS,
+    arrivalsHealthy: () => options.arrivalsHealthy ?? true,
     activity,
   });
 

@@ -275,6 +275,7 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
       readStoredPermissions: readAgentPermissionsFromManifest,
     },
     actions: () => permissionActions(wiring.registry()),
+    arrivalsHealthy: () => wiring.arrivals.isHealthy(),
     activity: wiring.activity,
   });
 }

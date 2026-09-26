@@ -165,6 +165,8 @@ export interface PermissionServiceDeps {
   };
   /** Every action an agent can reach, with its area. Read per call. */
   actions: () => PermissionActionInfo[];
+  /** Whether the record of screened arrivals can be read and saved. */
+  arrivalsHealthy?: () => boolean;
   /** The Activity log, absent in a process with none. */
   activity?: Pick<ActivityService, 'emit' | 'list'>;
 }
@@ -860,6 +862,9 @@ export class PermissionService {
       areas: this.areaEntries(config, actions),
       exceptions,
       agentCount: agents.length,
+      ...(this.deps.arrivalsHealthy && !this.deps.arrivalsHealthy()
+        ? { newAgentRecordUnreadable: true as const }
+        : {}),
     };
   }
 
