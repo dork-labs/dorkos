@@ -168,6 +168,8 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
       'thread',
       'panel',
       'side panel',
+      'resize',
+      'split',
       'orphan',
       'orphaned',
       'stalled',

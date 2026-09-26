@@ -416,10 +416,10 @@ export function RoomThreadPanel({
           className={cn(
             'bg-card flex min-h-0 flex-col outline-none',
             // The push IS the room on a phone — it takes the whole surface, with a
-            // Back button where the header's close would be. The side panel is a
-            // column beside it, bounded so a long thread cannot squeeze the room
-            // out of its own screen.
-            pushed ? 'h-full w-full' : 'w-full max-w-md min-w-80 basis-2/5 border-l'
+            // Back button where the header's close would be. The side panel fills
+            // the pane `RoomThreadSplit` gives it, which owns its width, its
+            // bounds and the handle that drags it.
+            pushed ? 'h-full w-full' : 'w-full border-l'
           )}
         >
           <header className="flex items-center gap-2 border-b px-3 py-2">

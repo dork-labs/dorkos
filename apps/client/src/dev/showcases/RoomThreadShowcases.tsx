@@ -198,6 +198,17 @@ function RoomThreadPanelShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
+        Beside the room — drag the line between them; the width is remembered
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ThreadPanelDemo
+          rootEntryId={PANEL_ROOT.id}
+          entries={[PANEL_ROOT, ...PANEL_REPLIES]}
+          beside
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
         Orphaned — the root is missing, its replies are not (design record §4)
       </ShowcaseLabel>
       <ShowcaseDemo>

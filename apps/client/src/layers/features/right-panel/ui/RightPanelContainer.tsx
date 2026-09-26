@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, Suspense } from 'react';
-import { Panel, PanelResizeHandle, type ImperativePanelHandle } from 'react-resizable-panels';
+import { Panel, type ImperativePanelHandle } from 'react-resizable-panels';
 import {
+  PaneResizeHandle,
   ResponsiveSheet,
   ResponsiveSheetContent,
   ResponsiveSheetHeader,
@@ -256,23 +257,15 @@ export function RightPanelContainer({
 
   return (
     <>
-      <PanelResizeHandle
-        className="group relative"
-        style={{ width: 0, overflow: 'visible' }}
+      <PaneResizeHandle
         disabled={!shouldShow}
         onDragging={setIsDragging}
-      >
-        <div
-          className="absolute inset-y-0 -left-1 z-10 flex w-2 items-center justify-center"
-          style={{
-            opacity: shouldShow ? 1 : 0,
-            pointerEvents: shouldShow ? 'auto' : 'none',
-            ...(animate && { transition: panelTransition('opacity', shouldShow) }),
-          }}
-        >
-          <div className="group-hover:bg-ring/50 h-full w-px transition-colors duration-500" />
-        </div>
-      </PanelResizeHandle>
+        gripStyle={{
+          opacity: shouldShow ? 1 : 0,
+          pointerEvents: shouldShow ? 'auto' : 'none',
+          ...(animate && { transition: panelTransition('opacity', shouldShow) }),
+        }}
+      />
       <Panel
         ref={panelRef}
         id="right-panel"
