@@ -237,6 +237,12 @@ symlink committed inside a granted folder cannot stretch the grant; a refusal ma
 A subagent's asks pass through the same handler, so its reach is bounded by the same grants. The two
 live-captured ask payloads are pinned in `__tests__/directory-grants.test.ts`.
 
+**A `reject` can end the turn.** A refused write into a `read` grant is not only a failed tool call:
+in the live runs above, every turn whose tool call was rejected ended there, with no further model
+text after the refusal. So an agent that tries to edit the room's main copy may stop rather than
+retry somewhere else in the same turn; its next turn starts fresh. A person's Deny has always had the
+same effect on this runtime.
+
 **Not run live:** a whole DorkOS turn through `OpenCodeRuntime` with grants against a real sidecar. The
 handler's input shape is the live-captured one, and its answer path is the same `respondPermission`
 every mode already uses.

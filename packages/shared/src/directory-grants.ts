@@ -9,6 +9,7 @@
  *
  * @module shared/directory-grants
  */
+import { realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { DirectoryGrant } from './agent-runtime.js';
@@ -37,11 +38,47 @@ export function isSameOrInside(child: string, parent: string): boolean {
 }
 
 /**
+ * `target` as the filesystem spells it. A path that does not exist yet keeps
+ * its missing tail on the resolved nearest existing ancestor, so a file about
+ * to be written compares the same way as one already there. `/tmp/x` on macOS
+ * comes back as `/private/tmp/x`.
+ *
+ * @param target - An absolute path.
+ */
+export function realPathOf(target: string): string {
+  let existing = target;
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync.native(existing), ...tail.reverse());
+    } catch {
+      const parent = path.dirname(existing);
+      if (parent === existing) return target;
+      tail.push(path.basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+/**
  * Throw unless `grants` is a set a runtime may hand its backend for a turn
- * standing in `cwd`: every path absolute and normalized, no path twice, none
- * equal to or inside `cwd` (the turn already stands there), and none that is a
- * filesystem root or the user's home folder itself (a grant that wide is not a
- * grant of a folder, it is a grant of everything).
+ * standing in `cwd`:
+ *
+ * - every path absolute, normalized and `realpath`-resolved — a backend
+ *   compares the paths its tools touch against the resolved spelling, so a
+ *   grant spelled through a symlink (`/tmp` for `/private/tmp`) would silently
+ *   fail to match, and for a `read` grant that is a write let through;
+ * - no path twice;
+ * - none equal to, inside, or CONTAINING `cwd` — the turn already reaches its
+ *   own folder, and a `read` grant above it would refuse edits in it;
+ * - none that is, or contains, the user's home folder or a filesystem root — a
+ *   grant that wide is not a grant of a folder, it is a grant of everything;
+ * - no `read` grant inside a `write` one. Claude Code and OpenCode could refuse
+ *   writes to it, but Codex's `--add-dir` makes the whole `write` folder
+ *   writable, so the runtimes would disagree about the same set. (A `write`
+ *   grant inside a `read` one is fine: the read folder wins for file tools
+ *   everywhere, and Codex's shell can still write the nested folder, which is
+ *   what a room's `repo/.git` needs.)
  *
  * @param grants - The turn's grants, as the dispatcher computed them.
  * @param cwd - The directory the turn runs in.
@@ -55,6 +92,7 @@ export function assertValidDirectoryGrants(
 ): void {
   const seen = new Set<string>();
   const turnDir = path.resolve(cwd);
+  const home = path.resolve(homeDir);
   for (const grant of grants) {
     const where = `Folder grant "${grant.path}"`;
     if (grant.access !== 'read' && grant.access !== 'write') {
@@ -69,18 +107,40 @@ export function assertValidDirectoryGrants(
     if (path.normalize(grant.path) !== grant.path || /[\\/]$/.test(grant.path)) {
       throw new DirectoryGrantError(`${where} is not a normalized path.`);
     }
-    if (grant.path === path.resolve(homeDir)) {
-      throw new DirectoryGrantError(`${where} is the user's home folder itself.`);
+    if (realPathOf(grant.path) !== grant.path) {
+      throw new DirectoryGrantError(
+        `${where} is not realpath-resolved (the filesystem spells it "${realPathOf(grant.path)}").`
+      );
+    }
+    if (isSameOrInside(home, grant.path)) {
+      throw new DirectoryGrantError(`${where} is the user's home folder or contains it.`);
     }
     if (isSameOrInside(grant.path, turnDir)) {
       throw new DirectoryGrantError(
         `${where} is the turn's own directory or inside it, which the turn can already reach.`
       );
     }
+    if (isSameOrInside(turnDir, grant.path)) {
+      throw new DirectoryGrantError(`${where} contains the turn's own directory.`);
+    }
     if (seen.has(grant.path)) {
       throw new DirectoryGrantError(`${where} appears more than once.`);
     }
     seen.add(grant.path);
+  }
+  for (const grant of grants) {
+    if (grant.access !== 'read') continue;
+    const outer = grants.find(
+      (other) =>
+        other.access === 'write' &&
+        other.path !== grant.path &&
+        isSameOrInside(grant.path, other.path)
+    );
+    if (outer) {
+      throw new DirectoryGrantError(
+        `Folder grant "${grant.path}" is read-only inside the write grant "${outer.path}", which not every runtime can enforce.`
+      );
+    }
   }
 }
 

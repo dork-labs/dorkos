@@ -37,7 +37,7 @@
  */
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
-import { assertValidDirectoryGrants } from '@dorkos/shared/directory-grants';
+import { assertValidDirectoryGrants, DirectoryGrantError } from '@dorkos/shared/directory-grants';
 
 /**
  * Makes `--add-dir` folders load their `CLAUDE.md`. Never passed to a turn: a
@@ -51,16 +51,47 @@ export const GRANT_CLAUDE_MD_ENV_VAR = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUD
 const WRITE_TOOLS = ['Edit', 'Write', 'NotebookEdit'] as const;
 
 /**
- * The absolute-path rule root for a folder. Claude Code reads a rule path with
- * ONE leading slash as relative to the project and with TWO as absolute, so
- * `/abs/path` becomes `//abs/path`; a single slash would fail open. A Windows
- * drive path is written in the POSIX form the rule syntax documents
- * (`C:\a\b` → `//c/a/b`) — reasoned from the docs, not run on Windows.
+ * Glob metacharacters in a rule path. Claude Code reads the path inside a rule
+ * as a glob, so a folder literally named `R [x]` makes the rule
+ * `Edit(//…/R [x]/**)` match `R x` instead and the real folder fails OPEN.
+ * Run live against CLI 2.1.280 (DOR-2408 review): unescaped, a `read` grant on
+ * `R [x] (y)` let `Write` through under `bypassPermissions` and `acceptEdits`;
+ * with these escaped, `[ ]`, `{ }`, `*` and `!` in a folder name were all
+ * refused. Spaces and parentheses need nothing.
+ */
+const GLOB_METACHARACTERS = /[[\]*{}!]/g;
+
+/**
+ * Characters no escaping was seen to make safe, so a `read` grant naming one
+ * is refused rather than handed over as a rule that may fail open. Run live:
+ * an escaped `\?` still let `Write` into `R ?q`; a folder with a backslash
+ * could not be tested at all (the CLI refused the write for a reason of its
+ * own). Control characters are refused because a rule is one line of text.
+ * A `write` grant needs no rule, so these limit only `read` grants.
+ */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const UNSAFE_IN_RULE = /[?\\\u0000-\u001f\u007f]/;
+
+/**
+ * The absolute-path rule root for a folder, escaped. Claude Code reads a rule
+ * path with ONE leading slash as relative to the project and with TWO as
+ * absolute, so `/abs/path` becomes `//abs/path`; a single slash would fail
+ * open. A Windows drive path is written in the POSIX form the rule syntax
+ * documents (`C:\a\b` → `//c/a/b`) — reasoned from the docs, not run on
+ * Windows.
  */
 function ruleRoot(folder: string): string {
+  const { drive, body } = splitRulePath(folder);
+  const escaped = body.replace(GLOB_METACHARACTERS, (c) => `\\${c}`);
+  return drive ? `//${drive}/${escaped}` : `/${escaped}`;
+}
+
+/** A folder's drive letter (Windows) and the rest of it with `/` separators. */
+function splitRulePath(folder: string): { drive?: string; body: string } {
   const drive = /^([A-Za-z]):[\\/](.*)$/.exec(folder);
-  if (drive) return `//${drive[1]!.toLowerCase()}/${drive[2]!.replace(/\\/g, '/')}`;
-  return `/${folder}`;
+  return drive
+    ? { drive: drive[1]!.toLowerCase(), body: drive[2]!.replace(/\\/g, '/') }
+    : { body: folder };
 }
 
 /** The deny rules that make `folder` read-only for file tools. */
@@ -96,6 +127,13 @@ export function applyDirectoryGrants(
   }
   if (!grants || grants.length === 0) return;
   assertValidDirectoryGrants(grants, cwd);
+  for (const grant of grants) {
+    if (grant.access === 'read' && UNSAFE_IN_RULE.test(splitRulePath(grant.path).body)) {
+      throw new DirectoryGrantError(
+        `Folder grant "${grant.path}" is read-only, and its name has a character Claude Code's permission rules cannot match literally.`
+      );
+    }
+  }
 
   const base =
     typeof sdkOptions.settings === 'object' && sdkOptions.settings !== null

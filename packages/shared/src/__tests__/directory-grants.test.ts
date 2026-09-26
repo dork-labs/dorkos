@@ -7,6 +7,9 @@
  * like a working guard.
  */
 import { describe, it, expect } from 'vitest';
+import { mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
   assertValidDirectoryGrants,
   directoryGrantsFingerprint,
@@ -15,8 +18,11 @@ import {
 } from '../directory-grants.js';
 import type { DirectoryGrant } from '../agent-runtime.js';
 
-const CWD = '/home/ana/agents/ana';
-const HOME = '/home/ana';
+// A root that exists on no machine, so `realpath` resolves every fixture path
+// to itself (a real `/home` is a symlink on macOS).
+const ROOT = '/dorkos-grant-fixture';
+const HOME = `${ROOT}/ana`;
+const CWD = `${HOME}/.dork/agents/ana`;
 
 function check(grants: DirectoryGrant[]): void {
   assertValidDirectoryGrants(grants, CWD, HOME);
@@ -26,12 +32,12 @@ describe('assertValidDirectoryGrants', () => {
   it('accepts absolute, normalized, distinct folders outside the cwd', () => {
     expect(() =>
       check([
-        { path: '/home/ana/.dork/rooms/r1/worktrees/ana', access: 'write' },
-        { path: '/home/ana/.dork/rooms/r1/repo', access: 'read' },
+        { path: `${HOME}/.dork/rooms/r1/worktrees/ana`, access: 'write' },
+        { path: `${HOME}/.dork/rooms/r1/repo`, access: 'read' },
         // Nested inside another grant is legal: the room's `repo/.git`.
-        { path: '/home/ana/.dork/rooms/r1/repo/.git', access: 'write' },
-        // An ANCESTOR of the cwd is not inside it.
-        { path: '/home/ana/agents', access: 'read' },
+        { path: `${HOME}/.dork/rooms/r1/repo/.git`, access: 'write' },
+        // A sibling of the cwd's parent.
+        { path: `${HOME}/.dork/shared`, access: 'read' },
       ])
     ).not.toThrow();
   });
@@ -42,24 +48,56 @@ describe('assertValidDirectoryGrants', () => {
 
   it.each([
     ['a relative path', [{ path: 'rooms/r1', access: 'write' }], /not an absolute path/],
-    ['an unnormalized path', [{ path: '/home/ana/rooms/../x', access: 'read' }], /normalized/],
-    ['a trailing separator', [{ path: '/home/ana/rooms/', access: 'read' }], /normalized/],
+    ['an unnormalized path', [{ path: `${HOME}/rooms/../x`, access: 'read' }], /normalized/],
+    ['a trailing separator', [{ path: `${HOME}/rooms/`, access: 'read' }], /normalized/],
     ['the filesystem root', [{ path: '/', access: 'read' }], /filesystem root/],
     ['the home folder itself', [{ path: HOME, access: 'read' }], /home folder/],
+    ['a folder above the home folder', [{ path: ROOT, access: 'write' }], /contains it/],
+    [
+      'a folder that contains the cwd',
+      [{ path: `${HOME}/.dork/agents`, access: 'write' }],
+      /contains the turn's own directory/,
+    ],
+    [
+      'a read grant inside a write grant',
+      [
+        { path: `${HOME}/.dork/rooms/r1`, access: 'write' },
+        { path: `${HOME}/.dork/rooms/r1/repo`, access: 'read' },
+      ],
+      /read-only inside the write grant/,
+    ],
     ['the cwd itself', [{ path: CWD, access: 'write' }], /own directory or inside it/],
     ['a folder inside the cwd', [{ path: `${CWD}/src`, access: 'read' }], /inside it/],
     [
       'the same path twice, even with different access',
       [
-        { path: '/srv/shared', access: 'read' },
-        { path: '/srv/shared', access: 'write' },
+        { path: `${ROOT}/srv/shared`, access: 'read' },
+        { path: `${ROOT}/srv/shared`, access: 'write' },
       ],
       /more than once/,
     ],
-    ['an unknown access', [{ path: '/srv/shared', access: 'admin' }], /valid access/],
+    ['an unknown access', [{ path: `${ROOT}/srv/shared`, access: 'admin' }], /valid access/],
   ] as const)('rejects %s', (_label, grants, message) => {
     expect(() => check(grants as unknown as DirectoryGrant[])).toThrow(DirectoryGrantError);
     expect(() => check(grants as unknown as DirectoryGrant[])).toThrow(message);
+  });
+
+  it('refuses a grant spelled through a symlink, naming the resolved spelling', async () => {
+    const base = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dorkos-grant-link-')));
+    try {
+      await mkdir(path.join(base, 'room'));
+      await symlink(path.join(base, 'room'), path.join(base, 'linked'));
+      const home = path.join(base, 'home');
+      const cwd = path.join(home, 'agent');
+      expect(() =>
+        assertValidDirectoryGrants([{ path: path.join(base, 'linked'), access: 'read' }], cwd, home)
+      ).toThrow(/not realpath-resolved .*room/);
+      expect(() =>
+        assertValidDirectoryGrants([{ path: path.join(base, 'room'), access: 'read' }], cwd, home)
+      ).not.toThrow();
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
   });
 
   it('does not mistake a sibling that shares a prefix for the cwd', () => {

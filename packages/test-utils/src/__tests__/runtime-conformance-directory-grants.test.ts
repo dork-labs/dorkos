@@ -79,6 +79,15 @@ describe('evaluateHandedGrants', () => {
     ).toMatch(/READ grant .*grant-b was handed as writable/);
   });
 
+  it('fails a runtime that hands a folder around a read grant as writable', () => {
+    expect(
+      evaluateHandedGrants(CONFORMANCE_GRANT_TURNS, [
+        handed({ writable: [A, '/dorkos-conformance'], readOnly: [B] }),
+        handed({ writable: [C] }),
+      ]).join('\n')
+    ).toMatch(/READ grant .*grant-b sits inside the writable folder \/dorkos-conformance/);
+  });
+
   it('fails a runtime that drops a grant', () => {
     const problems = evaluateHandedGrants(CONFORMANCE_GRANT_TURNS, [
       handed({ writable: [A] }),

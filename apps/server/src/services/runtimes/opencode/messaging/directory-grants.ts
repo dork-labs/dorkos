@@ -32,10 +32,13 @@
  *
  * @module services/runtimes/opencode/messaging/directory-grants
  */
-import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
-import { assertValidDirectoryGrants, isSameOrInside } from '@dorkos/shared/directory-grants';
+import {
+  assertValidDirectoryGrants,
+  isSameOrInside,
+  realPathOf,
+} from '@dorkos/shared/directory-grants';
 import type { ApprovalEvent } from '@dorkos/shared/types';
 
 /** How this turn's grants answer one ask; `undefined` means they say nothing. */
@@ -56,33 +59,12 @@ function absolute(value: unknown): string | undefined {
 }
 
 /**
- * `asked` as the filesystem spells it: grants are `realpath`-resolved, and a
- * tool may name the same folder through a symlink (`/var` for `/private/var` on
- * macOS). A path that does not exist yet — a file about to be written — keeps
- * its missing tail on the resolved nearest existing ancestor.
- */
-function canonical(asked: string): string {
-  let existing = asked;
-  const tail: string[] = [];
-  for (;;) {
-    try {
-      return path.join(realpathSync.native(existing), ...tail.reverse());
-    } catch {
-      const parent = path.dirname(existing);
-      if (parent === existing) return asked;
-      tail.push(path.basename(existing));
-      existing = parent;
-    }
-  }
-}
-
-/**
  * Whether `asked` really sits in `folder`: judged on where the filesystem
  * resolves it, so a symlink committed inside a granted folder cannot stretch
  * the grant to wherever it points (spec §10, room content cannot widen a grant).
  */
 function reallyWithin(asked: string, folder: string): boolean {
-  return isSameOrInside(canonical(asked), folder);
+  return isSameOrInside(realPathOf(asked), realPathOf(folder));
 }
 
 /**

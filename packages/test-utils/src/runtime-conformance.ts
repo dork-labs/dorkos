@@ -1278,8 +1278,9 @@ export function evaluateDirectoryGrantsDeclaration(
 
 /**
  * What is wrong with what a backend was handed for two turns' grants: each
- * turn's `write` grants writable, each `read` grant handed but never writable,
- * and nothing in turn two that only turn one carried (I5).
+ * turn's `write` grants writable, each `read` grant handed but never writable
+ * (neither itself nor through a writable folder around it), and nothing in
+ * turn two that only turn one carried (I5).
  *
  * @param grants - The grants the two turns were given.
  * @param handed - What the driver observed the backend was handed for each.
@@ -1305,6 +1306,15 @@ export function evaluateHandedGrants(
       }
       if (grant.access === 'read' && !readable.has(grant.path)) {
         problems.push(`turn ${turn + 1}: read grant ${grant.path} was not handed at all`);
+      }
+      const around =
+        grant.access === 'read'
+          ? got.writable.find((folder) => grant.path.startsWith(`${folder}/`))
+          : undefined;
+      if (around) {
+        problems.push(
+          `turn ${turn + 1}: READ grant ${grant.path} sits inside the writable folder ${around}, so file tools could write it anyway`
+        );
       }
     }
   });

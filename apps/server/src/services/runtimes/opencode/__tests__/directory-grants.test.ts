@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { ApprovalEvent, StreamEvent } from '@dorkos/shared/types';
-import { resolveGrantVerdict } from '../messaging/directory-grants.js';
+import { resolveGrantVerdict, validatedGrants } from '../messaging/directory-grants.js';
 import {
   enforceApprovals,
   PendingApprovalStore,
@@ -126,6 +126,22 @@ describe('resolveGrantVerdict', () => {
       { path: path.join(repo, '.git'), access: 'write' },
     ];
     expect(resolveGrantVerdict(editAsk(path.join(repo, '.git', 'HEAD')), nested)).toBe('deny');
+  });
+
+  it('refuses a write into a read grant spelled through a symlink, whichever spelling the ask uses', async () => {
+    // `/tmp` for `/private/tmp` on macOS is the everyday case of this.
+    const alias = path.join(base, 'alias');
+    await symlink(base, alias);
+    const spelledViaLink: DirectoryGrant[] = [{ path: path.join(alias, 'repo'), access: 'read' }];
+
+    expect(resolveGrantVerdict(editAsk(path.join(repo, 'README.md')), spelledViaLink)).toBe('deny');
+    expect(
+      resolveGrantVerdict(editAsk(path.join(alias, 'repo', 'README.md')), [
+        { path: repo, access: 'read' },
+      ])
+    ).toBe('deny');
+    // And the adapter refuses that spelling before the turn starts.
+    expect(() => validatedGrants(spelledViaLink, '/agents/ana')).toThrow(/not realpath-resolved/);
   });
 
   it('says nothing when the turn carries no grants, whatever the ask', () => {
