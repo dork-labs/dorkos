@@ -450,13 +450,11 @@ export class ExtensionManager {
    * Drop a stored run approval and stop the extension, for an id whose code is
    * being REPLACED or removed rather than judged (DOR-516).
    *
-   * The marketplace uninstall flow calls this for every extension a package
-   * bundled, which is also what makes an update re-ask: an update is an uninstall
-   * followed by a fresh install (`MarketplaceInstaller.update`), so `foo` v2
-   * arriving under the name of an approved `foo` v1 is different code and gets a
-   * different decision. Without it, `marketplace_install` — tier `act`, always
-   * allowed — could put any code at all behind an approval a person gave to
-   * something else.
+   * The marketplace uninstall flow calls this for every extension a removed
+   * package bundled, and, on an update, for every extension the new version no
+   * longer carries (DOR-2383: an update from the same package keeps the rest).
+   * Without it, `marketplace_install` — tier `act`, always allowed — could put
+   * any code at all behind an approval a person gave to something else.
    *
    * Unlike {@link revokeRunApproval} this needs no discovery record: by the time
    * an uninstall runs, the extension's files may already be staged away, and the

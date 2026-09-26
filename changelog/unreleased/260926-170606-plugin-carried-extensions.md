@@ -9,4 +9,4 @@ covers:
 
 ### Security
 
-- Your OK to run an extension now belongs to that one copy of it: its folder, and the plugin it came in. If a different plugin brings an extension with the same name, DorkOS asks you again before running any of it. Extensions you already allowed keep running with nothing to click (DOR-2383)
+- Your OK to run an extension now belongs to that one copy of it: its folder, and the plugin it came in. If a different plugin brings an extension with the same name, DorkOS asks you again before running any of it. Extensions you already allowed keep running with nothing to click, and updating a plugin keeps your OK for the extensions it still brings (DOR-2383)

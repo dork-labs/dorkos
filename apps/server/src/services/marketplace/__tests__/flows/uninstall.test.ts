@@ -489,6 +489,68 @@ describe('UninstallFlow', () => {
     expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
   });
 
+  describe('an update from the same plugin (DOR-2383)', () => {
+    /** Stage an installed `flow` plugin carrying the given extension ids. */
+    async function stageFlow(ids: string[]) {
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const installRoot = path.join(deps.dorkHome, 'plugins', 'flow');
+      await stageInstalledPackage({
+        installRoot,
+        manifest: buildPluginManifest({ name: 'flow', extensions: ids }),
+        extensions: ids.map((id) => ({ id, manifest: { id } })),
+      });
+      return { deps, installRoot };
+    }
+
+    it('keeps an extension the new version still carries on, and approved', async () => {
+      const { deps } = await stageFlow(['flow']);
+
+      await new UninstallFlow(deps).uninstall({
+        name: 'flow',
+        purge: false,
+        replacing: true,
+        retainedExtensionIds: ['flow'],
+      });
+
+      expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+      expect(deps.extensionManager.forgetRunApproval).not.toHaveBeenCalled();
+    });
+
+    it('turns off and forgets an extension the new version drops', async () => {
+      const { deps, installRoot } = await stageFlow(['flow', 'flow-old']);
+
+      await new UninstallFlow(deps).uninstall({
+        name: 'flow',
+        purge: false,
+        replacing: true,
+        retainedExtensionIds: ['flow'],
+      });
+
+      expect(deps.extensionManager.disable).toHaveBeenCalledTimes(1);
+      expect(deps.extensionManager.disable).toHaveBeenCalledWith('flow-old');
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledTimes(1);
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('flow-old', installRoot);
+    });
+
+    it('still forgets everything on a plain uninstall, whatever it is told to retain', async () => {
+      const { deps, installRoot } = await stageFlow(['flow']);
+
+      await new UninstallFlow(deps).uninstall({ name: 'flow', retainedExtensionIds: ['flow'] });
+
+      expect(deps.extensionManager.disable).toHaveBeenCalledWith('flow');
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('flow', installRoot);
+    });
+
+    it('forgets everything on a replace that does not say what the new version carries', async () => {
+      const { deps, installRoot } = await stageFlow(['flow']);
+
+      await new UninstallFlow(deps).uninstall({ name: 'flow', purge: false, replacing: true });
+
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('flow', installRoot);
+    });
+  });
+
   it('removes a Shape installed under shapes/ (DOR-355 regression)', async () => {
     // A Shape lives under `<dorkHome>/shapes/<name>`, a root the uninstall
     // probe originally never looked in — so uninstalling a Shape failed with

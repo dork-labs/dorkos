@@ -510,6 +510,18 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
     // so the surviving-content assertions read what they think they read.
     expect(await readFile(path.join(installRoot, 'who.txt'), 'utf8')).toBe('update');
 
+    // An extension the installed copy carries and the incoming version does
+    // not. An update keeps what the new version still carries switched on
+    // (DOR-2383), so the extension it DROPS is the one the uninstall half turns
+    // off — and that is the barrier below.
+    const droppedExtension = path.join(installRoot, '.dork', 'extensions', 'dropped-by-update');
+    await mkdir(droppedExtension, { recursive: true });
+    await writeFile(
+      path.join(droppedExtension, 'extension.json'),
+      JSON.stringify({ id: 'dropped-by-update', name: 'Dropped', version: '1.0.0' }),
+      'utf8'
+    );
+
     if (opts.plantUserData) {
       await mkdir(path.join(installRoot, '.dork', 'data'), { recursive: true });
       await writeFile(path.join(installRoot, '.dork', 'data', 'state.json'), '{"v":1}', 'utf8');
@@ -523,8 +535,8 @@ describe('MarketplaceInstaller.update() vs a concurrent install (same package)',
     let competitorEnteredTheGap = false;
 
     // The barrier is a real product event: the uninstall half disables the
-    // package's bundled extension from inside its own critical section, so this
-    // callback runs with the install target locked.
+    // extension the new version drops from inside its own critical section, so
+    // this callback runs with the install target locked.
     spies.extensionDisable.mockImplementation(async () => {
       if (barrierFired) return;
       barrierFired = true;

@@ -145,9 +145,13 @@
  *   path, is a different copy, so it asks again (above).
  *
  * - **Replacement by the marketplace.** Uninstalling a package forgets the
- *   approval for every extension it bundled (`flows/uninstall.ts`), and an update
- *   is an uninstall followed by an install, so different code arriving under a
- *   familiar name is asked about again.
+ *   approval for every extension it bundled (`flows/uninstall.ts`), so
+ *   reinstalling asks again. An update from the SAME package is the exception
+ *   (DOR-2383): it is the approved copy's own publisher shipping a new version to
+ *   the same path, the same trade as editing an approved extension's files, so
+ *   every extension the new version still carries keeps its approval. One the new
+ *   version drops loses it, and asks again if it ever comes back. A different
+ *   package arriving under a familiar id is a different copy, so it asks (above).
  * - **Shadowing from the project tree.** A `{cwd}/.dork/extensions/<id>` directory,
  *   or one inside a plugin installed into the project, is ignored when `<id>` is
  *   core or approved for some other copy (`extension-discovery.ts`), so a project

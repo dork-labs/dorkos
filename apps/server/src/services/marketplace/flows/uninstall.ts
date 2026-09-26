@@ -110,6 +110,17 @@ export interface UninstallRequest {
    */
   replacing?: boolean;
   /**
+   * Internal (installer-only), read only with `replacing`: the bundled extension
+   * ids the incoming version still carries. An update from the same plugin
+   * keeps those extensions on and keeps the person's approval to run them, since
+   * the same copy lands back at the same path; every other bundled extension
+   * (one the new version drops) is turned off and its approval forgotten, so it
+   * asks again if it ever returns. Absent means none is kept: a replace that
+   * does not say what the new version carries forgets everything, as a plain
+   * uninstall does.
+   */
+  retainedExtensionIds?: readonly string[];
+  /**
    * Internal (installer-only): the exact install root to remove, when the
    * caller already resolved which installation it means — the installer's
    * `update()` replacing the installation an update check found. See
@@ -706,7 +717,13 @@ export class UninstallFlow {
     // approval to forget (DOR-516). Whoever teaches discovery or `applyShape` to
     // read a Shape's own tree has to add the walk here as part of it.
     if (type === 'plugin' || type === 'skill-pack' || type === 'adapter') {
-      await this.disableBundledExtensions(inputs.extensionIds, located.installRoot);
+      // An update from the same package keeps what it still carries (see
+      // `UninstallRequest.retainedExtensionIds`); a plain uninstall keeps nothing.
+      const retained = new Set(req.replacing ? (req.retainedExtensionIds ?? []) : []);
+      await this.disableBundledExtensions(
+        inputs.extensionIds.filter((id) => !retained.has(id)),
+        located.installRoot
+      );
     }
     if (type === 'adapter') {
       await this.deps.adapterManager.removeAdapter(
@@ -883,8 +900,11 @@ export class UninstallFlow {
    * and nothing shown. `marketplace_install` is tier `act`, so an agent reaches
    * that path unaided.
    *
-   * A person who updates an extension they had approved is asked once more. That
-   * is the intended cost: new code, new decision. Editing an installed
+   * An update from the same package is the exception (DOR-2383): the
+   * installer passes `retainedExtensionIds`, the extensions the new version
+   * still carries, and those keep their approval, since the same copy lands back
+   * at the same path — the trade editing an approved extension already makes.
+   * Only the ones the new version drops reach this walk. Editing an installed
    * extension's files never comes through here, so the edit → test → reload loop
    * stays free.
    *
