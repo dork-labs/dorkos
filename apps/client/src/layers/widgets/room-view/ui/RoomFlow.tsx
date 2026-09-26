@@ -28,7 +28,12 @@ import type { MessageGrouping } from '@/layers/shared/model';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
-import { isRoomMember, threadReplySummary, usePendingPosts } from '@/layers/entities/room';
+import {
+  honestReplyCount,
+  isRoomMember,
+  threadReplySummary,
+  usePendingPosts,
+} from '@/layers/entities/room';
 import {
   Conversation,
   DayDivider,
@@ -365,7 +370,7 @@ export function RoomFlow({
             // the room's count is a snapshot taken when the root was fetched,
             // and both a streamed reply and a page read further back can put
             // more on screen than it knows about.
-            replyCount: Math.max(row.totalReplies ?? 0, row.replies.length),
+            replyCount: honestReplyCount(row.replies.length, row.totalReplies),
             lastAt: row.replies[row.replies.length - 1]!.createdAt,
           };
         return {

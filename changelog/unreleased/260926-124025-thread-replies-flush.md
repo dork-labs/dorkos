@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(rooms): line thread replies up with the message they answer, under a reply count (DOR-2110)'
+  - 'refactor(rooms): count thread replies with one helper and pin the flush layout harder (DOR-2110)'
 ---
 
 ### Changed

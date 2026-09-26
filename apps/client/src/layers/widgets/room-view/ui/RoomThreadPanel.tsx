@@ -3,6 +3,7 @@ import { ChevronLeft, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
 import {
+  honestReplyCount,
   isRoomMember,
   roomDisplayTitle,
   threadRootIdOf,
@@ -193,9 +194,9 @@ export function RoomThreadPanel({
   const knownReplies = root?.threadReplyCount;
   const partial = knownReplies !== undefined && knownReplies > replies.length;
   const articleCount = root === undefined || partial ? -1 : 1 + replies.length;
-  // What the line under the root says: the thread's own count when the root
-  // knows a bigger one than the page holds, else what is here.
-  const replyCount = Math.max(knownReplies ?? 0, replies.length);
+  // What the line under the root says — the same number the room's own reply
+  // row shows for this thread.
+  const replyCount = honestReplyCount(replies.length, knownReplies);
 
   // Scoped to the REPLIES, never the root — `PresenceScope` says why an agent
   // triggered by the root is the room's business and not this thread's.

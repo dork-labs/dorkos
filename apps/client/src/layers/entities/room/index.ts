@@ -153,7 +153,7 @@ export {
 export { profileMemberIdOf } from './lib/profile-target';
 export { roomIdentityMark, identityMarkFaces } from './lib/identity-mark';
 export type { IdentityMark, RoomIdentityMarkInput } from './lib/identity-mark';
-export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
+export { honestReplyCount, replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';
 export type { ThreadReplySummary } from './lib/thread';
 export { useLoadOlderRoomEntries } from './model/use-load-older-entries';
 export type { LoadOlderRoomEntries } from './model/use-load-older-entries';

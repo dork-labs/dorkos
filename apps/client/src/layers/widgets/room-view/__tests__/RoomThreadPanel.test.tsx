@@ -202,10 +202,28 @@ describe('RoomThreadPanel', () => {
 
     const feed = screen.getByTestId('room-thread-feed');
     const firstReply = within(feed).getAllByTestId('room-entry')[1]!;
+    const indentOf = (box: Element) => {
+      const style = getComputedStyle(box);
+      return [
+        style.marginLeft,
+        style.paddingLeft,
+        style.marginInlineStart,
+        style.paddingInlineStart,
+      ]
+        .filter((value) => value !== '' && value !== '0px' && value !== '0')
+        .join(' ');
+    };
     for (let box = firstReply.parentElement; box && box !== feed; box = box.parentElement) {
-      expect(box.className).not.toMatch(/\b(ml|pl|ms|ps)-/);
+      // A utility class that indents, an inline style that indents, or a
+      // sibling drawn beside the reply (the old connector) — any one fails.
+      expect(box.className).not.toMatch(/(^|\s)-?(ml|pl|ms|ps|mx|px|m|p)-/);
+      expect(indentOf(box)).toBe('');
       expect(box.querySelectorAll(':scope > [aria-hidden]')).toHaveLength(0);
     }
+    // And the reply's own box starts where the root's does.
+    const root = within(feed).getAllByTestId('room-entry')[0]!;
+    expect(firstReply.className).toBe(root.className);
+    expect(indentOf(firstReply)).toBe(indentOf(root));
   });
 
   it('counts the whole thread when the root says it is bigger than the page', () => {

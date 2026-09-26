@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
-import { replyRootFor, threadRootIdOf, threadReplySummary } from '../lib/thread';
+import { honestReplyCount, replyRootFor, threadRootIdOf, threadReplySummary } from '../lib/thread';
 
 function entry(seq: number, overrides: Partial<RoomEntry> = {}): RoomEntry {
   return {
@@ -41,6 +41,20 @@ describe('replyRootFor', () => {
     expect(replyRootFor(entry(3, { threadRootEntryId: 'entry-1', parentEntryId: 'entry-2' }))).toBe(
       'entry-1'
     );
+  });
+});
+
+describe('honestReplyCount', () => {
+  it('takes the room’s count when it knows more than is loaded', () => {
+    expect(honestReplyCount(2, 5)).toBe(5);
+  });
+
+  it('takes what is loaded once that overtakes the room’s snapshot', () => {
+    expect(honestReplyCount(6, 5)).toBe(6);
+  });
+
+  it('counts what is loaded when the room gave no number', () => {
+    expect(honestReplyCount(3)).toBe(3);
   });
 });
 
