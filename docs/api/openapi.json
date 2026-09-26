@@ -8611,6 +8611,12 @@
           "agentCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "newAgentRecordUnreadable": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
           }
         },
         "required": [

@@ -14,6 +14,8 @@ covers:
   - 'fix(permissions): a new agent cannot bring wider permissions in its own folder'
   - 'fix(permissions): an action that shows what it would change always asks'
   - "fix(permissions): an arriving agent's folder settings never apply as written"
+  - "fix(permissions): read an agent's own stop only through the gate reader"
+  - 'fix(permissions): say when the new-agent record cannot be read, and retry it'
   - 847dbbc
   - fcacf5a
   - fb6bdd0
