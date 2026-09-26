@@ -1044,10 +1044,7 @@
             ]
           },
           "plan": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "$ref": "#/components/schemas/LedgerPlan"
           },
           "credits": {
             "$ref": "#/components/schemas/LedgerCredits"
@@ -1095,6 +1092,8 @@
                     "sdk_usage",
                     "transcript",
                     "rollout",
+                    "sidecar",
+                    "provider_api",
                     "error"
                   ]
                 }
@@ -1164,6 +1163,40 @@
           "updatedAt"
         ]
       },
+      "LedgerPlan": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "statusline",
+              "sdk_event",
+              "sdk_usage",
+              "transcript",
+              "rollout",
+              "sidecar",
+              "provider_api",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "observedAt",
+          "source"
+        ]
+      },
       "LedgerCredits": {
         "type": [
           "object",
@@ -1180,13 +1213,32 @@
             "type": [
               "string",
               "null"
+            ],
+            "default": null
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "statusline",
+              "sdk_event",
+              "sdk_usage",
+              "transcript",
+              "rollout",
+              "sidecar",
+              "provider_api",
+              "error"
             ]
           }
         },
         "required": [
           "hasCredits",
           "unlimited",
-          "balance"
+          "observedAt",
+          "source"
         ]
       },
       "LedgerSpend": {
@@ -1197,19 +1249,23 @@
         "properties": {
           "periodStart": {
             "type": "string",
-            "format": "date-time"
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
           },
           "costUsd": {
             "type": "number",
             "minimum": 0
           },
           "limitUsd": {
-            "type": "number",
-            "exclusiveMinimum": 0
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "default": null
           },
           "observedAt": {
             "type": "string",
-            "format": "date-time"
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
           },
           "source": {
             "type": "string",
@@ -1219,6 +1275,8 @@
               "sdk_usage",
               "transcript",
               "rollout",
+              "sidecar",
+              "provider_api",
               "error"
             ]
           }
