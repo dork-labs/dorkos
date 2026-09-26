@@ -916,6 +916,45 @@ export const RoomMergeEventSchema = z
 /** Work an agent merged into a room's repo. See {@link RoomMergeEventSchema}. */
 export type RoomMergeEvent = z.infer<typeof RoomMergeEventSchema>;
 
+/** The most paths one file-change entry lists; `pathCount` says how many there were. */
+export const ROOM_FILE_CHANGE_MAX_PATHS = 20;
+
+/**
+ * A change a PERSON made to a room's files, carried on the entry that announces
+ * it (spec `agent-home-desk` §7.2).
+ *
+ * The merge entry's shape and the merge entry's reasons: an ordinary post in the
+ * room's own voice, addressed to nobody, triggering nothing — a person editing
+ * `ROOM.md` is news for whoever reads the room next, not a reason for three
+ * agents to start talking. `subjectAuthorId` on the body names the person.
+ *
+ * **Every path here is member-chosen text.** Render it as plain text, never as
+ * markdown or a link; the entry's own `text` is composed on the server from
+ * sanitized path segments.
+ */
+export const RoomFileChangeEventSchema = z
+  .object({
+    kind: z
+      .enum(['edit', 'add', 'upload', 'rename', 'delete', 'from-attachment'])
+      .describe('What the person did.'),
+    paths: z
+      .array(z.string())
+      .max(ROOM_FILE_CHANGE_MAX_PATHS)
+      .describe(
+        'The files the change wrote or removed, in byte order — the first twenty. For a rename, the new paths.'
+      ),
+    pathCount: z.number().int().nonnegative().describe('How many files the change touched in all.'),
+    from: z
+      .string()
+      .optional()
+      .describe('For a rename, the file or folder as it was named before.'),
+    commit: z.string().min(1).describe('The commit on the room’s main branch.'),
+  })
+  .openapi('RoomFileChangeEvent');
+
+/** A change a person made to a room's files. See {@link RoomFileChangeEventSchema}. */
+export type RoomFileChangeEvent = z.infer<typeof RoomFileChangeEventSchema>;
+
 /**
  * What one turn put on, changed or took off a room's canvas, carried on the one
  * entry that announces it (spec `room-canvas` §6.2).
@@ -1237,6 +1276,10 @@ export type MergeRoomRepoRequest = z.infer<typeof MergeRoomRepoRequestSchema>;
  * reasons — one entry per turn, system-voiced, addressed to nobody, triggering
  * nothing. Optional like its two siblings, so every entry written before it
  * existed still parses.
+ *
+ * `fileChange` is the same shape again, for a change a PERSON made to the
+ * room's files (spec `agent-home-desk` §7.2): one entry per commit, naming the
+ * person in `subjectAuthorId`, waking nobody.
  */
 export const RoomEntryBodySchema = z
   .object({
@@ -1246,6 +1289,7 @@ export const RoomEntryBodySchema = z
     moment: RoomMomentSchema.optional(),
     merge: RoomMergeEventSchema.optional(),
     canvas: RoomCanvasChangeSchema.optional(),
+    fileChange: RoomFileChangeEventSchema.optional(),
     waitingKind: RoomWaitingKindSchema.optional(),
     answersEntryId: z
       .string()

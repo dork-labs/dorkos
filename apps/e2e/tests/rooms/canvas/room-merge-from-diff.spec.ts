@@ -32,9 +32,6 @@ const OPENS_DIFF = 'rooms-open-diff';
 
 /**
  * The file the scenario reviews. Must match `ROOM_DIFF_PATH` in the scenario.
- *
- * At the root of the repo rather than in a folder, because a person's save into
- * a room's files refuses to create one: "saving does not make new folders".
  */
 const DIFF_PATH = 'app.txt';
 
