@@ -190,11 +190,22 @@ function RoomThreadPanelShowcase() {
   return (
     <PlaygroundSection
       title="RoomThreadPanel"
-      description="One thread, with its own composer, beside the room (design record §3). Root at the top with its own reactions, replies beneath it on a connector. Each demo below wires the real panel to an in-memory fixture — reads and writes both — so replying through the composer really lands the reply in the thread. Presence and reactions come from live app state (the Zustand store and query cache), so leaving this page resets them."
+      description="One thread, with its own composer, beside the room (design record §3). Root at the top with its own reactions, a line counting the replies, then the replies flush beneath it. Beside a room, drag the line between them to resize the thread. Each demo below wires the real panel to an in-memory fixture — reads and writes both — so replying through the composer really lands the reply in the thread. Presence and reactions come from live app state (the Zustand store and query cache), so leaving this page resets them."
     >
       <ShowcaseLabel>Normal — root and two replies</ShowcaseLabel>
       <ShowcaseDemo>
         <ThreadPanelDemo rootEntryId={PANEL_ROOT.id} entries={[PANEL_ROOT, ...PANEL_REPLIES]} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Beside the room — drag the line between them; the width is remembered
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ThreadPanelDemo
+          rootEntryId={PANEL_ROOT.id}
+          entries={[PANEL_ROOT, ...PANEL_REPLIES]}
+          beside
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>
@@ -243,7 +254,7 @@ function RoomThreadPanelShowcase() {
 }
 
 // ---------------------------------------------------------------------------
-// Micro-interactions: the connector draw, the reply drop, the presence hand-off
+// Micro-interactions: the reply drop and the presence hand-off
 // ---------------------------------------------------------------------------
 
 const ARRIVAL_ROOT = threadEntry('anyone know why the runner is stuck?');
@@ -252,7 +263,7 @@ const ARRIVAL_REPLIES = [
 ];
 
 /**
- * A panel whose replies arrive live, so the three thread animations (design
+ * A panel whose replies arrive live, so the two thread animations (design
  * record §5.3–5.5) can be watched on demand rather than raced against a real
  * SSE event. `useThreadArrivals` (the hook both animations key off) decides
  * "dropped" vs "handed-off" from whether the replying author was on the
@@ -337,12 +348,12 @@ function ThreadArrivalShowcase() {
   return (
     <PlaygroundSection
       title="Thread arrival animations"
-      description="Three one-shot motions live in this panel (design record §5.3–5.5), all keyed by `useThreadArrivals` so they play once per reply and never replay on an unrelated re-render: the connector drawing downward, an ordinary reply bouncing in, and an agent's reply settling upward out of the live lane it just occupied. `ThreadReplyRow`'s own count-flip is benched separately above, on the row itself."
+      description="Two one-shot motions live in this panel (design record §5.3–5.5), both keyed by `useThreadArrivals` so they play once per reply and never replay on an unrelated re-render: an ordinary reply bouncing in, and an agent's reply settling upward out of the live lane it just occupied. `ThreadReplyRow`'s own count-flip is benched separately above, on the row itself."
     >
       <ShowcaseLabel>
-        &quot;Ordinary reply&quot; plays the connector draw and the drop-in. The two-step Kai
-        sequence plays the hand-off: watch the presence line above the composer clear as the reply
-        settles into the space it leaves.
+        &quot;Ordinary reply&quot; plays the drop-in. The two-step Kai sequence plays the hand-off:
+        watch the presence line above the composer clear as the reply settles into the space it
+        leaves.
       </ShowcaseLabel>
       <ShowcaseDemo>
         <ArrivalDemo />

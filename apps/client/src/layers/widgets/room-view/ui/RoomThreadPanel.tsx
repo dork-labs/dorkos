@@ -3,6 +3,7 @@ import { ChevronLeft, X } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
 import {
+  honestReplyCount,
   isRoomMember,
   roomDisplayTitle,
   threadRootIdOf,
@@ -102,7 +103,8 @@ interface RoomThreadPanelProps {
  * Here the room shows a room, and the thread has a place — so a forty-reply
  * aside costs the conversation it hangs off exactly one quiet line.
  *
- * Root at the top with its own reactions, replies beneath it on a connector.
+ * Root at the top with its own reactions, then a quiet line counting the
+ * replies, then the replies themselves, flush with the root (DOR-2110).
  * Each reply is an ordinary {@link RoomMessage}, so it carries the same
  * capsule, the same reactions and the same keyboard model it would anywhere
  * else — a thread is a different PLACE, not a different kind of message.
@@ -172,7 +174,7 @@ export function RoomThreadPanel({
   }, [entries, rootEntryId]);
 
   // What the feed holds, which is the root and its replies and nothing else:
-  // the orphan line and the connectors are furniture between articles, with
+  // the orphan line and the reply-count rule are furniture between articles, with
   // nothing in them to stand on.
   //
   // `-1` — the APG's "I do not know" — whenever the ROOT is missing. The panel
@@ -192,6 +194,9 @@ export function RoomThreadPanel({
   const knownReplies = root?.threadReplyCount;
   const partial = knownReplies !== undefined && knownReplies > replies.length;
   const articleCount = root === undefined || partial ? -1 : 1 + replies.length;
+  // What the line under the root says — the same number the room's own reply
+  // row shows for this thread.
+  const replyCount = honestReplyCount(replies.length, knownReplies);
 
   // Scoped to the REPLIES, never the root — `PresenceScope` says why an agent
   // triggered by the root is the room's business and not this thread's.
@@ -332,39 +337,50 @@ export function RoomThreadPanel({
           }}
         />
       );
-      if (isRoot) return message;
+      if (isRoot) {
+        if (replyCount === 0) return message;
+        // The line between the root and its replies (DOR-2110). Replies sit
+        // flush with the root — the panel IS the thread, so an indent only
+        // spent its width saying so twice — and this rule is what tells the
+        // message everything hangs off from the answers to it. Decoration to
+        // the feed, like the connectors it replaced: the feed's own count
+        // already tells a screen reader how many replies there are.
+        return (
+          <>
+            {message}
+            <div
+              aria-hidden
+              data-testid="room-thread-divider"
+              className="flex items-center gap-2 px-[var(--msg-padding-x)] pt-1 pb-2"
+            >
+              <span className="text-muted-foreground shrink-0 text-xs">
+                {replyCount === 1 ? '1 reply' : `${replyCount} replies`}
+              </span>
+              <span className="bg-border h-px flex-1" />
+            </div>
+          </>
+        );
+      }
       const arrival = arrivals.get(entry.id) ?? 'at-rest';
       return (
-        <div className={cn('relative flex', replyIndex === 0 && 'mt-2')}>
-          {/* The connector. It draws downward as a reply lands (design record
-              §5.3) and is otherwise simply there. */}
-          <span
-            aria-hidden
-            data-testid="room-thread-connector"
-            className={cn(
-              'bg-border ml-[calc(var(--msg-padding-x)_+_var(--msg-gutter-width)_/_2)] w-px shrink-0',
-              arrival === 'dropped' && 'motion-safe:animate-thread-line-draw'
-            )}
-          />
-          <div
-            className={cn(
-              'min-w-0 flex-1',
-              // Two arrivals, two motions, and the difference is real: an
-              // ordinary reply drops in from above with a bounce; an answer from
-              // an agent that was just on the presence line rises into the space
-              // that line is leaving.
-              arrival === 'dropped' && 'motion-safe:animate-thread-reply-in',
-              arrival === 'handed-off' && 'motion-safe:animate-reply-settle'
-            )}
-          >
-            {message}
-          </div>
+        <div
+          className={cn(
+            // Two arrivals, two motions, and the difference is real: an
+            // ordinary reply drops in from above with a bounce; an answer from
+            // an agent that was just on the presence line rises into the space
+            // that line is leaving.
+            arrival === 'dropped' && 'motion-safe:animate-thread-reply-in',
+            arrival === 'handed-off' && 'motion-safe:animate-reply-settle'
+          )}
+        >
+          {message}
         </div>
       );
     },
     [
       root,
       replies,
+      replyCount,
       arrivals,
       room.id,
       room.viewerAuthorId,
@@ -416,10 +432,10 @@ export function RoomThreadPanel({
           className={cn(
             'bg-card flex min-h-0 flex-col outline-none',
             // The push IS the room on a phone — it takes the whole surface, with a
-            // Back button where the header's close would be. The side panel is a
-            // column beside it, bounded so a long thread cannot squeeze the room
-            // out of its own screen.
-            pushed ? 'h-full w-full' : 'w-full max-w-md min-w-80 basis-2/5 border-l'
+            // Back button where the header's close would be. The side panel fills
+            // the pane `RoomThreadSplit` gives it, which owns its width, its
+            // bounds and the handle that drags it.
+            pushed ? 'h-full w-full' : 'w-full border-l'
           )}
         >
           <header className="flex items-center gap-2 border-b px-3 py-2">
