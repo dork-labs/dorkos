@@ -197,7 +197,7 @@ The runtime-neutral pieces (the ledger file module, the usage store, the account
 
 **Outputs.**
 
-- `GET /api/runtimes/claude-code/accounts/usage` → `200 { accounts: AccountUsage[] }` (`routes/runtimes.ts`; OpenAPI).
+- `GET /api/runtimes/:runtime/accounts/usage` → `200 { accounts: AccountUsage[] }` for any runtime slug (S5 N2; `claude-code` included; `routes/runtimes.ts`; OpenAPI).
 - Global event **`account_usage`** (payload `AccountUsage`) when an account's `AccountUsage` changes other than `observedAt`, throttled to one per account per 2 s trailing; added to the client `stream-manager.ts` allowlist.
 - MCP tool **`accounts_usage`** (tier `observe`, always on, title "Read how much of each Claude account is used"): no input, returns `{ accounts }`.
 
@@ -276,7 +276,7 @@ Every call writes an Activity entry naming the calling agent, the account and th
 
 `GET /api/sessions`, after the existing overlays, runs `applySessionFleetOverlay(page, deps)` (`services/session/fleet/session-fleet-overlay.ts`):
 
-- `accountId` where `session.account` matches a registered account (`path.resolve` equality);
+- `accountId`: for Claude Code where `session.account` matches a registered account (`path.resolve` equality), else `default` when the registry is empty; for Codex and OpenCode sessions `default` (S5 N9);
 - `status: { lifecycle, limit }` from `projectorFor(session.id)?.status` when this process holds a projector; absent otherwise, which consumers read as idle;
 - envelope `accountUsage` from `store.peek()` for the distinct `accountId`s on the page; omitted when there are none;
 - `trackerItem` from D8.
@@ -296,7 +296,7 @@ Per contract §1.3, DorkOS **reads** `<main checkout>/.dork/flow/flow-state.json
 
 When D4 sets `limit`, core decides what happens next, and it works fully **without flow**. Flow only changes the answers, through the advisor (X3).
 
-**The plan.** `SessionLimit` gains `plan`, one of `{ mode: 'ask'; carryOver?: false }`, `{ mode: 'auto'; target: string; fireAt: string }`, `{ mode: 'waiting'; resumeAt: string | null; autoResume: boolean; resetConfirmedAt?: string }`, `{ mode: 'continued'; sessionId: string; accountId: string }`. On a new limit, core asks `advisor.onLimited(info)` (2 s, any failure = `ask`); no advisor = `ask`. An `auto` answer is accepted only when `target` is a registered id other than the limited account; `delaySeconds` is clamped to 0..3600 and becomes `fireAt`. A `wait` answer becomes `waiting` with `autoResume: true` and `resumeAt` = its `resumeAt`, else the limit's `resetsAt` (flow uses it when the reset is under an hour away). The UI renders a countdown only for `auto` and `waiting` (S5).
+**The plan.** `SessionLimit` gains `plan`, one of `{ mode: 'ask'; carryOver?: false }`, `{ mode: 'auto'; target: string; fireAt: string }`, `{ mode: 'waiting'; resumeAt: string | null; autoResume: boolean; resetConfirmedAt?: string; unconfirmed?: true; carryOver?: false }` (`carryOver: false` is carried over from the `ask` plan it replaced, S5 N5), `{ mode: 'continued'; sessionId: string; accountId: string }`. On a new limit, core asks `advisor.onLimited(info)` (2 s, any failure = `ask`); no advisor = `ask`. An `auto` answer is accepted only when `target` is a registered id other than the limited account; `delaySeconds` is clamped to 0..3600 and becomes `fireAt`. A `wait` answer becomes `waiting` with `autoResume: true` and `resumeAt` = its `resumeAt`, else the limit's `resetsAt` (flow uses it when the reset is under an hour away). The UI renders a countdown only for `auto` and `waiting` (S5).
 
 **The states core emits** (`SessionLimit.state`, set by the server whenever the limit or plan changes; the UI track renders them). `near-limit` is the one state with no limit: `sessionAccountState(status, accountUsage)` (shared) returns it when the session's account reads `warning` (chip only).
 
@@ -304,15 +304,15 @@ When D4 sets `limit`, core decides what happens next, and it works fully **witho
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `near-limit`       | No `limit`; the account's `AccountUsage.state` is `warning`.                                                                                                                                                                 |
 | `limited`          | Plan `ask` (carry-over allowed), another registered account exists, and at least one is eligible.                                                                                                                            |
-| `wait-only`        | Plan `ask` and the session can only wait: `carryOver: false`, or no other registered account exists (one account, or none).                                                                                                  |
+| `wait-only`        | Plan `ask` and the session can only wait: `carryOver: false`, or no other registered account exists and the advisor offered no other runtime's account.                                                                      |
 | `model-limited`    | `limit.scope` is `model` (the stopped window is `seven_day_opus`, `seven_day_sonnet` or a `model:*` bucket), the account's `five_hour` and `seven_day` still have room, and a fallback model exists (`limit.modelFallback`). |
-| `all-accounts-out` | Plan `ask`, carry-over allowed, other registered accounts exist, and none is eligible; `limit.allOut = { accountId, resetsAt }` names the earliest reset.                                                                    |
+| `all-accounts-out` | Plan `ask`, carry-over allowed, other accounts exist (or other runtimes were offered), and none is eligible; `limit.allOut = { accountId, resetsAt }` names the earliest reset.                                              |
 | `handing-off`      | Plan `auto` (countdown to `fireAt`).                                                                                                                                                                                         |
 | `moved`            | Plan `continued`; `plan.sessionId` points at the new session. Read-only by default is the UI's choice; the server still accepts a person's message ("continue here anyway"), which clears the limit.                         |
 | `waiting-reset`    | Plan `waiting`, reset not yet confirmed (countdown to `resumeAt`).                                                                                                                                                           |
 | `reset-ready`      | Plan `waiting`, reset confirmed, and no automatic resume happened (off, not allowed, or capped).                                                                                                                             |
 
-`SessionLimit` therefore also gains `scope: 'account' | 'model'`, `state` (nine values: the eight rows above that carry a limit, plus `wait-only`), `modelFallback?: string` and `allOut?: { accountId: string; resetsAt: string | null }`. **Precedence** when more than one row matches: `moved` > `handing-off` > `reset-ready` > `waiting-reset` > `model-limited` > `wait-only` > `all-accounts-out` > `limited`. The state is recomputed when the plan changes and on every `account_usage` change for an account a limited session is waiting on or could move to.
+`SessionLimit` therefore also gains `scope: 'account' | 'model'`, `state` (eight values: the rows above that carry a limit; with the derived `near-limit` a client sees nine), `modelFallback?: string` and `allOut?: { accountId: string; resetsAt: string | null }`. **Precedence** when more than one row matches: `moved` > `handing-off` > `reset-ready` > `waiting-reset` > `model-limited` > `wait-only` > `all-accounts-out` > `limited`. The state is recomputed when the plan changes and on every `account_usage` change for an account a limited session is waiting on or could move to.
 
 **Model fallback.** When only a model bucket is out, the same account can keep going on another model. The offered model is `advisor.modelFallback(info)` when it answers, else the default: `sonnet` when the stopped window is `seven_day_opus` or a `model:*` bucket that is not Sonnet's, otherwise none (then the state is `limited`). `POST …/continue { model }` with no `account` switches the SAME session's model (the settings row, as the model picker does) and sends the continue turn; it is a person's message, so it is allowed for any session origin. The turn runs with the session's stored permission mode, and the model must be one the session's own runtime offers (else 400).
 
@@ -320,14 +320,14 @@ When D4 sets `limit`, core decides what happens next, and it works fully **witho
 
 **Endpoints** (a person; the advisor's ranking is advice, and a person may pick any registered account, including one it marks ineligible or hid):
 
-- `GET /api/sessions/:id/continue-options` → `{ plan, ranking }` (ranking with `caller: 'person'`, `purpose: 'continue'`, `excludeAccountId` = the session's account).
-- `POST /api/sessions/:id/continue` `{ account?, model? }` → `202 { sessionId }`: with `account`, carries the work over (below; `model` then sets the new session's model); with only `model`, the model fallback above (the same session id); with neither, 400. 409 while the session is streaming. Idempotent per limit episode: a second call returns the session the first one started.
+- `GET /api/sessions/:id/continue-options` → `{ plan, ranking, advised: boolean }` (`advised` says whether an advisor's ranking was used, S5 N1) (ranking with `caller: 'person'`, `purpose: 'continue'`, `excludeAccountId` = the session's account).
+- `POST /api/sessions/:id/continue` `{ account?, runtime?, model? }` → `202 { sessionId }`: `runtime` (default: the session's) is accepted only when the advisor's ranking offered that runtime's account (cross-runtime fallback, S5 N3); such a carry-over starts the target runtime with its own defaults for model and effort and the source's trust stop resolved through the target runtime's profile, and the default summary is runtime-neutral text. with `account`, carries the work over (below; `model` then sets the new session's model); with only `model`, the model fallback above (the same session id); with neither, 400. 409 while the session is streaming. Idempotent per limit episode: a second call returns the session the first one started.
 - `POST /api/sessions/:id/wait` `{ autoResume?: boolean }` → the plan becomes `waiting` (`resumeAt` = the limit's `resetsAt`) and any `auto` timer is cancelled. `autoResume` defaults to the advisor's preference (true when its `onLimited` said `wait`), else false; it can be true only for a session carry-over is allowed for (below), otherwise 400.
 - `POST /api/sessions/:id/continue/cancel` → an `auto` plan becomes `ask`.
 
 **Which sessions can be carried over: decided from a server-held fact, deny by default.** `Session.origin` is best-effort and explicitly not a security boundary (a binding session whose transcript lacks its marker reads as a person's), so it cannot gate this. Instead `session_metadata` gains a nullable `launch_origin` column: `RuntimeRegistry.persistSessionRuntime` already receives the required `TurnOrigin` for every surface that binds a session, and writes `origin.kind` in the same first-write-wins statement (it is moved by `rekeySessionSettings` with the row). Carry-over is allowed only for `interactive`, `agent-launch` and `account-handoff`. Every other kind (`room`, `schedule`, `relay-binding`, `agent-dm`, `connector-event`, `test-harness`) and **no record at all** (a session bound before this change) get `{ mode: 'ask', carryOver: false }`: `onLimited` is not asked, and `POST …/continue` answers 409 ("This conversation did not start here, so it can only wait for the reset."; `Session.origin` may name the surface in that sentence, nothing more). `continue-options` still returns the ranking for display. Accepted gap: the binding subsystem's ownership write is best-effort, so if it fails, a person's later message binds the row as `interactive` and the session becomes eligible; that needs a failed write first, and the person is then driving the session themselves.
 
-**No current limit, no carry-over.** `/continue`, `/wait` and `/continue/cancel` answer 409 when the session has no `limit` (a new turn already cleared it), so a healthy session is never carried over.
+**Without a limit.** `/wait` and `/continue/cancel` answer 409 when the session has no `limit`. `/continue` is also allowed for a healthy session when a **person** asks (S5 N7: "Continue on another account" from the popover), for the same eligible launch origins, with the Activity reason "moved by a person"; its in-flight marker is keyed by the session alone, so a double click starts one session. Automatic carry-over always needs a limit.
 
 **One carry-over per limit episode, race-free.** An in-flight marker keyed by (session, `limit.since`) is set synchronously before any await and shared by the person path and the timer; a second caller awaits the first one's promise and gets the same new session id.
 
@@ -391,15 +391,15 @@ Usage must show the moment a session opens, after a restart, and for a single ac
 - **The list and single-session reads** carry it as D7 already specifies (`accountId` + envelope `accountUsage`), and `GET /api/sessions/:id` includes the session's `accountUsage` on `status`.
 - **Not gated on accounts:** it works for every runtime and for one account (the implicit `default`).
 
-**Context usage is per session.** A small `session_context` table (`session_id` PK, `context_tokens`, `context_max_tokens`, `observed_at`), not `session_metadata`: writing there could create a runtime-less row, which `persistSessionRuntime` reads as evidence of an existing conversation and would change how the first launch is seeded. It is written through whenever a status carries the context figures (the terminal status of each turn), and moved by `rekeySessionSettings`. A projector created for a session with a cold status hydrates `contextUsage` from that row; with no row, it derives it once from the runtime's own record (ADR-0310): Claude Code from the transcript tail's last main-thread assistant usage (the same bounded read the list's `contextTokens` uses) and the model's context window; Codex from the rollout's last `token_count` record (`turn-context-usage.ts`); OpenCode reports none until its first turn. The derived value is written to `session_context`, so the next open and a restart need no transcript read.
+**Context usage is per session.** A small `session_context` table (`session_id` PK, `context_tokens`, `context_max_tokens`, `observed_at`), not `session_metadata`: writing there could create a runtime-less row, which `persistSessionRuntime` reads as evidence of an existing conversation and would change how the first launch is seeded. It is written through whenever a status carries the context figures (the terminal status of each turn), and moved by `rekeySessionSettings`. The field is the existing `SessionStatus.contextUsage` (S5 N8: tokens, max and percent are already there), which gains `observedAt`. A projector created for a session with a cold status hydrates `contextUsage` from that row; with no row, it derives it once from the runtime's own record (ADR-0310): Claude Code from the transcript tail's last main-thread assistant usage (the same bounded read the list's `contextTokens` uses) and the model's context window; Codex from the rollout's last `token_count` record (`turn-context-usage.ts`); OpenCode reports none until its first turn. The derived value is written to `session_context`, so the next open and a restart need no transcript read.
 
 ### X. Extension server API additions (for the Flow extension)
 
 A server extension's `DataProviderContext` gives it secrets, scoped settings, scoped storage (`<dorkHome>/extension-data/<id>/`), a scheduler, `emit`, and its own directory. It runs in-process with no sandbox, so it **could** open any file with Node `fs`, but it has **no sanctioned way to learn `<dorkHome>`** (a project-local extension's `extensionDir` is not under it), **no read of the account registry or usage**, and **no way to take part in an account decision**. The Flow extension needs all three:
 
 - **X1.** `readonly dorkHome: string`, so it reads and writes `<dorkHome>/flow/fleet.json` (with the contract's lock) where the flow CLI also finds it.
-- **X2.** `readonly claudeAccounts: { list(): Promise<ClaudeAccountSummary[]>; usage(): Promise<AccountUsage[]>; onUsage(listener): () => void }`, `ClaudeAccountSummary = { id, path, label, color }` (color resolved). Backed by `readClaudeAccountSettings` and the D2 store. Listeners are removed on extension shutdown and reload.
-- **X3. The account advisor.** `claudeAccounts.registerAdvisor(advisor): () => void`. **One advisor at a time**: a second registration replaces the first and logs a warning naming both extensions; the unregister function removes only its own advisor; shutdown and reload unregister. Held in `accounts/account-advisor.ts`. Every call is bounded at 2 s, and its answer is validated (unknown ids dropped, delays clamped, oversized seeds refused); a failure means the core default for that call, except an agent's or relay's account pick, which is then refused.
+- **X2.** `readonly accounts: { list(): Promise<AccountSummary[]>; usage(runtime?): Promise<AccountUsage[]>; onUsage(listener): () => void; markContinued(sourceSessionId, to: { sessionId, runtime, accountId }): Promise<void> }`, `AccountSummary = { runtime, id, label, color, implicit }` over **every runtime** (S5 N4): registered rows (Claude Code today) and each runtime's implicit `default` (`implicit: true`, color by position). Backed by the registries and the D2 store. `markContinued` lets flow tell core that it moved a claimed session itself (below), so the source's plan becomes `continued` with the new id. Listeners are removed on extension shutdown and reload.
+- **X3. The account advisor.** `accounts.registerAdvisor(advisor): () => void`. **One advisor at a time**: a second registration replaces the first and logs a warning naming both extensions; the unregister function removes only its own advisor; shutdown and reload unregister. Held in `accounts/account-advisor.ts`. Every call is bounded at 2 s, and its answer is validated (unknown ids dropped, delays clamped, oversized seeds refused); a failure means the core default for that call, except an agent's or relay's account pick, which is then refused.
 
 ```ts
 interface AccountAdvisor {
@@ -415,7 +415,21 @@ interface AccountAdvisor {
     info: LimitedSessionInfo,
     targetAccountId: string
   ): CarryOverSeed | Promise<CarryOverSeed>;
+  // Single writer for flow runs (below):
+  claims?(info: SessionInfo): boolean | Promise<boolean>;
+  move?(
+    info: SessionInfo,
+    target: { runtime: string; accountId: string }
+  ): { sessionId: string } | Promise<{ sessionId: string }>;
+  wait?(info: SessionInfo, resumeAt: string | null, autoResume: boolean): void | Promise<void>;
 }
+type SessionInfo = {
+  sessionId: string;
+  cwd: string;
+  runtime: string;
+  accountId: string | null;
+  trackerItem?: { id: string };
+};
 type AccountCandidate = { id: string; label: string | null; color: string; usage: AccountUsage };
 type AdvisorContext = {
   purpose: 'launch' | 'continue';
@@ -426,7 +440,13 @@ type AdvisorContext = {
   excludeAccountId?: string;
 };
 type AdvisorRanking = {
-  accounts: { id: string; eligible: boolean; reason: string; badge?: 'recommended' | 'reserved' }[]; // ordered; an omitted id is hidden
+  accounts: {
+    runtime?: string;
+    id: string;
+    eligible: boolean;
+    reason: string;
+    badge?: 'recommended' | 'reserved';
+  }[]; // ordered; an omitted id is hidden; runtime defaults to the session's (another runtime = cross-runtime fallback, S5 N3)
   recommendedId: string | null;
 };
 type LimitedSessionInfo = {
@@ -448,6 +468,15 @@ type CarryOverSeed = { seedContext: string; prompt?: string };
 
 Flow uses it to hide kept-out accounts, show the main account as `reserved` (eligible only inside its spend-down window), hand work off automatically when `fleet.handoff` is `auto`, wait and resume by itself when the reset is under an hour away, suggest a model fallback, and seed the new session from its checkpoint. **Core consults it for:** D5 and D6-relay account picks (required), D9 ranking, plan and seed (optional; defaults otherwise). A person's own pick is never refused because of it.
 
+**One writer for a flow run** (S5 single-writer rule). A session the advisor **claims** (`claims(info)` true, 2 s) is a flow run, and only flow moves it, so `FlowRun`, the worktree and the session never disagree:
+
+- `POST …/continue` for a claimed session calls `advisor.move(info, target)`; flow runs its own handoff and returns the new session id, which core records as the `continued` plan. Core starts nothing itself.
+- `POST …/wait` for a claimed session records the `waiting` plan for display and calls `advisor.wait(info, resumeAt, autoResume)`, so a person's "Wait for reset" also holds flow's supervisor: the operator outranks the loop. Core arms no resume timer for it; flow resumes it.
+- Core's `auto` timer and auto-resume never fire for a claimed session. An `auto` plan from `onLimited` is shown (the countdown), and flow acts at `fireAt`, then calls `accounts.markContinued`.
+- If `claims`, `move` or `wait` throws or times out, the action is refused (`503`, "Flow could not be reached, so this was not changed.") rather than risk two writers. A session nobody claims (no advisor, or `claims` false) follows D9 unchanged.
+
+**Plugin-carried extensions** (X4, confirmed: extension discovery scans only `<dorkHome>/extensions/` and `<cwd>/.dork/extensions/`, so an extension shipped inside an installed marketplace plugin, which is how the Flow extension ships, is compiled at install but never found). Discovery also scans `<dorkHome>/plugins/*/.dork/extensions/*` (global) and `<cwd>/.dork/plugins/*/.dork/extensions/*` (local), per ADR `260926-153107` (drafted by the UI spec). The existing gates stay: extensions are off by default and each needs the person's one-time `approvedToRun`; the install disclosure lists the extension; a local record never takes over a core or approved id; a duplicate id across plugins resolves by sorted name with a warning; uninstalling the plugin disables its extensions and clears their approval. This is on the critical path for the Flow tab and the advisor.
+
 Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/shared`); `contributing/extension-authoring.md` documents them. The client half needs nothing new: the Flow tab calls its own server routes, and the core note finds the tab through the slot registry (§10).
 
 ## 7. API and event summary
@@ -468,7 +497,7 @@ Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/share
 | Notification | `account.limited`                                                                                                                                              | notable       | D4     |
 | REST         | `GET /api/sessions/:id/continue-options`, `POST /api/sessions/:id/continue` (`account` and/or `model`), `POST …/wait` (`autoResume`), `POST …/continue/cancel` | GET/POST      | D9     |
 | Notification | `account.reset`                                                                                                                                                | notable       | D9     |
-| Extension    | `ctx.dorkHome`, `ctx.claudeAccounts.{list, usage, onUsage, registerAdvisor}`                                                                                   |               | X1-X3  |
+| Extension    | `ctx.dorkHome`, `ctx.accounts.{list, usage, onUsage, markContinued, registerAdvisor}`, plugin-carried extensions (X4)                                          |               | X1-X3  |
 
 ## 8. Compliance (`research/anthropic-tos-compliance.md`)
 
@@ -495,7 +524,7 @@ Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/share
 - **Settings → Runtimes → Claude accounts:** `GET /api/config` `claudeCode.accounts[]` (`id`, `label`, `color`, `colorIsDefault`), writing `color` through the existing `PATCH /api/config`; the 5-hour and weekly bars from `GET …/accounts/usage` plus the `account_usage` event (`windows[key = 'five_hour' | 'seven_day']`: `usedPct`, `resetsAt`, `expired`).
 - **The "Flow uses these accounts for your work. Choose how in Settings → Flow." note:** shown when 2+ accounts are registered **and** `useSlotContributions('settings.tabs')` holds `FLOW_FLEET_SETTINGS_TAB_ID` (`'flow:fleet'`: the client namespaces contribution ids as `<extensionId>:<id>`, and the Flow extension registers tab `fleet`). The link is `useSettingsDeepLink().open(FLOW_FLEET_SETTINGS_TAB_ID)`; `tabbed-dialog.tsx` already resolves extension tab ids. No server work. The id is a cross-repo constant: the Flow extension's manifest id and tab id must produce it (recorded for the S1/S6 authors).
 - **Status-bar chip, sidebar dots, header badge:** `Session.accountId`, `Session.status.limit`, `sessionDisplayState`, `AccountUsage.state` / `limit`, `Session.trackerItem`.
-- **The out-of-usage notice, "Continue on another account" and "Wait for reset" (D10):** `Session.status.limit.state` (the nine states of D9 plus the derived `near-limit`), `limit.plan` (countdowns from `fireAt` and `resumeAt`; `moved` points at `plan.sessionId`), `limit.modelFallback` and `limit.allOut`, `GET …/continue-options` (ordered accounts with reasons, badges and the recommended id), `POST …/continue`, `POST …/wait`, `POST …/continue/cancel`. Countdowns for `plan.mode === 'auto'` (`fireAt`) and `'waiting'` (`resumeAt`).
+- **The out-of-usage notice, "Continue on another account" and "Wait for reset" (D10):** `Session.status.limit.state` (the eight limit states of D9 plus the derived `near-limit`), `limit.plan` (countdowns from `fireAt` and `resumeAt`; `moved` points at `plan.sessionId`), `limit.modelFallback` and `limit.allOut`, `GET …/continue-options` (ordered accounts with reasons, badges and the recommended id), `POST …/continue`, `POST …/wait`, `POST …/continue/cancel`. Countdowns for `plan.mode === 'auto'` (`fireAt`) and `'waiting'` (`resumeAt`).
 
 ## 11. Testing
 
@@ -535,6 +564,8 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 - **D7 status is absent when a session is not live here,** rather than reading every transcript.
 - **D8 reads flow's file** (contract §1.3); no core column, no core MCP tool for it. A non-flow launcher has no link, by design until the store moves into DorkOS (flow SPEC v2).
 - **No advisor means no agent or relay account pick** (review): the contract spends nothing until the operator opts in, and core has no policy of its own. **The advisor never refuses a person's pick,** and a schedule's account is an approved choice, so it is not checked either.
+- **One writer for a flow run** (orchestrator, from S5): a session the advisor claims is moved and held only by flow (`move`, `wait`, `markContinued`); core refuses rather than guess when flow cannot be reached.
+- **Plugin-carried extensions are discovered** (X4): the Flow extension ships inside the flow plugin, and without this it never loads.
 - **D9 is core, and the advisor only steers it** (orchestrator, 2026-09-26): without flow, a person still sees the notice, a ranked list, continue and wait. One advisor, last registration wins, because two policies giving different answers for one limit has no good merge.
 - **The default carry-over summary uses no model** (operator): the exhausted account cannot run one, and a deterministic digest is testable. It carries a pointer to the old transcript so the new session, on an account that can think, reads more itself when it needs to.
 - **A reset is confirmed by a reading, not the clock:** reset times are approximate, and a resume that hits the limit again wastes a turn.
