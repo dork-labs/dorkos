@@ -99,6 +99,8 @@ export interface CardDecision {
   changes: ConnectorReconciliationGrantSelection[];
   /** Agents that hold access now and would lose all of it. */
   removedAgentIds: string[];
+  /** Agents on Read and write that the chosen level would drop to Read. */
+  downgradedAgentIds: string[];
   /** A newly picked agent has no level yet because the switch is mixed. */
   needsLevel: boolean;
 }
@@ -117,6 +119,9 @@ export interface CardDecision {
  *   cannot express that set, so it never overwrites it.
  * - An agent in scope that had access and is no longer picked loses it, and
  *   is named in {@link CardDecision.removedAgentIds} so the card can say so.
+ * - A preset holder moved from Read and write to Read is named in
+ *   {@link CardDecision.downgradedAgentIds}; with `allowDowngrade: false` (the
+ *   chat's one-agent answer) it keeps its current access instead.
  *
  * @param preview - Server snapshot the decision is made against.
  * @param decision - What the person chose.
@@ -124,6 +129,7 @@ export interface CardDecision {
  * @param decision.picked - Agents the person picked.
  * @param decision.level - The chosen level, or `null` while the switch is mixed.
  * @param decision.levelTouched - Whether the person picked a level on the switch.
+ * @param decision.allowDowngrade - Whether the decision may lower a preset (default true).
  */
 export function cardDecision(
   preview: ConnectorReconciliationPreview,
@@ -132,11 +138,13 @@ export function cardDecision(
     picked,
     level,
     levelTouched,
+    allowDowngrade = true,
   }: {
     scope: readonly string[];
     picked: ReadonlySet<string>;
     level: CardAccessLevel | null;
     levelTouched: boolean;
+    allowDowngrade?: boolean;
   }
 ): CardDecision {
   const current = selectionsFromPreview(preview);
@@ -144,6 +152,7 @@ export function cardDecision(
   const inScope = new Set(scope);
   const changes: ConnectorReconciliationGrantSelection[] = [];
   const removedAgentIds: string[] = [];
+  const downgradedAgentIds: string[] = [];
   let needsLevel = false;
   for (const agent of preview.agents) {
     if (!inScope.has(agent.agentId)) continue;
@@ -158,6 +167,9 @@ export function cardDecision(
       after = target ?? before;
     } else if (held === 'custom' || !levelTouched || !target) {
       after = before;
+    } else if (held === 'read-write' && level === 'read') {
+      after = allowDowngrade ? target : before;
+      if (allowDowngrade) downgradedAgentIds.push(agent.agentId);
     } else {
       after = target;
     }
@@ -165,5 +177,5 @@ export function cardDecision(
       changes.push({ agentId: agent.agentId, operationRevisionIds: after });
     }
   }
-  return { changes, removedAgentIds, needsLevel };
+  return { changes, removedAgentIds, downgradedAgentIds, needsLevel };
 }

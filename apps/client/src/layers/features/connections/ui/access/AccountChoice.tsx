@@ -15,7 +15,6 @@ import type { AgentAccessCardProps } from './ConnectionAccessCard';
  * Fixed-agent mode without a known account: find it, and ask which one when
  * there are two. Once one is known, hands off to `renderAccess`.
  */
-/** Fixed-agent mode without a known account: find it, and ask which one when there are two. */
 export function AccountChoice({
   props,
   renderAccess,

@@ -137,6 +137,7 @@ describe('cardDecision', () => {
     ).toEqual({
       changes: [{ agentId: 'ada', operationRevisionIds: [] }],
       removedAgentIds: ['ada'],
+      downgradedAgentIds: [],
       needsLevel: false,
     });
   });
@@ -156,6 +157,7 @@ describe('cardDecision', () => {
     ).toEqual({
       changes: [{ agentId: 'bo', operationRevisionIds: ['read'] }],
       removedAgentIds: [],
+      downgradedAgentIds: [],
       needsLevel: false,
     });
   });
@@ -172,7 +174,7 @@ describe('cardDecision', () => {
         level: null,
         levelTouched: false,
       })
-    ).toEqual({ changes: [], removedAgentIds: [], needsLevel: false });
+    ).toEqual({ changes: [], removedAgentIds: [], downgradedAgentIds: [], needsLevel: false });
     expect(
       cardDecision(snapshot, {
         scope: ALL,
@@ -180,7 +182,7 @@ describe('cardDecision', () => {
         level: null,
         levelTouched: false,
       })
-    ).toEqual({ changes: [], removedAgentIds: [], needsLevel: true });
+    ).toEqual({ changes: [], removedAgentIds: [], downgradedAgentIds: [], needsLevel: true });
   });
 
   it('writes nothing when the decision matches what the server already holds', () => {
@@ -193,5 +195,27 @@ describe('cardDecision', () => {
         levelTouched: true,
       }).changes
     ).toEqual([]);
+  });
+
+  it('names a downgrade, and never makes one when downgrades are not allowed', () => {
+    const snapshot = preview([{ agentId: 'ada', operationRevisionIds: ['read', 'send'] }]);
+    const choice = {
+      scope: ALL,
+      picked: new Set(['ada']),
+      level: 'read' as const,
+      levelTouched: true,
+    };
+    expect(cardDecision(snapshot, choice)).toEqual({
+      changes: [{ agentId: 'ada', operationRevisionIds: ['read'] }],
+      removedAgentIds: [],
+      downgradedAgentIds: ['ada'],
+      needsLevel: false,
+    });
+    expect(cardDecision(snapshot, { ...choice, allowDowngrade: false })).toEqual({
+      changes: [],
+      removedAgentIds: [],
+      downgradedAgentIds: [],
+      needsLevel: false,
+    });
   });
 });

@@ -3,10 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import {
-  Badge,
   Button,
-  Checkbox,
-  Label,
   QueryErrorState,
   SegmentedControl,
   SegmentedControlItem,
@@ -16,11 +13,8 @@ import {
   cardDecision,
   heldAccess,
   initialCardLevel,
-  rankAgents,
-  VISIBLE_AGENT_LIMIT,
   type CardAccessLevel,
   type CardDecision,
-  type HeldAccess,
 } from '../../lib/access-card-selection';
 import {
   revisionIdsForAccessLevel,
@@ -30,6 +24,8 @@ import { useAccessReconciliation } from '../../model/use-access-reconciliation';
 import { AccessCardFrame } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
+import { AgentChecklist } from './AgentChecklist';
+import { joinNames, LEVEL_LABELS } from './access-labels';
 
 interface SharedCardProps {
   /** The app's display name, e.g. "Gmail". */
@@ -74,24 +70,6 @@ export interface AgentAccessCardProps extends SharedCardProps {
 
 /** Props for {@link ConnectionAccessCard}. */
 export type ConnectionAccessCardProps = PageAccessCardProps | AgentAccessCardProps;
-
-const LEVEL_LABELS: Record<CardAccessLevel, string> = {
-  read: 'Read',
-  'read-write': 'Read and write',
-};
-
-/** What a row says an agent holds today. */
-const HELD_LABELS: Record<Exclude<HeldAccess, 'none'>, string> = {
-  ...LEVEL_LABELS,
-  custom: 'Exact actions',
-};
-
-/** "Ada", "Ada and Bo", "Ada, Bo and Cy". */
-function joinNames(names: string[]): string {
-  return names.length <= 1
-    ? (names[0] ?? '')
-    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
 
 /**
  * "Who can use this app, and what can they do?" as one card, shared by the
@@ -200,8 +178,10 @@ function AccessStep(
             picked,
             level,
             levelTouched: fixedAgentId !== null || levelTouched,
+            // A chat answer can only raise an agent's access, never lower it.
+            allowDowngrade: fixedAgentId === null,
           })
-        : { changes: [], removedAgentIds: [], needsLevel: false },
+        : { changes: [], removedAgentIds: [], downgradedAgentIds: [], needsLevel: false },
     [preview, picked, level, levelTouched, fixedAgentId]
   );
 
@@ -350,8 +330,14 @@ function AccessEditor({
   const current = selectionsFromPreview(preview);
   const readIds = revisionIdsForAccessLevel(preview.candidates, 'read');
   const readWriteIds = revisionIdsForAccessLevel(preview.candidates, 'read-write');
-  const levels: CardAccessLevel[] =
+  const offered: CardAccessLevel[] =
     readWriteIds.length > readIds.length ? ['read', 'read-write'] : ['read'];
+  // The chat's one-agent answer only offers levels at or above what it holds.
+  const levels =
+    props.mode === 'agent' &&
+    heldAccess(preview.candidates, current[props.agentId] ?? []) === 'read-write'
+      ? offered.filter((option) => option === 'read-write')
+      : offered;
   const nothingToGrant = readWriteIds.length === 0;
 
   const exactActionsLink = props.onEditExactActions && (
@@ -380,57 +366,18 @@ function AccessEditor({
       </p>
     );
   } else {
-    const ranked = rankAgents(preview, {
-      preferredAgentIds: props.preferredAgentIds,
-      systemAgentIds,
-    });
-    const visible = showAll
-      ? ranked
-      : ranked.filter((agent, index) => index < VISIBLE_AGENT_LIMIT || picked.has(agent.agentId));
     who = (
-      <fieldset className="space-y-1">
-        <legend className="sr-only">Agents that can use {props.serviceName}</legend>
-        {visible.map((agent) => {
-          const id = `${baseId}-${agent.agentId}`;
-          const held = heldAccess(preview.candidates, current[agent.agentId] ?? []);
-          return (
-            <div
-              key={agent.agentId}
-              className="hover:bg-muted/60 flex min-h-11 items-center gap-3 rounded-md px-2"
-            >
-              <Checkbox
-                id={id}
-                checked={picked.has(agent.agentId)}
-                onCheckedChange={(next) => {
-                  const updated = new Set(picked);
-                  if (next === true) updated.add(agent.agentId);
-                  else updated.delete(agent.agentId);
-                  setPicked(updated);
-                }}
-              />
-              <Label htmlFor={id} className="min-w-0 flex-1 cursor-pointer py-2 font-normal">
-                <span className="truncate">{agent.displayName}</span>
-              </Label>
-              {held !== 'none' && (
-                <Badge size="xs" variant="secondary" aria-label={`Now: ${HELD_LABELS[held]}`}>
-                  {HELD_LABELS[held]}
-                </Badge>
-              )}
-            </div>
-          );
-        })}
-        {visible.length < ranked.length && (
-          <Button variant="ghost" size="sm" onClick={() => setShowAll(true)}>
-            Show all {ranked.length}
-          </Button>
-        )}
-        {decision.removedAgentIds.map((agentId) => (
-          <p key={agentId} className="text-warning px-2 text-xs">
-            {preview.agents.find((agent) => agent.agentId === agentId)?.displayName} will lose
-            access to {props.serviceName}.
-          </p>
-        ))}
-      </fieldset>
+      <AgentChecklist
+        preview={preview}
+        serviceName={props.serviceName}
+        preferredAgentIds={props.preferredAgentIds}
+        systemAgentIds={systemAgentIds}
+        picked={picked}
+        setPicked={setPicked}
+        decision={decision}
+        showAll={showAll}
+        setShowAll={setShowAll}
+      />
     );
   }
 
@@ -468,7 +415,7 @@ function AccessEditor({
                 ))}
               </SegmentedControl>
             ) : (
-              <p className="text-sm">Read</p>
+              <p className="text-sm">{LEVEL_LABELS[levels[0]]}</p>
             )}
             {level === null && (
               <p className="text-muted-foreground text-xs">

@@ -352,6 +352,24 @@ describe('ConnectionAccessCard — deciding for one agent never touches anyone e
     expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
   });
 
+  it('never offers a lower level than the agent already holds', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }])
+    );
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-bo',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+    });
+    expect(await screen.findByText('Bo can already do this.')).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'Read' })).not.toBeInTheDocument();
+    expect(screen.getByText('Read and write')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
+  });
+
   it('keeps Allow disabled for an agent that is not registered here', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview(OTHERS));
@@ -411,6 +429,12 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
         { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] },
       ])
     );
+    vi.mocked(transport.applyConnectorReconciliation).mockImplementation(async (request) => ({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      grants: request.grants,
+    }));
     renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
 
     expect(await screen.findByLabelText('Now: Read and write')).toBeInTheDocument();
@@ -425,7 +449,9 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
     await user.click(screen.getByRole('checkbox', { name: 'Cy' }));
     expect(save).toBeDisabled();
 
+    expect(screen.queryByText('Ada will lose write access.')).not.toBeInTheDocument();
     await user.click(screen.getByRole('radio', { name: 'Read' }));
+    expect(screen.getByText('Ada will lose write access.')).toBeInTheDocument();
     await user.click(save);
     await waitFor(() =>
       expect(transport.applyConnectorReconciliation).toHaveBeenCalledWith({
@@ -436,6 +462,50 @@ describe('ConnectionAccessCard — removals and mixed access are visible before 
         ],
       })
     );
+    expect(await screen.findByTestId('connector-access-outcome')).toHaveTextContent(
+      'Access updated'
+    );
+  });
+
+  it('will not save a removal alone while a newly ticked agent still has no level', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([
+        { agentId: 'agent-ada', operationRevisionIds: ['read-v1', 'send-v1'] },
+        { agentId: 'agent-bo', operationRevisionIds: ['read-v1'] },
+      ])
+    );
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Cy' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Bo' }));
+    const save = screen.getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    await user.click(save);
+    expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('radio', { name: 'Read and write' }));
+    expect(save).toBeEnabled();
+  });
+
+  it('keeps every agent with access in view, even after unticking it', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    const withAccess = ['ada', 'bo', 'cy', 'di', 'ed', 'flo'];
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview(
+        withAccess.map((name) => ({
+          agentId: `agent-${name}`,
+          operationRevisionIds: ['read-v1'],
+        }))
+      )
+    );
+    renderCard(transport, { mode: 'page', connectionId: 'connection-1', serviceName: 'Gmail' });
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Flo' }));
+    expect(screen.getByRole('checkbox', { name: 'Flo' })).not.toBeChecked();
+    expect(screen.getByText('Flo will lose access to Gmail.')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Gus' })).not.toBeInTheDocument();
   });
 });
 

@@ -62,11 +62,14 @@ async function savePending(transport: Transport) {
   return hook;
 }
 
-function readBack(agentSync: ConnectorAuthoritySyncState) {
+function readBack(
+  agentSync: ConnectorAuthoritySyncState,
+  connectionStatus: 'ready' | 'migration_needs_reconcile' = 'ready'
+) {
   return {
     connection: {
       connectionId: 'connection-1',
-      reconciliationStatus: 'ready',
+      reconciliationStatus: connectionStatus,
       authoritySync: { status: 'ready' },
     },
     agents: [{ ...GRANT, reconciliationStatus: 'ready', authoritySync: agentSync }],
@@ -124,5 +127,17 @@ describe('useAccessReconciliation', () => {
     act(() => hook.result.current.apply([GRANT]));
     expect(hook.result.current.needsRefresh).toBe(true);
     expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+  });
+
+  it('reports needs review when the check reads the connection needing reconciliation', async () => {
+    const transport = createMockTransport();
+    const hook = await savePending(transport);
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue(
+      readBack({ status: 'ready' }, 'migration_needs_reconcile')
+    );
+
+    act(() => hook.result.current.checkSync());
+    await waitFor(() => expect(hook.result.current.needsReconciliation).toBe(true));
+    expect(hook.result.current.saved).toBe(false);
   });
 });
