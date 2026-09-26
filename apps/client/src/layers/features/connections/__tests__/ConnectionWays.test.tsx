@@ -223,9 +223,13 @@ describe('ConnectionWays', () => {
     expect(within(dialog).getByText('Notion (team)')).toBeInTheDocument();
     // No form until the person agrees.
     expect(within(row).queryByLabelText('Composio API key')).toBeNull();
-    await user.click(within(dialog).getByRole('button', { name: 'Change key and pause 2 apps' }));
+    expect(dialog).toHaveTextContent('Nothing changes until you save the new key.');
+    await user.click(within(dialog).getByRole('button', { name: 'Continue to a new key' }));
 
-    await user.type(await within(row).findByLabelText('Composio API key'), 'ak_new');
+    // Continuing only opens the form: nothing is saved or paused yet.
+    const input = await within(row).findByLabelText('Composio API key');
+    expect(transport.putConnectorCredential).not.toHaveBeenCalled();
+    await user.type(input, 'ak_new');
     await user.click(within(row).getByRole('button', { name: 'Save key' }));
     await waitFor(() =>
       expect(transport.putConnectorCredential).toHaveBeenCalledWith('composio', 'ak_new')

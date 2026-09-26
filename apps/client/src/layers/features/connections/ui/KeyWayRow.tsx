@@ -160,7 +160,8 @@ export function KeyWayRow({
                 }
               />
               <p className="text-muted-foreground text-sm">
-                If the new key doesn’t work, every app on this key stops until you fix it.
+                Nothing changes until you save the new key. If it doesn’t work, every app on this
+                key stops until you fix it.
               </p>
               <AlertDialogFooter>
                 <AlertDialogCancel>Keep this key</AlertDialogCancel>
@@ -170,9 +171,8 @@ export function KeyWayRow({
                     setChanging(true);
                   }}
                 >
-                  {stopping.length > 0
-                    ? `Change key and pause ${appCount(stopping.length)}`
-                    : 'Change key'}
+                  {/* Only opens the form: nothing pauses until the new key is saved. */}
+                  Continue to a new key
                 </AlertDialogAction>
               </AlertDialogFooter>
             </>
