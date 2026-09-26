@@ -1,5 +1,5 @@
 import { useSafeSearch } from '@/layers/shared/model';
-import type { SessionSearch } from '@/router';
+import type { SessionSearch } from '@/layers/shared/lib';
 
 /**
  * Read session search params safely from any route — and any platform.

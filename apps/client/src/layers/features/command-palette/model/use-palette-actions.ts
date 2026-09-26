@@ -12,7 +12,7 @@ import {
   useFeedbackDialogStore,
   useTransport,
 } from '@/layers/shared/model';
-import { openLink, reportClientError, useCopyFeedback } from '@/layers/shared/lib';
+import { openLink, reportClientError, useCopyFeedback, toSession } from '@/layers/shared/lib';
 import { useRemoteAccessActions, useRemoteAccessSnapshot } from '@/layers/entities/tunnel';
 import {
   useDirectoryState,
@@ -174,7 +174,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       useInteractionStore.getState().recordOpened('session', sessionId);
       if (dir) recordAgentOpened(dir);
       closePalette();
-      navigate({ to: '/session', search: { session: sessionId, dir: dir ?? undefined } });
+      navigate(toSession({ session: sessionId, dir: dir ?? undefined }));
     },
     [closePalette, navigate, recordAgentOpened]
   );
@@ -221,10 +221,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           store.updateSession(resolved.sessionId, {
             input: composeCommandDraft(command, draft),
           });
-          void navigate({
-            to: '/session',
-            search: { session: resolved.sessionId, dir: selectedCwd ?? undefined },
-          });
+          void navigate(toSession({ session: resolved.sessionId, dir: selectedCwd ?? undefined }));
         })
         .catch((error: unknown) => {
           // `resolveSessionForCwd` handles its own failures, so anything landing

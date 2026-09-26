@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 
 import { useAppStore } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
+import { toSession } from '@/layers/shared/lib';
 
 /** Open a fresh conversation in the chosen directory, preserving an optional seed. */
 export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
@@ -12,10 +13,7 @@ export function useStartNewSession(): (dir?: string, options?: StartNewSessionOp
   return useCallback(
     (dir?: string, options?: StartNewSessionOptions) => {
       const target = dir ?? selectedCwd ?? undefined;
-      void navigate({
-        to: '/session',
-        search: { dir: target, session: crypto.randomUUID(), seed: options?.seed },
-      });
+      void navigate(toSession({ dir: target, session: crypto.randomUUID(), seed: options?.seed }));
     },
     [navigate, selectedCwd]
   );
@@ -61,8 +59,7 @@ export function useSessionId(): [
   const setSessionId = useCallback(
     (id: string | null, options?: SetSessionIdOptions) => {
       navigate({
-        to: '/session',
-        search: (prev) => ({
+        ...toSession((prev) => ({
           ...prev,
           session: id ?? undefined,
           // Set explicitly so a fresh navigation without a link drops any prior
@@ -82,7 +79,7 @@ export function useSessionId(): [
           prompt: undefined,
           send: undefined,
           seed: undefined,
-        }),
+        })),
         replace: options?.replace,
       });
     },

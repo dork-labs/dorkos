@@ -26,6 +26,7 @@ import type { SearchHit } from '@dorkos/shared/search-schemas';
 // the transport), so putting `basename` on it would break the thing the deep
 // import exists for. Left as-is rather than "fixed".
 import { basename } from '@/layers/shared/lib/basename';
+import { toSession, type SessionTarget } from '@/layers/shared/lib';
 
 /** The source id the room log is registered under, server-side. */
 const ROOMS_SOURCE = 'rooms';
@@ -64,11 +65,11 @@ const EXACT_LANDING_SOURCES: readonly string[] = ['claude-code', 'opencode'];
 /** Where one hit opens, as a TanStack Router destination. */
 export type MessageSearchTarget =
   | { kind: 'room'; to: '/channels'; search: { id: string; entry: number } }
-  | {
-      kind: 'session';
-      to: '/session';
-      search: { session: string; dir: string | undefined; message?: string };
-    }
+  | ({ kind: 'session' } & SessionTarget<{
+      session: string;
+      dir: string | undefined;
+      message?: string;
+    }>)
   /**
    * Nowhere — this hit has no DorkOS session behind it, so the row is shown
    * without a link (DOR-2020).
@@ -123,12 +124,11 @@ export function messageSearchTarget(hit: SearchHit): MessageSearchTarget {
   const lands = hit.messageId !== undefined && EXACT_LANDING_SOURCES.includes(hit.source);
   return {
     kind: 'session',
-    to: '/session',
-    search: {
+    ...toSession({
       session: hit.sessionId,
       dir: hit.containerPath ?? undefined,
       ...(lands ? { message: hit.messageId } : {}),
-    },
+    }),
   };
 }
 

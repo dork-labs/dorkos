@@ -352,3 +352,7 @@ export { isNewer } from './version-compare';
 // Ask — and one of them would otherwise have to reach into the other's lib.
 export { describeDecisionRefusal } from './decision-refusal';
 export type { DecisionRefusal } from './decision-refusal';
+
+// Every link into a conversation — navigate targets and hrefs alike (DOR-2077).
+export { SESSION_ROUTE, sessionHref, toSession, sessionSearchSchema } from './session-link';
+export type { SessionTarget, SessionSearch } from './session-link';

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { PendingInteractionDTO } from '@dorkos/shared/schemas';
+import { sessionPath } from '@dorkos/shared/session-link';
 import type {
   NotificationDTO,
   NotificationTier,
@@ -112,7 +113,7 @@ export function replyEligibility(
 
 /** The client route a click on the Ask's banner opens. */
 export function askDeepLink(ask: InteractionPendingEvent): string {
-  return `/session?session=${encodeURIComponent(ask.sessionId)}`;
+  return sessionPath({ session: ask.sessionId });
 }
 
 /**
@@ -172,7 +173,7 @@ export function notificationDeepLink(dto: NotificationDTO): string {
 
   switch (dto.subject.type) {
     case 'session':
-      return `/session?session=${encodeURIComponent(dto.sessionId ?? dto.subject.id)}`;
+      return sessionPath({ session: dto.sessionId ?? dto.subject.id });
     case 'room':
       return `/channels?id=${encodeURIComponent(dto.roomId ?? dto.subject.id)}`;
     case 'agent':

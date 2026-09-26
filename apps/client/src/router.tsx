@@ -33,7 +33,15 @@ import {
   TitleBar,
   type RouteHeader,
 } from '@/layers/widgets/one-bar';
-import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
+import {
+  DEFAULT_TEAM_VIEW,
+  LEGACY_TABLE_VIEW,
+  TEAM_VIEWS,
+  SESSION_ROUTE,
+  toSession,
+  sessionSearchSchema,
+  type SessionSearch,
+} from '@/layers/shared/lib';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
 import { createCommunityRouteMemory } from './app/community-route-memory';
@@ -90,69 +98,6 @@ const appShellRoute = createRoute({
 });
 
 // ── Search param schemas ────────────────────────────────────
-
-/**
- * Search params for the `/session` route.
- *
- * `runtime` is the launch-time runtime selection (e.g. `?runtime=opencode`):
- * it is carried into the first message POST as the `runtime` hint that binds a
- * brand-new session to that runtime (first-write-wins server-side).
- *
- * `prompt` seeds the composer of a freshly-launched session — the "Run this
- * with…" re-run carries the original prompt into a new session bound to another
- * runtime (ADR-0255: a switch is always a fresh session, never a history
- * transplant), and any link (docs, CLI, a marketplace page) can open DorkOS with
- * the question already written. It applies to a conversation with no messages
- * and to nothing else: a prompt aimed at a session that already has history is
- * ignored, by the loader below AND by `useLaunchPrompt` (which is the guard that
- * still holds for a URL somebody typed with a `session` id already in it).
- *
- * `send=1` turns that seed into a turn: the composer is filled and then
- * submitted through the composer's own handler, exactly once. Spelled as the
- * single literal `'1'` and `.catch()`ed, so `?send=0` or `?send=please` is
- * ignored rather than throwing the route — and so nothing that is not an
- * explicit opt-in can ever start a turn on somebody's behalf. Both params are
- * dropped from the URL the moment they are consumed, so a refresh or a Back does
- * not re-issue them.
- *
- * `seed=dorkbot-help` is the sidebar's ✦ Ask DorkBot press (BC-48). It carries
- * no words: the composer stays empty and focused, and the chat model builds a
- * hidden preamble locally — the page you came from, your fleet, your version,
- * what is currently broken — which rides the first send as `seedContext` and
- * nothing after it. An ENUMERATED literal and `.catch()`ed like `send`, because
- * this param names a situation the client knows how to describe, not text an
- * address bar supplies: a URL cannot dictate what an agent is told. Spent the
- * moment it is taken, exactly as `prompt`/`send` are.
- *
- * `continuedFrom` is the `/clear` intent's "linked back" reference (DOR-109) —
- * the id of the session this fresh one continues from. A lightweight client-side
- * link recorded in the URL only; there is no DB column.
- *
- * `message` is the conversation's answer to `entry` on a room (DOR-1579): the
- * id of the one message the transcript should open on, which a message-search
- * hit puts there. It is the store's own id for that message — a JSONL record
- * `uuid`, an OpenCode message id — never a position, because the index and the
- * session view count messages differently and only an id survives that.
- * Unknown or stale, it lands nowhere and the conversation opens as it always
- * does, so it is a plain optional string with nothing to `.catch()`.
- *
- * @internal Exported for testing only.
- */
-export const sessionSearchSchema = mergeDialogSearch(
-  z.object({
-    session: z.string().optional(),
-    dir: z.string().optional(),
-    message: z.string().optional(),
-    runtime: z.string().optional(),
-    prompt: z.string().optional(),
-    send: z.literal('1').optional().catch(undefined),
-    seed: z.literal('dorkbot-help').optional().catch(undefined),
-    continuedFrom: z.string().optional(),
-  })
-);
-
-/** Search params available on the `/session` route. */
-export type SessionSearch = z.infer<typeof sessionSearchSchema>;
 
 /**
  * `?entry=` — the `seq` of the one message a room should land on.
@@ -309,10 +254,7 @@ const indexRoute = createRoute({
     const params = new URLSearchParams(location.searchStr);
     const session = params.get('session');
     if (session) {
-      throw redirect({
-        to: '/session',
-        search: { session, dir: params.get('dir') ?? undefined },
-      });
+      throw redirect(toSession({ session, dir: params.get('dir') ?? undefined }));
     }
   },
 });
@@ -401,7 +343,7 @@ export async function sessionRouteLoader({
   // params below still override `prev`, so they are dropped for a resumed
   // conversation exactly as before.
   throw redirect({
-    to: '/session',
+    to: SESSION_ROUTE,
     search: (prev) => ({
       ...prev,
       session: resolved.sessionId,
@@ -442,7 +384,7 @@ export async function sessionRouteLoader({
 
 const sessionRoute = createRoute({
   getParentRoute: () => appShellRoute,
-  path: '/session',
+  path: SESSION_ROUTE,
   staticData: { header: SessionHeader },
   validateSearch: zodValidator(sessionSearchSchema),
   component: SessionPage,

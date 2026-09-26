@@ -75,8 +75,10 @@ describe('TunnelConnected', () => {
   it('copies the session URL when session link button is clicked', () => {
     render(<TunnelConnected {...defaultProps} activeSessionId="sess-abc123" />);
     fireEvent.click(screen.getByText('Session link'));
+    // The route path AND the id. This used to pin the origin plus `?session=`
+    // with no `/session` in front of it (DOR-2077).
     expect(mockClipboardWriteText).toHaveBeenCalledWith(
-      'https://abc123.ngrok.io?session=sess-abc123'
+      'https://abc123.ngrok.io/session?session=sess-abc123'
     );
   });
 

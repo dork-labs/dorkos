@@ -66,6 +66,7 @@ import { roomEntryRowKind, toMessageAuthor, type RosterAuthor } from '../lib/roo
 import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
+import { useNoticeSessionLink } from '../model/use-notice-session-link';
 import { makeRoomBodyRenderer } from './render-room-body';
 
 interface RoomMessageProps {
@@ -251,6 +252,9 @@ export function RoomMessage({
   const subjectId = entry.body.subjectAuthorId ?? entry.authorId;
   const subjectRef = authors.get(subjectId);
   const subjectAgent = useAgentInfo(subjectRef?.agentRef);
+  // Only a notice that sends the reader to a session gets one; for every other
+  // row this asks nothing.
+  const noticeSessionLink = useNoticeSessionLink(roomId, entry);
 
   // Which of the three lines this is — read once, from `roomEntryRowKind`,
   // which is also what `conversation-row-kinds.test.ts` puts every kind of
@@ -260,7 +264,15 @@ export function RoomMessage({
   const rowKind = roomEntryRowKind(entry);
 
   if (rowKind.kind === 'notice') {
-    return <NoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;
+    return (
+      <NoticeRow
+        entry={entry}
+        feedPosition={feedPosition}
+        rowId={rowId}
+        sessionLink={noticeSessionLink}
+        subjectName={subjectRef?.displayName}
+      />
+    );
   }
 
   // Everything else about a moment's row still applies: it is on the same log,

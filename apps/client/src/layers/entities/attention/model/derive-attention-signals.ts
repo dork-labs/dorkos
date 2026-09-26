@@ -11,6 +11,8 @@ import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { PendingInteractionDTO, Session, Task } from '@dorkos/shared/types';
+// The leaf, not the `shared/lib` barrel: this module is pure and stays that way.
+import { sessionHref } from '@/layers/shared/lib/session-link';
 import type { AttentionSignal } from './attention-signal';
 import { describeInteraction } from './describe-interaction';
 import {
@@ -75,21 +77,6 @@ const SCHEDULE_HREF = '/tasks';
 const SCHEDULE_SECONDARY = 'Wants to run on a timer';
 
 /**
- * The `/session` deep link for one session.
- *
- * Built with `URLSearchParams` rather than by interpolation because a `cwd` is
- * a filesystem path and routinely contains characters (`&`, spaces, `#`) that
- * silently truncate a hand-built query string.
- *
- * @param session - The session to open.
- */
-function sessionHref(session: Session): string {
-  const params = new URLSearchParams({ session: session.id });
-  if (session.cwd) params.set('dir', session.cwd);
-  return `/session?${params.toString()}`;
-}
-
-/**
  * What to call the agent behind a session.
  *
  * The disambiguated roster name when the session names a directory the roster
@@ -123,7 +110,9 @@ function sessionSignal(
   return {
     ...rest,
     primary: who ?? session.title,
-    deepLink: sessionHref(session),
+    // The directory rides along when the session has one, so the route does
+    // not have to guess it (DOR-1836).
+    deepLink: sessionHref({ session: session.id, dir: session.cwd ?? undefined }),
     ...(session.cwd ? { agentPath: session.cwd } : {}),
   };
 }

@@ -204,6 +204,48 @@ export const RoomNoticeCodeSchema = z
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
 
+/**
+ * The notice codes whose words send the reader to the subject agent's session —
+ * "Open Ana's session to see what went wrong" (`turn_failed`), "Open Ana's
+ * session to answer" (`awaiting_approval`).
+ *
+ * A line that tells somebody to go somewhere has to take them there, so a client
+ * draws a link to that session beside every notice with one of these codes
+ * (DOR-2077). The link is resolved from `subjectAuthorId` and the room's session
+ * bindings when it is drawn, never stamped on the entry: a room rebinds an
+ * agent's session after every turn, so an id written into the log would go stale
+ * (DOR-1974). The server's notice-copy test pins the other direction — a notice
+ * that says "Open …'s session" and is missing from this list fails it.
+ */
+export const SESSION_POINTER_NOTICE_CODES: readonly RoomNoticeCode[] = [
+  'turn_failed',
+  'awaiting_approval',
+];
+
+/**
+ * The words in a session-pointer notice that send the reader there — "Open
+ * Ana's session". A client turns exactly these words into the link, so the line
+ * says it once rather than once as a sentence and again as a button. The
+ * server's notice-copy test holds every notice in
+ * {@link SESSION_POINTER_NOTICE_CODES} to containing them.
+ *
+ * Built from the agent's name rather than matched by pattern, because a notice
+ * STARTS with that name: an agent called "Open Interpreter" would otherwise have
+ * the link begin at the first word of the sentence.
+ *
+ * @param agentName - The display name the notice was written with.
+ */
+export function sessionPointerPhrase(agentName: string): string {
+  return `Open ${agentName}'s session`;
+}
+
+/**
+ * The same words when the agent's name is not known to the reader (it left the
+ * roster, or was renamed after the notice was written). Looser than
+ * {@link sessionPointerPhrase} and used only in its place.
+ */
+export const SESSION_POINTER_PATTERN = /Open .+?'s session/;
+
 // === Authors ===
 
 /**
