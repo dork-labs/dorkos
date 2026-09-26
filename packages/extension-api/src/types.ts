@@ -26,6 +26,14 @@ export interface ExtensionRecord {
   origin: 'core' | 'user';
   /** Absolute path to the extension directory. */
   path: string;
+  /**
+   * The installed marketplace plugin this extension came inside, when it was
+   * found under `plugins/<name>/.dork/extensions/` rather than installed
+   * directly. Part of the copy's identity: a person's approval to run it is
+   * bound to this plugin and {@link ExtensionRecord.path}, so another plugin
+   * carrying the same id asks again.
+   */
+  sourcePlugin?: string;
   /** Structured error info (compilation failure, manifest parse error, etc.) */
   error?: { code: string; message: string; details?: string };
   /**
@@ -61,6 +69,8 @@ export interface ExtensionRecordPublic {
   scope: 'global' | 'local';
   /** Whether this extension ships with DorkOS (`'core'`) or was installed by the user (`'user'`). */
   origin: 'core' | 'user';
+  /** The installed marketplace plugin this extension came inside, if any. */
+  sourcePlugin?: string;
   error?: { code: string; message: string; details?: string };
   /**
    * The extension's server half failed to rebuild and the previously loaded

@@ -48,8 +48,9 @@
  *
  * ## Where the record lives, and why it is user config
  *
- * `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`
- * in `core/operator/config-write-policy.ts`.
+ * `~/.dork/config.json` at `extensions.approvedToRun`, with the copy each approval
+ * was given to at `extensions.approvedSources`, both classified `operator-only` in
+ * `core/operator/config-write-policy.ts`.
  *
  * The requirement is that the record of a HUMAN decision must not be writable by
  * the thing the decision is about. Two candidate homes were rejected for reasons
@@ -118,21 +119,39 @@
  *
  * ## What the approval is attached to, and what it is not
  *
- * It is attached to the extension id, so the edit → test → reload loop is asked
- * once and never again. The consequence is stated plainly rather than hidden:
- * approving `foo` trusts whoever can write `foo`'s files from then on, and editing
- * those files never re-asks. That is the deliberate trade named above.
+ * It is attached to ONE COPY of the extension: its id plus where that copy lives
+ * (`extensions.approvedSources`, DOR-2383) — the directory, and the installed
+ * plugin that carries it when it came inside one. It is not attached to the
+ * copy's contents, so the edit → test → reload loop is asked once and never
+ * again. The consequence is stated plainly rather than hidden: approving `foo`
+ * trusts whoever can write `foo`'s files from then on, and editing those files
+ * never re-asks. That is the deliberate trade named above.
  *
- * Two ways an id could change hands underneath an approval are closed, because
- * neither is the person editing their own extension:
+ * The copy half is what an id alone could not say. Extensions also arrive inside
+ * installed marketplace plugins (`plugins/<name>/.dork/extensions/<id>`), an agent
+ * can install a plugin through the marketplace tools, and nothing stops two
+ * plugins carrying the same id. Keyed on the id alone, a second plugin naming an
+ * approved id would have run on a decision made about the first. Keyed on the
+ * copy, it waits for its own approval. An id listed in `approvedToRun` with no
+ * recorded copy counts as not approved; the one exception is an approval given
+ * before copies were recorded, which `ExtensionManager.reload` binds on first
+ * sight to the extension installed directly under `{dorkHome}/extensions/<id>`,
+ * the only copy it could ever have been about.
+ *
+ * Three ways an id could change hands underneath an approval are closed, because
+ * none is the person editing their own extension:
+ *
+ * - **Another copy claiming the id.** A second plugin, or a directory at another
+ *   path, is a different copy, so it asks again (above).
  *
  * - **Replacement by the marketplace.** Uninstalling a package forgets the
  *   approval for every extension it bundled (`flows/uninstall.ts`), and an update
  *   is an uninstall followed by an install, so different code arriving under a
  *   familiar name is asked about again.
- * - **Shadowing from the project tree.** A `{cwd}/.dork/extensions/<id>` directory
- *   is ignored when `<id>` is core or already approved (`extension-discovery.ts`),
- *   so a project file cannot inherit a decision made about the installed copy.
+ * - **Shadowing from the project tree.** A `{cwd}/.dork/extensions/<id>` directory,
+ *   or one inside a plugin installed into the project, is ignored when `<id>` is
+ *   core or approved for some other copy (`extension-discovery.ts`), so a project
+ *   file cannot take the place of the copy a decision was made about.
  *
  * ## Not covered, deliberately
  *
@@ -147,6 +166,16 @@
  *
  * @module services/extensions/extension-load-policy
  */
+import path from 'path';
+import type { ExtensionRecord } from '@dorkos/extension-api';
+import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import type { ExtensionsConfig } from './extension-enable-resolution.js';
+
+/** The fields of an extension record that say which copy of the extension it is. */
+export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'sourcePlugin'>;
+
+/** The two stored halves of a person's approvals: the ids, and the copy each is for. */
+export type ExtensionApprovals = Pick<ExtensionsConfig, 'approvedToRun' | 'approvedSources'>;
 
 /**
  * The machine-readable code every refusal to run unapproved extension code
@@ -157,6 +186,41 @@ export const EXTENSION_NOT_APPROVED_CODE = 'extension_not_approved_to_run';
 /** The short `error` field every refusal to run unapproved extension code carries. */
 export const EXTENSION_NOT_APPROVED_ERROR =
   'Only a person can approve an extension to run inside DorkOS';
+
+/**
+ * The source an approval of this copy records: its directory, and the plugin
+ * that carries it when it came inside one.
+ *
+ * @param copy - The extension record being approved.
+ * @returns The value to store under `extensions.approvedSources[copy.id]`.
+ */
+export function approvedSourceOf(copy: ExtensionCopy): ExtensionApprovedSource {
+  const source: ExtensionApprovedSource = { path: path.resolve(copy.path) };
+  if (copy.sourcePlugin) source.plugin = copy.sourcePlugin;
+  return source;
+}
+
+/**
+ * Whether a person approved THIS copy of the extension: its id is in
+ * `approvedToRun`, and the source recorded for that id is this copy's directory
+ * and carrying plugin.
+ *
+ * An id with no recorded source is not approved. Pure, like
+ * {@link mayRunExtensionCode}.
+ *
+ * @param copy - The extension record in question.
+ * @param approvals - `config.extensions`, or the two approval fields of it.
+ * @returns `true` when the stored approval is for this very copy.
+ */
+export function isApprovedCopy(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  if (!approvals.approvedToRun.includes(copy.id)) return false;
+  const source = approvals.approvedSources?.[copy.id];
+  if (!source) return false;
+  return (
+    path.resolve(source.path) === path.resolve(copy.path) &&
+    (source.plugin ?? null) === (copy.sourcePlugin ?? null)
+  );
+}
 
 /**
  * Whether this extension's code may execute at all — in the DorkOS server process
@@ -172,28 +236,24 @@ export const EXTENSION_NOT_APPROVED_ERROR =
  *
  * Pure: no I/O and no `config-manager` import, matching
  * {@link module:services/extensions/extension-enable-resolution}. Callers pass the
- * stored list so the decision is testable without a config store.
+ * stored approvals so the decision is testable without a config store.
  *
  * Note what is NOT consulted: whether the extension is enabled, whether it
- * compiled, and whether it has a server entry. Approval is about the code, so it
- * outlives every one of those. An extension toggled off and on again is still
- * approved, and one that fails to compile is still approved once it builds.
+ * compiled, whether it has a server entry, and what its files contain. Approval
+ * is about one copy of the code, so it outlives every one of those. An extension
+ * toggled off and on again is still approved, and one that fails to compile is
+ * still approved once it builds.
  *
- * @param id - Extension id.
- * @param origin - `'core'` (staged by DorkOS itself, always allowed) or `'user'`.
- *   Derived from the record's path in `extension-discovery.ts`, never from its id
- *   or its manifest.
- * @param approvedToRun - `config.extensions.approvedToRun`, the ids a person
- *   approved.
+ * @param copy - The extension record. `origin` is `'core'` (staged by DorkOS
+ *   itself, always allowed) or `'user'`, derived from the record's path in
+ *   `extension-discovery.ts`, never from its id or its manifest.
+ * @param approvals - `config.extensions`: the approved ids and the copy each
+ *   approval was given to.
  * @returns `true` when DorkOS may execute this extension's code.
  */
-export function mayRunExtensionCode(
-  id: string,
-  origin: 'core' | 'user',
-  approvedToRun: readonly string[]
-): boolean {
-  if (origin === 'core') return true;
-  return approvedToRun.includes(id);
+export function mayRunExtensionCode(copy: ExtensionCopy, approvals: ExtensionApprovals): boolean {
+  if (copy.origin === 'core') return true;
+  return isApprovedCopy(copy, approvals);
 }
 
 /**

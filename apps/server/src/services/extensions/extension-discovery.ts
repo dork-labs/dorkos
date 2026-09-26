@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
+import type { Dirent } from 'fs';
 import path from 'path';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
 import { gte } from 'semver';
 import {
@@ -8,19 +10,34 @@ import {
   type ExtensionsConfig,
   type CoreExtensionInfo,
 } from './extension-enable-resolution.js';
+import { isApprovedCopy } from './extension-load-policy.js';
 import { logger } from '../../lib/logger.js';
 
 /** Host version for compatibility checking. */
 const HOST_VERSION = '0.1.0';
 
+type DiscoveredRecord = Omit<ExtensionRecord, 'origin'>;
+
 /**
  * Scans filesystem paths for extension directories containing valid
- * `extension.json` manifests. Handles both global (`{dorkHome}/extensions/`)
- * and local (`{cwd}/.dork/extensions/`) scopes, with local overriding global
- * when an extension ID appears in both — except for an id that ships with
- * DorkOS or that a person approved to run code, which a project directory can
- * never take over. When the two scopes name the same directory on disk it is
- * scanned once, as global. See {@link ExtensionDiscovery.discover}.
+ * `extension.json` manifests, in four places:
+ *
+ * - `{dorkHome}/extensions/<id>` — installed directly (scope `global`);
+ * - `{cwd}/.dork/extensions/<id>` — a project's own (scope `local`);
+ * - `{dorkHome}/plugins/<plugin>/.dork/extensions/<id>` — carried inside an
+ *   installed marketplace plugin (scope `global`, DOR-2383);
+ * - `{cwd}/.dork/plugins/<plugin>/.dork/extensions/<id>` — carried inside a
+ *   plugin installed into the project (scope `local`).
+ *
+ * The plugin roots are where the marketplace installer puts a plugin
+ * (`marketplace/flows/install-plugin.ts`). When one id turns up in more than one
+ * place, precedence is: a core extension, then an extension installed directly,
+ * then the copy a person approved to run, then a plugin-carried copy, by sorted
+ * plugin name (global plugins before project ones), with one warning. A project
+ * copy — direct or plugin-carried — never takes over an id that ships with DorkOS
+ * or that a person approved for another copy. When a project scope names the
+ * same directory on disk as the global one it is scanned once, as global. See
+ * {@link ExtensionDiscovery.discover}.
  */
 export class ExtensionDiscovery {
   private dorkHome: string;
@@ -30,16 +47,15 @@ export class ExtensionDiscovery {
   }
 
   /**
-   * Scan for extensions in both global and local directories, then resolve each
-   * record's `origin` (from the staging directory it was read from) and
-   * tier-aware `status`.
+   * Scan every extension root, then resolve each record's `origin` (from the
+   * staging directory it was read from) and tier-aware `status`.
    *
    * @param cwd - Optional current working directory for local extension scanning.
    * @param config - The user's `{ enabled, disabled }` deviation lists plus
-   *   `approvedToRun`, read here so a project directory cannot take over the id
-   *   of an extension the person already approved.
+   *   `approvedToRun` and `approvedSources`, read here so a project directory or
+   *   a second plugin cannot take over the id of an extension the person approved.
    * @param core - Tier metadata for bundled core extensions, keyed by id.
-   * @returns All discovered extension records, with local overriding global by ID.
+   * @returns All discovered extension records, one per id.
    */
   async discover(
     cwd: string | null,
@@ -48,8 +64,10 @@ export class ExtensionDiscovery {
   ): Promise<ExtensionRecord[]> {
     const globalDir = path.join(this.dorkHome, 'extensions');
     const globalRecords = await this.scanDirectory(globalDir, 'global');
+    const globalPluginsDir = path.join(this.dorkHome, 'plugins');
+    const pluginRecords = await this.scanPlugins(globalPluginsDir, 'global');
 
-    let localRecords: Array<Omit<ExtensionRecord, 'origin'>> = [];
+    let localRecords: DiscoveredRecord[] = [];
     if (cwd) {
       const localDir = path.join(cwd, '.dork', 'extensions');
       if (await this.isSameDirectory(localDir, globalDir)) {
@@ -65,22 +83,32 @@ export class ExtensionDiscovery {
       } else {
         localRecords = await this.scanDirectory(localDir, 'local');
       }
+      // The same rule for plugins installed into the project.
+      const localPluginsDir = path.join(cwd, '.dork', 'plugins');
+      if (!(await this.isSameDirectory(localPluginsDir, globalPluginsDir))) {
+        pluginRecords.push(...(await this.scanPlugins(localPluginsDir, 'local')));
+      }
     }
 
+    // An id already approved for some OTHER copy. Only a person's approval of that
+    // other copy put it there, so a project file must not take its place.
+    const approvedElsewhere = (rec: DiscoveredRecord): boolean =>
+      config.approvedToRun.includes(rec.id) && !isApprovedCopy({ ...rec, origin: 'user' }, config);
+
     // Merge: local overrides global by extension ID
-    const merged = new Map<string, Omit<ExtensionRecord, 'origin'>>();
+    const merged = new Map<string, DiscoveredRecord>();
     for (const rec of globalRecords) {
       merged.set(rec.id, rec);
     }
     for (const rec of localRecords) {
       // ...except for an id whose standing is already spoken for: one DorkOS ships
-      // (`core`), or one a person approved to run code in this process. Both are
-      // decisions about the extension INSTALLED under `{dorkHome}/extensions`, and
-      // an id is all a project directory needs to inherit them — a file an agent
-      // writes with no prompt and no shell (the DOR-511 adversary the approval
-      // record itself is placed to avoid). A project copy may still override any
-      // ordinary global extension, which is what the local scope is for.
-      if (core.has(rec.id) || config.approvedToRun.includes(rec.id)) {
+      // (`core`), or one a person approved to run code for another copy. Both are
+      // decisions about a copy that is not this one, and an id is all a project
+      // directory needs to inherit them — a file an agent writes with no prompt
+      // and no shell (the DOR-511 adversary the approval record itself is placed
+      // to avoid). A project copy may still override any ordinary global
+      // extension, which is what the local scope is for.
+      if (core.has(rec.id) || approvedElsewhere(rec)) {
         logger.warn(
           `[Extensions] Ignoring the project copy of '${rec.id}' at ${rec.path}: that id ` +
             `belongs to the extension installed under ${globalDir}. Rename it, or remove the ` +
@@ -90,6 +118,8 @@ export class ExtensionDiscovery {
       }
       merged.set(rec.id, rec);
     }
+
+    this.mergePluginRecords(merged, pluginRecords, config, core, approvedElsewhere);
 
     // Resolve origin (from the staging directory on disk) and tier-aware status.
     const stagingDir = path.resolve(globalDir);
@@ -129,6 +159,7 @@ export class ExtensionDiscovery {
         results
           .map((r) => {
             const flags: string[] = [r.origin, r.status];
+            if (r.sourcePlugin) flags.push(`plugin ${r.sourcePlugin}`);
             if (r.hasServerEntry) flags.push('server');
             if (r.hasDataProxy) flags.push('proxy');
             return `${r.id} (${flags.join(', ')})`;
@@ -137,6 +168,111 @@ export class ExtensionDiscovery {
       }`
     );
     return results;
+  }
+
+  /**
+   * Add the extensions installed plugins carry, for ids nothing ahead of them in
+   * precedence already holds.
+   *
+   * A core id and an id installed directly both win over any plugin. Among the
+   * plugins that carry one id, the copy a person approved wins; otherwise the
+   * first by sorted plugin name, global plugins before project ones, and one
+   * warning names them all. A copy inside a project's plugin is dropped when its
+   * id is approved for another copy, exactly like a project's own extension. A
+   * global plugin's copy of such an id is still listed, so a person can see it
+   * and approve it, but it runs nothing until they do (`extension-load-policy.ts`).
+   *
+   * @param merged - Records resolved so far, keyed by id; updated in place.
+   * @param pluginRecords - Plugin-carried records, global then local, each group
+   *   sorted by plugin name.
+   * @param config - The stored extensions config, for the approved copies.
+   * @param core - Tier metadata for bundled core extensions, keyed by id.
+   * @param approvedElsewhere - Whether a record's id is approved for another copy.
+   */
+  private mergePluginRecords(
+    merged: Map<string, DiscoveredRecord>,
+    pluginRecords: readonly DiscoveredRecord[],
+    config: ExtensionsConfig,
+    core: Map<string, CoreExtensionInfo>,
+    approvedElsewhere: (rec: DiscoveredRecord) => boolean
+  ): void {
+    const byId = new Map<string, DiscoveredRecord[]>();
+    for (const rec of pluginRecords) {
+      const group = byId.get(rec.id);
+      if (group) group.push(rec);
+      else byId.set(rec.id, [rec]);
+    }
+
+    for (const [id, candidates] of byId) {
+      const carriers = candidates.map((c) => c.sourcePlugin).join(', ');
+      const ahead = merged.get(id);
+      if (core.has(id) || ahead) {
+        logger.warn(
+          `[Extensions] Ignoring the copy of '${id}' carried by the plugin(s) ${carriers}: ` +
+            (core.has(id)
+              ? 'that id ships with DorkOS.'
+              : `the extension at ${ahead?.path} takes precedence.`)
+        );
+        continue;
+      }
+      const eligible = candidates.filter((c) => c.scope === 'global' || !approvedElsewhere(c));
+      const chosen =
+        eligible.find((c) => isApprovedCopy({ ...c, origin: 'user' }, config)) ?? eligible[0];
+      if (!chosen) {
+        logger.warn(
+          `[Extensions] Ignoring the project plugin copy of '${id}' (${carriers}): that id is ` +
+            `approved for another copy.`
+        );
+        continue;
+      }
+      if (candidates.length > 1) {
+        logger.warn(
+          `[Extensions] More than one installed plugin carries '${id}' (${carriers}); using ` +
+            `the copy in '${chosen.sourcePlugin}' at ${chosen.path}.`
+        );
+      }
+      merged.set(id, chosen);
+    }
+  }
+
+  /**
+   * Scan every installed plugin under `pluginsDir` for the extensions it carries
+   * in its own `.dork/extensions/`, tagging each record with its plugin.
+   *
+   * @param pluginsDir - A `plugins` install root: `{dorkHome}/plugins` or
+   *   `{cwd}/.dork/plugins`.
+   * @param scope - `global` for the DorkOS home, `local` for a project.
+   * @returns The carried records, sorted by plugin name so a duplicate id always
+   *   resolves the same way.
+   */
+  private async scanPlugins(
+    pluginsDir: string,
+    scope: 'global' | 'local'
+  ): Promise<DiscoveredRecord[]> {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(pluginsDir, { withFileTypes: true });
+    } catch {
+      // No plugins installed in this scope.
+      return [];
+    }
+    // An install engine sibling (a backup, a staging copy, an uninstall in
+    // flight) holds a plugin's files but is not an installed plugin: reading it
+    // would find every carried extension twice.
+    const names = entries
+      .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+      .map((entry) => entry.name)
+      .filter((name) => !isInstallSiblingName(name))
+      .sort();
+    const records: DiscoveredRecord[] = [];
+    for (const plugin of names) {
+      const carried = await this.scanDirectory(
+        path.join(pluginsDir, plugin, '.dork', 'extensions'),
+        scope
+      );
+      for (const rec of carried) records.push({ ...rec, sourcePlugin: plugin });
+    }
+    return records;
   }
 
   /**

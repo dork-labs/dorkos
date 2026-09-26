@@ -811,6 +811,38 @@ export function backfillExtensionsApprovedToRun(store: {
 }
 
 /**
+ * Migration body: seed `extensions.approvedSources: {}` for configs persisted
+ * before an extension approval recorded WHICH copy of the extension it was for
+ * (DOR-2383).
+ *
+ * Seeds the map EMPTY and binds nothing, on purpose. Which copy an existing
+ * id-only approval was about is a question about the disk, and this runs before
+ * anything has looked at the disk. `ExtensionManager.reload` answers it on the
+ * first discovery instead, binding each such approval to the extension installed
+ * directly under `{dorkHome}/extensions/<id>` — the only copy an id-only approval
+ * ever let run. An approved id found only inside a plugin stays unbound, which
+ * counts as not approved, so a plugin that carries an old approved id is asked
+ * about first rather than inheriting the decision.
+ *
+ * Additive and idempotent: writes only when `approvedSources` is not already an
+ * object, and never touches the other `extensions` members. A config with no
+ * `extensions` key is skipped (the schema default supplies the object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedExtensionsApprovedSources(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (!ext || typeof ext !== 'object' || Array.isArray(ext)) return;
+  const sources = (ext as { approvedSources?: unknown }).approvedSources;
+  if (sources && typeof sources === 'object' && !Array.isArray(sources)) return;
+  store.set('extensions', { ...(ext as Record<string, unknown>), approvedSources: {} });
+}
+
+/**
  * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
  * for configs persisted before it existed. Additive + idempotent — only writes
  * when the key is absent; the schema default also yields this object on read, so
@@ -4238,6 +4270,21 @@ export const CONFIG_MIGRATIONS = {
     // `profile.identityPromptDismissedAt` — whether the name-and-handle
     // question was put (DOR-677). See `seedIdentityPromptDismissedDefault`.
     seedIdentityPromptDismissedDefault(store);
+  },
+  // 0.85.0 has merged (the name-and-handle question), so 0.86.0 is the next key.
+  // Frozen from merge, not from the release bump, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.87.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `extensions`, beside `disabled` and `approvedToRun`, which the keys that
+  // backfilled those write and this body preserves.
+  '0.86.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `extensions.approvedSources` — which copy each extension approval is for
+    // (DOR-2383). See `seedExtensionsApprovedSources`.
+    seedExtensionsApprovedSources(store);
   },
 } as const;
 

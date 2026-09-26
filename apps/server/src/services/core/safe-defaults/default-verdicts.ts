@@ -357,6 +357,7 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   'extensions.enabled': [],
   'extensions.disabled': [],
   'extensions.approvedToRun': [],
+  'extensions.approvedSources': {},
   // DorkOS never moves a skill out of an agent tool's own folder on its own
   // until a person turns this on, and even then only inside the agent folders
   // and room folders DorkOS owns (DOR-1853). A gate that starts closed on a real

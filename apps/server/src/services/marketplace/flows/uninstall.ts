@@ -167,8 +167,11 @@ export interface UninstallExtensionManager {
   /**
    * Drop the person's standing approval for this extension to run code inside
    * DorkOS (DOR-516), because the code it was given to is going away.
+   *
+   * `installRoot` is the package being removed: an approval recorded for a copy
+   * outside it belongs to another package carrying the same id, and is kept.
    */
-  forgetRunApproval(id: string): Promise<void>;
+  forgetRunApproval(id: string, installRoot?: string): Promise<void>;
 }
 
 /**
@@ -691,23 +694,19 @@ export class UninstallFlow {
     journaled?: { root: string; sibling: string; journal: UninstallJournal }
   ): Promise<AgentRemovedSummary | undefined> {
     const type = located.inferredType;
-    // Only these two types walk `.dork/extensions/`. `shape` and `adapter` packages
-    // may carry that directory too, and the asymmetry looks like an oversight, so:
-    // a bundled extension under either of those types never becomes a discovery
-    // record today, and therefore has nothing to turn off and no approval to forget
-    // (DOR-516). `ExtensionDiscovery` scans exactly two roots, one level deep —
-    // `{dorkHome}/extensions` and `{cwd}/.dork/extensions` — and neither
-    // `{dorkHome}/shapes/**` nor an adapter's install root is among them.
-    // `applyShape` does not close the gap either: it iterates `manifest.activates`,
-    // a list of ids, and skips any id `extensionManager.get()` does not already
-    // know, so a Shape's own bundled tree is never registered.
-    //
-    // Two changes would make this live, and whoever makes one has to add the walk
-    // here as part of it: discovery gaining a third root, or `applyShape` learning
-    // to read `manifest.extensions` instead of only `activates`. Adding the call
-    // now would be dead code that reads like coverage.
-    if (type === 'plugin' || type === 'skill-pack') {
-      await this.disableBundledExtensions(inputs.extensionIds);
+    // Every package type that installs under `plugins/` walks `.dork/extensions/`,
+    // because discovery reads the extensions of everything installed there
+    // (`{dorkHome}/plugins/*/.dork/extensions` and its project twin, DOR-2383):
+    // whatever it found is turned off and its approval forgotten here. A `shape`
+    // is the exception and keeps its own teardown below. Its bundled tree lives
+    // under `shapes/`, which discovery does not scan, and `applyShape` iterates
+    // `manifest.activates`, a list of ids, skipping any id
+    // `extensionManager.get()` does not already know — so a Shape's own bundled
+    // extensions never become a record, and have nothing to turn off and no
+    // approval to forget (DOR-516). Whoever teaches discovery or `applyShape` to
+    // read a Shape's own tree has to add the walk here as part of it.
+    if (type === 'plugin' || type === 'skill-pack' || type === 'adapter') {
+      await this.disableBundledExtensions(inputs.extensionIds, located.installRoot);
     }
     if (type === 'adapter') {
       await this.deps.adapterManager.removeAdapter(
@@ -889,12 +888,19 @@ export class UninstallFlow {
    * extension's files never comes through here, so the edit → test → reload loop
    * stays free.
    *
+   * An approval recorded for a copy of the same id that lives OUTSIDE this
+   * package (DOR-2383: another plugin can carry the id) is about that copy, and
+   * removing this package leaves it alone.
+   *
    * @internal
    */
-  private async disableBundledExtensions(ids: readonly string[]): Promise<void> {
+  private async disableBundledExtensions(
+    ids: readonly string[],
+    installRoot: string
+  ): Promise<void> {
     for (const id of ids) {
       await this.deps.extensionManager.disable(id);
-      await this.deps.extensionManager.forgetRunApproval(id);
+      await this.deps.extensionManager.forgetRunApproval(id, installRoot);
     }
   }
 }

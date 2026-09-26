@@ -23,6 +23,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
+  approvedSourceOf,
   mayRunExtensionCode,
   describeExtensionLoadRefusal,
   EXTENSION_NOT_APPROVED_CODE,
@@ -90,8 +91,15 @@ vi.mock('../extension-compiler.js', () => ({
 }));
 
 /** The stored `extensions` config the gate reads, mutable per test. */
+/** The `extensions` config shape these tests store; `approvedSources` may predate DOR-2383. */
+interface StoredExtensions {
+  enabled: string[];
+  disabled: string[];
+  approvedToRun: string[];
+  approvedSources?: Record<string, { path: string; plugin?: string }>;
+}
 const stored = vi.hoisted(() => ({
-  value: { enabled: [] as string[], disabled: [] as string[], approvedToRun: [] as string[] },
+  value: { enabled: [], disabled: [], approvedToRun: [] } as StoredExtensions,
 }));
 // `set` WRITES THROUGH to the same object `get` reads. A mock that only records
 // the call would let `approveToRun` look like it worked while the gate kept
@@ -131,7 +139,9 @@ function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): Exten
     status: 'enabled',
     scope: 'global',
     origin: 'user',
-    path: `/fake/extensions/${id}`,
+    // Installed directly under the manager's dorkHome, so an id-only approval in
+    // `stored` binds to it on the first discovery (DOR-2383).
+    path: `/fake/dork-home/extensions/${id}`,
     bundleReady: false,
     hasServerEntry: false,
     hasDataProxy: false,
@@ -144,26 +154,92 @@ const OBSERVABLE_BUNDLE =
   'export function activate(api) { api.registerCommand("x", "X", () => {}); }';
 
 describe('mayRunExtensionCode', () => {
+  /** The copy of `my-ext` installed directly, and an approval of exactly it. */
+  const direct = { id: 'my-ext', origin: 'user' as const, path: '/home/.dork/extensions/my-ext' };
+  const approvedDirect = {
+    approvedToRun: ['my-ext'],
+    approvedSources: { 'my-ext': { path: '/home/.dork/extensions/my-ext' } },
+  };
+
   it('refuses a user extension that nobody approved', () => {
-    expect(mayRunExtensionCode('my-ext', 'user', [])).toBe(false);
-    expect(mayRunExtensionCode('my-ext', 'user', ['some-other-ext'])).toBe(false);
+    expect(mayRunExtensionCode(direct, { approvedToRun: [] })).toBe(false);
+    expect(mayRunExtensionCode(direct, { approvedToRun: ['some-other-ext'] })).toBe(false);
   });
 
-  it('allows a user extension a person approved', () => {
-    expect(mayRunExtensionCode('my-ext', 'user', ['my-ext'])).toBe(true);
+  it('allows the copy of a user extension a person approved', () => {
+    expect(mayRunExtensionCode(direct, approvedDirect)).toBe(true);
   });
 
   it('allows a core extension with no approval at all', () => {
     // Core extensions ship inside the DorkOS the person installed. Gating them
     // would make DorkOS ask permission to run itself, and would break the bundled
     // `linear-issues` data proxy on every install.
-    expect(mayRunExtensionCode('linear-issues', 'core', [])).toBe(true);
+    expect(
+      mayRunExtensionCode(
+        { id: 'linear-issues', origin: 'core', path: '/home/.dork/extensions/linear-issues' },
+        { approvedToRun: [] }
+      )
+    ).toBe(true);
   });
 
-  it('is decided by id, never by a manifest claim', () => {
+  it('is decided by the stored approval, never by a manifest claim', () => {
     // The `origin` argument comes from the startup staging set, not from anything
     // the extension says about itself, so an extension cannot declare itself core.
-    expect(mayRunExtensionCode('pretender', 'user', ['a-different-id'])).toBe(false);
+    expect(
+      mayRunExtensionCode(
+        { id: 'pretender', origin: 'user', path: '/x/pretender' },
+        { approvedToRun: ['a-different-id'] }
+      )
+    ).toBe(false);
+  });
+
+  describe('bound to one copy, not to the id (DOR-2383)', () => {
+    it('refuses an approved id with no recorded copy', () => {
+      // An id-only approval that discovery never bound to a direct install stays
+      // unapproved, so a plugin that later carries the id is asked about first.
+      expect(mayRunExtensionCode(direct, { approvedToRun: ['my-ext'] })).toBe(false);
+      expect(mayRunExtensionCode(direct, { approvedToRun: ['my-ext'], approvedSources: {} })).toBe(
+        false
+      );
+    });
+
+    it('refuses a copy at another path that claims an approved id', () => {
+      const elsewhere = { ...direct, path: '/project/.dork/extensions/my-ext' };
+      expect(mayRunExtensionCode(elsewhere, approvedDirect)).toBe(false);
+    });
+
+    it('refuses a second plugin carrying an id approved for the first', () => {
+      const first = {
+        id: 'flow',
+        origin: 'user' as const,
+        path: '/home/.dork/plugins/flow/.dork/extensions/flow',
+        sourcePlugin: 'flow',
+      };
+      const second = {
+        ...first,
+        path: '/home/.dork/plugins/aaa-other/.dork/extensions/flow',
+        sourcePlugin: 'aaa-other',
+      };
+      const approvals = {
+        approvedToRun: ['flow'],
+        approvedSources: { flow: approvedSourceOf(first) },
+      };
+      expect(mayRunExtensionCode(first, approvals)).toBe(true);
+      expect(mayRunExtensionCode(second, approvals)).toBe(false);
+    });
+
+    it('refuses the same path when the carrying plugin differs', () => {
+      const copy = { ...direct, sourcePlugin: 'some-plugin' };
+      expect(mayRunExtensionCode(copy, approvedDirect)).toBe(false);
+    });
+
+    it('records the carrying plugin only when there is one', () => {
+      expect(approvedSourceOf(direct)).toEqual({ path: '/home/.dork/extensions/my-ext' });
+      expect(approvedSourceOf({ ...direct, sourcePlugin: 'p' })).toEqual({
+        path: '/home/.dork/extensions/my-ext',
+        plugin: 'p',
+      });
+    });
   });
 });
 
@@ -285,6 +361,8 @@ describe('the load gate, at every path that runs extension code', () => {
 });
 
 describe('the dev loop stays free after one approval', () => {
+  /** The copy of `my-ext` every approval below is for. */
+  const MY_EXT_SOURCE = { 'my-ext': { path: '/fake/dork-home/extensions/my-ext' } };
   let manager: ExtensionManager;
 
   beforeEach(() => {
@@ -316,6 +394,7 @@ describe('the dev loop stays free after one approval', () => {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: ['my-ext'],
+      approvedSources: MY_EXT_SOURCE,
     });
     // The approve route is what makes one click enough: the extension is running
     // now, without a restart.
@@ -370,14 +449,21 @@ describe('the dev loop stays free after one approval', () => {
       enabled: [],
       disabled: [],
       approvedToRun: ['my-ext'],
+      approvedSources: MY_EXT_SOURCE,
     });
 
-    stored.value = { enabled: [], disabled: [], approvedToRun: ['my-ext'] };
+    stored.value = {
+      enabled: [],
+      disabled: [],
+      approvedToRun: ['my-ext'],
+      approvedSources: MY_EXT_SOURCE,
+    };
     await manager.enable('my-ext');
     expect(mockConfigSet).toHaveBeenLastCalledWith('extensions', {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: ['my-ext'],
+      approvedSources: MY_EXT_SOURCE,
     });
     // Back on, still approved, running again with nothing asked of the person.
     expect(manager.getServerRouter('my-ext')).not.toBeNull();
@@ -394,8 +480,144 @@ describe('the dev loop stays free after one approval', () => {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: [],
+      approvedSources: {},
     });
     expect(manager.getServerRouter('my-ext')).toBeNull();
+  });
+});
+
+describe('an approval is for one copy of an extension (DOR-2383)', () => {
+  let manager: ExtensionManager;
+  const PLUGIN_COPY = '/fake/dork-home/plugins/flow/.dork/extensions/flow';
+  const OTHER_PLUGIN_COPY = '/fake/dork-home/plugins/aaa-other/.dork/extensions/flow';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'h1' });
+    mockCompileServer.mockResolvedValue({
+      code: 'module.exports = function register(router, ctx) {};',
+      sourceHash: 'h1',
+    });
+    mockReadBundle.mockResolvedValue(OBSERVABLE_BUNDLE);
+    manager = new ExtensionManager('/fake/dork-home');
+  });
+
+  it('runs nothing a plugin carries until a person approves it, then runs it', async () => {
+    stored.value = { enabled: ['flow'], disabled: [], approvedToRun: [], approvedSources: {} };
+    mockDiscover.mockResolvedValue([
+      makeRecord('flow', { hasServerEntry: true, path: PLUGIN_COPY, sourcePlugin: 'flow' }),
+    ]);
+    await manager.initialize(null);
+
+    expect(manager.getServerRouter('flow')).toBeNull();
+    expect(await manager.readBundle('flow')).toBeNull();
+
+    const approved = await manager.approveToRun('flow');
+
+    expect(stored.value.approvedSources).toEqual({ flow: { path: PLUGIN_COPY, plugin: 'flow' } });
+    expect(approved).toMatchObject({ approvedToRun: true, sourcePlugin: 'flow' });
+    expect(manager.getServerRouter('flow')).not.toBeNull();
+    expect(await manager.readBundle('flow')).toBe(OBSERVABLE_BUNDLE);
+  });
+
+  it('does not run a second plugin carrying an already-approved id until it is approved', async () => {
+    stored.value = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow' } },
+    };
+    // The approved plugin is gone from this machine's view; another claims the id.
+    mockDiscover.mockResolvedValue([
+      makeRecord('flow', {
+        hasServerEntry: true,
+        path: OTHER_PLUGIN_COPY,
+        sourcePlugin: 'aaa-other',
+      }),
+    ]);
+    await manager.initialize(null);
+
+    expect(manager.getServerRouter('flow')).toBeNull();
+    expect(await manager.readBundle('flow')).toBeNull();
+    expect(manager.listPublic().find((e) => e.id === 'flow')?.approvedToRun).toBe(false);
+
+    await manager.approveToRun('flow');
+
+    // Approving it moves the approval to this copy, and only then does it run.
+    expect(stored.value.approvedSources).toEqual({
+      flow: { path: OTHER_PLUGIN_COPY, plugin: 'aaa-other' },
+    });
+    expect(manager.getServerRouter('flow')).not.toBeNull();
+  });
+
+  it('keeps an approval given before copies were recorded working for the direct install', async () => {
+    stored.value = { enabled: ['my-ext'], disabled: [], approvedToRun: ['my-ext'] };
+    mockDiscover.mockResolvedValue([makeRecord('my-ext', { hasServerEntry: true })]);
+
+    await manager.initialize(null);
+
+    expect(stored.value.approvedSources).toEqual({
+      'my-ext': { path: '/fake/dork-home/extensions/my-ext' },
+    });
+    expect(manager.getServerRouter('my-ext')).not.toBeNull();
+  });
+
+  it('leaves an earlier id-only approval unbound, and so unapproved, when only a plugin carries it', async () => {
+    stored.value = { enabled: ['flow'], disabled: [], approvedToRun: ['flow'] };
+    mockDiscover.mockResolvedValue([
+      makeRecord('flow', { hasServerEntry: true, path: PLUGIN_COPY, sourcePlugin: 'flow' }),
+    ]);
+
+    await manager.initialize(null);
+
+    expect(stored.value.approvedSources).toBeUndefined();
+    expect(mockConfigSet).not.toHaveBeenCalled();
+    expect(manager.getServerRouter('flow')).toBeNull();
+  });
+
+  it('forgets the copy along with the id when the approval is withdrawn', async () => {
+    stored.value = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow' } },
+    };
+    await manager.forgetRunApproval('flow');
+
+    expect(stored.value.approvedToRun).toEqual([]);
+    expect(stored.value.approvedSources).toEqual({});
+  });
+
+  it('keeps the approval when uninstalling a different plugin that carries the same id', async () => {
+    const approvals = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow' } },
+    };
+    stored.value = approvals;
+
+    await manager.forgetRunApproval('flow', '/fake/dork-home/plugins/aaa-other');
+    expect(stored.value).toEqual(approvals);
+
+    await manager.forgetRunApproval('flow', '/fake/dork-home/plugins/flow');
+    expect(stored.value.approvedToRun).toEqual([]);
+    expect(stored.value.approvedSources).toEqual({});
+  });
+
+  it('re-scans before enabling an id it has not seen, as a fresh plugin install does', async () => {
+    stored.value = { enabled: [], disabled: [], approvedToRun: [], approvedSources: {} };
+    mockDiscover.mockResolvedValueOnce([]);
+    await manager.initialize(null);
+
+    // The plugin lands on disk after the last scan.
+    mockDiscover.mockResolvedValue([
+      makeRecord('flow', { status: 'disabled', path: PLUGIN_COPY, sourcePlugin: 'flow' }),
+    ]);
+    const result = await manager.enable('flow');
+
+    expect(result).not.toBeNull();
+    expect(stored.value.enabled).toContain('flow');
   });
 });
 

@@ -10,7 +10,7 @@ import type {
   ExtensionStatus,
 } from '@dorkos/extension-api';
 import type { Router } from 'express';
-import { mayRunExtensionCode } from './extension-load-policy.js';
+import { mayRunExtensionCode, type ExtensionApprovals } from './extension-load-policy.js';
 
 /** Tracks an active server-side extension instance. */
 export interface ActiveServerExtension {
@@ -107,13 +107,14 @@ export interface TestExtensionResult {
  * Strip server-internal fields from ExtensionRecord for client consumption.
  *
  * @param record - The internal discovery record.
- * @param approvedToRun - `config.extensions.approvedToRun`, so the public record
- *   can carry the load-approval answer the cockpit renders. Passed in rather than
- *   read here to keep this module free of config I/O.
+ * @param approvals - `config.extensions` (the approved ids and the copy each is
+ *   for), so the public record can carry the load-approval answer the cockpit
+ *   renders. Passed in rather than read here to keep this module free of config
+ *   I/O.
  */
 export function toPublic(
   record: ExtensionRecord,
-  approvedToRun: readonly string[]
+  approvals: ExtensionApprovals
 ): ExtensionRecordPublic {
   return {
     id: record.id,
@@ -121,11 +122,12 @@ export function toPublic(
     status: record.status,
     scope: record.scope,
     origin: record.origin,
+    ...(record.sourcePlugin ? { sourcePlugin: record.sourcePlugin } : {}),
     error: record.error,
     serverError: record.serverError,
     bundleReady: record.bundleReady,
     hasServerEntry: record.hasServerEntry,
     hasDataProxy: record.hasDataProxy,
-    approvedToRun: mayRunExtensionCode(record.id, record.origin, approvedToRun),
+    approvedToRun: mayRunExtensionCode(record, approvals),
   };
 }

@@ -49,6 +49,29 @@ const CommunityNavigationRefSchema = z
   .regex(/^[0-9A-Za-z][0-9A-Za-z_-]*$/, 'A community ref must be path-safe');
 
 /** One canonical route inside the local DorkOS installation. */
+/**
+ * The one copy of an extension a person approved to run code (DOR-2383).
+ *
+ * An approval is about code, and an id is only a name: two copies of an
+ * extension can carry the same id, and the marketplace tools an agent may call
+ * can install a second one. So an approval also records WHICH copy it was
+ * given to, by where that copy lives. It is identity, not content: editing or
+ * updating the approved copy keeps loading with nothing to click (DOR-504/506).
+ * See `apps/server/src/services/extensions/extension-load-policy.ts`.
+ */
+export const ExtensionApprovedSourceSchema = z.object({
+  /** Absolute path of the approved extension directory. */
+  path: z.string().min(1),
+  /**
+   * The installed marketplace plugin that carries this extension, when it came
+   * inside one; absent for an extension installed directly.
+   */
+  plugin: z.string().min(1).optional(),
+});
+
+/** The one copy of an extension a person approved to run code. */
+export type ExtensionApprovedSource = z.infer<typeof ExtensionApprovedSourceSchema>;
+
 export const CommunityInstallationPathSchema = z.enum([
   '/',
   '/activity',
@@ -2365,8 +2388,21 @@ export const UserConfigSchema = z.object({
        * own id here would be approving its own code.
        */
       approvedToRun: z.array(z.string()).default(() => []),
+      /**
+       * Which copy of each approved extension the approval was given to, keyed
+       * by extension id (DOR-2383).
+       *
+       * An id in `approvedToRun` with no entry here counts as NOT approved,
+       * except that an approval given before this map existed is bound, on the
+       * first discovery that finds it, to the extension installed directly
+       * under `{dorkHome}/extensions/<id>` — the only copy it could have been
+       * about. A copy at any other path, inside any other plugin, asks again.
+       *
+       * `operator-only` for the same reason as `approvedToRun`.
+       */
+      approvedSources: z.record(z.string(), ExtensionApprovedSourceSchema).default(() => ({})),
     })
-    .default(() => ({ enabled: [], disabled: [], approvedToRun: [] })),
+    .default(() => ({ enabled: [], disabled: [], approvedToRun: [], approvedSources: {} })),
   mcp: z
     .object({
       enabled: z.boolean().default(true),

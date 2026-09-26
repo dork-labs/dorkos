@@ -425,8 +425,8 @@ describe('UninstallFlow', () => {
     await flow.uninstall({ name: 'plugin-approved' });
 
     expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledTimes(2);
-    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a');
-    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-b');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-b', installRoot);
   });
 
   it('forgets it even when `purge` is false, because data is not consent', async () => {
@@ -447,7 +447,7 @@ describe('UninstallFlow', () => {
     const result = await flow.uninstall({ name: 'plugin-update', purge: false });
 
     expect(result.preservedData.length).toBeGreaterThan(0);
-    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
   });
 
   it('removes adapter package files and calls adapterManager.removeAdapter', async () => {
@@ -468,6 +468,25 @@ describe('UninstallFlow', () => {
     expect(deps.adapterManager.removeAdapter).toHaveBeenCalledTimes(1);
     expect(deps.adapterManager.removeAdapter).toHaveBeenCalledWith('adapter-a');
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+  });
+
+  it('turns off and forgets the extensions an adapter package carries (DOR-2383)', async () => {
+    // An adapter installs under `plugins/`, and discovery now reads the extensions
+    // of everything installed there, so what it found must go with the package.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'adapter-ext');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildAdapterManifest({ name: 'adapter-ext', adapterType: 'fixture' }),
+      extensions: [{ id: 'ext-a', manifest: { id: 'ext-a' } }],
+    });
+
+    const flow = new UninstallFlow(deps);
+    await flow.uninstall({ name: 'adapter-ext' });
+
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
   });
 
   it('removes a Shape installed under shapes/ (DOR-355 regression)', async () => {

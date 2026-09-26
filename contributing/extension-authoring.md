@@ -48,6 +48,8 @@ my-extension/
 
 **Global extensions** live in `~/.dork/extensions/{id}/`. **Local extensions** (project-scoped) live in `{projectDir}/.dork/extensions/{id}/`. Local overrides global when IDs match.
 
+**Extensions inside a plugin.** A marketplace plugin can carry extensions in its own `.dork/extensions/{id}/`. Discovery reads them where the installer put the plugin: `~/.dork/plugins/{plugin}/.dork/extensions/{id}/` (global) and `{projectDir}/.dork/plugins/{plugin}/.dork/extensions/{id}/` (project). The record's `sourcePlugin` names the plugin. When one id turns up in more than one place, precedence is: a core extension, then one installed directly under `~/.dork/extensions/`, then the copy a person approved to run, then a plugin-carried copy by sorted plugin name (global plugins before project ones), with one warning. A project copy never takes a core id or an id approved for another copy (DOR-2383, `extension-discovery.ts`).
+
 ## Manifest (`extension.json`)
 
 ```json
@@ -976,12 +978,12 @@ What this looks like in practice:
 - The **first** `test_extension` or server-entry load for a new extension is refused, with a message naming the extension and telling you to ask the person to allow it in **Settings > Extensions**. Retrying without that is refused identically.
 - Its client bundle is not served either, so the extension contributes nothing to the cockpit until the person answers. `GET /api/extensions/:id/bundle` returns 404, the same as an extension that has not compiled.
 - The person clicks **Allow it to run**, once. Both halves start immediately; no restart, no page reload.
-- **Every** later call goes through: editing, testing, reloading, a compile error, and the fix after it. Turning the extension off and on again does not re-ask. Approval is recorded per extension id and is never spent by use.
-- A marketplace **uninstall clears it**, and an update is an uninstall plus a fresh install, so an update re-asks. That is the one thing an id-keyed approval must not survive: different code arriving under a familiar name.
+- **Every** later call goes through: editing, testing, reloading, a compile error, and the fix after it. Turning the extension off and on again does not re-ask. Approval is recorded per extension id **and copy** — the directory, plus the plugin that carries it when it came inside one (`extensions.approvedSources`, DOR-2383) — and is never spent by use. It is not tied to file contents, so edits never re-ask; another plugin or path carrying the same id does.
+- A marketplace **uninstall clears it**, and an update is an uninstall plus a fresh install, so an update re-asks. That is the one thing an approval must not survive: different code arriving under a familiar name. Removing a package leaves alone an approval recorded for a copy of the same id outside that package.
 
 Everything that is not execution still works while you wait, which is what makes the wait cheap: you can create and edit files, and compiling reports real errors. Only running is held back.
 
-There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere — an agent that could write it would be approving its own code. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this — and `origin` is derived from the record's path under `{dorkHome}/extensions`, so a `{cwd}/.dork/extensions/<core-id>` directory does not inherit the exemption; it is ignored outright, as is a project directory reusing the id of an extension the person already approved. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
+There is deliberately **no MCP tool to approve an extension**. The record lives in `~/.dork/config.json` at `extensions.approvedToRun`, classified `operator-only`, so the agent surface is refused it everywhere — an agent that could write it would be approving its own code. Core extensions (`origin: 'core'`) ship inside DorkOS and are exempt by origin, so they never need this — and `origin` is derived from the record's path under `{dorkHome}/extensions`, so a `{cwd}/.dork/extensions/<core-id>` directory does not inherit the exemption; it is ignored outright, as is a project directory (or a plugin installed into the project) reusing the id of an extension the person approved for another copy. Full reasoning: `apps/server/src/services/extensions/extension-load-policy.ts`.
 
 `reload_extensions --id` also refuses an extension the user has turned **off**, rather than quietly turning it back on. Turn it on in Settings first.
 

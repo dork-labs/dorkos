@@ -628,6 +628,10 @@ export const CONFIG_WRITE_POLICY = {
   // security control", and the reason the whole gate hangs off a config field
   // instead of anything under the project tree an agent edits freely.
   'extensions.approvedToRun': 'operator-only',
+  // Which copy of each extension that consent was given to (DOR-2383). Half of
+  // the same record: a caller that could point an approved id at another copy
+  // would move a person's decision onto code they never saw.
+  'extensions.approvedSources': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -972,6 +976,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.enabled',
       'extensions.disabled',
       'extensions.approvedToRun',
+      'extensions.approvedSources',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',
