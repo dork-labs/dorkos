@@ -14,7 +14,7 @@
  * @module features/profile/ui/fields/ProfileRolesField
  */
 import { useState } from 'react';
-import { ProfileRolePicker, useProfile } from '@/layers/features/onboarding';
+import { ProfileRolePicker, useProfile } from '@/layers/entities/user-profile';
 import { FieldCard, FieldCardContent, SettingRow } from '@/layers/shared/ui';
 import { FieldNote } from './ProfileFields';
 

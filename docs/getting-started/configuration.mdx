@@ -1005,6 +1005,12 @@ Tell DorkBot what kind of work you do, and every agent on this machine knows who
       type: 'string | null',
       default: 'null',
     },
+    'profile.identityPromptDismissedAt': {
+      description:
+        'When DorkBot asked what to call you and you answered or skipped it. Set automatically; you never edit it. DorkBot asks once, and only while your name or @handle is missing. Local-only; never included in any telemetry payload.',
+      type: 'string | null',
+      default: 'null',
+    },
   }}
 />
 

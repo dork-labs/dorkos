@@ -13,8 +13,15 @@ function msg(id: string, role: 'user' | 'assistant'): ChatMessage {
 }
 
 describe('onboarding-script', () => {
-  it('orders the beats arrival -> personality -> profile -> discovery -> handoff', () => {
-    expect([...BEAT_ORDER]).toEqual(['arrival', 'personality', 'profile', 'discovery', 'handoff']);
+  it('orders the beats arrival -> identity -> personality -> profile -> discovery -> handoff', () => {
+    expect([...BEAT_ORDER]).toEqual([
+      'arrival',
+      'identity',
+      'personality',
+      'profile',
+      'discovery',
+      'handoff',
+    ]);
     expect(ONBOARDING_BEATS.map((b) => b.id)).toEqual([...BEAT_ORDER]);
   });
 
@@ -24,7 +31,8 @@ describe('onboarding-script', () => {
     }
   });
 
-  it('shows one widget per interactive beat (personality, profile, discovery)', () => {
+  it('shows one widget per interactive beat (identity, personality, profile, discovery)', () => {
+    expect(getBeat('identity').widget).toBe('identity');
     expect(getBeat('personality').widget).toBe('personality');
     expect(getBeat('profile').widget).toBe('profile');
     expect(getBeat('discovery').widget).toBe('discovery');

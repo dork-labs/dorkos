@@ -28,7 +28,7 @@ import { DorkLogo } from '@dorkos/icons/logos';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useSettingsDeepLink } from '@/layers/shared/model';
 import type { ProfilePromptApi } from '../model/use-profile-prompt';
-import { ProfileRolePicker } from './ProfileRolePicker';
+import { ProfileRolePicker } from '@/layers/entities/user-profile';
 
 /** Props for {@link ProfilePromptCard}. */
 export interface ProfilePromptCardProps {

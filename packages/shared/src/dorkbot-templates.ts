@@ -61,9 +61,41 @@ export const DORKBOT_ONBOARDING_LINES = {
   ],
   /** Composer placeholder while the conversation is still scripted (Beats 0-2). */
   composerSetupPlaceholder: 'DorkBot is setting things up with you…',
-  /** Prompt that introduces the personality widget (Beat 1). */
+  /**
+   * The name-and-handle question (DOR-677, spec `handles` §4). Asked right
+   * after DorkBot introduces itself, and only while the operator has no name or
+   * no handle. Two lines: the ask, then what a handle is for and where to
+   * change it, so the answer is never a mystery value somebody cannot find.
+   */
+  identityPrompt: [
+    'What should I call you?',
+    'Your @handle is what people and agents type to reach you in a room. You can change both any time in Settings › Profile.',
+  ],
+  /** Reply once a name or handle is saved in the onboarding beat. */
+  identitySaved: 'Nice to meet you.',
+  /**
+   * Reply when the user skips the name-and-handle beat. Skipping counts as
+   * asked, forever. Worded to stay true after a partial answer — a skip can
+   * follow a saved name whose handle was refused — so it promises nothing
+   * about what is or is not set.
+   */
+  identitySkip: 'Okay. Your name and handle live in Settings › Profile whenever you want them.',
+  /**
+   * The one-time sidebar card for installs that onboarded before the question
+   * existed. The ask, then why it matters in plain terms.
+   */
+  identityCardPrompt: [
+    'What should I call you?',
+    'Your name and @handle show beside everything you write, so people and agents know who is talking.',
+  ],
+  /** Thanks line after the sidebar card saves. */
+  identityCardSaved: 'Got it. That is how you show up now.',
+  /**
+   * Prompt that introduces the personality widget (Beat 1). "Now" rather than
+   * "First", because the name question may come before it.
+   */
   personalityPrompt:
-    'First: how should I sound? Pick a personality. You can change it any time in settings.',
+    'Now, how should I sound? Pick a personality. You can change it any time in settings.',
   /** Honest error line when saving personality traits fails (Beat 1). */
   saveError: "I couldn't save that. Try again?",
   /** Reply when the user skips the personality step without picking one (Beat 1). */

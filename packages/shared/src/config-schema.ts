@@ -460,6 +460,19 @@ export const UserProfileSchema = z.object({
    * ("don't ask again"). Machine-managed; null = never dismissed.
    */
   rolePromptDismissedAt: z.string().nullable().default(null),
+  /**
+   * ISO timestamp when the person closed the one-time "what should we call
+   * you?" question (DOR-677) — by saving a name or handle, or by skipping it —
+   * in onboarding, the getting-started card or the sidebar prompt.
+   * Machine-managed; null = never asked.
+   *
+   * One fact for all three surfaces, and written on a save as well as on a
+   * skip: a person who saved a name and left the handle empty has answered, and
+   * asking again would be nagging. The name and the handle themselves live on
+   * the profile route and the author row, never here — this only records that
+   * the question was put. Nothing derives a handle when it is absent (DOR-604).
+   */
+  identityPromptDismissedAt: z.string().nullable().default(null),
 });
 
 /** What the user has told DorkOS about themselves (see {@link UserProfileSchema}). */
@@ -2266,6 +2279,7 @@ export const UserConfigSchema = z.object({
     displayName: null,
     displayNameSource: null,
     rolePromptDismissedAt: null,
+    identityPromptDismissedAt: null,
   })),
   agentContext: z
     .object({

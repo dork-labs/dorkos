@@ -7,7 +7,7 @@
  *
  * Controlled: the host owns the selected roles. No sliders, no form chrome.
  *
- * @module features/onboarding/ui/ProfileRolePicker
+ * @module entities/user-profile/ui/ProfileRolePicker
  */
 import { useRef, useState } from 'react';
 import {

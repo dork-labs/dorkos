@@ -534,6 +534,7 @@ export const CONFIG_WRITE_POLICY = {
   'profile.tools': 'agent-writable',
   'profile.displayName': 'agent-writable',
   'profile.rolePromptDismissedAt': 'agent-writable',
+  'profile.identityPromptDismissedAt': 'agent-writable',
 
   // The one leaf of the profile a person keeps, and the reason it is not a
   // contradiction of the line above (DOR-1022). `displayName` stays writable

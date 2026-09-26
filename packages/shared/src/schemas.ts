@@ -4030,6 +4030,10 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when the one-time existing-user role prompt was dismissed, or null',
         }),
+        identityPromptDismissedAt: z.string().nullable().openapi({
+          description:
+            'ISO timestamp when the one-time name-and-handle question was closed (saved or skipped), or null',
+        }),
       })
       .optional()
       .openapi({
