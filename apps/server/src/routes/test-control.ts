@@ -769,7 +769,8 @@ function fixtureAgentId(agentDir: string): string {
  * `AgentManifest.runtime` is required and its enum has no `test-mode` member,
  * so this fixture has to name a real harness — and a manifest runtime WINS over
  * the server default whenever this process registers it
- * (`resolveRuntimeTypeForNewSession` in `routes/sessions.ts`). Every spec that
+ * (`resolveRuntimeTypeForNewSession` in
+ * `services/session/launch/launch-session.ts`). Every spec that
  * starts a session in this agent's directory means "the server default"
  * (`test-mode`), so the declared value must be a runtime the test-mode server
  * never registers — then resolution soft-falls back to the default.
