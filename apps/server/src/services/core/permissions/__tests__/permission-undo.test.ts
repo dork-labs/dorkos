@@ -395,6 +395,57 @@ describe('the last change behind each state (the "why?" lines)', () => {
     );
   });
 
+  it("never credits an agent's own area to a later default change", async () => {
+    const world = createPermissionWorld({ preset: 'full', agents: TWO_AGENTS });
+    await world.service.setAgent(
+      'agent-test',
+      { areas: { rooms: 'blocked' }, surface: 'agent-page' },
+      LOCAL
+    );
+    await world.service.setDefaults({ areas: { rooms: 'ask' }, surface: 'cli' }, LOCAL);
+    const rooms = (await world.service.getAgent('agent-test')).areas.find((a) => a.id === 'rooms')!;
+    expect(rooms.resolved.source).toBe('agent-area');
+    expect(rooms.lastChange?.surface).toBe('agent-page');
+  });
+
+  it("never credits an agent's own action to a later preset switch", async () => {
+    const world = createPermissionWorld({
+      preset: 'balanced',
+      agents: TWO_AGENTS,
+      autonomyAcknowledged: true,
+    });
+    await world.service.setAgent(
+      'agent-test',
+      { actions: { 'rooms.create': 'allowed' }, surface: 'request-card', approvalId: 'a1' },
+      LOCAL
+    );
+    await world.service.setPreset({ preset: 'careful', surface: 'settings' }, LOCAL);
+    const action = (await world.service.getAgent('agent-test')).areas
+      .find((a) => a.id === 'rooms')!
+      .actions.find((a) => a.id === 'rooms.create')!;
+    expect(action.resolved.source).toBe('agent-action');
+    expect(action.lastChange?.surface).toBe('request-card');
+  });
+
+  it("never credits an agent's own Files & commands stop to a later global stop change", async () => {
+    const world = createPermissionWorld({
+      preset: 'balanced',
+      agents: TWO_AGENTS,
+      autonomyAcknowledged: true,
+    });
+    await world.service.setAgent(
+      'agent-test',
+      { filesAndCommands: 'ask', surface: 'agent-page' },
+      LOCAL
+    );
+    await world.service.setPreset({ preset: 'full', surface: 'control-center' }, LOCAL);
+    const files = (await world.service.getAgent('agent-test')).filesAndCommands;
+    expect(files.source).toBe('agent');
+    expect(files.lastChange?.surface).toBe('agent-page');
+    // What it would inherit is the global stop, which the preset just moved.
+    expect(files.inherited.lastChange?.surface).toBe('control-center');
+  });
+
   it('counts the agents that follow the Files & commands stop everyone has', async () => {
     const world = createPermissionWorld({
       agents: [

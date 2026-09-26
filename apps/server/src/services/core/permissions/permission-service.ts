@@ -829,13 +829,23 @@ export class PermissionService {
       perRuntime,
       global: stops.global,
     });
-    // Every stop the resolver reads for this agent, the newest change first:
-    // its own, its runtime's, and the one everyone has.
-    const filesKeys = [
-      `agent:${agent!.id}:files`,
-      ...(agent!.runtime ? [`default:files:${agent!.runtime}`] : []),
-      'default:files',
+    // The stops the resolver reads for this agent, most specific first. As
+    // for an area, a "why?" names the deciding stop's last change or a more
+    // specific one that was put back, never a less specific one: a later
+    // change to the global stop does not touch an agent's own.
+    const filesKeys: Array<{ key: string; source: string }> = [
+      { key: `agent:${agent!.id}:files`, source: 'agent' },
+      ...(agent!.runtime ? [{ key: `default:files:${agent!.runtime}`, source: 'runtime' }] : []),
+      { key: 'default:files', source: 'default' },
     ];
+    const filesChange = (source: string, from = 0) => {
+      const stop = filesKeys.findIndex((k) => k.source === source);
+      const keys = stop === -1 ? filesKeys.slice(from) : filesKeys.slice(from, stop + 1);
+      return newestOf(
+        lastChanges,
+        keys.map((k) => k.key)
+      );
+    };
     return {
       agentId: agent!.id,
       agentName: agentName(agent!),
@@ -848,9 +858,9 @@ export class PermissionService {
       filesAndCommands: withLastChange(
         {
           ...files,
-          inherited: withLastChange(inheritedFiles, newestOf(lastChanges, filesKeys.slice(1))),
+          inherited: withLastChange(inheritedFiles, filesChange(inheritedFiles.source, 1)),
         },
-        newestOf(lastChanges, filesKeys)
+        filesChange(files.source)
       ),
     };
   }

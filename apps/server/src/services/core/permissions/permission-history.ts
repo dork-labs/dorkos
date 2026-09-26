@@ -486,11 +486,40 @@ export function newestOf(
 }
 
 /**
- * The last change behind one resolved state: the newest recorded change to any
- * setting the resolver reads for it (the agent's own action and area, the
- * default action and area, and the preset). A newer key that is no longer set
- * was put back, which is exactly the change that made the state fall through
- * to where it comes from now, so it is the one to name.
+ * The resolver's keys for one state, most specific first. Paired with the
+ * source each one decides as, so {@link lastChangeFor} can stop at the key that
+ * decided.
+ */
+function resolverKeys(entry: {
+  area: PermissionAreaId;
+  actionId?: string;
+  agentId?: string;
+}): Array<{ key: string; source: PermissionSource }> {
+  const keys: Array<{ key: string; source: PermissionSource }> = [];
+  if (entry.agentId) {
+    if (entry.actionId) {
+      keys.push({ key: `agent:${entry.agentId}:action:${entry.actionId}`, source: 'agent-action' });
+    }
+    keys.push({ key: `agent:${entry.agentId}:area:${entry.area}`, source: 'agent-area' });
+  }
+  if (entry.actionId) {
+    keys.push({ key: `default:action:${entry.actionId}`, source: 'default-action' });
+  }
+  keys.push({ key: `default:area:${entry.area}`, source: 'default-area' });
+  keys.push({ key: 'default:preset', source: 'preset' });
+  return keys;
+}
+
+/**
+ * The last change behind one resolved state: the newest recorded change to the
+ * key that decided it, or to a MORE specific key. A more specific key that is
+ * no longer set was put back, which is exactly the change that made the state
+ * fall through to where it comes from now, so it may be named. A LESS specific
+ * key never is: a later change to the default does not touch an agent's own
+ * setting, and naming it would credit the state to the wrong change.
+ *
+ * `unchanged` decides at the same place `preset` does (no preset chosen yet).
+ * `floor` hides which layer said Allowed, so every key is a candidate.
  *
  * @param index - The last change per key.
  * @param entry - The area, the action (absent for the area as a whole), the
@@ -501,14 +530,14 @@ export function lastChangeFor(
   entry: { area: PermissionAreaId; actionId?: string; agentId?: string; source: PermissionSource }
 ): PermissionLastChange | undefined {
   if (entry.source === 'inactive') return undefined;
-  const keys: string[] = [];
-  if (entry.agentId) {
-    if (entry.actionId) keys.push(`agent:${entry.agentId}:action:${entry.actionId}`);
-    keys.push(`agent:${entry.agentId}:area:${entry.area}`);
-  }
-  if (entry.actionId) keys.push(`default:action:${entry.actionId}`);
-  keys.push(`default:area:${entry.area}`, 'default:preset');
-  return newestOf(index, keys);
+  const keys = resolverKeys(entry);
+  const decider = entry.source === 'unchanged' ? 'preset' : entry.source;
+  const stop = keys.findIndex((k) => k.source === decider);
+  const candidates = entry.source === 'floor' || stop === -1 ? keys : keys.slice(0, stop + 1);
+  return newestOf(
+    index,
+    candidates.map((k) => k.key)
+  );
 }
 
 /** Add `lastChange` to an object when there is one. */
