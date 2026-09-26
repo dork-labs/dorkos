@@ -80,6 +80,18 @@ After the operator asked what is flow-specific, the orchestrator decided:
 
 Spec: §6.6, §6.7, §7.1, §8.4.
 
+## 4b. Which runtimes and how many accounts (orchestrator, operator-confirmed, 2026-09-26)
+
+Source: the programme's runtime decisions (RUNTIMES.md R7).
+
+- The account chip, sidebar dots and header badge show **only when the session's runtime supports several accounts** (`supportsAccounts`, Claude Code only today) **and that runtime has 2+ registered accounts**. Never for Codex or OpenCode sessions today.
+- Settings → Runtimes shows **usage bars for any runtime with usage data** (for example Codex's weekly window), even with one account, using the same bar.
+- The out-of-usage banner applies to **any runtime** that reports it is out; when the account is implicit, the wording names the runtime ("Codex is out of usage until Tue 3pm").
+- The picker lists the same runtime's accounts, plus a second **"Other runtimes"** group only when flow's cross-runtime fallback is on.
+- The Flow tab lists accounts **grouped by runtime**, implicit accounts shown as "Codex (this computer's sign-in)", plus a **"Cross-runtime fallback"** toggle (off by default) in the same row and segmented-control pattern.
+
+Spec: §4, §6.0, §6.5, §6.6, §6.7, §8.3.
+
 ## 5. Chosen in this spec (not a new visual decision)
 
 - **The palette** (§5 of the spec): 8 colors, blue, green, amber, purple, pink, teal, indigo, stone, each at least 3:1 against every surface a dot sits on in both themes. The first four follow the mockups' order. The brief asked the spec to choose it.
@@ -103,3 +115,6 @@ Listed with a proposed default in the spec, §14. None is decided here; each nee
 - Q11. Whether "Continue here anyway" is remembered or per window.
 - Q12. The reset-ready wording ("Acct 4 has reset." + Continue).
 - Q13. Whether the calm states (waiting, reset-ready, moved) keep the red banner tone.
+- Q14. Whether a moved session keeps a tint or text in the sidebar.
+- Q15. Whether and how to show spend-only usage (OpenCode) in Settings.
+- Q16. Cross-runtime fallback per runtime pair, beyond one fleet-wide toggle.

@@ -24,7 +24,8 @@ The server track (S4, `specs/claude-account-fleet/`) makes the account something
 
 ## Assumptions
 
-- S4's server work lands first. Every UI task depends on the S4 task that serves its data.
+- S4's server work lands first, including its revision in dork-labs/dorkos#2147 (the out-of-usage states, continue and wait, the account advisor, usage for every runtime). Every UI task depends on the S4 work that serves its data.
+- Account identity UI appears only for a runtime that supports several accounts (Claude Code today) with 2+ registered accounts; usage bars and the out-of-usage banner apply to every runtime (orchestrator, RUNTIMES.md R7).
 - The Flow extension ships inside the flow plugin package in the marketplace repo (spec unit S6 is folded into this spec's Flow-tab tasks).
 - One account behaves exactly as today.
 
