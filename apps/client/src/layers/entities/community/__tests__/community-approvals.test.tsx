@@ -5,16 +5,21 @@
  * on-screen ending to its dialog instead of a toast.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { Transport } from '@dorkos/shared/transport';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { createMockTransport } from '@dorkos/test-utils';
-import { invalidateCommunityAuthority } from '@/layers/shared/lib';
+import {
+  getCommunityAuthority,
+  invalidateCommunityAuthority,
+  type ConfirmedCommunityAuthority,
+} from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import {
+  communityOwnerAddress,
   useCommunityApprovalStore,
   useCommunityApprovalWatcher,
 } from '../model/community-approvals';
@@ -152,6 +157,20 @@ describe('useCommunityApprovalWatcher', () => {
     const calls = poll.mock.calls.length;
     await new Promise((resolve) => setTimeout(resolve, 2_600));
     expect(poll).toHaveBeenCalledTimes(calls);
+  });
+
+  it('drops the approval links it holds when the owner changes or signs out', async () => {
+    mount(createMockTransport({ listCommunityConnections: vi.fn().mockResolvedValue([]) }));
+    await waitFor(() => expect(getCommunityAuthority().ownerKey).not.toBeNull());
+    const owner = communityOwnerAddress(getCommunityAuthority() as ConfirmedCommunityAuthority);
+    act(() => {
+      useCommunityApprovalStore.getState().rememberLink(owner, a.ref, 'https://a.example/pair');
+    });
+    expect(useCommunityApprovalStore.getState().links?.urls[a.ref]).toBe('https://a.example/pair');
+    act(() => {
+      invalidateCommunityAuthority();
+    });
+    await waitFor(() => expect(useCommunityApprovalStore.getState().links).toBeNull());
   });
 
   it('checks a wait again every two seconds while it is pending', async () => {

@@ -2,6 +2,7 @@
 covers:
   - 'feat(communities): connect a community from the sidebar switcher (DOR-2422)'
   - 'fix(communities): keep the connect dialog honest when a wait ends elsewhere (DOR-2422)'
+  - 'fix(communities): forget the old owner’s wait when the owner changes (DOR-2422)'
 ---
 
 ### Changed

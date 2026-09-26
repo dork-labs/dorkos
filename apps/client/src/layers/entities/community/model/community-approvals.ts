@@ -58,7 +58,12 @@ interface CommunityApprovalState {
   hide: (ref: string) => void;
   end: (ending: Omit<CommunityApprovalEnding, 'id'>) => void;
   rememberLink: (address: string, ref: string, url: string) => void;
+  /** Drop everything held for any owner but this one (`''`: for every owner). */
+  forget: (address: string) => void;
 }
+
+/** Ending ids only ever grow, so a dialog never mistakes a new ending for one it handled. */
+let lastEndingId = 0;
 
 /** The shared approval store; see the module comment. */
 export const useCommunityApprovalStore = create<CommunityApprovalState>()((set) => ({
@@ -67,7 +72,7 @@ export const useCommunityApprovalStore = create<CommunityApprovalState>()((set) 
   links: null,
   show: (ref) => set({ onScreen: ref }),
   hide: (ref) => set((state) => (state.onScreen === ref ? { onScreen: null } : state)),
-  end: (ending) => set((state) => ({ ending: { ...ending, id: (state.ending?.id ?? 0) + 1 } })),
+  end: (ending) => set({ ending: { ...ending, id: ++lastEndingId } }),
   rememberLink: (address, ref, url) =>
     set((state) => ({
       links: {
@@ -75,6 +80,12 @@ export const useCommunityApprovalStore = create<CommunityApprovalState>()((set) 
         urls: { ...(state.links?.address === address ? state.links.urls : {}), [ref]: url },
       },
     })),
+  forget: (address) =>
+    set((state) =>
+      state.links === null || state.links.address === address
+        ? { ending: null }
+        : { links: null, ending: null }
+    ),
 }));
 
 /**
@@ -138,6 +149,12 @@ export function useCommunityApprovalWatcher(): void {
   const client = useQueryClient();
   const authority = useConfirmedCommunityAuthority();
   const list = useCommunityConnections();
+  // A new owner, a new authority epoch, or signing out: the old owner's
+  // approval links and last ending are dropped, not just hidden.
+  const address = communityOwnerAddress(authority);
+  useEffect(() => {
+    useCommunityApprovalStore.getState().forget(address);
+  }, [address]);
   const pending = authority
     ? (list.data ?? []).filter((connection) => connection.status === 'pending')
     : [];

@@ -93,14 +93,19 @@ export function ConnectCommunityDialog({
   const rememberLink = useCommunityApprovalStore((state) => state.rememberLink);
   const ending = useCommunityApprovalStore((state) => state.ending);
 
-  // The ref on screen. It needs no owner of its own: it is only ever looked up
-  // in the confirmed owner's list, where another owner's ref is never found.
-  const [shownRef, setShownRef] = useState<string | null>(null);
+  const ownerKey = authority?.ownerKey ?? null;
+  // The ref on screen, and the owner it belongs to (`null` when it was chosen
+  // before an owner was confirmed; the first confirmed owner adopts it).
+  const [shown, setShown] = useState<{ owner: string | null; ref: string } | null>(null);
+  const setShownRef = (ref: string | null) =>
+    setShown(ref === null ? null : { owner: ownerKey, ref });
   const [notice, setNotice] = useState<OwnedValue<string> | null>(null);
   const [started, setStarted] = useState<Started | null>(null);
   const [handledEnding, setHandledEnding] = useState(ending?.id ?? 0);
   // The last name the wait on screen was shown under, to say which one ended.
-  const [lastSeen, setLastSeen] = useState<{ ref: string; label: string } | null>(null);
+  const [lastSeen, setLastSeen] = useState<{ owner: string; ref: string; label: string } | null>(
+    null
+  );
   // Each opening starts from what it was opened for, not from the last visit.
   const [openedFor, setOpenedFor] = useState<ConnectCommunityRequest | null>(null);
   if (request !== openedFor) {
@@ -110,6 +115,17 @@ export function ConnectCommunityDialog({
       setNotice(null);
     }
   }
+  // A different owner took over: nothing of the old owner's wait may show,
+  // not even its name. Back to a clean form, saying nothing about it.
+  if (shown !== null && ownerKey !== null && shown.owner !== ownerKey) {
+    if (shown.owner === null) setShown({ owner: ownerKey, ref: shown.ref });
+    else {
+      setShown(null);
+      setNotice(null);
+      setLastSeen(null);
+    }
+  }
+  const shownRef = shown !== null && shown.owner === ownerKey ? shown.ref : null;
 
   const listed = shownRef === null ? undefined : list.data?.find((row) => row.ref === shownRef);
   // Until the list is re-read after a start, the start's answer stands in for it.
@@ -122,8 +138,14 @@ export function ConnectCommunityDialog({
       ? started.connection
       : null;
   const connection = listed ?? provisional;
-  if (connection && (lastSeen?.ref !== connection.ref || lastSeen.label !== connection.label))
-    setLastSeen({ ref: connection.ref, label: connection.label });
+  if (
+    connection &&
+    ownerKey !== null &&
+    (lastSeen?.owner !== ownerKey ||
+      lastSeen.ref !== connection.ref ||
+      lastSeen.label !== connection.label)
+  )
+    setLastSeen({ owner: ownerKey, ref: connection.ref, label: connection.label });
 
   // The wait on screen ended, as the watcher saw it (expired, or cancelled on
   // the Community's side). A connected ending is handled below, from the list.
@@ -144,7 +166,8 @@ export function ConnectCommunityDialog({
   // expired or refused, or it was cancelled elsewhere. Say so, rather than
   // keep waiting on a connection that is gone.
   else if (open && shownRef !== null && !connection && list.isSuccess) {
-    const label = lastSeen?.ref === shownRef ? lastSeen.label : 'this community';
+    const label =
+      lastSeen?.owner === ownerKey && lastSeen.ref === shownRef ? lastSeen.label : 'this community';
     setShownRef(null);
     setNotice({
       address,

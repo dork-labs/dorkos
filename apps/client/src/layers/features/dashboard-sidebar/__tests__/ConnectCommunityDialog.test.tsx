@@ -256,6 +256,67 @@ describe('ConnectCommunityDialog', () => {
     expect(screen.queryByText('Next, approve this DorkOS on Community A.')).not.toBeInTheDocument();
   });
 
+  it('shows nothing of the old owner’s wait once another owner takes over', async () => {
+    const navigation = vi
+      .fn()
+      .mockResolvedValue({ ownerKey: 'owner-a', order: [], destinations: [] });
+    const list = vi.fn().mockResolvedValue([pending]);
+    const transport = createMockTransport({
+      getCommunityNavigation: navigation,
+      listCommunityConnections: list,
+      pollCommunityConnection: vi
+        .fn()
+        .mockResolvedValue({ status: 'pending', connection: pending }),
+    });
+    mount(transport, { ref: pending.ref });
+    expect(await screen.findByRole('dialog', { name: 'Approve on Community A' })).toBeVisible();
+
+    // The local server now answers for a different owner, who has no communities.
+    navigation.mockResolvedValue({ ownerKey: 'owner-b', order: [], destinations: [] });
+    list.mockResolvedValue([]);
+    act(() => {
+      invalidateCommunityAuthority();
+    });
+    await waitFor(() => expect(navigation).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('dialog', { name: 'Connect a community' })).toBeVisible();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(/Community A/)).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('');
+  });
+
+  it('never shows an approval link held for another owner', async () => {
+    // What the store holds between an owner change and the watcher clearing it.
+    useCommunityApprovalStore.setState({
+      links: {
+        address: JSON.stringify(['someone-else', 0]),
+        urls: { [pending.ref]: 'https://a.example/pair?code=theirs' },
+      },
+    });
+    const transport = createMockTransport({
+      listCommunityConnections: vi.fn().mockResolvedValue([pending]),
+      pollCommunityConnection: vi
+        .fn()
+        .mockResolvedValue({ status: 'pending', connection: pending }),
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // No watcher here, so nothing clears the store: the dialog's own check is all there is.
+    render(
+      <QueryClientProvider client={client}>
+        <TransportProvider transport={transport}>
+          <ConnectCommunityDialog
+            request={{ ref: pending.ref }}
+            onOpenChange={vi.fn()}
+            installName="Studio Mac"
+            onConnected={vi.fn()}
+          />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    expect(await screen.findByRole('dialog', { name: 'Approve on Community A' })).toBeVisible();
+    expect(screen.getByText(/Approve in the community tab you opened/)).toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('discards a start that finished after the owner changed', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({
