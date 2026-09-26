@@ -170,6 +170,8 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
       'side panel',
       'resize',
       'split',
+      'divider',
+      'reply count',
       'orphan',
       'orphaned',
       'stalled',
@@ -186,7 +188,6 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     keywords: [
       'thread',
       'animation',
-      'connector',
       'drop',
       'hand-off',
       'handoff',

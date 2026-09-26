@@ -179,6 +179,47 @@ describe('RoomThreadPanel', () => {
     expect(rows[1]).toHaveTextContent('line 2');
   });
 
+  it('separates the root from its replies with a line counting them', () => {
+    renderPanel({ entries: [entry(1), reply(2, 1), reply(3, 1)] });
+
+    const panel = screen.getByTestId('room-thread-panel');
+    const divider = within(panel).getByTestId('room-thread-divider');
+    expect(divider).toHaveTextContent('2 replies');
+    const [root, firstReply] = within(panel).getAllByTestId('room-entry');
+    // Between the root and the first reply, in reading order.
+    expect(root!.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      divider.compareDocumentPosition(firstReply!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('draws replies flush with the root, with nothing beside them', () => {
+    // DOR-2110: the panel IS the thread, so a reply is not indented under a
+    // connector rule. jsdom lays nothing out, so this reads what would: every
+    // box between the feed and the reply, none of which may hold a sibling
+    // beside the reply or push it in from the left.
+    renderPanel({ entries: [entry(1), reply(2, 1)] });
+
+    const feed = screen.getByTestId('room-thread-feed');
+    const firstReply = within(feed).getAllByTestId('room-entry')[1]!;
+    for (let box = firstReply.parentElement; box && box !== feed; box = box.parentElement) {
+      expect(box.className).not.toMatch(/\b(ml|pl|ms|ps)-/);
+      expect(box.querySelectorAll(':scope > [aria-hidden]')).toHaveLength(0);
+    }
+  });
+
+  it('counts the whole thread when the root says it is bigger than the page', () => {
+    renderPanel({ entries: [entry(1, { threadReplyCount: 5 }), reply(2, 1)] });
+
+    expect(screen.getByTestId('room-thread-divider')).toHaveTextContent('5 replies');
+  });
+
+  it('says "1 reply" in the singular', () => {
+    renderPanel();
+
+    expect(screen.getByTestId('room-thread-divider')).toHaveTextContent('1 reply');
+  });
+
   it('gathers only ITS thread, not every reply in the room', () => {
     renderPanel({
       entries: [entry(1), reply(2, 1), entry(3), reply(4, 3)],
@@ -224,6 +265,8 @@ describe('RoomThreadPanel', () => {
     expect(screen.getAllByTestId('room-entry')).toHaveLength(1);
     expect(screen.getByRole('combobox', { name: 'Reply in this thread…' })).toBeInTheDocument();
     expect(screen.queryByTestId('room-thread-orphan')).not.toBeInTheDocument();
+    // No line counting nothing under the root.
+    expect(screen.queryByTestId('room-thread-divider')).not.toBeInTheDocument();
   });
 
   it('closes on its close button', async () => {

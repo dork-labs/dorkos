@@ -869,7 +869,7 @@ describe('ChannelsPage — switching between threads', () => {
     const panel = screen.getByTestId('room-thread-panel');
     expect(within(panel).getByText('answering the second')).toBeInTheDocument();
     const animated = panel.querySelectorAll(
-      '[class*="animate-thread-reply-in"], [class*="animate-reply-settle"], [class*="animate-thread-line-draw"]'
+      '[class*="animate-thread-reply-in"], [class*="animate-reply-settle"]'
     );
     expect(animated).toHaveLength(0);
   });
