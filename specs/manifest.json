@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260926-183346",
+      "slug": "connections-one-list",
+      "title": "Connections, one list",
+      "created": "2026-09-26",
+      "status": "ideation",
+      "project": "DorkOS Connections",
+      "linearIssue": "DOR-2418"
+    },
+    {
       "id": "260925-225543",
       "slug": "disconnected-account-removal",
       "title": "Remove disconnected accounts",

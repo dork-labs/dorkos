@@ -1,0 +1,127 @@
+<style>
+  .card-image{display:block!important;height:auto!important;min-height:0!important;aspect-ratio:auto!important;overflow:visible!important;background:#f4f4f4!important;padding:14px!important;text-align:left}
+  .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+  .panel{background:#fff;border:1px solid #d9d9d9;border-radius:14px;width:360px;font-size:13px;overflow:hidden;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+  .hd{padding:16px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #f0f0f0}
+  .logo{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:15px;flex:none}
+  .nm{font-weight:700;font-size:15px}
+  .ds{font-size:12px;color:#777}
+  .x{margin-left:auto;color:#aaa}
+  .sec{padding:12px 16px}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:6px;display:flex}
+  .lbl span{margin-left:auto;text-transform:none;letter-spacing:0;color:#2563eb}
+  .ag{display:flex;align-items:center;gap:8px;padding:6px 0}
+  .av{width:22px;height:22px;border-radius:50%;background:#eee;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .lvl{margin-left:auto;font-size:11px;padding:3px 8px;border:1px solid #e3e3e3;border-radius:99px;color:#555}
+  .act{font-size:12px;color:#555;padding:3px 0}
+  .act i{color:#aaa;font-style:normal;float:right}
+  .more{border-top:1px solid #f0f0f0;padding:12px 16px;color:#555;display:flex}
+  .more span{margin-left:auto;color:#aaa}
+  .open .it{padding:7px 0;border-bottom:1px solid #f6f6f6;font-size:12px;display:flex}
+  .open .it small{margin-left:auto;color:#999}
+  .red{color:#b91c1c}
+  .banner{background:#fffbeb;border-bottom:1px solid #fde68a;color:#92400e;padding:10px 16px;font-size:12px;display:flex;align-items:center;gap:8px}
+  .banner .b{margin-left:auto;background:#b45309;color:#fff;border-radius:7px;padding:5px 10px;font-size:11px;white-space:nowrap}
+  .sel{border:1px solid #ddd;border-radius:8px;padding:7px 10px;display:flex}
+  .sel span{margin-left:auto;color:#999}
+  .wait{background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 10px;font-size:12px;margin-top:6px}
+  .wait .row2{display:flex;gap:6px;margin-top:6px}
+  .wait .row2 span{font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid #ddd;background:#fff}
+  .wait .row2 span.d{background:#111;color:#fff;border-color:#111}
+  .cap{font-size:12px;color:#6d28d9;margin-top:8px;max-width:360px}
+  .tog{margin-left:auto;width:30px;height:18px;border-radius:99px;background:#d4d4d4;position:relative}
+  .tog::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+</style>
+
+<h2>Step 5 — Clicking a connected row</h2>
+<p class="subtitle">It opens a panel. Up top: only what you came for — <b>who can use it</b> and <b>what they've been doing</b>. Everything else is folded under "More". Three versions of the same panel below.</p>
+
+<div class="wrap">
+  <div>
+    <div class="panel">
+      <div class="hd"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">you@gmail.com · <span style="color:#1a7f37">● Connected</span></div></div><div class="x">✕</div></div>
+      <div class="sec">
+        <div class="lbl">Who can use it <span>+ Add</span></div>
+        <div class="ag" style="padding-bottom:10px;border-bottom:1px solid #f4f4f4"><span>Every agent</span><div class="tog"></div></div>
+        <div class="ag"><div class="av">🦋</div>DorkBot<div class="lvl">Read and send ▾</div></div>
+        <div class="ag"><div class="av">📬</div>mailroom<div class="lvl">Read ▾</div></div>
+      </div>
+      <div class="sec" style="border-top:1px solid #f0f0f0">
+        <div class="lbl">Recently <span>See all</span></div>
+        <div class="act">DorkBot read 12 emails <i>2h ago</i></div>
+        <div class="act">mailroom read 3 emails <i>yesterday</i></div>
+        <div class="act">DorkBot sent 1 email <i>Tue</i></div>
+      </div>
+      <div class="more">More<span>›</span></div>
+    </div>
+    <div class="cap">① Normal. Level menu per agent: Read · Read and send · Remove. "Every agent" is a switch. Activity is 3 lines, plain words.</div>
+  </div>
+
+  <div>
+    <div class="panel open">
+      <div class="hd"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">you@gmail.com</div></div><div class="x">✕</div></div>
+      <div class="sec" style="padding-top:4px">
+        <div class="lbl" style="margin-top:8px">More</div>
+        <div class="it">Name <small>you@gmail.com ›</small></div>
+        <div class="it">When a new email arrives… <small>Tell mailroom ›</small></div>
+        <div class="it">Exact actions per agent <small>24 actions ›</small></div>
+        <div class="it">Pause <small>Agents stop until you resume</small></div>
+        <div class="it">How it's connected <small>Through Composio ›</small></div>
+        <div class="it red" style="border:none">Disconnect…</div>
+      </div>
+    </div>
+    <div class="cap">② "More", opened. Power features live here: new-email alerts, per-action picks, who holds the login. Disconnect is last, and asks first: "DorkBot and mailroom will lose access."</div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <div class="hd"><div class="logo" style="background:#229ED9">✈</div><div><div class="nm">Telegram</div><div class="ds">@lifeos_bot · <span style="color:#1a7f37">● Connected</span></div></div><div class="x">✕</div></div>
+      <div class="sec">
+        <div class="lbl">Who answers</div>
+        <div class="sel">🦋 DorkBot<span>▾</span></div>
+        <div class="wait"><b>1 new chat waiting</b> — Sam (@sam_k) messaged your bot.
+          <div class="row2"><span class="d">Let DorkBot answer</span><span>Ignore</span><span>Block</span></div></div>
+      </div>
+      <div class="sec" style="border-top:1px solid #f0f0f0">
+        <div class="lbl">Recently <span>See all</span></div>
+        <div class="act">You ↔ DorkBot, 14 messages <i>today</i></div>
+      </div>
+      <div class="more">More<span>›</span></div>
+    </div>
+    <div class="cap">③ A chat app asks a different question: <b>who answers</b> (one agent). New people who message the bot wait here for your OK. Session limits and timeouts move to Settings.</div>
+  </div>
+</div>
+
+<div class="wrap" style="margin-top:20px">
+  <div>
+    <div class="panel">
+      <div class="banner">Signed out. Agents can't use Notion.<span class="b">Sign in again</span></div>
+      <div class="hd"><div class="logo" style="background:#000">N</div><div><div class="nm">Notion</div><div class="ds">Acme workspace</div></div><div class="x">✕</div></div>
+      <div class="sec"><div class="lbl">Who can use it</div><div class="ag"><div class="av">🦋</div>DorkBot<div class="lvl">Read ▾</div></div></div>
+      <div class="more">More<span>›</span></div>
+    </div>
+    <div class="cap">④ Broken. The fix sits on top, as one button. Nothing else changes.</div>
+  </div>
+  <div style="max-width:420px;font-size:13px;color:#555">
+    <h3 style="margin-top:0">What's gone from today's panel</h3>
+    <ul style="padding-left:18px;margin:0">
+      <li>"dorkos-managed", "Managed", "Authentication: Signed in", "Agent access: Ready" → one green dot.</li>
+      <li>"0 sessions may be affected by changes" → said only when you actually change something.</li>
+      <li>"12 actions" → "Read" or "Read and send". Exact actions live under More.</li>
+      <li>"Delivery is managed by DorkOS…" → gone. It's a sentence about us, not you.</li>
+      <li>The custody note moves to More → "How it's connected".</li>
+    </ul>
+  </div>
+</div>
+
+<h2 style="margin-top:30px">One choice — where does it open?</h2>
+<div class="options">
+  <div class="option" data-choice="side-panel" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content"><h3>Side panel (recommended)</h3><p>Slides in from the right, the list stays visible behind it. On a phone it slides up from the bottom. It still gets its own link, so the chat card's "Change" button can open it directly.</p></div>
+  </div>
+  <div class="option" data-choice="own-page" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content"><h3>Its own page</h3><p>/connections/gmail. More room for activity history later, but you lose the list, and it feels heavier for a two-second change.</p></div>
+  </div>
+</div>
