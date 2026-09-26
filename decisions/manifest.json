@@ -6528,6 +6528,48 @@
         "apps/community/src/routes/host-lifecycle.ts",
         "apps/community/src/routes/host.ts"
       ]
+    },
+    {
+      "id": "260926-141753",
+      "slug": "claude-account-usage-ledger",
+      "title": "DorkOS keeps usage per Claude account in a shared ledger it merges by observation time",
+      "status": "draft",
+      "created": "2026-09-26",
+      "extractedFrom": "claude-account-fleet",
+      "specSlug": "claude-account-fleet",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/accounts/account-usage-store.ts",
+        "packages/shared/src/account-usage.ts"
+      ]
+    },
+    {
+      "id": "260926-141755",
+      "slug": "account-limit-as-session-field",
+      "title": "A hard usage limit is a field on the session status, not a new lifecycle value",
+      "status": "draft",
+      "created": "2026-09-26",
+      "extractedFrom": "claude-account-fleet",
+      "specSlug": "claude-account-fleet",
+      "supersedes": null,
+      "affects": [
+        "packages/shared/src/session-stream.ts",
+        "apps/server/src/services/session/session-state-projector.ts"
+      ]
+    },
+    {
+      "id": "260926-141756",
+      "slug": "account-launch-guard-seam",
+      "title": "Account routing policy belongs to an extension; core only asks its launch guards",
+      "status": "draft",
+      "created": "2026-09-26",
+      "extractedFrom": "claude-account-fleet",
+      "specSlug": "claude-account-fleet",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/accounts/account-launch-guard.ts",
+        "packages/extension-api/src/server-extension-api.ts"
+      ]
     }
   ]
 }

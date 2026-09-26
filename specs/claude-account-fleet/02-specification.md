@@ -1,0 +1,382 @@
+---
+slug: claude-account-fleet
+id: 260926-141330
+created: 2026-09-26
+status: specified
+tracker: DOR-2379, DOR-2380, DOR-2381, DOR-2382, DOR-2383, DOR-2384, DOR-2385, DOR-2386
+project: Flow CLI & Account Fleet
+ideation: dork-labs/marketplace specs/flow-fleet/01-ideation.md (§4, §6) and 04-design-decisions.md
+contracts: dork-labs/marketplace specs/flow-cli-core/02-specification.md §1 (revision 4)
+---
+
+# Claude account fleet: per-account usage, limits, and launching work on a chosen account
+
+**Status:** Specified. Technical decisions made under the operator's autonomy grant (2026-09-26) and logged in §12.
+**Scope:** server, shared schemas, config, MCP, REST, events, and the extension server API. UI is designed on a separate track (S5); this spec names only the data the UI reads (§10).
+
+## 1. Overview
+
+DorkOS already runs Claude Code sessions on different accounts and sees usage on every turn, but it keeps that usage per session, forgets it on restart, hides a hard limit, and only a person at the HTTP API can start a session on a chosen account. This spec makes the account something the server knows about:
+
+- one **usage record per account**, fed by every session, persisted to the shared ledger `<dorkHome>/usage/<id>.json`, and readable over REST, MCP and `/api/events` (D2);
+- a **probe** that reads an idle account's usage without a model turn (D3);
+- a hard limit shown as a **`limit` on the session**, plus one notification per limit (D4);
+- an **MCP tool that starts a session** on a named account (D5), and an **account on schedules and relay messages** (D6);
+- the **session list** carries status, account id and account usage (D7), and the **tracker item** a flow run serves (D8);
+- an account **color** (D1), and three small **extension server API** additions for the Flow extension (X1-X3).
+
+## 2. The split with flow, and the shared contracts
+
+Operator direction, 2026-09-26:
+
+| Concern                                                               | Owner                           | Where it lives                                                                             |
+| --------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
+| Account identity: `id`, `path`, `label`, `color`                      | DorkOS core                     | `config.json` → `runtimes.claudeCode.accounts[]` (contract §1.1a)                          |
+| Usage per account                                                     | DorkOS core and flow both write | `<dorkHome>/usage/<id>.json` (contract §1.2)                                               |
+| Routing policy: role, reserve, spend-down window, repo scope, handoff | **flow**                        | `<dorkHome>/flow/fleet.json` (contract §1.1b), edited in the Flow extension's Settings tab |
+| Which item a session serves                                           | **flow** writes, DorkOS reads   | `<main checkout>/.dork/flow/flow-state.json` (contract §1.3)                               |
+| Choosing an account automatically; handoff                            | **flow**                        | flow's dispatcher                                                                          |
+| Choosing an account by hand ("continue on another account", D10)      | DorkOS core UI (S5)             | the existing HTTP launch hint                                                              |
+
+**The contracts are the marketplace spec `flow-cli-core` §1, revision 4.** This spec adopts them exactly: field names, window keys, source names, merge and lock rules. Where this spec restates a rule, the contract wins; a mismatch found later is fixed here, never in code. DorkOS core **never reads `fleet.json`**. Where core must respect a routing rule (an agent or a relay message naming an account), it asks the launch guards the Flow extension registers (X3); with no guard registered, an agent's or a relay message's account pick is refused.
+
+## 3. Goals and non-goals
+
+**Goals:** D1-D8 and X1-X3 as below, each behaving the same with one account and with many (§9).
+
+**Non-goals:**
+
+- Any routing policy in core config (flow's, §2).
+- Automatic handoff, ranking, checkpoints (flow, S2/S3).
+- Reading any Anthropic endpoint directly, or touching Keychain credentials (§8).
+- Codex or OpenCode accounts.
+- Moving a live session to another account (impossible by design, ADR 260801-204127). "Continue on another account" starts a **new** session.
+- Writing `flow-state.json` or storing flow's run records in SQLite (contract §1.3: DorkOS reads only).
+- The Accounts UI, the status-bar chip, sidebar dots, the Flow Settings tab (S5, S6, flow).
+
+## 4. Invariants (each needs its evidence in tests)
+
+1. **Disk stays the per-session account truth** (billing-account-ladder invariant 1). Nothing here persists a session's account. _Evidence:_ the existing launch-resolver and session-store tests pass unmodified.
+2. **The ladder runs only at launch** (ladder invariant 5). Every new account input (D5, D6) enters as `accountHint` and is ignored once `session.accountRoot` exists. _Evidence:_ a resumed session with an `accountRoot` ignores a D5 or D6 account.
+3. **Usage is only read from what the official binary hands us** (§8). _Evidence:_ a guard test fails if any file under `services/runtimes/claude-code/accounts/` mentions `security find-generic-password`, `Keychain`, `.credentials.json`, `oauth/usage`, `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_AUTH_TOKEN`.
+4. **Unknown is never zero.** A missing ledger, a stale window, a failed probe, an API-key account all read as unknown, never `0%`. _Evidence:_ store and probe tests.
+5. **One account behaves exactly as today** (§9). _Evidence:_ the existing session, schedule and relay suites pass unmodified; new fields are optional and absent where there is nothing to say.
+6. **An agent cannot silently bill an account it did not name.** D5 refuses an unknown account id rather than falling through the ladder. The HTTP hint keeps its fall-through (a person's pick must never fail a launch). _Evidence:_ D5 test with an unregistered id starts nothing.
+
+## 5. Shared model (`packages/shared`)
+
+New subpath **`@dorkos/shared/account-usage`** (`src/account-usage.ts`, added to the `exports` map) for everything below except the `config-schema.ts`, `schemas.ts` and `session-stream.ts` edits.
+
+### 5.1 Account color and identity (D1)
+
+- `ClaudeCodeAccountSchema` gains `color: z.string().regex(/^#[0-9a-f]{6}$/).nullable().default(null).catch(null)` (contract §1.1a: nullable, default `null`, a bad value reads as `null`). `null` means "the default for this position".
+- `DEFAULT_ACCOUNT_COLORS`: 8 hex values, and `resolveAccountColor(stored, index)` = `stored ?? DEFAULT_ACCOUNT_COLORS[index % 8]`. The values are **provisional and owned by the UI track (S5)**: nothing persists them, so S5 may change them freely.
+- `nextAccountColor(taken, index)`: the first palette value no registered row uses, for a new row the operator registers.
+- `FLOW_FLEET_SETTINGS_TAB_ID = 'flow:fleet'` (§10).
+- `ACCOUNT_ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/` (contract §1.1a).
+
+### 5.2 Ledger and usage schemas (D2, D3, D7)
+
+Implementing contract §1.2, names as the contract spells them:
+
+```ts
+export const LEDGER_SOURCES = ['statusline', 'sdk_event', 'sdk_usage', 'transcript'] as const;
+export const RateLimitStatusSchema = z.enum(['allowed', 'allowed_warning', 'rejected']);
+export const LedgerEntrySchema = z
+  .object({
+    usedPct: z.number().min(0).max(100).nullable(),
+    resetsAt: z.string().datetime({ offset: true }).nullable(),
+    status: RateLimitStatusSchema.nullable(),
+    observedAt: z.string().datetime({ offset: true }),
+    source: z.enum(LEDGER_SOURCES),
+  })
+  .refine((e) => e.usedPct !== null || e.status !== null);
+export const WINDOW_KEY_PATTERN = /^(model:[a-z0-9][a-z0-9._-]*|[a-z][a-z0-9_]*)$/;
+export const UsageLedgerSchema = z.looseObject({
+  v: z.literal(1),
+  accountId: z.string().regex(ACCOUNT_ID_PATTERN),
+  updatedAt: z.string().datetime({ offset: true }),
+  windows: z.record(z.string().regex(WINDOW_KEY_PATTERN), LedgerEntrySchema),
+});
+
+export function readWindow(key, entry, now): ReadWindow | null; // contract "Reading a window"
+export function mergeLedger(
+  existing,
+  observations,
+  now,
+  accountId
+): { ledger; changed: boolean; dropped: { key: string; reason: string }[] }; // contract "Merging"
+export function modelWindowKey(displayName: string): string | null; // 'Fable' → 'model:fable'
+```
+
+`readWindow`: expired (`now ≥ resetsAt`) reads as `{ usedPct: 0, status: 'allowed', expired: true }`; stale (no `resetsAt`, older than the window length: `five_hour` 5 h, every other key 7 days) reads as `null`; else as stored.
+
+The wire shape every surface serves for one account:
+
+```ts
+export const AccountUsageSchema = z
+  .object({
+    accountId: z.string().nullable(), // null = an unregistered root (the inherited default)
+    path: z.string(),
+    label: z.string().nullable(),
+    color: z.string(), // resolved, never null
+    subscriptionType: z.string().nullable(), // in-memory only; null until a usage call reports it
+    windows: z.array(
+      z.object({
+        key: z.string(), // 'five_hour' | 'seven_day' | 'seven_day_opus' | … | 'model:<slug>'
+        label: z.string(), // '5-hour window', 'Weekly', 'Weekly Opus', …
+        usedPct: z.number().nullable(), // after readWindow
+        resetsAt: z.string().nullable(),
+        status: RateLimitStatusSchema.nullable(),
+        expired: z.boolean(),
+        observedAt: z.string(),
+        source: z.enum(LEDGER_SOURCES),
+      })
+    ),
+    state: z.enum(['ok', 'warning', 'limited', 'unknown']),
+    limit: z.object({ window: z.string(), resetsAt: z.string().nullable() }).nullable(),
+    updatedAt: z.string().nullable(),
+  })
+  .openapi('AccountUsage');
+```
+
+`toAccountUsage(ledger, identity, now)` builds it: stale windows are left out; `limit` is the first readable window whose `status` is `rejected`; `state` is `unknown` with no readable window, `limited` with a `limit`, `warning` when any window's `usedPct ≥ 90` or `status` is `allowed_warning` (the design-decisions chip rule), else `ok`. Windows are ordered `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, then other keys, then `model:*` alphabetically.
+
+The existing per-session `UsageStatus` is unchanged.
+
+### 5.3 Session additions (D4, D7, D8)
+
+- `SessionStatusEventSchema` (`schemas.ts`, the partial a mapper yields) gains `limit: SessionLimitSchema.nullable().optional()`. `SessionStatusSchema` (`session-stream.ts`) gains `limit: SessionLimitSchema.nullable().default(null)`, `SessionLimitSchema = { accountId: string | null, window: string, resetsAt: string | null, since: string }`. `.default(null)` keeps older snapshots parsing. **`SessionLifecycleSchema` is not extended** (§12).
+- `sessionDisplayState(status): SessionLifecycle | 'limited'` returns `'limited'` when `status.limit` is set, else `status.lifecycle`. The one place "limited" is spelled.
+- `SessionSchema` gains optional `accountId?: string` (the registry id matching `account`), `status?: { lifecycle, limit }`, and `trackerItem?: { id: string; stage?: string; runStatus?: string }` (from a matching `FlowRun`: `identifier`, `stage`, `status`).
+- `SessionListResponseSchema` gains `accountUsage?: AccountUsage[]`.
+
+## 6. Server design (`apps/server`)
+
+New directory **`services/runtimes/claude-code/accounts/`** (SDK imports stay under `services/runtimes/claude-code/`, Hard Rule 2). `dorkHome` comes from `lib/dork-home.ts` (Hard Rule 3). New session-domain modules go in `services/session/launch/` and `services/session/fleet/`, because `services/session/` is already over the dir-size limit. The dev server's `dorkHome` is `apps/server/.temp/.dork`; flow only sees it when `DORK_HOME` points there (contract §1.1).
+
+### D1. Account color, and the identity rules the contract asks of DorkOS (DOR-2379, core part)
+
+- **Rows keep what they do not know.** `ClaudeCodeAccountSchema` becomes a `z.looseObject` (`applyConfigPatch` re-parses the whole config, and a plain object strips per-row fields the contract says writers preserve). That alone is not enough: the client builds its PATCH from `GET /api/config`, which never shows unknown fields or rows skipped on read, and a PATCH replaces the array. So `applyConfigPatch`, for a patch naming `runtimes.claudeCode.accounts`, **merges each patched row onto the stored row with the same id** (a field the patch sets wins, `color: null` included; a field it leaves out survives) and **keeps every stored row the client could not see** (rows skipped by the read rules below). Removal stays by omission, only for rows the client was shown. The client's `toWritableAccounts` also sends each row's `color` (`null` when `colorIsDefault`), so an add or remove never resets a color. A test stores a row with an unknown field plus a skipped hand-edited row, PATCHes an add from the client's view, and asserts both survive.
+- **Read rules** (contract §1.1a): `readClaudeAccountSettings` skips a row whose `path` is missing or not absolute, keeps the first of two rows sharing an id, and reads a bad `color` as `null`, each with one warning. The write path keeps its existing duplicate-id refusal.
+- Schema per §5.1. `readClaudeAccountSettings` returns `color: resolveAccountColor(row.color, index)`; `describeClaudeCodeAccounts` puts the resolved color and a `colorIsDefault: boolean` on each `ServerConfig.claudeCode.accounts[]` row (synthesized unregistered rows get the next default).
+- **No config migration.** An absent `color` already means `null` means "default by position", so there is nothing to seed, and seeding would freeze S5's palette into every config file (§12). The adding-config-fields checklist still applies: `config-disclosure.ts` gets `'runtimes.claudeCode.accounts[].color': 'expose'`; the write policy keeps `accounts` operator-only (verify, and pin it with a test); `contributing/configuration.md` and `docs/getting-started/configuration.mdx` gain the row.
+- **Id pattern on write** (contract "What DorkOS must do"): a `PATCH /api/config` that ADDS a registry row, or changes a row's id, must use an id matching `ACCOUNT_ID_PATTERN`, else `400` naming the row. Existing rows are never rejected for an old id (that would block every settings write); such a row simply gets no ledger file, logged once.
+- **Re-read before writing `runtimes.claudeCode`:** `applyConfigPatch` must merge a patch that names `runtimes.claudeCode` onto the file's current contents, not a cached copy, so a `flow accounts add` made while the server runs survives. Verify against `conf`'s read behavior and add a test that writes the file externally between two server writes.
+- **Accept a config flow created** (no `__internal__`, no `version`, only `runtimes.claudeCode.accounts`): boot and read it without resetting it. Test it.
+
+### D2. Per-account usage store (DOR-2380)
+
+`accounts/account-usage-store.ts`: `class AccountUsageStore`, one instance, built in `index.ts`.
+
+**Keying.** By the account's canonical config dir (`path.resolve`). A registered account with a pattern-valid id has a ledger file; any other root (the inherited `~/.claude`, an env `CLAUDE_CONFIG_DIR`, a legacy id) is kept **in memory only**, with `accountId: null` for an unregistered one.
+
+**Feed.** One helper, `accounts/account-usage-feed.ts#recordSessionUsage(session, observations, meta?)`, resolves the root as `session.launchedAccountRoot ?? session.accountRoot ?? resolveActiveClaudeRoot()` and calls the store. Two feed points, both in the claude-code runtime:
+
+1. **`rate_limit_event`** (`result-event-mapper.ts`), per the contract's `sdk_event` row: key = `rateLimitType` verbatim (`five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, `overage`, `seven_day_overage_included`; an event with no type is not recorded), `usedPct = utilization × 100` (the event carries 0..1, as the existing mapper test pins), `resetsAt` from epoch seconds, `status`, `source: 'sdk_event'`. The existing `session_status` output is unchanged.
+2. **The per-turn usage call**, per the `sdk_usage` row: a new pure `mapSdkUsageWindows(response)` maps every present `rate_limits` window by its SDK key (`five_hour`, `seven_day`, `seven_day_oauth_apps`, `seven_day_opus`, `seven_day_sonnet`) and each `model_scoped[]` as `modelWindowKey(display_name)`; `usedPct` as given (0..100), `status: null`, `source: 'sdk_usage'`; a window with null utilization is skipped (an entry needs `usedPct` or `status`). `fetchSubscriptionUsage` returns `{ status, observations, subscriptionType }`; the two call sites (`messaging/message-sender.ts`, `sessions/session-turn-windows.ts`) keep setting `session.lastSubscriptionUsage` from `status` and call `recordSessionUsage`. The warm-process path (`sessions/persistent-dispatch.ts`) gets usage through its `onUsage` callback, not this function, so the observations ride that callback and its handler calls `recordSessionUsage` too. `rate_limits_available: false` records nothing.
+
+**Memory and persistence.** `record` merges into the in-memory ledger synchronously (`mergeLedger`), so the mapper never waits on disk. For a file-backed account, a flush (1 s trailing debounce, one in flight per account) runs the contract's **writing steps 1-7 exactly**: exclusive-create lock with a `<pid>:<128-bit hex>` token, a lock older than 10 s broken per revision 4 (read its token, rename it to `.stale-<random>`, read the moved file, and if it is not the token judged stale put it back with `link(moved, <id>.json.lock)`, which fails harmlessly when a newer lock exists; then delete the moved name and retry; never delete a lock by its original name), 25-100 ms jittered retries for at most 2 s, read under the lock (unparsable → rename to `.corrupt-<ms>`, start empty), merge the pending observations, skip the write when nothing changed, temp file + `fsync` + `rename`, release only our own token. Folder `0700`, file `0600`. Giving up drops the write with a warning (at most once per account per hour) and keeps memory; nothing ever throws into a turn. Flushed on shutdown. The lock-and-write code lives in `accounts/ledger-file.ts` as a small reusable module.
+
+**Reading.** `list(): Promise<AccountUsage[]>`: every registered account in registry order, plus the resolved default root when unregistered. Before answering it re-reads each ledger file whose `mtime` changed (no lock; contract "Reading") and merges it into memory, so flow's status-line writes show up. `peek(accountIds): AccountUsage[]` answers from memory only (for D7's hot path). Boot loads every file: **the store survives a restart because the ledger files are its persistence.** Removing an account leaves its file.
+
+**Outputs.**
+
+- `GET /api/runtimes/claude-code/accounts/usage` → `200 { accounts: AccountUsage[] }` (`routes/runtimes.ts`; OpenAPI).
+- Global event **`account_usage`** (payload `AccountUsage`) when an account's `AccountUsage` changes other than `observedAt`, throttled to one per account per 2 s trailing; added to the client `stream-manager.ts` allowlist.
+- MCP tool **`accounts_usage`** (tier `observe`, always on, title "Read how much of each Claude account is used"): no input, returns `{ accounts }`.
+
+### D3. Account probe (DOR-2381)
+
+`accounts/account-probe.ts#probeAccount(accountId)`:
+
+1. Unknown registry id → `404 UNKNOWN_ACCOUNT`. `isClaudeAccountRoot(path)` false → `probe: 'failed'`, reason `not-an-account`.
+2. Single-flight per account; a 60 s floor since the last attempt → `probe: 'throttled'` with the current record.
+3. Spawn the warm-probe shape the runtime already uses for `supportedCommands()`: `query({ prompt: createIdlePrompt().prompt, options })` with `cwd: <dorkHome>/cache/account-probe`, `settingSources: []` (no hooks, no CLAUDE.md, no plugins), no `mcpServers`, `persistSession: false` (no transcript), the resolved binary, and `env: runtimeEnvironment('claude-code', 'warmup', claudeConfigDirEnv(path))`.
+4. `usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })`, raced against 15 s. No user message is ever pushed, so **no model turn runs**.
+5. `rate_limits_available: false` → `probe: 'unavailable'` (API key or third-party provider), nothing recorded. A throw, timeout or missing method → `probe: 'failed'`, nothing recorded (never a guess). Success → the D2 feed with `mapSdkUsageWindows` (`source: 'sdk_usage'`, the contract's source for this call).
+6. `finally`: close the idle prompt and the query on every path.
+
+Every automated probe test uses a fake query, so one **opt-in live check** proves a real CLI answers the usage call on an idle prompt with `settingSources: []`: `account-probe.live.test.ts`, skipped unless `DORKOS_ACCOUNT_PROBE_LIVE=1` (read at module scope, never passed through turbo), run once by hand against a signed-in account before the task closes. It asserts windows were recorded and no transcript appeared under that account's `projects/`. It runs no turn, so it spends nothing.
+
+Exposed as `POST /api/runtimes/claude-code/accounts/:id/probe` → `200 { account: AccountUsage, probe: 'ok' | 'unavailable' | 'failed' | 'throttled', reason?: string }` and MCP tool **`accounts_probe`** (tier `act`, input `{ account }`, title "Check a Claude account's usage without running a turn"). On demand only.
+
+### D4. A hard limit on the session, and one notification (DOR-2382)
+
+**Stop suppressing it.** In `message-event-mapper.ts`, an assistant message with `error: 'rate_limit'` yields an `error` event built by the reload path's own rule (`buildApiErrorPart` in `api-error-record.ts`): the CLI's words as `message` ("You've hit your weekly limit · resets …"), `code: 'rate_limit'`, **no category**, so no Retry on a card that cannot honor it. Live and reload now agree (DOR-1649's rule). `SURFACED_ASSISTANT_ERRORS` stays as is; `rate_limit` gets its own branch with a comment. Transient 429s on the `api_retry` path are untouched.
+
+**The session's `limit`.** The SDK also sends `status: 'rejected'` for a window that extra usage is covering, and then the turn carries on. So `limit` is set only when the turn actually stopped: on the `rate_limit` assistant error, or on a `rejected` event whose `isUsingOverage` and `overageInUse` are both not true. The ledger still records every event as it came. When it applies, the mapper yields `session_status { limit }` once per turn: `window` = the event's `rateLimitType` (else the account's current rejected window in the store, else `'unknown'`), `resetsAt` likewise, `accountId` = the registry id matching the session's root (else `null`), `since` = now. The projector holds `limit` like `lastError`: **cleared at the next `turn_start`**, kept on snapshots and persisted projections. The turn settles to `error` through the error frame, like every failed turn. When only the error arrived and the window is known, the feed records `{ status: 'rejected', usedPct: null, source: 'sdk_event' }` for it.
+
+**Notification.** New kind **`account.limited`** (`NOTIFICATION_KINDS` + registry entry): tier `notable`, storage `event`, subject `session`, payload `{ sessionId, agentId?, sessionLabel, accountId, accountLabel, window, resetsAt }`, title `"<accountLabel> is out until <local reset time>"` (or `"<accountLabel> hit its <window label> limit"` when the reset is unknown), `dedupeKey: account-limited:<accountId ?? path>:<window>:<resetsAt ?? since-hour>`, `relay: 'never'`. The key is per account episode, so five sessions hitting one account's weekly limit make **one** notification. `emitters/session-lifecycle.ts` raises it instead of `session.error` when the status that moved to `error` carries a `limit`, and does not arm the `session.error` escalation (a limit ends at a known time; it is not breakage to page someone about).
+
+### D5. MCP tool: start a session (DOR-2383)
+
+**Extract the launch service first.** The session-creating body of `POST /api/sessions/:id/messages` moves verbatim into `services/session/launch/launch-session.ts#dispatchSessionMessage(opts)`: agent-path verification, workspace binding, cwd resolution, runtime resolution and `persistSessionRuntime`, account-hint gating, projector setup, `runInDispatch(… dispatchMessage)`. `opts.origin: TurnOrigin` is required. The route passes `{ kind: 'interactive' }` and keeps its HTTP concerns. The existing route and dispatch-correlation tests pass unchanged; that is the refactor's proof.
+
+**New origin.** `TurnOrigin` gains `{ kind: 'agent-launch' }`, which `permissionSeedForOrigin` maps to `'none'`: an agent does not hand a new session the operator's trust stop. Power comes only from the tool's `permissionMode`, clamped by `clampSchedulePermissionMode` (never `bypassPermissions`, the rule an agent-proposed schedule gets) and written to the new session's settings row before the send.
+
+**Tool `session_start`** (new `mcp-tools/session-tools.ts`, projected onto external `/mcp` by `registerFromDefinitions`; tier `act`, title "Start a new agent session"; entries in `mcp-tool-tiers.ts`, `mcp-tool-metadata.ts` and the tool-group map):
+
+| Input                      | Rule                                                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `prompt` (required)        | The first message.                                                                                                         |
+| `cwd` (required, absolute) | Boundary-checked like the route.                                                                                           |
+| `account`                  | Registry id. **Unknown → error, nothing started** (invariant 6). With a resolved runtime other than `claude-code` → error. |
+| `runtime`                  | Must be registered; absent → the usual resolution.                                                                         |
+| `model`, `effort`          | Written to the new session's settings row before the send, as the pre-launch picker does.                                  |
+| `permissionMode`           | Clamped (above).                                                                                                           |
+| `seedContext`              | Same limits as the HTTP field.                                                                                             |
+| `agentPath`                | Must be a registered Mesh agent directory.                                                                                 |
+
+**Account guard (X3).** With `account` set, every registered guard is asked `{ accountId, cwd, runtime, caller: 'agent' }`. Any `{ allow: false, reason }` refuses with the reason; a guard that throws or takes longer than 2 s refuses ("The account policy could not be checked."). **No guard registered → refused** ("Agents can pick an account only after Flow is set up to say which accounts they may use."): the contract spends nothing until the operator says so, and without the Flow extension nothing has. Omitting `account` still works (the ladder).
+
+**Load cap.** At most `AGENT_LAUNCH_MAX_LIVE = 8` sessions started by this tool may have a live turn at once (a constant; tracked in the launch service, released when the turn settles). Beyond it the tool refuses in plain words. Reason: the 2026-09-25 drain reached a machine load near 500.
+
+**Result:** `{ sessionId, runtime, account: { id, label } | null, status: 'started' }`, `sessionId` being the canonical id (the service already waits for it, with its 5 s fallback). The id is minted server-side. flow records it as `FlowRun.sessionId` (contract §1.3), which is what D8 reads.
+
+Every call writes an Activity entry naming the calling agent, the account and the cwd, so a person can see which agent spent which account.
+
+### D6. Account on schedules and relay dispatch (DOR-2384)
+
+**Schedules.**
+
+- `packages/skills` `schedule-schema.ts`: `account: z.string().min(1).optional().catch(undefined)` (registry id), round-tripped by the serializer like `model`.
+- `packages/db` `pulse_schedules`: nullable `account` column + Drizzle migration; row mappers; `Task` wire gains `account: string | null`.
+- `ScheduleSettings.account: string | null`; `scheduleSettingsOf` reads it; **`scheduleContentKey` grows to 10 parts** (`account` last); `parseContentKey` reads 10; `upgradeLegacyContentKey` also upgrades a 9-part key by appending the row's current `account` (`null` for every row written before this change). So every existing approval survives, nothing new is approved by the upgrade, and **changing a schedule's account re-parks an approved schedule** exactly as a model change does (DOR-2323). `approvalChanges` names the account.
+- `tasks_create` / `tasks_update` and the task HTTP routes accept `account`; `task-write-policy.ts` classifies it with `model` and `runtime`.
+- Schedules run two ways, and both carry it. Direct: the runner adds `accountHint: task.account` to `execution.settings` (already spread into `ensureSession` and `sendMessage`), so `launch-resolver.ts` reads it through the unchanged ladder. Over relay: `services/tasks/relay-dispatch.ts` builds a `TaskDispatchPayload` with only model and effort today, so `TaskDispatchPayloadSchema` (`relay-envelope-schemas.ts`) gains `account?: string`, `relay-dispatch.ts` sets it, and `packages/relay` `task-handler.ts` passes it as `accountHint`. A schedule's account is the operator's approved choice, so no guard applies on either path. An id no longer registered falls through with the existing warning, and the run's Activity entry says so.
+- **Sticky schedules** keep one conversation, and a conversation cannot change accounts. Changing `account` on a sticky task whose session has started is refused: `400 STICKY_ACCOUNT_LOCKED`, "This schedule keeps one conversation, so it stays on the account it started on. Turn off 'Keep one conversation' to change it."
+
+**Relay.**
+
+- The relay payload accepts an optional `account` (registry id); `relay_send`, `relay_send_async` and `relay_send_and_wait` gain an optional `account` argument.
+- `@dorkos/relay`: `ExecutionSettingsResolver` opts gain `requestedAccount?: string`; `TurnExecutionSettings` gains `accountHint?: string`; `agent-handler.ts` passes the payload's `account` in and spreads the returned hint into `sendMessage`.
+- `services/relay/turn-execution-settings.ts` returns `accountHint` only when the id is registered, at least one guard is registered, and every guard allows it (`caller: 'relay'`); otherwise it logs and returns none. A message is never dropped over an account. An existing conversation keeps its account (the ladder guard).
+
+**No account set anywhere keeps today's behavior.**
+
+### D7. Session list carries status and account usage (DOR-2385)
+
+`GET /api/sessions`, after the existing overlays, runs `applySessionFleetOverlay(page, deps)` (`services/session/fleet/session-fleet-overlay.ts`):
+
+- `accountId` where `session.account` matches a registered account (`path.resolve` equality);
+- `status: { lifecycle, limit }` from `projectorFor(session.id)?.status` when this process holds a projector; absent otherwise, which consumers read as idle;
+- envelope `accountUsage` from `store.peek()` for the distinct `accountId`s on the page; omitted when there are none;
+- `trackerItem` from D8.
+
+The status and usage parts add no I/O and no per-session calls. `GET /api/sessions/:id` gets the same overlay. OpenAPI regenerated with `pnpm docs:export-api`. `/recent` is unchanged.
+
+### D8. Tracker item on sessions (DOR-2386)
+
+Per contract §1.3, DorkOS **reads** `<main checkout>/.dork/flow/flow-state.json` and never writes it.
+
+- `services/session/fleet/flow-run-link.ts#flowRunsFor(cwd)`: resolve the main checkout as the parent of the git common dir (`git rev-parse --path-format=absolute --git-common-dir` through the repo's existing git runner, then `path.dirname` of the result, exactly as the contract says; not `repoPathFromCommonDir`, which is test-only and differs for a git dir not named `.git`), cached per cwd for the process (a negative result for 60 s); read the file with `readTextFileWithin` from `@dorkos/shared/bounded-read` (1 MB cap), cached by `mtime`; parse leniently (a `FlowRun` needs `identifier` and `sessionId` strings; unknown fields ignored; a file that fails to parse reads as no runs, logged once per mtime).
+- The D7 overlay sets `trackerItem: { id: run.identifier, stage: run.stage, runStatus: run.status }` on each session whose id equals a run's `sessionId`, looking up each distinct cwd on the page once.
+- A session no run names gets no `trackerItem` and nothing else changes. The link survives a restart because the file is flow's.
+- `session_start` takes no tracker argument: flow writes `FlowRun.sessionId` from the tool's result.
+
+### X. Extension server API additions (for the Flow extension)
+
+A server extension's `DataProviderContext` gives it secrets, scoped settings, scoped storage (`<dorkHome>/extension-data/<id>/`), a scheduler, `emit`, and its own directory. It runs in-process with no sandbox, so it **could** open any file with Node `fs`, but it has **no sanctioned way to learn `<dorkHome>`** (a project-local extension's `extensionDir` is not under it), **no read of the account registry or usage**, and **no way to take part in a launch decision**. The Flow extension needs all three:
+
+- **X1.** `readonly dorkHome: string`, so it reads and writes `<dorkHome>/flow/fleet.json` (with the contract's lock) where the flow CLI also finds it.
+- **X2.** `readonly claudeAccounts: { list(): Promise<ClaudeAccountSummary[]>; usage(): Promise<AccountUsage[]>; onUsage(listener): () => void }`, `ClaudeAccountSummary = { id, path, label, color }` (color resolved). Backed by `readClaudeAccountSettings` and the D2 store. Listeners are removed on extension shutdown and reload.
+- **X3.** `claudeAccounts.registerLaunchGuard(guard): () => void`, `guard(req: { accountId; cwd; runtime; caller: 'agent' | 'relay' }) → { allow: boolean; reason?: string } | Promise<…>`. Held in `accounts/account-launch-guard.ts`, removed on shutdown and reload, consulted by D5 and D6-relay only, **never for a person's own pick** (the HTTP hint, the status-bar picker, D10): the operator is not subject to flow's policy.
+
+Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/shared`); `contributing/extension-authoring.md` documents them. The client half needs nothing new: the Flow tab calls its own server routes, and the core note finds the tab through the slot registry (§10).
+
+## 7. API and event summary
+
+| Surface      | Name                                                                                                          | Tier / method | Spec   |
+| ------------ | ------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| REST         | `GET /api/runtimes/claude-code/accounts/usage`                                                                | GET           | D2     |
+| REST         | `POST /api/runtimes/claude-code/accounts/:id/probe`                                                           | POST          | D3     |
+| REST         | `GET /api/sessions`, `GET /api/sessions/:id` (+`accountId`, `status`, `trackerItem`; envelope `accountUsage`) | GET           | D7, D8 |
+| REST         | `PATCH /api/config` (+`color`; id pattern on new rows)                                                        | PATCH         | D1     |
+| REST         | task create/update (+`account`)                                                                               | POST/PATCH    | D6     |
+| MCP          | `accounts_usage`                                                                                              | observe       | D2     |
+| MCP          | `accounts_probe`                                                                                              | act           | D3     |
+| MCP          | `session_start`                                                                                               | act           | D5     |
+| MCP          | `tasks_create`, `tasks_update`, `relay_send`, `relay_send_async`, `relay_send_and_wait` (+`account`)          | unchanged     | D6     |
+| Event        | `/api/events` `account_usage` (payload `AccountUsage`)                                                        |               | D2     |
+| Event        | session stream `status_change` carrying `limit`                                                               |               | D4     |
+| Notification | `account.limited`                                                                                             | notable       | D4     |
+| Extension    | `ctx.dorkHome`, `ctx.claudeAccounts.{list, usage, onUsage, registerLaunchGuard}`                              |               | X1-X3  |
+
+## 8. Compliance (`research/anthropic-tos-compliance.md`)
+
+- Usage comes only from the official binary: SDK `rate_limit_event`, the SDK usage call inside a real `query()` subprocess, and flow's status-line and transcript readings. **No Keychain read, no token extraction, no call to any Anthropic endpoint from DorkOS code** (hard line 1). Invariant 3's test enforces it for the new directory.
+- The probe is an official Claude Code process reading its own usage; it sends no message.
+- Every session D5 or D6 starts is an ordinary official Claude Code session on the operator's own registered account (hard line 3 untouched).
+- No marketing or UI copy here. The notification says what happened ("Acct 3 is out until Tue 3pm"), and nothing anywhere says "use your subscriptions to the max" (hard line 4).
+
+## 9. One account vs two or more
+
+| Behavior                        | 1 account (or none registered)                                                 | 2+ registered                                          |
+| ------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------ |
+| D1 color                        | Stored and served; the UI shows nothing new (design rule).                     | Drives dots, chip, badge (S5).                         |
+| D2 store, event, REST           | Runs; the inherited root appears with `accountId: null` and no file.           | One record and one ledger file per registered account. |
+| D3 probe                        | Works for a registered account; an unregistered root cannot be probed (no id). | Same.                                                  |
+| D4 limit + notification         | Same as 2+: a limit is a limit.                                                | Same.                                                  |
+| D5 `session_start`              | `account` omitted → the ladder, as today.                                      | Names an account; guards apply.                        |
+| D6 schedule and relay `account` | Absent → today's behavior.                                                     | Honored at launch.                                     |
+| D7 list                         | `accountId` and `accountUsage` only when that account is registered.           | Full.                                                  |
+| D8 tracker item                 | Same either way.                                                               | Same.                                                  |
+
+## 10. What the UI track reads (S5, S6)
+
+- **Settings → Runtimes → Claude accounts:** `GET /api/config` `claudeCode.accounts[]` (`id`, `label`, `color`, `colorIsDefault`), writing `color` through the existing `PATCH /api/config`; the 5-hour and weekly bars from `GET …/accounts/usage` plus the `account_usage` event (`windows[key = 'five_hour' | 'seven_day']`: `usedPct`, `resetsAt`, `expired`).
+- **The "Flow uses these accounts for your work. Choose how in Settings → Flow." note:** shown when 2+ accounts are registered **and** `useSlotContributions('settings.tabs')` holds `FLOW_FLEET_SETTINGS_TAB_ID` (`'flow:fleet'`: the client namespaces contribution ids as `<extensionId>:<id>`, and the Flow extension registers tab `fleet`). The link is `useSettingsDeepLink().open(FLOW_FLEET_SETTINGS_TAB_ID)`; `tabbed-dialog.tsx` already resolves extension tab ids. No server work. The id is a cross-repo constant: the Flow extension's manifest id and tab id must produce it (recorded for the S1/S6 authors).
+- **Status-bar chip, sidebar dots, header badge:** `Session.accountId`, `Session.status.limit`, `sessionDisplayState`, `AccountUsage.state` / `limit`, `Session.trackerItem`.
+- **"Continue on another account" (D10):** the existing HTTP send with a person-chosen `account` hint, a `seedContext`, and the same `cwd`. No new endpoint; guards do not apply.
+
+## 11. Testing
+
+Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every new test must fail with its implementation reverted.
+
+| Area                     | Tests                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared                   | `readWindow` (expired, stale per window length, as stored), `mergeLedger` (strictly later wins, equal keeps, future > 5 min dropped, invalid dropped and the rest merge, unchanged → `changed: false`, unknown keys kept), `modelWindowKey`, `toAccountUsage` state table incl. unknown and the 90 boundary, color resolution.                                                                                                                                                                                                                                                                                                                                                                     |
+| **Contract conformance** | DorkOS vendors the marketplace folder `plugins/flow/conformance/fleet/` into `packages/shared/src/__fixtures__/flow-fleet-conformance/` at a pinned commit, with `SOURCE.json` (`repo`, `commit`, `CONTRACT_VERSION`) and a `scripts/sync-flow-conformance.ts` that copies it from a marketplace checkout at a given commit. `account-usage.conformance.test.ts` runs DorkOS's own implementations against `account-id`, `identity`, `window-read`, `ledger-merge` and `flow-run` cases, validates every ledger case against the vendored `usage-ledger.schema.json`, and fails on a `CONTRACT_VERSION` major it does not know. `fleet-policy` and `room` cases are flow-only and skipped by name. |
+| D1                       | Rows keep unknown fields through a server write; the client's add/remove keeps every stored color (round trip); read rules (non-absolute path skipped, duplicate id keeps the first, bad color null, each warned); color default null, bad value null, resolution by position; new row with a bad id → 400, old bad id kept; external write between two server writes survives; a flow-created config boots unchanged; disclosure and write-policy pins.                                                                                                                                                                                                                                           |
+| D2                       | Two sessions on one account → one record (validation 1); the written file validates against the vendored schema (validation 2); a new store over the same dir returns the same windows (validation 3); lock steps (held lock → retry then give up without throwing; stale lock broken by rename; two breakers racing on one stale lock never lose the fresh lock the first one took (token check and `link` restore); foreign token never deleted; unparsable file renamed to `.corrupt-*`); a flow write between flushes survives; unregistered root has no file; `account_usage` throttled; `rate_limit_event` utilization 0.82 → `usedPct` 82; `overage` recorded under its own key.            |
+| D3                       | Fake query factory: the idle prompt yields zero messages (no turn), `skipBehaviors: true`, windows recorded with `resetsAt`; `unavailable` and `failed` record nothing and the account stays unknown; timeout closes the query and prompt; throttle; single-flight; unknown id 404; the opt-in live check.                                                                                                                                                                                                                                                                                                                                                                                         |
+| D4                       | The previously suppressed `rate_limit` error now yields an uncategorised error frame (validation 3); `rejected` event → `limit` with `resetsAt` on the stream and the snapshot (validation 1); cleared at next `turn_start`; a `rejected` event with extra usage in use sets no `limit`; three limited sessions on one account → one `account.limited`, no `session.error` (validation 2); other errors still raise `session.error`.                                                                                                                                                                                                                                                               |
+| D5                       | Route tests unchanged after the extraction; the tool starts a session whose launch resolves the named account's root (validation 1); unknown account, non-claude runtime with account, out-of-boundary cwd, unregistered agent path each refuse and dispatch nothing; guard deny, throw and timeout refuse, no registered guard refuses an account pick while an account-less call still starts, (validation 2); clamp; load cap; `agent-launch` seeds no mode; tier and metadata tables; external `/mcp` lists it (validation 3).                                                                                                                                                                 |
+| D6                       | A schedule with `account` launches on it (validation 1); changing it re-parks an approved schedule and a stored 9-part key upgrades without re-parking (validation 2); no account → launch unchanged (validation 3); a schedule dispatched over relay carries its account; sticky lock; relay `account` honored on a new conversation, ignored on an existing one, and on a guard deny the turn still runs without it.                                                                                                                                                                                                                                                                             |
+| D7                       | The list carries `status`, `accountId`, `accountUsage`, with a spy proving only `peek` is called, once (validations 1, 3); the OpenAPI export has the new schemas (validation 2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| D8                       | A session named by a `FlowRun` shows `trackerItem` (validation 1); a new server instance reads it again (validation 2); a session no run names is byte-identical to today (validation 3); a worktree cwd resolves to the main checkout; a corrupt file reads as no runs.                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| X                        | The context exposes `dorkHome` and the account API; guards and listeners are removed on shutdown and reload.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Compliance               | Invariant 3 guard test.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+
+## 12. Decisions and assumptions (autonomy grant; all reversible)
+
+- **Contracts adopted as written** (marketplace `flow-cli-core` §1, revision 4). Differences from S4's earlier draft (token colors, a top-level `limit`, `schemaVersion`, dash window keys, a `probe` source, a session_metadata tracker column) were dropped in favor of the contract.
+- **DOR-2379 core part is `color` only;** the policy fields and their UI are flow's (operator, 2026-09-26).
+- **No config migration for `color`.** The issue asked for one, but absent already means default-by-position, and a seeding migration would freeze a palette the UI track has not chosen into every config file. The adding-config-fields steps that do apply (disclosure, docs, tests) are in the task.
+- **Store keyed by config dir; a file only for a registered, pattern-valid id.** An unregistered root has no id to name a file.
+- **`limit` field, not a new lifecycle value.** A new `SessionLifecycle` member breaks older clients' snapshot parsing and ~20 exhaustive client switches for a state that is "errored, because of a limit". `sessionDisplayState` gives consumers the word.
+- **`account.limited` is `notable` with no escalation.** A limit ends at a known time, and flow hands work off.
+- **D5 fails loudly on an unknown account;** the HTTP hint keeps falling through. An agent naming an account made a billing choice; silently billing another is worse.
+- **D5 power:** the `agent-launch` origin seeds nothing; an explicit `permissionMode` is clamped like an agent-proposed schedule. Workers needing more rely on the operator's standing grants (DOR-2102/2103), not on this tool.
+- **D5 load cap 8,** a constant. A setting is a follow-up if anyone needs it.
+- **D6 sticky schedules refuse an account change** rather than silently staying on the old account.
+- **D7 status is absent when a session is not live here,** rather than reading every transcript.
+- **D8 reads flow's file** (contract §1.3); no core column, no core MCP tool for it. A non-flow launcher has no link, by design until the store moves into DorkOS (flow SPEC v2).
+- **No guard means no agent or relay account pick** (review): the contract spends nothing until the operator opts in, and core has no policy of its own. **Guards never apply to a person's pick,** and a schedule's account is an approved choice, so it is not guarded either.
+- **`limit` only when the turn stopped:** a `rejected` window covered by extra usage is recorded in the ledger but does not mark the session.
+- **The probe runs on demand only,** never at boot (N accounts would mean N processes on every start).
+- **Conformance by vendoring at a pinned commit,** not a git submodule or a package: the fixture is small, and a pin makes a contract change a deliberate DorkOS diff. The vendoring task waits for S1 to land the folder.
+
+## 13. Draft ADRs seeded
+
+- `260926-141753` DorkOS keeps usage per Claude account in the shared ledger (contract §1.2).
+- `260926-141755` A hard limit is a field on the session status, not a lifecycle value.
+- `260926-141756` Account routing policy belongs to an extension; core only asks its launch guards.
+
+## 14. References
+
+- Ideation: `dork-labs/marketplace` `specs/flow-fleet/01-ideation.md` §4, §6; `04-design-decisions.md`. Contracts: `specs/flow-cli-core/02-specification.md` §1.
+- Prior specs: `specs/claude-code-accounts/`, `specs/billing-account-ladder/` (invariants preserved).
+- ADRs 260801-204126/27/28/29, 260821-205323/24, 0255, 260823-200726.
+- Linear: DOR-2379 … DOR-2386 (project "Flow CLI & Account Fleet", umbrella DOR-2366).
