@@ -784,33 +784,85 @@ so every room turn since DOR-1597 was filed under its worktree's slug, and `extr
 the agent's session list. Once turns run at home, resuming such a session would look in the home's
 folder and not find it.
 
-`apps/server/src/services/runtimes/claude-code/sessions/migrate-room-transcripts.ts` (new, built in
-T3) runs at startup, before the room dispatcher starts, and only if its marker is absent. **T4 wires
-it**, in the same PR that moves the desk: run while room turns still stood in worktrees, it would move
-transcripts out from under the sessions resuming them.
+`apps/server/src/services/runtimes/claude-code/migrate-room-transcripts.ts` (built in T3; not in
+`sessions/`, which is at the 25-file dir-size cap) runs at startup and only if its marker is absent.
+**T4 wires it**, in the same PR that moves the desk: run while room turns still stood in worktrees, it
+would move transcripts out from under the sessions resuming them. T4 must call it:
+
+- **after the agent registry has loaded.** `agentPaths` decides whose a worktree is; an empty list
+  would skip every worktree and still write the marker, which never runs the move again;
+- **before the room dispatcher starts**, so no DorkOS turn writes a transcript while it moves;
+- **inside a `try`.** It throws on an unexpected filesystem error and on two processes racing to write
+  the marker (one fixed temp name). A throw leaves the marker unwritten, so the next start retries;
+  it must not stop the server from starting.
 
 1. For every room worktree folder on disk (`<dorkHome>/rooms/*/worktrees/*`), find its agent by the
    name's digest suffix against the registered agents (`digestFor(agentPath)`, the scheme
-   `listWorktreesForAgent` already uses). Skip a worktree whose agent is not registered.
-2. For every Claude config directory DorkOS launches with (the default and every account pin's
-   directory, from `claude-config-dir.ts` and the accounts store), move
-   `projects/<slug(worktree)>/<id>.jsonl` and its sibling `<id>/` folder to
-   `projects/<slug(home)>/`. Same filesystem, so a rename. An existing destination is never
-   overwritten. Leaving the source as a second `<id>.jsonl` would put two transcripts with one
-   session id in the indexed set, which `jsonl-frontier.ts:262-276` treats as contested and stops
-   indexing; so the source is renamed in place to `<id>.jsonl.conflict` (not indexed by anything), and
-   the startup log and the marker name both paths for the operator to resolve.
-3. Write `<dorkHome>/migrations/agent-home-desk-transcripts.json` with counts and the frozen list of
-   worktree folders it saw.
+   `listWorktreesForAgent` already uses). Skip a worktree whose agent is not registered, and a digest
+   two registered paths share.
+2. Also find the slug folders of worktrees the idle reap already removed (the folder is gone, its
+   transcripts are not), by exact shape: `<slug of <dorkHome>/rooms>-<room ULID>-worktrees-<agent
+name>-<8 hex digest>`, the name part at most 40 characters. A shape-match whose name part carries a
+   known worktree digest (a registered agent's, or one on a worktree folder on disk) is what a path
+   NESTED inside a worktree looks like — a dev DorkOS running in a worktree keeps its own
+   `rooms/…/worktrees/…` there — so it is not moved; when it ends in a registered agent's digest it
+   is logged and listed in the marker's `nearMisses`. A slug the SDK truncated past 200 characters is
+   not found this way (a worktree still on disk is found by its path instead).
+3. For every Claude config directory DorkOS launches with (`resolveClaudeRootSet()`: the default and
+   every account's directory), move `projects/<slug(worktree)>/<id>.jsonl` and its sibling `<id>/`
+   folder to `projects/<slug(home)>/`. Files move by `link` then `unlink`, so an existing destination
+   is never overwritten, and a pass that crashed between the two is finished (same inode), not
+   treated as a conflict. Leaving the source as a second `<id>.jsonl` would put two transcripts with
+   one session id in the indexed set, which `jsonl-frontier.ts` treats as contested and stops
+   indexing; so a colliding source is set aside in place as `<id>.jsonl.conflict` (then `.2`, `.3`…,
+   never replacing an earlier one; not indexed by anything), and a sibling folder meeting an existing
+   destination folder as `<id>.conflict`. The log and the marker name both paths for the operator.
+4. **A transcript written in the last 15 minutes is skipped**, and the marker is not written, so the
+   next start retries. A Claude Code process outside DorkOS appends by path, and moving the file under
+   it would recreate `<id>.jsonl` at the old place. Fifteen minutes is past the Bash tool's 10-minute
+   ceiling, the longest a turn goes without writing. The window protects a turn in flight only: an
+   interactive `claude` session left idle outside DorkOS, or a subagent file still being written under
+   `<id>/`, can still split a session; the next pass then sets the recreated file aside as a conflict,
+   so nothing is lost.
+5. **Only transcripts move.** Claude Code's per-project auto-memory (`memory/`) under a worktree slug,
+   and anything else unknown, stays and is listed in the marker's `leftBehind`: several rooms'
+   worktrees of one agent each have their own, and merging them would carry one room's notes into
+   every other room and into the person's own sessions at home. A move the filesystem cannot do
+   (`EXDEV`, a slug folder symlinked to another volume) is recorded once in `unmovable`, not retried
+   every start.
+6. Write `<dorkHome>/migrations/agent-home-desk-transcripts.json` with counts, conflicts, `unmovable`,
+   `leftBehind`, `nearMisses` and the **frozen list** of worktree folders it saw (`worktrees[]`, each
+   `{ path, agentPath | null }`).
 
-**Measured before T3 merges:** that a moved claude-code room session resumes with its history at the
-home (live, operator sign-in), and — for codex (threads resumed by id) and opencode (sessions scoped
-by directory) — whether a room session filed at the worktree is still listed and resumable at the
-home. For any runtime where listing depends on the worktree folder, `extraDirs` is kept but fed from a
-**frozen list** (the worktree folders that existed when the marker was written, stored in it), never
-from the live manager. Where a runtime cannot resume at the new desk, the next turn of that (room,
-agent) starts a fresh session and the old one stays listed; the room log carries the conversation
-either way. The measurement result is written into this section in the T3 PR.
+A moved transcript keeps the worktree as the `cwd` its records carry. Listing accepts it (it sits in
+the home's own slug folder, which `listSessionsAcrossAccounts` takes whatever the record says), and a
+resume carries its history (below), but a reader must not assume a record's `cwd` is the home. T4's
+live check must exercise a resume, not only a listing.
+
+**Measured (T3, 2026-09-26).** No paid call: each CLI was pointed at a local fake model endpoint that
+records the request, in temp config directories.
+
+- **claude-code (CLI 0.3.280): resumes at the home after the move.** A copy of a real room transcript,
+  filed under a worktree slug, was moved by the module and resumed with `--resume <id>` at cwd = the
+  home: the request carried the full history (44 messages; 47 after one more turn) and the new turn
+  was appended to the moved file under the home's slug. The CLI also finds the id from the home
+  _before_ the move (it looks in other project folders), but then keeps appending under the worktree
+  slug, where DorkOS's own reads (history, listing by slug, crash recovery) never look. So the move is
+  still required. **`extraDirs` is not needed for claude-code** once transcripts are moved.
+- **codex (SDK/CLI 0.154.0): resumes, but does not list at the home.** `codex exec --cd <home> resume
+<threadId>` resumed a thread started in another folder with its history; rollouts are filed by date,
+  not by folder, so nothing moves. But `codex_threads.cwd` is first-write-wins, so after every restart
+  a room session carries the worktree as its cwd and `CodexSessionRegistry.list(home)` never returns
+  it. **`extraDirs` must be kept for codex, fed from the marker's frozen list** (or T4 re-points
+  `codex_threads.cwd`).
+- **opencode (sidecar 1.18.31, no model call): cannot resume at the new desk.** A session created in
+  the worktree is found by id from the home, but every session-scoped call routes by the session's
+  stored directory (`/shell` with `?directory=<home>` ran with cwd = the worktree; `/fork` also lands
+  there), and the directory cannot be changed (`PATCH /session/{id}` takes only title, metadata,
+  permission and time). `GET /session?directory=<home>`, exact and `scope=project`, returns none of
+  them. So **the next turn of that (room, agent) must start a fresh opencode session** when the bound
+  one's directory is a room worktree, and **`extraDirs` must be kept for opencode, fed from the
+  frozen list**, so the old session stays listed. The room log carries the conversation either way.
 
 ### 8.2 ADR status
 

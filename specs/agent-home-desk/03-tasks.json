@@ -167,7 +167,7 @@
         "codex and opencode measurement recorded in §8.1, stating for each whether extraDirs must keep a frozen list."
       ],
       "filesOwned": [
-        "apps/server/src/services/runtimes/claude-code/sessions/migrate-room-transcripts.ts (new) + its test",
+        "apps/server/src/services/runtimes/claude-code/migrate-room-transcripts.ts (new; not sessions/, which is at the 25-file dir-size cap) + its test",
         "specs/agent-home-desk/02-specification.md (§8.1 result)"
       ],
       "size": "medium",
