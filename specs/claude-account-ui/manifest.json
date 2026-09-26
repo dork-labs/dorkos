@@ -1,0 +1,9 @@
+{
+  "id": "260926-152113",
+  "slug": "claude-account-ui",
+  "title": "Claude account UI: see which account a session spends, and move work off a spent one",
+  "created": "2026-09-26",
+  "status": "specified",
+  "linearIssue": "DOR-2387",
+  "project": "Flow CLI & Account Fleet"
+}

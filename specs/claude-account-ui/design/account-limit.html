@@ -1,0 +1,261 @@
+<h2>When a session's account runs out of usage</h2>
+<p class="subtitle">
+  By default, work moves to another account automatically (you can switch this to "ask me" in
+  Settings → Flow). The new session picks up in the same folder and branch from a short checkpoint.
+  It starts a fresh chat with a summary, because the old chat can't move between accounts.
+</p>
+
+<style>
+  .ax {
+    color: #18181b;
+    font: 13px/1.5 system-ui;
+  }
+  .ax-chat {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 10px;
+    color: #18181b;
+  }
+  .ax-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f4f4f5;
+    font-size: 13px;
+  }
+  .ax-pill {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    border: 1px solid #fecaca;
+    background: #fef2f2;
+    color: #b91c1c;
+  }
+  .ax-msgs {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .ax-m {
+    background: #f4f4f5;
+    border-radius: 8px;
+    padding: 6px 10px;
+    max-width: 80%;
+  }
+  .ax-a {
+    color: #3f3f46;
+  }
+  .ax-muted {
+    color: #71717a;
+  }
+  .ax-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 12px 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    font-size: 12px;
+    color: #7f1d1d;
+    flex-wrap: wrap;
+  }
+  .ax-card {
+    margin: 4px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #fecaca;
+    background: #fff;
+    font-size: 12px;
+    border-left: 3px solid #ef4444;
+  }
+  .ax-btn {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    border: 1px solid #d4d4d8;
+    background: #fff;
+    color: #18181b;
+    white-space: nowrap;
+  }
+  .ax-btn.p {
+    background: #18181b;
+    color: #fff;
+    border-color: #18181b;
+  }
+  .ax-grow {
+    flex: 1;
+    min-width: 160px;
+  }
+  .ax-comp {
+    margin: 0 12px 12px;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: #a1a1aa;
+    font-size: 12px;
+  }
+  .ax-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+  }
+  .ax-dlg {
+    background: #fff;
+    border: 1px solid #e4e4e7;
+    border-radius: 12px;
+    padding: 14px 16px;
+    max-width: 380px;
+    margin-top: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    color: #18181b;
+    font: 13px/1.5 system-ui;
+  }
+  .ax-opt {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border: 1px solid #e4e4e7;
+    border-radius: 8px;
+    margin-top: 6px;
+    font-size: 12px;
+  }
+  .ax-opt.sel {
+    border-color: #18181b;
+    box-shadow: 0 0 0 1px #18181b inset;
+  }
+  .ax-rec {
+    font-size: 10px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: #f0fdf4;
+    color: #15803d;
+    border: 1px solid #bbf7d0;
+  }
+  .ax-list {
+    margin: 8px 0 0;
+    padding-left: 16px;
+    font-size: 12px;
+    color: #3f3f46;
+  }
+  .ax-cap {
+    font-size: 11px;
+    color: #a1a1aa;
+    margin: 14px 0 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+</style>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>A banner above the message box</h3>
+      <p>
+        It stays in view where you'd type next. In automatic mode it counts down and moves the work,
+        and you can stop it. Afterwards it links to the new session.
+      </p>
+      <div class="ax">
+        <div class="ax-chat">
+          <div class="ax-hdr">
+            <b>DOR-2361 issuer column</b> <span class="ax-pill">● Acct 4 · out</span>
+          </div>
+          <div class="ax-msgs">
+            <div class="ax-m ax-a">Running the migration tests now…</div>
+            <div class="ax-muted">Stopped: Acct 4 reached its weekly limit.</div>
+          </div>
+          <div class="ax-banner">
+            <span class="ax-grow"
+              ><b>Acct 4 is out of usage until Tue 3pm.</b> Moving this work to
+              <span class="ax-dot" style="background: #16a34a"></span>Acct 2 in 10s…</span
+            ><span class="ax-btn p">Move now</span><span class="ax-btn">Choose account…</span
+            ><span class="ax-btn">Wait for reset</span>
+          </div>
+          <div class="ax-comp">Message is paused until the work moves or the account resets</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>A card in the conversation, at the point it stopped</h3>
+      <p>
+        It reads as part of the story: here's where it stopped and what happened next. It scrolls
+        away with the chat, so the status-bar chip and the sidebar dot carry the "out" state after
+        that.
+      </p>
+      <div class="ax">
+        <div class="ax-chat">
+          <div class="ax-hdr">
+            <b>DOR-2361 issuer column</b> <span class="ax-pill">● Acct 4 · out</span>
+          </div>
+          <div class="ax-msgs">
+            <div class="ax-m ax-a">Running the migration tests now…</div>
+            <div class="ax-card">
+              <b>Acct 4 ran out of usage</b> <span class="ax-muted">· resets Tue 3pm</span
+              ><br />Saved a checkpoint and moved the work to
+              <span class="ax-dot" style="background: #16a34a"></span><b>Acct 2</b>.
+              <span style="color: #2563eb">Open the new session →</span>
+              <div style="margin-top: 6px">
+                <span class="ax-btn">Choose a different account…</span>
+              </div>
+            </div>
+          </div>
+          <div class="ax-comp">Message… (this session is paused)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ax">
+  <div class="ax-cap">
+    Both options open this picker for "Choose account…" (and it's what "Ask me" mode shows)
+  </div>
+  <div class="ax-dlg">
+    <b>Continue on another account</b>
+    <div class="ax-muted" style="font-size: 12px">
+      Picks up in the same folder and branch from a checkpoint. It starts a new chat with a summary
+      of this one.
+    </div>
+    <div class="ax-opt sel">
+      <span class="ax-dot" style="background: #16a34a"></span><b>Acct 2</b
+      ><span class="ax-rec">recommended</span><span class="ax-grow"></span
+      ><span class="ax-muted">28% left · resets Sun</span>
+    </div>
+    <div class="ax-opt">
+      <span class="ax-dot" style="background: #d97706"></span><b>Acct 3</b
+      ><span class="ax-grow"></span><span class="ax-muted">9% left · resets Thu</span>
+    </div>
+    <div class="ax-opt" style="opacity: 0.6">
+      <span class="ax-dot" style="background: #2563eb"></span><b>Main</b
+      ><span class="ax-grow"></span><span class="ax-muted">kept in reserve (50%)</span>
+    </div>
+    <ul class="ax-list">
+      <li>Carries over: files, branch, checkpoint, task</li>
+      <li>Doesn't: the chat itself (a summary is passed on)</li>
+    </ul>
+    <div style="margin-top: 10px; text-align: right">
+      <span class="ax-btn">Cancel</span> <span class="ax-btn p">Continue on Acct 2</span>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top: 16px">
+  <b>My pick: A.</b> A limit blocks what you'd do next, so the notice belongs where you'd act, and
+  it stays visible until it's resolved. B is nicer as history, but it's easy to miss once the chat
+  moves on.
+</p>

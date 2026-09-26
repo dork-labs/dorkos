@@ -1,0 +1,748 @@
+# Tasks: claude-account-ui
+
+Generated from `03-tasks.json` (the canonical file). Spec: `02-specification.md`. Cross-spec dependencies (S4 = `specs/claude-account-fleet/03-tasks.json`; marketplace S3) are named at the top of each task.
+
+## Summary
+
+| Task | Title                                                                                                               | Size   | Priority | Depends on                   | Repo        |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ------ | -------- | ---------------------------- | ----------- |
+| 1.1  | Set the account palette and add the pure account display helpers                                                    | medium | high     | none                         | dorkos      |
+| 1.2  | Bring account usage into the client and add the account dot and usage bar atoms                                     | large  | high     | 1.1                          | dorkos      |
+| 2.1  | Add the status-bar account chip and its popover, and move the pre-launch account picker into it                     | large  | high     | 1.2                          | dorkos      |
+| 2.2  | Show the account dot and the out-of-usage state on sidebar rows, and the account badge in the session header        | medium | high     | 1.2, 3.1                     | dorkos      |
+| 2.3  | Show each account's color and live usage in Settings → Runtimes, with the pointer to the Flow tab                   | medium | medium   | 1.2                          | dorkos      |
+| 3.1  | Add the account advisor seam and the continue-options and continue-on-account routes                                | xl     | high     | none                         | dorkos      |
+| 3.2  | Build the Continue on another account picker and open it from the account popover                                   | large  | high     | 2.1, 3.1                     | dorkos      |
+| 3.3  | Build the out-of-usage banner and its transcript marker, and run the accessibility check over every new showcase    | xl     | high     | 3.2, 3.4, 2.2, 2.3           | dorkos      |
+| 3.4  | Keep a durable record of each usage-limit episode and let a session wait, resume or switch model                    | xl     | high     | 3.1                          | dorkos      |
+| 4.1  | Discover and run extensions that ship inside an installed plugin                                                    | medium | high     | none                         | dorkos      |
+| 4.2  | Scaffold the Flow extension with its fleet routes and the account advisor (marketplace)                             | xl     | high     | 3.1, 4.1                     | marketplace |
+| 4.3  | Build the Flow settings tab for choosing how flow spends each account (marketplace)                                 | large  | medium   | 4.2                          | marketplace |
+| 5.1  | Document using several Claude accounts: the chip, sidebar, settings, the Flow tab and continuing on another account | small  | medium   | 2.1, 2.2, 2.3, 3.2, 3.3, 4.3 | dorkos      |
+
+## Parallel groups
+
+- **A**: 1.1, 3.1, 4.1. No dependencies in this file (1.1 and 3.1 wait on their S4 tasks); different files.
+- **B**: 1.2, 3.4, 4.2. After 1.1 (1.2), 3.1 (3.4), and 3.1 + 4.1 (4.2, marketplace repo).
+- **C**: 2.1, 2.2, 2.3, 4.3. After 1.2 (2.2 also after 3.1; its badge half after 2.1); 4.3 after 4.2.
+- **D**: 3.2. After 2.1 and 3.1.
+- **E**: 3.3. After 3.2, 3.4, 2.2, 2.3 (Q0 resolved: banner + marker).
+- **F**: 5.1. After every user-facing task.
+
+Critical path: 1.1 → 1.2 → 2.1 → 3.2 → 3.3 → 5.1.
+
+## Shared-file hotspots
+
+- packages/shared/src/transport.ts, apps/client/src/layers/shared/lib/transport/account-methods.ts, packages/test-utils/src/mock-factories.ts, apps/client/src/dev/playground-transport.ts (1.1, 1.2, 3.1): whichever lands second adds to the file the first created.
+- packages/shared/src/account-usage.ts (1.1 palette, 3.1 continue schemas; S4 1.1 creates it).
+- apps/client/src/layers/shared/model/server-config/ (1.2 hooks and accountKeys, 2.2 useAccountAdvisor).
+- apps/client/src/dev/showcases/settings-mock-data.ts (1.2, 2.3, 3.2): additive.
+- apps/client/src/dev/sections/content/conversation-sections.ts + ConversationPage.tsx (2.1, 3.2, 3.3).
+- apps/client/src/layers/features/status/ (2.1 creates use-session-account, AccountItem, AccountPopover; 2.2 adds AccountBadge; 3.2 wires the popover action).
+- apps/client/src/layers/features/chat/ui/status/status-item-nodes.tsx, features/status/model/status-bar-registry.ts, features/status/ui/RuntimeItem.tsx (2.1 only).
+- apps/server/src/routes/sessions.ts (3.1, 3.4 vs S4 2.5 and 3.5): S4 first, then 3.1, then 3.4; routes/runtimes.ts (3.1 vs S4 2.1).
+- packages/db/src/schema/ (new account-limit-episodes.ts, index.ts export) + packages/db/drizzle/ migration and meta snapshot (3.4): regenerate the migration if another PR takes the next number first.
+- apps/server/src/services/session/origin/turn-origin.ts + **tests**/turn-origin-call-sites.test.ts (3.4 adds limit-resume; S4 2.5 adds agent-launch): S4 first.
+- apps/client/src/layers/shared/lib/transport/stream-manager.ts event allowlist (3.4 adds account_limit_changed; S4 2.1 adds account_usage).
+- packages/shared/src/transport.ts + account-methods.ts (3.1 adds three methods, 3.4 adds four).
+- apps/server/src/index.ts wiring (3.4 builds LimitEpisodeService after the D2 store and advisor registry).
+- packages/extension-api/src/server-extension-api.ts and services/extensions/extension-server-api-factory.ts / extension-server-lifecycle.ts (3.1 vs S4 3.1): S4 first.
+- apps/client/src/layers/widgets/session/ui/ChatPanel.tsx, features/chat/ui/status/TurnFailedNotice.tsx and features/chat/ui/message/ErrorMessageBlock.tsx (3.3).
+- docs/guides/runtimes.mdx (5.1; its account line goes stale when 2.1 lands).
+
+## Phase 1: Foundations
+
+### Task 1.1: Set the account palette and add the pure account display helpers
+
+- Size medium, priority high
+- Depends on: nothing in this file
+- Parallel with: 3.1, 4.1
+
+Depends on (outside this file): S4 task 1.1 (packages/shared/src/account-usage.ts with `DEFAULT_ACCOUNT_COLORS`, `AccountUsageSchema`, `LEDGER_SOURCES`, `RateLimitStatusSchema`), S4 task 1.2 (`SessionLimitSchema`, `sessionDisplayState`, `Session.accountId`, `Session.status`, `Session.trackerItem`). Both must be on main first.
+
+Tracker: DOR-2387 (with the color part of DOR-2379's UI). Spec §5 (palette and helpers), §12 Palette and Helpers rows.
+
+Types this task reads (from S4, already in `@dorkos/shared/account-usage`):
+
+```ts
+AccountUsage = { accountId: string | null; path: string; label: string | null; color: string; subscriptionType: string | null;
+  windows: Array<{ key: string; label: string; usedPct: number | null; resetsAt: string | null; status: 'allowed' | 'allowed_warning' | 'rejected' | null; expired: boolean; observedAt: string; source: 'statusline' | 'sdk_event' | 'sdk_usage' | 'transcript' }>;
+  state: 'ok' | 'warning' | 'limited' | 'unknown'; limit: { window: string; resetsAt: string | null } | null; updatedAt: string | null }
+SessionLimit = { accountId: string | null; window: string; resetsAt: string | null; since: string }
+```
+
+S4's `state` rule: `unknown` with no readable window, `limited` with a `limit`, `warning` when any window `usedPct >= 90` or `status === 'allowed_warning'`, else `ok`. Window keys: `five_hour`, `seven_day`, `seven_day_opus`, `seven_day_sonnet`, other keys, `model:<slug>`; server labels `five_hour` "5-hour window", `seven_day` "Weekly", `seven_day_opus` "Weekly Opus", `seven_day_sonnet` "Weekly Sonnet".
+
+1. PALETTE. In packages/shared/src/account-usage.ts replace the provisional `DEFAULT_ACCOUNT_COLORS` values with exactly these 8, in this order (the order is the default-by-position order):
+
+| #   | Name   | Hex       | Min contrast on any app surface |
+| --- | ------ | --------- | ------------------------------- |
+| 1   | blue   | `#2f7be0` | 3.41                            |
+| 2   | green  | `#1d8a4a` | 3.45                            |
+| 3   | amber  | `#c2680a` | 3.25                            |
+| 4   | purple | `#9b51e0` | 3.35                            |
+| 5   | pink   | `#d6336c` | 3.28                            |
+| 6   | teal   | `#0d9488` | 3.06                            |
+| 7   | indigo | `#6366f1` | 3.39                            |
+| 8   | stone  | `#78716c` | 3.15                            |
+
+Rewrite the TSDoc: owned by the claude-account-ui spec (no longer provisional); chosen so each is at least 3:1 (WCAG non-text) against all six surfaces a dot sits on, light `#ffffff`, `#fafafa` (background), `#e8e8e8` (sidebar) and dark `#0a0a0a`, `#1a1a1a` (sidebar), `#262626` (hover/muted), so one hex per account works in both themes (the contract stores one value); the first four follow the decided mockups (blue, green, amber, purple); no red, because red means "out" in this UI; a hand-stored `#rrggbb` outside the palette still renders. Changing values does not need a config migration (absent color = default by position, resolved at read time).
+
+Test packages/shared/src/**tests**/account-palette.test.ts: recompute each ratio from the hex (relative luminance: channel c = v/255, linear = c <= 0.03928 ? c/12.92 : ((c+0.055)/1.055)^2.4, L = 0.2126R + 0.7152G + 0.0722B; ratio = (Lhi + 0.05)/(Llo + 0.05)); assert the min over the six surfaces is >= 3.0 for every entry and matches the table to 2 decimals; assert 8 distinct lowercase `#rrggbb` values; assert no red hue (HSL hue not in 345..360 or 0..15 degrees; pink is 339, amber 31, stone 25).
+
+2. CLIENT HELPERS, new pure module apps/client/src/layers/shared/lib/claude-accounts.ts (export through the shared/lib barrel; if a file of that name already exists, add to it):
+
+- `accountWindow(usage: AccountUsage | null | undefined, key: 'five_hour' | 'seven_day'): AccountUsage['windows'][number] | null`: the entry with that key, or null.
+- `type BarTone = 'unknown' | 'error' | 'warning' | 'success'`; `barTone(window)`: `'unknown'` when window is null, or `usedPct` is null and `status !== 'rejected'`; `'error'` when `status === 'rejected'` or `usedPct >= 100`; `'warning'` when `usedPct >= 70`; else `'success'`. (70 is where both decided mockups turn a bar amber: 72% amber, 40% green. The chip's own amber rule is 90%, below.)
+- `type ChipState = 'ok' | 'near' | 'out' | 'unknown'`; `chipState(usage: AccountUsage | null | undefined, limit: SessionLimit | null | undefined, now = Date.now())`: `'out'` when `isLimitActive(limit, now)` or `usage?.state === 'limited'`; `'near'` when `usage.state === 'warning'`; `'unknown'` when usage is absent or `state === 'unknown'`; else `'ok'`.
+- `isLimitActive(limit, now: number)`: `limit != null && (limit.resetsAt === null || now < Date.parse(limit.resetsAt))`.
+- `nearestWindow(usage)`: the readable window (usedPct not null) with the highest `usedPct`; ties go to `five_hour` first, then S4's order; null when none.
+- `formatResetTime(iso: string | null, now: Date, locale?: string): string | null`: local time. Same calendar day -> `2:10pm`; within the next 6 days -> `Sun 9am`; later -> `Oct 3`. Minutes dropped when `:00` (`3pm`, not `3:00pm`); lowercase am/pm, no space. `null` -> `null`. Use `Intl.DateTimeFormat` parts so the day name and month follow `locale`.
+- `formatResetDay(iso: string | null, now: Date)`: the weekday (`Sun`), or the time (`3pm`, via formatResetTime's time form) when the reset is today; `null` -> `null`. Used by the picker's "28% left · resets Sun".
+- `formatBackIn(ms: number)`: under 60 min -> `47 min`; under 24 h -> `1h 12m` (`2h` when minutes are 0). Never called for 24 h or more (the caller falls back to formatResetTime).
+- `limitText(windowKey: string, resetsAt: string | null, now: Date)`: THE wording rule in one place (used by the chip, the picker's out rows and the banner): a `five_hour` window with a reset under 24 h away -> `back in <formatBackIn(resetsAt − now)>`; any other window (7-day, model) or a 5-hour reset 24 h+ away -> `out until <formatResetTime>`; no reset -> `out`. Durations are re-rendered once a minute by their callers.
+- `windowShortName(key: string, serverLabel: string)`: `five_hour` -> `5h`, `seven_day` -> `week`, `seven_day_opus` -> `week (Opus)`, `seven_day_sonnet` -> `week (Sonnet)`, `model:<slug>` -> `week (<Slug>)` (first letter capitalised), anything else -> `serverLabel`.
+- `planName(subscriptionType: string | null)`: `'max'` -> `Max plan`, `'pro'` -> `Pro plan`, other non-null -> capitalised + ` plan`, `null` -> `null` (omitted).
+
+Tests apps/client/src/layers/shared/lib/**tests**/claude-accounts.test.ts: `barTone` at null window, usedPct null, 0, 69, 70, 99, 100, and status rejected with usedPct null; the `chipState` table incl. an EXPIRED limit (resetsAt in the past -> not out) and a limit with resetsAt null (out); `isLimitActive` null reset, past, future; `nearestWindow` ties (five_hour wins); `formatResetTime` same day, `:00` drop, weekday, far date, `null`, and a DST boundary with a fixed `now` and `TZ` (set `process.env.TZ` in the test, e.g. America/New_York across 2026-11-01); `windowShortName` every branch; `planName` every branch; `formatResetDay` today vs another day vs null; `formatBackIn` 47 min, 59 min, 60 min -> `1h`, 72 min -> `1h 12m`, 120 min -> `2h`; `limitText` 5-hour under 24 h (`back in 47 min`), 5-hour 25 h away (`out until …`), `seven_day` (`out until Tue 3pm`), `seven_day_opus`, no reset (`out`).
+
+3. TEST FIXTURES in packages/test-utils/src/mock-factories.ts: `createMockAccountUsage(overrides: Partial<AccountUsage> = {}): AccountUsage` (defaults: accountId 'acct-2', path '/Users/test/.claude-acct-2', label 'Acct 2', color '#1d8a4a', subscriptionType 'max', windows five_hour 40% and seven_day 72% both status 'allowed', expired false, source 'sdk_event', resetsAt/observedAt fixed ISO strings, state 'ok', limit null, updatedAt a fixed ISO) with TSDoc; make sure `createMockSession(overrides)` accepts and passes through `accountId`, `status: { lifecycle, limit }` and `trackerItem: { id, stage?, runStatus? }` (they are optional on `Session`; add a test that they round-trip). Export from the package barrel.
+
+Acceptance: palette test and helper tests pass; `pnpm --filter @dorkos/shared build` then client typecheck green; no UI change yet.
+
+Changelog: internal only (no fragment); use a `chore(`-prefixed PR title so the changelog gate does not ask for one. (No surface shows the palette yet; the first user-facing fragment comes with task 2.1.)
+
+### Task 1.2: Bring account usage into the client and add the account dot and usage bar atoms
+
+- Size large, priority high
+- Depends on: 1.1
+- Parallel with: 3.1, 4.1, 4.2, 3.4
+
+Depends on (outside this file): S4 task 1.3 (`color` + `colorIsDefault` on `GET /api/config` `claudeCode.accounts[]`), S4 task 2.1 (`GET /api/runtimes/claude-code/accounts/usage` -> `{ accounts: AccountUsage[] }` and the `account_usage` event, already added to the client allowlist in apps/client/src/layers/shared/lib/transport/stream-manager.ts), S4 task 3.5 (session list envelope `{ sessions, warnings?, accountUsage?: AccountUsage[] }`).
+
+Tracker: DOR-2387 (data and atoms every surface uses). Spec §6.0, §13 (Design Tokens row, playground data), §9 (one account vs two).
+
+1. TRANSPORT. packages/shared/src/transport.ts `Transport` gains `getAccountUsage(): Promise<{ accounts: AccountUsage[] }>` (TSDoc: usage per Claude account; the client calls it only with 2+ accounts). (The other seven account methods are added by the server tasks that own their routes: `getAccountAdvisor`, `getContinueOptions`, `continueOnAccount` in task 3.1; `getAccountLimit`, `waitForAccountReset`, `resumeAfterAccountReset`, `continueOnFallbackModel` in task 3.4.) Implement it in a new apps/client/src/layers/shared/lib/transport/account-methods.ts beside session-methods.ts (same composition pattern `HttpTransport` uses for session-methods; `GET /api/runtimes/claude-code/accounts/usage`). If task 3.1 landed first and already created account-methods.ts, add to it. Defaults: `createMockTransport` in packages/test-utils/src/mock-factories.ts returns `{ accounts: [] }`; `createPlaygroundTransport()` in apps/client/src/dev/playground-transport.ts answers from `MOCK_ACCOUNT_USAGE` (below). Any other `Transport` implementation the typecheck finds (e.g. DirectTransport for Obsidian) gets a method too (return `{ accounts: [] }` if it has no server route).
+
+2. DATA HOOKS in apps/client/src/layers/shared/model/server-config/ (export via the shared/model barrel):
+
+- `useClaudeAccounts()` (use-claude-accounts.ts): each `accounts[]` entry gains `color: string` and `colorIsDefault: boolean` (from the config row), and the view gains `colorFor(pathOrId: string): string | null` (match by id, then by `path.resolve`-equal path string; null when unknown). `isMultiAccount` is unchanged and stays the ONE gate.
+- query-keys.ts: `export const accountKeys = { all: ['accounts'] as const, usage: () => [...accountKeys.all, 'usage'] as const, advisor: () => [...accountKeys.all, 'advisor'] as const }` with TSDoc (advisor is used by tasks 2.2 and 3.x).
+- New use-account-usage.ts `useAccountUsage(): { byId: Map<string, AccountUsage>; byPath: Map<string, AccountUsage>; isLoading: boolean }`: `useQuery({ queryKey: accountKeys.usage(), queryFn: () => transport.getAccountUsage(), enabled: isMultiAccount, staleTime: 60_000 })`; `byId` keyed by `accountId` (skip null), `byPath` by `path`.
+- Seed from the session list: wherever the session-list query resolves (find the query that reads `GET /api/sessions`; the "onSuccess-equivalent" is the place its data is received, e.g. a `select`/effect or the queryFn), when the envelope has `accountUsage`, merge it into `accountKeys.usage()` with `queryClient.setQueryData`: upsert by `accountId ?? path`, and never replace a record whose `updatedAt` is newer than the incoming one (compare ISO strings as dates; null loses). Export the pure merge `mergeAccountUsage(prev: AccountUsage[], incoming: AccountUsage[]): AccountUsage[]` and test it.
+- New use-account-usage-sync.ts `useAccountUsageSync()`: `useEventSubscription('account_usage', (u: AccountUsage) => upsert into accountKeys.usage() by accountId ?? path with the same newer-wins rule)`; when `!isMultiAccount` it subscribes to nothing (pass a no-op/skip the subscription; no work with one account). Mount it once in apps/client/src/AppShell.tsx beside the existing config sync (`use-config-sync`).
+
+3. UI ATOMS in apps/client/src/layers/shared/ui/ (each with `data-slot`, TSDoc, sizes per contributing/design-system.md / components.md; export through the shared/ui barrel):
+
+- `AccountDot({ color, name, size = 'sm', className })`: an 8px (`sm`) or 10px (`md`) circle, `role="img"`, `aria-label={name}`, wrapped in the house `Tooltip` showing `name`. Its background comes from a CSS variable: `style={{ '--account-color': color }}` and a class using `bg-[var(--account-color)]`, the way identity-avatar.tsx does; add a comment naming this as the one literal-color exception (account colors are user data, dots and badges only, never a large fill). `data-slot="account-dot"`.
+- `UsageMiniBars({ fiveHour, week, className })` (each prop an `AccountUsage` window or null): two vertical 4x10px bars, 2px apart, bottom-filled to `usedPct`, fill by `barTone` through status tokens: success -> `bg-status-success`, warning -> `bg-status-warning-dot`, error -> `bg-status-error`; track `bg-muted`. `role="img"`, `aria-label` like "5-hour window 40% used, weekly 72% used"; an unknown window reads "5-hour window usage unknown" / "weekly usage unknown".
+- `UsageBar({ window, label, showReset = true, compact = false })`: the horizontal 6px bar used by the popover and settings rows: label on the left, on the right "40% · resets 2:10pm" (`text-2xs text-muted-foreground`; reset via `formatResetTime`; no reset part when resetsAt is null or `showReset` false). `compact` = the 110px settings form (label left, bar right, no right-hand text; the reset time goes in the bar's `Tooltip`). Same tones; `role="img"` with the same sentence form ("Weekly 72% used, resets Sun 9am" / "Weekly usage unknown").
+- UNKNOWN (open design question Q6, default below; the operator's answer may change it): a window with no reading (`barTone === 'unknown'`) renders its track with NO fill and a dashed outline (`border border-dashed border-border bg-transparent`) instead of a solid track, and the visible text says "unknown". Implement it in ONE branch (a single `if (tone === 'unknown')` render path shared by UsageMiniBars and UsageBar, e.g. an internal `UnknownTrack`) so a different answer changes one place. Never draw unknown as an empty 0% bar (invariant 3).
+
+4. PLAYGROUND DATA AND SHOWCASE:
+
+- apps/client/src/dev/showcases/settings-mock-data.ts: `MOCK_SERVER_CONFIG_MULTI_ACCOUNT` rows gain `color` and `colorIsDefault`; add `MOCK_ACCOUNT_USAGE: AccountUsage[]` with one account per state: ok (5h 40%, week 72%), near/warning (week 91%), limited (seven_day rejected, resetsAt a Tuesday 3pm), unknown (no windows), and one with an extra `seven_day_opus` window, labels "Acct 1".."Acct 5", palette colors in order.
+- Design Tokens page (apps/client/src/dev/pages/TokensPage.tsx and its section registry): new section "Account palette" (id `account-palette`) showing the 8 colors, each as an `AccountDot` (md) and a swatch, on light and dark surfaces (render both surface colors side by side), with its name, hex and min contrast ratio from the table (blue 3.41, green 3.45, amber 3.25, purple 3.35, pink 3.28, teal 3.06, indigo 3.39, stone 3.15). Import the hex list from `DEFAULT_ACCOUNT_COLORS`, not a copy.
+
+Tests (RTL + createMockTransport + TransportProvider + createTestQueryClient):
+
+- useAccountUsage: with 1 account `getAccountUsage` is NOT called (spy); with 2 it is and maps byId/byPath.
+- mergeAccountUsage: newer updatedAt wins, older incoming is ignored, new account appended, keyed by path when accountId null.
+- useAccountUsageSync: an `account_usage` event through the mock event stream updates the cache without a refetch (spy on getAccountUsage call count); with 1 account the handler does nothing.
+- useClaudeAccounts: color/colorIsDefault present; colorFor by id and by path; unknown -> null.
+- AccountDot: `getByRole('img', { name: 'Acct 2' })`; tooltip shows the name on hover/focus.
+- UsageMiniBars / UsageBar: aria-label sentences for 40/72; tones at 69/70/100/rejected via `data-tone` attribute you add; unknown with `usedPct: null` and with the window absent both render the dashed track, say "unknown", and have no fill element (invariant 3).
+
+Changelog: internal only (no fragment); use a `chore(`-prefixed PR title so the changelog gate does not ask for one. (No surface renders these yet.)
+
+## Phase 2: Where you work
+
+### Task 2.1: Add the status-bar account chip and its popover, and move the pre-launch account picker into it
+
+- Size large, priority high
+- Depends on: 1.2
+- Parallel with: 2.2, 2.3, 4.2, 4.3, 3.4
+
+Depends on (outside this file): S4 task 1.2 (`Session.accountId`, `Session.status.limit`, `Session.trackerItem`, `SessionStatus.limit` on the session stream's status_change).
+
+Tracker: DOR-2387 (the chip, popover and the "which account" source). Spec §6.1, §6.4, §10, §11 (Chip, Popover rows), §12 Chip and Gating rows, §13 (AccountItem, AccountPopover rows).
+
+1. ONE SOURCE: new apps/client/src/layers/features/status/model/use-session-account.ts `useSessionAccount(sessionId: string | null)` returns `{ visible: boolean; accountId: string | null; path: string | null; name: string | null; color: string | null; usage: AccountUsage | null; limit: SessionLimit | null; chipState: ChipState; trackerItem: { id: string; stage?: string; runStatus?: string } | null; lifecycle: SessionLifecycle | null; pending: boolean }`. Inputs: the session's account from `useResolvedSessionRuntime(sessionId).account` (path) plus `Session.accountId`; its `AccountUsage` from `useAccountUsage()` (byId, else byPath); `status.limit` and `status.lifecycle` from the live session stream state (the store that receives `status_change`), falling back to `Session.status`; name via `useClaudeAccounts().nameFor(path)`; color via `colorFor`. `visible = isMultiAccount && runtime === 'claude-code'`. `chipState` from the task 1.1 helper with `Date.now()`; re-evaluate at `limit.resetsAt` (a timer to that instant) so "out" clears without a new event. Export it from the features/status barrel: the header badge (2.2) and the notice (3.3) import it from there, never from the model path. This hook is the only place the chip, popover, header badge and notice compute "which account and how is it".
+
+2. REGISTRY: apps/client/src/layers/features/status/model/status-bar-registry.ts: add key `'account'` to the item-key union and an entry directly after `runtime` in `STATUS_BAR_REGISTRY`, same cluster and group as `runtime`, label "Account", description "Which Claude account this session spends, and how much is left.", `promote`: `runtime === 'claude-code' && isMultiAccount`; `severity`: above `usage` when chipState is `near` or `out`, else equal to `runtime`'s. Extend whatever inputs the registry's promote/severity functions receive (follow how `runtime`/`usage` get theirs) and update features/status/**tests**/status-bar-registry.test.ts.
+
+3. CHIP: apps/client/src/layers/features/status/ui/AccountItem.tsx, rendered by `buildStatusItemNodes` in apps/client/src/layers/features/chat/ui/status/status-item-nodes.tsx (add the `account` case; update status-item-nodes.test.tsx). States:
+
+| chipState | Look                                           | Text                                                                                                                                                                                                                                                                                                                                                           |
+| --------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ok        | neutral chip                                   | `● Acct 2` + `UsageMiniBars` (five_hour, seven_day)                                                                                                                                                                                                                                                                                                            |
+| unknown   | neutral chip                                   | `● Acct 2` + unknown bars                                                                                                                                                                                                                                                                                                                                      |
+| near      | `STATUS_TONE_SURFACE.warning` + warning border | `● Acct 3 · 91% of week` (`nearestWindow` + `windowShortName`: "<pct>% of <short>")                                                                                                                                                                                                                                                                            |
+| out       | `STATUS_TONE_SURFACE.error` + error border     | `limitText(window, resetsAt, now)` from task 1.1 (window and reset from `limit` else `usage.limit`): 7-day or model window -> `● Acct 4 · out until Tue 3pm`; 5-hour window -> `● Acct 4 · back in 47 min` (`1h 12m` past an hour; a 5-hour reset 24 h+ away falls back to "out until"); reset unknown -> `● Acct 4 · out`. Durations re-render once a minute. |
+
+The `●` is an `AccountDot`, not a character. `near` and `out` drop the bars and print words instead. The chip is a button with `aria-haspopup="dialog"` and `aria-expanded`; its accessible name includes the name and the state text (e.g. "Acct 4, out until Tue 3pm"). At 360px the name truncates first; the state words never truncate. STATUS_TONE_SURFACE / STATUS_TONE_BORDER_LEFT live in apps/client/src/layers/shared/ui/status-dot.ts.
+
+4. POPOVER: apps/client/src/layers/features/status/ui/AccountPopover.tsx (house `ResponsivePopover`), top to bottom:
+   1. Header: `AccountDot` + name (semibold), `planName(usage.subscriptionType)` right-aligned in muted text (omitted when null), e.g. "Max plan".
+   2. One `UsageBar` per readable window in S4's order (five_hour, seven_day, then the rest). Labels: `five_hour` -> "5-hour", `seven_day` -> "This week"; every other window keeps the server label ("Weekly Opus", ...). Right side "40% · resets 2:10pm".
+   3. When `trackerItem` is set: "Working on DOR-2353" (muted, `text-2xs`, the item id). Open design question Q5: the mockup's "· started on this account" clause is NOT rendered (default: omit; the operator's answer may add it; keep the tracker line in one small component so the clause is a one-line change).
+   4. The action "Continue on another account →" (`Button size="sm"`, primary). It is hidden while the session has a live turn (`lifecycle` is running/streaming, i.e. not idle/error) and hidden before launch. In THIS task it calls an `onContinue` prop that is a no-op when not provided; task 3.2 wires it to open the picker. Render it only when `onContinue` is provided so nothing dead ships.
+      Focus returns to the chip on close; `Escape` closes (house primitive behaviour).
+
+5. PRE-LAUNCH (`pending`, the account is still a hint `pendingAccount`): the chip IS the existing pre-launch account picker (`useAccountSwitch` in features/status/model/use-account-switch.ts), moved here from `RuntimeItem`'s dropdown. In the same change remove the account group from apps/client/src/layers/features/status/ui/RuntimeItem.tsx's menu (RuntimeItem keeps runtime and model choices) and update RuntimeItem.test.tsx (no account group). Open design question Q7 (default below; the operator's answer may change it): trigger = the same chip (dot, name, bars) plus a small chevron; menu rows = dot + name + `UsageMiniBars`, the default account first, keeping today's "not ready" note and the "Default" row naming what it would charge. Build the trigger and row as two small components so the look changes in one place. Choosing still sets `pendingAccount` and locks once the first message sends, as today.
+
+6. LIVE: the chip re-renders from the `account_usage` event (via the task 1.2 cache) and the stream's `status_change` (`limit`), with no polling.
+
+Note for docs (task 5.1 updates it): docs/guides/runtimes.mdx "Choose an Account" says to open the runtime chip; after this task it is the account chip.
+
+Tests (RTL + createMockTransport + TransportProvider):
+
+- Gating: chip absent with 0 and 1 account (queryByRole null), present with 2; absent for a codex session; `getAccountUsage` not called with 1 account.
+- Text and accessible name for ok / unknown / near (week and 5h) / out on a 7-day window ("out until Tue 3pm") / out on the 5-hour window ("back in 47 min", ticking to "back in 46 min" after a minute with fake timers) / out without reset; bars' aria-label.
+- Clicking opens the popover: rows per window with local reset times (fixed `now`, `TZ`), "5-hour"/"This week" labels, extra Opus row keeps server label, plan shown/omitted; tracker line only with trackerItem; the action hidden during a live turn and before launch.
+- An `account_usage` event through the mock event stream updates the chip without a refetch.
+- A limit whose resetsAt passes (fake timers) returns the chip to ok without an event.
+- Pre-launch: RuntimeItem has no account group; choosing an account in the chip sets `pendingAccount`.
+- useSessionAccount unit test for the id-then-path usage lookup.
+
+Dev Playground (Conversation page, apps/client/src/dev/pages/content/ConversationPage.tsx + apps/client/src/dev/sections/content/conversation-sections.ts): section "AccountItem" showing ok, unknown, near (week and 5h), out with and without reset, and the pre-launch picker; section "AccountPopover" with and without plan, with a tracker item, with extra windows (Opus). Data from `MOCK_ACCOUNT_USAGE`.
+
+Changelog: user-facing. Add one fragment `changelog/unreleased/<id>-<slug>.md` (id from `node --experimental-strip-types .claude/scripts/id.ts`, format per changelog/README.md), written with the writing-for-humans skill: what a person with two or more Claude accounts now sees, in plain words, no internals.
+
+### Task 2.2: Show the account dot and the out-of-usage state on sidebar rows, and the account badge in the session header
+
+- Size medium, priority high
+- Depends on: 1.2, 3.1
+- Parallel with: 2.1, 2.3, 4.3, 3.4
+
+Depends on (outside this file): S4 tasks 1.2 (`sessionDisplayState`, `Session.status`, `Session.trackerItem`) and 3.5 (the list carries `accountId`, `status`, `trackerItem`, envelope `accountUsage`). In this file it depends on 1.2 (atoms, hooks) and 3.1 (the `GET /api/runtimes/claude-code/accounts/advisor` route and `Transport.getAccountAdvisor()`); the `AccountBadge` part also uses `useSessionAccount` from task 2.1 — if 2.1 has not merged yet, land the sidebar part first and the badge after 2.1, or rebase onto it.
+
+Tracker: DOR-2387 (sidebar, header) and DOR-2382's UI part (the limited row state). Spec §6.2, §6.3, §12 Sidebar/Header/Gating rows, §13 (AccountMark, AccountBadge rows).
+
+1. ADVISOR QUERY (shared, so an entity can read it): apps/client/src/layers/shared/model/server-config/use-account-advisor.ts `useAccountAdvisor(): { present: boolean; handoff: 'auto' | 'ask' | null }` = `useQuery({ queryKey: accountKeys.advisor(), queryFn: () => transport.getAccountAdvisor(), staleTime: 30_000, enabled: isMultiAccount })`, defaulting to `{ present: false, handoff: null }` while loading or disabled. Export via the shared/model barrel.
+
+2. SIDEBAR DOT: apps/client/src/layers/entities/session/ui/AccountMark.tsx becomes the account DOT: `AccountDot` with the account's color and name (tooltip and aria-label). Still returns null unless `isMultiAccount` and the session runtime is claude-code. Rendered by SessionRowFull and SessionRowCompact. Open design question Q4 (default below; the operator's answer may change it): the dot LEADS the title, and the account name moves into the tooltip (the row no longer prints the name beside it). Keep the position choice in one place (AccountMark's placement prop or a single slot in each row) so moving it next to the origin/runtime marks is a one-line change.
+
+3. LIMITED ROW: when `sessionDisplayState(session.status) === 'limited'` and `isLimitActive(session.status.limit, now)`:
+
+- the row gets `STATUS_TONE_SURFACE.error` as a soft tint;
+- the trailing position (where the relative time sits) shows state text and hides the time while it shows:
+  - `out · handing off` when flow will move it: `session.trackerItem` is set AND `useAccountAdvisor()` reports `present: true, handoff: 'auto'`;
+  - `out · waiting for reset` otherwise (flow absent, handoff `ask`, or a session no flow run owns: nothing will move it);
+- the text is appended to the row's accessible name;
+- a timer to `limit.resetsAt` brings the time back when the reset passes (no event needed).
+  Put the pure decision in an entity-level helper `sessionLimitText(session, advisor, now): string | null` and test it.
+- apps/client/src/layers/entities/session/model/status/use-session-border-state.ts: `SessionBorderKind` gains `'limited'` (label "Out of usage" for the tooltip; error-tone border); `borderKindFromLifecycle` (or its caller) maps a limited display state to it. Update its test.
+
+4. HEADER BADGE: new apps/client/src/layers/features/status/ui/AccountBadge.tsx (export via the features/status barrel) reading `useSessionAccount(sessionId)`: a small outlined pill (`rounded-full border text-2xs`) with the `AccountDot` and the name, `● Acct 2`; when `chipState === 'out'` it uses the error surface (`STATUS_TONE_SURFACE.error`) and reads `● Acct 4 · out`. Same gate (`visible`). apps/client/src/layers/widgets/one-bar/ui/SessionHeader.tsx passes it into `OneBar`'s `chips` after the origin chip; update SessionHeader.test.tsx.
+
+Tests:
+
+- Gating: dot, limited text and badge absent at 0 and 1 accounts, present at 2; dot absent for non-claude-code sessions; advisor query not fired with 1 account.
+- Dot: `getByRole('img', { name: 'Acct 2' })` and tooltip text.
+- Limited row, FLOW ABSENT (`present: false`): a limited session with a trackerItem shows `out · waiting for reset`.
+- Limited row, FLOW PRESENT: `handoff: 'auto'` + trackerItem -> `out · handing off`; `handoff: 'auto'` without trackerItem -> `out · waiting for reset`; `handoff: 'ask'` + trackerItem -> `out · waiting for reset`.
+- The relative time returns after resetsAt (fake timers); accessible name includes the text; border state 'limited' labelled "Out of usage".
+- Badge: name; out variant text.
+
+Dev Playground: Sidebar Model page (apps/client/src/dev/pages/SidebarModelPage.tsx) section "AccountMark": a dot per palette color; limited rows (handing off, waiting) in full and compact rows. One Bar page (OneBarPage.tsx) section "AccountBadge": normal and out.
+
+Changelog: user-facing. Add one fragment `changelog/unreleased/<id>-<slug>.md` (id from `node --experimental-strip-types .claude/scripts/id.ts`, format per changelog/README.md), written with the writing-for-humans skill: what a person with two or more Claude accounts now sees, in plain words, no internals.
+
+### Task 2.3: Show each account's color and live usage in Settings → Runtimes, with the pointer to the Flow tab
+
+- Size medium, priority medium
+- Depends on: 1.2
+- Parallel with: 2.1, 2.2, 4.3, 3.4
+
+Depends on (outside this file): S4 task 1.3 (color/colorIsDefault on config rows; `toWritableAccounts` already sends `color`), S4 task 1.1 (`FLOW_FLEET_SETTINGS_TAB_ID = 'flow:fleet'` in `@dorkos/shared/account-usage`).
+
+Tracker: DOR-2379 UI part (color, bars), riding DOR-2387. Spec §6.5, §9 Settings row, §12 Settings row, §13 Settings row.
+
+In apps/client/src/layers/features/settings/ui/runtimes/sections/ClaudeAccountsSection.tsx, each `AccountRow`, WITH 2+ ACCOUNTS ONLY (with one account neither dot nor bars show: invariant 1 and the design's one-account rule):
+
+- A leading `AccountDot` size `md` in the account's color (from `useClaudeAccounts().accounts[i].color`). Open design question Q8 (default below; the operator's answer may change it): the dot is DISPLAY-ONLY, the row's color stays the default by position, and no color control ships. Render the dot through one small `AccountColorControl` wrapper that today just renders the dot, so a later swatch popover (the proposed answer: clicking the dot opens the 8 swatches as a radio group plus "Default") replaces one component.
+- Trailing compact `UsageBar`s labelled `5h` and `wk` (the 110px form: label left, bar right, no reset text; the reset time is in the bar's tooltip), from `useAccountUsage()` by id then path. Unknown per the task 1.2 unknown branch.
+- The name, "in use" and the shortened path stay as today.
+- No write change (`toWritableAccounts` already sends `color`).
+
+THE FLOW NOTE, under the list, only when `isMultiAccount` AND `useSlotContributions('settings.tabs')` (apps/client/src/layers/shared/model/extension-registry.ts) contains a contribution whose `id === FLOW_FLEET_SETTINGS_TAB_ID` (the host namespaces an extension's tab id as `${extId}:${id}`, so the Flow extension's `fleet` tab is `flow:fleet`). Text exactly: "Flow uses these accounts for your work. Choose how in **Settings → Flow**." The bold part is a link-styled button calling `useSettingsDeepLink().setTab(FLOW_FLEET_SETTINGS_TAB_ID)` (the dialog is already open; `setTab` switches without closing). Muted surface (`bg-muted`), `rounded-md`, as the mockup. Check that `SettingsTab`'s type accepts the contributed id; widen it the way other contributed tabs are addressed if not.
+
+Tests (extend features/settings/ui/runtimes/**tests**/ClaudeAccountsSection.test.tsx):
+
+- Gating: dot and bars absent with 1 account, present with 2.
+- Bars per window incl. unknown (dashed, "unknown", no fill) and the reset in the tooltip.
+- The Flow note: absent with 2 accounts and no contribution; absent with 1 account and the contribution; present with 2 accounts AND a `settings.tabs` contribution `flow:fleet` registered in the extension registry; clicking "Settings → Flow" calls `setTab('flow:fleet')` (spy on the deep-link hook or assert the URL search param).
+
+Dev Playground: extend the existing `ClaudeAccountsShowcaseSection` in apps/client/src/dev/showcases/SettingsShowcases.tsx: multi-account with bars incl. an unknown account, rendered with and without the Flow note (register a fake `flow:fleet` contribution for the "with" variant). Data from `MOCK_SERVER_CONFIG_MULTI_ACCOUNT` + `MOCK_ACCOUNT_USAGE`.
+
+Changelog: user-facing. Add one fragment `changelog/unreleased/<id>-<slug>.md` (id from `node --experimental-strip-types .claude/scripts/id.ts`, format per changelog/README.md), written with the writing-for-humans skill: what a person with two or more Claude accounts now sees, in plain words, no internals.
+
+## Phase 3: Continue and the limit
+
+### Task 3.1: Add the account advisor seam and the continue-options and continue-on-account routes
+
+- Size xl, priority high
+- Depends on: nothing in this file
+- Parallel with: 1.1, 1.2, 4.1
+
+Depends on (outside this file): S4 task 2.1 (the D2 `AccountUsageStore` with `list()`), S4 task 2.5 (`dispatchSessionMessage` in apps/server/src/services/session/launch/launch-session.ts), S4 task 3.1 (`ctx.claudeAccounts` on the extension server API, the launch-guard registry in `services/runtimes/claude-code/accounts/account-launch-guard.ts`, and its shutdown/reload removal in `extension-server-lifecycle.ts`). S4 tasks 1.2/2.3 (`SessionStatus.limit` with `since`) must be on main too.
+
+Tracker: DOR-2388. Spec §7.1, §4 invariants 4-6, §11 Server errors and "First message", §12 Server X4 / Server routes / Invariant 4 rows, §15. Decision (orchestrator, 2026-09-26): the picker and the notice are CORE UI that work WITHOUT flow; flow changes them only through this server-side advisor (rank, filter, recommended, reasons, onLimited countdown or ask, carryOver); there is no flow-contributed UI slot. Draft ADR 260926-153106 records it.
+
+1. EXTENSION SERVER API (packages/extension-api/src/server-extension-api.ts, on S4's `ClaudeAccountsApi`), exact shapes with TSDoc:
+
+```ts
+/** What may carry over when work moves to another account. */
+export type CarryOverItem = 'files' | 'branch' | 'summary' | 'checkpoint' | 'task';
+
+/** Lets an extension rank and filter the accounts a person is offered, and move work it runs. */
+export interface ClaudeAccountAdvisor {
+  /** Fleet-wide handoff mode for the work this advisor runs (used for sidebar text). */
+  describe(): Promise<{ handoff: 'auto' | 'ask' }>;
+  /** Rank and filter every registered account for continuing `sessionId`. */
+  advise(req: { sessionId: string; cwd: string; fromAccountId: string | null }): Promise<{
+    /** True when this advisor runs the session's work (a flow run). */
+    managed: boolean;
+    /** Accounts in the order to offer them; an account left out is offered last as 'eligible'. */
+    accounts: Array<{ accountId: string; availability: 'eligible' | 'reserved' | 'excluded'; /** Plain words for a person, e.g. "kept in reserve (50%)". */ reason?: string }>;
+    recommendedAccountId: string | null;
+    /** What the move keeps, e.g. ['files','branch','checkpoint','task'] for a flow run. */
+    carryOver: CarryOverItem[];
+    /** Set when the advisor already moved this session's work (e.g. flow's own supervisor did). */
+    movedToSessionId?: string | null;
+  }>;
+  /** What the advisor will do about a limited session; null = nothing (not its work). */
+  onLimited(req: { sessionId: string; cwd: string; accountId: string | null; window: string; resetsAt: string | null }):
+    Promise<{ mode: 'auto'; toAccountId: string; countdownSeconds: number } | { mode: 'ask' } | null>;
+  /** Move a session the advisor manages. `handled: false` = not mine; core continues it. */
+  continueSession?(req: { sessionId: string; cwd: string; toAccountId: string }): Promise<{ handled: false } | { handled: true; sessionId: string }>;
+}
+// ClaudeAccountsApi gains:
+registerAdvisor(advisor: ClaudeAccountAdvisor): () => void;
+```
+
+Keep `CarryOverItem` equal to the shared schema below (a type-level test asserts the two are identical).
+
+2. REGISTRY: apps/server/src/services/runtimes/claude-code/accounts/account-advisor.ts: `registerAccountAdvisor(ownerId, advisor): () => void`, `getAccountAdvisor()`, and the raced callers `describeAdvice()`, `adviseFor(req)`, `onLimitedFor(req)`, `continueWithAdvisor(req)`. One advisor at a time: a second registration replaces the first and logs a warning; a disposer removes only its own registration. Removed on extension shutdown and reload through the same mechanism S4 uses for launch guards (extension-server-lifecycle.ts); the factory (`services/extensions/extension-server-api-factory.ts`) exposes `registerAdvisor` keyed by extension id. `describe`, `advise` and `onLimited` are raced against 2 s: a throw or timeout means "no advice" (log at most once a minute), never an error to the person. `continueSession` is raced against 90 s (flow's launch start timeout plus margin); a throw, a timeout, or `handled: false` when `advise` said `managed: true` is an ERROR to the person (invariant 5), never a core launch. Document X4 in contributing/extension-authoring.md next to S4's guards: what each method is for, the time limits, that the advisor answers for every session (so it can hide a kept-out account) but only moves the work it manages, and that a person's continue is never subject to launch guards.
+
+3. SHARED SCHEMAS (packages/shared/src/account-usage.ts, each `.openapi(<Name>)`): `CarryOverItemSchema = z.enum(['files','branch','summary','checkpoint','task'])`; `AccountAdvisorStatusSchema = z.object({ present: z.boolean(), handoff: z.enum(['auto','ask']).nullable() })`; `ContinueOptionsSchema`:
+
+```ts
+{
+  fromAccountId: string | null;
+  advised: boolean;                  // an advisor answered in time
+  managed: boolean;                  // false when !advised
+  accounts: Array<{ usage: AccountUsage; availability: 'eligible' | 'reserved' | 'excluded'; reason: string | null }>;
+  recommendedAccountId: string | null; // always null when !advised
+  carryOver: CarryOverItem[];         // ['files','branch','summary'] when !advised
+  onLimited: { mode: 'auto'; toAccountId: string; deadline: string } | { mode: 'ask' } | null;
+  movedToSessionId: string | null;
+}
+```
+
+`ContinueOnAccountRequestSchema = z.object({ account: z.string().min(1), trigger: z.enum(['person','auto']).optional() })`; `ContinueOnAccountResponseSchema = z.object({ sessionId: z.string(), via: z.enum(['flow','dorkos']) })`.
+
+4. ROUTES (logic in new apps/server/src/services/session/fleet/continue-on-account.ts; thin handlers):
+
+- In apps/server/src/routes/runtimes.ts beside S4's usage route: `GET /api/runtimes/claude-code/accounts/advisor` -> `200 { present, handoff }` (`present: false, handoff: null` with no advisor or no answer in time).
+- In apps/server/src/routes/sessions.ts: `GET /api/sessions/:id/continue-options` -> `200 ContinueOptions`. `404` unknown session; `409 NOT_CLAUDE_CODE` for another runtime. Every registered account but the session's own, each with its AccountUsage from the D2 store `list()`.
+  - WITHOUT ADVICE (no advisor, or no answer in 2 s): `advised: false`, `managed: false`, all `eligible`, `reason: null`, sorted by weekly headroom (100 − `seven_day.usedPct`); an account with unknown weekly usage after every known one; ties keep registry order; `recommendedAccountId: null`; `carryOver: ['files','branch','summary']`; `onLimited: null`.
+  - WITH ADVICE: `advised: true`; the advisor's order and annotations (an account it did not mention goes last as `eligible`); EXCLUDED rows are still returned (the UI hides them; a log can say why); a `recommendedAccountId` that is excluded, out (`state === 'limited'`) or unknown is dropped to null; `carryOver` from the advisor. `onLimited` is asked ONLY while the session's `limit` is active (`isLimitActive`), with `{ sessionId, cwd, accountId: limit.accountId, window: limit.window, resetsAt: limit.resetsAt }`; `auto` becomes `{ mode: 'auto', toAccountId, deadline }` with `deadline = new Date(Date.parse(limit.since) + countdownSeconds * 1000).toISOString()` (every window counts to the same instant; a reload does not restart it); a `toAccountId` that is not selectable (excluded, out, unknown, or the session's own) turns the answer into `{ mode: 'ask' }`.
+  - `movedToSessionId`: the advisor's value, else the successor recorded on the session's latest limit episode (task 3.4's table), else null.
+- EPISODE PORT (so this task does not wait on 3.4): continue-on-account.ts takes an injected `LimitEpisodePort { latestUnresolved(sessionId): Promise<{ id: string; since: string; waitChosenAt: string | null; toSessionId: string | null } | null>; recordMoved(sessionId, { toSessionId, toAccountId, at }): Promise<void> }` with a no-op default (`latestUnresolved` -> null). Task 3.4 wires the real limit-episodes service into it and adds the 409 WAITING and moved-recording tests; this task tests the port calls with a fake.
+- `POST /api/sessions/:id/continue-on-account` body `{ account: string, trigger?: 'person' | 'auto' }` -> `202 { sessionId, via: 'flow' | 'dorkos' }`.
+  - `400` unknown account or the session's own; `404` unknown session; `409 NOT_CLAUDE_CODE`; `409 LIVE_TURN` while the session has a live turn, message exactly "Wait for this session to finish its turn, then continue it on another account."; `409 WAITING` for `trigger: 'auto'` when the person chose to wait on this episode (`latestUnresolved(...).waitChosenAt` set), so a countdown in a second window cannot override the wait (a `person` trigger still moves).
+  - ONCE PER LIMIT EPISODE: a second call for the same session and the same `limit.since` (either trigger) returns the first call's result instead of moving the work again, and a call while one is in flight awaits the same promise (key `${sessionId}:${limit.since}`; with no active limit, key on the in-flight call only). This makes the notice's countdown safe with two windows open; flow's own `handing-off` compare-and-set (S3 §4.3) covers a race with flow's supervisor.
+  - MANAGED (`advise` says `managed: true`): call `continueSession`; `handled: true` -> `202 { sessionId, via: 'flow' }`. A throw, timeout, missing `continueSession`, or `handled: false` -> `502 { error: <the advisor's message> }` and nothing else happens: NO core dispatch (invariant 5), no episode write.
+  - EITHER WAY (flow or dorkos), after a successful move, record it on the session's latest unresolved limit episode as moved via `port.recordMoved(sessionId, { toSessionId, toAccountId, at: now })`, when there is one.
+  - NOT MANAGED, or no advisor: a core launch through S4's `dispatchSessionMessage` with `origin: { kind: 'interactive' }` (a person's action; the `auto` trigger only fires from a countdown the person could stop), `account` as the hint, the old session's `cwd`, `runtime: 'claude-code'`, its `agentPath` when it has one, the old session's settings row `model`, `effort` and `permissionMode` copied to the new session's row FIRST, a new server-minted session id, the first message exactly "Continue where the previous session stopped. The context above says what it was doing.", and `seedContext` (<= `SEED_CONTEXT_MAX_LENGTH`, 10,000, from packages/shared/src/schemas.ts) from `buildContinueSeed(session)` in continue-on-account.ts: the previous session's id, title, account name and why it stopped (window and reset, if any), the cwd and git branch, then the last user message (<= 1,500 chars) and the last assistant text (<= 3,000 chars) read through the same history read `GET /api/sessions/:id/messages` uses, and a line pointing at `.dork/flow/HANDOFF.md` when that file exists in the cwd. No model writes it; it is quoted text (invents nothing, spends nothing). Truncate from the start of the quoted parts so the total always fits the cap.
+  - NO LAUNCH GUARD applies on this path (invariant 6): do not call `checkAccountLaunch`.
+  - An Activity entry records the move: "Continued <title> on <account label>".
+- Register all schemas and routes in OpenAPI and run `pnpm docs:export-api`; commit whatever regenerated output the repo tracks (the openapi freshness check needs both doc commands).
+
+5. TRANSPORT (client side): packages/shared/src/transport.ts gains `getAccountAdvisor(): Promise<AccountAdvisorStatus>`, `getContinueOptions(sessionId: string): Promise<ContinueOptions>`, `continueOnAccount(sessionId: string, body: { account: string; trigger?: 'person' | 'auto' }): Promise<{ sessionId: string; via: 'flow' | 'dorkos' }>`, implemented in apps/client/src/layers/shared/lib/transport/account-methods.ts (create it if task 1.2 has not; else add). Errors surface the server's message (follow session-methods' error handling). Defaults in `createMockTransport` (`{ present: false, handoff: null }`; a flow-absent ContinueOptions with no accounts; `continueOnAccount` resolves `{ sessionId: 'new-session', via: 'dorkos' }`) and in `createPlaygroundTransport()` (answers from `MOCK_ACCOUNT_USAGE`).
+
+6. INVARIANT 4 GUARD: apps/server/src/services/runtimes/claude-code/accounts/**tests**/no-fleet-policy-read.test.ts fails if any non-test `.ts`/`.tsx` file under apps/server/src, apps/client/src or packages/shared/src contains the string literal `'fleet.json'` or `"fleet.json"` (comments and vendored conformance fixtures are skipped). Prove it can fail by temporarily adding such a literal.
+
+Tests (FakeAgentRuntime + route tests; cover BOTH flow absent and flow present):
+
+- X4 registry: registration, replacement logs a warning, a stale disposer does not remove the newer advisor, removal on extension reload/shutdown; `describe`/`advise`/`onLimited` that throw or exceed 2 s (fake timers) -> no advice.
+- continue-options FLOW ABSENT: headroom order, unknown weekly last, ties registry order, `recommendedAccountId: null`, `carryOver` files/branch/summary, `onLimited: null`, advisor route `present: false`.
+- continue-options FLOW PRESENT: the advisor's order; an unmentioned account last as eligible; excluded rows kept in the response; an excluded / out / unknown recommendation dropped to null; `deadline = limit.since + countdownSeconds`; a non-selectable `toAccountId` -> `{ mode: 'ask' }`; `onLimited` NOT asked when no limit is active (spy); `movedToSessionId` from the advisor, else from the fake port's latest episode.
+- Episode port: a successful continue (flow and dorkos) calls `recordMoved` once; a 502 calls nothing; `trigger: 'auto'` with `waitChosenAt` set -> 409 WAITING and no dispatch, while `trigger: 'person'` still moves.
+- continue: called twice for one limit episode, and twice concurrently, moves once and returns the same result; managed -> `continueSession` only (spy: `dispatchSessionMessage` never called); managed failure (throw, timeout, handled:false) -> 502 `{ error: <message> }` and no dispatch (invariant 5); unmanaged -> `dispatchSessionMessage` with `origin.kind === 'interactive'`, the copied model/effort/permissionMode, the exact first message, the seed within the cap and containing the last user/assistant text, and NO guard consulted even when a denying launch guard is registered (invariant 6); live turn -> 409 LIVE_TURN with the exact message; 404 and NOT_CLAUDE_CODE; the OpenAPI export contains ContinueOptions, AccountAdvisorStatus, ContinueOnAccountRequest/Response.
+- The invariant 4 guard test.
+
+Changelog: internal only (no fragment); use a `chore(`-prefixed PR title so the changelog gate does not ask for one. (The routes have no UI until 3.2/3.3; those tasks carry the fragment.)
+
+### Task 3.2: Build the Continue on another account picker and open it from the account popover
+
+- Size large, priority high
+- Depends on: 2.1, 3.1
+- Parallel with: 2.2, 2.3, 3.4, 4.3
+
+Tracker: DOR-2388. Spec §6.6 (mockup v2 wording, design/account-limit-v2.html), §10, §12 Picker rows, §13 ContinueOnAccountDialog row, §14 Q2, Q3 (resolved by mockup v2). Where §11's Picker copy row still shows the older wording, §6.6 (mockup v2) wins; the strings below are the ones to ship. Decision (orchestrator, 2026-09-26): the picker is CORE UI and works WITHOUT flow; everything flow changes arrives as data from `GET /api/sessions/:id/continue-options` (task 3.1); there is no flow-contributed UI slot.
+
+New feature slice apps/client/src/layers/features/continue-on-account/ with index.ts barrel: `ui/ContinueOnAccountDialog.tsx`, `model/use-continue-options.ts`, `model/use-continue-on-account.ts`.
+
+Data: `useContinueOptions(sessionId, enabled)` = `useQuery({ queryKey: [...accountKeys.all, 'continue-options', sessionId], queryFn: () => transport.getContinueOptions(sessionId), enabled })`. Response (task 3.1): `{ fromAccountId, advised, managed, accounts: Array<{ usage: AccountUsage; availability: 'eligible'|'reserved'|'excluded'; reason: string | null }>, recommendedAccountId, carryOver: Array<'files'|'branch'|'summary'|'checkpoint'|'task'>, onLimited, movedToSessionId }`, the session's own account already excluded. `useContinueOnAccount(sessionId)` = mutation calling `transport.continueOnAccount(sessionId, { account })`.
+
+Opened from: the account popover's "Continue on another account →" (wire task 2.1's `onContinue` prop in AccountItem to open this dialog; composing a sibling feature's UI is allowed) and the out-of-usage banner's "Continue on another account…" / "Choose account…" buttons (task 3.3). Nowhere else. Export the dialog and an `open` API (e.g. a controlled `open`/`onOpenChange` pair) from the slice barrel for 3.3.
+
+COMMON CONTENT (house `ResponsiveDialog`, max width 380px; a bottom sheet on mobile):
+
+- Title "Continue on another account".
+- One option row per listed account: `AccountDot`, name, and on the right "28% left · resets Sun" = `100 − seven_day.usedPct` and the weekly reset as a DAY via `formatResetDay` (task 1.1: the weekday, or the time when it is today). Weekly unknown -> "usage unknown". An account that is out (`usage.state === 'limited'`) -> `limitText(usage.limit.window, usage.limit.resetsAt, now)` ("out until 3pm", or "back in 47 min" for a 5-hour window, or "out"), and its row is disabled.
+- Rows are a `role="radiogroup"` of radios (arrow keys move, `aria-checked`); footer `Cancel` and a primary "Continue on <name>" naming the selected account.
+- When no row is selectable, the list is replaced by one muted line "No other account can take this work right now." and the primary button is disabled.
+
+WITHOUT FLOW (`advised: false`):
+
+- Subtitle (mockup v2) "Starts a new chat in the same folder, with a summary of this one. Sorted by most usage left."
+- Rows in the server's order (weekly headroom). NO `recommended` badge, NOTHING hidden, NOTHING dimmed. The first selectable row is selected on open.
+- Carry-over list (mockup v2): "Carries over: the folder and a summary of this chat" / "Doesn't: the chat itself".
+
+WITH FLOW (`advised: true`):
+
+- Rows in the advisor's order. `excluded` accounts are NOT listed (DOR-2388: a kept-out account is never offered outside its repos); one muted line under the list names them: "Client is kept out, so it isn't listed." (two or more: "Client and Acct 5 are kept out, so they aren't listed."; three or more: "A, B and C are kept out, so they aren't listed."). No line when nothing is excluded.
+- A `reserved` account is shown dimmed with its reason on the right (e.g. "kept in reserve (50%)"). Open design question Q2 (default below; the operator's answer may change it): a reserved row is NOT selectable when `managed` is true (flow handoff refuses it) and IS selectable otherwise. Put the rule in one pure function `isSelectable(row, managed)` so the answer changes one place.
+- A `recommended` badge (success tone, pill) on `recommendedAccountId`, which is selected on open (else the first selectable row).
+- Subtitle and carry-over from `carryOver`: when it includes both `checkpoint` and `task` (a flow run): subtitle (mockup v2) "Picks up in the same folder and branch from flow's checkpoint." and "Carries over: files, branch, checkpoint, task" / "Doesn't: the chat itself"; otherwise the without-flow wording above (Q3 resolved by mockup v2).
+
+CONTINUE: `POST /api/sessions/:id/continue-on-account { account }`. On `202 { sessionId }` the dialog closes and the app navigates to the new session (use the app's existing session navigation). On an error the dialog stays open and shows the server's message inline with `role="alert"`; nothing is retried. The primary button shows a pending state while the request runs.
+
+Tests (RTL + createMockTransport + TransportProvider):
+
+- FLOW ABSENT (`advised: false`): rows in the server's order, no "recommended" text anywhere, nothing hidden or dimmed, first selectable row preselected, the without-flow subtitle and carry-over list, limited rows disabled with "out until 3pm" (7-day) and "back in 47 min" (5-hour); the right-hand text uses `formatResetDay` ("resets Sun", or the time when today).
+- FLOW PRESENT (`advised: true`): recommended badge on and preselecting `recommendedAccountId`; reserved dimmed with its reason and selectable only when not managed (Q2 default); excluded absent and named in the kept-out line (one and two-account forms); the flow-run subtitle and list only when carryOver has checkpoint and task, otherwise the without-flow wording.
+- BOTH: "Continue on <name>" follows the selection; submit posts `{ account }` and navigates on 202; a server error shows with role="alert" and the dialog stays; nothing selectable -> the one-line message and a disabled button; arrows move between radios; Escape closes and focus returns to the chip.
+- The popover action opens the dialog; the action stays hidden during a live turn (from 2.1).
+- Gating: with 1 account the popover (and so the dialog) never renders.
+
+Dev Playground: Conversation page section "ContinueOnAccountDialog": without flow (headroom order, no badge), with flow for a flow run (recommended, reserved, checkpoint wording), with flow for another session, nothing to offer, server error. Playground transport answers `getContinueOptions` per variant.
+
+Changelog: user-facing. Add one fragment `changelog/unreleased/<id>-<slug>.md` (id from `node --experimental-strip-types .claude/scripts/id.ts`, format per changelog/README.md), written with the writing-for-humans skill: what a person with two or more Claude accounts now sees, in plain words, no internals.
+
+### Task 3.3: Build the out-of-usage banner and its transcript marker, and run the accessibility check over every new showcase
+
+- Size xl, priority high
+- Depends on: 3.2, 3.4, 2.2, 2.3
+- Parallel with: 4.3
+
+Depends on (outside this file): S4 task 2.3 (the uncategorised `rate_limit` error frame: an `error` part with `code: 'rate_limit'`, the CLI's own message, no category; `SessionStatus.limit` set/cleared on the stream). In this file: 3.2 (the picker and its open API), 3.4 (`GET /api/sessions/:id/account-limit`, the wait/resume/model-fallback routes, the `account_limit_changed` event, and their Transport methods), 2.2 and 2.3 (their showcases are covered by this task's axe spec).
+
+Tracker: DOR-2382 UI part (the limited state), DOR-2388 (countdown and move). Spec §6.7 (rewritten; option A decided), §10, §11 Banner and Transcript marker rows, §12 Banner, Marker and Accessibility rows, §13 AccountLimitBanner / AccountLimitMarker rows, §14 Q0 (resolved), Q1, Q10, Q11, Q12, §15. Mockup: specs/claude-account-ui/design/account-limit-v2.html option A.
+
+DECIDED (the operator delegated the pick; orchestrator, 2026-09-26): a banner above the message box; when the episode resolves, the banner collapses into a one-line marker in the transcript at the point the turn stopped. Core UI; works without flow. Option B (a card in the transcript) is NOT built; do not add it.
+
+COMPONENTS (in `features/continue-on-account/`, exported from its barrel): `ui/AccountLimitBanner.tsx`, `ui/AccountLimitMarker.tsx`, `model/use-account-limit.ts`. ONE banner component serves every state below: the same layout (bold first sentence, optional second sentence, a button row, an optional checkbox), different text and actions. That is the rule for every state the mockup does not draw.
+
+WHERE:
+
+- The banner mounts in apps/client/src/layers/widgets/session/ui/ChatPanel.tsx directly above `SessionComposer`, where `TurnFailedNotice` renders, and REPLACES `TurnFailedNotice` for a limited turn (one notice, not two): extend `shouldShowTurnFailedNotice` (features/chat/ui/status/TurnFailedNotice.tsx) so it is false while this banner shows. It is the house `Banner` (shared/ui/banner.tsx): `variant="critical"` for `limited`, all-out and model-only; `variant="neutral"` for `waiting`, `reset-ready` and `moved` (nothing is failing then); ALWAYS pass `role="status"` (Banner sets `role="alert"` for critical but spreads props after, so the prop overrides it; the turn's own error frame already announced the stop).
+- The marker renders in place of the turn's `rate_limit` error part: apps/client/src/layers/features/chat/ui/message/ErrorMessageBlock.tsx gains a branch for `code === 'rate_limit'`, ONLY when `isMultiAccount`, rendering `AccountLimitMarker` (UI composition of a sibling feature is allowed): NOTHING while the banner for that episode is showing (mockup A draws nothing at the stop point), then one muted `text-2xs` line once the episode is resolved. With one account the part renders as S4's plain error card, as today (invariant 1).
+
+DATA: `useAccountLimit(sessionId)` = `useQuery({ queryKey: [...accountKeys.all, 'limit', sessionId], queryFn: () => transport.getAccountLimit(sessionId), enabled: isMultiAccount && runtime === 'claude-code' })`, refetched on the global `account_limit_changed { sessionId }` event for this session (`useEventSubscription`) and on the session stream's `status_change`. The server computes the phase, so every open window agrees. Response (task 3.4):
+
+```ts
+{
+  phase: 'none' | 'limited' | 'waiting' | 'reset-ready' | 'moved';
+  managed: boolean;
+  episode: { id: string; accountId: string | null; accountLabel: string; window: string;
+    windowKind: 'five_hour' | 'weekly' | 'model'; modelFamily: string | null;
+    resetsAt: string | null; since: string; resumeOnReset: boolean;
+    moved: { toSessionId: string; toAccountId: string; at: string } | null } | null;
+  allOut: { soonest: { accountId: string; resetsAt: string } | null } | null;
+  modelFallback: { model: string; label: string } | null;
+  onLimited: { mode: 'auto'; toAccountId: string; deadline: string } | { mode: 'ask' } | null;
+  episodes: Array<{ id: string; since: string; accountId: string | null; window: string;
+    resolution: 'moved' | 'resumed-reset' | 'resumed-model' | 'resumed-early' | null;
+    resolvedAt: string | null; toSessionId: string | null; toAccountId: string | null; model: string | null }>;
+}
+```
+
+Account names and dots via `useClaudeAccounts()` (`nameFor`/`colorFor`); the episode's `accountLabel` names the out account.
+
+STATES (the server's `phase`, plus `allOut` and `windowKind`); first sentence BOLD; buttons in order:
+
+| State                 | When                                                                                                                        | Banner                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Composer                                                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| near-limit            | the account is `warning`                                                                                                    | NO banner; the amber chip only (task 2.1).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | normal                                                                                                                     |
+| `limited`             | phase `limited`, not all out, not model-only                                                                                | **"Acct 4 is out of usage until Tue 3pm."** (7-day) or **"Acct 4 is out of usage · back in 47 min."** (5-hour), by `limitText` (reset unknown: "Acct 4 is out of usage."). Without flow, or flow `ask` (`onLimited` null or `ask`), or a session flow does not run: **Continue on another account…** (primary, opens the 3.2 picker), **Wait for reset**. Flow `auto` (`onLimited.mode === 'auto'`): plus the second sentence "Moving this task to ● Acct 2 in 10s…", counting down to `deadline`; buttons **Move now** (primary), **Choose account…**, **Wait for reset**. | paused: "Paused until you continue or the account resets" (flow auto: "Paused until the task moves or the account resets") |
+| `limited`, all out    | `allOut` set (no other account is selectable: every other account out, or hidden by flow)                                   | **"All accounts are out."** + "Soonest back: ● Acct 2, Sun 9am" (`allOut.soonest`, day via formatResetTime; omit the sentence when soonest is null). Only **Wait for reset**.                                                                                                                                                                                                                                                                                                                                                                                               | paused                                                                                                                     |
+| `limited`, model only | `windowKind === 'model'` and `modelFallback` set (the server only sets it when neither five_hour nor seven_day is rejected) | **"Opus is out on Acct 3 for this week."** (family capitalised from `episode.modelFamily`) + primary **Keep going on Sonnet, same account** (the model named is `modelFallback.label`), then **Continue on another account…**, **Wait for reset**. Without `modelFallback` this state falls back to the plain `limited` row.                                                                                                                                                                                                                                                | paused                                                                                                                     |
+| `waiting`             | phase `waiting` (the person chose Wait, or flow is waiting)                                                                 | **"Waiting for Acct 4 · back in 1h 12m"** (reset under 24 h, `formatBackIn`) or **"Waiting for Acct 4 · back Tue 3pm"**; a labelled native checkbox **"Continue automatically when it resets"** (checked = `episode.resumeOnReset`; the server's default is on with flow, off without); **Continue on another account…** stays available as a secondary button.                                                                                                                                                                                                             | paused                                                                                                                     |
+| `reset-ready`         | `resetsAt` passed, auto-continue off                                                                                        | **"Acct 4 has reset."** + primary **Continue** (Q12: copy and action as written; the operator may change them).                                                                                                                                                                                                                                                                                                                                                                                                                                                             | normal                                                                                                                     |
+| `moved`               | phase `moved` (the work continued in another session: the picker, Move now, the countdown, or flow's supervisor)            | **"This task continued on ● Acct 2."** + **Open it →** (primary link to `episode.moved.toSessionId`) and a quiet text button **Continue here anyway**.                                                                                                                                                                                                                                                                                                                                                                                                                      | disabled by default; "Continue here anyway" re-enables it                                                                  |
+| resolved              | phase `none` after a new turn started in this chat                                                                          | NO banner; the marker takes over.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | normal                                                                                                                     |
+
+Composer pause: `SessionComposer` (widgets/session/ui/SessionComposer.tsx) disabled with the row's placeholder in `limited` (all three forms) and `waiting`; NOT paused when `episode.resetsAt` is null (it could never un-pause). In `moved` it is disabled with no special placeholder until "Continue here anyway".
+
+WORDING RULE: a 5-hour window says "back in 47 min" (a duration; "1h 12m" past an hour); a 7-day or model window says "out until Tue 3pm". Use task 1.1's `limitText`/`formatBackIn`/`formatResetTime`; durations tick once a minute (one interval per banner, cleared on unmount).
+
+ACTIONS:
+
+- **Continue on another account…** / **Choose account…**: open the 3.2 picker.
+- **Move now**: `transport.continueOnAccount(sessionId, { account: onLimited.toAccountId })`.
+- **Countdown**: seconds = ceil((deadline − now)/1000), so a reload resumes from the deadline, never from 10. At zero: `continueOnAccount(sessionId, { account: toAccountId, trigger: 'auto' })` exactly once (the server is idempotent per episode and refuses it with 409 WAITING after a wait). A page opened after the deadline shows "Moving this task to ● Acct 2…" and makes the same call once. The countdown is not announced each second: the live text says "in 10s" once (render the ticking number in an `aria-hidden` span with a static accessible label), and the button labels carry the rest.
+- **Wait for reset**: `transport.waitForAccountReset(sessionId, { resumeOnReset })` with the checkbox's default (`managed` -> true, else false); the checkbox then toggles the same call with the new value. In flow `auto` mode it also stops DorkOS's countdown. Open question Q1 (default (a); the operator's answer may change it): flow's own supervisor may still move or resume the work, and the banner then goes to `moved` or clears when flow acts. Alternatives: (b) for a flow run, hide "Wait for reset" in auto mode and show the checkbox checked and disabled; (c) a flow-side hold. Keep the Wait button's visibility and the checkbox's enabled state in one small predicate so (b) is a one-line change.
+- **Keep going on Sonnet, same account**: `transport.continueOnFallbackModel(sessionId)`; the server switches the model and sends the resume message; the banner resolves.
+- **Continue** (reset-ready): `transport.resumeAfterAccountReset(sessionId)`.
+- **Open it →**: navigate to the new session. **Continue here anyway**: CLIENT-ONLY (Q11 default: this window only, not saved, not shared; the operator may choose to remember it on the episode, so keep it in one piece of local state); re-enables the composer; sending a message there resolves the episode as resumed (server side, task 3.4).
+- Errors from any action show inline in the banner with `role="alert"`, and nothing is retried.
+
+THE TRANSCRIPT MARKER (one line, muted, `text-2xs`, a small icon at the stop point; Q10 default: a clock icon for resumed, an arrow for moved, keeping the moved line's account dot; the operator's answer may change the look, so keep icon choice in one map), by resolution:
+
+| Resolution                                                                           | Marker                                                                    |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| moved                                                                                | "Acct 4 ran out · moved to ● Acct 2 at 2:14pm" (links to the new session) |
+| resumed-reset                                                                        | "Resumed after reset at 4:02pm"                                           |
+| resumed-model                                                                        | "Opus ran out · continued on Sonnet at 4:02pm"                            |
+| resumed-early ("Continue here anyway", or another cause)                             | "Acct 4 ran out · continued here at 4:02pm"                               |
+| unresolved (an older episode whose banner is gone, e.g. a later episode replaced it) | "Acct 4 ran out of usage"                                                 |
+
+Markers read their episode from `episodes[]` in the same response, matched to the `rate_limit` part by time: the episode whose `since` is the first at or after the part's message timestamp, within 5 minutes. No match (e.g. a transcript older than this feature) -> S4's plain error card. Times via formatResetTime's time form (`resolvedAt`).
+
+Tests (RTL + createMockTransport + TransportProvider; fake timers; a mocked `getAccountLimit` per state; cover flow absent and flow present):
+
+- Gating: nothing at 0 and 1 account and `getAccountLimit` never called; the rate_limit part stays the plain error card with one account.
+- near-limit: no banner.
+- `limited` WITHOUT FLOW: bold 7-day sentence; primary "Continue on another account…" opens the picker; "Wait for reset" posts `{ resumeOnReset: false }`.
+- `limited` FLOW `ask`: same as without flow.
+- `limited` FLOW `auto`: "in 10s…" counts down to `deadline`; a remount mid-count resumes from `deadline` (not 10); Move now posts `{ account: toAccountId }` at once; zero posts `{ account, trigger: 'auto' }` exactly once; Wait stops the count, posts `{ resumeOnReset: true }` (managed default) and posts no continue; opened after the deadline -> "Moving this task to ● Acct 2…" and one call.
+- all out: only Wait, the soonest account and day.
+- model only: primary posts model-fallback; absent without `modelFallback` (falls back to the plain row).
+- `waiting`: checkbox default from `resumeOnReset`, toggling posts the new value; "back in 1h 12m" under 24 h and "back Tue 3pm" beyond.
+- `reset-ready`: Continue posts resume; composer normal.
+- `moved`: Open it navigates; the composer is disabled until "Continue here anyway".
+- 5-hour vs 7-day wording; durations tick after a minute.
+- Composer paused in `limited` and `waiting` with the exact placeholders, not when resetsAt is null.
+- `account_limit_changed` for this session refetches; for another session it does not.
+- Banner role is "status"; TurnFailedNotice hidden for a limited turn and still shown for other failures.
+- Marker: each resolution row renders its line, matched by time to the right rate_limit part; nothing while that episode's banner shows; no match -> plain error card.
+
+ACCESSIBILITY SPEC (the last client task, so it covers every new showcase): a `@smoke` Playwright spec (e.g. apps/e2e/tests/account-ui/account-ui-showcase.spec.ts) using `runAxe` from apps/e2e/axe.ts, following apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts (no server, no seeding; open the Dev Playground sections): zero violations on AccountItem + an open AccountPopover, ContinueOnAccountDialog, the Settings ClaudeAccountsShowcaseSection, AccountBadge, the Sidebar Model AccountMark rows, the Design Tokens Account palette, AccountLimitBanner and AccountLimitMarker, each in light and dark.
+
+Dev Playground (Conversation page): section "AccountLimitBanner" with every state: limited without flow, limited with flow auto counting down, all out, model only, waiting (with and without the flow default), reset-ready, moved; 5-hour and 7-day wording. Section "AccountLimitMarker" with each resolution line. `createPlaygroundTransport()` answers `getAccountLimit` per variant.
+
+Changelog: user-facing. Add one fragment `changelog/unreleased/<id>-<slug>.md` (id from `node --experimental-strip-types .claude/scripts/id.ts`, format per changelog/README.md), written with the writing-for-humans skill: what a person with two or more Claude accounts now sees, in plain words, no internals.
+
+### Task 3.4: Keep a durable record of each usage-limit episode and let a session wait, resume or switch model
+
+- Size xl, priority high
+- Depends on: 3.1
+- Parallel with: 1.2, 2.1, 2.2, 2.3, 3.2, 4.2, 4.3
+
+Depends on (outside this file): S4 task 2.3 (the session projector sets `SessionStatus.limit = { accountId, window, resetsAt, since }` when the account hits a hard limit and clears it at the next `turn_start`), S4 task 2.5 (`dispatchSessionMessage` and `TurnOrigin` in apps/server/src/services/session/origin/turn-origin.ts), S4 task 2.1 (the D2 AccountUsageStore). In this file: 3.1 (the continue route, the advisor, and the `LimitEpisodePort` this task implements).
+
+Tracker: DOR-2382 UI part (the server half of the limited state). Spec §7.2, §7.1 (409 WAITING, episode recording), §11 "Resume message" and "Resume errors" rows, §12 Episodes row, §15 (episodes are a table; DorkOS resumes only sessions flow does not run; a new limit-resume origin; model fallback by family).
+
+Why: the banner's states need facts S4 does not keep: that the person chose to wait, whether to continue automatically, and how an episode ended (moved where, resumed when). S4's `SessionStatus.limit` stays the live signal; an episode is its durable record, so `waiting`, `moved` and the transcript marker survive a restart and agree across windows.
+
+1. TABLE: packages/db/src/schema/account-limit-episodes.ts (export from packages/db/src/schema/index.ts) + a Drizzle migration generated with `pnpm --filter @dorkos/db db:generate` (the next number after the latest in packages/db/drizzle/; commit the SQL and the meta snapshot). Table `account_limit_episodes`: `id` text uuid primary key, `session_id` text not null, `account_id` text nullable, `account_path` text not null, `window` text not null, `resets_at` text nullable (ISO), `since` text not null (ISO), `wait_chosen_at` text nullable, `resume_on_reset` integer 0/1 not null default 0, `resolution` text nullable (`moved` | `resumed-reset` | `resumed-model` | `resumed-early`), `resolved_at` text nullable, `to_session_id` text nullable, `to_account_id` text nullable, `model` text nullable. UNIQUE on (`session_id`, `since`); an index on `session_id`. Rows are deleted 30 days after `resolved_at` (swept on boot).
+
+2. SERVICE: apps/server/src/services/session/fleet/limit-episodes.ts, `class LimitEpisodeService`, one instance built in apps/server/src/index.ts (after the D2 store and the advisor registry), and passed to task 3.1's continue-on-account as its `LimitEpisodePort` (`latestUnresolved`, `recordMoved`).
+
+- OPEN: when a session's projected status gains a `limit`, insert an episode (idempotent on `since`: `INSERT … ON CONFLICT DO NOTHING`). Hook the projector's status output the same way other status consumers are (a listener, not a poll).
+- MOVED: the continue route resolves the latest unresolved episode as `moved` with `to_session_id`, `to_account_id`, `resolved_at`. For a managed session whose advisor reports `movedToSessionId` (flow's own supervisor moved it), the next `account-limit` read records it the same way.
+- RESUMED: the session's next `turn_start` resolves its unresolved episode: `resumed-model` when the session's model changed since `since` (store the model at open time in `model`, compare), `resumed-reset` when now >= `resets_at`, else `resumed-early`.
+- WAIT: `POST /api/sessions/:id/account-limit/wait { resumeOnReset: boolean }` sets `wait_chosen_at` (first call only) and `resume_on_reset`. The client's checkbox default is `true` when the advisor manages the session, else `false`. `404` when there is no unresolved episode.
+- TIMER: for an unresolved episode with `resets_at`, one timer fires at `resets_at` (re-armed on boot; an overdue one fires once at boot). It emits `account_limit_changed` (so `waiting` becomes `reset-ready`, or the banner clears) and, when `resume_on_reset` is set and the session is NOT managed (ask the advisor's `advise`; no advisor = not managed), resumes the session. A managed session is resumed by flow's supervisor (S3 "resume here"), NEVER by DorkOS: two resumers would send two messages. Before resuming it reads the account's `AccountUsage`: a window still `rejected` (the reset moved) re-arms the timer to the new `resetsAt`, or to 5 minutes when there is none. Use one timer per episode (clear on resolve), unref'd, and an injectable clock for tests.
+- RESUME: `POST /api/sessions/:id/account-limit/resume` (and the timer) sends exactly "Continue where you stopped." into the SAME session through `dispatchSessionMessage` with a NEW `TurnOrigin` member `{ readonly kind: 'limit-resume' }` (TSDoc: DorkOS resumed a session after its account's usage reset; nobody chose a trust stop for it), which `permissionSeedForOrigin` maps to `'none'` (the session's row already exists and keeps its mode). Update the exhaustive switch and `__tests__/turn-origin-call-sites.test.ts`. `409 LIVE_TURN` while a turn runs; `409 STILL_LIMITED` while the account is still out, message "<account label> is still out of usage. Try again after it resets." (e.g. "Acct 4 is still out of usage. Try again after it resets.").
+- MODEL FALLBACK: `POST /api/sessions/:id/account-limit/model-fallback`, only for an episode whose window is a model window. The fallback is the FIRST model in the claude-code runtime's model list (newest first) whose family has no rejected model window on this account and differs from the current model's family. A model's family is the lowercased first word of its display name (`Opus 5.5` -> `opus`); a window's family is `seven_day_opus` -> `opus`, `seven_day_sonnet` -> `sonnet`, `model:<slug>` -> `<slug>`. No hard-coded model names. The server writes the model with the SAME session-settings write the status-bar model picker uses, then resumes as above. `409 NO_FALLBACK_MODEL` when there is none (the banner never offers it then).
+- EVENT: global `account_limit_changed { sessionId }` through eventFanOut on every insert, update and timer transition; add `'account_limit_changed'` to the client allowlist in apps/client/src/layers/shared/lib/transport/stream-manager.ts.
+
+3. READ: `GET /api/sessions/:id/account-limit` -> `200`:
+
+```ts
+{
+  phase: 'none' | 'limited' | 'waiting' | 'reset-ready' | 'moved';
+  managed: boolean;
+  episode: {
+    id: string; accountId: string | null; accountLabel: string; window: string;
+    windowKind: 'five_hour' | 'weekly' | 'model'; modelFamily: string | null;
+    resetsAt: string | null; since: string; resumeOnReset: boolean;
+    moved: { toSessionId: string; toAccountId: string; at: string } | null;
+  } | null;
+  allOut: { soonest: { accountId: string; resetsAt: string } | null } | null;
+  modelFallback: { model: string; label: string } | null;
+  onLimited: { mode: 'auto'; toAccountId: string; deadline: string } | { mode: 'ask' } | null;
+  episodes: Array<{
+    id: string; since: string; accountId: string | null; window: string;
+    resolution: 'moved' | 'resumed-reset' | 'resumed-model' | 'resumed-early' | null;
+    resolvedAt: string | null; toSessionId: string | null; toAccountId: string | null; model: string | null;
+  }>;
+}
+```
+
+- `phase`: `moved` when the latest episode is resolved `moved` and no turn has run since; else, for an unresolved latest episode: `reset-ready` when `resetsAt` has passed and `resumeOnReset` is off; `waiting` when a wait was chosen, or flow is waiting (the advisor's `onLimited` is `ask` AND `allOut` is set: `ask` alone also means handoff mode `ask`, which is not a wait); `limited` otherwise; else `none`.
+- `windowKind`: `five_hour` for `five_hour`; `model` for `seven_day_opus`, `seven_day_sonnet` and `model:*`; `weekly` for every other key. `modelFamily` per the family rule above (null unless model).
+- `allOut`: set when no other account is selectable by 3.1's continue-options rules (with advice: excluded and out accounts count as unavailable); `soonest` = the earliest known `resetsAt` among EVERY registered account, this one included.
+- `modelFallback`: computed as for the route above, only when `windowKind === 'model'` and neither `five_hour` nor `seven_day` is rejected on this account; `label` = the model's display name.
+- `onLimited` as in task 3.1 (asked only while `phase` is `limited`; `deadline = limit.since + countdownSeconds`).
+- `episodes`: this session's last 20, oldest first, for the transcript markers.
+- `404` unknown session; `409 NOT_CLAUDE_CODE` for another runtime.
+- Zod schemas in packages/shared/src/account-usage.ts (`AccountLimitStateSchema`, `AccountLimitWaitRequestSchema`, each `.openapi(...)`); register routes in OpenAPI and run `pnpm docs:export-api`.
+
+4. TRANSPORT: packages/shared/src/transport.ts gains `getAccountLimit(sessionId): Promise<AccountLimitState>`, `waitForAccountReset(sessionId, body: { resumeOnReset: boolean }): Promise<AccountLimitState>`, `resumeAfterAccountReset(sessionId): Promise<void>`, `continueOnFallbackModel(sessionId): Promise<void>`, implemented in apps/client/src/layers/shared/lib/transport/account-methods.ts (server messages surfaced as errors); defaults in `createMockTransport` (`phase: 'none'`, everything null, `episodes: []`) and `createPlaygroundTransport()`.
+
+Tests (server, FakeAgentRuntime + route tests + an in-memory/temp SQLite DB; fake clock):
+
+- open on a limit (idempotent on `since`); resolved `moved` by the continue route and by an advisor `movedToSessionId` on read; `resumed-reset` / `resumed-model` / `resumed-early` on the next `turn_start`.
+- wait sets `wait_chosen_at` once and `resume_on_reset`; continue with `trigger: 'auto'` after a wait -> `409 WAITING` (task 3.1's route, now with the real port), a `person` continue still moves.
+- timer: fires at `resets_at`; re-armed on boot; fires once when overdue at boot; re-arms (to the new resetsAt, or 5 min) when the account is still rejected; resumes ONLY unmanaged sessions with `resume_on_reset` (a managed one gets only the event).
+- resume: sends exactly "Continue where you stopped." with origin `limit-resume`; refuses a live turn (409 LIVE_TURN) and a still-limited account (409 STILL_LIMITED with the message).
+- model fallback: Opus out -> Sonnet (from a fake model list, newest first); none -> 409 NO_FALLBACK_MODEL; writes the session model BEFORE sending.
+- `limit-resume` origin seeds `'none'`.
+- `phase` table incl. `moved` then a new turn -> `none`; `reset-ready`; `waiting` by wait and by flow (`ask` + allOut) but NOT by `ask` alone; `allOut` and `soonest` (this account included); `windowKind`/`modelFamily`; `modelFallback` null when five_hour or seven_day is also rejected.
+- `account_limit_changed` emitted on insert, update and timer transition.
+- the migration applies on an existing DB (run migrations on a DB at the previous version); the 30-day sweep deletes old resolved rows and keeps unresolved ones.
+- OpenAPI contains the new schemas.
+
+Changelog: internal only (no fragment); use a `chore(`-prefixed PR title so the changelog gate does not ask for one. (The banner in task 3.3 carries the fragment.)
+
+## Phase 4: Flow extension
+
+### Task 4.1: Discover and run extensions that ship inside an installed plugin
+
+- Size medium, priority high
+- Depends on: nothing in this file
+- Parallel with: 1.1, 1.2, 3.1
+
+Tracker: DOR-2388 (prerequisite: without this the Flow extension installs but never runs). Spec §2 (checked: apps/server/src/services/extensions/extension-discovery.ts scans only `<dorkHome>/extensions/` and `<cwd>/.dork/extensions/`, and apps/server/src/services/marketplace/flows/install-plugin.ts then calls `enable()` on an id discovery never saw, which returns null), §7.3 (was §7.2 in earlier drafts), §12 Discovery row. Draft ADR 260926-153107 (plugin-carried extensions are discovered and gated like any other extension).
+
+Where plugins land today: `computeInstallRoot` in install-plugin.ts installs a global plugin at `<dorkHome>/plugins/<name>/` and a project plugin at `<projectPath>/.dork/plugins/<name>/`; a bundled extension sits at `<installRoot>/.dork/extensions/<id>/` (`discoverExtensionIds(root)` in services/marketplace/lib/staged-extensions.ts reads that folder).
+
+1. `ExtensionDiscovery.discover` scans two more roots: `<dorkHome>/plugins/*/.dork/extensions/*` with origin `global`, and `<cwd>/.dork/plugins/*/.dork/extensions/*` with origin `local`. Precedence and approval are exactly those of the existing roots: a local record never takes over an id that is core or already approved (the DOR-511 rule in the same file), and a plugin-carried extension needs the person's one-time "Allow it to run" (DOR-516) like any other non-core extension. Two plugins carrying the same id: the first by sorted plugin directory name wins, with a warning naming both.
+2. The record remembers its plugin directory (a new optional field on the extension record, e.g. `pluginDir`), so uninstalling the plugin (services/marketplace/flows/uninstall.ts, which already walks the package's `.dork/extensions`) disables it and clears its approval. The compile cache is keyed by the extension's REAL path (`fs.realpath`), so two roots never share a cache entry and a symlinked install does not compile twice.
+3. Make sure `install-plugin.ts`'s enable call now finds the id (re-run discovery before enable if it caches).
+
+Tests (apps/server/src/services/extensions/**tests**/extension-discovery.test.ts and install/uninstall flow tests, temp dorkHome + temp project):
+
+- an installed fixture plugin with `.dork/extensions/<id>/extension.json` is discovered with origin global;
+- install-plugin enables it (no null from enable);
+- it is refused (not run) until approved, then runs;
+- after uninstall it is gone and its approval is cleared;
+- a project plugin cannot inherit an approved global id (local never takes over);
+- two plugins with the same id: sorted-first wins and a warning is logged;
+- compile cache keyed by real path.
+
+Changelog: user-facing. Add one fragment `changelog/unreleased/<id>-<slug>.md` (id from `node --experimental-strip-types .claude/scripts/id.ts`, format per changelog/README.md), written with the writing-for-humans skill: what a person with two or more Claude accounts now sees, in plain words, no internals. (Extensions that come inside an installed plugin now run, after the same one-time "Allow it to run" question.)
+
+### Task 4.2: Scaffold the Flow extension with its fleet routes and the account advisor (marketplace)
+
+- Size xl, priority high
+- Depends on: 3.1, 4.1
+- Parallel with: 1.2, 2.1, 2.2, 2.3, 3.4
+
+Depends on (outside this file): S4 task 3.1 (`ctx.dorkHome`, `ctx.claudeAccounts.{list, usage, onUsage}` on the DorkOS extension server API; `list()` -> `{ id, path, label, color }[]` with resolved colors, `usage()` -> `AccountUsage[]`); marketplace S3 task 1.2 (`rankAccounts`; use the fallback below until it lands); marketplace S3 task 4.3 (`flow handoff <id> --to <acct>`; `continueSession` throws "Flow cannot move this run yet. Update flow." for a managed session until it lands). In this file: 3.1 (DorkOS X4 `registerAdvisor`), 4.1 (DorkOS runs plugin-carried extensions).
+
+Tracker: DOR-2388 (the advisor) and the server half of the Flow tab. Spec §8.1, §8.2, §8.4, §11 Server errors and Flow tab rows, §12 Flow extension row, §15.
+
+1. WHERE IT LIVES: folder plugins/flow/.dork/extensions/flow/ with `extension.json`, `index.ts` (client; its UI is task 4.3 — in this task `activate` registers nothing, or only what 4.3 fills in), `server.ts`, and `ui/*.ts` / `lib/*.ts` modules. Extension id `flow` (must equal the folder name), so the tab id `fleet` becomes `flow:fleet`.
+
+- plugins/flow/.dork/manifest.json: `"layers"` gains `"extensions"`, and add `"extensions": ["flow"]`. The marketplace's root `.claude-plugin/dorkos.json` entry for `flow` lists `extensions` in its layers. `.claude-plugin/plugin.json` is unchanged. Bump the plugin version per the repo's rules.
+- `extension.json`: `{ "id": "flow", "name": "Flow", "version": <plugin version>, "description": "Choose how flow spends your Claude accounts.", "minHostVersion": <the DorkOS release carrying S4 X1-X3 and claude-account-ui §7> }`. NO `serverCapabilities.secrets` or `settings` (those would make the host add a second, generic "Flow" tab).
+- The server half imports flow's own modules directly by relative path (DorkOS's esbuild bundles relative imports): `../../../scripts/fleet/accounts.ts` and `../../../scripts/flow-state-file.ts`, and S3's `rankAccounts` once it lands. These are zod-free, keeping the bundle small; do not import anything that pulls zod.
+- `@dorkos/extension-api` types: if the package is not installable from npm, keep a small local `lib/host-types.ts` mirroring exactly the subset used (DataProviderContext's `dorkHome`, `extensionDir`, `claudeAccounts`, router registration, `ClaudeAccountAdvisor`, `CarryOverItem`); the DorkOS harness check in task 4.3 is the drift guard.
+- `dorkHome` comes from `ctx.dorkHome`, NEVER `resolveDorkHome()`.
+- OLDER DORKOS: when `ctx.claudeAccounts` or `ctx.dorkHome` is missing, register no routes that need them and no advisor; `GET /fleet` answers `501 { reason: 'host-too-old' }`.
+
+2. IDENTITIES: build `AccountIdentity[]` from `ctx.claudeAccounts.list()` in registry order: `{ id, path, label, color, routable: ACCOUNT_ID_PATTERN.test(id) }` (use flow's own id check). `effectiveReservePct(policy, windows, now)` and `weeklyRoom` take the raw LEDGER shape, not DorkOS's `AccountUsage`: read each account's ledger windows with flow's own reader `readLedger` from plugins/flow/scripts/fleet/usage-ledger.ts against `ctx.dorkHome` (a missing ledger = `null` windows), in one helper `ledgerWindowsFor(dorkHome, accountId)` (test it). `ctx.claudeAccounts.usage()` is not used for this.
+
+3. ROUTES (mounted by the host at `/api/ext/flow/`):
+
+- `GET /fleet` -> `{ handoff, accounts: Array<{ id, label, color, role, reservePct, spendDownWindowHours, repos, effectiveReservePct }>, warnings: string[] }`: identities from `list()`, policy from `loadFleetPolicy(ctx.dorkHome, identities)` (`repos` = `policy.scope.repos`), `effectiveReservePct` fed `ledgerWindowsFor(ctx.dorkHome, id)`, warnings as plain strings.
+- `PUT /fleet/accounts/:id` body `{ role?, reservePct?, spendDownWindowHours?, repos? }` (the `AccountPolicyPatch` shape; `null` resets a field to its default): ONE `updateFleetPolicy` call under the contract's lock. Choosing `main` for an account while another is `main` demotes the old one to `rotation` IN THE SAME locked update (the contract allows only one main). `repos` entries must match `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`, else `400` naming the entry. Unknown id -> `404`. Returns the new `GET /fleet` body.
+- `PUT /fleet/handoff` body `{ handoff: 'auto' | 'ask' }` via `setHandoff`; returns the new body.
+- Any write error from the lock (gave up after 2 s, a newer file version / `PreconditionError`) -> `409` with flow's own message; `UsageError` -> `400` with its message.
+
+4. THE ADVISOR: `server.ts` calls `ctx.claudeAccounts.registerAdvisor(advisor)` (keep the disposer; the host removes it on reload). It answers for EVERY session (so a kept-out account is hidden in any session outside its repos) but only moves and counts down for a flow run.
+
+- `describe()`: `{ handoff }` from `loadFleetPolicy(ctx.dorkHome, identities)`.
+- `advise({ sessionId, cwd, fromAccountId })`:
+  - `managed`: the main checkout's `.dork/flow/flow-state.json` (found from `cwd` via `resolveMainCheckout`, exactly as DorkOS S4 D8 does: parent of the git common dir) has a run whose `sessionId` equals `sessionId`.
+  - Per account, FOR A FLOW RUN (managed): `excluded` when flow could not move the run there: `!mayServe(policy, repo)` (repo from the checkout's `origin` remote via `parseOriginRepo`), or `rankAccounts` calls it ineligible once S3 task 1.2 lands. FOR ANY OTHER SESSION (a person's own work): `excluded` ONLY for an account the operator EXPLICITLY set to Kept out in fleet.json (read the raw file's entry, not the resolved default) whose repos do not include this repo. An account with no fleet.json entry reads as kept-out to flow (the contract's opt-in default), but hiding it from a person's own picks would hide every account on a fresh install, so it stays `eligible` there. Then (both kinds of session) `reserved` when its role is `main`, it is outside its spend-down window (`effectiveReservePct > 0`), and another non-excluded account has weekly room (`weeklyRoom`; the main-account rule, contract §1.1b); else `eligible`. `reason` for reserved: "kept in reserve (<effectiveReservePct>%)"; for excluded: "kept out of this repo" (the UI hides these rows; the reason is for logs).
+  - Order and `recommendedAccountId`: S3's `rankAccounts` (with `fromAccountId` excluded) once S3 task 1.2 has landed; until then: eligible accounts by weekly headroom (100 − seven_day usedPct; unknown last), then reserved, then excluded, and the first eligible one with weekly room is recommended (else null). Keep the choice behind one function `rankForAdvice(...)` so swapping in `rankAccounts` is one change.
+  - `carryOver`: `['files','branch','checkpoint','task']` when managed, else `['files','branch','summary']`.
+  - `movedToSessionId`: for a managed session, when flow's run record shows it was handed off from `sessionId` (S3's `drain.handoffs`), the run's current `sessionId`; else null.
+- `onLimited({ sessionId, cwd })`: `null` unless managed; `{ mode: 'ask' }` when handoff is `ask`; `{ mode: 'auto', toAccountId: <recommended>, countdownSeconds: 10 }` when `auto` and there is a recommended account; `{ mode: 'ask' }` when `auto` but nothing is eligible (flow will wait for the reset).
+- `continueSession({ sessionId, cwd, toAccountId })`: not a flow run -> `{ handled: false }`. A flow run -> `execFile('node', ['--experimental-strip-types', <flowRoot>/scripts/flow.ts, 'handoff', <run identifier>, '--to', toAccountId, '--project', <main checkout>, '--json'])` with NO shell and a 90 s timeout, where `flowRoot = path.resolve(ctx.extensionDir, '../../..')` (extensionDir is plugins/flow/.dork/extensions/flow). `node` comes from PATH, NEVER `process.execPath` (inside the desktop app that is Electron). A missing `node` (ENOENT) or one older than 22.6 (check `node --version` once, cached) throws exactly "Flow needs Node 22.6 or newer on your PATH to move this work." On exit 0, re-read the run and return `{ handled: true, sessionId: <its new sessionId> }`. A non-zero exit throws with flow's own message (stderr / the `--json` error), which the person sees. Until S3 task 4.3 ships `flow handoff` (detect: the verb is unknown), a managed session throws exactly "Flow cannot move this run yet. Update flow."
+
+Tests (vitest; widen plugins/flow/vitest.config.ts to include `.dork/extensions/**/__tests__/**/*.test.ts`; fake `ctx` over a temp dorkHome; cover flow absent vs present where it applies):
+
+- GET resolves defaults (every account `kept-out` with no file); PUT role main demotes the old main in ONE write (spy on updateFleetPolicy call count); repos validation 400 names the entry; `null` resets a field; a write the flow CLI makes to fleet.json between two PUTs survives; unknown id 404; lock error 409 with flow's message; host-too-old (no `claudeAccounts`) -> 501 `{ reason: 'host-too-old' }` and no advisor registered.
+- Advisor: managed detection from a `flow-state.json` fixture in a temp git repo + worktree; excluded/reserved/eligible driven by the contract's conformance cases (plugins/flow/conformance/fleet/fleet-policy.cases.json, room.cases.json); carryOver per managed; onLimited null (unmanaged), ask, auto with countdownSeconds 10, auto-with-nothing-eligible -> ask; movedToSessionId from a handed-off run fixture.
+- continueSession: unmanaged -> handled:false; builds the exact argv with `'node'` as the command and no shell (fake `execFile`); non-zero exit throws flow's message; ENOENT -> the Node message; unknown verb -> "Flow cannot move this run yet. Update flow."; success re-reads the run and returns its new sessionId.
+- ledgerWindowsFor reads flow's ledger file from the temp dorkHome (missing file -> null).
+- Advisor for a person's own session: with NO fleet.json, nothing is excluded (every account eligible or reserved); an account explicitly set to Kept out and scoped to another repo is excluded; one scoped to this repo is not. For a flow run with no fleet.json, every account is excluded (flow's default).
+
+Changelog: follow the marketplace repo's release-note convention for the flow plugin (its CHANGELOG if it has one): "Flow can now tell DorkOS which Claude accounts to offer and move a run to another account." No DorkOS fragment.
+
+### Task 4.3: Build the Flow settings tab for choosing how flow spends each account (marketplace)
+
+- Size large, priority medium
+- Depends on: 4.2
+- Parallel with: 2.1, 2.2, 2.3, 3.2, 3.3, 3.4
+
+Tracker: DOR-2387/DOR-2388 (settings decision 2, option A: the Flow tab). Spec §8.1 (client rules), §8.3, §10 (Flow tab accessibility), §11 Flow tab row, §12 Flow extension row, §14 Q9.
+
+Routes it calls (task 4.2): `GET /api/ext/flow/fleet` -> `{ handoff: 'auto'|'ask', accounts: Array<{ id, label, color, role: 'main'|'rotation'|'kept-out', reservePct, spendDownWindowHours, repos: string[], effectiveReservePct }>, warnings: string[] }` or `501 { reason: 'host-too-old' }`; `PUT /api/ext/flow/fleet/accounts/:id` `{ role?, reservePct?, spendDownWindowHours?, repos? }` (null resets) -> new body; `PUT /api/ext/flow/fleet/handoff` `{ handoff }` -> new body; errors 400/404/409 with a message.
+
+CLIENT RULES: client code may import only `react` (as the global, via `const h = React.createElement`, the pattern of DorkOS's apps/server/src/core-extensions/linear-issues/index.ts), `react-dom` and `@dorkos/extension-api`. No `@dork-labs/ui`, shadcn or lucide. Controls use the host's CSS variables (`--border`, `--muted`, `--muted-foreground`, `--foreground`, `--background`, `--ring`, `--radius`) and native elements, matching the host's control heights (28-32px) and 13px labels. Call routes with a local `resolveApiBaseUrl()` mirroring linear-issues (`window.electronAPI?.getServerPort?.()` -> `http://localhost:<port>/api`, else `/api`) so it works in the desktop app.
+
+REGISTRATION: in `index.ts` `activate(api)`: `api.registerSettingsTab('fleet', 'Flow', FleetTab, { group: 'Add-ons' })` (the host namespaces it to `flow:fleet`, which the core Settings → Runtimes note links to).
+
+FleetTab (`ui/fleet-tab.ts`), top to bottom, from the mockup:
+
+1. Heading "Which accounts flow may use"; muted line "Flow spends the account whose unused time expires soonest, and saves Main for last."
+2. One row per account: dot (`background` = color, `role="img"`, `aria-label` = name), name, and a three-way segmented control **Main | Rotation | Kept out** built as a `role="radiogroup"` (labelled with the account name) of `role="radio"` buttons with `aria-checked`, roving tabindex and arrow keys (Left/Up previous, Right/Down next, wrapping; Home/End); the selected segment uses `--foreground` fill and `--background` text.
+3. Under the Main row, an inset panel: "Keep **50%** for me" (the live value) + a native `<input type="range" min=0 max=100 step=5>` (`aria-label` "Share of the weekly limit kept for you", `aria-valuetext` e.g. "50%") + "· Use it all in the last" + a native `<select>` of 6, 12, 24, 48 and 72 hours (a stored value outside the list is added as its own option) + "before it resets". The reserve WRITES ON RELEASE (`change`), not on every drag step (`input` only updates the label).
+4. Under each Kept out row, an inset panel: "Only for these repos:" + one chip per `owner/name` with a remove button (`aria-label` "Remove <repo>") + an "+ add" chip. Open design question Q9 (default below; the operator's answer may change it): "+ add" turns into a small text field (placeholder "owner/name"); Enter adds, Escape cancels, a value not matching `^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$` shows "Use owner/name, like acme/app." Keep it in one `RepoAddChip` component.
+5. A final row: "When an account runs out" + a segmented control **Hand off automatically | Ask me** (same radiogroup build).
+
+- Every change writes at once (no Save button), OPTIMISTIC, and rolls back with an inline `role="alert"` message (the server's message) on an error. Choosing Main for one account shows the old Main as Rotation (the server's returned body is the source of truth after each write).
+- Zero accounts registered: one muted line "Add Claude accounts in Settings → Runtimes first." (plain text; the extension API cannot switch Settings tabs).
+- `501 host-too-old`: one line "Update DorkOS to choose how flow uses your accounts."
+- `warnings` from GET render as a muted list under the heading when present.
+
+Tests: add `react`, `react-dom`, `@testing-library/react` and `jsdom` as DEV dependencies of plugins/flow; vitest `environment: 'jsdom'` for `.dork/extensions/**` tests only (a vitest project or `environmentMatchGlobs`), engine-tests stay node. RTL tests with a stubbed fetch: radiogroup keyboard (arrows move and write), `aria-checked`; range `aria-valuetext` and write-on-change only (no write on `input`); select with a stored custom value; chip remove label and write; "+ add" add/cancel/invalid (Q9 default); optimistic write then rollback with role="alert" on a 409; handoff control; zero-account line; host-too-old line.
+DorkOS check: using DorkOS's apps/server/src/services/extensions/extension-test-harness.ts (it counts registrations per slot), load the BUILT extension and assert exactly one `settings.tabs` registration (the harness counts per slot, not ids); the extension's own RTL/unit test asserts `activate` calls `registerSettingsTab` with `'fleet'`, `'Flow'`, a component and `{ group: 'Add-ons' }` (the host namespaces it to `flow:fleet`). Record how to run the harness check in the PR.
+
+Changelog: the marketplace repo's flow plugin release-note convention: "A Flow tab in DorkOS Settings lets you choose which Claude accounts flow may use, keep part of your main account for yourself, and pick whether work moves automatically when an account runs out." No DorkOS fragment.
+
+## Phase 5: Docs
+
+### Task 5.1: Document using several Claude accounts: the chip, sidebar, settings, the Flow tab and continuing on another account
+
+- Size small, priority medium
+- Depends on: 2.1, 2.2, 2.3, 3.2, 3.3, 4.3
+- Parallel with: none
+
+Tracker: DOR-2387, DOR-2388. Spec §1, §6, §8.3, §9, §11.
+
+Extend the existing user docs page docs/guides/runtimes.mdx, section "## Choose an Account" (it currently says to "open the runtime chip in the status bar and pick an account" — after task 2.1 the pick lives on the ACCOUNT chip; fix that line). Also check docs/getting-started/configuration.mdx's runtimes/accounts row still reads true. Follow the writing-for-humans skill (plain enough for a smart 9th grader; describe what the person sees and does; no internals like advisor, endpoint or fleet.json).
+
+Cover, only as shipped:
+
+- Everything here shows only with 2 or more Claude accounts; with one, nothing changes.
+- The status-bar account chip: color dot, name, two small bars (5-hour and weekly); amber with words when near a limit (e.g. "Acct 3 · 91% of week"), red when out ("Acct 4 · out until Tue 3pm"); click for each window, reset times, the work item a flow run serves, and "Continue on another account". Before the first message, the same chip picks the account.
+- The sidebar dot per session, and "out · handing off" / "out · waiting for reset" on a session that ran out; the name badge in the session header.
+- Settings → Runtimes → Claude accounts: each account's color and live 5-hour and weekly bars; the note pointing to Settings → Flow when flow is installed.
+- Continuing on another account: starts a NEW chat in the same folder and branch with a summary of this one (the chat itself does not move); without flow every other account is offered, most room first; with flow some accounts may be recommended, kept in reserve or hidden for repos they are kept out of.
+- When an account runs out: the banner above the message box ("Acct 4 is out of usage until Tue 3pm." or "· back in 47 min." for the 5-hour limit), its buttons (Continue on another account, Wait for reset), the paused message box; waiting with "Continue automatically when it resets"; "Acct 4 has reset." + Continue; "All accounts are out." with the soonest one back; "Opus is out … Keep going on Sonnet, same account"; "This task continued on …" with Open it and Continue here anyway; and the one-line note left in the chat afterwards (e.g. "Resumed after reset at 4:02pm"). For a flow run set to hand off automatically: the 10-second countdown with Move now and Wait for reset, and that flow may still move or resume the work itself.
+- The Flow tab: Main / Rotation / Kept out, the reserve and "use it all in the last N hours", repos for a kept-out account, "Hand off automatically | Ask me". Say it comes with the flow plugin and needs the one-time "Allow it to run".
+  Honesty gate: no claim beyond what ships; nothing about Codex or OpenCode accounts; if a task's behaviour changed during review (an operator answer to Q1, Q2, Q4-Q12), describe the shipped behaviour. Screenshots only through the capturing-product-media skill, never hand-placed.
+
+Changelog: docs-only PR, label `skip-changelog` + `review:light`. Every new test must fail with its implementation reverted (no tests expected here; if you add a docs link check, prove it can fail).
+
+## Standing rules in every task
+
+Each task's JSON description carries the full block that applies to it:
+
+**Client tasks (1.1, 1.2, 2.1, 2.2, 2.3, 3.2, 3.3):** Always (client): work in your own worktree based on origin/main (one checkout, one writer). TSDoc on every export (a block description, not tags alone). Tests beside the code in **tests**/. Every new test must fail with its implementation reverted. Run `pnpm vitest run <file>` per file, `pnpm --filter @dorkos/client typecheck` and `lint` (plus each other touched package), and every existing test that renders a component you change. Rebuild `@dorkos/shared` (`pnpm --filter @dorkos/shared build`) after changing it. FSD: `shared <- entities <- features <- widgets`; import other slices only through their barrel `index.ts`; a feature's `model/` may not import another feature's `model/` path (lint rule `fsd/no-cross-feature-model-import`), but may import a sibling's public barrel, and `ui/` may compose a sibling feature's component. An entity may not import `entities/config`, which is why account data lives in `shared/`. Client tests: React Testing Library with `createMockTransport` (from `@dorkos/test-utils`) inside `TransportProvider` and a fresh `createTestQueryClient()` (pattern: apps/client/src/layers/features/settings/ui/runtimes/**tests**/ClaudeAccountsSection.test.tsx); query by role and accessible name, never by class. THE GATE: `isMultiAccount` from `useClaudeAccounts()` (apps/client/src/layers/shared/model/server-config/use-claude-accounts.ts; `accounts.length > 1`, registered rows only, computed by the server's `describeClaudeCodeAccounts`) is the one gate every surface in this spec uses. With 0 or 1 account nothing this task adds renders and no request or event subscription runs (invariant 1); each surface's test renders it with 0, 1 and 2 accounts and asserts `queryBy*` is null at 0 and 1 and present at 2. Color is never the only signal (invariant 2): every dot has the account name as its accessible name and tooltip, the chip and badge always print the name, amber and red states print what happened in words. Unknown is never zero (invariant 3): a window with no reading is never drawn as a 0% bar. No user-facing copy beyond what is quoted here; all copy follows the writing-for-humans skill; never use "mission control", "cockpit", "integration", "connector", "adapter" or "provider" in user copy. Everything works at 360px wide. Dev Playground (maintaining-dev-playground skill): render the real component with injected data, never a rebuilt layout; section id = slug of the title.
+
+**Server tasks (3.1, 3.4, 4.1):** Always (server): work in your own worktree based on origin/main. TSDoc on every export. Tests beside the code in **tests**/. Every new test must fail with its implementation reverted. Run `pnpm vitest run <file>` per file and `pnpm --filter <pkg> typecheck` + `lint` for each touched package; rebuild `@dorkos/shared` (`pnpm --filter @dorkos/shared build`) after changing it. Express 5 semantics (`req.body` is undefined on an empty POST). SDK imports stay under apps/server/src/services/runtimes/claude-code/ (Hard Rule 2); never `os.homedir()` in the server, use lib/dork-home.ts (Hard Rule 3). The dir-size pre-commit hook refuses a new file in a directory already at 25+ source files (apps/server/src/services/session has 32): new session modules go in `services/session/fleet/`. Server tests for session routes use `FakeAgentRuntime` and scenarios from `@dorkos/test-utils`. No user-facing copy beyond what is quoted here.
+
+**Marketplace tasks (4.2, 4.3):** Always (marketplace): this task is in the PUBLIC repo dork-labs/marketplace (local checkout /Users/doriancollier/Keep/dork-os/marketplace), folder plugins/flow/. Follow that repo's AGENTS.md. Work in your own worktree of that repo based on its origin/main and open the PR there. Nothing from dorkos-cloud goes in. The flow plugin's scripts run with `node --experimental-strip-types`; tests are vitest (plugins/flow/vitest.config.ts today includes only `engine-tests/**/*.test.ts`; widen it as this task says). Every new test must fail with its implementation reverted. Run `npm test`, `npm run typecheck` and `npm run format:check` in plugins/flow (extend the `format`/`format:check` globs and tsconfig include to cover `.dork/extensions/**`). TSDoc on every export. Existing flow modules to reuse (on main): plugins/flow/scripts/fleet/accounts.ts exports `FLEET_POLICY_VERSION`, `AccountIdentity { id; path; label: string | null; color: string | null; routable: boolean }`, `AccountRole = 'main' | 'rotation' | 'kept-out'`, `HandoffMode = 'auto' | 'ask'`, `ResolvedAccountPolicy { id; role; reservePct; spendDownWindowHours; scope: { repos: string[] } }`, `ResolvedFleetPolicy { handoff; mainId: string | null; accounts: ResolvedAccountPolicy[]; warnings: FleetWarning[] }`, `resolveFleetPolicy(identities, fleet)`, `loadFleetPolicy(dorkHome, identities: Pick<AccountIdentity,'id'|'routable'>[])`, `updateFleetPolicy(dorkHome, mutate: (raw) => raw): Promise<AtomicUpdateResult>` (throws `PreconditionError` on another file version), `AccountPolicyPatch { role?: AccountRole | null; reservePct?: number | null; spendDownWindowHours?: number | null; repos?: string[] | null }` (omitted = leave, null = delete to default), `setAccountPolicy(raw, id, patch)` (throws `UsageError`), `setHandoff(raw, handoff | null)`, `parseOriginRepo(origin)`, `mayServe(policy, repo)`, `effectiveReservePct(policy, windows, now)` (NOTE: `windows` is the raw ledger record `Record<key, entry>`, not the AccountUsage array), `fiveHourRoom`, `weeklyRoom`, `modelRoom`; plugins/flow/scripts/flow-state-file.ts exports `resolveMainCheckout(project)` and `openFlowStateFile(project)`; conformance fixtures in plugins/flow/conformance/fleet/ (`fleet-policy.cases.json`, `room.cases.json`, `flow-run.cases.json`, ...). Never call flow's `resolveDorkHome()` from the extension: it ignores DorkOS's dev home; use `ctx.dorkHome`.
