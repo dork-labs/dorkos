@@ -26,13 +26,14 @@ import type {
 /**
  * The connection service each route type signs in through — the name an app's
  * own consent page shows. The DorkOS account route runs on Composio, so it
- * names Composio too. A type absent here signs in directly or is a test double,
- * and names nothing rather than guessing.
+ * names Composio too. A type absent here names nothing rather than guessing:
+ * raw MCP signs in directly, and a self-hosted Nango server signs in with the
+ * OAuth app the person registered themselves, so the consent page shows their
+ * own app's name, not Nango's.
  */
 const SIGN_IN_THROUGH: Readonly<Record<string, string>> = {
   composio: 'Composio',
   'dorkos-managed': 'Composio',
-  nango: 'Nango',
 };
 
 /**

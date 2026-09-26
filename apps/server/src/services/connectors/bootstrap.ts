@@ -429,9 +429,9 @@ export class ConnectorProviderBootstrapper {
   /**
    * Every way the person has set up to reach apps, and the one new apps use
    * ({@link chooseNewAppsWay}). A way is ready only while its route is
-   * registered, which means it answered its last check — a linked DorkOS
-   * account that cannot connect apps, or a key that failed, is set up but
-   * unavailable.
+   * registered (it answered its last check) AND reports that it can sign in to
+   * apps — a linked DorkOS account whose app sign-in is not available yet, or a
+   * key that failed, is set up but unavailable.
    */
   async appConnections(): Promise<ConnectorAppConnections> {
     const ways: ConnectorAppWay[] = [];
@@ -460,11 +460,13 @@ export class ConnectorProviderBootstrapper {
     live: ConnectorProvider | undefined
   ): ConnectorAppWay {
     const signInThrough = signInThroughFor(type);
+    const ready =
+      live?.getCapabilities().capabilities.authentication.status === 'available' ? live : undefined;
     return {
       kind,
       type,
-      status: live ? 'ready' : 'unavailable',
-      ...(live && { providerInstanceId: live.instanceId }),
+      status: ready ? 'ready' : 'unavailable',
+      ...(ready && { providerInstanceId: ready.instanceId }),
       ...(signInThrough !== undefined && { signInThrough }),
     };
   }

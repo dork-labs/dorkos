@@ -10,9 +10,11 @@
  */
 import type {
   ConnectorAppConnections,
+  ConnectorAppWay,
   ConnectorCatalogProviderRoute,
   ConnectorCatalogService,
 } from '@dorkos/shared/connector-resource-schemas';
+import { providerName } from './presentation';
 
 /** Every route that can sign in to the app, in the catalog's order. */
 export function accountRoutes(
@@ -50,12 +52,35 @@ export function chooseConnectRoute(
 
 /**
  * Whether connecting the app has to start with the one-time setup step: it is
- * an app a person signs in to, and no way that is set up reaches it yet.
- * Chat-only apps never qualify — they have no account to sign in to.
+ * an app a person signs in to, and no route that is set up can sign in to it —
+ * none at all, or only routes whose sign-in is not available (a linked DorkOS
+ * account before it can connect apps). Never a dead end: the step always offers
+ * another way. Chat-only apps never qualify; they have no account to sign in to.
  */
 export function needsFirstConnectStep(service: ConnectorCatalogService | null): boolean {
   const account = service?.intents.find((intent) => intent.kind === 'account');
-  return account?.kind === 'account' && account.routes.length === 0;
+  return (
+    account?.kind === 'account' &&
+    !account.routes.some((route) => route.capabilities.authentication.status === 'available')
+  );
+}
+
+/**
+ * Whether the app is out of reach only because a working way could not be
+ * asked just now: something is set up and working, but the catalog came back
+ * partial. Offering setup then would be wrong — the answer is to try again.
+ *
+ * @param page - The catalog page the app was read from.
+ */
+export function isCatalogOutage(
+  page: { warnings: readonly unknown[]; appConnections?: ConnectorAppConnections } | undefined
+): boolean {
+  return (page?.warnings.length ?? 0) > 0 && page?.appConnections?.newApps.status === 'ready';
+}
+
+/** How the person knows a way: their DorkOS account, or the service their key is for. */
+export function wayName(way: ConnectorAppWay): string {
+  return way.kind === 'dorkos_account' ? 'Your DorkOS account' : providerName(way.type);
 }
 
 /**
@@ -80,18 +105,20 @@ export function signInLine(
  * plain line; `null` when nothing is set up, which needs no explaining.
  *
  * @param appConnections - Every way set up and the one new apps use.
- * @param serviceName - The app being connected.
+ * @param service - The app being connected.
  */
 export function firstConnectReason(
   appConnections: ConnectorAppConnections | undefined,
-  serviceName: string
+  service: ConnectorCatalogService | null
 ): string | null {
+  const serviceName = service?.displayName ?? 'this app';
+  const unsupported = accountRoutes(service)
+    .map((route) => route.capabilities.authentication)
+    .find((authentication) => authentication.status === 'unsupported');
+  if (unsupported?.status === 'unsupported') return unsupported.reason;
   const newApps = appConnections?.newApps;
   if (!newApps) return null;
-  if (newApps.status === 'ready') {
-    const name = newApps.way.signInThrough ?? 'The way you set up';
-    return `${name} can’t reach ${serviceName} yet.`;
-  }
+  if (newApps.status === 'ready') return `${wayName(newApps.way)} can’t reach ${serviceName} yet.`;
   switch (newApps.reason) {
     case 'dorkos_account_unavailable':
       return 'Your DorkOS account is linked, but it can’t connect apps right now.';

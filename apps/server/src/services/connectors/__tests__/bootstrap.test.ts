@@ -815,6 +815,45 @@ describe('ConnectorProviderBootstrapper', () => {
       });
     });
 
+    it('does not count a linked DorkOS account that answers but cannot sign in to apps yet', async () => {
+      const managed = new FakeConnectorProvider({
+        instanceId: 'managed-provider' as never,
+        type: 'dorkos-managed',
+        custody: 'managed',
+      });
+      const capabilities = managed.getCapabilities();
+      Object.defineProperty(managed, 'getCapabilities', {
+        value: () => ({
+          ...capabilities,
+          capabilities: {
+            ...capabilities.capabilities,
+            authentication: { status: 'unsupported', reason: 'Not available for this account.' },
+          },
+        }),
+      });
+      const bootstrapper = makeBootstrapper({
+        managedCloud: managedCloud(
+          () => true,
+          () => managed
+        ),
+      });
+      await bootstrapper.registerBootProviders();
+      // Registered — it answered — but not a way new apps can use.
+      expect(registry.resolveProviderInstance(managed.instanceId)).toBe(managed);
+
+      await expect(bootstrapper.appConnections()).resolves.toEqual({
+        ways: [
+          {
+            kind: 'dorkos_account',
+            type: 'dorkos-managed',
+            status: 'unavailable',
+            signInThrough: 'Composio',
+          },
+        ],
+        newApps: { status: 'setup_needed', reason: 'dorkos_account_unavailable' },
+      });
+    });
+
     it('says why when the saved key failed its check', async () => {
       secrets.set(COMPOSIO_API_KEY_REF, 'uak-wrong-kind');
       const bootstrapper = makeBootstrapper({

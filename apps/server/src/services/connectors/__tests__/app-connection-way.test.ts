@@ -71,10 +71,11 @@ describe('signInThroughFor', () => {
   it('names Composio for the DorkOS account route, which runs on it', () => {
     expect(signInThroughFor('dorkos-managed')).toBe('Composio');
     expect(signInThroughFor('composio')).toBe('Composio');
-    expect(signInThroughFor('nango')).toBe('Nango');
   });
 
-  it('names nothing for a route that signs in directly', () => {
+  it('names nothing for a route that signs in directly or with the person’s own OAuth app', () => {
+    // Self-hosted Nango signs in with the OAuth app the person registered.
+    expect(signInThroughFor('nango')).toBeUndefined();
     expect(signInThroughFor('mcp')).toBeUndefined();
     expect(signInThroughFor('test-connector')).toBeUndefined();
   });

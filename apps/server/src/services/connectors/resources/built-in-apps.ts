@@ -190,8 +190,3 @@ export const BUILT_IN_APPS: readonly BuiltInApp[] = [
     chat: true,
   },
 ];
-
-/** Built-in apps by service id. */
-export const BUILT_IN_APPS_BY_SLUG: ReadonlyMap<string, BuiltInApp> = new Map(
-  BUILT_IN_APPS.map((app) => [app.serviceSlug, app])
-);

@@ -1,6 +1,9 @@
 import { useDeferredValue, useState } from 'react';
 import { Cable, MessageSquare, Search } from 'lucide-react';
-import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
+import type {
+  ConnectorAppConnections,
+  ConnectorCatalogService,
+} from '@dorkos/shared/connector-resource-schemas';
 import { useConnectorCatalog } from '@/layers/entities/connectors';
 import {
   Badge,
@@ -39,7 +42,7 @@ export function ServiceGrid({
   const catalog = useConnectorCatalog(deferredQuery);
   const services = catalog.data?.pages.flatMap((page) => page.services) ?? [];
   const warnings = catalog.data?.pages.flatMap((page) => page.warnings) ?? [];
-  const nothingSetUp = catalog.data?.pages[0]?.appConnections?.newApps.status === 'setup_needed';
+  const emptyHint = emptySearchHint(catalog.data?.pages[0]?.appConnections?.newApps);
 
   return (
     <>
@@ -86,11 +89,7 @@ export function ServiceGrid({
             ) : services.length === 0 ? (
               <div className="bg-muted/40 rounded-lg p-6 text-center">
                 <p className="text-sm font-medium">No app matches “{deferredQuery.trim()}”</p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  {nothingSetUp
-                    ? 'Only popular apps are listed until you connect your first one. After that, search reaches every app DorkOS can connect.'
-                    : 'Try another name.'}
-                </p>
+                <p className="text-muted-foreground mt-1 text-xs">{emptyHint}</p>
               </div>
             ) : (
               <ul className="space-y-2" data-testid="service-catalog-results">
@@ -180,4 +179,20 @@ export function ServiceGrid({
       </ResponsiveDialog>
     </>
   );
+}
+
+/**
+ * Why a search found nothing, in the one case it is not just the name: while
+ * no way to reach apps works, only the popular apps can be listed.
+ */
+function emptySearchHint(newApps: ConnectorAppConnections['newApps'] | undefined): string {
+  if (newApps?.status !== 'setup_needed') return 'Try another name.';
+  switch (newApps.reason) {
+    case 'nothing_set_up':
+      return 'Only popular apps are listed until you connect your first one. After that, search reaches every app DorkOS can connect.';
+    case 'own_key_unavailable':
+      return 'Only popular apps are listed while your saved key isn’t working.';
+    case 'dorkos_account_unavailable':
+      return 'Only popular apps are listed while your DorkOS account can’t connect apps.';
+  }
 }

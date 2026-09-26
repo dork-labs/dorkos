@@ -6,6 +6,7 @@ import type {
 import {
   chooseConnectRoute,
   firstConnectReason,
+  isCatalogOutage,
   needsFirstConnectStep,
   signInLine,
 } from '../lib/connect-route';
@@ -92,7 +93,7 @@ describe('signInLine', () => {
     );
   });
 
-  it('says nothing for a direct route or a sign-in with no consent page', () => {
+  it('says nothing for a direct route, a self-hosted Nango route, or a sign-in with no consent page', () => {
     expect(signInLine(route('a'), notion)).toBeNull();
     expect(
       signInLine(route('a', { signInThrough: 'Composio', authKind: 'api-key' }), notion)
@@ -101,31 +102,103 @@ describe('signInLine', () => {
 });
 
 describe('firstConnectReason', () => {
-  it('says the working way does not reach this app', () => {
-    const way = {
-      kind: 'own_key' as const,
-      type: 'nango',
+  const nango = {
+    kind: 'own_key' as const,
+    type: 'nango',
+    status: 'ready' as const,
+    providerInstanceId: 'nango' as never,
+  };
+
+  it('names the working way that does not reach this app', () => {
+    expect(
+      firstConnectReason({ ways: [nango], newApps: { status: 'ready', way: nango } }, notion)
+    ).toBe('Nango can’t reach Notion yet.');
+    const account = {
+      kind: 'dorkos_account' as const,
+      type: 'dorkos-managed',
       status: 'ready' as const,
-      providerInstanceId: 'nango' as never,
-      signInThrough: 'Nango',
+      providerInstanceId: 'managed' as never,
+      signInThrough: 'Composio',
     };
-    expect(firstConnectReason({ ways: [way], newApps: { status: 'ready', way } }, 'Notion')).toBe(
-      'Nango can’t reach Notion yet.'
-    );
+    expect(
+      firstConnectReason({ ways: [account], newApps: { status: 'ready', way: account } }, notion)
+    ).toBe('Your DorkOS account can’t reach Notion yet.');
+  });
+
+  it('gives the route’s own reason when a route exists but cannot sign in', () => {
+    const blocked: ConnectorCatalogService = {
+      ...notion,
+      intents: [
+        {
+          kind: 'account',
+          displayName: 'Use a Notion account',
+          routes: [
+            route('managed', {
+              mode: 'managed',
+              capabilities: {
+                ...capabilities,
+                authentication: { status: 'unsupported', reason: 'Not available for apps yet.' },
+              },
+            }),
+          ],
+        },
+      ],
+    };
+    expect(needsFirstConnectStep(blocked)).toBe(true);
+    expect(
+      firstConnectReason(
+        { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+        blocked
+      )
+    ).toBe('Not available for apps yet.');
   });
 
   it('explains a saved key that stopped working, and stays quiet when nothing is set up', () => {
     expect(
       firstConnectReason(
         { ways: [], newApps: { status: 'setup_needed', reason: 'own_key_unavailable' } },
-        'Notion'
+        notion
       )
     ).toBe('Your saved key didn’t work the last time DorkOS checked it.');
     expect(
       firstConnectReason(
         { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
-        'Notion'
+        notion
       )
     ).toBeNull();
+  });
+});
+
+describe('isCatalogOutage', () => {
+  const way = {
+    kind: 'own_key' as const,
+    type: 'composio',
+    status: 'ready' as const,
+    providerInstanceId: 'c' as never,
+  };
+  const warning = { code: 'catalog_provider_unavailable', message: 'down' };
+
+  it('is an outage only when a working way left the catalog partial', () => {
+    expect(
+      isCatalogOutage({
+        warnings: [warning],
+        appConnections: { ways: [way], newApps: { status: 'ready', way } },
+      })
+    ).toBe(true);
+    expect(
+      isCatalogOutage({
+        warnings: [],
+        appConnections: { ways: [way], newApps: { status: 'ready', way } },
+      })
+    ).toBe(false);
+    expect(
+      isCatalogOutage({
+        warnings: [warning],
+        appConnections: {
+          ways: [],
+          newApps: { status: 'setup_needed', reason: 'own_key_unavailable' },
+        },
+      })
+    ).toBe(false);
   });
 });

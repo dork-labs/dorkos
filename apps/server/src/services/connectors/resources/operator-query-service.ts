@@ -183,17 +183,23 @@ function matchesQuery(query: string, ...fields: string[]): boolean {
 }
 
 /** One catalog service, reduced to what an agent service request needs. */
-export interface ConnectorServiceDirectoryEntry {
+export type ConnectorServiceDirectoryEntry = {
   /** Exact service id an agent passes as `serviceSlug`. */
   readonly serviceSlug: string;
   /** Human-facing service name. */
   readonly displayName: string;
-  /**
-   * False for a Messaging-only row (the person sets it up; an agent cannot ask
-   * for it) and for a popular app no way reaches yet.
-   */
-  readonly requestable: boolean;
-}
+} & (
+  | { readonly requestable: true }
+  | {
+      readonly requestable: false;
+      /**
+       * Why an agent cannot ask for it: `messaging_only` — a chat app the person
+       * sets up themselves; `not_reached` — an app to sign in to that no way
+       * DorkOS is set up with reaches yet (the person's first connect fixes it).
+       */
+      readonly unavailableBecause: 'messaging_only' | 'not_reached';
+    }
+);
 
 /** The whole service catalog, as agent requests validate against it. */
 export interface ConnectorServiceDirectory {
@@ -270,15 +276,20 @@ export class ConnectorOperatorQueryService {
       signal,
     });
     return {
-      services: all.map((service) => ({
-        serviceSlug: service.serviceSlug,
-        displayName: service.displayName,
+      services: all.map((service): ConnectorServiceDirectoryEntry => {
+        const account = service.intents.find((intent) => intent.kind === 'account');
+        const base = { serviceSlug: service.serviceSlug, displayName: service.displayName };
         // A popular app no way reaches yet is listed, but not requestable: an
         // agent's request needs a route the person can sign in through.
-        requestable: service.intents.some(
-          (intent) => intent.kind === 'account' && intent.routes.length > 0
-        ),
-      })),
+        if (account?.kind === 'account' && account.routes.length > 0) {
+          return { ...base, requestable: true };
+        }
+        return {
+          ...base,
+          requestable: false,
+          unavailableBecause: account ? 'not_reached' : 'messaging_only',
+        };
+      }),
       warnings,
       routeTypes: this.registry.listProviders().map((provider) => provider.type),
     };

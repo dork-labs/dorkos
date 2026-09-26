@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { ArrowUpRight, CheckCircle2, ExternalLink, RefreshCw, ShieldCheck } from 'lucide-react';
 import type {
   ConnectorAuthenticationFlowState,
@@ -30,8 +30,10 @@ import {
   accountRoutes,
   chooseConnectRoute,
   firstConnectReason,
+  isCatalogOutage,
   needsFirstConnectStep,
   signInLine,
+  wayName,
 } from '../lib/connect-route';
 import { FirstConnectStep } from './FirstConnectStep';
 
@@ -114,7 +116,8 @@ export function ConnectDialog({
   const lookedUpService = lookup.data?.pages
     .flatMap((page) => page.services)
     .find((candidate) => candidate.serviceSlug === serviceSlug);
-  const appConnections = lookup.data?.pages[0]?.appConnections;
+  const firstPage = lookup.data?.pages[0];
+  const appConnections = firstPage?.appConnections;
   const resolvedService = lookedUpService ?? service ?? null;
   const routes = accountRoutes(resolvedService);
   const availableRouteCount = routes.filter(
@@ -132,16 +135,6 @@ export function ConnectDialog({
   const serviceName = resolvedService?.displayName ?? titleCase(activeFlow?.toolkit ?? 'service');
   const guidance = route ? authenticationGuidance(route, serviceName) : null;
   const whoAsks = signInLine(route, resolvedService);
-  const unavailableReason = useMemo(() => {
-    if (route) return null;
-    const unavailable = routes.find(
-      (candidate) => candidate.capabilities.authentication.status === 'unsupported'
-    )?.capabilities.authentication;
-    return unavailable?.status === 'unsupported'
-      ? unavailable.reason
-      : 'No configured setup can connect this service yet.';
-  }, [route, routes]);
-
   const close = () => {
     setOpen(false);
     onClose();
@@ -202,8 +195,17 @@ export function ConnectDialog({
             </ResponsiveDialogDescription>
           </ResponsiveDialogHeader>
           <ResponsiveDialogBody className="space-y-4 pb-4">
-            {firstConnect ? (
-              <FirstConnectStep reason={firstConnectReason(appConnections, serviceName)} />
+            {firstConnect &&
+            isCatalogOutage(firstPage) &&
+            appConnections?.newApps.status === 'ready' ? (
+              <QueryErrorState
+                title={`Couldn’t reach ${serviceName} just now`}
+                description={`${wayName(appConnections.newApps.way)} didn’t answer. Nothing needs setting up — try again in a moment.`}
+                onRetry={() => void lookup.refetch()}
+                isRetrying={lookup.isFetching}
+              />
+            ) : firstConnect ? (
+              <FirstConnectStep reason={firstConnectReason(appConnections, resolvedService)} />
             ) : !activeFlow ? (
               <>
                 <div className="space-y-1.5">
@@ -257,14 +259,7 @@ export function ConnectDialog({
                         : 'Service usage is billed to you.'}
                     </p>
                   </div>
-                ) : (
-                  <p
-                    role="alert"
-                    className="text-destructive bg-destructive/5 rounded-lg p-3 text-sm"
-                  >
-                    {unavailableReason}
-                  </p>
-                )}
+                ) : null}
 
                 {showProviders && (
                   <fieldset className="space-y-2">

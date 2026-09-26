@@ -133,6 +133,54 @@ describe('connector discovery capabilities', () => {
     });
   });
 
+  it('lists popular apps to agents without owner setup or an account intent nothing reaches', async () => {
+    const withSetup: ConnectorCapabilityDeps = {
+      registry,
+      catalog: async (input) => ({
+        ...(await queries.catalog({ ...input, includeAuthenticationSetup: false })),
+        appConnections: {
+          ways: [
+            {
+              kind: 'own_key',
+              type: 'composio',
+              status: 'ready',
+              providerInstanceId: 'private-route-id' as never,
+            },
+          ],
+          newApps: {
+            status: 'ready',
+            way: {
+              kind: 'own_key',
+              type: 'composio',
+              status: 'ready',
+              providerInstanceId: 'private-route-id' as never,
+            },
+          },
+        },
+      }),
+    };
+    const result = (await capability('connector.list_toolkits').invoke(
+      { logger: noopLogger, connectorDeps: withSetup },
+      { query: 'notion' },
+      {}
+    )) as {
+      services: Array<{ serviceSlug: string; intents: unknown[]; notRequestable?: string }>;
+      toolkits: unknown[];
+    };
+
+    expect(JSON.stringify(result)).not.toContain('appConnections');
+    expect(JSON.stringify(result)).not.toContain('private-route-id');
+    // Notion is listed (popular), but the fake route does not reach it.
+    expect(result.services).toEqual([
+      expect.objectContaining({
+        serviceSlug: 'notion',
+        intents: [],
+        notRequestable: expect.stringContaining('cannot be requested'),
+      }),
+    ]);
+    expect(result.toolkits).toEqual([]);
+  });
+
   it('omits sign-in setup even when provider metadata supplies it', async () => {
     const provider = new FakeConnectorProvider({
       type: 'setup',

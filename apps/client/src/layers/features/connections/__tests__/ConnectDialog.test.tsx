@@ -280,27 +280,32 @@ describe('ConnectDialog', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
 
-  it('keeps an unsupported declared method visible and unavailable', () => {
+  it('never dead-ends on a route that cannot sign in: it offers another way, with the reason', async () => {
+    // The pre-DOR-1798 case: the DorkOS-account route answers but cannot sign in to apps.
     renderDialog(
-      createMockTransport(),
-      managedService(
-        {
-          kind: 'unsupported',
-          source: 'unsupported',
-          scheme: 'OAUTH1',
-          requiresAccountFields: false,
-        },
-        {
-          status: 'unsupported',
-          reason: 'This service uses OAUTH1, which DorkOS does not support yet.',
-        }
-      )
+      createMockTransport({
+        getConnectorProviders: vi.fn().mockResolvedValue([
+          {
+            type: 'composio',
+            configured: false,
+            registered: false,
+            custody: 'managed',
+            disclosure: 'Composio keeps sign-ins.',
+          },
+        ]),
+      }),
+      managedService(undefined, {
+        status: 'unsupported',
+        reason: 'Signing in to apps through your DorkOS account isn’t available yet.',
+      })
     );
 
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'This service uses OAUTH1, which DorkOS does not support yet.'
+    expect(await screen.findByTestId('first-connect-step')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Signing in to apps through your DorkOS account isn’t available yet.'
     );
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
   });
 
   it('preserves an explicit provider choice and never starts an unavailable route', async () => {
@@ -558,6 +563,60 @@ describe('ConnectDialog', () => {
         'Your DorkOS account is linked, but it can’t connect apps right now.'
       );
       expect(screen.getByRole('button', { name: /Use my Composio key/ })).toBeInTheDocument();
+    });
+
+    it('says to try again, not to set up, when a working way could not be reached', async () => {
+      const user = userEvent.setup();
+      const transport = createMockTransport({
+        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+      });
+      const way = {
+        kind: 'own_key' as const,
+        type: 'composio',
+        status: 'ready' as const,
+        providerInstanceId: 'composio-1' as never,
+        signInThrough: 'Composio',
+      };
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [builtInGmail],
+        warnings: [
+          { code: 'catalog_provider_unavailable', message: 'composio is temporarily unavailable.' },
+        ],
+        appConnections: { ways: [way], newApps: { status: 'ready', way } },
+      });
+      renderDialog(transport, builtInGmail);
+
+      expect(await screen.findByText('Couldn’t reach Gmail just now')).toBeInTheDocument();
+      expect(screen.getByText(/Composio didn’t answer/)).toBeInTheDocument();
+      expect(screen.queryByTestId('first-connect-step')).not.toBeInTheDocument();
+      const reads = vi.mocked(transport.getConnectorCatalog).mock.calls.length;
+      await user.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() =>
+        expect(vi.mocked(transport.getConnectorCatalog).mock.calls.length).toBeGreaterThan(reads)
+      );
+    });
+
+    it('names the DorkOS account, not Composio, when that account cannot reach the app', async () => {
+      const transport = createMockTransport({
+        getConnectorProviders: vi.fn().mockResolvedValue(statuses),
+      });
+      const way = {
+        kind: 'dorkos_account' as const,
+        type: 'dorkos-managed',
+        status: 'ready' as const,
+        providerInstanceId: 'managed-1' as never,
+        signInThrough: 'Composio',
+      };
+      vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+        services: [builtInGmail],
+        warnings: [],
+        appConnections: { ways: [way], newApps: { status: 'ready', way } },
+      });
+      renderDialog(transport, builtInGmail);
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        'Your DorkOS account can’t reach Gmail yet.'
+      );
     });
 
     it('uses the way marked for new apps without asking, preferring the person’s own key', async () => {

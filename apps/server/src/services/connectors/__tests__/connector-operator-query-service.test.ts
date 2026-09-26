@@ -255,6 +255,7 @@ describe('ConnectorOperatorQueryService', () => {
       serviceSlug: 'gmail',
       displayName: 'Gmail',
       requestable: false,
+      unavailableBecause: 'not_reached',
     });
   });
 
@@ -586,6 +587,7 @@ describe('ConnectorOperatorQueryService', () => {
       serviceSlug: 'telegram',
       displayName: 'Telegram',
       requestable: false,
+      unavailableBecause: 'messaging_only',
     });
     expect(directory.warnings).toEqual([]);
     // Types only: a person's label for a route never hides a service word.

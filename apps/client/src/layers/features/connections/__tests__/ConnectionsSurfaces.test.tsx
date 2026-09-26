@@ -185,6 +185,29 @@ describe('ServiceGrid', () => {
     ).toBeInTheDocument();
   });
 
+  it('does not promise the first connect fixes search when a saved key stopped working', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [],
+      warnings: [],
+      appConnections: {
+        ways: [{ kind: 'own_key', type: 'composio', status: 'unavailable' }],
+        newApps: { status: 'setup_needed', reason: 'own_key_unavailable' },
+      },
+    });
+    renderWith(
+      transport,
+      <ServiceGrid onConnect={() => undefined} onConnectChat={() => undefined} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    expect(
+      await screen.findByText('Only popular apps are listed while your saved key isn’t working.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/until you connect your first one/)).not.toBeInTheDocument();
+  });
+
   it('keeps an empty search plain once a way to reach apps works', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
