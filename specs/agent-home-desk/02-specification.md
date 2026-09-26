@@ -840,9 +840,9 @@ resume carries its history (below), but a reader must not assume a record's `cwd
 live check must exercise a resume, not only a listing.
 
 **Measured (T3, 2026-09-26).** No paid call: each CLI was pointed at a local fake model endpoint that
-records the request, in temp config directories.
+records the request, in temp config directories. The operator's real sign-in was not used: the fake endpoint stands in for it, which is enough to show the full history goes out on resume, and T4's live check covers a real turn.
 
-- **claude-code (CLI 0.3.280): resumes at the home after the move.** A copy of a real room transcript,
+- **claude-code (Agent SDK 0.3.280 and its bundled CLI): resumes at the home after the move.** A copy of a real room transcript,
   filed under a worktree slug, was moved by the module and resumed with `--resume <id>` at cwd = the
   home: the request carried the full history (44 messages; 47 after one more turn) and the new turn
   was appended to the moved file under the home's slug. The CLI also finds the id from the home
