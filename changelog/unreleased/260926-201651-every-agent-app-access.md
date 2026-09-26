@@ -2,6 +2,7 @@
 covers:
   - 'feat(connectors): let one app be used by every agent, including agents added later (DOR-2420)'
   - 'fix(connectors): be honest about every-agent access everywhere it applies (DOR-2420)'
+  - 'fix(connectors): keep every-agent review facts and the Activity trail true (DOR-2420)'
 ---
 
 ### Added

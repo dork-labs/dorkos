@@ -16,7 +16,12 @@ import {
   sessionConnectionOverrides,
   type Db,
 } from '@dorkos/db';
-import { revokeEveryAgentGrants } from './every-agent-grants.js';
+import {
+  liveEveryAgentConnections,
+  revokeEveryAgentGrants,
+  type EndedEveryAgentGrant,
+} from './every-agent-grants.js';
+import { notifyEveryAgentEnded } from './every-agent-activity.js';
 import type {
   ConnectedAccount,
   ConnectedAccountStatus,
@@ -121,7 +126,8 @@ export class ConnectionStore {
     this.assertAvailable();
     const capabilities = provider.getCapabilities();
     const now = new Date().toISOString();
-    return this.db.transaction((tx) => {
+    let ended: EndedEveryAgentGrant[] = [];
+    const generation = this.db.transaction((tx) => {
       const existing = tx
         .select({
           createdAt: connectorProviderInstances.createdAt,
@@ -194,19 +200,19 @@ export class ConnectionStore {
         // Hosted authority cannot honor an every-agent grant (ADR 260926-192625),
         // so moving an instance to managed ends it for good rather than leaving
         // it dormant to reappear if the instance ever moves back.
-        revokeEveryAgentGrants(
-          tx,
-          tx
-            .select({ id: connections.id })
-            .from(connections)
-            .where(eq(connections.providerInstanceId, provider.instanceId))
-            .all()
-            .map((row) => row.id),
-          now
-        );
+        const instanceConnections = tx
+          .select({ id: connections.id })
+          .from(connections)
+          .where(eq(connections.providerInstanceId, provider.instanceId))
+          .all()
+          .map((row) => row.id);
+        ended = liveEveryAgentConnections(tx, instanceConnections);
+        revokeEveryAgentGrants(tx, instanceConnections, now);
       }
       return executionConfigGeneration;
     });
+    notifyEveryAgentEnded(ended, 'moved_to_dorkos_account');
+    return generation;
   }
 
   /** Read the material generation for one configured provider instance. */
@@ -424,7 +430,10 @@ export class ConnectionStore {
   revokeConnection(connectionId: ConnectionId): void {
     this.assertAvailable();
     const now = new Date().toISOString();
-    this.db.transaction((tx) => {
+    // Read before the connection-wide revoke below ends it, so the owner is
+    // told sharing with every agent stopped (ADR 260926-192625).
+    const ended = this.db.transaction((tx) => {
+      const endedSharing = liveEveryAgentConnections(tx, [connectionId]);
       tx.update(connections)
         .set({
           lifecycleState: 'disconnected',
@@ -458,7 +467,9 @@ export class ConnectionStore {
           )
         )
         .run();
+      return endedSharing;
     });
+    notifyEveryAgentEnded(ended, 'disconnected');
   }
 
   /** Revoke every connection authority row owned by one removed agent. */

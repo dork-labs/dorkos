@@ -38,6 +38,8 @@ import { ConnectorOperatorQueryService } from '../resources/operator-query-servi
 import { ConnectorManagementReviewContextBuilder } from '../management-review-context.js';
 import {
   createEveryAgentArrivalReaction,
+  createEveryAgentEndedRecorder,
+  setOnEveryAgentEnded,
   EVERY_AGENT_CHANGED_EVENT,
   EVERY_AGENT_INHERITED_EVENT,
   type EveryAgentActivitySink,
@@ -67,7 +69,10 @@ describe('every-agent grants', () => {
   let nextId: number;
   let activity: { emit: ReturnType<typeof vi.fn<EveryAgentActivitySink['emit']>> };
 
-  afterEach(() => setOnAgentCreated(null));
+  afterEach(() => {
+    setOnAgentCreated(null);
+    setOnEveryAgentEnded(null);
+  });
 
   beforeEach(() => {
     activity = { emit: vi.fn<EveryAgentActivitySink['emit']>() };
@@ -459,6 +464,28 @@ describe('every-agent grants', () => {
     );
   });
 
+  it('records sharing that ends because the account was disconnected', async () => {
+    await giveEveryAgent(['gmail.read']);
+    setOnEveryAgentEnded(createEveryAgentEndedRecorder(activity));
+    activity.emit.mockClear();
+    registry.recordDisconnect(CONNECTION_ID);
+    await vi.waitFor(() =>
+      expect(activity.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: EVERY_AGENT_CHANGED_EVENT,
+          resourceId: CONNECTION_ID,
+          summary:
+            'Stopped sharing Gmail (Work Gmail) with every agent because the account was disconnected',
+        })
+      )
+    );
+    // Nothing was shared on a second disconnect, so nothing more is recorded.
+    activity.emit.mockClear();
+    registry.recordDisconnect(CONNECTION_ID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(activity.emit).not.toHaveBeenCalled();
+  });
+
   it('refuses a revision the owner did not review in this preview', async () => {
     const snapshot = await preview();
     await expect(
@@ -728,9 +755,32 @@ describe('every-agent grants', () => {
     expect(query.disconnectImpact(OWNER, 'connection-managed').everyAgent).toBe(false);
   });
 
+  function namedRevokedAt(id: string) {
+    return db
+      .select({ revokedAt: connectionOperationGrants.revokedAt })
+      .from(connectionOperationGrants)
+      .where(eq(connectionOperationGrants.id, id))
+      .get()?.revokedAt;
+  }
+
   it('ends for good when the instance moves to a DorkOS account', async () => {
     const snapshot = await giveEveryAgent(['gmail.read']);
+    grantNamed('named-survives-move', 'agent-a', revisionId(snapshot, 'gmail.write'));
+    setOnEveryAgentEnded(createEveryAgentEndedRecorder(activity));
+    activity.emit.mockClear();
     registry.register(provider, 'material-a', 'managed');
+    // Only the every-agent row ends; a grant made to one agent by name does not.
+    expect(namedRevokedAt('named-survives-move')).toBeNull();
+    await vi.waitFor(() =>
+      expect(activity.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: EVERY_AGENT_CHANGED_EVENT,
+          actorLabel: 'DorkOS',
+          summary:
+            'Stopped sharing Gmail (Work Gmail) with every agent because it now connects through your DorkOS account',
+        })
+      )
+    );
     expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([expect.any(String)]);
     registry.register(provider, 'material-a', 'byo');
     expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([expect.any(String)]);
@@ -744,6 +794,7 @@ describe('every-agent grants', () => {
 
   it('stops sharing with no preview, even while the provider is unavailable', async () => {
     const snapshot = await giveEveryAgent(['gmail.read', 'gmail.write']);
+    grantNamed('named-survives-stop', 'agent-a', revisionId(snapshot, 'gmail.read'));
     activity.emit.mockClear();
     db.update(connectorProviderInstances)
       .set({ status: 'unavailable' })
@@ -766,6 +817,8 @@ describe('every-agent grants', () => {
       revokedCount: 2,
     });
     expect(everyAgentRows().every((row) => row.revokedAt !== null)).toBe(true);
+    // Stopping the sharing never touches what an agent was given by name.
+    expect(namedRevokedAt('named-survives-stop')).toBeNull();
     expect(activity.emit).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: EVERY_AGENT_CHANGED_EVENT,

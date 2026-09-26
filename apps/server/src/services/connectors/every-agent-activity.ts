@@ -12,12 +12,20 @@
  *   installs, discovery adoption), since only the create dialog can say it
  *   before the agent exists.
  *
+ * A third moment is sharing ending as a side effect rather than by choice —
+ * the account was disconnected, or its provider moved to a DorkOS account.
+ * Those paths run deep in the connection store, long before Activity exists at
+ * boot, so they report through one process-wide listener set in `index.ts`,
+ * the same trade `services/core/agent-created-hook.ts` makes.
+ *
  * @module services/connectors/every-agent-activity
  */
 import type { ActivityCategory, ActorType } from '@dorkos/shared/activity-schemas';
 import type { ConnectorOperationClassification } from '@dorkos/shared/connector-schemas';
 import type { ConnectorEveryAgentGrants } from '@dorkos/shared/connector-resource-schemas';
+import { logger } from '../../lib/logger.js';
 import type { CreatedAgentInfo } from '../core/agent-created-hook.js';
+import type { EndedEveryAgentGrant } from './every-agent-grants.js';
 
 /** Where the Activity links: the page where access is changed. */
 export const EVERY_AGENT_ACTIVITY_LINK = '/connections?region=accounts';
@@ -171,5 +179,84 @@ export function createEveryAgentArrivalReaction(deps: {
         connectionIds: connections.map((grant) => grant.connectionId),
       },
     });
+  };
+}
+
+/** Why sharing with every agent ended without the owner turning it off. */
+export type EveryAgentEndedReason = 'disconnected' | 'moved_to_dorkos_account';
+
+/** Reacts to sharing that ended as a side effect of another change. */
+export type EveryAgentEndedListener = (
+  ended: readonly EndedEveryAgentGrant[],
+  reason: EveryAgentEndedReason
+) => Promise<void> | void;
+
+let endedListener: EveryAgentEndedListener | null = null;
+
+/**
+ * Register the process-wide listener for sharing that ended as a side effect.
+ * Set once in `index.ts`; tests may swap in their own and MUST reset to `null`.
+ *
+ * @param next - The listener, or `null` to clear.
+ */
+export function setOnEveryAgentEnded(next: EveryAgentEndedListener | null): void {
+  endedListener = next;
+}
+
+/**
+ * Report sharing that just ended. Call AFTER the revoking transaction commits.
+ * Never throws and never blocks the caller: a failed record must not undo or
+ * fail the disconnect that caused it.
+ *
+ * @param ended - Connections whose every-agent grant ended.
+ * @param reason - What ended it.
+ */
+export function notifyEveryAgentEnded(
+  ended: readonly EndedEveryAgentGrant[],
+  reason: EveryAgentEndedReason
+): void {
+  if (!endedListener || ended.length === 0) return;
+  try {
+    void Promise.resolve(endedListener(ended, reason)).catch((err: unknown) =>
+      logger.warn('[Connectors] Could not record every-agent sharing ending', { err })
+    );
+  } catch (err) {
+    logger.warn('[Connectors] Could not record every-agent sharing ending', { err });
+  }
+}
+
+/**
+ * Build the listener that records one Activity entry per connection whose
+ * sharing ended as a side effect.
+ *
+ * @param activity - The Activity writer.
+ */
+export function createEveryAgentEndedRecorder(
+  activity: EveryAgentActivitySink
+): EveryAgentEndedListener {
+  return async (ended, reason) => {
+    for (const grant of ended) {
+      const name = `${serviceName(grant.toolkit)} (${grant.label})`;
+      await activity.emit({
+        actorType: 'system',
+        actorLabel: 'DorkOS',
+        category: 'permissions',
+        eventType: EVERY_AGENT_CHANGED_EVENT,
+        resourceType: 'connection',
+        resourceId: grant.connectionId,
+        resourceLabel: name,
+        summary:
+          reason === 'disconnected'
+            ? `Stopped sharing ${name} with every agent because the account was disconnected`
+            : `Stopped sharing ${name} with every agent because it now connects through your DorkOS account`,
+        linkPath: EVERY_AGENT_ACTIVITY_LINK,
+        metadata: {
+          connectionId: grant.connectionId,
+          operationCount: 0,
+          classifications: [],
+          reason,
+        },
+      });
+    }
   };
 }

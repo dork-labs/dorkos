@@ -165,6 +165,36 @@ export class ConnectorManagementReviewContextBuilder {
     };
   }
 
+  /**
+   * Replace the every-agent facts of a stored context with what is true now.
+   *
+   * Everything else in a review is frozen when it is filed, on purpose. These
+   * facts are not: the owner can start or stop sharing with every agent after a
+   * review is filed, and a "remove access" review that still said nothing is
+   * kept would then be wrong at the moment of approval (ADR 260926-192625).
+   * Pending reviews are read through this, and approval stores its result.
+   *
+   * @param context - The stored context.
+   * @returns The same context with live `keptThroughEveryAgent` / `everyAgent`.
+   */
+  withLiveEveryAgent(context: ConnectorManagementReviewContext): ConnectorManagementReviewContext {
+    if (context.kind !== 'remove_agent_access' && context.kind !== 'disconnect') return context;
+    const connectionId = context.connection.connectionId;
+    const mode = this.db
+      .select({ mode: connectorProviderInstances.mode })
+      .from(connections)
+      .innerJoin(
+        connectorProviderInstances,
+        eq(connectorProviderInstances.id, connections.providerInstanceId)
+      )
+      .where(eq(connections.id, connectionId))
+      .get()?.mode;
+    const shared = mode === 'byo' ? this.everyAgentRevisionIds(connectionId) : [];
+    return context.kind === 'disconnect'
+      ? { ...context, everyAgent: shared.length > 0 }
+      : { ...context, keptThroughEveryAgent: this.readOperationContext(shared) };
+  }
+
   /** Live revisions the connection shares with every agent, sorted. */
   private everyAgentRevisionIds(connectionId: string): string[] {
     return [

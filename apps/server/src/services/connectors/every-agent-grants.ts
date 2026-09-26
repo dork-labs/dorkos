@@ -13,6 +13,7 @@
 import {
   and,
   connectionOperationGrants,
+  connections,
   eq,
   EVERY_AGENT_GRANT_SUBJECT_ID,
   inArray,
@@ -121,4 +122,46 @@ export function revokeEveryAgentGrants(
       )
     )
     .run().changes;
+}
+
+/** A connection whose every-agent grant just ended, named for the owner. */
+export interface EndedEveryAgentGrant {
+  /** Stable connection id. */
+  readonly connectionId: string;
+  /** The service, e.g. `gmail`. */
+  readonly toolkit: string;
+  /** The owner's label for the account. */
+  readonly label: string;
+}
+
+/**
+ * The connections among `connectionIds` that are shared with every agent right
+ * now. Read inside a transaction just before a path that revokes by connection,
+ * so the caller can say afterwards which sharing it ended.
+ *
+ * @param tx - The open connector transaction.
+ * @param connectionIds - Connections about to lose every grant.
+ */
+export function liveEveryAgentConnections(
+  tx: DbTransaction,
+  connectionIds: readonly string[]
+): EndedEveryAgentGrant[] {
+  if (connectionIds.length === 0) return [];
+  const rows = tx
+    .select({
+      connectionId: connections.id,
+      toolkit: connections.toolkit,
+      label: connections.label,
+    })
+    .from(connectionOperationGrants)
+    .innerJoin(connections, eq(connections.id, connectionOperationGrants.connectionId))
+    .where(
+      and(
+        inArray(connectionOperationGrants.connectionId, [...connectionIds]),
+        everyAgentGrantSubject(),
+        isNull(connectionOperationGrants.revokedAt)
+      )
+    )
+    .all();
+  return [...new Map(rows.map((row) => [row.connectionId, row])).values()];
 }

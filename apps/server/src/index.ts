@@ -292,7 +292,11 @@ import { createMarketplaceRouter } from './routes/marketplace.js';
 import { runAutoProjection } from './services/harness/auto-project.js';
 import { backfillAgentWorkspaceSkills } from './services/harness/project-agent-workspace.js';
 import { runAgentCreatedProjection } from './services/harness/project-on-agent-created.js';
-import { createEveryAgentArrivalReaction } from './services/connectors/every-agent-activity.js';
+import {
+  createEveryAgentArrivalReaction,
+  createEveryAgentEndedRecorder,
+  setOnEveryAgentEnded,
+} from './services/connectors/every-agent-activity.js';
 import {
   startSkillsWatcher,
   startTurnEndReprojection,
@@ -1019,6 +1023,10 @@ async function start() {
 
   // Initialize Activity Service and prune stale events
   const activityService = new ActivityService(db);
+  // Sharing with every agent that ends as a side effect (a disconnect, a move
+  // to a DorkOS account) is recorded too, so every change to it leaves a
+  // trace. Set here, before any provider registers, so boot-time changes count.
+  setOnEveryAgentEnded(createEveryAgentEndedRecorder(activityService));
   // Records a change to an agent's permissions that was made by editing its
   // settings file rather than through DorkOS. The last-seen values live in
   // DorkOS's own data directory, never the agent's.
