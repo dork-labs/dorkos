@@ -37,7 +37,7 @@
  */
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { betterAuth } from 'better-auth';
+import { betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
@@ -50,8 +50,24 @@ import { findOwnerAccount, type Account } from './accounts.js';
 import { resolveBetterAuthSecret } from './secret.js';
 import { seedLegacyMcpApiKey } from './seed-legacy-mcp-key.js';
 
+/**
+ * The parts of the auth options that shape the instance's TYPE: the plugins
+ * (which add endpoints such as `verifyApiKey`) and the extra user field (which
+ * adds `role` to every session's user).
+ *
+ * Written out rather than inferred. From Better Auth 1.7.3 the type inferred
+ * from the options literal is too large for the compiler to write out, and an
+ * exported function whose type cannot be written fails with TS7056 (DOR-2036).
+ * Keep this in step with {@link buildAuthOptions}: adding a plugin there without
+ * adding it here is a type error, which is the point.
+ */
+type AuthOptions = Omit<BetterAuthOptions, 'user' | 'plugins'> & {
+  user: { additionalFields: { role: { type: 'string'; required: false; input: false } } };
+  plugins: [ReturnType<typeof apiKey>];
+};
+
 /** The configured Better Auth instance type (return of {@link createAuth}). */
-export type Auth = ReturnType<typeof createAuth>;
+export type Auth = ReturnType<typeof betterAuth<AuthOptions>>;
 
 const isProduction = env.NODE_ENV === 'production';
 
@@ -84,7 +100,19 @@ export function isBetterAuthBaseUrlAdvisory(level: string, message: string): boo
  * @param port - The validated server port; defaults to the server environment.
  * @throws If a non-default instance's data directory cannot be canonicalized.
  */
-export function createAuth(db: Db, dorkHome: string, port = env.DORKOS_PORT) {
+export function createAuth(db: Db, dorkHome: string, port = env.DORKOS_PORT): Auth {
+  return betterAuth(buildAuthOptions(db, dorkHome, port));
+}
+
+/**
+ * The Better Auth options for one instance, kept apart from {@link createAuth}
+ * so the instance type can be named from them (see {@link Auth}).
+ *
+ * @param db - The server's Drizzle database.
+ * @param dorkHome - The resolved DorkOS data directory.
+ * @param port - The validated server port.
+ */
+function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
   // Cookies ignore TCP ports. Keep the primary install's legacy names, but
   // separate other data homes. Canonical home identity stays stable when the
   // desktop selects another fallback port or the same home uses a symlink.
@@ -93,7 +121,7 @@ export function createAuth(db: Db, dorkHome: string, port = env.DORKOS_PORT) {
     port === 4242
       ? 'better-auth'
       : `better-auth-${createHash('sha256').update(realpathSync(dorkHome)).digest('hex').slice(0, 32)}`;
-  return betterAuth({
+  return {
     appName: 'DorkOS',
     // Resolve the signing secret up front: env override → persisted file →
     // freshly generated + persisted. Supplying it explicitly (rather than
@@ -225,7 +253,7 @@ export function createAuth(db: Db, dorkHome: string, port = env.DORKOS_PORT) {
         },
       },
     },
-  });
+  };
 }
 
 let activeAuth: Auth | undefined;
