@@ -46,13 +46,13 @@ describe('useCoalescedInvalidation', () => {
 
     act(() => {
       hook.result.current([{ queryKey: ['agents'] }]);
-      hook.result.current([{ queryKey: ['agents'] }, { queryKey: ['config'], exact: true }]);
+      hook.result.current([{ queryKey: ['agents'] }, { queryKey: ['sessions'], exact: true }]);
     });
     act(() => {
       vi.advanceTimersByTime(WINDOW_MS);
     });
 
-    expect(invalidatedKeys()).toEqual([['agents'], ['config']]);
+    expect(invalidatedKeys()).toEqual([['agents'], ['sessions']]);
   });
 
   it('holds the keys through a veto and flushes them once it lifts', () => {
@@ -110,7 +110,7 @@ describe('useCoalescedInvalidation', () => {
     });
     // A second broadcast lands while the first is deferred.
     act(() => {
-      hook.result.current([{ queryKey: ['config'], exact: true }]);
+      hook.result.current([{ queryKey: ['sessions'], exact: true }]);
     });
 
     veto.active = false;
@@ -118,6 +118,6 @@ describe('useCoalescedInvalidation', () => {
       vi.advanceTimersByTime(WINDOW_MS);
     });
 
-    expect(invalidatedKeys()).toEqual([['agents'], ['config']]);
+    expect(invalidatedKeys()).toEqual([['agents'], ['sessions']]);
   });
 });
