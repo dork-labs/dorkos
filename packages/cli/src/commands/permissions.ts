@@ -534,7 +534,7 @@ function skipRow(skip: PermissionUndoSkip): string[] {
     skip.reason === 'changed-since'
       ? `changed since: now ${valueText(skip.current)}`
       : skip.reason === 'floor'
-        ? 'would make a locked area Allowed'
+        ? 'would set something that always asks to Allowed'
         : 'no longer exists';
   return [who, what, valueText(change.before), why];
 }

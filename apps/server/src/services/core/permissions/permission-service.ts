@@ -55,6 +55,9 @@ import {
 import type { ActivityService } from '../../activity/activity-service.js';
 import { undoPermissionChange } from './permission-undo.js';
 import {
+  ARRIVAL_NOTE,
+  ARRIVAL_WRITE_FAILED_NOTE,
+  ARRIVAL_WRITER,
   AUTONOMY_ACK_MESSAGE,
   PermissionError,
   compact,
@@ -63,24 +66,12 @@ import {
 } from './permission-values.js';
 import { narrowArrivedPermissions } from './arrival-narrowing.js';
 
-/** Who a setting DorkOS declined on arrival is recorded under. */
-const ARRIVAL_WRITER: PermissionWriter = {
-  attribution: 'outside',
-  actorType: 'system',
-  actorLabel: 'DorkOS',
-};
-
-/** The line a declined-on-arrival event carries. */
-export const ARRIVAL_NOTE =
-  "Permissions in this folder's settings file that were not stricter than everyone's " +
-  'defaults were not applied. Set them in DorkOS.';
-
-/** The line an arrival whose file could not be written back carries. */
-export const ARRIVAL_WRITE_FAILED_NOTE =
-  "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
-  'defaults except where its file is stricter. Set its permissions in DorkOS.';
-
-export { AUTONOMY_ACK_MESSAGE, PermissionError } from './permission-values.js';
+export {
+  ARRIVAL_NOTE,
+  ARRIVAL_WRITE_FAILED_NOTE,
+  AUTONOMY_ACK_MESSAGE,
+  PermissionError,
+} from './permission-values.js';
 
 /** One action as the permission pages list it. */
 export interface PermissionActionInfo {
@@ -453,36 +444,45 @@ export class PermissionService {
   async screenArrivedAgent(
     agentId: string
   ): Promise<{ changes: PermissionChange[]; written: boolean }> {
-    const agent = this.deps.agents.list().find((a) => a.id === agentId);
-    if (!agent) return { changes: [], written: false };
-    const read = this.deps.agents.readStoredPermissions ?? this.deps.agents.readPermissions;
-    const stored = await read(agent.projectPath);
-    const actions = this.actionIndex();
-    const { kept, dropped, droppedUnknown } = narrowArrivedPermissions(stored, {
-      config: this.deps.config.get(),
-      actions,
-      globalStop: this.deps.config.trustStops().global,
-    });
-    const target = this.agentTarget(agent);
-    const changes: PermissionChange[] = dropped.map((d) => ({ ...d, target, after: null }));
-    if (changes.length === 0 && !droppedUnknown) return { changes, written: true };
+    // Under the write queue like every other write: it reads the file, awaits,
+    // and writes it back.
+    return this.exclusive(async () => {
+      const agent = this.deps.agents.list().find((a) => a.id === agentId);
+      if (!agent) return { changes: [], written: false };
+      const read = this.deps.agents.readStoredPermissions ?? this.deps.agents.readPermissions;
+      const stored = await read(agent.projectPath);
+      const actions = this.actionIndex();
+      const { kept, dropped, droppedUnknown } = narrowArrivedPermissions(stored, {
+        config: this.deps.config.get(),
+        actions,
+        globalStop: this.deps.config.trustStops().global,
+      });
+      const target = this.agentTarget(agent);
+      const changes: PermissionChange[] = dropped.map((d) => ({ ...d, target, after: null }));
+      if (changes.length === 0 && !droppedUnknown) return { changes, written: true };
 
-    try {
-      await this.deps.agents.writePermissions(agentId, kept);
-    } catch (err) {
-      await this.record(
-        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_WRITE_FAILED_NOTE },
-        this.titleFor(actions)
-      );
-      throw err;
-    }
-    if (changes.length > 0) {
-      await this.record(
-        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_NOTE },
-        this.titleFor(actions)
-      );
-    }
-    return { changes, written: true };
+      try {
+        await this.deps.agents.writePermissions(agentId, kept);
+      } catch (err) {
+        await this.record(
+          {
+            changes,
+            surface: 'file-edit',
+            writer: ARRIVAL_WRITER,
+            note: ARRIVAL_WRITE_FAILED_NOTE,
+          },
+          this.titleFor(actions)
+        );
+        throw err;
+      }
+      if (changes.length > 0) {
+        await this.record(
+          { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_NOTE },
+          this.titleFor(actions)
+        );
+      }
+      return { changes, written: true };
+    });
   }
 
   /**

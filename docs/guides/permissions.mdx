@@ -181,7 +181,8 @@ Every change in the history has an **Undo**. It puts things back the way they we
 - **If something changed since**, Undo asks before it overwrites it, with the value it would put back: "This has changed since. Set it back to Ask anyway?" Choose **Set it back** to go ahead, or **Cancel** to leave it.
 - **A change that reached several agents** at once (a new default, with the agents you chose to bring along) puts back everything that still matches and tells you what it left alone: "Undid 3 changes. 1 had changed since and was left alone."
 - **Undoing a preset switch** puts back the old preset, the changes you had on top of it, and its Files & commands position, together.
-- **Undo never makes a locked area Allowed.** If putting something back would do that, Undo leaves it alone and says so.
+- **Undo never makes a locked area Allowed**, or anything that always asks. If putting something back would do that, Undo leaves it alone and says so.
+- **The line saying DorkOS didn't apply a new agent's own settings has no Undo.** Those settings were never chosen in DorkOS; set any you want on the agent's page.
 - Undo that would put Files & commands back on **Full autonomy** asks you to confirm what that means first, like every other way to choose it.
 
 An answer on a request card has no Undo, because the action already happened. An **Always allow** answer also records the setting it created, and that line does have an Undo.

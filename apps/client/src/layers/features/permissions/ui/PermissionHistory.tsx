@@ -72,7 +72,7 @@ export function partialUndoNote(result: UndoPermissionChangeResponse): string | 
   }
   if (locked > 0) {
     parts.push(
-      `${locked} would have made a locked area Allowed, so ${locked === 1 ? 'it was' : 'they were'} left alone.`
+      `${locked} would have set something that always asks to Allowed, so ${locked === 1 ? 'it was' : 'they were'} left alone.`
     );
   }
   if (gone > 0) {

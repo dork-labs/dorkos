@@ -8,6 +8,7 @@ covers:
   - 'fix(permissions): the server says which history lines are undone, and Not now is in the history with an Undo'
   - "fix(permissions): the preset's reach counts an agent whose Files & commands stop follows it"
   - 'test(permissions): the phase 4 browser spec gives each attempt its own agent'
+  - "fix(permissions): Undo can't put back what the arrival screen declined, and a folder that isn't an agent follows the defaults"
 ---
 
 ### Added

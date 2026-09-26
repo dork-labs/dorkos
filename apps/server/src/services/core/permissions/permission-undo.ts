@@ -40,6 +40,7 @@ import {
   AUTONOMY_ACK_MESSAGE,
   PermissionError,
   compact,
+  isArrivalScreenLine,
   isState,
   ownState,
 } from './permission-values.js';
@@ -145,6 +146,13 @@ export async function undoPermissionChange(
     );
   }
   const metadata = parsed.data;
+  if (isArrivalScreenLine(metadata)) {
+    throw new PermissionError(
+      'NOT_UNDOABLE',
+      "DorkOS didn't apply these settings from the agent's own folder, so Undo can't put them back. Set any you want on the agent's page.",
+      409
+    );
+  }
   const force = input.force === true;
   const acknowledge = input.acknowledgeAutonomy === true;
 
@@ -190,11 +198,15 @@ export async function undoPermissionChange(
     }
   };
 
-  /** Setting this key back would make a locked area Allowed. */
+  /**
+   * Setting this key back would make a locked area Allowed, or an action that
+   * always shows what it would change Allowed. Neither may ever be written.
+   */
   const widensFloor = (change: PermissionChange): boolean =>
     change.before === 'allowed' &&
     (change.key.kind === 'area' || change.key.kind === 'action') &&
-    isFloorArea(change.key.area);
+    (isFloorArea(change.key.area) ||
+      (change.key.kind === 'action' && actions.get(change.key.action)?.alwaysAsks === true));
 
   // Group the recorded changes into units that are set back together: a
   // preset switch's default half is one; every other change is its own.

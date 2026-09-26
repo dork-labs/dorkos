@@ -5,11 +5,13 @@
  * strict as the defaults; the rest is dropped from the file, with one history
  * line saying so. An agent DorkOS has already seen is left alone.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { PermissionChangedMetadata } from '@dorkos/shared/permissions';
 
 import { ARRIVAL_NOTE, ARRIVAL_WRITE_FAILED_NOTE } from '../permission-service.js';
 import { isAlwaysOffered } from '../../approvals/index.js';
+import { listPermissionHistory, personWriter } from '../permission-history.js';
+import { narrowingReader } from '../index.js';
 import { createPermissionWorld, type FixtureAgent } from './permission-fixtures.js';
 
 const WIDE: FixtureAgent = {
@@ -131,5 +133,38 @@ describe('which cards offer Always allow', () => {
   });
   it('never on a card that shows what would change', () => {
     expect(isAlwaysOffered({ ...card, detail: 'Model: a → b' })).toBe(false);
+  });
+});
+
+describe('the arrival line in the history', () => {
+  it('has no Undo: it can never put back what a folder brought without a person', async () => {
+    const world = createPermissionWorld({ preset: 'careful', trustStop: 'ask', agents: [WIDE] });
+    await world.service.screenArrivedAgent('agent-new');
+    const line = world.events[0]!;
+
+    const history = await listPermissionHistory(world.activity, { limit: 10 });
+    expect(history.items[0]).toMatchObject({ id: line.id, undoable: false });
+    await expect(
+      world.service.undo(line.id, { force: true }, personWriter('local-trust'))
+    ).rejects.toMatchObject({
+      code: 'NOT_UNDOABLE',
+      status: 409,
+    });
+    expect(world.agents.get('agent-new')?.permissions).toEqual({ areas: { tasks: 'blocked' } });
+  });
+});
+
+describe('narrowingReader', () => {
+  it('gives a folder that is not a registered agent no settings of its own', async () => {
+    const read = vi.fn(async () => ({ areas: { rooms: 'allowed' as const } }));
+    const reader = narrowingReader(read, {
+      arrivals: { isPending: () => false } as never,
+      agentAt: () => undefined,
+      context: () => {
+        throw new Error('not needed');
+      },
+    });
+    await expect(reader('/somewhere/unregistered')).resolves.toBeUndefined();
+    expect(read).not.toHaveBeenCalled();
   });
 });

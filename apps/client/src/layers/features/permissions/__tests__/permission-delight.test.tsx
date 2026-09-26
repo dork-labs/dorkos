@@ -393,6 +393,8 @@ describe('Undo in the history', () => {
         changes: [change],
         skipped: [{ change, current: 'ask', reason: 'floor' }],
       })
-    ).toBe('Undid 1 change. 1 would have made a locked area Allowed, so it was left alone.');
+    ).toBe(
+      'Undid 1 change. 1 would have set something that always asks to Allowed, so it was left alone.'
+    );
   });
 });

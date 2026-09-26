@@ -174,9 +174,12 @@ export function narrowingReader(
   }
 ): (agentPath: string) => Promise<AgentPermissions | undefined> {
   return async (agentPath) => {
-    const stored = await read(agentPath);
     const agentId = deps.agentAt(agentPath);
-    if (!agentId || !deps.arrivals.isPending(agentId)) return stored;
+    // A folder that is not a registered agent has no settings of its own: its
+    // file was never screened, so it follows the defaults.
+    if (!agentId) return undefined;
+    const stored = await read(agentPath);
+    if (!deps.arrivals.isPending(agentId)) return stored;
     return narrowArrivedPermissions(stored, deps.context()).kept;
   };
 }

@@ -10,8 +10,11 @@
 import {
   PERMISSION_STATES,
   type AgentPermissions,
+  type PermissionChangedMetadata,
   type PermissionState,
 } from '@dorkos/shared/permissions';
+
+import type { PermissionWriter } from './permission-history.js';
 
 /** A permission write the service refused, with the HTTP status that fits it. */
 export class PermissionError extends Error {
@@ -81,4 +84,33 @@ export function ownState(
   if (!record || !Object.hasOwn(record, key)) return null;
   const value = record[key];
   return isState(value) ? value : null;
+}
+
+/** Who a setting DorkOS declined on arrival is recorded under. */
+export const ARRIVAL_WRITER: PermissionWriter = {
+  attribution: 'outside',
+  actorType: 'system',
+  actorLabel: 'DorkOS',
+};
+
+/** The line a declined-on-arrival event carries. */
+export const ARRIVAL_NOTE =
+  "Permissions in this folder's settings file that were not stricter than everyone's " +
+  'defaults were not applied. Set them in DorkOS.';
+
+/** The line an arrival whose file could not be written back carries. */
+export const ARRIVAL_WRITE_FAILED_NOTE =
+  "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
+  'defaults except where its file is stricter. Set its permissions in DorkOS.';
+
+/**
+ * Whether a history line records the arrival screen declining settings a new
+ * agent's own folder brought. Such a line has no Undo: undoing it would put
+ * back, in one tap, settings nobody ever chose in DorkOS, past the check that
+ * refused them. A person sets them one by one on the agent's page instead.
+ *
+ * @param metadata - The line's `permission.changed` metadata.
+ */
+export function isArrivalScreenLine(metadata: Pick<PermissionChangedMetadata, 'note'>): boolean {
+  return metadata.note === ARRIVAL_NOTE || metadata.note === ARRIVAL_WRITE_FAILED_NOTE;
 }

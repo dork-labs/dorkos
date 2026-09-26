@@ -256,6 +256,42 @@ describe('PermissionService.undo', () => {
     expect(result.skipped).toEqual([expect.objectContaining({ reason: 'floor', current: 'ask' })]);
   });
 
+  it('never sets an action that always asks back to Allowed', async () => {
+    const world = createPermissionWorld({
+      agents: [
+        {
+          ...TWO_AGENTS[1]!,
+          permissions: { actions: { 'operator.update_agent_execution': 'ask' } },
+        },
+      ],
+    });
+    // A file edit DorkOS noticed: the file had said Allowed.
+    await recordPermissionChange(world.activity, {
+      changes: [
+        {
+          target: {
+            kind: 'agent',
+            agentId: 'agent-test',
+            agentPath: '/agents/test-bot',
+            agentName: 'Test Bot',
+          },
+          key: { kind: 'action', action: 'operator.update_agent_execution', area: 'agents' },
+          before: 'allowed',
+          after: 'ask',
+        },
+      ],
+      surface: 'file-edit',
+      writer: { attribution: 'outside', actorType: 'system', actorLabel: 'Outside DorkOS' },
+    });
+
+    const result = await world.service.undo(world.events[0]!.id, { force: true }, LOCAL);
+
+    expect(result.skipped).toEqual([expect.objectContaining({ reason: 'floor' })]);
+    expect(world.agents.get('agent-test')?.permissions?.actions).toEqual({
+      'operator.update_agent_execution': 'ask',
+    });
+  });
+
   it('reports a change about an agent that no longer exists as gone', async () => {
     const world = createPermissionWorld({ agents: TWO_AGENTS });
     await world.service.setAgent(

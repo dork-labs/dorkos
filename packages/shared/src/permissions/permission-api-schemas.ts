@@ -333,8 +333,8 @@ export type UndoPermissionChangeBody = z.infer<typeof UndoPermissionChangeBodySc
  *
  * - `changed-since` — the setting holds something other than what the change
  *   wrote, so setting it back would undo a later change too.
- * - `floor` — setting it back would make a locked area Allowed, which nothing
- *   may do.
+ * - `floor` — setting it back would make a locked area, or an action that
+ *   always shows what it would change, Allowed, which nothing may do.
  * - `gone` — the agent (or runtime) it was about no longer exists.
  */
 export const PermissionUndoSkipReasonSchema = z
