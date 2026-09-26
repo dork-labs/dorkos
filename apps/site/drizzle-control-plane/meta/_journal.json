@@ -8,6 +8,13 @@
       "when": 1789525923548,
       "tag": "0000_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790381055176,
+      "tag": "0001_account_issuer_optional",
+      "breakpoints": true
     }
   ]
 }

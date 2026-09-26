@@ -22,7 +22,7 @@ Every override belongs to exactly one of these, and the map is ordered so the tw
 | `vite@7`                               | Scoped to the vite-7 consumers only; the apps stay on vite 6                                                                                                                                                                                                                                                                         |
 | `@esbuild-kit/core-utils>esbuild`      | Scoped to the one stale consumer that asks for the vulnerable `~0.18.20`. Deliberately **not** a blanket `esbuild` pin — vite 6 needs `^0.25.0` and tsx needs `~0.28.0`, so a single forced version breaks one of them                                                                                                               |
 | `jose`                                 | Deduped to keep `@better-auth/core` a single instance. See below (DOR-1538)                                                                                                                                                                                                                                                          |
-| `@better-auth/utils`                   | Deduped so `better-auth@1.7.2` and the `better-call@1.4.0` it pulls in share one copy; two copies fork `@better-auth/core` the same way `jose` does. Added by #1577. Goes when `better-auth` and `better-call` agree on a range again                                                                                                |
+| `@better-auth/utils`                   | Deduped so `better-auth` (which asks for `0.4.2`) and the `better-call@1.4.0` it pulls in (which asks for `0.5.0`) share one copy; two copies fork `@better-auth/core` the same way `jose` does. Added by #1577. Goes when `better-auth` and `better-call` agree on a range again                                                    |
 
 An exact-version pin rewrites every workspace spec for its package, and Dependabot cannot see it: a group bump moves the manifests and leaves the pin behind, so five manifests claimed `lucide-react 1.47.0` over a lockfile on `1.44.0`. Every manifest that declares a package with an exact pin must declare the pin's version (a caret on the same version is fine), and `scripts/__tests__/dependabot-lockstep-families.test.ts` fails when one does not. Move the pin and the specs in one commit.
 
@@ -32,7 +32,7 @@ An exact-version pin rewrites every workspace spec for its package, and Dependab
 
 Two instances of that package are two different `HookEndpointContext` types, and the server typecheck fails with a wall of `better-auth` errors that name neither `jose` nor A2A. The pin collapses both back to one instance by putting every consumer on `^6.2.10`, which is inside `better-auth`'s own range — nothing is being held back.
 
-**Drop it when `better-auth` and `@a2a-js/sdk` agree on a `jose` range on their own** and the tree re-resolves to a single `@better-auth/core` without it. That day is gated on the exact `better-auth` pin below moving, so read that section first — `better-auth` is held at 1.7.2 on purpose, and this pin was not re-measured when #1577 moved it there. To check, remove the entry, reinstall, and run `grep -oE "^  jose@[0-9.]+" pnpm-lock.yaml | sort -u` — a single version means the pin is no longer doing anything. (Each version appears on two lines, once per lockfile section, so count versions and not lines.) `pnpm --filter @dorkos/server typecheck` is the real arbiter: that is what broke (DOR-1538).
+**Drop it when `better-auth` and `@a2a-js/sdk` agree on a `jose` range on their own** and the tree re-resolves to a single `@better-auth/core` without it. Re-measured when DOR-2036 moved `better-auth` to 1.7.5: without the pin the tree still resolves two `jose` lines (5.10.0 beside 6.2.12), so it stays. To check, remove the entry, reinstall, and run `grep -oE "^  jose@[0-9.]+" pnpm-lock.yaml | sort -u` — a single version means the pin is no longer doing anything. (Each version appears on two lines, once per lockfile section, so count versions and not lines.) `pnpm --filter @dorkos/server typecheck` is the real arbiter: that is what broke (DOR-1538).
 
 This is the shape to recognize, because the error never points at the cause: **a new dependency bumps a transitive package that is somebody else's peer, and an unrelated package's types break.** If a routine upgrade produces type errors in a package you did not touch, look for a duplicated peer in the lockfile before you look at the types.
 
@@ -49,28 +49,22 @@ Two shapes worth copying when you add to this group:
 
 Not every deliberate hold belongs in the override map. When the repo declares the package directly in every place it is used, an **exact spec in each declaring `package.json`** does the same job and is visible where a person actually looks — the file they are editing when they bump it.
 
-### `better-auth` — pinned exact at 1.7.2 (DOR-1538; moved from 1.6.23 by #1577)
+### `better-auth` family — exact, and moved together
 
-`better-auth` and `@better-auth/api-key` are declared exact — `"1.7.2"`, not `"^1.7.2"` — in `apps/server`, `apps/site` and `packages/cli`. Do not loosen either one.
+`better-auth`, `@better-auth/api-key`, `@better-auth/core` and `@better-fetch/fetch` are declared exact in `apps/server`, `apps/site` and `packages/cli` (`apps/community` declares `better-auth` alone, at the same version), and they only ever move as one.
 
-**Where the pin is today, and how it got there.** Dependabot's 2026-09-06 group bump (#1577) moved the family from 1.6.23 to 1.7.2 and added the `@better-auth/utils -> 0.5.0` override that collapses the utils fork described below. It passed every gate — the tree resolves one `@better-auth/core@1.7.2` and one `@better-auth/utils@0.5.0` — but the PR did not touch this page, so for a week the ledger described a pin that no longer existed. That gap is the reason `/app:upgrade` edits this file in the same commit as any override it moves.
+**Why together.** `better-auth` depends on `@better-auth/core` at an exact version, while `@better-auth/api-key` takes core as a `^` peer and `@better-fetch/fetch` is a peer of core. Moving any one of them alone mints a second `@better-auth/core`, the api-key plugin stops being assignable to `BetterAuthPlugin`, and every plugin endpoint (`verifyApiKey`, `createApiKey`, `listUsers`) vanishes from the inferred API across server, site and cli. That was PR #1977. Dependabot's one catch-all group moves all four in one PR, which is why `.github/dependabot.yml` needs no entry for them; #1977 only happened because `better-auth` itself was being ignored.
 
-**1.7.3 and 1.7.4 are known bad (DOR-2036, #1847, 2026-09-14).** The next group bump proposed 1.7.4 and the server typecheck failed with `TS7056: The inferred type of this node exceeds the maximum length the compiler will serialize` at `apps/server/src/services/core/auth/index.ts`, with `BetterAuthError: Drizzle schema mismatch` across the test shards. 1.7.3 was then measured and fails the same two ways **with a single `@better-auth/core` in the tree**, so this is not the duplicate-instance shape below: it is a real change in 1.7.3. The schema message names it: `Required columns Better Auth never writes: account.issuer`, so every sign-up insert fails and `auth.integration.test.ts` gets a 500. A newer release will probably not clear it; the fix is ours (the column's nullability plus a migration, and an explicit type on `createAuth`). `.github/dependabot.yml` ignores `>= 1.7.3` of both packages, a range rather than a version list, because ignoring only the newest bad version makes Dependabot fall back to the next-newest one; remove both entries in the PR that closes DOR-2036. One trap while holding: reverting the specs over Dependabot's lockfile still left an auto-installed `@better-auth/core@1.7.4` peer under `@better-auth/api-key`, so relock from `main`'s lockfile, not the bot's. Re-test with the recipe at the end of this section before moving the pin again.
+**Why exact and not an override.** An override duplicating a spec the repo already declares is the redundancy rule 2 below warns about. Add one only if `better-auth` ever arrives transitively, through a dependency we do not declare.
 
-**Why 1.7.1 was skipped in the first place.** `better-auth@1.7.1` broke two things at once:
+**History worth knowing before the next bump.**
 
-- **The server typecheck**, through the duplicate-instance mechanism described above — two copies of `@better-auth/core` are two incompatible sets of types.
-- **CLI auth at runtime**, which no typecheck catches: `dorkos auth enable` exits 1, and signing in with a freshly created credential comes back `INVALID_EMAIL_OR_PASSWORD`.
+- 1.7.1 broke CLI auth at runtime, which no typecheck catches: `dorkos auth enable` exited 1, and a fresh credential signed in as `INVALID_EMAIL_OR_PASSWORD`.
+- 1.6.24 to 1.6.30 pulled `better-call@1.4.0`, which forked `@better-auth/utils` (the override above).
+- 1.7.0 to 1.7.2 keyed accounts by a new required `account.issuer`; migration `0087` (server) and `0010` (site) added it. 1.7.3 went back to the 1.6 shape and never writes it, so every sign-up failed on the NOT NULL column (DOR-2036). Server migration `0112` drops the column and its unique index. The site's control-plane migration `0001` only relaxes it, because Vercel migrates while the previous deployment still serves and still writes `issuer`; dropping the column there is the next release's job.
+- From 1.7.3 the instance type inferred from the options literal is too big for the compiler to write, which is TS7056 at `createAuth`. `apps/server/src/services/core/auth/index.ts` names it from an explicit `AuthOptions` type instead; a new plugin goes in both places.
 
-**1.6.30 is not a safe middle ground either.** From 1.6.24 the tree pulls `better-call@1.4.0`, which needs `@better-auth/utils@0.5.0` while `better-auth` itself still needs `0.4.2` — two copies of `@better-auth/utils`, same shape of failure.
-
-**Why an exact spec and not an override.** Both were measured against a deleted lockfile and both hold, so the tie-breaker is maintenance: an override duplicating a spec the repo already declares is the redundancy rule 2 below warns about, and it would give the next bump a fourth place to remember. Add an override only if `better-auth` ever arrives transitively, through a dependency we do not declare.
-
-**How the exact spec reaches the rest of the family.** `better-auth` pins its own dependencies exactly — at 1.7.2 that is `@better-auth/core@1.7.2` and `better-call@1.4.0` — so holding the one package holds them too. `@better-auth/utils` is the exception: `better-call@1.4.0` and `better-auth` disagree on it, which is why the `@better-auth/utils -> 0.5.0` override exists (it is a dedupe pin and belongs to the deliberate group above). `@better-auth/api-key` needs its own exact spec because it is a separate declaration whose peers would otherwise resolve against a newer core.
-
-**Drop it when** a `better-auth` release resolves, from a deleted lockfile, to a single `@better-auth/core` and a single `@better-auth/utils`, _and_ CLI auth still works end to end. Both halves are required — wave 1 of the 2026-08-24 dependency sweep passed neither, and the runtime half is the one no gate would have caught.
-
-To re-test after changing the spec:
+**Re-test after moving the family:**
 
 ```bash
 rm pnpm-lock.yaml && pnpm install            # fresh resolution, nothing held by the lockfile
@@ -87,7 +81,7 @@ pnpm vitest run apps/server/src/services/core/auth/__tests__/auth.integration.te
 DORK_HOME=$(mktemp -d) node packages/cli/dist/bin/cli.js auth enable --email you@example.test --password correct-horse-battery-staple
 ```
 
-`auth enable` must exit 0 and the integration test's sign-up → sign-in → `get-session` chain must pass; that chain is what 1.7.1 broke.
+`auth enable` must exit 0 and the integration test's sign-up, sign-in and `get-session` chain must pass.
 
 ### `@a2a-js/sdk` — pinned exact at 1.0.1 (DOR-1549)
 
@@ -130,7 +124,7 @@ The fix is the one this section already prescribes twice: `apps/desktop` declare
 
 **Why 0.120.0 and not 0.122.0.** The peer range admits both, so nothing forces the choice — which is precisely why it is a deliberate pin rather than a floor. 0.120.0 is what every code path in this repo has actually run and been tested against since DOR-1526; 0.122.0 has never executed anywhere, only sat in the desktop's node_modules. Moving it is a runtime-SDK bump governed by the `upgrading-runtime-dependencies` skill, in lockstep with the agent SDK it companions — not something a dedup inherits from an unreviewed group PR.
 
-**Why the override stays, given rule 2.** Rule 2's warning is about an override that duplicates a declared spec and thereby **hides** it — which is precisely what happened here — and this one can no longer hide anything, because the parity test below now fails the moment the override and the three manifests disagree; it is kept for the one case the manifests cannot cover, a transitive arrival from a package we do not declare, which is the condition the `better-auth` section above names as the reason to have an override at all. (Dropping it was measured, not assumed: with the entry removed the tree still resolves a single 0.120.0 today, because the agent SDK's peer is the only edge — so this is a deliberate belt, not a load-bearing pin.)
+**Why the override stays, given rule 2.** Rule 2's warning is about an override that duplicates a declared spec and thereby **hides** it — which is precisely what happened here — and this one can no longer hide anything, because the parity test below now fails the moment the override and the three manifests disagree; it is kept for the one case the manifests cannot cover, a transitive arrival from a package we do not declare, which is the condition the `better-auth` family section above names as the reason to have an override at all. (Dropping it was measured, not assumed: with the entry removed the tree still resolves a single 0.120.0 today, because the agent SDK's peer is the only edge — so this is a deliberate belt, not a load-bearing pin.)
 
 **The guard.** Two assertions in `scripts/__tests__/dependabot-lockstep-families.test.ts` cover this, because one is not enough:
 
