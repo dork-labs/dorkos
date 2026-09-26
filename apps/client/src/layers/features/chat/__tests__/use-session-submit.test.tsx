@@ -123,6 +123,7 @@ function snapshotWith(lifecycle: SessionStatus['lifecycle'], cursor: number): Se
       runningSubagentCount: 0,
       lifecycle,
       lastError: null,
+      limit: null,
     },
     pendingInteractions: [],
     queuedMessages: [],
@@ -1088,6 +1089,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
             runningSubagentCount: 0,
             lifecycle: 'streaming',
             lastError: null,
+            limit: null,
           },
         });
         useSessionStreamStore.getState().migrateSessionContinuity('request-uuid', 'canonical-id');

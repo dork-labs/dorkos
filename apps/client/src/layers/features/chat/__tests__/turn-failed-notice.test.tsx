@@ -66,6 +66,7 @@ function statusWithLastError(lastError: SessionStatus['lastError']): SessionStat
     runningSubagentCount: 0,
     lifecycle: 'error',
     lastError,
+    limit: null,
   };
 }
 

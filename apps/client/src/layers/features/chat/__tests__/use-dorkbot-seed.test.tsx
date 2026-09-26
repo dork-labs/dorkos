@@ -42,6 +42,7 @@ function erroredStatus(): SessionStatus {
     runningSubagentCount: 0,
     lifecycle: 'error',
     lastError: null,
+    limit: null,
   };
 }
 

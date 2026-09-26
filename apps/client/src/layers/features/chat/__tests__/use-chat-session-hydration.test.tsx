@@ -79,6 +79,7 @@ function makeSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot
       runningSubagentCount: 0,
       lifecycle: 'idle',
       lastError: null,
+      limit: null,
     },
     pendingInteractions: [],
     queuedMessages: [],

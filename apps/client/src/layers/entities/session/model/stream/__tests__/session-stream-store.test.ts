@@ -25,6 +25,7 @@ const STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'idle',
   lastError: null,
+  limit: null,
 };
 
 const MESSAGE: HistoryMessage = { id: 'm1', role: 'user', content: 'hello' };

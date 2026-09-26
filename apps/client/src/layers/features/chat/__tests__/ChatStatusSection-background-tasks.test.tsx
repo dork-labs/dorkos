@@ -182,6 +182,7 @@ function snapshotWithChildren(
       runningSubagentCount: n,
       lifecycle,
       lastError: null,
+      limit: null,
     },
     pendingInteractions: [],
     queuedMessages: [],

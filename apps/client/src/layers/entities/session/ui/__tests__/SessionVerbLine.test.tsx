@@ -65,6 +65,7 @@ function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
     runningSubagentCount: 0,
     lifecycle: 'streaming',
     lastError: null,
+    limit: null,
     ...overrides,
   };
 }

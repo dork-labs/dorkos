@@ -97,6 +97,7 @@ const WEDGED_STATUS: SessionStatus = {
   runningSubagentCount: 0,
   lifecycle: 'error',
   lastError: null,
+  limit: null,
 };
 
 /** A schedule an agent proposed and parked — the `schedule-approval` signal. */

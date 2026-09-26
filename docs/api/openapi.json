@@ -717,6 +717,12 @@
             "items": {
               "$ref": "#/components/schemas/SessionListWarning"
             }
+          },
+          "accountUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountUsage"
+            }
           }
         },
         "required": [
@@ -778,6 +784,41 @@
           "account": {
             "type": "string"
           },
+          "accountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "lifecycle": {
+                "$ref": "#/components/schemas/SessionLifecycle"
+              },
+              "limit": {
+                "$ref": "#/components/schemas/SessionLimit"
+              }
+            },
+            "required": [
+              "lifecycle",
+              "limit"
+            ]
+          },
+          "trackerItem": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "runStatus": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
           "userLastMessageAt": {
             "type": "string",
             "format": "date-time"
@@ -824,6 +865,130 @@
           "external"
         ]
       },
+      "SessionLifecycle": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "streaming",
+          "blocked",
+          "error",
+          "interrupted"
+        ]
+      },
+      "SessionLimit": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "window": {
+            "type": "string"
+          },
+          "resetsAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/LimitPlan"
+          }
+        },
+        "required": [
+          "accountId",
+          "window",
+          "resetsAt",
+          "since"
+        ]
+      },
+      "LimitPlan": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "ask"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "auto"
+                ]
+              },
+              "target": {
+                "type": "string"
+              },
+              "fireAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "target",
+              "fireAt"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "waiting"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "continued"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "accountId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "sessionId",
+              "accountId"
+            ]
+          }
+        ],
+        "default": {
+          "mode": "ask"
+        }
+      },
       "SessionListWarning": {
         "type": "object",
         "properties": {
@@ -840,6 +1005,148 @@
         "required": [
           "runtime",
           "message"
+        ]
+      },
+      "AccountUsage": {
+        "type": "object",
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": "string"
+          },
+          "subscriptionType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "usedPct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "resetsAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/RateLimitStatus"
+                },
+                "expired": {
+                  "type": "boolean"
+                },
+                "observedAt": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "statusline",
+                    "sdk_event",
+                    "sdk_usage",
+                    "transcript"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "usedPct",
+                "resetsAt",
+                "status",
+                "expired",
+                "observedAt",
+                "source"
+              ]
+            }
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "limited",
+              "unknown"
+            ]
+          },
+          "limit": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "window": {
+                "type": "string"
+              },
+              "resetsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "window",
+              "resetsAt"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "path",
+          "label",
+          "color",
+          "subscriptionType",
+          "windows",
+          "state",
+          "limit",
+          "updatedAt"
+        ]
+      },
+      "RateLimitStatus": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "allowed",
+          "allowed_warning",
+          "rejected",
+          null
         ]
       },
       "ErrorResponse": {
@@ -2616,6 +2923,9 @@
                   "lastError": {
                     "$ref": "#/components/schemas/ErrorEvent"
                   },
+                  "limit": {
+                    "$ref": "#/components/schemas/SessionLimit"
+                  },
                   "steerable": {
                     "type": "boolean"
                   }
@@ -3687,16 +3997,6 @@
           "total",
           "completed",
           "inProgress"
-        ]
-      },
-      "SessionLifecycle": {
-        "type": "string",
-        "enum": [
-          "idle",
-          "streaming",
-          "blocked",
-          "error",
-          "interrupted"
         ]
       },
       "ErrorEvent": {
@@ -4970,6 +5270,9 @@
           },
           "lastError": {
             "$ref": "#/components/schemas/ErrorEvent"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/SessionLimit"
           },
           "activity": {
             "$ref": "#/components/schemas/SessionActivity"
@@ -14316,6 +14619,9 @@
                             },
                             "lastError": {
                               "$ref": "#/components/schemas/ErrorEvent"
+                            },
+                            "limit": {
+                              "$ref": "#/components/schemas/SessionLimit"
                             },
                             "steerable": {
                               "type": "boolean"

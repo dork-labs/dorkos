@@ -16,6 +16,7 @@ const STATUS = {
   runningSubagentCount: 0,
   lifecycle: 'streaming',
   lastError: null,
+  limit: null,
 } as const;
 
 /** Apply a retire announce (canonical id supersedes a request UUID) to the list store. */

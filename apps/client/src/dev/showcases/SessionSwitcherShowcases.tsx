@@ -213,6 +213,7 @@ export function useSwitcherFixture(): void {
           runningSubagentCount: 0,
           lifecycle: 'streaming',
           lastError: null,
+          limit: null,
         },
         LONG_NAME_AGENT.path
       );
@@ -231,6 +232,7 @@ export function useSwitcherFixture(): void {
           runningSubagentCount: 0,
           lifecycle: 'streaming',
           lastError: null,
+          limit: null,
           activity: { toolName, target },
         },
         SWITCHER_AGENT.path

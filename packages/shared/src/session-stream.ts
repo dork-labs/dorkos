@@ -50,6 +50,9 @@ import {
   McpSigninResolvedEventSchema,
   QueuedMessageSchema,
   MessageDeliveryOutcomeSchema,
+  SessionLifecycleSchema,
+  SessionLimitSchema,
+  type SessionLifecycle,
   type ToolApprovalOutcome,
   type QuestionOutcome,
 } from './schemas.js';
@@ -119,17 +122,17 @@ export const SessionTodoCountsSchema = z
 /** Inferred type for {@link SessionTodoCountsSchema}. */
 export type SessionTodoCounts = z.infer<typeof SessionTodoCountsSchema>;
 
-/**
- * Coarse lifecycle phase of a session. `streaming` while a turn produces
- * output, `blocked` while an interaction awaits the operator, `interrupted`
- * when a turn was aborted, `error` on a terminal failure, `idle` otherwise.
- */
-export const SessionLifecycleSchema = z
-  .enum(['idle', 'streaming', 'blocked', 'error', 'interrupted'])
-  .openapi('SessionLifecycle');
-
-/** Inferred type for {@link SessionLifecycleSchema}. */
-export type SessionLifecycle = z.infer<typeof SessionLifecycleSchema>;
+// The lifecycle and limit schemas live in `schemas.ts`, because `SessionSchema`
+// carries them and this module imports that one. Re-exported so this stays the
+// home a status consumer imports them from.
+export {
+  SessionLifecycleSchema,
+  SessionLimitSchema,
+  LimitPlanSchema,
+  type SessionLifecycle,
+  type SessionLimit,
+  type LimitPlan,
+} from './schemas.js';
 
 /**
  * What a session is doing RIGHT NOW, structured rather than phrased.
@@ -219,6 +222,14 @@ export const SessionStatusSchema = z
      */
     lastError: ErrorEventSchema.nullable().default(null),
     /**
+     * The hard usage limit the session's account reported during the last
+     * turn, or `null`. Set when the account reports one; cleared at the next
+     * `turn_start`. The lifecycle is untouched: "limited" is a display state
+     * ({@link sessionDisplayState}), not a lifecycle phase. The `.default(null)`
+     * keeps older snapshots parsing (version skew).
+     */
+    limit: SessionLimitSchema.nullable().default(null),
+    /**
      * What this session is doing right now ({@link SessionActivitySchema}), or
      * ABSENT when nothing is known — an idle session, a turn that has not
      * reached a tool yet, or a status minted by a server that predates the
@@ -254,6 +265,18 @@ export const SessionStatusSchema = z
 
 /** Inferred type for {@link SessionStatusSchema}. */
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
+
+/**
+ * The state to show for a session: `'limited'` while its account's usage limit
+ * holds it, else its lifecycle. The one place "limited" is spelled.
+ *
+ * @param status - The session's lifecycle and limit.
+ */
+export function sessionDisplayState(
+  status: Pick<SessionStatus, 'lifecycle' | 'limit'>
+): SessionLifecycle | 'limited' {
+  return status.limit ? 'limited' : status.lifecycle;
+}
 
 // === Session Event Stream ===
 

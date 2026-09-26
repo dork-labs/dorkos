@@ -254,6 +254,7 @@ function coldStatus(): SessionStatus {
     runningSubagentCount: 0,
     lifecycle: 'idle',
     lastError: null,
+    limit: null,
   };
 }
 
