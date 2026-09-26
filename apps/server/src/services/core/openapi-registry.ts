@@ -234,6 +234,7 @@ import {
   ConnectorAgentConnectionsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
+  ConnectorAppConnectionsSchema,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
@@ -3506,13 +3507,17 @@ registry.registerPath({
   description:
     'Reference-free setup state per credential-gated provider: configured/registered booleans, ' +
     'the custody stance with its plain-language disclosure, and — when a configured provider ' +
-    'refused to register — the honest error text. Never carries a secret or a credential reference.',
+    'refused to register — the honest error text. `appConnections` lists every way set up to ' +
+    'reach apps and names the one new apps use. Never carries a secret or a credential reference.',
   responses: {
     200: {
       description: 'Provider setup statuses',
       content: {
         'application/json': {
-          schema: z.object({ providers: z.array(ConnectorProviderStatusSchema) }),
+          schema: z.object({
+            providers: z.array(ConnectorProviderStatusSchema),
+            appConnections: ConnectorAppConnectionsSchema,
+          }),
         },
       },
     },
@@ -3576,7 +3581,9 @@ registry.registerPath({
   tags: ['Connectors'],
   summary: 'List the provider-neutral connector catalog',
   description:
-    'Returns one bounded account-free page. Native message adapters remain distinct from account routes.',
+    'Returns one bounded account-free page. Hand-picked popular apps are always listed, even ' +
+    'before any way to reach apps is set up; live services merge into them by service id. ' +
+    'Native message adapters remain distinct from account routes.',
   request: {
     query: z.object({
       q: z.string().max(200).optional(),

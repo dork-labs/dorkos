@@ -38,6 +38,8 @@ export const ProblemCodeSchema = z
     'quota_exceeded',
     'topup_below_minimum',
     'first_purchase_cap',
+    // No longer sent: it belonged to the withdrawn refunds route. Kept because
+    // removing a member narrows a published type, which is a `/v2` change.
     'refund_window_closed',
     // Remote access.
     'enrolment_required',

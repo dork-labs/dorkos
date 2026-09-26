@@ -1,0 +1,108 @@
+<style>
+  .app{display:flex;background:#f6f6f6;border:1px solid #ddd;border-radius:14px;overflow:hidden;height:760px;font-size:13px;position:relative;color:#111}
+  .side{width:210px;padding:14px 10px;flex:none;color:#555}
+  .side .i{padding:6px 8px;border-radius:6px;display:flex;gap:8px;align-items:center}
+  .side .on{background:#e9e9e9;color:#111;font-weight:600}
+  .side .g{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#aaa;margin:14px 8px 4px}
+  .main{flex:1;background:#fff;border-radius:12px;margin:8px 8px 8px 0;overflow:hidden;display:flex;flex-direction:column;border:1px solid #e8e8e8}
+  .top{padding:10px 16px;border-bottom:1px solid #f0f0f0;font-weight:600}
+  .scroll{padding:22px 32px;overflow:hidden}
+  .h{font-size:22px;font-weight:700;letter-spacing:-.01em}
+  .sub{color:#777;margin:4px 0 16px}
+  .search{border:1px solid #ddd;border-radius:9px;padding:9px 12px;color:#999;max-width:560px}
+  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#999;margin:22px 0 6px}
+  .list{max-width:560px}
+  .row{display:flex;gap:12px;align-items:center;padding:10px 4px;border-bottom:1px solid #f3f3f3}
+  .row.sel{background:#f5f5f5;border-radius:8px;border-color:transparent;padding:10px 8px;margin:0 -4px}
+  .logo{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:13px;flex:none}
+  .nm{font-weight:600}
+  .ds{font-size:12px;color:#777}
+  .right{margin-left:auto;display:flex;gap:8px;align-items:center;white-space:nowrap;font-size:12px}
+  .btn{font-size:12px;padding:5px 12px;border-radius:7px;border:1px solid #ddd;background:#fff}
+  .btn.d{background:#111;color:#fff;border-color:#111}
+  .btn.a{background:#b45309;color:#fff;border-color:#b45309}
+  .gd{color:#1a7f37}
+  .tag{font-size:10px;padding:2px 6px;border-radius:5px;background:#f1f1f1;color:#666;margin-left:6px;font-weight:500}
+  .chips{display:flex;gap:6px;margin:4px 0 6px}
+  .chips span{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid #e3e3e3;color:#555}
+  .chips span.on{background:#111;color:#fff;border-color:#111}
+  .warn{background:#fffbeb}
+  .panel{position:absolute;right:8px;top:8px;bottom:8px;width:360px;background:#fff;border:1px solid #d9d9d9;border-radius:12px;box-shadow:-8px 0 30px rgba(0,0,0,.08);font-size:13px}
+  .ph{padding:16px;display:flex;gap:10px;align-items:center;border-bottom:1px solid #f0f0f0}
+  .ps{padding:12px 16px}
+  .pl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:6px;display:flex}
+  .pl span{margin-left:auto;text-transform:none;letter-spacing:0;color:#2563eb}
+  .ag{display:flex;align-items:center;gap:8px;padding:6px 0}
+  .av{width:22px;height:22px;border-radius:50%;background:#eee;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .lvl{margin-left:auto;font-size:11px;padding:3px 8px;border:1px solid #e3e3e3;border-radius:99px;color:#555}
+  .act{font-size:12px;color:#555;padding:3px 0;display:flex}
+  .act i{margin-left:auto;color:#aaa;font-style:normal}
+  .tog{margin-left:auto;width:30px;height:18px;border-radius:99px;background:#d4d4d4;position:relative}
+  .tog::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+  .more{border-top:1px solid #f0f0f0;padding:12px 16px;color:#555;display:flex}
+  .more span{margin-left:auto;color:#aaa}
+  .try{padding:0 16px 14px}
+  .pill{display:inline-block;font-size:11px;padding:4px 9px;border-radius:99px;border:1px solid #e3e3e3;margin:3px 3px 0 0}
+</style>
+
+<h2>Step 8 — All of it together</h2>
+<p class="subtitle">The Connections page with the Gmail side panel open. Everything decided so far, in one picture.</p>
+
+<div class="app">
+  <div class="side">
+    <div class="i" style="font-weight:600;color:#111">DorkOS</div>
+    <div class="g">Workspace</div>
+    <div class="i">💬 Chats</div><div class="i">👥 Team</div><div class="i">⏱ Tasks</div><div class="i">🛍 Marketplace</div>
+    <div class="i on">🔌 Connections</div>
+  </div>
+  <div class="main">
+    <div class="top">Connections</div>
+    <div class="scroll">
+      <div class="h">Connections</div>
+      <div class="sub">Apps your agents can use, and places you can reach them.</div>
+      <div class="search">🔍  Search apps</div>
+
+      <div class="lbl">Yours</div>
+      <div class="list">
+        <div class="row warn"><div class="logo" style="background:#000">N</div><div><div class="nm">Notion</div><div class="ds" style="color:#b45309">Signed out. Agents can't use it.</div></div><div class="right"><span class="btn a">Sign in again</span></div></div>
+        <div class="row sel"><div class="logo" style="background:#ea4335">M</div><div><div class="nm">Gmail</div><div class="ds">you@gmail.com · DorkBot and mailroom</div></div><div class="right"><span class="gd">●</span></div></div>
+        <div class="row"><div class="logo" style="background:#4285f4">31</div><div><div class="nm">Google Calendar</div><div class="ds">Every agent · read</div></div><div class="right"><span class="gd">●</span></div></div>
+        <div class="row"><div class="logo" style="background:#229ED9">✈</div><div><div class="nm">Telegram <span class="tag">Chat</span></div><div class="ds">@lifeos_bot · DorkBot answers</div></div><div class="right"><span class="btn">1 waiting</span></div></div>
+      </div>
+
+      <div class="lbl">All apps</div>
+      <div class="chips"><span class="on">Popular</span><span>Email</span><span>Chat</span><span>Docs</span><span>Code</span></div>
+      <div class="list">
+        <div class="row"><div class="logo" style="background:#5e6ad2">L</div><div><div class="nm">Linear</div><div class="ds">Read and update issues</div></div><div class="right"><span class="btn d">Connect</span></div></div>
+        <div class="row"><div class="logo" style="background:#181717">⌥</div><div><div class="nm">GitHub</div><div class="ds">Issues and pull requests</div></div><div class="right"><span class="btn d">Connect</span></div></div>
+        <div class="row"><div class="logo" style="background:#4a154b">#</div><div><div class="nm">Slack <span class="tag">Chat</span></div><div class="ds">Talk to your agents in Slack</div></div><div class="right"><span class="btn d">Connect</span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ph"><div class="logo" style="background:#ea4335">M</div><div><div class="nm" style="font-size:15px">Gmail</div><div class="ds">you@gmail.com · <span class="gd">● Connected</span></div></div><div style="margin-left:auto;color:#aaa">✕</div></div>
+    <div class="ps">
+      <div class="pl">Who can use it <span>+ Add</span></div>
+      <div class="ag" style="padding-bottom:10px;border-bottom:1px solid #f4f4f4">Every agent<div class="tog"></div></div>
+      <div class="ag"><div class="av">🦋</div>DorkBot<div class="lvl">Read and send ▾</div></div>
+      <div class="ag"><div class="av">📬</div>mailroom<div class="lvl">Read ▾</div></div>
+    </div>
+    <div class="ps" style="border-top:1px solid #f0f0f0">
+      <div class="pl">Recently <span>See all</span></div>
+      <div class="act">DorkBot read 12 emails<i>2h ago</i></div>
+      <div class="act">mailroom read 3 emails<i>yesterday</i></div>
+      <div class="act">DorkBot sent 1 email<i>Tue</i></div>
+    </div>
+    <div class="ps" style="border-top:1px solid #f0f0f0">
+      <div class="pl">Try it</div>
+      <span class="pill">Summarise today's inbox</span><span class="pill">What needs a reply?</span>
+    </div>
+    <div class="more">More<span>›</span></div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:20px">
+  <div class="option" data-choice="ship-it" onclick="toggleSelect(this)"><div class="letter">✓</div><div class="content"><h3>This is it</h3><p>Write up the decisions.</p></div></div>
+  <div class="option" data-choice="tweak" onclick="toggleSelect(this)"><div class="letter">~</div><div class="content"><h3>Tweak something</h3><p>Tell me in the terminal.</p></div></div>
+</div>

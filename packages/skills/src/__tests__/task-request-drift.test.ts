@@ -245,6 +245,8 @@ describe('request-vs-frontmatter drift — the fields POST /api/tasks writes int
     ['effort', 'high', true],
     ['effort', 'xhigh', true],
     ['effort', 'ludicrous', false],
+    ['account', 'work', true], // DOR-2384: a registry id, checked at run time
+    ['account', '', false],
   ] as const)(
     'the %s mirror in shared agrees with the schedule block on %s',
     // `survives` is asserted as well as compared, deliberately. Agreement alone

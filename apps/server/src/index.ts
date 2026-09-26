@@ -3000,6 +3000,7 @@ async function start() {
     db,
     registry: connectorRegistry,
     recoverManagedProvider: () => connectorBootstrapper.recoverManagedCloud(),
+    appConnections: () => connectorBootstrapper.appConnections(),
     ...(adapterManager && { relay: adapterManager }),
     agentOwnership: { ownsAgent: connectorOwnsAgent },
     managedUsage: getCloudLinkManager(),

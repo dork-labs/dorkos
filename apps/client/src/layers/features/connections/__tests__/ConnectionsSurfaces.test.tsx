@@ -99,41 +99,142 @@ describe('ServiceGrid', () => {
       warnings: [],
     });
     const onConnect = vi.fn();
-    renderWith(transport, <ServiceGrid onConnect={onConnect} />);
+    const onConnectChat = vi.fn();
+    renderWith(transport, <ServiceGrid onConnect={onConnect} onConnectChat={onConnectChat} />);
     await user.click(screen.getByRole('button', { name: 'Connect service' }));
     await user.type(screen.getByRole('textbox', { name: 'Search services' }), 'Slack');
-    expect(
-      await screen.findByRole('button', { name: 'Messages through a Slack bot' })
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Use a Slack account' }));
+    await user.click(await screen.findByRole('button', { name: 'Use a Slack account' }));
     expect(onConnect).toHaveBeenCalledWith(expect.objectContaining({ serviceSlug: 'slack' }));
+    expect(onConnectChat).not.toHaveBeenCalled();
     expect(transport.getConnectorCatalog).toHaveBeenCalledWith(
       expect.objectContaining({ query: 'Slack', limit: 24 })
     );
+
+    // The chat intent goes to the chat app's own setup, not the sign-in flow.
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    await user.click(await screen.findByRole('button', { name: 'Messages through a Slack bot' }));
+    expect(onConnectChat).toHaveBeenCalledWith('slack');
+    expect(onConnect).toHaveBeenCalledTimes(1);
   });
 
-  it('shows a useful empty result without promising a missing action inside the dialog', async () => {
+  it('lists popular apps with a line about each, and tags chat apps, with nothing set up', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [
+        {
+          serviceSlug: 'gmail',
+          displayName: 'Gmail',
+          iconKey: 'gmail',
+          description: 'Read, search and send email.',
+          category: 'email',
+          popular: true,
+          signInName: 'Google',
+          intents: [{ kind: 'account', displayName: 'Use a Gmail account', routes: [] }],
+        },
+        {
+          serviceSlug: 'telegram',
+          displayName: 'Telegram',
+          iconKey: 'telegram',
+          description: 'Talk to your agents through your own Telegram bot.',
+          category: 'chat',
+          popular: true,
+          intents: [
+            {
+              kind: 'messages',
+              displayName: 'Messages through a Telegram bot',
+              relayAdapterType: 'telegram',
+            },
+          ],
+        },
+      ],
+      warnings: [],
+      appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+    });
+    const onConnect = vi.fn();
+    renderWith(transport, <ServiceGrid onConnect={onConnect} onConnectChat={() => undefined} />);
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+
+    const gmail = await screen.findByTestId('service-result-gmail');
+    expect(gmail).toHaveTextContent('Read, search and send email.');
+    expect(gmail).not.toHaveTextContent('Chat');
+    expect(screen.getByTestId('service-result-telegram')).toHaveTextContent('Chat');
+    // Nothing set up is not a reason to hide the app: Connect still leads somewhere.
+    await user.click(screen.getByRole('button', { name: 'Use a Gmail account' }));
+    expect(onConnect).toHaveBeenCalledWith(expect.objectContaining({ serviceSlug: 'gmail' }));
+  });
+
+  it('says why a search finds nothing while no way to reach apps is set up', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [],
+      warnings: [],
+      appConnections: { ways: [], newApps: { status: 'setup_needed', reason: 'nothing_set_up' } },
+    });
+    renderWith(
+      transport,
+      <ServiceGrid onConnect={() => undefined} onConnectChat={() => undefined} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    await user.type(screen.getByRole('textbox', { name: 'Search services' }), 'Zendesk');
+    expect(await screen.findByText('No app matches “Zendesk”')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Only popular apps are listed until you connect your first one/)
+    ).toBeInTheDocument();
+  });
+
+  it('does not promise the first connect fixes search when a saved key stopped working', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({
+      services: [],
+      warnings: [],
+      appConnections: {
+        ways: [{ kind: 'own_key', type: 'composio', status: 'unavailable' }],
+        newApps: { status: 'setup_needed', reason: 'own_key_unavailable' },
+      },
+    });
+    renderWith(
+      transport,
+      <ServiceGrid onConnect={() => undefined} onConnectChat={() => undefined} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    expect(
+      await screen.findByText('Only popular apps are listed while your saved key isn’t working.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/until you connect your first one/)).not.toBeInTheDocument();
+  });
+
+  it('keeps an empty search plain once a way to reach apps works', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorCatalog).mockResolvedValue({ services: [], warnings: [] });
-    renderWith(transport, <ServiceGrid onConnect={() => undefined} />);
+    renderWith(
+      transport,
+      <ServiceGrid onConnect={() => undefined} onConnectChat={() => undefined} />
+    );
 
     await user.click(screen.getByRole('button', { name: 'Connect service' }));
-    expect(await screen.findByText('No matching services')).toBeInTheDocument();
-    expect(screen.getByText(/Advanced account setup on the Connections page/)).toBeInTheDocument();
-    expect(screen.queryByText(/add your own account below/i)).not.toBeInTheDocument();
+    expect(await screen.findByText('Try another name.')).toBeInTheDocument();
+    expect(screen.queryByText(/Only popular apps are listed/)).not.toBeInTheDocument();
   });
 
   it('keeps a catalog error separate from an empty result and offers a retry', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorCatalog).mockRejectedValue(new Error('catalog offline'));
-    renderWith(transport, <ServiceGrid onConnect={() => undefined} />);
+    renderWith(
+      transport,
+      <ServiceGrid onConnect={() => undefined} onConnectChat={() => undefined} />
+    );
 
     await user.click(screen.getByRole('button', { name: 'Connect service' }));
     expect(await screen.findByText('Couldn’t load services')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
-    expect(screen.queryByText('No matching services')).not.toBeInTheDocument();
+    expect(screen.queryByText(/No app matches/)).not.toBeInTheDocument();
   });
 });
 

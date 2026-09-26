@@ -717,6 +717,12 @@
             "items": {
               "$ref": "#/components/schemas/SessionListWarning"
             }
+          },
+          "accountUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountUsage"
+            }
           }
         },
         "required": [
@@ -778,6 +784,41 @@
           "account": {
             "type": "string"
           },
+          "accountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "lifecycle": {
+                "$ref": "#/components/schemas/SessionLifecycle"
+              },
+              "limit": {
+                "$ref": "#/components/schemas/SessionLimit"
+              }
+            },
+            "required": [
+              "lifecycle",
+              "limit"
+            ]
+          },
+          "trackerItem": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "runStatus": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
           "userLastMessageAt": {
             "type": "string",
             "format": "date-time"
@@ -824,6 +865,131 @@
           "external"
         ]
       },
+      "SessionLifecycle": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "streaming",
+          "blocked",
+          "error",
+          "interrupted"
+        ]
+      },
+      "SessionLimit": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "window": {
+            "type": "string"
+          },
+          "resetsAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/LimitPlan"
+          }
+        },
+        "required": [
+          "accountId",
+          "window",
+          "resetsAt",
+          "since"
+        ]
+      },
+      "LimitPlan": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "ask"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "auto"
+                ]
+              },
+              "target": {
+                "type": "string"
+              },
+              "fireAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "mode",
+              "target",
+              "fireAt"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "waiting"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "continued"
+                ]
+              },
+              "sessionId": {
+                "type": "string"
+              },
+              "accountId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode",
+              "sessionId",
+              "accountId"
+            ]
+          }
+        ],
+        "default": {
+          "mode": "ask"
+        }
+      },
       "SessionListWarning": {
         "type": "object",
         "properties": {
@@ -840,6 +1006,298 @@
         "required": [
           "runtime",
           "message"
+        ]
+      },
+      "AccountUsage": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "codex",
+              "opencode"
+            ]
+          },
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": "string"
+          },
+          "subscriptionType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "plan": {
+            "$ref": "#/components/schemas/LedgerPlan"
+          },
+          "credits": {
+            "$ref": "#/components/schemas/LedgerCredits"
+          },
+          "spend": {
+            "$ref": "#/components/schemas/LedgerSpend"
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "usedPct": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "resetsAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "$ref": "#/components/schemas/RateLimitStatus"
+                },
+                "expired": {
+                  "type": "boolean"
+                },
+                "observedAt": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "statusline",
+                    "sdk_event",
+                    "sdk_usage",
+                    "transcript",
+                    "rollout",
+                    "sidecar",
+                    "provider_api",
+                    "error"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "usedPct",
+                "resetsAt",
+                "status",
+                "expired",
+                "observedAt",
+                "source"
+              ]
+            }
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "limited",
+              "unknown"
+            ]
+          },
+          "limit": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "window": {
+                "type": "string"
+              },
+              "resetsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "window",
+              "resetsAt"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "runtime",
+          "accountId",
+          "path",
+          "label",
+          "color",
+          "subscriptionType",
+          "plan",
+          "credits",
+          "spend",
+          "windows",
+          "state",
+          "limit",
+          "updatedAt"
+        ]
+      },
+      "LedgerPlan": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "statusline",
+              "sdk_event",
+              "sdk_usage",
+              "transcript",
+              "rollout",
+              "sidecar",
+              "provider_api",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "observedAt",
+          "source"
+        ]
+      },
+      "LedgerCredits": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "hasCredits": {
+            "type": "boolean"
+          },
+          "unlimited": {
+            "type": "boolean"
+          },
+          "balance": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "statusline",
+              "sdk_event",
+              "sdk_usage",
+              "transcript",
+              "rollout",
+              "sidecar",
+              "provider_api",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "hasCredits",
+          "unlimited",
+          "observedAt",
+          "source"
+        ]
+      },
+      "LedgerSpend": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "periodStart": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "costUsd": {
+            "type": "number",
+            "minimum": 0
+          },
+          "limitUsd": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "default": null
+          },
+          "observedAt": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?(Z|[+-]\\d{2}:\\d{2})$"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "statusline",
+              "sdk_event",
+              "sdk_usage",
+              "transcript",
+              "rollout",
+              "sidecar",
+              "provider_api",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "periodStart",
+          "costUsd",
+          "observedAt",
+          "source"
+        ]
+      },
+      "RateLimitStatus": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "allowed",
+          "allowed_warning",
+          "rejected",
+          null
         ]
       },
       "ErrorResponse": {
@@ -2616,6 +3074,9 @@
                   "lastError": {
                     "$ref": "#/components/schemas/ErrorEvent"
                   },
+                  "limit": {
+                    "$ref": "#/components/schemas/SessionLimit"
+                  },
                   "steerable": {
                     "type": "boolean"
                   }
@@ -3687,16 +4148,6 @@
           "total",
           "completed",
           "inProgress"
-        ]
-      },
-      "SessionLifecycle": {
-        "type": "string",
-        "enum": [
-          "idle",
-          "streaming",
-          "blocked",
-          "error",
-          "interrupted"
         ]
       },
       "ErrorEvent": {
@@ -4971,6 +5422,9 @@
           "lastError": {
             "$ref": "#/components/schemas/ErrorEvent"
           },
+          "limit": {
+            "$ref": "#/components/schemas/SessionLimit"
+          },
           "activity": {
             "$ref": "#/components/schemas/SessionActivity"
           },
@@ -5853,7 +6307,8 @@
                     "model",
                     "effort",
                     "maxRuntime",
-                    "sticky"
+                    "sticky",
+                    "account"
                   ]
                 },
                 "from": {
@@ -5947,6 +6402,13 @@
                 ]
               }
             ]
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
           },
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
@@ -6138,6 +6600,13 @@
               }
             ]
           },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
           },
@@ -6230,6 +6699,13 @@
                 ]
               }
             ]
+          },
+          "account": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
           },
           "permissionMode": {
             "$ref": "#/components/schemas/PermissionMode"
@@ -14368,6 +14844,9 @@
                             },
                             "lastError": {
                               "$ref": "#/components/schemas/ErrorEvent"
+                            },
+                            "limit": {
+                              "$ref": "#/components/schemas/SessionLimit"
                             },
                             "steerable": {
                               "type": "boolean"
@@ -25446,7 +25925,7 @@
           "Connectors"
         ],
         "summary": "List connector provider setup statuses",
-        "description": "Reference-free setup state per credential-gated provider: configured/registered booleans, the custody stance with its plain-language disclosure, and — when a configured provider refused to register — the honest error text. Never carries a secret or a credential reference.",
+        "description": "Reference-free setup state per credential-gated provider: configured/registered booleans, the custody stance with its plain-language disclosure, and — when a configured provider refused to register — the honest error text. `appConnections` lists every way set up to reach apps and names the one new apps use. Never carries a secret or a credential reference.",
         "responses": {
           "200": {
             "description": "Provider setup statuses",
@@ -25500,10 +25979,147 @@
                           "disclosure"
                         ]
                       }
+                    },
+                    "appConnections": {
+                      "type": "object",
+                      "properties": {
+                        "ways": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "dorkos_account",
+                                  "own_key"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "unavailable"
+                                ]
+                              },
+                              "providerInstanceId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "signInThrough": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "type",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20
+                        },
+                        "newApps": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ready"
+                                  ]
+                                },
+                                "way": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dorkos_account",
+                                        "own_key"
+                                      ]
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "ready",
+                                        "unavailable"
+                                      ]
+                                    },
+                                    "providerInstanceId": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "signInThrough": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "type",
+                                    "status"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "way"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "setup_needed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "nothing_set_up",
+                                    "dorkos_account_unavailable",
+                                    "own_key_unavailable"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ways",
+                        "newApps"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "providers"
+                    "providers",
+                    "appConnections"
                   ]
                 }
               }
@@ -25696,7 +26312,7 @@
           "Connectors"
         ],
         "summary": "List the provider-neutral connector catalog",
-        "description": "Returns one bounded account-free page. Native message adapters remain distinct from account routes.",
+        "description": "Returns one bounded account-free page. Hand-picked popular apps are always listed, even before any way to reach apps is set up; live services merge into them by service id. Native message adapters remain distinct from account routes.",
         "parameters": [
           {
             "schema": {
@@ -26121,6 +26737,11 @@
                                               "requiresAccountFields"
                                             ],
                                             "additionalProperties": false
+                                          },
+                                          "signInThrough": {
+                                            "type": "string",
+                                            "minLength": 1,
+                                            "maxLength": 100
                                           }
                                         },
                                         "required": [
@@ -26135,7 +26756,6 @@
                                         ],
                                         "additionalProperties": false
                                       },
-                                      "minItems": 1,
                                       "maxItems": 20
                                     }
                                   },
@@ -26150,6 +26770,33 @@
                             },
                             "minItems": 1,
                             "maxItems": 20
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 300
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "email",
+                              "calendar",
+                              "chat",
+                              "docs",
+                              "files",
+                              "code",
+                              "tasks",
+                              "sales",
+                              "developer"
+                            ]
+                          },
+                          "popular": {
+                            "type": "boolean"
+                          },
+                          "signInName": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
                           }
                         },
                         "required": [
@@ -26190,6 +26837,142 @@
                         "additionalProperties": false
                       },
                       "maxItems": 50
+                    },
+                    "appConnections": {
+                      "type": "object",
+                      "properties": {
+                        "ways": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "dorkos_account",
+                                  "own_key"
+                                ]
+                              },
+                              "type": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "ready",
+                                  "unavailable"
+                                ]
+                              },
+                              "providerInstanceId": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "signInThrough": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "type",
+                              "status"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 20
+                        },
+                        "newApps": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ready"
+                                  ]
+                                },
+                                "way": {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "enum": [
+                                        "dorkos_account",
+                                        "own_key"
+                                      ]
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "ready",
+                                        "unavailable"
+                                      ]
+                                    },
+                                    "providerInstanceId": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    },
+                                    "signInThrough": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 100
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "type",
+                                    "status"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "way"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "setup_needed"
+                                  ]
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "nothing_set_up",
+                                    "dorkos_account_unavailable",
+                                    "own_key_unavailable"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "reason"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ways",
+                        "newApps"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [

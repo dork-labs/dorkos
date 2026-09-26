@@ -95,7 +95,7 @@ function createTasksEnvelope(overrides?: Partial<RelayEnvelope>): RelayEnvelope 
   return {
     id: 'msg-002',
     subject: 'relay.system.tasks.budget-monitor',
-    from: 'system:tasks',
+    from: 'relay.system.tasks.scheduler',
     replyTo: 'relay.human.console.client-1',
     budget: {
       hopCount: 0,

@@ -46,6 +46,10 @@ runtimeConformance(() => new TestModeRuntime(), {
   // property; saying so beats a case that quietly asserts nothing.
   systemPromptAppendUnprovenReason:
     'test-mode answers from a scripted scenario table — there is no model to give a system prompt to, and no backend input a caller’s append could be read off',
+  // The `agent-home-desk` §4.6 gate, for the same reason: no backend holds a
+  // file tool, so there is nothing a folder grant could be handed to.
+  directoryGrantsUnprovenReason:
+    'test-mode answers from a scripted scenario table — it has no file tools and no backend a folder grant could be handed to',
   // The one runtime allowed to repeat its trigger: `simple-text` answers
   // `Echo: <content>`, and that determinism is the fixture's entire job — the
   // browser suite asserts on it (`apps/e2e/tests/chat-mock.spec.ts`). Only the

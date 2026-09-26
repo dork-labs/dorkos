@@ -62,6 +62,11 @@ function assertConnectorDeps(deps: CapabilityDeps): void {
   }
 }
 
+/** What an agent reads beside a popular app no way DorkOS is set up with reaches yet. */
+const NOT_REACHED_NOTE =
+  'DorkOS cannot reach this app yet, so it cannot be requested. The person connects it in ' +
+  'Connections in the DorkOS app first.';
+
 /** Nonprivate provider-neutral discovery projected onto ordinary MCP surfaces. */
 export const connectorDomain: CapabilityDomain = {
   name: 'connector',
@@ -96,12 +101,24 @@ export const connectorDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) => {
-        const page = await requireConnectorDeps(deps).catalog({
+        // `appConnections` is the owner's setup (which way new apps use, and its
+        // route ids): agents get the catalog, never the plumbing behind it.
+        const { appConnections: _ownerSetup, ...page } = await requireConnectorDeps(deps).catalog({
           ...input,
           signal: context.signal ?? AbortSignal.timeout(30_000),
         });
         return {
           ...page,
+          // A popular app no way reaches yet is listed so an agent can name it,
+          // but with no account intent to ask for, and a plain note on who acts.
+          services: page.services.map((service) => {
+            const intents = service.intents.filter(
+              (intent) => intent.kind !== 'account' || intent.routes.length > 0
+            );
+            return intents.length === service.intents.length
+              ? service
+              : { ...service, intents, notRequestable: NOT_REACHED_NOTE };
+          }),
           // Keep the original toolkit fields for callers that predate pagination.
           // Messaging-only entries remain in services, without inventing account support.
           toolkits: page.services.flatMap((service) => {

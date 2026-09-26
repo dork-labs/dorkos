@@ -1,0 +1,19 @@
+{
+  "version": "plv_0001",
+  "effectiveFrom": "2026-09-15T12:00:00.000Z",
+  "entries": [
+    {
+      "modelId": "md_opaque_0001",
+      "displayName": "the model shown in your usage page",
+      "unit": "megatoken",
+      "inputMicro": "1700000",
+      "outputMicro": "7300000",
+      "cacheReadMicro": "230000",
+      "cacheWriteMicro": "1900000"
+    }
+  ],
+  "denomination": {
+    "currency": "XTS",
+    "microPerCredit": "250"
+  }
+}

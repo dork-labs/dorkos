@@ -2317,3 +2317,35 @@ describe('systemPromptAppend reaches the runtime, or is absent entirely', () => 
     expect('systemPromptAppend' in optsAtRuntime()).toBe(false);
   });
 });
+
+describe('folder grants reach the runtime, including from the queue (spec `agent-home-desk` §4.1)', () => {
+  // A grant absent from `sendMessage` means the turn runs WITHOUT that folder,
+  // so a field dropped by either the plan's whitelist or the launch spread is a
+  // room turn that silently cannot reach the room's files — and only for turns
+  // that happened to wait. Read off the runtime spy, the last hand the value
+  // passes through.
+  const grants = [
+    { path: '/rooms/r1/worktrees/ana', access: 'write' },
+    { path: '/rooms/r1/repo', access: 'read' },
+  ] as const;
+
+  it('carries a queued turn’s grants to the runtime once the turn ahead ends', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('long turn');
+    const second = await send('a room turn that waits', { additionalDirectories: grants });
+    expect(second.queued, 'the second turn was supposed to wait behind the first').toBe(true);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    first.open();
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    const queued = runtime.sendMessage.mock.calls[1]![2] as Record<string, unknown>;
+    expect(queued.additionalDirectories).toEqual(grants);
+    // And the turn that carried none was handed none.
+    const firstOpts = runtime.sendMessage.mock.calls[0]![2] as Record<string, unknown>;
+    expect('additionalDirectories' in firstOpts).toBe(false);
+  });
+});

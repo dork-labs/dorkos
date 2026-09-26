@@ -670,7 +670,7 @@ export class CodexRuntime implements AgentRuntime {
         ? resolveManagedMcpServers(this.managedMcpServers, agentPath, dorkosTools !== null)
         : { servers: {}, env: {} };
 
-      const threadOptions = projectThreadOptions(settings, cwd);
+      const threadOptions = projectThreadOptions(settings, cwd, opts?.additionalDirectories);
       const client = await this.clientForTurn(
         agentTokenEnv,
         managedMcpServers,
