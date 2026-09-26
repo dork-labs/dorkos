@@ -7,7 +7,7 @@ Generated from `03-tasks.json` (the canonical file). Spec: `02-specification.md`
 - **A**: 1.1, 1.2, 2.5, 3.3. No dependencies; different files.
 - **B**: 1.3, 2.1, 2.4. After 1.1 (1.3, 2.1) and 1.2 (2.4).
 - **C**: 2.2, 2.3, 3.1. After 2.1 (and 1.2 for 2.3).
-- **D**: 3.2, 3.4, 3.5. After 2.5+3.1 (3.2), 3.1 (3.4), 2.1+2.3+2.4 (3.5).
+- **D**: 3.2, 3.4, 3.5, 5.1. After 2.5+3.1 (3.2), 3.1 (3.4), 2.1+2.3+2.4 (3.5), 2.1+2.3+2.5+3.1 (5.1). 3.5 and 5.1 both touch routes/sessions.ts: land 3.5 first.
 - **E**: 4.1. After 1.1, 1.3, 2.1, 2.4 (the marketplace fixture folder is merged, PR #57).
 
 Critical path: 1.1 → 2.1 → 3.1 → 3.2.
@@ -49,7 +49,8 @@ Tracker: DOR-2382, DOR-2385, DOR-2386. Spec §5.3.
 
 In `packages/shared/src/session-stream.ts`:
 
-- `SessionLimitSchema = z.object({ accountId: z.string().nullable(), window: z.string(), resetsAt: z.string().nullable(), since: z.string() }).openapi('SessionLimit')`.
+- `LimitPlanSchema = z.discriminatedUnion('mode', [ z.object({ mode: z.literal('ask') }), z.object({ mode: z.literal('auto'), target: z.string(), fireAt: z.string() }), z.object({ mode: z.literal('waiting') }), z.object({ mode: z.literal('continued'), sessionId: z.string(), accountId: z.string() }) ]).openapi('LimitPlan')`.
+- `SessionLimitSchema = z.object({ accountId: z.string().nullable(), window: z.string(), resetsAt: z.string().nullable(), since: z.string(), plan: LimitPlanSchema.default({ mode: 'ask' }) }).openapi('SessionLimit')`.
 - `SessionStatusEventSchema` in schemas.ts (the partial status a mapper yields) gains `limit: SessionLimitSchema.nullable().optional()`.
 - `SessionStatusSchema` gains `limit: SessionLimitSchema.nullable().default(null)` with TSDoc: set when the session's account reported a hard limit during the last turn; cleared at the next turn_start; the default keeps older snapshots parsing. Do NOT add a value to `SessionLifecycleSchema`.
 - `export function sessionDisplayState(status: Pick<SessionStatus, 'lifecycle' | 'limit'>): SessionLifecycle | 'limited'` → 'limited' when `status.limit` is non-null, else `status.lifecycle`.
@@ -179,22 +180,24 @@ Proof: every existing sessions route test passes with no edits. New unit tests f
 
 ## Phase 3: Launching and routing
 
-### Task 3.1: Give server extensions dork-home, read access to Claude accounts and usage, and a launch guard
+### Task 3.1: Give server extensions dork-home, read access to Claude accounts and usage, and an account advisor seam
 
-- Size medium, priority medium, tracker n/a
+- Size medium, priority high, tracker n/a
 - Depends on: 2.1
 - Parallel with: 2.2, 2.3, 3.3
 
-Tracker: DOR-2383 and DOR-2384 (the guard), for the Flow extension. Spec §6 X1-X3.
+Tracker: DOR-2383 and DOR-2384 (the account check), for the Flow extension. Spec §6 X1-X3 and D9 "Ranking".
 
 1. `packages/extension-api/src/server-extension-api.ts` `DataProviderContext` gains, with TSDoc:
    - `readonly dorkHome: string` — the resolved DorkOS data directory, so an extension can keep a file other tools also read (the Flow extension's `<dorkHome>/flow/fleet.json`).
-   - `readonly claudeAccounts: ClaudeAccountsApi` = `{ list(): Promise<ClaudeAccountSummary[]>; usage(): Promise<AccountUsage[]>; onUsage(listener: (usage: AccountUsage) => void): () => void; registerLaunchGuard(guard: AccountLaunchGuard): () => void }`; `ClaudeAccountSummary = { id: string; path: string; label: string | null; color: string }` (color resolved); `AccountLaunchGuard = (req: { accountId: string; cwd: string; runtime: string; caller: 'agent' | 'relay' }) => AccountLaunchVerdict | Promise<AccountLaunchVerdict>`; `AccountLaunchVerdict = { allow: boolean; reason?: string }`. AccountUsage from `@dorkos/shared/account-usage`.
-2. New `apps/server/src/services/runtimes/claude-code/accounts/account-launch-guard.ts`: `registerAccountLaunchGuard(ownerId, guard)` → unregister fn, and `checkAccountLaunch(req)` → `{ allow: true } | { allow: false; reason: string }`: asks every guard; any deny wins with its reason; a throw or a guard slower than 2 s denies with "The account policy could not be checked."; no guards registered → deny with "Agents can pick an account only after Flow is set up to say which accounts they may use." (the contract spends nothing until the operator opts in). Deny logged at info.
-3. `services/extensions/extension-server-api-factory.ts` builds `dorkHome` and `claudeAccounts` (list via `readClaudeAccountSettings` of the runtimes.claudeCode config block, usage and onUsage via the D2 store, registerLaunchGuard via the registry keyed by extension id). `extension-server-lifecycle.ts` removes that extension's listeners and guards on shutdown and reload.
-4. Document all three in `contributing/extension-authoring.md`, including that guards apply only to agent- and relay-initiated account choices, never to a person's pick.
+   - `readonly claudeAccounts: { list(): Promise<ClaudeAccountSummary[]>; usage(): Promise<AccountUsage[]>; onUsage(listener: (usage: AccountUsage) => void): () => void; registerAdvisor(advisor: AccountAdvisor): () => void }`, `ClaudeAccountSummary = { id; path; label; color }` (color resolved).
+   - The advisor types exactly as spec §6 X3: `AccountAdvisor { rank(candidates, ctx); onLimited?(info); carryOver?(info, targetAccountId) }`, `AccountCandidate`, `AdvisorContext { purpose: 'launch' | 'continue'; caller: 'person' | 'agent' | 'relay' | 'advisor'; cwd; runtime; sessionId?; excludeAccountId? }`, `AdvisorRanking { accounts: { id; eligible; reason; badge?: 'recommended' | 'reserved' }[]; recommendedId }`, `LimitedSessionInfo`, `LimitedPlan`, `CarryOverSeed { seedContext; prompt? }`. AccountUsage from `@dorkos/shared/account-usage`.
+2. New `apps/server/src/services/runtimes/claude-code/accounts/account-advisor.ts`: `registerAccountAdvisor(ownerId, advisor)` → unregister fn. ONE advisor: a second registration replaces the first and logs a warning naming both owners; an unregister removes only its own advisor. `callAdvisor(method, args)` bounds every call at 2 s and returns `undefined` on throw/timeout (logged). Validation helpers: drop ranking ids that are not registered; clamp `delaySeconds` to 0..3600; reject an `auto` target that is unregistered or equals the limited account; reject a seed longer than `SEED_CONTEXT_MAX_LENGTH`.
+3. New `accounts/account-ranking.ts`: `rankAccounts(ctx): Promise<{ accounts: { id, label, color, usage, eligible, reason, badge? }[]; recommendedId }>`: with an advisor, its ranking (validated; omitted ids hidden); without one, or on failure, the DEFAULT: every registered account except `ctx.excludeAccountId`; eligible when `AccountUsage.state !== 'limited'`; eligible first ordered by weekly headroom (100 − seven_day usedPct; unknown weekly after known), then 5-hour headroom, then registry order; ineligible after; reasons "58% of the week left" / "Usage unknown" / "Out until <local short time>"; recommendedId = first eligible or null. And `checkAccountLaunch({ accountId, cwd, runtime, caller: 'agent' | 'relay' })`: NO advisor → deny "Agents can pick an account only after Flow is set up to say which accounts they may use."; advisor failure → deny "The account policy could not be checked."; else allow iff the advisor's ranking (purpose 'launch') marks the id eligible, deny with its reason otherwise.
+4. `services/extensions/extension-server-api-factory.ts` builds `dorkHome` and `claudeAccounts` (list via `readClaudeAccountSettings`, usage/onUsage via the D2 store, registerAdvisor keyed by extension id). `extension-server-lifecycle.ts` removes that extension's listeners and advisor on shutdown and reload.
+5. Document all of it in `contributing/extension-authoring.md`: one advisor at a time; a person's pick is never refused by it; without it core uses defaults and refuses agent/relay account picks.
 
-Tests: the factory exposes dorkHome and the accounts API; guard registry (deny wins, throw denies, slow guard denies with fake timers, none registered denies); shutdown and reload remove guards and listeners.
+Tests: the factory exposes dorkHome and the account API; one-advisor rule (second replaces first with a warning; stale unregister does not remove the new one); 2 s bound; default ranking table (headroom order, unknown last, limited ineligible, excluded account absent, reasons, recommendedId); advisor ranking validated (unknown id dropped, hidden ids absent); checkAccountLaunch with no advisor, failing advisor, eligible, ineligible; shutdown/reload unregister.
 
 ### Task 3.2: Add the session_start MCP tool that starts a session on a named account
 
@@ -209,11 +212,11 @@ New `mcp-tools/session-tools.ts` (`getSessionTools(deps)`, projected to external
 - `prompt: z.string().min(1)`; `cwd: z.string()` — absolute and inside the boundary (lib/boundary.ts, as the route checks), else refuse;
 - `account?: z.string().min(1)` — registry id; unknown → error "No Claude account with id <x> is registered." and nothing starts (invariant 6); with a resolved runtime other than 'claude-code' → error;
 - `runtime?`, `model?`, `effort?` (EffortLevelSchema), `permissionMode?` (PermissionModeSchema), `seedContext?` (the SendMessageRequestSchema limits), `agentPath?` (must be a registered Mesh agent directory).
-  Flow: mint `sessionId = crypto.randomUUID()`; if account → `checkAccountLaunch({ accountId, cwd, runtime, caller: 'agent' })` (task 3.1), refuse with its reason on deny; enforce `AGENT_LAUNCH_MAX_LIVE = 8` live agent-launched turns (in-memory set in launch-session.ts, added at dispatch, removed via onSettled) → refuse "Too many agent-started sessions are running (8). Try again when one finishes."; write model, effort and the clamped permission mode (`clampSchedulePermissionMode`, never bypassPermissions) to the new session's settings row the way the pre-launch PATCH does; then `dispatchSessionMessage({ sessionId, content: prompt, cwd, runtime, account, agentPath, seedContext, clientId: 'mcp:session_start', origin: { kind: 'agent-launch' } })`. Result JSON `{ sessionId: <canonical>, runtime, account: { id, label } | null, status: 'started' }`.
+  Flow: mint `sessionId = crypto.randomUUID()`; if account → `checkAccountLaunch({ accountId, cwd, runtime, caller: 'agent' })` (task 3.1: asks the account advisor; no advisor = refused), refuse with its reason on deny; enforce `AGENT_LAUNCH_MAX_LIVE = 8` live agent-launched turns (in-memory set in launch-session.ts, added at dispatch, removed via onSettled) → refuse "Too many agent-started sessions are running (8). Try again when one finishes."; write model, effort and the clamped permission mode (`clampSchedulePermissionMode`, never bypassPermissions) to the new session's settings row the way the pre-launch PATCH does; then `dispatchSessionMessage({ sessionId, content: prompt, cwd, runtime, account, agentPath, seedContext, clientId: 'mcp:session_start', origin: { kind: 'agent-launch' } })`. Result JSON `{ sessionId: <canonical>, runtime, account: { id, label } | null, status: 'started' }`.
   One Activity entry per call (actor = the calling agent resolved from the calling session's cwd via Mesh, else 'external MCP'), naming the account and the cwd, following an existing activity writer's shape.
   Tier `session_start: { tier: 'act', area: null, areaNote: AREA_PENDING_PHASE_3, title: 'Start a new agent session' }` + mcp-tool-metadata (not read-only, not idempotent) + tool group.
 
-Tests (FakeAgentRuntime): a named account's root reaches the launch (accountHint in the message opts, resolved by resolveLaunchAccountRoot); unknown account, codex + account, out-of-boundary cwd, unregistered agentPath each refuse with nothing dispatched; guard deny, throw, timeout refuse; no registered guard refuses a call naming an account while a call without account still starts; bypassPermissions clamps to acceptEdits; the 9th concurrent launch refuses and succeeds after one settles; the agent-launch row seeds no permission mode; tier and metadata tables; external /mcp lists the tool.
+Tests (FakeAgentRuntime): a named account's root reaches the launch (accountHint in the message opts, resolved by resolveLaunchAccountRoot); unknown account, codex + account, out-of-boundary cwd, unregistered agentPath each refuse with nothing dispatched; advisor marks ineligible, advisor throws, advisor times out → refused; no advisor refuses a call naming an account while a call without account still starts; bypassPermissions clamps to acceptEdits; the 9th concurrent launch refuses and succeeds after one settles; the agent-launch row seeds no permission mode; tier and metadata tables; external /mcp lists the tool.
 
 ### Task 3.3: Let a schedule name the Claude account its runs use
 
@@ -242,10 +245,10 @@ Tests: a relay-dispatched scheduled run carries account into sendMessage; a sche
 Tracker: DOR-2384 (relay half). Spec D6 "Relay".
 
 1. `packages/relay`: the payload read in `adapters/claude-code/agent-handler.ts` accepts optional `account: string`. `ExecutionSettingsResolver` opts gain `requestedAccount?: string`; `TurnExecutionSettings` gains `accountHint?: string` (extend the Omit type). agent-handler passes `payload.account` as `requestedAccount` and spreads the returned `accountHint` into the `sendMessage` opts.
-2. `apps/server/src/services/relay/turn-execution-settings.ts`: when `requestedAccount` is set, return `accountHint` only if the id is registered AND at least one guard is registered AND `checkAccountLaunch({ accountId, cwd: agentDirectory ?? '', runtime: runtimeType, caller: 'relay' })` allows; otherwise log at info and return no hint. Never throw; never drop the message.
+2. `apps/server/src/services/relay/turn-execution-settings.ts`: when `requestedAccount` is set, return `accountHint` only if the id is registered AND `checkAccountLaunch({ accountId, cwd: agentDirectory ?? '', runtime: runtimeType, caller: 'relay' })` allows; otherwise log at info and return no hint. Never throw; never drop the message.
 3. `relay_send`, `relay_send_async`, `relay_send_and_wait` (in-session and external) gain optional `account` (registry id) setting the payload field; the descriptions say it applies only when the message starts a new conversation.
 
-Tests: a relay turn on a new conversation with account → accountHint reaches sendMessage; an existing conversation (accountRoot set) ignores it; guard deny or no guard registered → the turn runs without the hint; unknown id → no hint; the MCP tools accept and forward `account`.
+Tests: a relay turn on a new conversation with account → accountHint reaches sendMessage; an existing conversation (accountRoot set) ignores it; advisor refusal or no advisor → the turn runs without the hint; unknown id → no hint; the MCP tools accept and forward `account`.
 
 ### Task 3.5: Put status, account id, account usage and the tracker item on the session list
 
@@ -260,6 +263,27 @@ Tracker: DOR-2385 (and the D8 read path). Spec D7. Validation: GET /api/sessions
 3. If task 1.2 did not add `accountUsage` to `SessionListResponseSchema`, add it here. Register in OpenAPI and run `pnpm docs:export-api`; commit whatever regenerated output the repo tracks (check what the openapi freshness check compares).
 
 Tests: the list carries accountId, status, trackerItem and accountUsage; a spy proves `store.peek` is called once and `store.list` and disk never; a session with no projector has no status; a single-account machine with the account unregistered has no accountId and no accountUsage; the OpenAPI export contains AccountUsage and SessionLimit.
+
+### Task 5.1: When an account runs out, let a person continue on another account or wait, and let an advisor automate it
+
+- Size large, priority high, tracker DOR-2382
+- Depends on: 2.1, 2.3, 2.5, 3.1
+- Parallel with: 3.2, 3.4, 3.5
+
+Tracker: DOR-2382 (and the server half of DOR-2388, "continue on another account"). Spec D9. Works fully WITHOUT flow; the advisor only changes answers. No UI here (S5 renders it).
+
+1. Plan on limit: where task 2.3 sets `limit`, compute `plan`: `callAdvisor('onLimited', info)` (task 3.1; `info = { sessionId, cwd, accountId, window, resetsAt, trackerItem? }`) → validated `auto` (registered target ≠ limited account; `fireAt = now + clamp(delaySeconds, 0, 3600)`) or `ask`; no advisor / failure / invalid → `{ mode: 'ask' }`. Store it on `limit.plan` via a status update. A persisted snapshot whose plan is `auto` hydrates as `ask` (timers do not survive a restart).
+2. New `apps/server/src/services/session/fleet/continue-service.ts` (subfolder: services/session is over the dir-size limit): `continueOptions(sessionId)`, `continueOnAccount(sessionId, accountId, by: 'person' | 'advisor')`, `waitForReset(sessionId)`, `cancelAuto(sessionId)`, and the auto timer registry (one timer per session, cleared by wait/cancel/continue/turn_start/shutdown).
+3. Routes in `routes/sessions.ts` (thin; OpenAPI-registered): `GET /api/sessions/:id/continue-options` → `{ plan, ranking }` (rankAccounts with caller 'person', purpose 'continue', excludeAccountId = the session's account; a person may pick any registered account, eligible or not); `POST /api/sessions/:id/continue` `{ account }` → 202 `{ sessionId }` (400 unknown/unregistered account or non-claude-code session; 409 while streaming; idempotent per limit episode: a second call returns the first new session); `POST /api/sessions/:id/wait` → plan `waiting`, cancels any timer; `POST /api/sessions/:id/continue/cancel` → `auto` becomes `ask`.
+4. Auto fire: at `fireAt`, re-rank (caller 'advisor', purpose 'continue'); target still eligible → `continueOnAccount(…, 'advisor')`; else plan → `ask` and raise `account.limited` again with detail "could not move it automatically" (new dedupe suffix). At most one automatic carry-over per limit episode.
+5. `apps/server/src/services/session/fleet/carry-over.ts`: new session id; copy the source row's model, effort and permission mode onto the new session's settings row before the send; new `TurnOrigin` member `{ kind: 'account-handoff' }` mapped to `'none'` in `permissionSeedForOrigin` (TSDoc: the copied row is the power; the origin adds none); `dispatchSessionMessage({ sessionId, content: seed.prompt ?? 'Continue the work from the previous session. The background says where it stopped.', cwd: source cwd, runtime: 'claude-code', account: target, agentPath: source agentPath, seedContext, origin: { kind: 'account-handoff' } })`. Seed: `callAdvisor('carryOver', info, target)` when present and valid, else the DEFAULT SUMMARY. Source plan → `{ mode: 'continued', sessionId: <new canonical>, accountId: target }`. One Activity entry: who (person or advisor), from which account to which, source and new session ids.
+6. Default summary (`fleet/carry-over-summary.ts`, pure given transcript messages): no model call. Contents: previous session id and account label, the limit window and reset, cwd and git branch (from the session's cwd), the first user message, and the last 6 user and assistant text messages (each trimmed to ~800 chars), tool output excluded; total capped at `SEED_CONTEXT_MAX_LENGTH` by dropping the oldest of the last-6 first. Read messages through the claude-code runtime's existing transcript reader.
+
+Tests (FakeAgentRuntime; fake timers):
+
+- WITHOUT an advisor: a limit gives plan ask; continue-options ranks by weekly headroom with the limited account excluded; continue starts a new claude-code session in the same cwd whose launch resolves the chosen account, seeded with the default summary, with the source's model/effort/mode copied; a second continue returns the same session; wait sets waiting and nothing else happens; 409 while streaming; 400 for an unregistered account.
+- WITH an advisor: its ranking (hidden, badges, reasons) is served; onLimited auto fires exactly once at fireAt and carries over with the advisor's seed and prompt; target turned ineligible at fire time → plan ask + repeated notification; advisor throw/timeout → defaults; oversized seed → default summary; cancel and wait stop the timer; a restart-hydrated auto reads as ask.
+- The summary builder: cap respected, oldest dropped first, tool output excluded, first message kept.
 
 ## Phase 4: Contract conformance
 

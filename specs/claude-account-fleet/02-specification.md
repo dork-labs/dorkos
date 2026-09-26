@@ -23,26 +23,28 @@ DorkOS already runs Claude Code sessions on different accounts and sees usage on
 - a hard limit shown as a **`limit` on the session**, plus one notification per limit (D4);
 - an **MCP tool that starts a session** on a named account (D5), and an **account on schedules and relay messages** (D6);
 - the **session list** carries status, account id and account usage (D7), and the **tracker item** a flow run serves (D8);
-- an account **color** (D1), and three small **extension server API** additions for the Flow extension (X1-X3).
+- when an account runs out, **continue on another account or wait for the reset**, in core, with or without flow (D9);
+- an account **color** (D1), and three **extension server API** additions for the Flow extension, the last being an **account advisor** that lets flow steer D5, D6 and D9 (X1-X3).
 
 ## 2. The split with flow, and the shared contracts
 
 Operator direction, 2026-09-26:
 
-| Concern                                                               | Owner                           | Where it lives                                                                             |
-| --------------------------------------------------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------ |
-| Account identity: `id`, `path`, `label`, `color`                      | DorkOS core                     | `config.json` → `runtimes.claudeCode.accounts[]` (contract §1.1a)                          |
-| Usage per account                                                     | DorkOS core and flow both write | `<dorkHome>/usage/<id>.json` (contract §1.2)                                               |
-| Routing policy: role, reserve, spend-down window, repo scope, handoff | **flow**                        | `<dorkHome>/flow/fleet.json` (contract §1.1b), edited in the Flow extension's Settings tab |
-| Which item a session serves                                           | **flow** writes, DorkOS reads   | `<main checkout>/.dork/flow/flow-state.json` (contract §1.3)                               |
-| Choosing an account automatically; handoff                            | **flow**                        | flow's dispatcher                                                                          |
-| Choosing an account by hand ("continue on another account", D10)      | DorkOS core UI (S5)             | the existing HTTP launch hint                                                              |
+| Concern                                                                     | Owner                                      | Where it lives                                                                             |
+| --------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Account identity: `id`, `path`, `label`, `color`                            | DorkOS core                                | `config.json` → `runtimes.claudeCode.accounts[]` (contract §1.1a)                          |
+| Usage per account                                                           | DorkOS core and flow both write            | `<dorkHome>/usage/<id>.json` (contract §1.2)                                               |
+| Routing policy: role, reserve, spend-down window, repo scope, handoff       | **flow**                                   | `<dorkHome>/flow/fleet.json` (contract §1.1b), edited in the Flow extension's Settings tab |
+| Which item a session serves                                                 | **flow** writes, DorkOS reads              | `<main checkout>/.dork/flow/flow-state.json` (contract §1.3)                               |
+| Out-of-usage notice, "Continue on another account", "Wait for reset"        | **DorkOS core** (D9), works without flow   | core ranks accounts by weekly headroom and seeds the new session with a summary            |
+| Changing that behavior: which accounts, automatic handoff, the handoff seed | **flow**, through the account advisor (X3) | the Flow extension's server side                                                           |
+| flow's own dispatch of new work                                             | **flow**                                   | flow's dispatcher, calling D5                                                              |
 
-**The contracts are the marketplace spec `flow-cli-core` §1, revision 5.** This spec adopts them exactly: field names, window keys, source names, merge and lock rules. Where this spec restates a rule, the contract wins; a mismatch found later is fixed here, never in code. DorkOS core **never reads `fleet.json`**. Where core must respect a routing rule (an agent or a relay message naming an account), it asks the launch guards the Flow extension registers (X3); with no guard registered, an agent's or a relay message's account pick is refused.
+**The contracts are the marketplace spec `flow-cli-core` §1, revision 5.** This spec adopts them exactly: field names, window keys, source names, merge and lock rules. Where this spec restates a rule, the contract wins; a mismatch found later is fixed here, never in code. DorkOS core **never reads `fleet.json`**. Where core must respect a routing rule (an agent or a relay message naming an account), it asks the account advisor the Flow extension registers (X3); with no advisor registered, an agent's or a relay message's account pick is refused, and everything a person does uses core defaults.
 
 ## 3. Goals and non-goals
 
-**Goals:** D1-D8 and X1-X3 as below, each behaving the same with one account and with many (§9).
+**Goals:** D1-D9 and X1-X3 as below, each behaving the same with one account and with many (§9).
 
 **Non-goals:**
 
@@ -146,7 +148,7 @@ The existing per-session `UsageStatus` is unchanged.
 
 ### 5.3 Session additions (D4, D7, D8)
 
-- `SessionStatusEventSchema` (`schemas.ts`, the partial a mapper yields) gains `limit: SessionLimitSchema.nullable().optional()`. `SessionStatusSchema` (`session-stream.ts`) gains `limit: SessionLimitSchema.nullable().default(null)`, `SessionLimitSchema = { accountId: string | null, window: string, resetsAt: string | null, since: string }`. `.default(null)` keeps older snapshots parsing. **`SessionLifecycleSchema` is not extended** (§12).
+- `SessionStatusEventSchema` (`schemas.ts`, the partial a mapper yields) gains `limit: SessionLimitSchema.nullable().optional()`. `SessionStatusSchema` (`session-stream.ts`) gains `limit: SessionLimitSchema.nullable().default(null)`, `SessionLimitSchema = { accountId: string | null, window: string, resetsAt: string | null, since: string, plan: LimitPlan }` with `LimitPlan` per D9 (default `{ mode: 'ask' }`). `.default(null)` keeps older snapshots parsing. **`SessionLifecycleSchema` is not extended** (§12).
 - `sessionDisplayState(status): SessionLifecycle | 'limited'` returns `'limited'` when `status.limit` is set, else `status.lifecycle`. The one place "limited" is spelled.
 - `SessionSchema` gains optional `accountId?: string` (the registry id matching `account`), `status?: { lifecycle, limit }`, and `trackerItem?: { id: string; stage?: string; runStatus?: string }` (from a matching `FlowRun`: `identifier`, `stage`, `status`).
 - `SessionListResponseSchema` gains `accountUsage?: AccountUsage[]`.
@@ -228,7 +230,7 @@ Exposed as `POST /api/runtimes/claude-code/accounts/:id/probe` → `200 { accoun
 | `seedContext`              | Same limits as the HTTP field.                                                                                             |
 | `agentPath`                | Must be a registered Mesh agent directory.                                                                                 |
 
-**Account guard (X3).** With `account` set, every registered guard is asked `{ accountId, cwd, runtime, caller: 'agent' }`. Any `{ allow: false, reason }` refuses with the reason; a guard that throws or takes longer than 2 s refuses ("The account policy could not be checked."). **No guard registered → refused** ("Agents can pick an account only after Flow is set up to say which accounts they may use."): the contract spends nothing until the operator says so, and without the Flow extension nothing has. Omitting `account` still works (the ladder).
+**Account check (X3).** With `account` set, core calls `checkAccountLaunch({ accountId, cwd, runtime, caller: 'agent' })`, which asks the registered advisor's `rank` (purpose `launch`) and allows the account only when the ranking marks it eligible; a refusal carries the ranking's reason. An advisor that throws or takes longer than 2 s refuses ("The account policy could not be checked."). **No advisor registered → refused** ("Agents can pick an account only after Flow is set up to say which accounts they may use."): the contract spends nothing until the operator says so, and without the Flow extension nothing has. Omitting `account` still works (the ladder).
 
 **Load cap.** At most `AGENT_LAUNCH_MAX_LIVE = 8` sessions started by this tool may have a live turn at once (a constant; tracked in the launch service, released when the turn settles). Beyond it the tool refuses in plain words. Reason: the 2026-09-25 drain reached a machine load near 500.
 
@@ -251,7 +253,7 @@ Every call writes an Activity entry naming the calling agent, the account and th
 
 - The relay payload accepts an optional `account` (registry id); `relay_send`, `relay_send_async` and `relay_send_and_wait` gain an optional `account` argument.
 - `@dorkos/relay`: `ExecutionSettingsResolver` opts gain `requestedAccount?: string`; `TurnExecutionSettings` gains `accountHint?: string`; `agent-handler.ts` passes the payload's `account` in and spreads the returned hint into `sendMessage`.
-- `services/relay/turn-execution-settings.ts` returns `accountHint` only when the id is registered, at least one guard is registered, and every guard allows it (`caller: 'relay'`); otherwise it logs and returns none. A message is never dropped over an account. An existing conversation keeps its account (the ladder guard).
+- `services/relay/turn-execution-settings.ts` returns `accountHint` only when the id is registered and `checkAccountLaunch` allows it (`caller: 'relay'`, so an advisor must be registered); otherwise it logs and returns none. A message is never dropped over an account. An existing conversation keeps its account (the ladder guard).
 
 **No account set anywhere keeps today's behavior.**
 
@@ -275,33 +277,97 @@ Per contract §1.3, DorkOS **reads** `<main checkout>/.dork/flow/flow-state.json
 - A session no run names gets no `trackerItem` and nothing else changes. The link survives a restart because the file is flow's.
 - `session_start` takes no tracker argument: flow writes `FlowRun.sessionId` from the tool's result.
 
+### D9. Out of usage: continue on another account, or wait (core; DOR-2382 with the server half of D10)
+
+When D4 sets `limit`, core decides what happens next, and it works fully **without flow**. Flow only changes the answers, through the advisor (X3).
+
+**The plan.** `SessionLimit` gains `plan`, one of `{ mode: 'ask' }`, `{ mode: 'auto'; target: string; fireAt: string }`, `{ mode: 'waiting' }`, `{ mode: 'continued'; sessionId: string; accountId: string }`. On a new limit, core asks `advisor.onLimited(info)` (2 s, any failure = `ask`); no advisor = `ask`. An `auto` answer is accepted only when `target` is a registered id other than the limited account; `delaySeconds` is clamped to 0..3600 and becomes `fireAt`. The UI renders a countdown only for `auto` (S5).
+
+**Ranking.** `rankAccounts(ctx)` (`accounts/account-ranking.ts`) returns `{ accounts: { id, label, color, usage, eligible, reason, badge? }[], recommendedId }`. It asks `advisor.rank(candidates, ctx)` when one is registered (2 s; failure = the default), dropping ids that are not registered and appending none it hid. **The default:** every registered account except the limited one; eligible when its `AccountUsage.state` is not `limited`; eligible accounts first, ordered by most weekly headroom (`100 − seven_day.usedPct`; an unknown weekly reading sorts after known ones), then 5-hour headroom, then registry order; ineligible ones after; reasons in plain words ("58% of the week left", "Usage unknown", "Out until Tue 3pm"); `recommendedId` = the first eligible, else null.
+
+**Endpoints** (a person; the advisor's ranking is advice, and a person may pick any registered account, including one it marks ineligible or hid):
+
+- `GET /api/sessions/:id/continue-options` → `{ plan, ranking }` (ranking with `caller: 'person'`, `purpose: 'continue'`, `excludeAccountId` = the session's account).
+- `POST /api/sessions/:id/continue` `{ account }` → `202 { sessionId }`: carries the work over (below). 409 while the session is streaming. Idempotent per limit episode: a second call returns the session the first one started.
+- `POST /api/sessions/:id/wait` → the plan becomes `waiting` and any `auto` timer is cancelled. The session is parked; nothing else happens until the person acts.
+- `POST /api/sessions/:id/continue/cancel` → an `auto` plan becomes `ask`.
+
+**Automatic handoff.** For `auto`, core arms an in-memory timer for `fireAt`. When it fires, core re-ranks (`caller: 'advisor'`, `purpose: 'continue'`); if `target` is still eligible it carries over, else the plan drops to `ask` and the `account.limited` notification is repeated with "could not move it automatically". At most one automatic carry-over per limit episode. Timers do not survive a restart: on boot a persisted `auto` plan reads as `ask`.
+
+**Carry-over** (`services/session/fleet/carry-over.ts`): a **new** session in the source session's cwd (and agent path), on the chosen account, runtime `claude-code`. Its settings row copies the source's model, effort and permission mode before the send (no more power than the session already had), under a new `TurnOrigin` `{ kind: 'account-handoff' }` that seeds nothing itself. It is started through `dispatchSessionMessage` with:
+
+- `seedContext` = `advisor.carryOver(info, target)` when an advisor answers (2 s; flow supplies its `HANDOFF.md` checkpoint and task link), else the **default summary**; a seed over `SEED_CONTEXT_MAX_LENGTH` or a failure falls back to the default, logged;
+- `content` = the advisor's `prompt`, else "Continue the work from the previous session. The background says where it stopped."
+
+The **default summary** is built without a model call (the only model at hand is the one that just ran out): the previous session id and account, the limit and its reset, the cwd and git branch, the session's first user message, and its last 6 user and assistant text messages from the transcript, each trimmed, the whole capped at `SEED_CONTEXT_MAX_LENGTH`. The source's `plan` becomes `continued`, and an Activity entry records who moved it (a person or the advisor), from which account to which.
+
 ### X. Extension server API additions (for the Flow extension)
 
-A server extension's `DataProviderContext` gives it secrets, scoped settings, scoped storage (`<dorkHome>/extension-data/<id>/`), a scheduler, `emit`, and its own directory. It runs in-process with no sandbox, so it **could** open any file with Node `fs`, but it has **no sanctioned way to learn `<dorkHome>`** (a project-local extension's `extensionDir` is not under it), **no read of the account registry or usage**, and **no way to take part in a launch decision**. The Flow extension needs all three:
+A server extension's `DataProviderContext` gives it secrets, scoped settings, scoped storage (`<dorkHome>/extension-data/<id>/`), a scheduler, `emit`, and its own directory. It runs in-process with no sandbox, so it **could** open any file with Node `fs`, but it has **no sanctioned way to learn `<dorkHome>`** (a project-local extension's `extensionDir` is not under it), **no read of the account registry or usage**, and **no way to take part in an account decision**. The Flow extension needs all three:
 
 - **X1.** `readonly dorkHome: string`, so it reads and writes `<dorkHome>/flow/fleet.json` (with the contract's lock) where the flow CLI also finds it.
 - **X2.** `readonly claudeAccounts: { list(): Promise<ClaudeAccountSummary[]>; usage(): Promise<AccountUsage[]>; onUsage(listener): () => void }`, `ClaudeAccountSummary = { id, path, label, color }` (color resolved). Backed by `readClaudeAccountSettings` and the D2 store. Listeners are removed on extension shutdown and reload.
-- **X3.** `claudeAccounts.registerLaunchGuard(guard): () => void`, `guard(req: { accountId; cwd; runtime; caller: 'agent' | 'relay' }) → { allow: boolean; reason?: string } | Promise<…>`. Held in `accounts/account-launch-guard.ts`, removed on shutdown and reload, consulted by D5 and D6-relay only, **never for a person's own pick** (the HTTP hint, the status-bar picker, D10): the operator is not subject to flow's policy.
+- **X3. The account advisor.** `claudeAccounts.registerAdvisor(advisor): () => void`. **One advisor at a time**: a second registration replaces the first and logs a warning naming both extensions; the unregister function removes only its own advisor; shutdown and reload unregister. Held in `accounts/account-advisor.ts`. Every call is bounded at 2 s, and its answer is validated (unknown ids dropped, delays clamped, oversized seeds refused); a failure means the core default for that call, except an agent's or relay's account pick, which is then refused.
+
+```ts
+interface AccountAdvisor {
+  rank(
+    candidates: AccountCandidate[],
+    ctx: AdvisorContext
+  ): AdvisorRanking | Promise<AdvisorRanking>;
+  onLimited?(info: LimitedSessionInfo): LimitedPlan | Promise<LimitedPlan>;
+  carryOver?(
+    info: LimitedSessionInfo,
+    targetAccountId: string
+  ): CarryOverSeed | Promise<CarryOverSeed>;
+}
+type AccountCandidate = { id: string; label: string | null; color: string; usage: AccountUsage };
+type AdvisorContext = {
+  purpose: 'launch' | 'continue';
+  caller: 'person' | 'agent' | 'relay' | 'advisor';
+  cwd: string;
+  runtime: string;
+  sessionId?: string;
+  excludeAccountId?: string;
+};
+type AdvisorRanking = {
+  accounts: { id: string; eligible: boolean; reason: string; badge?: 'recommended' | 'reserved' }[]; // ordered; an omitted id is hidden
+  recommendedId: string | null;
+};
+type LimitedSessionInfo = {
+  sessionId: string;
+  cwd: string;
+  accountId: string | null;
+  window: string;
+  resetsAt: string | null;
+  trackerItem?: { id: string };
+};
+type LimitedPlan = { mode: 'auto'; target: string; delaySeconds: number } | { mode: 'ask' };
+type CarryOverSeed = { seedContext: string; prompt?: string };
+```
+
+Flow uses it to hide kept-out accounts, show the main account as `reserved` (eligible only inside its spend-down window), hand work off automatically when `fleet.handoff` is `auto`, and seed the new session from its checkpoint. **Core consults it for:** D5 and D6-relay account picks (required), D9 ranking, plan and seed (optional; defaults otherwise). A person's own pick is never refused because of it.
 
 Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/shared`); `contributing/extension-authoring.md` documents them. The client half needs nothing new: the Flow tab calls its own server routes, and the core note finds the tab through the slot registry (§10).
 
 ## 7. API and event summary
 
-| Surface      | Name                                                                                                          | Tier / method | Spec   |
-| ------------ | ------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
-| REST         | `GET /api/runtimes/claude-code/accounts/usage`                                                                | GET           | D2     |
-| REST         | `POST /api/runtimes/claude-code/accounts/:id/probe`                                                           | POST          | D3     |
-| REST         | `GET /api/sessions`, `GET /api/sessions/:id` (+`accountId`, `status`, `trackerItem`; envelope `accountUsage`) | GET           | D7, D8 |
-| REST         | `PATCH /api/config` (+`color`; id pattern on new rows)                                                        | PATCH         | D1     |
-| REST         | task create/update (+`account`)                                                                               | POST/PATCH    | D6     |
-| MCP          | `accounts_usage`                                                                                              | observe       | D2     |
-| MCP          | `accounts_probe`                                                                                              | act           | D3     |
-| MCP          | `session_start`                                                                                               | act           | D5     |
-| MCP          | `tasks_create`, `tasks_update`, `relay_send`, `relay_send_async`, `relay_send_and_wait` (+`account`)          | unchanged     | D6     |
-| Event        | `/api/events` `account_usage` (payload `AccountUsage`)                                                        |               | D2     |
-| Event        | session stream `status_change` carrying `limit`                                                               |               | D4     |
-| Notification | `account.limited`                                                                                             | notable       | D4     |
-| Extension    | `ctx.dorkHome`, `ctx.claudeAccounts.{list, usage, onUsage, registerLaunchGuard}`                              |               | X1-X3  |
+| Surface      | Name                                                                                                                 | Tier / method | Spec   |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- | ------------- | ------ |
+| REST         | `GET /api/runtimes/claude-code/accounts/usage`                                                                       | GET           | D2     |
+| REST         | `POST /api/runtimes/claude-code/accounts/:id/probe`                                                                  | POST          | D3     |
+| REST         | `GET /api/sessions`, `GET /api/sessions/:id` (+`accountId`, `status`, `trackerItem`; envelope `accountUsage`)        | GET           | D7, D8 |
+| REST         | `PATCH /api/config` (+`color`; id pattern on new rows)                                                               | PATCH         | D1     |
+| REST         | task create/update (+`account`)                                                                                      | POST/PATCH    | D6     |
+| MCP          | `accounts_usage`                                                                                                     | observe       | D2     |
+| MCP          | `accounts_probe`                                                                                                     | act           | D3     |
+| MCP          | `session_start`                                                                                                      | act           | D5     |
+| MCP          | `tasks_create`, `tasks_update`, `relay_send`, `relay_send_async`, `relay_send_and_wait` (+`account`)                 | unchanged     | D6     |
+| Event        | `/api/events` `account_usage` (payload `AccountUsage`)                                                               |               | D2     |
+| Event        | session stream `status_change` carrying `limit`                                                                      |               | D4     |
+| Notification | `account.limited`                                                                                                    | notable       | D4     |
+| REST         | `GET /api/sessions/:id/continue-options`, `POST /api/sessions/:id/continue`, `POST …/wait`, `POST …/continue/cancel` | GET/POST      | D9     |
+| Extension    | `ctx.dorkHome`, `ctx.claudeAccounts.{list, usage, onUsage, registerAdvisor}`                                         |               | X1-X3  |
 
 ## 8. Compliance (`research/anthropic-tos-compliance.md`)
 
@@ -318,7 +384,7 @@ Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/share
 | D2 store, event, REST           | Runs; the inherited root appears with `accountId: null` and no file.           | One record and one ledger file per registered account. |
 | D3 probe                        | Works for a registered account; an unregistered root cannot be probed (no id). | Same.                                                  |
 | D4 limit + notification         | Same as 2+: a limit is a limit.                                                | Same.                                                  |
-| D5 `session_start`              | `account` omitted → the ladder, as today.                                      | Names an account; guards apply.                        |
+| D5 `session_start`              | `account` omitted → the ladder, as today.                                      | Names an account; the advisor decides.                 |
 | D6 schedule and relay `account` | Absent → today's behavior.                                                     | Honored at launch.                                     |
 | D7 list                         | `accountId` and `accountUsage` only when that account is registered.           | Full.                                                  |
 | D8 tracker item                 | Same either way.                                                               | Same.                                                  |
@@ -328,7 +394,7 @@ Types go in `@dorkos/extension-api/server` (it already depends on `@dorkos/share
 - **Settings → Runtimes → Claude accounts:** `GET /api/config` `claudeCode.accounts[]` (`id`, `label`, `color`, `colorIsDefault`), writing `color` through the existing `PATCH /api/config`; the 5-hour and weekly bars from `GET …/accounts/usage` plus the `account_usage` event (`windows[key = 'five_hour' | 'seven_day']`: `usedPct`, `resetsAt`, `expired`).
 - **The "Flow uses these accounts for your work. Choose how in Settings → Flow." note:** shown when 2+ accounts are registered **and** `useSlotContributions('settings.tabs')` holds `FLOW_FLEET_SETTINGS_TAB_ID` (`'flow:fleet'`: the client namespaces contribution ids as `<extensionId>:<id>`, and the Flow extension registers tab `fleet`). The link is `useSettingsDeepLink().open(FLOW_FLEET_SETTINGS_TAB_ID)`; `tabbed-dialog.tsx` already resolves extension tab ids. No server work. The id is a cross-repo constant: the Flow extension's manifest id and tab id must produce it (recorded for the S1/S6 authors).
 - **Status-bar chip, sidebar dots, header badge:** `Session.accountId`, `Session.status.limit`, `sessionDisplayState`, `AccountUsage.state` / `limit`, `Session.trackerItem`.
-- **"Continue on another account" (D10):** the existing HTTP send with a person-chosen `account` hint, a `seedContext`, and the same `cwd`. No new endpoint; guards do not apply.
+- **The out-of-usage notice, "Continue on another account" and "Wait for reset" (D10):** `Session.status.limit.plan`, `GET …/continue-options` (ordered accounts with reasons, badges and the recommended id), `POST …/continue`, `POST …/wait`, `POST …/continue/cancel`. A countdown only for `plan.mode === 'auto'` (`fireAt`).
 
 ## 11. Testing
 
@@ -346,7 +412,8 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 | D6                       | A schedule with `account` launches on it (validation 1); changing it re-parks an approved schedule and a stored 9-part key upgrades without re-parking (validation 2); no account → launch unchanged (validation 3); a schedule dispatched over relay carries its account; sticky lock; relay `account` honored on a new conversation, ignored on an existing one, and on a guard deny the turn still runs without it.                                                                                                                                                                                                                                                                             |
 | D7                       | The list carries `status`, `accountId`, `accountUsage`, with a spy proving only `peek` is called, once (validations 1, 3); the OpenAPI export has the new schemas (validation 2).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | D8                       | A session named by a `FlowRun` shows `trackerItem` (validation 1); a new server instance reads it again (validation 2); a session no run names is byte-identical to today (validation 3); a worktree cwd resolves to the main checkout; a corrupt file reads as no runs.                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| X                        | The context exposes `dorkHome` and the account API; guards and listeners are removed on shutdown and reload.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| D9                       | Without an advisor: a limit gives `plan: ask`; continue-options ranks by weekly headroom (unknown last, limited ineligible, the limited account excluded); continue starts a new session in the same cwd on the chosen account with the default summary seed and the source's model, effort and mode, and is idempotent; wait parks and cancels. With an advisor: its ranking, hidden ids and badges are served; `auto` fires once at `fireAt` and carries over with the advisor's seed; a target no longer eligible drops to `ask`; advisor throw or 2 s timeout falls back to defaults; an oversized seed falls back to the summary; a restart turns `auto` into `ask`.                          |
+| X                        | The context exposes `dorkHome` and the account API; one advisor at a time, a second registration replaces the first with a warning, and unregister on shutdown and reload; listeners are removed too.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | Compliance               | Invariant 3 guard test.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## 12. Decisions and assumptions (autonomy grant; all reversible)
@@ -363,7 +430,10 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 - **D6 sticky schedules refuse an account change** rather than silently staying on the old account.
 - **D7 status is absent when a session is not live here,** rather than reading every transcript.
 - **D8 reads flow's file** (contract §1.3); no core column, no core MCP tool for it. A non-flow launcher has no link, by design until the store moves into DorkOS (flow SPEC v2).
-- **No guard means no agent or relay account pick** (review): the contract spends nothing until the operator opts in, and core has no policy of its own. **Guards never apply to a person's pick,** and a schedule's account is an approved choice, so it is not guarded either.
+- **No advisor means no agent or relay account pick** (review): the contract spends nothing until the operator opts in, and core has no policy of its own. **The advisor never refuses a person's pick,** and a schedule's account is an approved choice, so it is not checked either.
+- **D9 is core, and the advisor only steers it** (orchestrator, 2026-09-26): without flow, a person still sees the notice, a ranked list, continue and wait. One advisor, last registration wins, because two policies giving different answers for one limit has no good merge.
+- **The default carry-over summary uses no model:** the only model at hand is the one that ran out, and a deterministic digest is testable.
+- **Automatic handoff timers are in memory:** a restart downgrades them to `ask` rather than firing late.
 - **`limit` only when the turn stopped:** a `rejected` window covered by extra usage is recorded in the ledger but does not mark the session.
 - **The probe runs on demand only,** never at boot (N accounts would mean N processes on every start).
 - **Conformance by vendoring at a pinned commit,** not a git submodule or a package: the fixture is small, and a pin makes a contract change a deliberate DorkOS diff. The fixture folder is merged on marketplace main (PR #57).
@@ -372,7 +442,7 @@ Placement per `.claude/rules/testing.md`; routes with `FakeAgentRuntime`; every 
 
 - `260926-141753` DorkOS keeps usage per Claude account in the shared ledger (contract §1.2).
 - `260926-141755` A hard limit is a field on the session status, not a lifecycle value.
-- `260926-141756` Account routing policy belongs to an extension; core only asks its launch guards.
+- `260926-141756` Account routing policy belongs to an extension; core only asks its account advisor.
 
 ## 14. References
 
