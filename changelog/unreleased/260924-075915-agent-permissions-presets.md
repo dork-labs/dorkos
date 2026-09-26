@@ -13,6 +13,7 @@ covers:
   - 'fix(marketplace): an agent package cannot ship what its agent may do'
   - 'fix(permissions): a new agent cannot bring wider permissions in its own folder'
   - 'fix(permissions): an action that shows what it would change always asks'
+  - "fix(permissions): an arriving agent's folder settings never apply as written"
   - 847dbbc
   - fcacf5a
   - fb6bdd0
