@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   SESSION_POINTER_NOTICE_CODES,
-  SESSION_POINTER_PHRASE,
+  sessionPointerPhrase,
   type RoomEntryBody,
 } from '@dorkos/shared/room-schemas';
 import * as copy from '../notice-copy.js';
@@ -120,7 +120,7 @@ describe('notices that send the reader to a session (DOR-2077)', () => {
       // The link is resolved from who the notice is about, and drawn over
       // exactly these words — so they have to be there, spelled this way.
       expect(notice.subjectAuthorId, notice.text).toBeDefined();
-      expect(notice.text).toMatch(SESSION_POINTER_PHRASE);
+      expect(notice.text).toContain(sessionPointerPhrase('Ana'));
     }
   });
 

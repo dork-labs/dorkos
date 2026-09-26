@@ -38,7 +38,11 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { MouseEvent, ReactNode } from 'react';
-import { SESSION_POINTER_PHRASE, type RoomNoticeCode } from '@dorkos/shared/room-schemas';
+import {
+  SESSION_POINTER_PATTERN,
+  sessionPointerPhrase,
+  type RoomNoticeCode,
+} from '@dorkos/shared/room-schemas';
 import { feedArticleProps, type FeedPosition } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import type { RoomEntry } from '@/layers/entities/room';
@@ -72,6 +76,12 @@ interface NoticeRowProps {
    * link that goes nowhere.
    */
   sessionLink?: NoticeSessionLink | null;
+  /**
+   * The display name of the agent the notice is about, from the room's roster —
+   * which words to turn into {@link sessionLink}. Absent when the roster no
+   * longer knows them.
+   */
+  subjectName?: string;
 }
 
 /**
@@ -205,16 +215,32 @@ function noticeName(text: string): string {
  * a line written before that rule, which does not, gets the link after it
  * rather than none.
  *
+ * **Found by the agent's name, from the end.** A notice starts with that name,
+ * so "Open Interpreter ran into a problem… Open Open Interpreter's session" has
+ * the phrase twice-over at the front; the exact phrase, searched from the end,
+ * is the one that is the instruction. Only when the roster no longer knows the
+ * name does the looser pattern stand in.
+ *
  * **The hit area is taller than the text.** Vertical padding on an inline
  * element grows what can be pressed without moving a single line: 8px each way
- * turns a 16px line into a 32px target, past the 24px minimum, and stops at the
- * row's own 8px padding so it never reaches over the words of the next row.
+ * turns a 16px line into a 32px target, past the 24px minimum. Within the row
+ * it does reach over the notice's own neighbouring lines when the sentence
+ * wraps — about 6px each way at phone width — so a press just above or below
+ * the link, on the same notice, opens it. Nothing else on the notice can be
+ * pressed, and the row's own 8px padding keeps it off the next row's words.
+ * Padding small enough to overlap no line at all would leave a target under
+ * 24px.
  *
  * @param text - What the notice says.
  * @param link - Where the session is.
+ * @param subjectName - The agent's display name, when the roster knows it.
  */
-function linkedText(text: string, link: NoticeSessionLink): ReactNode {
-  const match = SESSION_POINTER_PHRASE.exec(text);
+function linkedText(
+  text: string,
+  link: NoticeSessionLink,
+  subjectName: string | undefined
+): ReactNode {
+  const match = findSessionPointer(text, subjectName);
   const anchor = (words: string) => (
     <a
       href={link.href}
@@ -235,10 +261,29 @@ function linkedText(text: string, link: NoticeSessionLink): ReactNode {
   return (
     <>
       {text.slice(0, match.index)}
-      {anchor(match[0])}
-      {text.slice(match.index + match[0].length)}
+      {anchor(match.words)}
+      {text.slice(match.index + match.words.length)}
     </>
   );
+}
+
+/**
+ * Where in a notice the words that send the reader to a session are.
+ *
+ * @param text - What the notice says.
+ * @param subjectName - The agent's display name, when the roster knows it.
+ */
+function findSessionPointer(
+  text: string,
+  subjectName: string | undefined
+): { index: number; words: string } | null {
+  if (subjectName !== undefined) {
+    const words = sessionPointerPhrase(subjectName);
+    const index = text.lastIndexOf(words);
+    if (index !== -1) return { index, words };
+  }
+  const match = SESSION_POINTER_PATTERN.exec(text);
+  return match === null ? null : { index: match.index, words: match[0] };
 }
 
 /**
@@ -261,7 +306,13 @@ function linkedText(text: string, link: NoticeSessionLink): ReactNode {
  * into three words that say nothing. Naming it after its own text means the
  * worst case is hearing the line twice rather than never.
  */
-export function NoticeRow({ entry, feedPosition, rowId, sessionLink }: NoticeRowProps) {
+export function NoticeRow({
+  entry,
+  feedPosition,
+  rowId,
+  sessionLink,
+  subjectName,
+}: NoticeRowProps) {
   const { Icon, tone } = (entry.body.notice && NOTICE_STYLES[entry.body.notice]) ?? UNKNOWN_NOTICE;
 
   return (
@@ -286,7 +337,9 @@ export function NoticeRow({ entry, feedPosition, rowId, sessionLink }: NoticeRow
           screen reader read "warning" before a sentence that goes on to
           explain itself. */}
       <Icon aria-hidden className="mt-px size-3.5 shrink-0" />
-      <span>{sessionLink ? linkedText(entry.body.text, sessionLink) : entry.body.text}</span>
+      <span>
+        {sessionLink ? linkedText(entry.body.text, sessionLink, subjectName) : entry.body.text}
+      </span>
     </p>
   );
 }

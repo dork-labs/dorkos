@@ -40,7 +40,18 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   };
 });
 
+/** A roster member for this file, by author id and display name. */
+function agentAuthor(id: string, displayName: string) {
+  return [
+    id,
+    { id, kind: 'agent' as const, displayName, handle: id, origin: 'local' as const },
+  ] as const;
+}
+
 const AUTHORS = new Map([
+  // Names that start the way the phrase does, or contain it (review of DOR-2077).
+  agentAuthor('oi', 'Open Interpreter'),
+  agentAuthor('ksb', "Kai's session bot"),
   [
     'kai',
     {
@@ -224,6 +235,22 @@ describe('RoomMessage — a notice that sends you to a session links to it', () 
     );
 
     expect(await screen.findByTestId('room-notice-session-link')).toHaveTextContent('Open session');
+  });
+
+  it.each([
+    ['oi', 'Open Interpreter'],
+    ['ksb', "Kai's session bot"],
+  ])('links only the instruction for an agent named %s → %s', async (authorId, name) => {
+    // The notice starts with the name, so a pattern that looks for "Open …'s
+    // session" from the front underlines most of the sentence for these two.
+    const text = `${name} ran into a problem and could not answer here. Open ${name}'s session to see what went wrong.`;
+    const transport = transportWith([{ authorId, sessionId: 'sess-x' }]);
+    renderNotice(notice({ text, notice: 'turn_failed', subjectAuthorId: authorId }), transport);
+
+    expect(await screen.findByTestId('room-notice-session-link')).toHaveTextContent(
+      new RegExp(`^Open ${name}'s session$`)
+    );
+    expect(screen.getByTestId('room-notice').textContent).toBe(text);
   });
 
   it('leaves a new-tab click to the browser', async () => {

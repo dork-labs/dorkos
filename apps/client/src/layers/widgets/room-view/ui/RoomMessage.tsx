@@ -270,6 +270,7 @@ export function RoomMessage({
         feedPosition={feedPosition}
         rowId={rowId}
         sessionLink={noticeSessionLink}
+        subjectName={subjectRef?.displayName}
       />
     );
   }

@@ -2,6 +2,7 @@
 covers:
   - 'fix(client,server,desktop): room notices link to their session; one session-link helper (DOR-2077)'
   - 'fix(client): link the words of a room notice, and never open a session the room let go (DOR-2077)'
+  - 'fix(client): find a notice's session words by the agent's name (DOR-2077)'
 ---
 
 ### Fixed
