@@ -23,7 +23,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import { reportClientError } from '@/layers/shared/lib';
+import { reportClientError, toSession } from '@/layers/shared/lib';
 import {
   useAgentCreationStore,
   useImportProjectsStore,
@@ -360,7 +360,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       // the agent one, and it has to survive walking away to Marketplace or
       // Team — which the router's `?dir` does not.
       if (cwd !== null) useInteractionStore.getState().recordOpened('agent', cwd);
-      navigate({ to: '/session', search: { dir: cwd ?? undefined, session: sessionId } });
+      navigate(toSession({ dir: cwd ?? undefined, session: sessionId }));
     },
     [navigate]
   );

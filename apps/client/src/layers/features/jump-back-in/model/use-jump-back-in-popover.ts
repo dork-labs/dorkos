@@ -19,6 +19,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { roomIdentityMark, type IdentityMark } from '@/layers/entities/room';
 import { useJumpBackIn, type JumpBackInItem } from '@/layers/entities/recents';
+import { toSession } from '@/layers/shared/lib';
 
 /**
  * How many threads the popover offers.
@@ -349,10 +350,7 @@ export function useJumpBackInPopover({
         if (item.session.cwd) {
           useInteractionStore.getState().recordOpened('agent', item.session.cwd);
         }
-        navigate({
-          to: '/session',
-          search: { dir: item.session.cwd ?? undefined, session: item.session.id },
-        });
+        navigate(toSession({ dir: item.session.cwd ?? undefined, session: item.session.id }));
         return;
       }
       useInteractionStore.getState().recordOpened('room', item.room.id);

@@ -18,6 +18,7 @@ import {
   registerLinkNavigator,
   registerTabOpener,
   useRenderSlot,
+  toSession,
 } from '@/layers/shared/lib';
 import { HttpTransport, streamManager } from '@/layers/shared/lib/transport';
 import { createBootCache } from '@/layers/shared/lib/query-persister';
@@ -405,7 +406,7 @@ const extensionDeps: ExtensionAPIDeps = {
         queryClient,
         transport,
         currentLocation: () => router.state.location,
-        navigate: (search) => void router.navigate({ to: '/session', search }),
+        navigate: (search) => void router.navigate(toSession(search)),
       }),
     // Wires the agent's `control_ui apply_layout` command (and the switcher UI's
     // shared action) to the real apply flow (DOR-355 task 3.1). Each restored
@@ -424,7 +425,7 @@ const extensionDeps: ExtensionAPIDeps = {
             queryClient,
             transport,
             currentLocation: () => router.state.location,
-            navigate: (search) => void router.navigate({ to: '/session', search }),
+            navigate: (search) => void router.navigate(toSession(search)),
           }),
       }),
   },

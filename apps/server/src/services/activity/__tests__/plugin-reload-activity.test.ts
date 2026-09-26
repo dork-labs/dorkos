@@ -129,7 +129,9 @@ describe('createPluginReloadActivityWriter', () => {
 
     createPluginReloadActivityWriter(service)({ ...BASE, sessionId: 'a b/c' });
 
-    expect(emit.mock.calls[0]?.[0].linkPath).toBe('/session?session=a%20b%2Fc');
+    // Built by `@dorkos/shared/session-link`, which writes a query the way the
+    // client router does: a space is `+`, which the router reads back as one.
+    expect(emit.mock.calls[0]?.[0].linkPath).toBe('/session?session=a+b%2Fc');
   });
 
   it('puts no money in the words a person reads', () => {

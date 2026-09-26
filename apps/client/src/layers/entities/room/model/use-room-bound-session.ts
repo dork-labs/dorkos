@@ -87,6 +87,41 @@ export async function resolveRoomBoundSession(
 }
 
 /**
+ * Ask which session a room has bound for one of its own members, by the author
+ * id the room knows them by.
+ *
+ * The same question {@link resolveRoomBoundSession} answers for a caller holding
+ * an agent's DIRECTORY, for a caller that already holds the room's own id for it
+ * — a notice's `subjectAuthorId` (DOR-2077). So there is no roster join, and the
+ * bindings are read fresh for the reason given there: they move after every
+ * turn, and a cached pair names a session the transcript is no longer under.
+ *
+ * Every failure answers `null`, for the same reasons.
+ *
+ * @param deps - Query client to read and fill, transport to ask over.
+ * @param roomId - The room the member belongs to.
+ * @param authorId - That member's author id in this room.
+ * @returns The bound session id, or `null` when this room has none for it.
+ */
+export async function resolveRoomSessionForAuthor(
+  deps: ResolveRoomSessionDeps,
+  roomId: string,
+  authorId: string
+): Promise<string | null> {
+  try {
+    const sessions = await deps.queryClient.fetchQuery<RoomSessionsResponse>({
+      queryKey: roomKeys.sessions(roomId),
+      queryFn: () => deps.transport.listRoomSessions(roomId),
+      staleTime: 0,
+    });
+    return sessions.bindings.find((binding) => binding.authorId === authorId)?.sessionId ?? null;
+  } catch (error) {
+    reportClientError(deps.transport, error);
+    return null;
+  }
+}
+
+/**
  * Resolve an agent's session for the room the page is showing.
  *
  * Hand it a project directory and it answers the session that room has bound for

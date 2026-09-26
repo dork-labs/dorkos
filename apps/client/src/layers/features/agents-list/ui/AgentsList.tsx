@@ -10,7 +10,7 @@ import {
   useTeamRoster,
   type TeamRosterFilters,
 } from '@/layers/entities/team';
-import { applySortAndFilter } from '@/layers/shared/lib';
+import { applySortAndFilter, toSession } from '@/layers/shared/lib';
 import { useFilterState, useProfileDeepLink, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
@@ -198,7 +198,7 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
   // one handler (DOR-1415).
   const handleNavigate = useCallback(
     (projectPath: string) => {
-      void navigate({ to: '/session', search: { dir: projectPath } });
+      void navigate(toSession({ dir: projectPath }));
     },
     [navigate]
   );

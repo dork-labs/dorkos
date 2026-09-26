@@ -20,6 +20,7 @@ import { useMarkRead } from '@/layers/entities/notifications';
 import type { HomeSearch } from '@/router';
 import { useShiftReport } from '../model/use-shift-report';
 import { PinnedTriageHeaderView, type TriagePresenceSlot } from './PinnedTriageHeaderView';
+import { toSession } from '@/layers/shared/lib';
 
 export interface PinnedTriageHeaderProps {
   /**
@@ -125,7 +126,7 @@ export function PinnedTriageHeader({
         settlingAsks={settlingAsks}
         askAgentNames={askAgentNames}
         onOpenSession={(sessionId) => {
-          void navigate({ to: '/session', search: { session: sessionId } });
+          void navigate(toSession({ session: sessionId }));
         }}
         // A failed read only speaks for itself while it has nothing to show:
         // stale cards still on screen are better evidence than an error card.

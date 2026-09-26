@@ -13,7 +13,7 @@ import {
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useTaskRun, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useNavigate } from '@tanstack/react-router';
-import { cn, formatCompactAge } from '@/layers/shared/lib';
+import { cn, formatCompactAge, toSession } from '@/layers/shared/lib';
 import type { TaskRun } from '@dorkos/shared/types';
 
 interface FailedRunDetailSheetProps {
@@ -152,10 +152,7 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
     // `notificationLink` in `entities/notifications`. No directory to record an
     // agent against: a run's detail carries the session and nothing else.
     useInteractionStore.getState().recordOpened('session', run.sessionId);
-    void navigate({
-      to: '/session',
-      search: { session: run.sessionId },
-    });
+    void navigate(toSession({ session: run.sessionId }));
   };
 
   const handleCancel = () => {

@@ -204,6 +204,24 @@ export const RoomNoticeCodeSchema = z
 
 export type RoomNoticeCode = z.infer<typeof RoomNoticeCodeSchema>;
 
+/**
+ * The notice codes whose words send the reader to the subject agent's session —
+ * "Open Ana's session to see what went wrong" (`turn_failed`), "Open Ana's
+ * session to answer" (`awaiting_approval`).
+ *
+ * A line that tells somebody to go somewhere has to take them there, so a client
+ * draws a link to that session beside every notice with one of these codes
+ * (DOR-2077). The link is resolved from `subjectAuthorId` and the room's session
+ * bindings when it is drawn, never stamped on the entry: a room rebinds an
+ * agent's session after every turn, so an id written into the log would go stale
+ * (DOR-1974). The server's notice-copy test pins the other direction — a notice
+ * that says "Open …'s session" and is missing from this list fails it.
+ */
+export const SESSION_POINTER_NOTICE_CODES: readonly RoomNoticeCode[] = [
+  'turn_failed',
+  'awaiting_approval',
+];
+
 // === Authors ===
 
 /**

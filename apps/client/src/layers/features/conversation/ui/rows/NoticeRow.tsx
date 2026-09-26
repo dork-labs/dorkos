@@ -37,10 +37,24 @@ import {
   WifiOff,
   type LucideIcon,
 } from 'lucide-react';
+import type { MouseEvent } from 'react';
 import type { RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import { feedArticleProps, type FeedPosition } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import type { RoomEntry } from '@/layers/entities/room';
+
+/**
+ * Where a notice that says "Open Ana's session" takes the reader (DOR-2077).
+ *
+ * Handed in rather than worked out here: which session an agent works in is a
+ * question about the room, and this row knows only the line it draws.
+ */
+export interface NoticeSessionLink {
+  /** The session's address, for a new tab, a copied link or a screen reader. */
+  href: string;
+  /** Runs on a click; a plain click navigates in place, anything else is the browser's. */
+  onOpen: (event: MouseEvent<HTMLAnchorElement>) => void;
+}
 
 interface NoticeRowProps {
   /** The notice to draw — its own words, and the code that chooses its mark. */
@@ -52,6 +66,12 @@ interface NoticeRowProps {
   feedPosition?: FeedPosition;
   /** The DOM id to put on the row, when something has to be able to find it again. */
   rowId?: string;
+  /**
+   * The session this notice tells the reader to open, when it tells them to and
+   * the room knows where it is. Absent, the line is drawn on its own — never a
+   * link that goes nowhere.
+   */
+  sessionLink?: NoticeSessionLink | null;
 }
 
 /**
@@ -195,7 +215,7 @@ function noticeName(text: string): string {
  * into three words that say nothing. Naming it after its own text means the
  * worst case is hearing the line twice rather than never.
  */
-export function NoticeRow({ entry, feedPosition, rowId }: NoticeRowProps) {
+export function NoticeRow({ entry, feedPosition, rowId, sessionLink }: NoticeRowProps) {
   const { Icon, tone } = (entry.body.notice && NOTICE_STYLES[entry.body.notice]) ?? UNKNOWN_NOTICE;
 
   return (
@@ -220,7 +240,22 @@ export function NoticeRow({ entry, feedPosition, rowId }: NoticeRowProps) {
           screen reader read "warning" before a sentence that goes on to
           explain itself. */}
       <Icon aria-hidden className="mt-px size-3.5 shrink-0" />
-      <span>{entry.body.text}</span>
+      <span>
+        {entry.body.text}
+        {sessionLink && (
+          <>
+            {' '}
+            <a
+              href={sessionLink.href}
+              onClick={sessionLink.onOpen}
+              data-testid="room-notice-session-link"
+              className="focus-ring hover:text-foreground rounded font-medium whitespace-nowrap underline underline-offset-2"
+            >
+              Open session
+            </a>
+          </>
+        )}
+      </span>
     </p>
   );
 }
