@@ -27,7 +27,7 @@ import {
 import { roomKeys } from '@/layers/entities/room';
 import { errorCodeOf, ROOM_HAS_NO_REPO_CODE } from '../lib/error-code';
 import { roomFileConflictOf, saveRefusalMessage } from '../lib/save-errors';
-import { roomChangeRefusalMessage } from '../lib/crud-errors';
+import { roomChangeRefusalMessage, serverSentenceFirst } from '../lib/crud-errors';
 import { watchRoomEntries } from './room-entry-watch';
 import type {
   ExplorerChangeOutcome,
@@ -229,7 +229,10 @@ export function createRoomFilesSource(deps: RoomFilesSourceDeps): FileExplorerSo
         if (code === 'MAIN_CHECKOUT_DIRTY') {
           void queryClient.invalidateQueries({ queryKey: roomKeys.repoStatus(roomId) });
         }
-        const reason = saveRefusalMessage(code);
+        // The server's sentence first where it names the file — a name taken
+        // in other capitals, a path the room ignores, a folder where a file
+        // was meant — and ours where it does not.
+        const reason = serverSentenceFirst(error) ?? saveRefusalMessage(code);
         // A refusal nobody wrote copy for is a bug, not a rule. Rethrowing is
         // what puts it in front of somebody who can fix it, rather than dressing
         // it up as an ordinary answer.

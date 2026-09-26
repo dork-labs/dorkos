@@ -48,6 +48,19 @@ interface PreviewTarget {
   isNew: boolean;
 }
 
+/**
+ * What a new name that is already taken says: the plain "already there" when
+ * it is spelled the same, and why a different spelling still counts when only
+ * capitals differ.
+ *
+ * @param name - The name the person typed.
+ * @param clash - What the folder already holds under that name.
+ */
+function nameClashMessage(name: string, clash: ExplorerEntry): string {
+  if (clash.name === name) return nameTakenMessage(name);
+  return `There’s already “${clash.name}” there, and a name that differs only in capital letters is the same ${clash.type === 'dir' ? 'folder' : 'file'} on some computers. Pick another name.`;
+}
+
 /** What a drop that held only folders is told — an upload takes files. */
 const DROP_FOLDERS_MESSAGE =
   'Folders can’t be uploaded whole. Open the folder and drop the files inside it.';
@@ -214,22 +227,31 @@ export function FileExplorer({
       const target = draft;
       setDraft(null);
       if (changes !== null) {
-        // A room's folder is a place its files live, not a thing of its own —
-        // git has no empty folders — so a new folder is named with its first
-        // file, and appears when that file is saved.
-        if (target.type === 'dir') {
-          setDraft({ parent: joinPath(target.parent, name), type: 'file', firstInFolder: name });
-          return;
-        }
-        const path = joinPath(target.parent, name);
         const siblings =
           queryClient.getQueryData<ExplorerListing>(
             explorerDirQueryKey(source, target.parent, showHidden)
           )?.entries ?? [];
-        if (siblings.some((e) => e.name === name)) {
-          toast.error(nameTakenMessage(name));
+        // Compared without case: a room's files are checked out on machines
+        // where `Notes.md` and `notes.md` are one file, so the room refuses the
+        // second — better said before the person has written anything.
+        const clash = siblings.find((e) => e.name.toLowerCase() === name.toLowerCase());
+        // A room's folder is a place its files live, not a thing of its own —
+        // git has no empty folders — so a new folder is named with its first
+        // file, and appears when that file is saved. Naming a folder the room
+        // already has, spelled the same, just puts the new file in it.
+        if (target.type === 'dir') {
+          if (clash !== undefined && !(clash.type === 'dir' && clash.name === name)) {
+            toast.error(nameClashMessage(name, clash));
+            return;
+          }
+          setDraft({ parent: joinPath(target.parent, name), type: 'file', firstInFolder: name });
           return;
         }
+        if (clash !== undefined) {
+          toast.error(nameClashMessage(name, clash));
+          return;
+        }
+        const path = joinPath(target.parent, name);
         // A new file is written, not made: it opens in the editor, and the
         // room gets it — as one commit — when the person saves.
         setPreview({ path, isNew: true });

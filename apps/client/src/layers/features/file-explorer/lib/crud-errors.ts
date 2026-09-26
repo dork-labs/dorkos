@@ -158,10 +158,26 @@ export function roomChangeRefusalMessage(err: unknown): string | undefined {
   if (code === undefined) return undefined;
   const ours = ROOM_CHANGE_REFUSAL_COPY.get(code);
   if (ours === undefined) return undefined;
-  if (SERVER_SENTENCE_FIRST.has(code) && err instanceof Error && err.message.trim() !== '') {
-    return plainServerSentence(err.message);
-  }
-  return ours;
+  return serverSentenceFirst(err) ?? ours;
+}
+
+/**
+ * The server's own sentence for a refusal that names the file or the limit
+ * ({@link SERVER_SENTENCE_FIRST}), made plain — or `undefined` for any other
+ * refusal, or one that came with no sentence.
+ *
+ * Shared by every room-files write, the save included: "This room already has
+ * “Notes.md”…", "The room's files are set to ignore “build/”…" and "“docs” is a
+ * folder, not a file" each tell a person what to do, and a generic line in
+ * their place tells them nothing.
+ *
+ * @param err - Whatever the transport threw.
+ */
+export function serverSentenceFirst(err: unknown): string | undefined {
+  const code = errorCodeOf(err);
+  if (code === undefined || !SERVER_SENTENCE_FIRST.has(code)) return undefined;
+  if (!(err instanceof Error) || err.message.trim() === '') return undefined;
+  return plainServerSentence(err.message);
 }
 
 /**

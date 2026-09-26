@@ -578,6 +578,49 @@ describe('making new files in a room', () => {
     );
   });
 
+  it('a new file whose name differs only in capitals is caught before anything is written', async () => {
+    const transport = roomWith({ '': [file('Notes.md')] });
+    renderSection(transport);
+    await screen.findByRole('treeitem', { name: 'Notes.md' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'New file' }));
+    const name = screen.getByRole('textbox', { name: 'New file name' });
+    fireEvent.change(name, { target: { value: 'notes.md' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+
+    expect(toastError).toHaveBeenCalledWith(
+      'There’s already “Notes.md” there, and a name that differs only in capital letters is the same file on some computers. Pick another name.'
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('a new file the room refuses shows the room’s own reason, not a generic one', async () => {
+    const transport = roomWith({ '': [file('notes.md')] });
+    transport.saveRoomFile = vi
+      .fn()
+      .mockRejectedValue(
+        refusal(
+          'ROOM_FILE_NOT_READABLE',
+          'This room’s files are set to ignore `build/out.md`, so saving it would not keep it. Change the room’s `.gitignore` first, or save somewhere else.'
+        )
+      );
+    renderSection(transport);
+    await screen.findByRole('treeitem', { name: 'notes.md' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'New file' }));
+    const name = screen.getByRole('textbox', { name: 'New file name' });
+    fireEvent.change(name, { target: { value: 'out.md' } });
+    fireEvent.keyDown(name, { key: 'Enter' });
+    await screen.findByRole('textbox', { name: 'out.md contents' });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(
+      await screen.findByText(
+        'This room’s files are set to ignore “build/out.md”, so saving it would not keep it. Change the room’s “.gitignore” first, or save somewhere else.'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('a new file with a name that is taken says so and opens nothing', async () => {
     const transport = roomWith({ '': [file('notes.md')] });
     renderSection(transport);
