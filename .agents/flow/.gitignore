@@ -1,0 +1,4 @@
+# flow: this machine's settings, credentials and pause. Never commit them.
+config.local.json
+.config.local.json.*.tmp
+paused.json
