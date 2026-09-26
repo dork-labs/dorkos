@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(tasks): let a schedule name the Claude account its runs use (DOR-2384)'
+  - "fix(tasks): honor a relay dispatch's account only from the scheduler, and lock sticky accounts on the merged schedule (DOR-2384)"
 ---
 
 ### Added
