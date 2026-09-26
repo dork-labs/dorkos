@@ -10,7 +10,11 @@ import type { PermissionChangedMetadata } from '@dorkos/shared/permissions';
 
 import { ARRIVAL_NOTE, ARRIVAL_WRITE_FAILED_NOTE } from '../permission-service.js';
 import { isAlwaysOffered } from '../../approvals/index.js';
-import { listPermissionHistory, personWriter } from '../permission-history.js';
+import {
+  listPermissionHistory,
+  personWriter,
+  recordPermissionChange,
+} from '../permission-history.js';
 import { narrowingReader } from '../index.js';
 import { isArrivalScreenLine } from '../permission-values.js';
 import { createPermissionWorld, type FixtureAgent } from './permission-fixtures.js';
@@ -176,10 +180,53 @@ describe('narrowingReader', () => {
 });
 
 describe('isArrivalScreenLine', () => {
-  it('reads the marker, never the wording', () => {
+  it('reads the marker first', () => {
     expect(isArrivalScreenLine({ origin: 'arrival-screen' })).toBe(true);
     expect(isArrivalScreenLine({})).toBe(false);
-    // A line with the arrival wording but no marker is an ordinary change.
-    expect(isArrivalScreenLine({ note: ARRIVAL_NOTE } as never)).toBe(false);
+  });
+
+  it('knows a line written before the marker by its frozen wording', () => {
+    const before =
+      "Permissions in this folder's settings file that were not stricter than everyone's " +
+      'defaults were not applied. Set them in DorkOS.';
+    const failed =
+      "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
+      'defaults except where its file is stricter. Set its permissions in DorkOS.';
+    expect(isArrivalScreenLine({ note: before })).toBe(true);
+    expect(isArrivalScreenLine({ note: failed })).toBe(true);
+    expect(isArrivalScreenLine({ note: 'Some other note.' })).toBe(false);
+  });
+
+  it('treats a line with any other origin as an ordinary change, whatever its note', () => {
+    expect(isArrivalScreenLine({ origin: 'somewhere-else', note: ARRIVAL_NOTE } as never)).toBe(
+      false
+    );
+  });
+
+  it('gives a pre-marker arrival line in the history no Undo', async () => {
+    const world = createPermissionWorld({ agents: [WIDE] });
+    await recordPermissionChange(world.activity, {
+      changes: [
+        {
+          target: {
+            kind: 'agent',
+            agentId: 'agent-new',
+            agentPath: '/agents/newcomer',
+            agentName: 'newcomer',
+          },
+          key: { kind: 'area', area: 'rooms' },
+          before: 'allowed',
+          after: null,
+        },
+      ],
+      surface: 'file-edit',
+      writer: { attribution: 'outside', actorType: 'system', actorLabel: 'DorkOS' },
+      note: ARRIVAL_NOTE,
+    });
+    const [line] = (await listPermissionHistory(world.activity, { limit: 5 })).items;
+    expect(line).toMatchObject({ undoable: false });
+    await expect(
+      world.service.undo(line!.id, { force: true }, personWriter('local-trust'))
+    ).rejects.toMatchObject({ code: 'NOT_UNDOABLE' });
   });
 });

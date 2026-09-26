@@ -104,18 +104,36 @@ export const ARRIVAL_WRITE_FAILED_NOTE =
   'defaults except where its file is stricter. Set its permissions in DorkOS.';
 
 /**
+ * The two notes the arrival screen wrote before its lines carried `origin`
+ * (the release that first shipped the screen). FROZEN: they identify lines
+ * already in people's histories, so they must never change, even when the
+ * live notes above are reworded. Only {@link isArrivalScreenLine} reads them.
+ */
+const PRE_MARKER_ARRIVAL_NOTES: ReadonlySet<string> = new Set([
+  "Permissions in this folder's settings file that were not stricter than everyone's " +
+    'defaults were not applied. Set them in DorkOS.',
+  "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
+    'defaults except where its file is stricter. Set its permissions in DorkOS.',
+]);
+
+/**
  * Whether a history line records the arrival screen declining settings a new
- * agent's own folder brought, by the marker the screen writes on it. Such a
- * line has no Undo: undoing it would put back, in one tap, settings nobody
- * ever chose in DorkOS, past the check that refused them. A person sets them
- * one by one on the agent's page instead.
+ * agent's own folder brought. Such a line has no Undo: undoing it would put
+ * back, in one tap, settings nobody ever chose in DorkOS, past the check that
+ * refused them. A person sets them one by one on the agent's page instead.
  *
- * The marker is the only test. The arrival screen and this marker ship in the
- * same release, so no line without it was ever written by the screen, and the
- * note's wording is free to change.
+ * - `origin: 'arrival-screen'` decides it.
+ * - A line with no `origin` is one of the screen's only when its note is one
+ *   of the frozen notes the screen wrote before the marker existed: a release
+ *   could ship the screen before the marker, and those lines must not become
+ *   undoable.
+ * - A line with any other `origin` is an ordinary change, whatever its note.
  *
  * @param metadata - The line's `permission.changed` metadata.
  */
-export function isArrivalScreenLine(metadata: Pick<PermissionChangedMetadata, 'origin'>): boolean {
-  return metadata.origin === 'arrival-screen';
+export function isArrivalScreenLine(
+  metadata: Pick<PermissionChangedMetadata, 'origin' | 'note'>
+): boolean {
+  if (metadata.origin !== undefined) return metadata.origin === 'arrival-screen';
+  return metadata.note !== undefined && PRE_MARKER_ARRIVAL_NOTES.has(metadata.note);
 }
