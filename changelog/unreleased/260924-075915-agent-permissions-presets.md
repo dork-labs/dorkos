@@ -47,6 +47,7 @@ covers:
 
 ### Security
 
+- A new agent can't bring wider permissions in its folder's settings file. When DorkOS adds an agent from a folder, however it gets there, it keeps only the settings that are at least as strict as your defaults, drops the rest, and says so in the history (DOR-2278)
 - An agent package can no longer ship its own permissions. DorkOS refuses a package whose agent settings say what the agent may do, so an agent from the marketplace starts where your defaults say, and you decide the rest after it is installed (DOR-2278)
 
 ### Removed

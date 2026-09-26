@@ -182,6 +182,7 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
         if (agentPath) await wiring.observer.writing(agentPath, next, write);
         else await write();
       },
+      seenBefore: (agentId: string) => wiring.observer.hasSeen(agentId),
     },
     actions: () => permissionActions(wiring.registry()),
     activity: wiring.activity,

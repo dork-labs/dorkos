@@ -251,6 +251,21 @@ export class PermissionObserver {
   }
 
   /**
+   * Whether DorkOS has already recorded this agent's settings, by a read or a
+   * write. An unreadable record answers `true`: treating it as empty would
+   * make every agent look new.
+   *
+   * @param agentId - The agent.
+   */
+  async hasSeen(agentId: string): Promise<boolean> {
+    try {
+      return (await this.load()).has(agentId);
+    } catch {
+      return true;
+    }
+  }
+
+  /**
    * Capture the agent's write generation. Call this BEFORE reading the
    * manifest, and hand the ticket to {@link observe} with what the read found.
    *

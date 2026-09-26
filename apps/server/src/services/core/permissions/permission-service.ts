@@ -49,6 +49,18 @@ import {
 } from './permission-history.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 
+/** Who a setting DorkOS declined on arrival is recorded under. */
+const ARRIVAL_WRITER: PermissionWriter = {
+  attribution: 'outside',
+  actorType: 'system',
+  actorLabel: 'DorkOS',
+};
+
+/** The line a declined-on-arrival event carries. */
+export const ARRIVAL_NOTE =
+  "Permissions in this folder's settings file that would let the agent do more than " +
+  "everyone's defaults were not applied. Set them in DorkOS.";
+
 /** A permission write the service refused, with the HTTP status that fits it. */
 export class PermissionError extends Error {
   /** Marks this class across module instances. */
@@ -136,6 +148,12 @@ export interface PermissionServiceDeps {
     readPermissions: (projectPath: string) => Promise<AgentPermissions | undefined>;
     /** Write an agent's overrides through the manifest (absent = inherit all). */
     writePermissions: (agentId: string, next: AgentPermissions | undefined) => Promise<void>;
+    /**
+     * Whether DorkOS has already seen this agent's settings (a read or a write
+     * recorded them). An agent it has seen is not new, so its settings are the
+     * person's and {@link PermissionService.screenArrivedAgent} leaves them be.
+     */
+    seenBefore?: (agentId: string) => Promise<boolean>;
   };
   /** Every action an agent can reach, with its area. Read per call. */
   actions: () => PermissionActionInfo[];
@@ -407,6 +425,111 @@ export class PermissionService {
     titles: (id: string) => string
   ) {
     await recordPermissionChange(this.deps.activity, { ...record, actionTitle: titles });
+  }
+
+  /**
+   * Screen the settings a newly arrived agent brought in its own folder.
+   *
+   * An agent is registered from a folder whose `.dork/agent.json` anybody (or
+   * any agent with file tools) may have written, so the permissions in it were
+   * never a person's choice in DorkOS. Honoured as found, a folder could mint
+   * an agent with more than everyone's defaults and no card, from any path
+   * that registers a folder: the HTTP route, the `mesh_register` tool, a
+   * discovery scan. So an arriving agent keeps only the settings that are at
+   * least as strict as the defaults it would otherwise follow; anything that
+   * would let it do more is dropped from the file, and one history line says
+   * so. Stricter settings stay, because dropping those would widen it too.
+   *
+   * An agent DorkOS has already seen is left alone: its settings are the
+   * person's, and the observer and the boot folds look after them.
+   *
+   * @param agentId - The agent that just arrived.
+   * @returns The changes made, empty when nothing was dropped.
+   */
+  async screenArrivedAgent(agentId: string): Promise<PermissionChange[]> {
+    const agent = this.deps.agents.list().find((a) => a.id === agentId);
+    if (!agent) return [];
+    if (await this.deps.agents.seenBefore?.(agentId)) return [];
+    const stored = await this.deps.agents.readPermissions(agent.projectPath);
+    if (!stored) return [];
+    const config = this.deps.config.get();
+    const actions = this.actionIndex();
+    const rank: Record<PermissionState, number> = { allowed: 0, ask: 1, blocked: 2 };
+    const target = this.agentTarget(agent);
+    const changes: PermissionChange[] = [];
+    const kept: AgentPermissions = {};
+
+    for (const [area, state] of Object.entries(stored.areas ?? {})) {
+      if (!(PERMISSION_AREA_IDS as readonly string[]).includes(area)) continue;
+      const areaId = area as PermissionAreaId;
+      const baseline = resolvePermission({ area: areaId, tier: 'act', config }).state;
+      if (rank[state] >= rank[baseline]) {
+        kept.areas = { ...kept.areas, [areaId]: state };
+      } else {
+        changes.push({ target, key: { kind: 'area', area: areaId }, before: state, after: null });
+      }
+    }
+    let droppedUnknown = false;
+    for (const [id, state] of Object.entries(stored.actions ?? {})) {
+      const info = actions.get(id);
+      if (!info?.area) {
+        // An action DorkOS cannot place (none by that id yet, or one with no
+        // switch): a stricter entry is kept, since dropping it could only
+        // widen; an Allowed one is dropped, since nobody chose it here.
+        if (state === 'allowed') droppedUnknown = true;
+        else kept.actions = { ...kept.actions, [id]: state };
+        continue;
+      }
+      const baseline = resolvePermission({
+        area: info.area,
+        actionId: id,
+        tier: info.tier,
+        config,
+      }).state;
+      if (rank[state] >= rank[baseline]) {
+        kept.actions = { ...kept.actions, [id]: state };
+      } else {
+        changes.push({
+          target,
+          key: { kind: 'action', action: id, area: info.area },
+          before: state,
+          after: null,
+        });
+      }
+    }
+    if (stored.filesAndCommands) {
+      // Ask first is the strictest stop; with no stop set for everyone, the
+      // runtime decides, so only Ask first is certainly no wider than that.
+      const stopRank: Record<PermissionStop, number> = { autonomy: 0, act: 1, ask: 2 };
+      const global = this.deps.config.trustStops().global;
+      const floor = global ? stopRank[global] : stopRank.ask;
+      if (stopRank[stored.filesAndCommands] >= floor) {
+        kept.filesAndCommands = stored.filesAndCommands;
+      } else {
+        changes.push({
+          target,
+          key: { kind: 'files' },
+          before: stored.filesAndCommands,
+          after: null,
+        });
+      }
+    }
+    if (changes.length === 0 && !droppedUnknown) return [];
+
+    const empty = !kept.areas && !kept.actions && !kept.filesAndCommands;
+    await this.deps.agents.writePermissions(agentId, empty ? undefined : kept);
+    if (changes.length > 0) {
+      await this.record(
+        {
+          changes,
+          surface: 'file-edit',
+          writer: ARRIVAL_WRITER,
+          note: ARRIVAL_NOTE,
+        },
+        this.titleFor(actions)
+      );
+    }
+    return changes;
   }
 
   /**

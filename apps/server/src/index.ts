@@ -3958,7 +3958,23 @@ async function start() {
   // after the seat and in that order deliberately: "tangerines joined your team"
   // is a line about a member of the room, so the roster is settled before the
   // room says so (team-room-home spec D5.1).
+  // Set once the permission service exists, below. Every arrival path
+  // (create, the register route, the mesh_register tool, a discovery scan)
+  // reaches the listener, so this is the one place an arriving folder's own
+  // permission settings are screened before anything acts for the agent.
+  const arrivalScreen: { run?: (agentId: string) => Promise<unknown> } = {};
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
+    // First: a folder's own settings file never widens what an agent may do
+    // on arrival (spec `agent-permissions`). Awaited, so a register call's
+    // response already reflects it.
+    try {
+      await arrivalScreen.run?.(agent.id);
+    } catch (err) {
+      logger.warn('[Permissions] could not screen an arriving agent', {
+        agentId: agent.id,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
     joinTeamRoom(teamRoomDeps, agent.path);
     momentDetectors.agentCreated(agent);
     // Migrate anything this agent's project still keeps in the old shape, then
@@ -4043,6 +4059,7 @@ async function start() {
     activity: activityService,
     observer: permissionObserver,
   });
+  arrivalScreen.run = (agentId) => permissionService.screenArrivedAgent(agentId);
   app.use(
     '/api',
     createPermissionsRouter({

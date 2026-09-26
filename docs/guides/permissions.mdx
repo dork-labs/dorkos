@@ -151,7 +151,9 @@ In DorkOS, only a person can. The permission pages, the `dorkos permissions` com
 
 An agent's own settings are kept in a file in its folder (`.dork/agent.json`). Anything that can edit files on your computer can edit that file, and that includes an agent that has file tools. DorkOS can't prevent that, and turning on login doesn't prevent it either, because login guards DorkOS, not your files.
 
-What DorkOS does is notice. The next time it checks that agent's permissions, it records the change in the history as **"Changed outside DorkOS"**, with what it was before and what it is now. The change takes effect, because you may have edited the file yourself on purpose. The agent's Permissions page marks the row too, so you can see it and set it back.
+A new agent is different. When DorkOS first adds an agent from a folder, whether you add it, an agent adds it, or DorkOS finds it on its own, the permissions already written in that folder's settings file were never your choice. So DorkOS keeps only the ones that are at least as strict as your defaults, drops any that would let the agent do more, and says so in the history. You can give the agent more afterwards, in DorkOS.
+
+For an agent DorkOS already knows, what it does is notice. The next time it checks that agent's permissions, it records the change in the history as **"Changed outside DorkOS"**, with what it was before and what it is now. The change takes effect, because you may have edited the file yourself on purpose. The agent's Permissions page marks the row too, so you can see it and set it back.
 
 If an agent should never be able to do something, don't rely on its settings alone: give it no way to edit files in its own folder, or keep a close eye on the history.
 

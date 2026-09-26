@@ -45,6 +45,8 @@ export function createPermissionWorld(
     runtimeStops?: Record<string, PermissionStop | null>;
     /** Whether an acknowledgement of Full autonomy is on file. */
     autonomyAcknowledged?: boolean;
+    /** Agent ids DorkOS has already seen the settings of. */
+    seen?: string[];
   } = {}
 ) {
   const config = {
@@ -136,6 +138,7 @@ export function createPermissionWorld(
         if (next) agent.permissions = structuredClone(next);
         else delete agent.permissions;
       },
+      seenBefore: async (agentId) => (options.seen ?? []).includes(agentId),
     },
     actions: () => FIXTURE_ACTIONS,
     activity,
