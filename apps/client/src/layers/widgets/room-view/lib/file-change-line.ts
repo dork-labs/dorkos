@@ -37,7 +37,27 @@ function folderLabel(folder: string): string {
 }
 
 /**
+ * The folder an upload or a save from the chat went into: the entry's own
+ * `target` (`''` for the top, `dir/` otherwise), or — on an entry written
+ * before it carried one — the folder of its first file, which is the same
+ * folder because one upload lands in one folder.
+ */
+function landedIn(change: RoomFileChangeEvent): string {
+  if (change.target !== undefined) {
+    return change.target === '' ? TOP_FOLDER : change.target;
+  }
+  return folderLabel(folderOf(change.paths[0] ?? ''));
+}
+
+/**
  * The plain sentence for one file change — "Dorian renamed a.md to b.md".
+ *
+ * **Where a rename went and what a delete removed come from the entry's
+ * `target`, never from the depths of `paths`.** `paths` lists files, and a
+ * folder's files can sit at any depth under it: `old/` whose files are all in
+ * `old/sub/` is still `old/`, and `a/` moved to `x/y/a/` is not `x/`. An entry
+ * written before `target` existed says only what it can prove — the folder's
+ * old name, or how many files went.
  *
  * The paths are the ones on the entry, exactly as the room holds them; the
  * caller renders the result as text, never as markup.
@@ -48,48 +68,29 @@ function folderLabel(folder: string): string {
  */
 export function fileChangeLine(change: RoomFileChangeEvent, who: string): string {
   const first = change.paths[0] ?? '';
+  const target = change.target;
   switch (change.kind) {
     case 'edit':
-      return `${who} edited ${first}`;
+      return `${who} edited ${target ?? first}`;
     case 'add':
-      return `${who} added ${first}`;
+      return `${who} added ${target ?? first}`;
     case 'upload':
       return change.pathCount === 1
-        ? `${who} uploaded ${nameOf(first)} to ${folderLabel(folderOf(first))}`
-        : `${who} uploaded ${change.pathCount} files to ${folderLabel(folderOf(first))}`;
+        ? `${who} uploaded ${nameOf(first)} to ${landedIn(change)}`
+        : `${who} uploaded ${change.pathCount} files to ${landedIn(change)}`;
     case 'rename': {
-      // `from` is the old name, with a trailing `/` on a folder; `paths` holds
-      // the NEW paths — for a folder, the files under it — so a folder's new
-      // name is its files' path cut back to the folder's own depth.
       const from = change.from ?? '';
-      if (!from.endsWith('/')) return `${who} renamed ${from} to ${first}`;
-      const depth = from.slice(0, -1).split('/').length;
-      return `${who} renamed ${from} to ${first.split('/').slice(0, depth).join('/')}/`;
+      if (target !== undefined) return `${who} renamed ${from} to ${target}`;
+      // Older entry: a file's new path is its only path; a folder's new name
+      // is not recoverable from its files, so the line does not guess one.
+      return from.endsWith('/') ? `${who} renamed ${from}` : `${who} renamed ${from} to ${first}`;
     }
     case 'delete':
-      // The entry names the files that went, not the folder the person
-      // pointed at, so a folder is described by where its files were.
+      if (target !== undefined) return `${who} deleted ${target}`;
       return change.pathCount === 1
         ? `${who} deleted ${first}`
-        : `${who} deleted ${change.pathCount} files from ${folderLabel(commonFolder(change.paths))}`;
+        : `${who} deleted ${change.pathCount} files`;
     case 'from-attachment':
-      return `${who} saved ${nameOf(first)} from the chat to ${folderLabel(folderOf(first))}`;
+      return `${who} saved ${nameOf(first)} from the chat to ${landedIn(change)}`;
   }
-}
-
-/**
- * The deepest folder every path shares, `''` when they share none.
- *
- * @param paths - Paths from one change.
- */
-function commonFolder(paths: readonly string[]): string {
-  if (paths.length === 0) return '';
-  let shared = folderOf(paths[0]).split('/');
-  for (const path of paths.slice(1)) {
-    const parts = folderOf(path).split('/');
-    let i = 0;
-    while (i < shared.length && i < parts.length && shared[i] === parts[i]) i += 1;
-    shared = shared.slice(0, i);
-  }
-  return shared.join('/');
 }

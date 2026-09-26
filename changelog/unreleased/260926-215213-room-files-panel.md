@@ -1,6 +1,10 @@
 ---
 covers:
   - "feat(rooms): run a room's files from the Files panel (DOR-2413)"
+  - "fix(rooms): name where a folder went and which folder was deleted in a room's file-change line (DOR-2413)"
+  - "fix(rooms): tell a person why a new room file can't be saved, and catch a name taken in other capitals (DOR-2413)"
+  - 'fix(rooms): put the cursor back in the Files tree after a delete or a lost race (DOR-2413)'
+  - 'fix(rooms): offer no file changes in an archived room or to someone not in it (DOR-2413)'
 ---
 
 ### Added
