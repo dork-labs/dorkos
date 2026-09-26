@@ -33,6 +33,7 @@ function renderWays(
 function provider(over: Partial<ConnectorProviderStatus> = {}): ConnectorProviderStatus {
   return {
     type: 'composio',
+    providerInstanceId: 'cpi_composio' as never,
     configured: false,
     registered: false,
     custody: 'managed',
@@ -43,6 +44,7 @@ function provider(over: Partial<ConnectorProviderStatus> = {}): ConnectorProvide
 
 const nango = provider({
   type: 'nango',
+  providerInstanceId: 'cpi_nango' as never,
   custody: 'self-host',
   disclosure: 'Your Nango server keeps your logins on your own machine.',
 });
@@ -50,7 +52,7 @@ const nango = provider({
 function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
   return {
     connectionId: 'c1' as never,
-    providerInstanceId: 'cpi_x' as never,
+    providerInstanceId: 'cpi_composio' as never,
     toolkit: 'gmail',
     label: 'work',
     identityHint: null,
@@ -84,7 +86,8 @@ describe('ConnectionWays', () => {
     await user.click(screen.getByRole('button', { name: 'Open the Connections page' }));
     expect(handlers.onOpenConnectionsPage).toHaveBeenCalledTimes(1);
 
-    await user.click(screen.getByRole('button', { name: 'Set one up here instead' }));
+    // Never a loop: the choices are open right here, not behind another hop.
+    expect(screen.getByText('Or set one up here now:')).toBeInTheDocument();
     const composio = screen.getByTestId('add-connection-way-composio');
     // Where sign-ins will live is said before any key is pasted.
     expect(composio).toHaveTextContent('in its own secure vault');
@@ -163,6 +166,7 @@ describe('ConnectionWays', () => {
         connections: [
           connection({ connectionId: 'b1' as never, toolkit: 'notion', label: 'team' }),
           connection({ connectionId: 'b2' as never, label: 'personal', agentCount: 1 }),
+          connection({ connectionId: 'p1' as never, toolkit: 'linear', lifecycle: 'paused' }),
           connection({ connectionId: 'gone' as never, lifecycle: 'disconnected' }),
         ],
       }),
@@ -176,7 +180,12 @@ describe('ConnectionWays', () => {
     expect(dialog).toHaveTextContent('These 2 apps will stop working for every agent:');
     expect(within(dialog).getByText('Notion (team)')).toBeInTheDocument();
     expect(within(dialog).getByText('Gmail (personal)')).toBeInTheDocument();
-    expect(dialog).toHaveTextContent('1 agent use it');
+    expect(dialog).toHaveTextContent('Gmail (personal) · used by 1 agent');
+    expect(dialog).toHaveTextContent('Notion (team) · used by 2 agents');
+    // A paused app is listed honestly and not counted as a loss.
+    expect(dialog).toHaveTextContent('This app can’t be used now either way:');
+    expect(within(dialog).getByText('Linear (work)')).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent('Gmail (work)');
     expect(transport.deleteConnectorCredential).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole('button', { name: 'Remove key and stop 2 apps' }));
     await waitFor(() =>
@@ -184,13 +193,18 @@ describe('ConnectionWays', () => {
     );
   });
 
-  it('Change key replaces the key in place and warns what another account’s key would stop', async () => {
+  it('Change key asks first, names the apps it pauses, then saves over the old key', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport({
       getConnectorProviders: vi
         .fn()
         .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
-      getConnectorConnections: vi.fn().mockResolvedValue({ connections: [connection({})] }),
+      getConnectorConnections: vi.fn().mockResolvedValue({
+        connections: [
+          connection({}),
+          connection({ connectionId: 'c2' as never, toolkit: 'notion', label: 'team' }),
+        ],
+      }),
     });
     vi.mocked(transport.putConnectorCredential).mockResolvedValue(
       provider({ configured: true, registered: true })
@@ -199,13 +213,109 @@ describe('ConnectionWays', () => {
 
     const row = await screen.findByTestId('connection-way-composio');
     await user.click(within(row).getByRole('button', { name: 'Change key' }));
-    expect(row).toHaveTextContent('A key from another account stops the 1 app connected');
-    await user.type(within(row).getByLabelText('Composio API key'), 'ak_new');
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('A new key pauses the apps on this one until you review');
+    expect(dialog).toHaveTextContent('different Composio project can’t reach them at all');
+    expect(dialog).toHaveTextContent(
+      'These 2 apps pause until you review their access on the Connections page:'
+    );
+    expect(within(dialog).getByText('Gmail (work)')).toBeInTheDocument();
+    expect(within(dialog).getByText('Notion (team)')).toBeInTheDocument();
+    // No form until the person agrees.
+    expect(within(row).queryByLabelText('Composio API key')).toBeNull();
+    await user.click(within(dialog).getByRole('button', { name: 'Change key and pause 2 apps' }));
+
+    await user.type(await within(row).findByLabelText('Composio API key'), 'ak_new');
     await user.click(within(row).getByRole('button', { name: 'Save key' }));
     await waitFor(() =>
       expect(transport.putConnectorCredential).toHaveBeenCalledWith('composio', 'ak_new')
     );
     await waitFor(() => expect(within(row).queryByLabelText('Composio API key')).toBeNull());
+  });
+
+  it('Change key backs out cleanly: keeping the key saves nothing', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      getConnectorProviders: vi
+        .fn()
+        .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
+      getConnectorConnections: vi.fn().mockResolvedValue({ connections: [connection({})] }),
+    });
+    renderWays(transport);
+    const row = await screen.findByTestId('connection-way-composio');
+    await user.click(within(row).getByRole('button', { name: 'Change key' }));
+    await user.click(await screen.findByRole('button', { name: 'Keep this key' }));
+    expect(within(row).queryByLabelText('Composio API key')).toBeNull();
+    expect(transport.putConnectorCredential).not.toHaveBeenCalled();
+  });
+
+  it('Change key with no apps on the key goes straight to the form', async () => {
+    const user = userEvent.setup();
+    renderWays(
+      createMockTransport({
+        getConnectorProviders: vi
+          .fn()
+          .mockResolvedValue([provider({ configured: true, registered: true }), nango]),
+      })
+    );
+    const row = await screen.findByTestId('connection-way-composio');
+    await user.click(within(row).getByRole('button', { name: 'Change key' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(within(row).getByLabelText('Composio API key')).toBeInTheDocument();
+  });
+
+  it('on a refused key, counts nothing as stopping: the apps already can’t be used', async () => {
+    const user = userEvent.setup();
+    renderWays(
+      createMockTransport({
+        getConnectorProviders: vi
+          .fn()
+          .mockResolvedValue([
+            provider({ configured: true, registered: false, error: 'Invalid API key' }),
+            nango,
+          ]),
+        getConnectorConnections: vi.fn().mockResolvedValue({ connections: [connection({})] }),
+      })
+    );
+    const row = await screen.findByTestId('connection-way-composio');
+    await user.click(within(row).getByRole('button', { name: 'Remove…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('This app can’t be used now either way:');
+    expect(dialog).not.toHaveTextContent('will stop working');
+    expect(within(dialog).getByRole('button', { name: 'Remove key' })).toBeInTheDocument();
+  });
+
+  it('groups apps by the exact key instance, not by kind', async () => {
+    renderWays(
+      createMockTransport({
+        getConnectorProviders: vi.fn().mockResolvedValue([
+          provider({ configured: true, registered: true }),
+          // A second key of the same kind and custody (test mode's scripted one).
+          provider({
+            type: 'test-connector',
+            providerInstanceId: 'cpi_test' as never,
+            configured: true,
+            registered: true,
+          }),
+          nango,
+        ]),
+        getConnectorConnections: vi.fn().mockResolvedValue({
+          connections: [
+            connection({ connectionId: 'a' as never }),
+            connection({ connectionId: 'b' as never, providerInstanceId: 'cpi_test' as never }),
+            connection({ connectionId: 'c' as never, providerInstanceId: 'cpi_test' as never }),
+            // A raw server nobody sets up here belongs to no row.
+            connection({ connectionId: 'raw' as never, providerInstanceId: 'cpi_raw' as never }),
+          ],
+        }),
+      })
+    );
+    expect(await screen.findByTestId('connection-way-composio')).toHaveTextContent(
+      '1 app connected'
+    );
+    expect(screen.getByTestId('connection-way-test-connector')).toHaveTextContent(
+      '2 apps connected'
+    );
   });
 
   it('keeps apps whose key was removed visible, and says how to bring them back', async () => {
@@ -217,7 +327,7 @@ describe('ConnectionWays', () => {
     );
     const row = await screen.findByTestId('connection-way-composio');
     expect(row).toHaveTextContent('Key removed');
-    expect(row).toHaveTextContent('Add it again to bring them back.');
+    expect(row).toHaveTextContent('Add the same key again to bring them back.');
     expect(within(row).getByRole('button', { name: 'Add key again' })).toBeInTheDocument();
   });
 

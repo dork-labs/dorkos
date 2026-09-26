@@ -79,16 +79,75 @@ describe('ChatAppSettings', () => {
       })
     );
 
-    // Minutes on screen, milliseconds on the wire.
-    const giveUp = screen.getByLabelText('Give up after, in minutes');
-    expect(giveUp).toHaveValue(5);
+    // Seconds on screen, milliseconds on the wire.
+    const giveUp = screen.getByLabelText('Give up after, in seconds');
+    expect(giveUp).toHaveValue(300);
     await user.clear(giveUp);
-    await user.type(giveUp, '12{Enter}');
+    await user.type(giveUp, '90{Enter}');
     await waitFor(() =>
       expect(transport.updateRelayAdapterConfig).toHaveBeenCalledWith('delivery-1', {
-        defaultTimeoutMs: 720_000,
+        defaultTimeoutMs: 90_000,
       })
     );
+    // Only the field that was edited is ever written.
+    for (const [, config] of vi.mocked(transport.updateRelayAdapterConfig).mock.calls) {
+      expect(Object.keys(config)).toHaveLength(1);
+    }
+  });
+
+  it.each([
+    [10_000, 10],
+    [90_000, 90],
+    [300_000, 300],
+  ])('shows a stored wait of %i ms exactly as %i seconds', async (stored, seconds) => {
+    const transport = createMockTransport({
+      getConfig: await configWith({ enabled: true }),
+      getAdapterCatalog: vi
+        .fn()
+        .mockResolvedValue(deliveryCatalog({ maxConcurrent: 3, defaultTimeoutMs: stored })),
+    });
+    renderSettings(transport);
+    expect(await screen.findByLabelText('Give up after, in seconds')).toHaveValue(seconds);
+  });
+
+  it('accepts the 10-second floor and nothing below it', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      getConfig: await configWith({ enabled: true }),
+      getAdapterCatalog: vi.fn().mockResolvedValue(deliveryCatalog({ defaultTimeoutMs: 300_000 })),
+    });
+    renderSettings(transport);
+    const giveUp = await screen.findByLabelText('Give up after, in seconds');
+    await user.clear(giveUp);
+    await user.type(giveUp, '9{Enter}');
+    expect(await screen.findByText('Enter a whole number from 10 to 3600.')).toBeInTheDocument();
+    expect(transport.updateRelayAdapterConfig).not.toHaveBeenCalled();
+    await user.clear(giveUp);
+    await user.type(giveUp, '10{Enter}');
+    await waitFor(() =>
+      expect(transport.updateRelayAdapterConfig).toHaveBeenCalledWith('delivery-1', {
+        defaultTimeoutMs: 10_000,
+      })
+    );
+  });
+
+  it('editing another setting leaves the stored wait untouched', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      getConfig: await configWith({ enabled: true }),
+      getAdapterCatalog: vi
+        .fn()
+        .mockResolvedValue(deliveryCatalog({ maxConcurrent: 3, defaultTimeoutMs: 90_000 })),
+    });
+    renderSettings(transport);
+    const most = await screen.findByLabelText('Most chats at once');
+    await user.clear(most);
+    await user.type(most, '4{Enter}');
+    await waitFor(() => expect(transport.updateRelayAdapterConfig).toHaveBeenCalledTimes(1));
+    expect(transport.updateRelayAdapterConfig).toHaveBeenCalledWith('delivery-1', {
+      maxConcurrent: 4,
+    });
+    expect(screen.getByLabelText('Give up after, in seconds')).toHaveValue(90);
   });
 
   it('never saves a number out of range', async () => {

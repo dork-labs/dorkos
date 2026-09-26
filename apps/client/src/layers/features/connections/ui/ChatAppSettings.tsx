@@ -22,16 +22,21 @@ const DEFAULT_TIMEOUT_MS = 300_000;
 
 /** The ranges the delivery config accepts, in the units a person types. */
 const MOST_AT_ONCE_BOUNDS = { min: 1, max: 20 };
-const GIVE_UP_MINUTES_BOUNDS = { min: 1, max: 60 };
+/** Seconds, not minutes: 10 s and 90 s were settable before and must stay exact. */
+const WAIT_SECONDS_BOUNDS = { min: 10, max: 3600 };
 
-/** One minute, in the milliseconds the config stores. */
-const MS_PER_MINUTE = 60_000;
+/** One second, in the milliseconds the config stores. */
+const MS_PER_SECOND = 1000;
 
 /**
  * How chat apps behave when a message arrives, for every chat app at once
  * (Telegram, Slack, a webhook): whether a message starts an agent working
- * straight away, how many chats may run together, and how long one message
- * gets.
+ * straight away, how many chats may run together, and how long a new message
+ * waits for a free chat before it is turned away.
+ *
+ * That last one is `defaultTimeoutMs`, which the delivery uses only as the
+ * ceiling on how long a message is held for a free slot. It is not a limit on
+ * how long an agent works on a message, so the copy never says it is.
  *
  * The three settings live on the built-in delivery that turns an incoming
  * message into a working agent, so this reads that one entry from the chat app
@@ -132,17 +137,17 @@ function DeliverySettings() {
         </SettingRow>
         <SettingRow
           label="Give up after"
-          description="Minutes one message gets before it's stopped."
+          description="Seconds a new message waits for a free chat before it's turned away."
         >
           <BoundedNumberInput
-            aria-label="Give up after, in minutes"
-            value={timeoutMs / MS_PER_MINUTE}
-            min={GIVE_UP_MINUTES_BOUNDS.min}
-            max={GIVE_UP_MINUTES_BOUNDS.max}
-            onCommit={(minutes) =>
+            aria-label="Give up after, in seconds"
+            value={Math.round(timeoutMs / MS_PER_SECOND)}
+            min={WAIT_SECONDS_BOUNDS.min}
+            max={WAIT_SECONDS_BOUNDS.max}
+            onCommit={(seconds) =>
               updateConfig({
                 id: delivery.id,
-                config: { defaultTimeoutMs: minutes * MS_PER_MINUTE },
+                config: { defaultTimeoutMs: seconds * MS_PER_SECOND },
               })
             }
           />

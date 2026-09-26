@@ -54,6 +54,10 @@ describe('AccountsRegion', () => {
     );
     await screen.findByText('No accounts connected');
     expect(screen.queryByRole('button', { name: 'Link DorkOS account' })).not.toBeInTheDocument();
+    // Linked, the page still keeps exactly one pointer to where your own key lives.
+    expect(
+      await screen.findAllByRole('button', { name: 'Set it up in Settings › Connections' })
+    ).toHaveLength(1);
   });
 
   it('does not mistake loading or a failed status read for an unlinked account', async () => {

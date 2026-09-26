@@ -21,7 +21,7 @@ export function HostedAccountSetup() {
     return (
       <QueryErrorState
         title="Couldn’t check your DorkOS account"
-        description="Try again to check account setup. Your own service accounts are still available below."
+        description="Try again to check account setup. Your own Composio or Nango key still works; it’s set in Settings › Connections."
         onRetry={() => void status.refetch()}
         isRetrying={status.isFetching}
       />
@@ -43,16 +43,7 @@ export function HostedAccountSetup() {
         >
           Link DorkOS account
         </Button>
-        <p className="text-muted-foreground text-xs">
-          Prefer your own Composio or Nango account?{' '}
-          <Button
-            variant="link"
-            className="h-auto p-0 text-xs"
-            onClick={() => settings.open('connections', 'ways')}
-          >
-            Set it up in Settings › Connections
-          </Button>
-        </p>
+        <OwnKeyPointer onOpen={() => settings.open('connections', 'ways')} />
       </div>
     );
   }
@@ -60,11 +51,25 @@ export function HostedAccountSetup() {
     return (
       <QueryErrorState
         title="Some services couldn’t load"
-        description="Try again, or use your own Composio or Nango account from Settings › Connections."
+        description="Try again. Your own Composio or Nango key is set in Settings › Connections."
         onRetry={() => void catalog.refetch()}
         isRetrying={catalog.isFetching}
       />
     );
   }
-  return null;
+  // Linked and loading fine: the page still keeps its one pointer to where
+  // your own key lives.
+  return <OwnKeyPointer onOpen={() => settings.open('connections', 'ways')} />;
+}
+
+/** The page's one pointer to Settings › Connections, where your own key lives. */
+function OwnKeyPointer({ onOpen }: { onOpen: () => void }) {
+  return (
+    <p className="text-muted-foreground text-xs">
+      Prefer your own Composio or Nango account?{' '}
+      <Button variant="link" className="h-auto p-0 text-xs" onClick={onOpen}>
+        Set it up in Settings › Connections
+      </Button>
+    </p>
+  );
 }

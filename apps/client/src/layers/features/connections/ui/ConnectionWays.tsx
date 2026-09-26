@@ -3,7 +3,12 @@ import { ChevronRight, Plus } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
 import { cloudStatusKey } from '@/layers/features/cloud-link';
-import { useConnectorConnections, useConnectorProviders } from '@/layers/entities/connectors';
+import {
+  appCount,
+  useConnectorConnections,
+  useConnectorProviders,
+  type ImpactApp,
+} from '@/layers/entities/connectors';
 import { useTransport } from '@/layers/shared/model';
 import {
   Button,
@@ -13,7 +18,7 @@ import {
   QueryErrorState,
   Skeleton,
 } from '@/layers/shared/ui';
-import { appCount, groupAppsByWay, keyWayName, type WayApp } from '../lib/connection-ways';
+import { groupAppsByWay, keyWayName } from '../lib/connection-ways';
 import { ConnectionKeyForm } from './ConnectionKeyForm';
 import { KeyWayRow } from './KeyWayRow';
 import { WayRow, type WayStatus } from './WayRow';
@@ -78,7 +83,8 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
   const linked = cloud.data?.linked === true;
   const showAccount = linked || apps.dorkosAccount.length > 0;
   const keyRows = statuses.filter(
-    (status) => status.configured || (apps.byKeyType[status.type]?.length ?? 0) > 0
+    (status) =>
+      status.configured || (apps.byKeyInstance[status.providerInstanceId]?.length ?? 0) > 0
   );
   const keysToAdd = statuses.filter((status) => !keyRows.includes(status));
   const accountToAdd = cloud.isSuccess && !showAccount;
@@ -88,9 +94,12 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
     <AddWays keys={keysToAdd} offerAccount={accountToAdd} onManageAccount={onManageAccount} />
   );
 
+  // Never a loop: the page's first connect asks how to reach apps, and this
+  // state also sets a way up right here, in the open, so neither place only
+  // sends people to the other.
   if (nothingSetUp) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="bg-muted/40 space-y-3 rounded-lg p-4">
           <div className="space-y-1">
             <p className="text-sm font-medium">Set up when you connect your first app</p>
@@ -102,7 +111,10 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
             Open the Connections page
           </Button>
         </div>
-        <AddWaysFold label="Set one up here instead">{addWays}</AddWaysFold>
+        <div className="space-y-2">
+          <p className="text-muted-foreground text-sm">Or set one up here now:</p>
+          {addWays}
+        </div>
       </div>
     );
   }
@@ -119,7 +131,11 @@ export function ConnectionWays({ onManageAccount, onOpenConnectionsPage }: Conne
           />
         )}
         {keyRows.map((status) => (
-          <KeyWayRow key={status.type} status={status} apps={apps.byKeyType[status.type] ?? []} />
+          <KeyWayRow
+            key={status.providerInstanceId}
+            status={status}
+            apps={apps.byKeyInstance[status.providerInstanceId] ?? []}
+          />
         ))}
       </ul>
       {(keysToAdd.length > 0 || accountToAdd) && (
@@ -138,7 +154,7 @@ function AccountWayRow({
 }: {
   linked: boolean;
   checkFailed: boolean;
-  apps: readonly WayApp[];
+  apps: readonly ImpactApp[];
   onManageAccount: () => void;
 }) {
   const status: WayStatus = linked
@@ -214,7 +230,7 @@ function AddWays({
       )}
       {keys.map((status) => (
         <li
-          key={status.type}
+          key={status.providerInstanceId}
           data-testid={`add-connection-way-${status.type}`}
           className="space-y-2 px-4 py-3"
         >

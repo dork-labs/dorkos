@@ -138,6 +138,7 @@ function AccountsRegionShowcase() {
     () =>
       makeConnectionsQueryClient((qc) => {
         qc.setQueryData(connectorKeys.connections(), { connections: [] });
+        qc.setQueryData(connectorKeys.providers(), []);
         qc.setQueryData(connectorKeys.agentRequestList('pending'), []);
         qc.setQueryData(connectorKeys.catalog(''), {
           pages: [{ services: [], warnings: [] }],
@@ -232,6 +233,8 @@ function MessagingRegionShowcase() {
 function mockKey(over: Partial<ConnectorProviderStatus>): ConnectorProviderStatus {
   return {
     type: 'composio',
+    // The same instance the byo mock accounts below carry, so they group onto it.
+    providerInstanceId: 'provider-1' as ConnectorProviderStatus['providerInstanceId'],
     configured: false,
     registered: false,
     custody: 'managed',
@@ -260,6 +263,7 @@ function ConnectionWaysShowcase() {
           mockKey({}),
           mockKey({
             type: 'nango',
+            providerInstanceId: 'provider-2' as ConnectorProviderStatus['providerInstanceId'],
             custody: 'self-host',
             disclosure: 'Your Nango server keeps your logins on a machine you run.',
           }),
@@ -280,6 +284,7 @@ function ConnectionWaysShowcase() {
           mockKey({ configured: true, registered: true, keyKind: 'project' }),
           mockKey({
             type: 'nango',
+            providerInstanceId: 'provider-2' as ConnectorProviderStatus['providerInstanceId'],
             custody: 'self-host',
             configured: true,
             error: 'Set NANGO_ENCRYPTION_KEY on the server, then save the key again.',

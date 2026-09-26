@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
-import { useDeleteConnectorCredential } from '@/layers/entities/connectors';
+import {
+  appCount,
+  ConnectionImpactList,
+  splitByImpact,
+  useDeleteConnectorCredential,
+  type ImpactApp,
+} from '@/layers/entities/connectors';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,10 +16,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
   Button,
 } from '@/layers/shared/ui';
-import { appCount, keyWayName, type WayApp } from '../lib/connection-ways';
+import { keyWayName } from '../lib/connection-ways';
 import { providerName } from '../lib/presentation';
 import { ConnectionKeyForm } from './ConnectionKeyForm';
 import { WayRow, type WayStatus } from './WayRow';
@@ -35,11 +40,28 @@ function keyStatus(status: ConnectorProviderStatus): WayStatus {
 }
 
 /**
+ * What the apps on a key belong to. A different key for the same place keeps
+ * reaching them; a key for another place cannot see them at all.
+ */
+function keyScope(type: string): string {
+  if (type === 'composio') return 'Composio project';
+  if (type === 'nango') return 'Nango environment';
+  return `${providerName(type)} account`;
+}
+
+/** Which confirmation, if any, is open. */
+type Confirming = 'change' | 'remove' | null;
+
+/**
  * One of your own keys (Composio, Nango) as a way DorkOS reaches your apps:
  * whether it works, how many apps use it, and Change key / Remove….
  *
- * Remove lists every app that stops working and the button says how many,
- * because the whole point of the confirmation is knowing what you lose.
+ * Both actions sit behind a confirmation that names every app they touch,
+ * because both stop apps. Removing a key stops every app on it. Changing it
+ * stops them too, for longer than it looks: the server re-checks the new key
+ * before using it (a typo stops everything), and ANY new key string changes
+ * what the server trusts, so every app on it pauses until its access is
+ * reviewed again. A key from another project cannot reach those apps at all.
  */
 export function KeyWayRow({
   status,
@@ -48,13 +70,21 @@ export function KeyWayRow({
   /** The key's setup status from `GET /api/connectors/providers`. */
   status: ConnectorProviderStatus;
   /** The live apps that reach their service through this key. */
-  apps: readonly WayApp[];
+  apps: readonly ImpactApp[];
 }) {
   const [changing, setChanging] = useState(false);
+  const [confirming, setConfirming] = useState<Confirming>(null);
   const remove = useDeleteConnectorCredential();
   const name = providerName(status.type);
   const kind = status.configured ? keyKindLine(status.keyKind) : null;
   const detail = [`${appCount(apps.length)} connected`, kind].filter(Boolean).join(' · ');
+  const { stopping, idle } = splitByImpact(apps, status.registered);
+
+  const startChange = () => {
+    // Nothing to lose: go straight to the form.
+    if (apps.length === 0 || !status.configured) setChanging(true);
+    else setConfirming('change');
+  };
 
   return (
     <WayRow
@@ -64,16 +94,19 @@ export function KeyWayRow({
       status={keyStatus(status)}
       actions={
         <>
-          <Button size="sm" variant="outline" onClick={() => setChanging((open) => !open)}>
+          <Button size="sm" variant="outline" onClick={startChange} disabled={changing}>
             {status.configured ? 'Change key' : 'Add key again'}
           </Button>
           {status.configured && (
-            <RemoveKeyDialog
-              name={name}
-              apps={apps}
-              pending={remove.isPending}
-              onConfirm={() => remove.mutate({ provider: status.type })}
-            />
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-destructive"
+              disabled={remove.isPending}
+              onClick={() => setConfirming('remove')}
+            >
+              {remove.isPending ? 'Removing…' : 'Remove…'}
+            </Button>
           )}
         </>
       }
@@ -88,89 +121,91 @@ export function KeyWayRow({
       )}
       {!status.configured && apps.length > 0 && (
         <p className="text-muted-foreground text-xs">
-          These apps stopped working when the key was removed. Add it again to bring them back.
+          These apps stopped working when the key was removed. Add the same key again to bring them
+          back.
         </p>
       )}
       {changing && (
-        <div className="space-y-2">
-          {status.configured && apps.length > 0 && (
-            <p className="text-muted-foreground text-xs leading-relaxed">
-              Use a key from the same {name} account. A key from another account stops the{' '}
-              {appCount(apps.length)} connected with this one.
-            </p>
-          )}
-          <ConnectionKeyForm
-            type={status.type}
-            submitLabel="Save key"
-            onSaved={() => setChanging(false)}
-            onCancel={() => setChanging(false)}
-          />
-        </div>
+        <ConnectionKeyForm
+          type={status.type}
+          submitLabel="Save key"
+          onSaved={() => setChanging(false)}
+          onCancel={() => setChanging(false)}
+        />
       )}
-    </WayRow>
-  );
-}
 
-/** "Remove…" and its confirmation, which names every app that stops. */
-function RemoveKeyDialog({
-  name,
-  apps,
-  pending,
-  onConfirm,
-}: {
-  name: string;
-  apps: readonly WayApp[];
-  pending: boolean;
-  onConfirm: () => void;
-}) {
-  const confirmLabel =
-    apps.length > 0 ? `Remove key and stop ${appCount(apps.length)}` : 'Remove key';
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button size="sm" variant="ghost" className="text-destructive" disabled={pending}>
-          {pending ? 'Removing…' : 'Remove…'}
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Remove your {name} key?</AlertDialogTitle>
-          <AlertDialogDescription>
-            {apps.length > 0
-              ? `${apps.length === 1 ? 'This app' : `These ${apps.length} apps`} will stop working for every agent:`
-              : 'No apps use this key right now.'}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {apps.length > 0 && (
-          <>
-            <ul className="text-foreground max-h-48 list-disc space-y-1 overflow-y-auto pl-5 text-sm">
-              {apps.map((app) => (
-                <li key={app.connectionId}>
-                  {app.name}
-                  {app.agentCount > 0 && (
-                    <span className="text-muted-foreground">
-                      {' '}
-                      · {app.agentCount} {app.agentCount === 1 ? 'agent' : 'agents'} use it
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <p className="text-muted-foreground text-sm">
-              Your sign-ins are not deleted. Add the same key again to bring these apps back.
-            </p>
-          </>
-        )}
-        <AlertDialogFooter>
-          <AlertDialogCancel>Keep key</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
-          >
-            {confirmLabel}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      <AlertDialog
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirming(null);
+        }}
+      >
+        <AlertDialogContent>
+          {confirming === 'change' ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Change your {name} key?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A new key pauses the apps on this one until you review their access again. A key
+                  from a different {keyScope(status.type)} can’t reach them at all.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <ConnectionImpactList
+                stopping={stopping}
+                idle={idle}
+                stopLine={
+                  stopping.length === 1
+                    ? 'This app pauses until you review its access on the Connections page:'
+                    : `These ${stopping.length} apps pause until you review their access on the Connections page:`
+                }
+              />
+              <p className="text-muted-foreground text-sm">
+                If the new key doesn’t work, every app on this key stops until you fix it.
+              </p>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep this key</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    setConfirming(null);
+                    setChanging(true);
+                  }}
+                >
+                  {stopping.length > 0
+                    ? `Change key and pause ${appCount(stopping.length)}`
+                    : 'Change key'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove your {name} key?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {apps.length === 0
+                    ? 'No apps use this key right now.'
+                    : 'Your sign-ins are not deleted. Add the same key again to bring these apps back.'}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <ConnectionImpactList
+                stopping={stopping}
+                idle={idle}
+                stopLine={`${stopping.length === 1 ? 'This app' : `These ${stopping.length} apps`} will stop working for every agent:`}
+              />
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep key</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => remove.mutate({ provider: status.type })}
+                  className="bg-destructive hover:bg-destructive/90 dark:bg-destructive/60 text-white"
+                >
+                  {stopping.length > 0
+                    ? `Remove key and stop ${appCount(stopping.length)}`
+                    : 'Remove key'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
+        </AlertDialogContent>
+      </AlertDialog>
+    </WayRow>
   );
 }

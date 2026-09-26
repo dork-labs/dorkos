@@ -80,8 +80,9 @@ test.describe('Connections page @smoke', () => {
   }) => {
     await connectionsPage.goto();
 
-    // "Composio & Nango", verbatim. Both "engine" and "provider" failed to mean
-    // anything to the people using this, so the section says who they are.
+    // The page names Composio and Nango where it points at Settings ›
+    // Connections, where those keys now live. Both "engine" and "provider"
+    // failed to mean anything to the people using this, so it says who they are.
     await expect(connectionsPage.carrierSection).toBeVisible();
     await expect(connectionsPage.accounts.getByText(/\bprovider\b/i)).toHaveCount(0);
   });

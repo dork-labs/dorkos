@@ -1,7 +1,7 @@
 import { useDeferredValue, useState } from 'react';
 import { Cable, MessageSquare, Search } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import { useConnectorCatalog } from '@/layers/entities/connectors';
+import { useConnectorCatalog, useConnectorProviders } from '@/layers/entities/connectors';
 import { useOpenConnections, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   Button,
@@ -30,6 +30,10 @@ export function ServiceGrid({
   const catalog = useConnectorCatalog(deferredQuery);
   const openConnections = useOpenConnections();
   const settings = useSettingsDeepLink();
+  // Someone who already saved a key of their own is not told to go set one up.
+  const providers = useConnectorProviders();
+  const offerOwnKey =
+    providers.isSuccess && !(providers.data ?? []).some((provider) => provider.configured);
   const services = catalog.data?.pages.flatMap((page) => page.services) ?? [];
   const warnings = catalog.data?.pages.flatMap((page) => page.warnings) ?? [];
 
@@ -78,21 +82,27 @@ export function ServiceGrid({
             ) : services.length === 0 ? (
               <div className="bg-muted/40 rounded-lg p-6 text-center">
                 <p className="text-sm font-medium">No matching services</p>
-                <p className="text-muted-foreground mt-1 text-xs">
-                  Try another name. To reach more apps through your own Composio or Nango account,
-                  set it up in Settings.
-                </p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() => {
-                    setOpen(false);
-                    settings.open('connections', 'ways');
-                  }}
-                >
-                  Open Settings › Connections
-                </Button>
+                {!offerOwnKey ? (
+                  <p className="text-muted-foreground mt-1 text-xs">Try another name.</p>
+                ) : (
+                  <>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Try another name. To reach more apps through your own Composio or Nango
+                      account, set it up in Settings.
+                    </p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3"
+                      onClick={() => {
+                        setOpen(false);
+                        settings.open('connections', 'ways');
+                      }}
+                    >
+                      Open Settings › Connections
+                    </Button>
+                  </>
+                )}
               </div>
             ) : (
               <ul className="space-y-2" data-testid="service-catalog-results">

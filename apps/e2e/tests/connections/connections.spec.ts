@@ -175,13 +175,14 @@ test('a revoked community grant gives a direct remove-and-reconnect path', async
 /**
  * Open Settings › Connections, where your own keys live (DOR-2419), and return
  * the "add a way" entry for the scripted provider. Nothing is set up yet in
- * these specs, so the fold is the "set one up here" one.
+ * these specs, so the choices are already open under "Or set one up here now".
  */
 async function openKeySetup(page: Page) {
   await page.getByRole('button', { name: 'Set it up in Settings › Connections' }).click();
   const settings = page.getByTestId('settings-dialog');
-  await expect(settings.getByText('How DorkOS reaches your apps')).toBeVisible();
-  await settings.getByRole('button', { name: 'Set one up here instead' }).click();
+  await expect(
+    settings.getByRole('heading', { name: 'How DorkOS reaches your apps' })
+  ).toBeVisible();
   return settings.getByTestId(`add-connection-way-${PROVIDER}`);
 }
 

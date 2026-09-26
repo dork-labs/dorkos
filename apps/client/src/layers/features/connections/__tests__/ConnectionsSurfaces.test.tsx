@@ -126,10 +126,32 @@ describe('ServiceGrid', () => {
     await user.click(screen.getByRole('button', { name: 'Connect service' }));
     expect(await screen.findByText('No matching services')).toBeInTheDocument();
     expect(screen.queryByText(/Advanced account setup/)).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Open Settings › Connections' }));
+    await user.click(await screen.findByRole('button', { name: 'Open Settings › Connections' }));
     // The catalog steps aside for Settings rather than stacking a modal on it.
     expect(screen.queryByRole('dialog', { name: 'Connect a service' })).not.toBeInTheDocument();
     expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
+  });
+
+  it('does not tell someone who already saved a key to go set one up', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      getConnectorProviders: vi.fn().mockResolvedValue([
+        {
+          type: 'composio',
+          providerInstanceId: 'cpi_composio',
+          configured: true,
+          registered: true,
+          custody: 'managed',
+          disclosure: 'Composio keeps your logins.',
+        },
+      ]),
+    });
+    vi.mocked(transport.getConnectorCatalog).mockResolvedValue({ services: [], warnings: [] });
+    renderWith(transport, <ServiceGrid onConnect={() => undefined} />);
+
+    await user.click(screen.getByRole('button', { name: 'Connect service' }));
+    expect(await screen.findByText('Try another name.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open Settings › Connections' })).toBeNull();
   });
 
   it('keeps a catalog error separate from an empty result and offers a retry', async () => {
