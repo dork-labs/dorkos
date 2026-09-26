@@ -12,7 +12,9 @@ patch)
 **Author:** Claude (spec author), direction approved by Dorian on 2026-09-26; remaining decisions
 delegated and recorded below.
 **ADRs:** [260926-172251](../../decisions/260926-172251-an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy.md),
-[260926-172252](../../decisions/260926-172252-people-change-a-rooms-files-through-the-server-and-agents-are-refreshed-at-turn-start.md)
+[260926-180223](../../decisions/260926-180223-a-turn-reaches-shared-folders-through-per-turn-grants-on-the-runtime-port.md),
+[260926-172252](../../decisions/260926-172252-people-change-a-rooms-files-through-the-server.md),
+[260926-180308](../../decisions/260926-180308-a-clean-room-worktree-is-fast-forwarded-when-its-agents-turn-launches.md)
 
 This is a short ideation: the direction was settled with the operator before it was written. The
 specification is [02-specification.md](02-specification.md).
@@ -66,12 +68,16 @@ Decided by the spec author under delegation (reasons in the spec):
    because a commit in a linked worktree writes objects and refs there. The limit is stated honestly:
    a shell can move `main`'s ref by hand on every runtime, today as before; `MAIN_CHECKOUT_DIRTY`
    catches it.
-9. **A linked git worktree of a registered home resolves to that home** (by the `.git` file and the
+9. **A linked git worktree of a registered home resolves to that home** (only with git's own
+   backlink intact, so a hand-written `.git` pointer claims nothing) (by the `.git` file and the
    common directory, no `git` process), and so does a `managed` workspace whose recorded owner is the
    agent — even when its source is another repo, because an operator bound it to that agent by name.
    Nothing else does.
 10. **The desk guard applies to turns dispatched as a named agent** (room, relay binding, task). A
     session a person opens in a folder is "a session about a directory"; the guard does not apply.
+    It refuses only another agent's home (or a copy of it) and any room folder: an agent configured
+    `workspace.mode: 'none'` still runs at the operator's `DEFAULT_CWD`, with identity from its home
+    (review round, orchestrator ruling).
 11. **No `.dork/` exclusion in room worktrees.** `info/exclude` cannot hide a tracked file, and hiding
     an untracked `.dork/` would hide a person's work from the reap's dirty check. After this change a
     committed `.dork/` is just a file; negative tests prove it.
@@ -88,9 +94,21 @@ Decided by the spec author under delegation (reasons in the spec):
     file is saved, and saving creates missing parents. No placeholder file is committed.
 17. **One room entry per person commit, no coalescing.** Noisy for frequent savers; coalescing would
     need entries that change after they were posted, which the room log never does.
-18. **A turn-start refresh forgets diff baselines** for the paths it moved in that agent's room
+18. **The refresh runs when the turn launches**, not when it is placed, and is skipped while any
+    session bound to that (room, agent) has a turn running (an app-resumed turn holds no room claim).
+    It also holds when an ignored or untracked file sits where the fast-forward would write, because
+    git's fast-forward overwrites an ignored file silently (review round, orchestrator ruling). It
+    forgets diff baselines for the paths it moved in that agent's room
     session, so the diff viewer never shows others' changes as the agent's.
-19. **Tasks are ordered so the agent-facing truth flips in one PR**: the desk change, the grants, the
+19. **A person's commit is authored as the signed-in person** when login is on
+    (`person-<authorId>@dorkos.local`, never a real address) and as the operator when it is off;
+    every name the app or an agent sees comes from the room log, never from git.
+20. **In a room, an agent changes its own code in a private worktree of its own repo**, never in its
+    home checkout, because its other turns may be running there. A skill rule, not a mechanism; the
+    per-agent concurrency cap stays.
+21. **Four ADRs, one decision each:** identity and desk (172251), grants on the runtime port (180223),
+    people's file operations (172252), the launch-time refresh (180308).
+22. **Tasks are ordered so the agent-facing truth flips in one PR**: the desk change, the grants, the
     context block and the `working-in-room-repos` skill land together (T4).
 
 ## Out of scope

@@ -15,7 +15,7 @@ follow-up work outside this programme.
 **Prerequisite:** `specs/agent-workspace-binding/` (implemented as Phase 0 of this programme)
 
 > **Amended 2026-09-26 by [`specs/agent-home-desk/`](../agent-home-desk/02-specification.md)** (ADRs
-> 260926-172251, 260926-172252), proposed at the time of writing. A room turn runs in the agent's own
+> 260926-172251, 260926-180223, 260926-172252, 260926-180308), proposed at the time of writing. A room turn runs in the agent's own
 > home, with its worktree granted as a folder it writes to and `repo/` granted read-only; §3.5 rung 2
 > is retired. The server fast-forwards a clean worktree with nothing ahead of `main` at turn start
 > (§3.4's "the server never mutates a worktree" is retired for that case). Skills committed to a room

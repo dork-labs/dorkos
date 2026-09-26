@@ -18,7 +18,7 @@ file, joining the absolute path the amendment describes. One name in that amendm
 see the note at the end.
 
 **Amended by
-[260926-172251](260926-172251-an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy.md)
+[260926-180223](260926-180223-a-turn-reaches-shared-folders-through-per-turn-grants-on-the-runtime-port.md)
 (2026-09-26, proposed).** The "filesystem grant on the `AgentRuntime` port" this record declined on
 cost is now built, for a room's files. Attachments are **still projected** — a remote attachment
 store has no local path to grant — and the projection root is again the agent's home, because a room

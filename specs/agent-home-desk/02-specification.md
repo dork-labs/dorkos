@@ -11,10 +11,12 @@ status: specified
 **Author:** Claude (spec author), direction approved by Dorian 2026-09-26
 **Tracker:** DOR-2355 (closes DOR-2356; DOR-2359 becomes moot for rooms; retires DOR-1640's patch)
 **Decision record:** [01-ideation.md](01-ideation.md) — the rule, the operator's decisions and the
-19 decisions made under delegation. Not re-litigated here.
+decisions made under delegation (22 after the review round). Not re-litigated here.
 **ADRs:** [260926-172251](../../decisions/260926-172251-an-agents-identity-comes-from-its-home-and-its-desk-is-its-home-or-a-private-copy.md)
-(home, desk, grants), [260926-172252](../../decisions/260926-172252-people-change-a-rooms-files-through-the-server-and-agents-are-refreshed-at-turn-start.md)
-(people's file operations, turn-start refresh).
+(home and desk), [260926-180223](../../decisions/260926-180223-a-turn-reaches-shared-folders-through-per-turn-grants-on-the-runtime-port.md)
+(grants on the runtime port; room turns stand at home), [260926-172252](../../decisions/260926-172252-people-change-a-rooms-files-through-the-server.md)
+(people's file operations), [260926-180308](../../decisions/260926-180308-a-clean-room-worktree-is-fast-forwarded-when-its-agents-turn-launches.md)
+(the launch-time refresh).
 **Amends:** `specs/project-rooms/` ideation decisions 5 and 13, spec §3.4 ("the server never mutates
 a worktree"), §3.5 rung 2, §3.7's files section and §3.8; ADRs 260829-115621, 260829-115626,
 260807-233816, 260726-022251.
@@ -66,23 +68,30 @@ Each invariant has at least one test in §11 that fails if it is broken.
 - **I2 — A committed `.dork/` elsewhere is inert.** A `.dork/agent.json`, `SOUL.md`, `NOPE.md` or
   `MEMORY.md` in a worktree of a home repo, a room repo, a room worktree or a managed checkout changes
   nothing any turn sees and registers no agent.
-- **I3 — The desk rule.** A turn dispatched as a named agent (room, relay binding, task) runs with
-  `cwd` equal to that agent's home, or a folder that resolves to that same home through §3's resolver.
-  Otherwise the turn is refused `DESK_NOT_OWN` before the runtime is called (DOR-2356).
+- **I3 — The desk rule.** A turn dispatched as a named agent (room, relay binding, task) never
+  stands in another agent's home or a private copy of it, and never in a room's folder
+  (`<dorkHome>/rooms/**`). Its desk is its own home, a folder that resolves to that same home through
+  §3's resolver, or — only when the agent is configured `workspace.mode: 'none'` or its home is
+  refused by the boundary — the operator-configured `DEFAULT_CWD`. Identity comes from the home in
+  every case. Anything else is refused `DESK_NOT_OWN` before the runtime is called (DOR-2356).
 - **I4 — Room turns stand at home.** A project-room turn's `cwd` is the agent's home. It is never a
   room worktree, never `repo/`, never another agent's home.
 - **I5 — Grants are exact and per turn.** A turn is granted exactly the folders its dispatcher
   computed for it. A grant from an earlier turn in the same session is not handed to a later turn that
   does not carry it.
 - **I6 — One writer per room tree.** `repo/` is written only by the server. A room worktree is written
-  only by its agent's turns and, between turns under that agent's claim, by the §6 fast-forward.
-- **I7 — The refresh cannot lose work.** The server moves a worktree only when it is on its own branch,
-  has no tracked or untracked changes, and has no commits `main` lacks; it only fast-forwards; it never
-  runs during that agent's turn.
-- **I8 — Files never change during a turn.** The refresh happens before the room context is built,
-  at the same boundary where the `ROOM.md` pin advances (ADR 260829-115623).
+  only by its agent's turns (room turns and app-resumed turns on that agent's room sessions, which
+  carry the same grant) and, when none of those is running, by the §6 fast-forward.
+- **I7 — The refresh cannot lose work.** The server moves a worktree only when it is on its own
+  branch, has no tracked or untracked changes, has no commits `main` lacks, and has no ignored or
+  untracked file at any path the fast-forward would write; it only fast-forwards; and it runs at the
+  moment a room turn is launched, never while any session bound to that (room, agent) has a turn
+  running.
+- **I8 — Files never change during a turn.** The refresh happens at launch, before the runtime is
+  called and before the room context's files section is rendered, the same boundary where the
+  `ROOM.md` pin takes effect (ADR 260829-115623).
 - **I9 — People write through the server.** Every person change is one commit on `main`, authored as
-  that person, behind the room's merge mutex, refused `PEOPLE_ONLY` for agents and `FILE_CHANGED` when
+  that person (§7.1 authorship rule), behind the room's merge mutex, refused `PEOPLE_ONLY` for agents and `FILE_CHANGED` when
   the path moved since the person loaded it.
 - **I10 — Edits wake nobody.** A person's file change posts one entry that stores no mentions,
   addresses nobody and triggers no turn.
@@ -115,8 +124,12 @@ Owner sources, in order, first match wins:
 1. **Exact.** `meshCore.getByPath(dir)` — the registered home itself (today's behaviour).
 2. **Linked worktree of a home repo** (new). Pure filesystem, no `git` process:
    walk up from `dir` to the nearest ancestor `W` holding `.git`; if `.git` is a directory, stop (not
-   a linked worktree). If it is a file `gitdir: <G>`, read `<G>/commondir` to get the common dir `C`;
-   when `basename(C) === '.git'` the main worktree is `M = dirname(C)` (a bare repo answers `none`).
+   a linked worktree). If it is a file `gitdir: <G>`, require git's own **backlink**: `<G>/gitdir`
+   must exist and name `<W>/.git` (realpath-compared). A hand-written `.git` pointer into another
+   agent's repo has no backlink and answers `none`. Then read `<G>/commondir`; **missing
+   `commondir` answers `none`** (a submodule's `.git` file points at a gitdir with no `commondir`).
+   Resolve it to the common dir `C`; when `basename(C) === '.git'` the main worktree is
+   `M = dirname(C)` (a bare repo answers `none`).
    The candidate home is `path.join(M, path.relative(W, dir))`; it resolves only if that exact path is
    registered. No walk-up past the relative position: a desk at `W/apps/server` maps to
    `M/apps/server`, the same exact-path rule as source 1. A common dir under `<dorkHome>/rooms/`
@@ -133,8 +146,11 @@ T4 a room worktree is never a desk, and a session a person opens inside one reso
 (`roomTurn.agentPath`, a binding's agent, a task's agent) and the resolution names a different home,
 the answer is `refused: 'not-the-turns-agent'`.
 
-The result is memoized per `dir` for the life of the server instance, invalidated on mesh
+Memoization: source 1 (exact) and source 3 (managed) are memoized per `dir`, invalidated on mesh
 register/unregister (`meshCore.onUnregister` and the register path) and on workspace-store writes.
+Source 2 is memoized keyed on `(dir, contents of W/.git, contents of <G>/gitdir)`, so removing a
+worktree and adding another at the same path, or rewriting its `.git` file, is a cache miss. The
+three reads cost less than the `stat` calls they replace; nothing is cached across a changed pointer.
 
 ### 3.2 Identity readers that change (T1)
 
@@ -179,8 +195,21 @@ of a registered home is already refused as `duplicate-id` by `AgentRegistry.upse
 
 ### 3.4 The desk guard (T4, DOR-2356)
 
-`assertOwnDesk(forAgent: AgentHome, cwd: string)` in `agent-home.ts`: passes when `cwd === forAgent`
-or `resolveAgentHome(cwd).home === forAgent`; otherwise throws `DeskNotOwnError` (`DESK_NOT_OWN`).
+`assertOwnDesk(forAgent: AgentHome, cwd: string, binding: 'home' | 'managed' | 'none' | 'boundary-refused')`
+in `agent-home.ts`. Checked in this order:
+
+1. `cwd` is inside `<dorkHome>/rooms/` → refuse (a room's folder is never a desk).
+2. `resolveAgentHome(cwd)` names a home other than `forAgent` → refuse (another agent's home or a
+   private copy of it).
+3. `cwd === forAgent`, or the resolution names `forAgent` → pass.
+4. `cwd === DEFAULT_CWD` and `binding` is `'none'` or `'boundary-refused'` → pass. This is the
+   supported `workspace.mode: 'none'` value (`resolve-session-cwd.ts`; tasks at
+   `task-scheduler-service.ts:916`, relay at `binding-router.ts:761,1172`). Identity still comes from
+   `forAgent`'s home.
+5. Anything else → refuse.
+
+`binding` is the rung `resolveSessionCwd` already reports for the placement; callers pass it through
+rather than re-deriving it. A refusal throws `DeskNotOwnError` (`DESK_NOT_OWN`).
 Called at the three named-agent dispatch points, immediately before `runtime.sendMessage`:
 
 - rooms: `apps/server/src/services/rooms/room-turn-runner.ts` before `dispatchMessage` (`:864`);
@@ -223,6 +252,14 @@ export interface MessageOpts extends SessionSettings {
 }
 ```
 
+**Forwarding through the dispatcher.** `services/session/message-dispatcher.ts` forwards turn fields
+**by name** in two places: the `turn: Pick<DispatchMessageOpts, …>` whitelist (`:955-970`) and the
+launch spread that rebuilds a queued turn (`:1236-1250`). A field missing from either is silently
+dropped for any turn that waited in the queue — and for grants, absent means none (I5). T1 adds
+`forAgent` to both, T2 adds `additionalDirectories` to both, and T4 adds `prepareLaunch` (§6.1; T5 is its
+first real user) to both; each lands with a test that queues a turn behind a running one and asserts the field reaches
+`runtime.sendMessage`.
+
 A nested grant is legal (the room's `repo/.git` inside `repo/`); where a backend's rules are
 path-prefix denies, a `read` ancestor wins for file tools and only shell processes write inside it —
 which is the intended outcome for `repo/.git` (§5.2).
@@ -257,14 +294,25 @@ object (`:2144`).
   (`sdk.mjs`), which loads skills from the granted folder; `permissions.additionalDirectories` loads
   neither skills nor rules (research/20260913_multi-repo-organization-for-agents.md, Claude Code
   docs). I11 needs the latter.
-- **Validation gate (blocks T2 merging).** One live claude-code run (no paid key needed beyond the
-  operator's own sign-in) proves, in `default` permission mode: (a) `Read` and `Edit` inside a
-  `write` grant proceed with no `canUseTool` call; (b) `Edit` inside a `read` grant is refused;
-  (c) a `.claude/skills/probe/SKILL.md` inside a grant is absent from the session's reported skills;
-  (d) a `CLAUDE.md` inside a grant is not loaded. If (a) fails, the adapter switches to
-  `Options.additionalDirectories`, and if (c) then fails too, the spec is amended to record that
-  room-committed skills load on claude-code (I11 downgraded honestly, with the docs saying so) —
-  never silently.
+- **Validation gate (blocks T2 merging).** Live claude-code runs on the operator's own sign-in
+  prove the grant behaves like the working directory does in each mode, because room turns run in the
+  operator's unattended trust stop — `acceptEdits` or `bypassPermissions`, never `default` (DOR-1917,
+  `room-turn-runner.ts:333-340`):
+  - (a1) `default`: `Read` of a file inside a `write` grant raises no `canUseTool` call (reading
+    outside the cwd is what the grant exists to allow; `Edit` asks in `default` everywhere, so it is
+    not the test).
+  - (a2) `acceptEdits`: `Edit` inside a `write` grant raises no `canUseTool` call.
+  - (b) `Edit` inside a `read` grant is refused under **both** `acceptEdits` and `bypassPermissions`
+    (a deny rule must beat the bypass).
+  - (c) a `.claude/skills/probe/SKILL.md` inside a grant is absent from the session's reported skills.
+  - (d) a `CLAUDE.md` inside a grant is not loaded.
+
+  Only if (a1) or (a2) fails does the adapter switch to `Options.additionalDirectories`; if (c) then
+  fails too, the spec is amended to record that room-committed skills load on claude-code (I11
+  downgraded honestly, with the docs saying so) — never silently. If (b) fails under
+  `bypassPermissions`, a `read` grant under bypass is recorded as unenforced for file tools too, in
+  §5.2 and the docs.
+
 - **`CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`** is removed from the turn environment
   (`runtimeEnvironment('claude-code','turn', …)`) whenever it is present in the server's environment,
   pinned by test.
@@ -361,12 +409,12 @@ export interface RoomTurnFiles {
   worktree: string;
   branch: string;
   repo: string;
-  refresh: WorktreeRefreshOutcome; // §6
+  refresh?: WorktreeRefreshOutcome; // §6, set at launch
 }
 ```
 
-For a project room: `ensureWorktree` (unchanged lazy creation, minus seeding and projection, §5.6),
-then the §6 refresh, then grants:
+For a project room: `ensureWorktree` (unchanged lazy creation, minus seeding and projection, §5.9),
+then grants:
 
 | Grant                     | Access  | Why                                                                                               |
 | ------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
@@ -374,8 +422,10 @@ then the §6 refresh, then grants:
 | `<room>/repo`             | `read`  | Reading `main` and the room's other files                                                         |
 | `<room>/repo/.git`        | `write` | A commit in a linked worktree writes objects, its index and its ref here (01-ideation decision 8) |
 
-The dispatcher keeps its load-bearing order (spec project-rooms §3.5): place → refresh → build context
-→ runner. `resolve-session-cwd.ts` loses the `room-worktree` rung (`:271`, `roomWorktree()`
+The dispatcher keeps its load-bearing order (spec project-rooms §3.5): place → build context →
+runner. The refresh is **not** part of placement: it runs at launch (§6.1), and fills the files
+section's `refresh` field there. `RoomTurnFiles.refresh` is therefore absent in the context the
+dispatcher builds and set by `prepareLaunch`. `resolve-session-cwd.ts` loses the `room-worktree` rung (`:271`, `roomWorktree()`
 `:318-334`, `ensureRoomWorktree` `:193`); a request naming a room resolves to the agent's home and
 stops there, as today's no-repo case does. `RoomTurnRequest.cwd` stays as a field (it is where the
 attachment projector writes, §5.4) and always equals `agentPath` for a room turn.
@@ -423,7 +473,10 @@ home") is deleted. `room-context.ts` keeps `path.join(input.cwd, relativePath)`.
 path; `git -C <copy>`; absolute paths for edits; the shared copy is read-only; sync, commit, merge.
 It adds a short "your own code" paragraph (the new capability: in a room, the agent's own repo is
 its desk, so it can change its own code in the same turn — following its own repo's rules for that,
-not the room's). `OPERATING_SKILLS_VERSION` is bumped so the every-boot backfill reaches existing
+not the room's), with one rule stated as a rule: **when you change your own code, do it in a private
+worktree of your own repo, never in your home checkout itself**, because other turns of yours — in
+other rooms, or a person's direct session — may be running in that checkout at the same time
+(§13). The per-agent concurrency cap (`rooms.maxConcurrentTurnsPerAgent`) stays as it is. `OPERATING_SKILLS_VERSION` is bumped so the every-boot backfill reaches existing
 homes. References in `pack.ts`, `operating-dorkos.ts` and `answering-dorkos-questions.ts` are checked
 for the old wording.
 
@@ -442,8 +495,9 @@ canvas service needs no rooms lookup.
 
 `routes/sessions.ts:1177-1187` resolves a room-bound session through
 `services/workspace/room-session-cwd.ts` `resolveSessionCwdWithRoom`. It now returns the home **and
-the room turn's grants** (from `resolveRoomTurnPlace`, without the refresh — a person resuming is not
-a room turn and holds no claim), and the message route passes them into `sendMessage`. An explicit
+the room turn's grants** (from `resolveRoomTurnPlace`), and the message route passes them into
+`sendMessage`. An app-resumed turn never refreshes, and because it is a turn on a session bound to
+that (room, agent), a room turn launched while it runs skips its own refresh (§6.1). An explicit
 `cwd` naming the agent's room worktree is replaced by the home with a debug log;
 `vouchForNamedWorktree` (`:127-144`) is deleted. The file is renamed `room-session-place.ts`.
 
@@ -464,8 +518,9 @@ Each item is deleted, not deprecated, by the task named.
 | DOR-1597 "identity and files are two values" comments                                                                                                              | `room-turn-runner.ts:169,518,646`, `room-context.ts:191`, `room-turn-port.ts:81`, `agent-runtime.ts:821`       | T4   |
 
 Kept on purpose: `busyAgentPaths` as reap gate 1 (a live turn still edits its worktree through the
-grant), the claim map and both busy ceilings keyed on `agentPath` (DOR-2359 is moot for rooms because
-the key and the cwd are the same value again), the merge service and `room_repo_status`.
+grant), the claim map and both busy ceilings keyed on `agentPath` (DOR-2359's mismatch between the key and
+the cwd is moot for rooms because they are the same value again; the home having several concurrent
+writers is a separate, stated risk, §13), the merge service and `room_repo_status`.
 
 ### 5.9 Legacy worktree plumbing (T4)
 
@@ -474,7 +529,8 @@ projection links (`.claude/skills/*`, `.agents/harness.manifest.json`, scaffolde
 and attachment projections (`.dork/.temp/room-attachments/`), all hidden by a marker block in the
 repo's shared `info/exclude`. Removing the block would make every such worktree dirty (never reaped,
 merges refused `UNCOMMITTED_WORK`). So, once per worktree per process, at the worktree's next turn
-placement under its agent's claim (T4, `room-worktree-manager.ts` `retireLegacyPlumbing`):
+launch, inside `prepareLaunch` and under the same "no bound session busy" check as the refresh
+(T4 adds the hook for this, `room-worktree-manager.ts` `retireLegacyPlumbing`):
 
 - delete a seeded `SKILL.md` only when its bytes equal a pack version DorkOS shipped (the seeder's
   own manifest of hashes), a projection path only when it is a symlink into the agent's home or the
@@ -487,21 +543,40 @@ placement under its agent's claim (T4, `room-worktree-manager.ts` `retireLegacyP
 
 ### 6.1 The refresh
 
-`apps/server/src/services/rooms/repo/room-worktree-refresh.ts` (new), called by
-`resolveRoomTurnPlace` after `ensureWorktree`, under the turn's claim:
+`apps/server/src/services/rooms/repo/room-worktree-refresh.ts` (new).
+
+**When it runs.** Not at placement: a room turn can wait in the session queue behind another turn on
+the same session (an app-resumed turn holds no room claim), and a refresh done at placement would
+move files under that running turn. So the refresh runs at **launch**, through a new
+`DispatchMessageOpts.prepareLaunch?: () => Promise<Partial<Pick<DispatchMessageOpts, 'roomContext'>>>`
+(added by T4 for legacy clean-up, §5.9)
+that `message-dispatcher.ts` awaits at the one point where a turn — immediate or dequeued — is about to
+call `runtime.sendMessage`, and merges the result into the turn. It is forwarded by name like every
+turn field (§4.1). The room turn runner supplies it; it runs the refresh and sets
+`roomContext.files.refresh` (the runtimes format `roomContext` at launch, so the context the model
+sees matches the files on disk). Before touching git, it asks the dispatcher whether **any session
+bound to this (room, agent)** (`room_sessions`) has a turn in flight other than this one; if so it
+answers `held: busy` without a single git call. The question is a new read,
+`message-dispatcher.ts` `isTurnInFlight(sessionId)` (true from launch until settle, the same slot
+`inFlight` already tracks), asked for each session id `room_sessions` holds for the (room, author)
+pair.
 
 ```ts
 export type WorktreeRefreshOutcome =
   | { kind: 'current' } // already at main's tip, or just created
   | { kind: 'refreshed'; from: string; to: string; paths: string[] }
-  | { kind: 'held'; reason: 'changes' | 'ahead' | 'off-branch' | 'unreadable'; moved: MainMoved };
+  | {
+      kind: 'held';
+      reason: 'busy' | 'changes' | 'ahead' | 'off-branch' | 'unreadable';
+      moved: MainMoved | null; // null for 'busy' (no git read was made)
+    };
 
 export interface MainMoved {
   commits: {
     sha: string;
-    author: string;
+    who: string; // a display name from the room log, never a git author field (§6.2)
     subject: string;
-    kind: 'merge' | 'person';
+    kind: 'merge' | 'person' | 'other';
     files: string[];
   }[];
   overflow: number; // commits beyond the cap, for "and N more"
@@ -511,12 +586,21 @@ export interface MainMoved {
 
 Steps, each a git query under `--no-optional-locks` except the one write:
 
-1. `HEAD` must be the symbolic ref `refs/heads/room/<slug>`; otherwise `held: off-branch`.
-2. `git status --porcelain=v1 --untracked-files=all` must be empty; otherwise `held: changes`.
-3. `git rev-list --count <mainTip>..HEAD` must be `0`; otherwise `held: ahead`.
-4. Capture `mainTip = git rev-parse refs/heads/main` once; if `HEAD === mainTip`, `current`.
-5. `git merge --ff-only <mainTip>` in the worktree (the only write). A failure answers `held:
-unreadable` and logs; nothing else is attempted.
+1. Capture `mainTip = git rev-parse refs/heads/main` once. Every later step uses this value, never
+   `main` by name.
+2. `HEAD` must be the symbolic ref `refs/heads/room/<slug>`; otherwise `held: off-branch`.
+3. `git status --porcelain=v1 --untracked-files=all` must be empty; otherwise `held: changes`.
+4. `git rev-list --count <mainTip>..HEAD` must be `0`; otherwise `held: ahead`.
+5. If `HEAD === mainTip`, `current`.
+6. **Nothing on disk in the way.** Let `P` be `git diff --name-only HEAD <mainTip>` (every path the
+   fast-forward would add, change or remove). If any path in `P`, or any parent folder of one, is
+   present on disk as an ignored or untracked file (`git ls-files -o -i --exclude-standard` together
+   with `git ls-files -o --exclude-standard`, intersected with `P` and its parents), answer
+   `held: changes`. Git's fast-forward silently overwrites an ignored file that `main` now tracks
+   (measured by the reviewer: a private `notes.log` overwritten, exit 0); this step is the only thing
+   that stops it.
+7. `git merge --ff-only <mainTip>` in the worktree (the only write). A failure answers
+   `held: unreadable` and logs; nothing else is attempted.
 
 A refresh forgets diff baselines for the moved paths in every live session of this agent in this room
 (`services/diff/edit-baseline.ts` gains `forget(sessionId, absPaths)`; I8 plus ADR 260711-142049's
@@ -524,12 +608,17 @@ first-touch-wins would otherwise report others' changes as the agent's).
 
 ### 6.2 What moved
 
-For `held`, `MainMoved` is computed from `merge-base HEAD main`: commits on `main` after it (cap 8,
-newest first), each classified `merge` (a merge commit made by the merge service) or `person` (a
-person's commit from §7, recognised by the operator author email), with up to 8 files each; `overlap`
-is the intersection of files changed on `main` since the base with files the agent changed (committed
-ahead of the base plus working-tree changes). All git reads are bounded by the existing repo git
-timeout.
+For `held` (except `busy`), `MainMoved` is computed from `B = merge-base HEAD <mainTip>`:
+`git rev-list --first-parent B..<mainTip>` (cap 8, newest first). Merges are `--no-ff`
+(`room-repo-git.ts`), so without `--first-parent` every commit an agent made on its branch would be
+listed and eat the cap; with it, `main`'s own history is exactly one commit per merge and one per
+person change. Each commit is classified and named **from the room log, not from git**: the room entry
+whose `merge.commit` or `fileChange.commit` equals the sha gives `kind` (`merge` or `person`) and
+`who` (that entry's subject author's display name). A commit with no matching entry (a repair commit,
+something committed by hand) is `other`, named "someone". Up to 8 files each
+(`git diff --name-only <sha>^1 <sha>`). `overlap` is the intersection of `git diff --name-only B
+<mainTip>` with the files the agent changed (`git diff --name-only B HEAD` plus working-tree changes).
+All git reads are bounded by the existing repo git timeout.
 
 ### 6.3 Refresh lines in the context block
 
@@ -544,8 +633,11 @@ Exactly one, pinned:
 - `held: off-branch`: "Your copy is not on {branch}, so it was not updated. Switch back before you
   merge."
 
-Names and subjects render through `sanitizeIdentity` like every label outside the untrusted fence;
-commit subjects are member-authored text and go inside the fence as untrusted content.
+- `held: busy`: nothing (the turn says nothing about a refresh it did not attempt).
+
+Names render through `sanitizeIdentity` like every label outside the untrusted fence. Commit subjects
+and file paths are member-authored text (a person or agent chose them), so the "what moved" lines —
+subjects and paths alike — render inside the untrusted fence with the per-turn nonce.
 
 ## 7. People's file operations (T6 server, T7 app)
 
@@ -553,8 +645,17 @@ commit subjects are member-authored text and go inside the fence as untrusted co
 
 All in `apps/server/src/routes/rooms.ts`, all `assertCanWriteFiles` (people only, room not archived,
 `services/rooms/service/room-visibility.ts:353`), all serialized through `RoomRepoMutex.run` and
-`assertMainCheckoutReady` first, all one commit authored as the person
-(`room-file-editor.ts:377-384`), all refusing with the existing codes plus two new ones.
+`assertMainCheckoutReady` first, all one commit authored as the person, all refusing with the
+existing codes plus two new ones.
+
+**Authorship rule, stated plainly.** Today every person commit is authored `operatorGitName()` /
+`operator@dorkos.local` (`room-file-editor.ts:377-384`, `room-repo-git.ts:141-150`), whoever is
+signed in. From T6: when login is on and the request carries a signed-in person, the commit author is
+that person — name = their display name, email = `person-<authorId>@dorkos.local`, a stable
+non-address so no real email lands in the room's history. When login is off, the person is the
+operator, and the operator identity is used as today. The server never names anyone from git: the
+room entry (§7.2) carries the person's author id and is what every surface — including the §6.2
+heads-up — reads names from.
 
 | Route                                   | Body                                                                             | Commit subject               | Locking                                                                                                                                    |
 | --------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -568,9 +669,18 @@ New codes in `services/rooms/room-errors.ts` and `routes/room-error-response.ts`
 (409, names the path; the app offers "replace") and `ROOM_UPLOAD_TOO_MANY_FILES` (400). Unchanged
 checks apply to every written path: `assertWritablePath`, `assertOverwritable`, `assertNotIgnored`,
 `assertFits` (`FILE_TOO_LARGE`, `REPO_CAP_EXCEEDED`, measured on the resulting tree), and
-`assertNoLinkOnDisk`. Uploads and attachment copies may be binary (the editor stays text-only);
-`assertText` applies only to the text save. Multer limits the upload to the room's frozen
-`maxFileBytes` per file and 20 files, so the 1 MB JSON cap does not apply. A multi-file commit rolls
+`assertNoLinkOnDisk`. **Case collisions are checked per path segment**, not only on the whole path:
+`assertOverwritable`'s capital-letters check today compares whole paths, so saving `Notes/plan.md`
+when `notes/` exists passes it, lands on disk inside `notes/` (APFS and NTFS fold case), and commits a
+path the response and the room entry would name wrongly. For save (now that it creates parents),
+upload, move's destination and save-from-attachment, every folder segment of the new path is compared
+case-insensitively with the existing tree at that level, and a mismatch is refused naming the folder
+that is really there. Uploads and attachment copies may be binary (the editor stays text-only);
+`assertText` applies only to the text save. Multer uses **disk storage** into a
+per-request temp folder under `<dorkHome>/.temp/room-uploads/` (never memory storage, which would hold
+up to 20 × `maxFileBytes` in RAM), limits each file to the room's frozen `maxFileBytes` and the
+request to 20 files, and the temp folder is removed when the request settles. The 1 MB JSON cap does
+not apply. A multi-file commit rolls
 back entirely on any failure (the editor's existing rollback, extended to a list).
 
 `FILE_CHANGED` keeps its conflict payload (`packages/shared/src/room-files.ts:292-321`), naming the
@@ -601,7 +711,10 @@ Text (plain words, person's display name first): "Dorian edited ROOM.md", "Doria
 "Dorian uploaded 3 files to designs/", "Dorian renamed a.md to b.md", "Dorian deleted old/", "Dorian
 saved screenshot.png from the chat to designs/".
 
-Agents see these in the room context like any system entry; the §6.2 heads-up also names them.
+Paths in a `fileChange` entry are member-chosen text. The app renders them as plain text (never
+markdown or links); in the room context they render inside the untrusted fence like any entry body,
+and the entry's `text` is composed server-side from sanitized path segments. Agents see these in the
+room context like any system entry; the §6.2 heads-up also names them.
 
 ### 7.3 The app
 
@@ -651,7 +764,10 @@ transcripts out from under the sessions resuming them.
    directory, from `claude-config-dir.ts` and the accounts store), move
    `projects/<slug(worktree)>/<id>.jsonl` and its sibling `<id>/` folder to
    `projects/<slug(home)>/`. Same filesystem, so a rename. An existing destination is never
-   overwritten; the source stays and is logged.
+   overwritten. Leaving the source as a second `<id>.jsonl` would put two transcripts with one
+   session id in the indexed set, which `jsonl-frontier.ts:262-276` treats as contested and stops
+   indexing; so the source is renamed in place to `<id>.jsonl.conflict` (not indexed by anything), and
+   the startup log and the marker name both paths for the operator to resolve.
 3. Write `<dorkHome>/migrations/agent-home-desk-transcripts.json` with counts and the frozen list of
    worktree folders it saw.
 
@@ -666,7 +782,7 @@ either way. The measurement result is written into this section in the T3 PR.
 
 ### 8.2 ADR status
 
-T8 flips 260926-172251 and 260926-172252 to `accepted` once T4-T7 have shipped and the code matches.
+T8 flips 260926-172251, 260926-180223, 260926-172252 and 260926-180308 to `accepted` once T4-T7 have shipped and the code matches.
 
 ## 9. Worksessions, managed workspaces and multi-repo
 
@@ -691,7 +807,7 @@ T8 flips 260926-172251 and 260926-172252 to `accepted` once T4-T7 have shipped a
   resolves to at most one home, by exact registered path through three named sources; a named-agent
   turn in any other folder is refused (I3).
 - **The refresh cannot destroy work** (I7): three git-read preconditions, fast-forward only, between
-  turns only, under the claim.
+  turns only, at launch, never while any session bound to that (room, agent) has a turn in flight.
 - **People's operations** keep every existing path, link, submodule, ignore and size rule; uploads
   are bytes (no symlinks can arrive); the attachment copy is membership- and room-scoped.
 
@@ -719,27 +835,51 @@ T8 flips 260926-172251 and 260926-172252 to `accepted` once T4-T7 have shipped a
   ruleset sent only when the set changes (opencode).
 - **Room placement (T4).** A project-room turn: `cwd === agentPath`; grants exactly §5.1's three; a
   no-files room: no grants; files section rendered with the new copy (pinned).
-- **Desk guard (T4).** A room turn whose computed cwd is another agent's home, a room worktree,
-  `repo/`, or `DEFAULT_CWD` → `DESK_NOT_OWN`, the runtime's `sendMessage` never called; the same for a
-  relay binding and a task whose cwd resolves to a different agent; the agent's own linked worktree
-  and own managed workspace pass.
+- **Desk guard (T4).** A room turn whose computed cwd is another agent's home, a linked worktree of
+  another agent's home, a room worktree, or `repo/` → `DESK_NOT_OWN`, the runtime's `sendMessage`
+  never called; the same for a relay binding and a task whose cwd resolves to a different agent. The
+  agent's own linked worktree and own managed workspace pass. A task and a relay binding for an agent
+  configured `workspace.mode: 'none'` run at `DEFAULT_CWD` and pass, with identity from the home; the
+  same agent at `DEFAULT_CWD` with binding `home` is refused.
+- **Resolver hardening (T1).** A hand-written `.git` file pointing into another agent's repo's
+  `worktrees/<name>` gitdir (no matching backlink) → `none`; a submodule `.git` file (no `commondir`)
+  → `none`; `git worktree remove` then `git worktree add` of a different repo at the same path → the
+  new owner, not the memoized old one.
+- **Queued forwarding (T1, T2, T5).** A room turn queued behind a running turn on the same session
+  reaches `runtime.sendMessage` with its `forAgent` (T1), its `additionalDirectories` (T2) and its
+  `prepareLaunch` result (T4) — each field removed from the whitelist or the launch spread fails its
+  test.
 - **Canvas (T4).** An absolute source path inside the worktree → `worktree` label with ahead count;
   inside `repo/` → `room-main`; elsewhere → `agent-cwd`.
 - **Legacy plumbing (T4).** A worktree with an unmodified seeded `SKILL.md`, a projection symlink and an
   old attachment projection → all removed, tree clean, block removed when it was the last; a modified
   `SKILL.md` and a real file at a projection path → kept, block kept.
 - **Refresh (T5).** Each `held` reason red-before/green-after: untracked file only; staged change;
-  one commit ahead; detached `HEAD`; another branch checked out. `current` when at tip. `refreshed`
-  moves exactly to the captured tip even if `main` advances during the refresh. Never runs while the
-  agent holds a live turn (claim asserted). Baselines forgotten for moved paths only.
-- **Heads-up (T5).** Merge and person commits classified; caps and "and N more"; overlap from
-  committed-ahead and working-tree changes; subjects inside the fence.
+  one commit ahead; detached `HEAD`; another branch checked out. **An ignored file at a path `main`
+  now tracks** (e.g. `notes.log` ignored in the worktree, then committed on `main`) → `held: changes`
+  and the file's bytes are unchanged; the same for an untracked file at a parent-folder path.
+  `current` when at tip. `refreshed` moves exactly to the captured tip even if `main` advances after
+  step 1. **Busy:** an app-resumed turn running on a session bound to the same (room, agent) → the
+  room turn queues behind it and, when launched, answers `held: busy` with zero git calls if the
+  resumed turn is still running, and refreshes if it has finished; a refresh never runs while any
+  bound session has a turn in flight. The refresh runs at launch, not at placement: a turn placed
+  while `main` is at A and launched after `main` moved to B lands on B. Baselines forgotten for moved
+  paths only.
+- **Heads-up (T5).** With `--first-parent`, a merge of a 12-commit agent branch is one listed commit;
+  merge and person commits classified and named from their room entries; a hand commit is `other`
+  ("someone"); two people signed in under login are named apart even though neither is the operator;
+  caps and "and N more"; overlap from committed-ahead and working-tree changes; subjects and paths
+  inside the fence.
 - **File ops (T6).** Each route: happy path is one commit authored as the person with the pinned
   subject; `PEOPLE_ONLY` for an agent caller; `FILE_CHANGED` when a locked path moved; `ROOM_FILE_EXISTS`;
-  caps; `.git` paths; a symlink on disk; `MAIN_CHECKOUT_DIRTY`; queued behind a running merge;
+  caps; `.git` paths; a symlink on disk; `MAIN_CHECKOUT_DIRTY`; case collisions per segment
+  (`Notes/plan.md` when `notes/` exists is refused naming `notes/`, for save, upload, move and
+  from-attachment); commit author is the signed-in person with login on and the operator with login
+  off; upload temp folder is removed after success and after failure; queued behind a running merge;
   multi-file rollback leaves `main` and `repo/` unchanged; save creates parents; a parent that is a
   file is refused; an attachment from another room is 404.
-- **Room entry (T6).** One entry per commit, `mentions: []`, no dispatch (cascade-guard assertion as
+- **Room entry (T6).** A path containing `</room_context>` and markdown renders inert in the app and
+  inside the fence in the context. One entry per commit, `mentions: []`, no dispatch (cascade-guard assertion as
   for merges), text pinned per kind; the existing save now posts one.
 
 ### Conformance (T2)
@@ -759,7 +899,8 @@ edits `ROOM.md` → one quiet entry, no turn triggered, the next turn's heads-up
 ### Migration (T3, wired in T4)
 
 A fixture config dir with transcripts under two worktree slugs (one registered agent, one not) and a
-colliding destination → moved, skipped and kept as specified; marker written; second run is a no-op.
+colliding destination → moved, skipped, and the colliding source renamed `.jsonl.conflict` and named
+in the log and marker (the frontier indexes exactly one transcript for that id); marker written; second run is a no-op.
 The live resume check in §8.1.
 
 ### Browser (T7)
@@ -793,6 +934,17 @@ pushing, grep `apps/e2e` for the old "markdown only" copy.
   and must join the policed tier array.
 - **Transcript resume across a desk change** is measured, not assumed (§8.1).
 - **The refresh is the server writing into a worktree** — narrow, and every precondition has a
-  negative test; still the one place I6's exception lives.
+  negative test, including the ignored-file case git itself does not protect; still the one place
+  I6's exception lives. It depends on the dispatcher answering "is any session bound to this (room,
+  agent) busy" truthfully; that read is pinned by the busy test.
+- **The home has several writers.** Before this spec, room turns across rooms stood in separate
+  worktrees; now every room turn of an agent stands in its home, up to
+  `rooms.maxConcurrentTurnsPerAgent` (default 3) at once, beside a person's direct session there — and
+  the spec invites a room turn to change the agent's own code. Two turns editing one checkout is the
+  DOR-500 interleaving. Mitigations: the skill rule that own-code changes happen in a private worktree
+  of the agent's repo (§5.5), the concurrency cap kept as it is, and room files reached only through
+  the per-agent worktree. The residual — an agent ignoring the rule — is real and is the same exposure
+  a person running two sessions in one folder has today. A mechanical guard (a per-home write lease)
+  is a follow-up, not in this programme.
 - **Relay and task dispatch gain the desk guard**; a misconfigured `managed` binding that used to run
   unattributed now refuses loudly. That is intended and is called out in the T4 changelog fragment.
