@@ -12,6 +12,10 @@
 -- later lookup of it would throw. 0010 refused duplicates, so none should
 -- exist; if one does, this stops with a message naming no account, and the
 -- migration's transaction leaves everything as it was.
+--
+-- Every statement is safe to run twice. The shared preview database ran an
+-- earlier draft of this migration (relax only, no new index) under a different
+-- journal timestamp, so it replays this one on top of that state.
 DO $$
 BEGIN
 	IF EXISTS (
@@ -21,6 +25,6 @@ BEGIN
 			MESSAGE = 'Cannot make account identity unique: duplicate (provider_id, account_id) rows exist';
 	END IF;
 END $$;--> statement-breakpoint
-CREATE UNIQUE INDEX "account_provider_accountId_unique" ON "account" USING btree ("provider_id","account_id");--> statement-breakpoint
-DROP INDEX "account_issuer_accountId_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "account_provider_accountId_unique" ON "account" USING btree ("provider_id","account_id");--> statement-breakpoint
+DROP INDEX IF EXISTS "account_issuer_accountId_unique";--> statement-breakpoint
 ALTER TABLE "account" ALTER COLUMN "issuer" DROP NOT NULL;

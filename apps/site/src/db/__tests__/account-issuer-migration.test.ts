@@ -29,6 +29,9 @@ import * as authSchema from '../auth-schema';
 vi.setConfig({ testTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../drizzle/', import.meta.url));
+const CONTROL_PLANE_DIR = fileURLToPath(
+  new URL('../../../drizzle-control-plane/', import.meta.url)
+);
 const ISSUER_MIGRATION_PREFIX = '0010_';
 
 type LegacyAccount = {
@@ -248,6 +251,38 @@ describe('hosted Better Auth account identity since 1.7.3', () => {
            VALUES ('old-deploy-dup', 'local:oauth:google', 'google-subject', 'google', 'owner-1')`
         )
       ).rejects.toThrow(/unique/i);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('replays cleanly over a database that already ran an earlier draft of it', async () => {
+    // The shared preview database applied a relax-only draft of 0001 (issuer
+    // index dropped, column nullable, no identity index) under another journal
+    // timestamp, so the real 0001 runs on top of that state. It must not fail.
+    const client = new PGlite();
+    const db = drizzle(client);
+    try {
+      await migrate(db, {
+        migrationsFolder: FROZEN_HISTORY.folder,
+        migrationsTable: FROZEN_HISTORY.migrationsTable,
+        migrationsSchema: FROZEN_HISTORY.migrationsSchema,
+      });
+      await client.exec(`
+        DROP INDEX "account_issuer_accountId_unique";
+        ALTER TABLE "account" ALTER COLUMN "issuer" DROP NOT NULL;
+      `);
+      const sql = readFileSync(
+        join(CONTROL_PLANE_DIR, '0001_account_issuer_optional.sql'),
+        'utf8'
+      ).replaceAll('--> statement-breakpoint', '');
+      await client.exec(sql);
+      await client.exec(sql);
+
+      const identity = await client.query(
+        `SELECT indexname FROM pg_indexes WHERE indexname = 'account_provider_accountId_unique'`
+      );
+      expect(identity.rows).toHaveLength(1);
     } finally {
       await client.close();
     }
