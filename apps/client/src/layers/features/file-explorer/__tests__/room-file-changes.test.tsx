@@ -211,6 +211,22 @@ describe('renaming a room’s file', () => {
     expect(screen.queryByRole('treeitem', { name: 'plan.md' })).not.toBeInTheDocument();
   });
 
+  it('a rename the network loses puts the name back and says it did not happen', async () => {
+    const transport = roomWith({ '': [file('notes.md')] });
+    // A plain Error — no code, no body — is what a dropped connection throws.
+    transport.moveRoomFile = refuseAndFreeze(transport, new Error('Failed to fetch'));
+    renderSection(transport);
+
+    await press('notes.md', 'F2');
+    const input = screen.getByRole('textbox', { name: 'New name' });
+    fireEvent.change(input, { target: { value: 'plan.md' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Couldn’t rename'));
+    expect(screen.getByRole('treeitem', { name: 'notes.md' })).toBeInTheDocument();
+    expect(screen.queryByRole('treeitem', { name: 'plan.md' })).not.toBeInTheDocument();
+  });
+
   it('a move into a folder that is refused puts the row back where it was', async () => {
     const transport = roomWith({ '': [file('notes.md'), file('docs', 'dir')], docs: [] });
     transport.moveRoomFile = refuseAndFreeze(transport, refusal('MERGE_IN_FLIGHT'));
