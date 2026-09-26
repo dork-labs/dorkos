@@ -2111,6 +2111,12 @@ export const RoomHeldBehindSchema = z
       .describe(
         'This agent is holding a message in at least one OTHER conversation too. A boolean, never a count or a list — it exists only to decide whether "Answer here first" would do anything.'
       ),
+    severalInTheWay: z
+      .boolean()
+      .optional()
+      .describe(
+        "More than one of this agent's turns is running elsewhere, so whichever finishes first may be the one that lets this message start — `roomId` names only the one that has run longest. A boolean, never a count, for the same reason as `othersWaiting`. Absent from a producer that predates `rooms.maxConcurrentTurnsPerAgent`, and read as `false`."
+      ),
   })
   .openapi('RoomHeldBehind');
 

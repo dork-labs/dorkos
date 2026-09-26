@@ -466,6 +466,16 @@ export interface RoomTriggerDeps {
    */
   holdCeilingMs(): number;
   /**
+   * How many turns one agent may run in its own directory at once —
+   * `rooms.maxConcurrentTurnsPerAgent`, the count behind the second claim
+   * ceiling (see `claimBusyWith`).
+   *
+   * Read at every claim decision rather than captured, so raising it in
+   * Settings lets the very next message start, and lowering it holds the very
+   * next one — without stopping any turn already running.
+   */
+  maxConcurrentTurnsPerAgent(): number;
+  /**
    * Put one agent's working state on the room's stream — live only, never
    * logged.
    *
@@ -3480,6 +3490,34 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Re-arm the waits whose agent has room for another turn without any turn
+   * having ended — which only a raised `rooms.maxConcurrentTurnsPerAgent` does.
+   *
+   * A held collection is otherwise re-armed by a claim RELEASING
+   * ({@link RoomTriggerDispatcher.resumeElsewhere}), which is the only event
+   * that frees a slot while the limit stands still. Raising the limit in
+   * Settings frees one too, and without this the message that had been waiting
+   * longest would sit parked behind a turn it no longer needs to wait for —
+   * while a message sent a second later started at once. Riding the republish
+   * tick bounds that to one beat; the tick is running, because a hold cannot
+   * exist without a claim.
+   *
+   * Nothing is decided here: re-arming routes each collection back through
+   * `claimCollected`, which asks the ceiling again and re-parks any that still
+   * do not fit.
+   */
+  private resumeFreedHolds(): void {
+    const freed = new Set<string>();
+    for (const record of this.held.values()) {
+      if (freed.has(record.agentPath)) continue;
+      if (this.busyWith(record.roomId, record.authorId, record.agentPath) === null) {
+        freed.add(record.agentPath);
+      }
+    }
+    for (const agentPath of freed) this.resumeElsewhere(agentPath);
+  }
+
+  /**
    * Give up on the holds that have waited longer than the room's late ceiling,
    * and say so once each.
    *
@@ -3694,11 +3732,17 @@ export class RoomTriggerDispatcher {
   /**
    * What one hold is waiting behind, as the wire carries it.
    *
-   * An id and a boolean, and no more: the reader may not be a member of the room
-   * in the way, so the name is resolved on the client against the rooms it can
-   * already see. `othersWaiting` is a boolean rather than a count because it
+   * An id and two booleans, and no more: the reader may not be a member of the
+   * room in the way, so the name is resolved on the client against the rooms it
+   * can already see. `othersWaiting` is a boolean rather than a count because it
    * exists only to decide whether "Answer here first" would change anything —
    * a count would let a reader enumerate rooms it cannot see.
+   *
+   * `severalInTheWay` is the same shape for the same reason. Once an agent may
+   * work in more than one conversation at once (`rooms.maxConcurrentTurnsPerAgent`),
+   * the room named is only the turn that has run longest, and whichever of its
+   * turns finishes first can be the one that lets this message start — so the
+   * sentence must not promise the named one (DOR-2104).
    *
    * @param record - The hold being described.
    */
@@ -3709,7 +3753,11 @@ export class RoomTriggerDispatcher {
       othersWaiting = true;
       break;
     }
-    return { roomId: record.behindRoomId, othersWaiting };
+    let running = 0;
+    for (const claim of this.claimed.values()) {
+      if (claim.agentPath === record.agentPath) running += 1;
+    }
+    return { roomId: record.behindRoomId, othersWaiting, severalInTheWay: running > 1 };
   }
 
   /**
@@ -3746,6 +3794,7 @@ export class RoomTriggerDispatcher {
     // Before the re-state, so nothing that has outlived the room's patience is
     // announced one more time on its way out.
     this.expireHolds();
+    this.resumeFreedHolds();
     const rooms = new Set<string>();
     for (const claim of this.claimed.values()) {
       this.publishPresence(claim, claim.pastDeadline ? 'working_late' : 'working');
@@ -3949,7 +3998,13 @@ export class RoomTriggerDispatcher {
    *   way, or `null` when it is doing nothing.
    */
   private busyWith(roomId: string, authorId: string, agentPath: string): ClaimBusy | null {
-    return claimBusyWith(this.claimed, roomId, authorId, agentPath);
+    return claimBusyWith(
+      this.claimed,
+      roomId,
+      authorId,
+      agentPath,
+      this.deps.maxConcurrentTurnsPerAgent()
+    );
   }
 
   /**

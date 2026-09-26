@@ -229,6 +229,7 @@ export function RoomLiveLane({
             title: behind === undefined ? null : roomDisplayTitle(behind),
           },
           othersWaiting: hold.othersWaiting,
+          severalInTheWay: hold.severalInTheWay,
         };
       }),
     [holds, nameOf, rooms.data]

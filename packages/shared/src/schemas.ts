@@ -4158,6 +4158,10 @@ export const ServerConfigSchema = z
           description:
             'The most automatic replies this DorkOS may run in an hour, across every room. The one limit no room may override',
         }),
+        maxConcurrentTurnsPerAgent: z.number().int().optional().openapi({
+          description:
+            'How many conversations one agent may work in at the same time. A message that finds the agent at this limit waits for one of its turns to finish. Never more than one turn per room, whatever this says. Writable from Settings',
+        }),
       })
       .optional()
       .openapi({

@@ -8,7 +8,10 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ServerConfig } from '@dorkos/shared/types';
-import { ROOM_TURN_LIMIT_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
+  ROOM_TURN_LIMIT_DEFAULTS,
+} from '@dorkos/shared/config-schema';
 import { createMockTransport } from '@dorkos/test-utils';
 import { toast } from 'sonner';
 import { TransportProvider } from '@/layers/shared/model';
@@ -18,12 +21,16 @@ import { RoomsTab } from '../ui/tabs/RoomsTab';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-/** The five limits as a stock install reports them, plus the engaged ceilings. */
+/**
+ * The five limits as a stock install reports them, plus the engaged ceilings and
+ * how many conversations one agent may work in at once.
+ */
 function stockRooms(overrides: Partial<ServerConfig['rooms']> = {}) {
   return {
     engagedWindowMinutes: 10,
     engagedWindowPosts: 5,
     ...ROOM_TURN_LIMIT_DEFAULTS,
+    maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
     ...overrides,
   };
 }
@@ -151,7 +158,10 @@ describe('RoomsTab', () => {
     const depth = screen.getByRole('spinbutton', { name: 'Replies in a row' });
     expect(depth).toBeDisabled();
     expect(depth).toHaveValue(7);
-    for (const field of screen.getAllByRole('spinbutton')) expect(field).toBeDisabled();
+    const concurrency = screen.getByRole('spinbutton', { name: 'Conversations at once' });
+    for (const field of screen.getAllByRole('spinbutton')) {
+      if (field !== concurrency) expect(field).toBeDisabled();
+    }
   });
 
   it('writes one number when the reader leaves the field', async () => {
@@ -204,5 +214,63 @@ describe('RoomsTab', () => {
     expect(await screen.findByText('Enter a whole number from 0 to 100.')).toBeInTheDocument();
     expect(transport.updateConfig).not.toHaveBeenCalled();
     expect(depth).toHaveValue(500);
+  });
+
+  describe('conversations at once (DOR-2104)', () => {
+    it('shows how many conversations one agent may work in at once, and the default', () => {
+      renderTab(stockRooms({ maxConcurrentTurnsPerAgent: 5 }));
+
+      expect(screen.getByRole('spinbutton', { name: 'Conversations at once' })).toHaveValue(5);
+      expect(
+        screen.getByText(
+          `How many conversations one agent may work in at the same time. Higher is faster, but turns that change the same files can collide. Default: ${MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}.`
+        )
+      ).toBeInTheDocument();
+    });
+
+    it('writes the new number when the reader leaves the field', async () => {
+      const user = userEvent.setup();
+      const { transport } = renderTab();
+
+      const field = screen.getByRole('spinbutton', { name: 'Conversations at once' });
+      await user.clear(field);
+      await user.type(field, '1');
+      await user.tab();
+
+      await waitFor(() =>
+        expect(transport.updateConfig).toHaveBeenCalledWith({
+          rooms: { maxConcurrentTurnsPerAgent: 1 },
+        })
+      );
+    });
+
+    it('stays usable while automatic replies are unlimited, because it applies to every turn', () => {
+      renderTab(stockRooms({ turnLimitsEnabled: false }));
+
+      expect(screen.getByRole('spinbutton', { name: 'Conversations at once' })).toBeEnabled();
+    });
+
+    it('refuses a number past the range the server accepts', async () => {
+      const user = userEvent.setup();
+      const { transport } = renderTab();
+
+      const field = screen.getByRole('spinbutton', { name: 'Conversations at once' });
+      await user.clear(field);
+      await user.type(field, '9');
+      await user.tab();
+
+      expect(await screen.findByText('Enter a whole number from 1 to 8.')).toBeInTheDocument();
+      expect(transport.updateConfig).not.toHaveBeenCalled();
+    });
+
+    it('is not offered by a server that does not report it', () => {
+      const { maxConcurrentTurnsPerAgent: _absent, ...older } = stockRooms();
+      renderTab(older);
+
+      expect(screen.getByRole('spinbutton', { name: 'Replies in a row' })).toBeInTheDocument();
+      expect(
+        screen.queryByRole('spinbutton', { name: 'Conversations at once' })
+      ).not.toBeInTheDocument();
+    });
   });
 });

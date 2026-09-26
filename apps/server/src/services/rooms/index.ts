@@ -326,6 +326,23 @@ function readMaxCanvasOpsPerTurn(): number {
 }
 
 /**
+ * How many conversations one agent may work in at once, read live from
+ * `rooms.maxConcurrentTurnsPerAgent` (DOR-2104).
+ *
+ * Fails to ONE rather than the shipped default, because one is the direction
+ * that cannot hurt: an unreadable config may make an agent wait for its other
+ * turn to finish, but must never let more turns loose in one folder than a
+ * person asked for (the contention ADR `260726-170125` measured).
+ */
+function readMaxConcurrentTurnsPerAgent(): number {
+  try {
+    return configManager.get('rooms').maxConcurrentTurnsPerAgent;
+  } catch {
+    return 1;
+  }
+}
+
+/**
  * How many messages one agent may post into a room inside one turn, read live
  * from `rooms.maxPostsPerTurn` and degrading to the shipped default the same way
  * {@link readMaxAgentDepth} does (spec `tool-only-room-replies` §D9).
@@ -549,6 +566,10 @@ export function createRoomSubsystem(opts: {
     // Read per tick, for the same reason: shortening how long a room waits on a
     // busy agent has to bind the wait that is already running.
     holdCeilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
+    // Read at every claim decision, for the same reason: raising it in Settings
+    // has to let the very next message start, and lowering it has to hold the
+    // very next one — neither may wait for a restart.
+    maxConcurrentTurnsPerAgent: readMaxConcurrentTurnsPerAgent,
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,

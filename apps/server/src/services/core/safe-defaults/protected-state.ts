@@ -299,6 +299,12 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       "The most times one agent may change a room's shared canvas inside one turn. Lower is the tightened bound, the same way it is for posts, and it is what a person reaches for when a turn has buried the table under tabs nobody asked for.",
   },
   {
+    path: 'rooms.maxConcurrentTurnsPerAgent',
+    direction: 'lower',
+    reason:
+      'How many conversations one agent may work in at the same time. Lower is the tightened bound: fewer turns writing the same folder at once, and a person who set it to one did so because two turns collided.',
+  },
+  {
     path: 'rooms.repo.enabled',
     direction: 'boolean',
     protectiveValue: false,
