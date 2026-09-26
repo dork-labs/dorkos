@@ -188,6 +188,20 @@ export const CHANNEL_ROOM: RoomWithRoster = createRoomWithRoster({
   members: [MEMBER.reader, MEMBER.pm, MEMBER.code, MEMBER.kai],
 });
 
+/**
+ * A channel whose topic is a paragraph, with a link and one 200-character word
+ * in it — the case the panel used to cut off after a few words (DOR-2117). The
+ * unbroken tokens are the hard part: they have no space to wrap at, so they
+ * must break mid-token rather than push the panel sideways.
+ */
+export const LONG_TOPIC_ROOM: RoomWithRoster = createRoomWithRoster({
+  id: 'room-migration',
+  slug: 'migration',
+  title: 'Migration',
+  topic: `Everything about moving the last three services off the old cluster before the freeze. Runbook: https://example.com/runbooks/cluster-migration/2026/phase-three/checklist?owner=platform&section=rollback-plan ${'x'.repeat(200)}`,
+  members: [MEMBER.reader, MEMBER.pm, MEMBER.code],
+});
+
 /** A channel nobody has been put in yet — the sheet's most consequential moment. */
 export const EMPTY_ROOM: RoomWithRoster = createRoomWithRoster({
   id: 'room-design',
