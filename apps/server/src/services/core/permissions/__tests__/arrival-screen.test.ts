@@ -12,6 +12,7 @@ import { ARRIVAL_NOTE, ARRIVAL_WRITE_FAILED_NOTE } from '../permission-service.j
 import { isAlwaysOffered } from '../../approvals/index.js';
 import { listPermissionHistory, personWriter } from '../permission-history.js';
 import { narrowingReader } from '../index.js';
+import { isArrivalScreenLine } from '../permission-values.js';
 import { createPermissionWorld, type FixtureAgent } from './permission-fixtures.js';
 
 const WIDE: FixtureAgent = {
@@ -77,7 +78,10 @@ describe('screening an arriving agent', () => {
     });
     await expect(world.service.screenArrivedAgent('agent-new')).rejects.toThrow(/EACCES/);
     expect(world.events).toHaveLength(1);
-    expect(world.events[0]!.metadata).toMatchObject({ note: ARRIVAL_WRITE_FAILED_NOTE });
+    expect(world.events[0]!.metadata).toMatchObject({
+      note: ARRIVAL_WRITE_FAILED_NOTE,
+      origin: 'arrival-screen',
+    });
   });
 });
 
@@ -142,6 +146,8 @@ describe('the arrival line in the history', () => {
     await world.service.screenArrivedAgent('agent-new');
     const line = world.events[0]!;
 
+    // Marked by what made it, not by its wording.
+    expect(line.metadata).toMatchObject({ origin: 'arrival-screen' });
     const history = await listPermissionHistory(world.activity, { limit: 10 });
     expect(history.items[0]).toMatchObject({ id: line.id, undoable: false });
     await expect(
@@ -166,5 +172,14 @@ describe('narrowingReader', () => {
     });
     await expect(reader('/somewhere/unregistered')).resolves.toBeUndefined();
     expect(read).not.toHaveBeenCalled();
+  });
+});
+
+describe('isArrivalScreenLine', () => {
+  it('reads the marker, never the wording', () => {
+    expect(isArrivalScreenLine({ origin: 'arrival-screen' })).toBe(true);
+    expect(isArrivalScreenLine({})).toBe(false);
+    // A line with the arrival wording but no marker is an ordinary change.
+    expect(isArrivalScreenLine({ note: ARRIVAL_NOTE } as never)).toBe(false);
   });
 });

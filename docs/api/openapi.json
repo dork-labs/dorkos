@@ -9293,6 +9293,12 @@
               "undoOf": {
                 "type": "string"
               },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "arrival-screen"
+                ]
+              },
               "note": {
                 "type": "string",
                 "maxLength": 500

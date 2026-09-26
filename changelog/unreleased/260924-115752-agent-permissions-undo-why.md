@@ -9,6 +9,7 @@ covers:
   - "fix(permissions): the preset's reach counts an agent whose Files & commands stop follows it"
   - 'test(permissions): the phase 4 browser spec gives each attempt its own agent'
   - "fix(permissions): Undo can't put back what the arrival screen declined, and a folder that isn't an agent follows the defaults"
+  - 'fix(permissions): mark the arrival screen history line by what made it, not by its wording'
 ---
 
 ### Added

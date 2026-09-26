@@ -105,12 +105,17 @@ export const ARRIVAL_WRITE_FAILED_NOTE =
 
 /**
  * Whether a history line records the arrival screen declining settings a new
- * agent's own folder brought. Such a line has no Undo: undoing it would put
- * back, in one tap, settings nobody ever chose in DorkOS, past the check that
- * refused them. A person sets them one by one on the agent's page instead.
+ * agent's own folder brought, by the marker the screen writes on it. Such a
+ * line has no Undo: undoing it would put back, in one tap, settings nobody
+ * ever chose in DorkOS, past the check that refused them. A person sets them
+ * one by one on the agent's page instead.
+ *
+ * The marker is the only test. The arrival screen and this marker ship in the
+ * same release, so no line without it was ever written by the screen, and the
+ * note's wording is free to change.
  *
  * @param metadata - The line's `permission.changed` metadata.
  */
-export function isArrivalScreenLine(metadata: Pick<PermissionChangedMetadata, 'note'>): boolean {
-  return metadata.note === ARRIVAL_NOTE || metadata.note === ARRIVAL_WRITE_FAILED_NOTE;
+export function isArrivalScreenLine(metadata: Pick<PermissionChangedMetadata, 'origin'>): boolean {
+  return metadata.origin === 'arrival-screen';
 }

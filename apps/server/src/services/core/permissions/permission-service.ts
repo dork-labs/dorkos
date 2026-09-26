@@ -469,6 +469,7 @@ export class PermissionService {
             changes,
             surface: 'file-edit',
             writer: ARRIVAL_WRITER,
+            origin: 'arrival-screen',
             note: ARRIVAL_WRITE_FAILED_NOTE,
           },
           this.titleFor(actions)
@@ -477,7 +478,13 @@ export class PermissionService {
       }
       if (changes.length > 0) {
         await this.record(
-          { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_NOTE },
+          {
+            changes,
+            surface: 'file-edit',
+            writer: ARRIVAL_WRITER,
+            origin: 'arrival-screen',
+            note: ARRIVAL_NOTE,
+          },
           this.titleFor(actions)
         );
       }
