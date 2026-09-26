@@ -760,7 +760,7 @@ What 6.1 already does (do not redo): `ExtensionDiscovery.discover` scans `<dorkH
 
 Remaining work:
 
-1. In uninstall.ts `runSideEffects`, skip disabling bundled extensions and forgetting their approval when `req.replacing` is set, so an update of the same plugin (same name, same folder) keeps `approvedToRun` and the `approvedSources` entry. A plain uninstall is unchanged.
+1. In uninstall.ts `runSideEffects`, skip disabling bundled extensions and forgetting their approval when `req.replacing` is set, so an update of the same plugin (same name, same folder) keeps `approvedToRun` and the `approvedSources` entry. A plain uninstall is unchanged. An extension that the new version no longer carries is disabled by `disableDroppedExtensions`; make that path also call `forgetRunApproval(id, installRoot)`, so a later version that brings it back asks again (code that left and came back is new to the person). Test it.
 2. Move draft ADR `decisions/260926-153107-plugin-carried-extension-discovery.md` to its decided status per the writing-adrs skill and keep `decisions/manifest.json` consistent.
 
 Tests (apps/server/src/services/marketplace/**tests**/flows/): approve a plugin-carried extension, update the same plugin through the marketplace update path (a changed version), and assert it still runs with `approvedToRun` and its `approvedSources` entry intact; a plain uninstall still clears both. Every new test must fail with its implementation reverted.
