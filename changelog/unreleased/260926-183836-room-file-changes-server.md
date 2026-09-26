@@ -12,5 +12,5 @@ covers:
 
 ### Changed
 
-- Saving a file in a room now makes any folders it needs, and posts a quiet line in the room saying who changed what (DOR-2412).
+- Saving a file in a room now makes any folders it needs, and posts a quiet line in the room saying who changed what. The app shows that line as plain text, but places that read its words, like an agent's view of the room or a chat bridge, may still show a name that looks like a web address as a link (DOR-2412).
 - With login on, a change you make to a room's files is saved under your own name, so two people's changes stay apart in the history (DOR-2412).
