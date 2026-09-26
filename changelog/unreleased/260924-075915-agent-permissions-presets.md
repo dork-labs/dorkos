@@ -16,6 +16,7 @@ covers:
   - "fix(permissions): an arriving agent's folder settings never apply as written"
   - "fix(permissions): read an agent's own stop only through the gate reader"
   - 'fix(permissions): say when the new-agent record cannot be read, and retry it'
+  - "fix(permissions): read no agent's own settings until the gate is wired"
   - 847dbbc
   - fcacf5a
   - fb6bdd0
