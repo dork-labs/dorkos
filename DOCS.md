@@ -68,6 +68,8 @@ The doc trees are kept honest by harness mechanisms, not by hope:
   filesystem.
 - **SessionStart digest**: `.claude/hooks/session-maintenance.sh` surfaces ADR
   drift, review backlog, and docs/research staleness in at most five lines at
-  the start of a session.
+  the start of a session, and fast-forwards the main checkout's `main` to
+  `origin/main` on startup when it is clean and behind (`git config dorkos.mainSync warn`
+  pauses that to a warning).
 - **Stop hook**: `.claude/hooks/create-checkpoint.sh` checkpoints work when a
   session ends.
