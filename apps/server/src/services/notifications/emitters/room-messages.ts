@@ -43,7 +43,9 @@ export interface RoomMessageNotifyInput {
   mentionsOperator: boolean;
   /**
    * Whether the operator has muted this room. Consulted only for
-   * `isDirectMessage` — `mentionsOperator` always notifies, mute or not.
+   * `isDirectMessage` — `mentionsOperator` always notifies, mute or not. The
+   * caller never sets both for one entry: inside a 1:1 DM it clears
+   * `mentionsOperator`, so a muted DM stays silent.
    */
   roomMuted: boolean;
 }

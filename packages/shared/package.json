@@ -77,6 +77,10 @@
       "types": "./src/error-report.ts",
       "default": "./dist/error-report.js"
     },
+    "./session-link": {
+      "types": "./src/session-link.ts",
+      "default": "./dist/session-link.js"
+    },
     "./telemetry-consent": {
       "types": "./src/telemetry-consent.ts",
       "default": "./dist/telemetry-consent.js"

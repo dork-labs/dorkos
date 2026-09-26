@@ -13,6 +13,11 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 import { describe, expect, it, vi } from 'vitest';
 
+import {
+  FROZEN_HISTORY,
+  MIGRATION_HISTORIES,
+  markBaselineApplied,
+} from '../../../scripts/migration-histories';
 import * as authSchema from '../auth-schema';
 
 // Booting PGlite and replaying the migrations costs seconds, and every case
@@ -24,6 +29,9 @@ import * as authSchema from '../auth-schema';
 vi.setConfig({ testTimeout: 30_000 });
 
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../drizzle/', import.meta.url));
+const CONTROL_PLANE_DIR = fileURLToPath(
+  new URL('../../../drizzle-control-plane/', import.meta.url)
+);
 const ISSUER_MIGRATION_PREFIX = '0010_';
 
 type LegacyAccount = {
@@ -142,65 +150,197 @@ async function rejectionMessage(operation: Promise<unknown>): Promise<string> {
   }
 }
 
-describe('hosted Better Auth account issuer', () => {
-  it('declares the required issuer and its composite identity index', () => {
-    expect(authSchema.account.issuer).toBeDefined();
-    expect(authSchema.account.issuer.notNull).toBe(true);
-
-    const issuerIndex = getTableConfig(authSchema.account).indexes.find(
-      (index) => index.config.name === 'account_issuer_accountId_unique'
+describe('hosted Better Auth account identity since 1.7.3', () => {
+  it('keeps issuer only as an optional column, keyed uniquely by provider instead', () => {
+    expect(authSchema.account.issuer.notNull).toBe(false);
+    const indexes = getTableConfig(authSchema.account).indexes;
+    expect(indexes.map((index) => index.config.name)).not.toContain(
+      'account_issuer_accountId_unique'
     );
-    expect(issuerIndex).toBeDefined();
-    expect(issuerIndex?.config.unique).toBe(true);
+    const identity = indexes.find(
+      (index) => index.config.name === 'account_provider_accountId_unique'
+    );
+    expect(identity?.config.unique).toBe(true);
     expect(
-      issuerIndex?.config.columns.map((column) => ('name' in column ? column.name : undefined))
-    ).toEqual(['issuer', 'account_id']);
+      identity?.config.columns.map((column) => ('name' in column ? column.name : undefined))
+    ).toEqual(['provider_id', 'account_id']);
   });
 
-  it('lets the real Better Auth Drizzle adapter persist the required issuer', async () => {
-    const client = await createLegacyDatabase();
+  it('relaxes the live issuer column so both the old and the new deployment can write', async () => {
+    // The production path: a database the frozen history built (0010 made
+    // issuer NOT NULL with a unique index), adopted by the split, then moved by
+    // the control-plane history's later migrations.
+    const client = new PGlite();
+    const db = drizzle(client);
     try {
+      await migrate(db, {
+        migrationsFolder: FROZEN_HISTORY.folder,
+        migrationsTable: FROZEN_HISTORY.migrationsTable,
+        migrationsSchema: FROZEN_HISTORY.migrationsSchema,
+      });
       await client.exec(`
-        ALTER TABLE "account" ADD COLUMN "issuer" text NOT NULL;
-        CREATE UNIQUE INDEX "account_issuer_accountId_unique"
-          ON "account" ("issuer", "account_id");
-        INSERT INTO "user" ("id", "name", "email")
-          VALUES ('owner-1', 'Owner', 'owner@dork.test');
+        INSERT INTO "user" ("id", "name", "email") VALUES ('owner-1', 'Owner', 'owner@dork.test');
+        INSERT INTO "account" ("id", "issuer", "account_id", "provider_id", "user_id", "password")
+          VALUES ('existing', 'local:credential', 'owner@dork.test', 'credential', 'owner-1', 'hash');
       `);
+      for (const history of MIGRATION_HISTORIES) {
+        await markBaselineApplied(db, history);
+        await migrate(db, {
+          migrationsFolder: history.folder,
+          migrationsTable: history.migrationsTable,
+          migrationsSchema: history.migrationsSchema,
+        });
+      }
 
+      const issuerColumn = await client.query<{ is_nullable: string }>(
+        `SELECT is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'account' AND column_name = 'issuer'`
+      );
+      expect(issuerColumn.rows).toEqual([{ is_nullable: 'YES' }]);
+      const issuerIndex = await client.query(
+        `SELECT indexname FROM pg_indexes WHERE indexname = 'account_issuer_accountId_unique'`
+      );
+      expect(issuerIndex.rows).toEqual([]);
+      const identityIndex = await client.query<{ indexdef: string }>(
+        `SELECT indexdef FROM pg_indexes WHERE indexname = 'account_provider_accountId_unique'`
+      );
+      expect(identityIndex.rows).toHaveLength(1);
+      expect(identityIndex.rows[0].indexdef).toMatch(
+        /^CREATE UNIQUE INDEX .* ON public\.account USING btree \(provider_id, account_id\)$/
+      );
+
+      // The write this release's Better Auth makes: no issuer at all. It is
+      // the insert every sign-up failed on while the column was NOT NULL.
       const database = drizzle(client, { schema: authSchema });
-      const adapter = drizzleAdapter(database, {
-        provider: 'pg',
-        schema: authSchema,
-      })({
+      const adapter = drizzleAdapter(database, { provider: 'pg', schema: authSchema })({
         database,
         emailAndPassword: { enabled: true },
       });
-
       await adapter.create({
         model: 'account',
         data: {
-          issuer: 'local:credential',
-          accountId: 'owner@dork.test',
-          providerId: 'credential',
+          accountId: 'github-subject',
+          providerId: 'github',
           userId: 'owner-1',
-          createdAt: new Date('2026-09-06T00:00:00.000Z'),
-          updatedAt: new Date('2026-09-06T00:00:00.000Z'),
+          createdAt: new Date('2026-09-25T00:00:00.000Z'),
+          updatedAt: new Date('2026-09-25T00:00:00.000Z'),
         },
       });
+      // The write the previous deployment still makes while this one rolls out.
+      await client.query(
+        `INSERT INTO "account" ("id", "issuer", "account_id", "provider_id", "user_id")
+         VALUES ('from-old-deploy', 'local:oauth:google', 'google-subject', 'google', 'owner-1')`
+      );
 
-      const persisted = await client.query<{
-        issuer: string;
+      const rows = await client.query<{
+        issuer: string | null;
         account_id: string;
         provider_id: string;
-      }>(`SELECT issuer, account_id, provider_id FROM "account"`);
-      expect(persisted.rows).toEqual([
-        {
-          issuer: 'local:credential',
-          account_id: 'owner@dork.test',
-          provider_id: 'credential',
-        },
+      }>(`SELECT issuer, account_id, provider_id FROM "account" ORDER BY account_id`);
+      expect(rows.rows).toEqual([
+        { issuer: null, account_id: 'github-subject', provider_id: 'github' },
+        { issuer: 'local:oauth:google', account_id: 'google-subject', provider_id: 'google' },
+        { issuer: 'local:credential', account_id: 'owner@dork.test', provider_id: 'credential' },
       ]);
+
+      // One row per provider-side identity, from either deployment: a retried
+      // callback linking the same identity again is refused, not stored twice.
+      await expect(
+        client.query(
+          `INSERT INTO "account" ("id", "account_id", "provider_id", "user_id")
+           VALUES ('retried-callback', 'github-subject', 'github', 'owner-1')`
+        )
+      ).rejects.toThrow(/unique/i);
+      await expect(
+        client.query(
+          `INSERT INTO "account" ("id", "issuer", "account_id", "provider_id", "user_id")
+           VALUES ('old-deploy-dup', 'local:oauth:google', 'google-subject', 'google', 'owner-1')`
+        )
+      ).rejects.toThrow(/unique/i);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('replays cleanly over a database that already ran an earlier draft of it', async () => {
+    // The shared preview database applied a relax-only draft of 0001 (issuer
+    // index dropped, column nullable, no identity index) under another journal
+    // timestamp, so the real 0001 runs on top of that state. It must not fail.
+    const client = new PGlite();
+    const db = drizzle(client);
+    try {
+      await migrate(db, {
+        migrationsFolder: FROZEN_HISTORY.folder,
+        migrationsTable: FROZEN_HISTORY.migrationsTable,
+        migrationsSchema: FROZEN_HISTORY.migrationsSchema,
+      });
+      await client.exec(`
+        DROP INDEX "account_issuer_accountId_unique";
+        ALTER TABLE "account" ALTER COLUMN "issuer" DROP NOT NULL;
+      `);
+      const sql = readFileSync(
+        join(CONTROL_PLANE_DIR, '0001_account_issuer_optional.sql'),
+        'utf8'
+      ).replaceAll('--> statement-breakpoint', '');
+      await client.exec(sql);
+      await client.exec(sql);
+
+      const identity = await client.query(
+        `SELECT indexdef FROM pg_indexes WHERE indexname = 'account_provider_accountId_unique'`
+      );
+      expect(identity.rows).toHaveLength(1);
+      expect((identity.rows[0] as { indexdef: string }).indexdef).toMatch(
+        /^CREATE UNIQUE INDEX .* ON public\.account USING btree \(provider_id, account_id\)$/
+      );
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('refuses to relax issuer over a duplicate identity, naming no account', async () => {
+    const client = new PGlite();
+    const db = drizzle(client);
+    try {
+      await migrate(db, {
+        migrationsFolder: FROZEN_HISTORY.folder,
+        migrationsTable: FROZEN_HISTORY.migrationsTable,
+        migrationsSchema: FROZEN_HISTORY.migrationsSchema,
+      });
+      // 0010's index is on (issuer, account_id), so two issuers let one
+      // (provider_id, account_id) in twice.
+      await client.exec(`
+        INSERT INTO "user" ("id", "name", "email") VALUES ('owner-1', 'Owner', 'owner@dork.test');
+        INSERT INTO "account" ("id", "issuer", "account_id", "provider_id", "user_id")
+          VALUES ('a', 'issuer-a', 'private-subject', 'github', 'owner-1'),
+                 ('b', 'issuer-b', 'private-subject', 'github', 'owner-1');
+      `);
+
+      let failure = '';
+      try {
+        for (const history of MIGRATION_HISTORIES) {
+          await markBaselineApplied(db, history);
+          await migrate(db, {
+            migrationsFolder: history.folder,
+            migrationsTable: history.migrationsTable,
+            migrationsSchema: history.migrationsSchema,
+          });
+        }
+      } catch (error) {
+        const cause = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+        failure = `${error instanceof Error ? error.message : String(error)} ${
+          cause instanceof Error ? cause.message : ''
+        }`;
+      }
+      expect(failure).toMatch(/duplicate \(provider_id, account_id\)/);
+      expect(failure).not.toContain('private-subject');
+
+      const issuerColumn = await client.query<{ is_nullable: string }>(
+        `SELECT is_nullable
+           FROM information_schema.columns
+          WHERE table_schema = 'public' AND table_name = 'account' AND column_name = 'issuer'`
+      );
+      expect(issuerColumn.rows).toEqual([{ is_nullable: 'NO' }]);
     } finally {
       await client.close();
     }

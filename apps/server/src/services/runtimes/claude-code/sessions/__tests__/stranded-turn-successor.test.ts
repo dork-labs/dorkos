@@ -99,10 +99,13 @@ vi.mock('../../messaging/plugin-activation.js', () => ({
 vi.mock('../../../../core/credential-env.js', () => ({
   resolveClaudeCredentialEnv: vi.fn().mockResolvedValue({}),
 }));
-vi.mock('../../../../core/agent-identity/index.js', () => ({
+vi.mock('../../../../core/agent-identity/index.js', async () => ({
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
   AGENT_TOKEN_ENV_VAR: 'DORKOS_AGENT_TOKEN',
   createInSessionContextResolver: () => () => Promise.resolve(undefined),
+  // The launch anchors identity through these (DOR-2091); the pure rule is
+  // wanted as-is, so it comes straight from its own module.
+  ...(await import('../../../../core/agent-identity/identity-anchor.js')),
 }));
 // The neutral context bag shells out for git status; this turn is about turn
 // ORDER, and a real repo probe would only make it slower and flakier.

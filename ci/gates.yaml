@@ -137,6 +137,11 @@ gates:
     source: .github/workflows/merge-tail.yml
     purpose: Every 10 minutes, arms auto-merge on PRs that are finished, green and unblocked, and re-requests a lost automated review on the ones whose review check is red.
 
+  # --- neon-preview-sweep.yml ---
+  - id: wf.neon-preview-sweep.sweep
+    source: .github/workflows/neon-preview-sweep.yml
+    purpose: Nightly, deletes Neon preview databases idle 7+ days whose git branch has no open PR; green with a notice until NEON_API_KEY is set, red when it cannot read Neon or GitHub or a delete fails. Never required.
+
   # --- operating-skills-version-check.yml ---
   - id: wf.operating-skills-version-check.version-outranks-base
     source: .github/workflows/operating-skills-version-check.yml

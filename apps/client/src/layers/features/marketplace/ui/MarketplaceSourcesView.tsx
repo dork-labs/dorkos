@@ -17,6 +17,7 @@ import {
   PageHeading,
   Skeleton,
 } from '@/layers/shared/ui';
+import { usePendingRead } from '@/layers/shared/model';
 import {
   useAddMarketplaceSource,
   useMarketplaceSources,
@@ -283,11 +284,14 @@ function AddSourceDialog({ open, onOpenChange, isPending, error, onSubmit }: Add
  * they were added, and provides add/remove actions. Mounts at
  * `/marketplace/sources` inside the marketplace feature area.
  *
- * FSD: `features/marketplace` — imports only from `entities/marketplace` and
- * `shared/ui`.
+ * FSD: `features/marketplace` — imports only from `entities/marketplace`,
+ * `shared/ui` and `shared/model`.
  */
 export function MarketplaceSourcesView() {
-  const { data: sources, isLoading } = useMarketplaceSources();
+  const { data: sources, isLoading: isFetchingSources } = useMarketplaceSources();
+  // A paused read during the boot-cache restore is not an empty source list (DOR-1914).
+  // Why `isLoading` cannot answer that on its own is in `usePendingRead`.
+  const isLoading = usePendingRead(isFetchingSources);
   const addSource = useAddMarketplaceSource();
   const removeSource = useRemoveMarketplaceSource();
   const refreshSource = useRefreshMarketplaceSource();

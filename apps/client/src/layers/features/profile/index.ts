@@ -58,3 +58,10 @@ export {
 // side. Rendering them through the real mapping is what stops the showcase
 // drifting into a set of sentences the product no longer says.
 export { handleErrorMessage } from './model/profile-errors';
+// The name-and-handle question (DOR-677), drawn by onboarding's three surfaces.
+// Lives here because it writes through this feature's profile mutations; the
+// onboarding side composes it and owns only when the question is put.
+export {
+  OperatorIdentityForm,
+  type OperatorIdentityFormProps,
+} from './ui/fields/OperatorIdentityForm';

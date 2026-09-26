@@ -96,14 +96,19 @@ export const session = pgTable('session', {
 /**
  * `account` — credential + social provider links for a `user` (email/password
  * hash lives in `password`; GitHub/Google links carry OAuth tokens). Better
- * Auth identifies the provider-side account by the stable `(issuer,
- * accountId)` pair rather than by the local provider configuration alone.
+ * Auth identifies the provider-side account by `(providerId, accountId)`.
  */
 export const account = pgTable(
   'account',
   {
     id: text('id').primaryKey(),
-    issuer: text('issuer').notNull(),
+    // Better Auth 1.7.0-1.7.2 required this column; 1.7.3 went back to the 1.6
+    // shape and never writes it. It stays, nullable, for one release: the
+    // migration runs while the previous deployment still serves requests and
+    // still writes it, so dropping it here would fail that deployment's
+    // sign-ups mid-rollout. Unread and unwritten from this release on
+    // (DOR-2036).
+    issuer: text('issuer'),
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     userId: text('user_id')
@@ -119,7 +124,13 @@ export const account = pgTable(
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
-  (table) => [uniqueIndex('account_issuer_accountId_unique').on(table.issuer, table.accountId)]
+  (table) => [
+    // One row per provider-side identity. Better Auth links accounts with a
+    // check-then-insert, so a retried or double-clicked OAuth callback could
+    // otherwise write the same identity twice, after which every lookup of it
+    // throws and that person is locked out (DOR-2036).
+    uniqueIndex('account_provider_accountId_unique').on(table.providerId, table.accountId),
+  ]
 );
 
 /**

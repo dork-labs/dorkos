@@ -5,7 +5,10 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { ROOM_TURN_LIMIT_DEFAULTS } from '@dorkos/shared/config-schema';
+import {
+  MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
+  ROOM_TURN_LIMIT_DEFAULTS,
+} from '@dorkos/shared/config-schema';
 
 // Mock tunnel-manager and agent-manager to avoid side effects
 vi.mock('../../services/core/tunnel-manager.js', () => ({
@@ -1189,6 +1192,7 @@ describe('GET /api/config', () => {
       'maxAgentDepth',
       'maxAutomaticTurnsPerRoomPerHour',
       'maxAutomaticTurnsTotalPerHour',
+      'maxConcurrentTurnsPerAgent',
       'maxTurnsPerAgentPerCascade',
       'turnLimitsEnabled',
     ];
@@ -1200,6 +1204,7 @@ describe('GET /api/config', () => {
         engagedWindowMinutes: 10,
         engagedWindowPosts: 5,
         ...ROOM_TURN_LIMIT_DEFAULTS,
+        maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       });
     });
 
@@ -1224,7 +1229,8 @@ describe('GET /api/config', () => {
     });
 
     it('carries the ceilings and the limits, and nothing else out of the rooms block', async () => {
-      // Settings offers the five limits, so they ride (DOR-1430) — but the rest
+      // Settings offers the five limits, so they ride (DOR-1430), and how many
+      // conversations one agent may work in at once (DOR-2104) — but the rest
       // of `rooms` is reply waits and collect timings, real settings the cockpit
       // never states out loud. Widening this to the whole block would put
       // settings on a wire that has no reader for them.
@@ -1669,6 +1675,19 @@ describe('GET /api/config', () => {
       const res = await request(server).get('/api/config').expect(200);
 
       expect(res.body.runtimes).toEqual(['claude-code', 'codex', 'opencode']);
+    });
+
+    it('drops a runtime the person turned off from the runtimes list', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      const prior = configManager.getDot('runtimes.codex.enabled');
+      configManager.setDot('runtimes.codex.enabled', false);
+      try {
+        const res = await request(server).get('/api/config').expect(200);
+
+        expect(res.body.runtimes).toEqual(['claude-code', 'opencode']);
+      } finally {
+        configManager.setDot('runtimes.codex.enabled', prior);
+      }
     });
   });
 

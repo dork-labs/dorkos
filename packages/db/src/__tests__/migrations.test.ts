@@ -47,6 +47,13 @@ const PRE_CONNECTOR_EXECUTION_IDX = 86;
 /** Shipped main schema after Better Auth account issuers, before P2 execution state. */
 const SHIPPED_ACCOUNT_ISSUER_IDX = 87;
 
+/**
+ * Last migration BEFORE `account.issuer` was dropped (0112, DOR-2036). Better
+ * Auth 1.7.3 stopped writing the column, so every install that ran 0087 holds
+ * accounts with an issuer and a NOT NULL column that now fails every sign-up.
+ */
+const PRE_ACCOUNT_ISSUER_DROP_IDX = 111;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -968,7 +975,7 @@ describe('Database Migrations', () => {
     });
   });
 
-  it('applies the P2 chain after shipped migration 0087 without losing account issuers', () => {
+  it('applies the P2 chain after shipped migration 0087 without losing accounts', () => {
     const db = createDb(':memory:');
     migrate(db, { migrationsFolder: migrationsFolderThrough(SHIPPED_ACCOUNT_ISSUER_IDX) });
     const raw = db.$client;
@@ -999,8 +1006,8 @@ describe('Database Migrations', () => {
     expect(() => runMigrations(db)).not.toThrow();
 
     expect(
-      raw.prepare('SELECT issuer, account_id FROM account WHERE id = ?').get('account-a')
-    ).toEqual({ issuer: 'local:credential', account_id: 'owner-a' });
+      raw.prepare('SELECT provider_id, account_id FROM account WHERE id = ?').get('account-a')
+    ).toEqual({ provider_id: 'credential', account_id: 'owner-a' });
     expect(
       raw
         .prepare(
@@ -1012,6 +1019,107 @@ describe('Database Migrations', () => {
       raw.prepare("SELECT name FROM pragma_table_info('connector_review_requests')").all()
     ).toContainEqual({ name: 'review_context_json' });
     expect(raw.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('drops account.issuer and its index, keeping every account and its password', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_ACCOUNT_ISSUER_DROP_IDX) });
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        `INSERT INTO user
+          (id, name, email, email_verified, created_at, updated_at)
+         VALUES ('owner-a', 'Owner', 'owner@example.com', 1, 1788700000000, 1788700000000)`
+      )
+      .run();
+    raw
+      .prepare(
+        `INSERT INTO account
+          (id, issuer, account_id, provider_id, user_id, password, created_at, updated_at)
+         VALUES ('account-a', 'local:credential', 'owner-a', 'credential', 'owner-a',
+                 'password-hash', 1788700000000, 1788700000000)`
+      )
+      .run();
+
+    runMigrations(db);
+
+    expect(raw.prepare("SELECT name FROM pragma_table_info('account')").all()).not.toContainEqual({
+      name: 'issuer',
+    });
+    expect(
+      raw
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'account_issuer_accountId_unique'"
+        )
+        .get()
+    ).toBeUndefined();
+    expect(
+      raw
+        .prepare('SELECT provider_id, account_id, user_id, password FROM account WHERE id = ?')
+        .get('account-a')
+    ).toEqual({
+      provider_id: 'credential',
+      account_id: 'owner-a',
+      user_id: 'owner-a',
+      password: 'password-hash',
+    });
+    // The insert Better Auth 1.7.3+ makes: no issuer at all. This is the write
+    // that failed every sign-up while the column was NOT NULL.
+    expect(() =>
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, account_id, provider_id, user_id, password, created_at, updated_at)
+           VALUES ('account-b', 'owner-a-2', 'credential', 'owner-a', 'hash-b',
+                   1788700000000, 1788700000000)`
+        )
+        .run()
+    ).not.toThrow();
+    // One row per provider-side identity: a second link of the same identity
+    // (a racing sign-in) is refused rather than left to lock the person out.
+    expect(() =>
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, account_id, provider_id, user_id, created_at, updated_at)
+           VALUES ('account-c', 'owner-a-2', 'credential', 'owner-a', 1788700000000, 1788700000000)`
+        )
+        .run()
+    ).toThrow(/UNIQUE/);
+    expect(raw.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('refuses to drop account.issuer over a duplicate identity, changing nothing', () => {
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_ACCOUNT_ISSUER_DROP_IDX) });
+    const raw = db.$client;
+    raw
+      .prepare(
+        `INSERT INTO user
+          (id, name, email, email_verified, created_at, updated_at)
+         VALUES ('owner-a', 'Owner', 'owner@example.com', 1, 1788700000000, 1788700000000)`
+      )
+      .run();
+    // Two issuers let the same (provider_id, account_id) in twice under 0087.
+    for (const [id, issuer] of [
+      ['account-a', 'local:credential'],
+      ['account-b', 'local:other'],
+    ]) {
+      raw
+        .prepare(
+          `INSERT INTO account
+            (id, issuer, account_id, provider_id, user_id, created_at, updated_at)
+           VALUES (?, ?, 'owner-a', 'credential', 'owner-a', 1788700000000, 1788700000000)`
+        )
+        .run(id, issuer);
+    }
+
+    expect(() => runMigrations(db)).toThrow(/UNIQUE/);
+    expect(raw.prepare("SELECT name FROM pragma_table_info('account')").all()).toContainEqual({
+      name: 'issuer',
+    });
+    expect(raw.prepare('SELECT count(*) AS n FROM account').get()).toEqual({ n: 2 });
   });
 
   it('unique constraint on relay_traces.message_id is enforced', () => {

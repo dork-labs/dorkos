@@ -1,6 +1,10 @@
 /**
  * @vitest-environment node
  */
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { PGlite } from '@electric-sql/pglite';
 import { sql, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
@@ -49,6 +53,42 @@ async function applyHistory(db: Db, history: MigrationHistory): Promise<void> {
     migrationsTable: history.migrationsTable,
     migrationsSchema: history.migrationsSchema,
   });
+}
+
+/** How many migrations a history's own journal lists, its baseline included. */
+function journalEntryCount(history: MigrationHistory): number {
+  const journal = JSON.parse(
+    readFileSync(join(history.folder, 'meta', '_journal.json'), 'utf8')
+  ) as { entries: unknown[] };
+  return journal.entries.length;
+}
+
+/**
+ * Apply ONLY a history's `0000_baseline`, through a throwaway folder holding
+ * just that migration. The baselines are what must reproduce the frozen
+ * history; every migration after them changes the schema on purpose.
+ */
+async function applyBaseline(db: Db, history: MigrationHistory): Promise<void> {
+  const journal = JSON.parse(
+    readFileSync(join(history.folder, 'meta', '_journal.json'), 'utf8')
+  ) as { entries: Array<{ tag: string }> };
+  const baseline = journal.entries[0];
+  const folder = mkdtempSync(join(tmpdir(), 'dorkos-site-baseline-'));
+  try {
+    mkdirSync(join(folder, 'meta'));
+    writeFileSync(
+      join(folder, 'meta', '_journal.json'),
+      JSON.stringify({ ...journal, entries: [baseline] })
+    );
+    copyFileSync(join(history.folder, `${baseline.tag}.sql`), join(folder, `${baseline.tag}.sql`));
+    await migrate(db, {
+      migrationsFolder: folder,
+      migrationsTable: history.migrationsTable,
+      migrationsSchema: history.migrationsSchema,
+    });
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
 }
 
 /** Apply the frozen pre-split history — how the live database was actually built. */
@@ -128,10 +168,11 @@ describe('the two migration histories', () => {
     await client.close();
   });
 
-  it('reproduces the frozen history exactly — every column, constraint and index', async () => {
+  it('the two baselines reproduce the frozen history exactly — every column, constraint and index', async () => {
     // Table names alone would not catch a lost default, a dropped index or a
     // weakened foreign key, and those are the failures that only surface in
-    // production. Compare the whole end state instead.
+    // production. Compare the whole end state instead. Only the baselines: the
+    // migrations after them change the schema on purpose.
     const catalogue = {
       columns: `SELECT table_name, column_name, data_type, is_nullable, column_default,
                        character_maximum_length, numeric_precision
@@ -156,8 +197,8 @@ describe('the two migration histories', () => {
 
     const frozen = await endState(applyFrozenHistory);
     const split = await endState(async (db) => {
-      await applyHistory(db, PUBLIC);
-      await applyHistory(db, CONTROL_PLANE);
+      await applyBaseline(db, PUBLIC);
+      await applyBaseline(db, CONTROL_PLANE);
     });
 
     expect(split.columns).toEqual(frozen.columns);
@@ -186,8 +227,8 @@ describe('the two migration histories', () => {
     // journal, and the drizzle DEFAULT journal is never touched.
     const publicJournal = await journalRows(client, 'drizzle', PUBLIC.migrationsTable);
     const controlPlaneJournal = await journalRows(client, 'drizzle', CONTROL_PLANE.migrationsTable);
-    expect(publicJournal).toHaveLength(1);
-    expect(controlPlaneJournal).toHaveLength(1);
+    expect(publicJournal).toHaveLength(journalEntryCount(PUBLIC));
+    expect(controlPlaneJournal).toHaveLength(journalEntryCount(CONTROL_PLANE));
     expect(publicJournal![0].hash).toBe(readBaselineRow(PUBLIC).hash);
     expect(controlPlaneJournal![0].hash).toBe(readBaselineRow(CONTROL_PLANE).hash);
     expect(publicJournal![0].hash).not.toBe(controlPlaneJournal![0].hash);
@@ -213,8 +254,12 @@ describe('the two migration histories', () => {
     await applyHistory(db, CONTROL_PLANE);
     await applyHistory(db, PUBLIC);
     await applyHistory(db, CONTROL_PLANE);
-    expect(await journalRows(client, 'drizzle', PUBLIC.migrationsTable)).toHaveLength(1);
-    expect(await journalRows(client, 'drizzle', CONTROL_PLANE.migrationsTable)).toHaveLength(1);
+    expect(await journalRows(client, 'drizzle', PUBLIC.migrationsTable)).toHaveLength(
+      journalEntryCount(PUBLIC)
+    );
+    expect(await journalRows(client, 'drizzle', CONTROL_PLANE.migrationsTable)).toHaveLength(
+      journalEntryCount(CONTROL_PLANE)
+    );
     await client.close();
   });
 
@@ -275,7 +320,7 @@ describe('adopting the split on a database built by the frozen history', () => {
     await client.close();
   });
 
-  it('marks each baseline applied and then migrates without running any DDL', async () => {
+  it('marks each baseline applied, then applies only the migrations after it', async () => {
     const { client, db } = await seededFromFrozenHistory();
 
     expect(await markBaselineApplied(db, PUBLIC)).toBe('marked-applied');
@@ -297,9 +342,13 @@ describe('adopting the split on a database built by the frozen history', () => {
     await applyHistory(db, PUBLIC);
     await applyHistory(db, CONTROL_PLANE);
 
-    // Still one row per journal: the baselines were skipped, not replayed.
-    expect(await journalRows(client, 'drizzle', PUBLIC.migrationsTable)).toHaveLength(1);
-    expect(await journalRows(client, 'drizzle', CONTROL_PLANE.migrationsTable)).toHaveLength(1);
+    // One row per migration, and the first is still the mark: the baselines
+    // were skipped, not replayed, and everything after them ran.
+    for (const history of [PUBLIC, CONTROL_PLANE]) {
+      const rows = await journalRows(client, 'drizzle', history.migrationsTable);
+      expect(rows).toHaveLength(journalEntryCount(history));
+      expect(rows![0].hash).toBe(readBaselineRow(history).hash);
+    }
 
     // The frozen journal is untouched — all 17 of its rows still there.
     const frozenJournal = await journalRows(client, 'drizzle', FROZEN_HISTORY.migrationsTable);

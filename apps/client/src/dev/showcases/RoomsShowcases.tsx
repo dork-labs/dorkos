@@ -42,6 +42,7 @@ import {
   ARCHIVED_ROOM,
   BRIDGED_CHANNEL_ROOM,
   CHANNEL_ROOM,
+  LONG_TOPIC_ROOM,
   DM_ROOM,
   EMPTY_ROOM,
   MEMBER,
@@ -86,6 +87,18 @@ function RoomPanelShowcase() {
       <ShowcaseLabel>A channel with several agents in it</ShowcaseLabel>
       <ShowcaseDemo>
         <RoomPanelDemo label="#general — four members" read={CHANNEL_ROOM} holds={CHANNEL_ROOM} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        A long topic — it wraps, and a link or a long unbroken word breaks inside the panel rather
+        than pushing it sideways (DOR-2117)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <RoomPanelDemo
+          label="#migration — long topic"
+          read={LONG_TOPIC_ROOM}
+          holds={LONG_TOPIC_ROOM}
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>An empty room — the picker opens itself</ShowcaseLabel>

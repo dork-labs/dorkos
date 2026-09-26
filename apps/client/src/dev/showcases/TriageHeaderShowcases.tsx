@@ -6,6 +6,7 @@ import { PinnedTriageHeaderView } from '@/layers/widgets/home';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { sessionHref } from '@/layers/shared/lib';
 
 /**
  * Frozen at module load, not read per render: `Date.now()` during render is
@@ -94,7 +95,7 @@ const ERRORS: AttentionSignal[] = [
     primary: 'tangerines',
     secondary: 'Stopped with an error',
     since: minutesFromLoad(-8),
-    deepLink: '/session?session=ses-9',
+    deepLink: sessionHref({ session: 'ses-9' }),
     agentPath: '/Users/dev/agents/tangerines',
   },
 ];

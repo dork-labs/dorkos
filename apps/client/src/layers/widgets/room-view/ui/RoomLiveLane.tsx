@@ -39,7 +39,7 @@ import {
   type LaneSilentFinish,
   type LivePeekRow,
 } from '@/layers/features/conversation';
-import { activitySentence } from '@/layers/shared/lib';
+import { activitySentence, toSession } from '@/layers/shared/lib';
 import { usePendingInteractions } from '@/layers/entities/attention';
 import { InteractionAsk } from '@/layers/features/ask';
 import { ROOM_CAPABILITIES } from '../model/room-capabilities';
@@ -232,6 +232,7 @@ export function RoomLiveLane({
             title: behind === undefined ? null : roomDisplayTitle(behind),
           },
           othersWaiting: hold.othersWaiting,
+          severalInTheWay: hold.severalInTheWay,
         };
       }),
     [holds, nameOf, rooms.data]
@@ -396,7 +397,7 @@ export function RoomLiveLane({
               ? { agentName: askAgentNames[state.ask.sessionId] }
               : {})}
             onOpenSession={(sessionId) => {
-              void navigate({ to: '/session', search: { session: sessionId } });
+              void navigate(toSession({ session: sessionId }));
             }}
             className="border-l-0"
           />
@@ -407,7 +408,7 @@ export function RoomLiveLane({
           rows={peekRows}
           onScrollToRow={onScrollToRow}
           onOpenSession={(sessionId) => {
-            void navigate({ to: '/session', search: { session: sessionId } });
+            void navigate(toSession({ session: sessionId }));
           }}
           onOpenRoom={(roomId) => {
             void navigate({ to: '/channels', search: { id: roomId } });

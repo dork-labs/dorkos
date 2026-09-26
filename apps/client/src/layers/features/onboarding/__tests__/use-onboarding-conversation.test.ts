@@ -22,6 +22,10 @@ function makePorts(
 ): OnboardingConversationPorts {
   return {
     reducedMotion: true,
+    // Most cases are about the beats after it: an operator who already has a
+    // name and a handle is never asked (DOR-677), so arrival goes straight on.
+    identityQuestion: 'settled',
+    closeIdentityQuestion: vi.fn(),
     saveTraits: vi.fn().mockResolvedValue(undefined),
     saveProfile: vi.fn().mockResolvedValue(undefined),
     completeStep: vi.fn(),
@@ -53,6 +57,80 @@ describe('useOnboardingConversation', () => {
       DORKBOT_ONBOARDING_LINES.personalityPrompt,
     ]);
     expect(result.current.composerEnabled).toBe(false);
+  });
+
+  describe('the name-and-handle beat (DOR-677)', () => {
+    it('asks after arrival when the operator is missing a name or handle', async () => {
+      const { result } = renderHook(() =>
+        useOnboardingConversation(makePorts({ identityQuestion: 'ask' }))
+      );
+      act(() => result.current.beginConversation());
+
+      await waitFor(() => expect(result.current.activeWidget).toBe('identity'));
+      expect(contents(result.current.messages)).toEqual([
+        DORKBOT_ONBOARDING_LINES.arrival[0],
+        DORKBOT_ONBOARDING_LINES.arrival[1],
+        DORKBOT_ONBOARDING_LINES.identityPrompt[0],
+        DORKBOT_ONBOARDING_LINES.identityPrompt[1],
+      ]);
+    });
+
+    it('holds at arrival while the answer is still loading, then asks', async () => {
+      // Guessing either way while the roster loads is wrong: "ask" questions
+      // someone who already answered, "skip" never asks at all.
+      let question: OnboardingConversationPorts['identityQuestion'] = 'pending';
+      const { result, rerender } = renderHook(() =>
+        useOnboardingConversation(makePorts({ identityQuestion: question }))
+      );
+      act(() => result.current.beginConversation());
+      await waitFor(() =>
+        expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.arrival[1])
+      );
+      expect(result.current.beatId).toBe('arrival');
+      expect(result.current.activeWidget).toBeNull();
+
+      question = 'ask';
+      rerender();
+      await waitFor(() => expect(result.current.activeWidget).toBe('identity'));
+    });
+
+    it('confirming closes the question and moves on to personality', async () => {
+      const ports = makePorts({ identityQuestion: 'ask' });
+      const { result } = renderHook(() => useOnboardingConversation(ports));
+      act(() => result.current.beginConversation());
+      await waitFor(() => expect(result.current.activeWidget).toBe('identity'));
+
+      act(() => result.current.confirmIdentity());
+
+      await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
+      expect(ports.closeIdentityQuestion).toHaveBeenCalledTimes(1);
+      expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.identitySaved);
+    });
+
+    it('skipping closes the question too, and never saves anything', async () => {
+      const ports = makePorts({ identityQuestion: 'ask' });
+      const { result } = renderHook(() => useOnboardingConversation(ports));
+      act(() => result.current.beginConversation());
+      await waitFor(() => expect(result.current.activeWidget).toBe('identity'));
+
+      act(() => result.current.skipIdentity());
+
+      await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
+      expect(ports.closeIdentityQuestion).toHaveBeenCalledTimes(1);
+      expect(ports.saveProfile).not.toHaveBeenCalled();
+      expect(contents(result.current.messages)).toContain(DORKBOT_ONBOARDING_LINES.identitySkip);
+    });
+
+    it('never asks when there is nothing to ask', async () => {
+      const ports = makePorts({ identityQuestion: 'settled' });
+      const { result } = renderHook(() => useOnboardingConversation(ports));
+      act(() => result.current.beginConversation());
+      await waitFor(() => expect(result.current.activeWidget).toBe('personality'));
+      expect(contents(result.current.messages)).not.toContain(
+        DORKBOT_ONBOARDING_LINES.identityPrompt[0]
+      );
+      expect(ports.closeIdentityQuestion).not.toHaveBeenCalled();
+    });
   });
 
   it('confirming personality saves traits, completes the step, and advances to the profile beat', async () => {

@@ -14,6 +14,7 @@
  *
  * @module services/activity/plugin-reload-activity
  */
+import { sessionPath } from '@dorkos/shared/session-link';
 import type { PaidPluginReload } from '../runtimes/claude-code/messaging/plugin-reload-policy.js';
 import type { ActivityService } from './activity-service.js';
 
@@ -59,7 +60,7 @@ export function createPluginReloadActivityWriter(
       // entry written from the server can supply — the working directory the
       // route also likes is a client-side resolution, not a fact this writer
       // holds.
-      linkPath: `/session?session=${encodeURIComponent(entry.sessionId)}`,
+      linkPath: sessionPath({ session: entry.sessionId }),
       metadata: {
         // The estimate the session is never shown. Tokens rather than dollars
         // because tokens are what the runtime actually reports — see the policy

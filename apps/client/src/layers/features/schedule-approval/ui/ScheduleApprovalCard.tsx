@@ -13,6 +13,7 @@ import {
   isBypassPermissionMode,
   formatCompactAge,
   shortenHomePath,
+  toSession,
 } from '@/layers/shared/lib';
 import { useNow, useSafeNavigate } from '@/layers/shared/model';
 import {
@@ -355,10 +356,7 @@ export function ScheduleApprovalCard({
 
   const goToSession = (sessionId: string) => {
     onNavigate?.();
-    navigate?.({
-      to: '/session',
-      search: { session: sessionId, dir: task.proposedByAgentPath ?? undefined },
-    });
+    navigate?.(toSession({ session: sessionId, dir: task.proposedByAgentPath ?? undefined }));
   };
 
   /**

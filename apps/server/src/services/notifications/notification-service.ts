@@ -148,6 +148,14 @@ export interface NotificationServiceDeps {
 
 /** The notification pipeline. */
 export class NotificationService {
+  /**
+   * The raises still between their dedupe check and their stored row, by
+   * dedupe key. `raise()` awaits the relay hand-off in that gap, so without
+   * this two overlapping raises of one key would both pass the check and say
+   * the same thing twice.
+   */
+  private readonly inFlight = new Map<string, Promise<NotifyResult>>();
+
   constructor(
     private readonly store: NotificationStore,
     private readonly deps: NotificationServiceDeps = {}
@@ -337,6 +345,16 @@ export class NotificationService {
    * converges once `notify()`'s promise resolves — and is deliberately left
    * as a documented trade-off rather than a `TODO`.
    *
+   * **One raise per dedupe key at a time.** A raise that finds another one of
+   * the same key still in flight waits for it to settle, then checks again. So
+   * the second of two overlapping raises sees the first one's row and is
+   * deduped, and when the first stored nothing (a refused note) the second is
+   * judged on its own. Only raises of the SAME key queue, but the wait is not
+   * short: the relay hand-off to Telegram or Slack waits on the adapter's
+   * delivery, which can take up to its two-minute timeout, and every raise of
+   * the key waits that long behind it. Raises queued behind a refused first
+   * raise each re-run the whole path, one after another.
+   *
    * @param kind - Which registry entry.
    * @param payload - That kind's payload.
    * @param opts - Who acted, and how to reach out of the app.
@@ -348,8 +366,31 @@ export class NotificationService {
     opts: NotifyOptions,
     resolution: { resolvedAt?: string; outcome?: NotificationOutcome }
   ): Promise<NotifyResult> {
+    const dedupeKey = notificationEntry(kind).dedupeKey(payload);
+    for (let ahead = this.inFlight.get(dedupeKey); ahead; ahead = this.inFlight.get(dedupeKey)) {
+      // Its failure is its own caller's to report; this raise only needs it done.
+      await ahead.catch(() => undefined);
+    }
+    // Nothing awaits between the empty lookup above and this `set`, so no
+    // other raise of this key can slip in between them.
+    const raising = this.raiseOnce(kind, payload, opts, resolution, dedupeKey);
+    this.inFlight.set(dedupeKey, raising);
+    try {
+      return await raising;
+    } finally {
+      if (this.inFlight.get(dedupeKey) === raising) this.inFlight.delete(dedupeKey);
+    }
+  }
+
+  /** The body of {@link raise}, run while it holds its dedupe key. */
+  private async raiseOnce<K extends EventNotificationKind | StandingNotificationKind>(
+    kind: K,
+    payload: NotificationPayload<K>,
+    opts: NotifyOptions,
+    resolution: { resolvedAt?: string; outcome?: NotificationOutcome },
+    dedupeKey: string
+  ): Promise<NotifyResult> {
     const entry = notificationEntry(kind);
-    const dedupeKey = entry.dedupeKey(payload);
     const alreadySaid = this.store.findRecent(
       dedupeKey,
       entry.dedupeWindowMs ?? DEFAULT_DEDUPE_WINDOW_MS

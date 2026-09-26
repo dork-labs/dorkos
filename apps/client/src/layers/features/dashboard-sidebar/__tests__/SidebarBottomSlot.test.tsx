@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The cockpit's bottom-slot PRIORITY: getting started > update > profile prompt
- * > promo (spec `sidebar-simplification` D4).
+ * The cockpit's bottom-slot PRIORITY: getting started > update > identity
+ * prompt > profile prompt > promo (spec `sidebar-simplification` D4).
  *
  * `bottom-slot.test.tsx` proves the arbiter picks the first candidate whose
  * `show` is true. That is a mechanism; this is the product decision — that a
@@ -21,6 +21,7 @@ import '@testing-library/jest-dom/vitest';
 let gettingStarted = false;
 let updateReady = false;
 let updateKind: 'command' | 'desktop-install-failed' = 'command';
+let identityVisible = false;
 let profileVisible = false;
 let promoQualifies = false;
 
@@ -37,8 +38,10 @@ vi.mock('@/layers/features/onboarding', () => ({
     dismiss: vi.fn(),
     isLoading: false,
   }),
+  useIdentityPrompt: () => ({ visible: identityVisible }),
   useProfilePrompt: () => ({ visible: profileVisible }),
   ProgressCard: () => <div data-testid="card-getting-started" />,
+  IdentityPromptCard: () => <div data-testid="card-identity-prompt" />,
   ProfilePromptCard: () => <div data-testid="card-profile-prompt" />,
 }));
 
@@ -81,7 +84,7 @@ vi.mock('../ui/bottom-slot/UpdatePill', () => ({
 import { SidebarBottomSlot } from '../ui/bottom-slot/SidebarBottomSlot';
 
 /** Every card the slot can draw, in the priority order under test. */
-const RUNGS = ['getting-started', 'update', 'profile-prompt', 'promo'] as const;
+const RUNGS = ['getting-started', 'update', 'identity-prompt', 'profile-prompt', 'promo'] as const;
 
 /** Which card the slot actually drew, or `null`. */
 function drawn(): string | null {
@@ -95,6 +98,7 @@ beforeEach(() => {
   gettingStarted = false;
   updateReady = false;
   updateKind = 'command';
+  identityVisible = false;
   profileVisible = false;
   promoQualifies = false;
 });
@@ -102,8 +106,8 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('SidebarBottomSlot priority', () => {
-  it('gives the slot to getting started when all four qualify', () => {
-    gettingStarted = updateReady = profileVisible = promoQualifies = true;
+  it('gives the slot to getting started when every card qualifies', () => {
+    gettingStarted = updateReady = identityVisible = profileVisible = promoQualifies = true;
     render(<SidebarBottomSlot />);
     expect(drawn()).toBe('getting-started');
   });
@@ -119,6 +123,12 @@ describe('SidebarBottomSlot priority', () => {
     updateReady = profileVisible = promoQualifies = true;
     render(<SidebarBottomSlot />);
     expect(drawn()).toBe('update');
+  });
+
+  it('asks who you are before what you do (DOR-677)', () => {
+    identityVisible = profileVisible = promoQualifies = true;
+    render(<SidebarBottomSlot />);
+    expect(drawn()).toBe('identity-prompt');
   });
 
   it('falls to the profile prompt once there is no update waiting', () => {
@@ -147,7 +157,8 @@ describe('SidebarBottomSlot priority', () => {
       // done. So the winner must be exactly `RUNGS[peeled]`.
       gettingStarted = peeled <= 0;
       updateReady = peeled <= 1;
-      profileVisible = peeled <= 2;
+      identityVisible = peeled <= 2;
+      profileVisible = peeled <= 3;
       promoQualifies = true;
       render(<SidebarBottomSlot />);
       winners.push(drawn());

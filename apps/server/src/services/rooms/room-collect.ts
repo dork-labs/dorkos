@@ -409,10 +409,17 @@ export class RoomCollector {
    * promoted-first sort, which only ever runs over one batch, would never see
    * the promoted room and "Answer here first" would silently do nothing.
    *
+   * **The reading can come from the caller**, for the same property one level
+   * up. When a fresh message for this agent is what frees the slot, the
+   * dispatcher passes that message's own `arrivedAt`, so every re-armed
+   * collection is due no later than the fresh one and lands in its sweep, where
+   * `openedSeq` puts the older waits first. A second `Date.now()` here could
+   * read one millisecond later and hand the fresh message a sweep of its own.
+   *
    * @param agentPath - The working directory whose claim just released.
+   * @param from - The clock reading to arm from. Defaults to now.
    */
-  resumeAgent(agentPath: string): void {
-    const from = Date.now();
+  resumeAgent(agentPath: string, from: number = Date.now()): void {
     for (const collection of this.collections.values()) {
       if (collection.agentPath !== agentPath || !collection.parked) continue;
       collection.parked = false;

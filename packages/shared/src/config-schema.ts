@@ -193,6 +193,26 @@ export const ROOM_TURN_LIMIT_DEFAULTS = {
 } as const;
 
 /**
+ * The bounds `rooms.maxConcurrentTurnsPerAgent` must satisfy — how many
+ * conversations one agent may work in at the same time.
+ *
+ * Exported so Settings offers exactly the range the schema accepts. Eight is
+ * the ceiling because DOR-500 measured real damage at six writers on one tree:
+ * a person may go past that on purpose, but not by an order of magnitude.
+ */
+export const MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS = { min: 1, max: 8 } as const;
+
+/**
+ * What `rooms.maxConcurrentTurnsPerAgent` is before anybody changes it.
+ *
+ * The schema builds both of its declarations from this — the per-field
+ * `.default()` and the `rooms` section literal — so a fresh install and an
+ * upgraded one cannot disagree, and Settings reads it to say what the default
+ * is.
+ */
+export const MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT = 3;
+
+/**
  * The bounds the relay turn ceiling must satisfy.
  *
  * Its own constant rather than a reuse of {@link ROOM_TURN_LIMIT_BOUNDS},
@@ -440,6 +460,19 @@ export const UserProfileSchema = z.object({
    * ("don't ask again"). Machine-managed; null = never dismissed.
    */
   rolePromptDismissedAt: z.string().nullable().default(null),
+  /**
+   * ISO timestamp when the person closed the one-time "what should we call
+   * you?" question (DOR-677) — by saving a name or handle, or by skipping it —
+   * in onboarding, the getting-started card or the sidebar prompt.
+   * Machine-managed; null = never asked.
+   *
+   * One fact for all three surfaces, and written on a save as well as on a
+   * skip: a person who saved a name and left the handle empty has answered, and
+   * asking again would be nagging. The name and the handle themselves live on
+   * the profile route and the author row, never here — this only records that
+   * the question was put. Nothing derives a handle when it is absent (DOR-604).
+   */
+  identityPromptDismissedAt: z.string().nullable().default(null),
 });
 
 /** What the user has told DorkOS about themselves (see {@link UserProfileSchema}). */
@@ -1320,6 +1353,29 @@ export function readClaudeAccountSettings(raw: unknown): {
 }
 
 /**
+ * The agent runtimes configured on this host, in a fixed order.
+ *
+ * claude-code is always available; codex and opencode are included unless they
+ * are explicitly turned off, since both default to enabled. The one definition
+ * behind the config DTO's `runtimes` list and the feedback report's, so the web
+ * app and a pasted report can never disagree about what a host runs.
+ *
+ * Takes a dotted-path reader rather than a parsed config, because both callers
+ * hold one (`configManager.getDot`, the feedback gatherer's `readConfigValue`)
+ * and a store that is missing or unreadable should degrade to the defaults
+ * instead of failing.
+ *
+ * @param read - Reads one dotted config path; returns `undefined` when unset.
+ * @returns The configured runtime ids, `claude-code` first.
+ */
+export function configuredRuntimes(read: (key: string) => unknown): string[] {
+  const runtimes = ['claude-code'];
+  if (read('runtimes.codex.enabled') !== false) runtimes.push('codex');
+  if (read('runtimes.opencode.enabled') !== false) runtimes.push('opencode');
+  return runtimes;
+}
+
+/**
  * The Claude account registry: rows with stable ids, no two the same.
  *
  * Uniqueness is enforced rather than assumed because an id is a REFERENCE — an
@@ -2009,6 +2065,36 @@ export const UserConfigSchema = z.object({
        */
       maxCanvasOpsPerTurn: z.number().int().min(1).max(10).default(3),
       /**
+       * How many conversations one agent may work in at the same time.
+       *
+       * An agent's rooms and chats all run in its own folder, so two turns at
+       * once are two writers in one set of files — the contention ADR
+       * `260726-170125` (DOR-500) measured, where six writers on one tree
+       * clobbered each other and halving them roughly doubled what survived.
+       * A message that finds the agent at this limit is held, never refused,
+       * and starts the moment one of its turns ends (ADR `260818-234541`).
+       *
+       * Three covers the common case — one person talking to one agent in two
+       * or three rooms — well short of the measured collision regime; `1` is
+       * the old one-turn-at-a-time behaviour. It never lets one agent run two
+       * turns in the SAME room: a room is one transcript, and that ceiling is
+       * not a setting.
+       *
+       * Read at every claim decision, so a change binds the very next message.
+       * Lowering it while turns are running stops nothing already started; new
+       * turns wait until the agent is back under the limit.
+       *
+       * Both declarations of this value — here and in the `rooms` section
+       * literal below — read {@link MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT}, so
+       * they cannot disagree.
+       */
+      maxConcurrentTurnsPerAgent: z
+        .number()
+        .int()
+        .min(MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS.min)
+        .max(MAX_CONCURRENT_TURNS_PER_AGENT_BOUNDS.max)
+        .default(MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT),
+      /**
        * A room's own files — its git repo, the standing worktree each agent
        * works in, and the merges that bring that work back (spec
        * `project-rooms`).
@@ -2102,6 +2188,9 @@ export const UserConfigSchema = z.object({
       // How many canvas changes one agent may make in one turn, same judgement
       // and same both-sites rule as the line above it.
       maxCanvasOpsPerTurn: 3,
+      // How many conversations one agent may work in at once, same both-sites
+      // rule as the lines above it.
+      maxConcurrentTurnsPerAgent: MAX_CONCURRENT_TURNS_PER_AGENT_DEFAULT,
       repo: {
         enabled: true,
         worktreeReapDays: 14,
@@ -2190,6 +2279,7 @@ export const UserConfigSchema = z.object({
     displayName: null,
     displayNameSource: null,
     rolePromptDismissedAt: null,
+    identityPromptDismissedAt: null,
   })),
   agentContext: z
     .object({

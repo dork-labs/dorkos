@@ -9,7 +9,7 @@ import {
   ResponsivePopoverContent,
   ResponsivePopoverTitle,
 } from '@/layers/shared/ui';
-import { listWaitingKinds } from '@/layers/shared/lib';
+import { listWaitingKinds, toSession } from '@/layers/shared/lib';
 import { useEventStream } from '@/layers/shared/model';
 import { useAskAgentNames, useSettlingAsks, useWaitingQueue } from '@/layers/entities/attention';
 import {
@@ -358,7 +358,7 @@ export function InboxBell() {
                       // the whole conversation rather than the one question.
                       onOpenSession={(sessionId) => {
                         setOpen(false);
-                        void navigate({ to: '/session', search: { session: sessionId } });
+                        void navigate(toSession({ session: sessionId }));
                       }}
                       emptyState={
                         <p className="text-muted-foreground text-xs">Nothing needs you</p>

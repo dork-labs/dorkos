@@ -70,6 +70,7 @@ import {
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
 import { SessionLockManager } from '../../session/session-lock.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
+import { anchorPath, resolveIdentityAnchor } from '../../core/agent-identity/index.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { buildOpenCodeTurnContext } from './messaging/turn-context.js';
 import {
@@ -325,6 +326,9 @@ export class OpenCodeRuntime implements AgentRuntime {
   ): AsyncGenerator<StreamEvent> {
     const settings = await this.resolveTurnSettings(sessionId, opts);
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? DEFAULT_CWD;
+    // Who a room turn is for, which every identity decision below is checked
+    // against (DOR-2091). Absent on every turn a room did not trigger.
+    const forAgent = opts?.roomTurn?.agentPath;
     this.registry.recordMessage(sessionId, content, {
       cwd,
       ...(opts?.title !== undefined ? { title: opts.title } : {}),
@@ -337,9 +341,12 @@ export class OpenCodeRuntime implements AgentRuntime {
       async (client, ocSessionId, dorkosApplied, connectionsApplied) => {
         // Build the prompt only after the leased MCP reconcile, so the room
         // verbs describe what this exact turn can actually call.
-        const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied);
+        // The agent this turn acts as — anchored, so a room worktree reads as its
+        // agent and a room turn as nobody but the agent it is for (DOR-2091).
+        const agentPath = anchorPath(resolveIdentityAnchor(cwd, forAgent));
+        const agentContext = await buildOpenCodeTurnContext(cwd, dorkosApplied, agentPath);
         const model = parseModelSelection(settings.model);
-        const agent = this.meshCore?.getByPath(cwd);
+        const agent = agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
         const accessContext =
           connectionsApplied && this.connectorRuntimeTools && agent
             ? await this.accountsAccess.select(this.connectorRuntimeTools, agent.id, sessionId, {
@@ -366,7 +373,7 @@ export class OpenCodeRuntime implements AgentRuntime {
           throw new Error(`OpenCode session.promptAsync failed: ${JSON.stringify(prompted.error)}`);
         }
       },
-      { connectorTurn: true }
+      { connectorTurn: true, ...(forAgent !== undefined ? { forAgent } : {}) }
     );
   }
 
@@ -432,7 +439,8 @@ export class OpenCodeRuntime implements AgentRuntime {
    * @param title - Optional title used only when a new OpenCode session is created.
    * @param trigger - Fires the turn after MCP registration settles, receiving
    *   whether the room-tool server was actually applied.
-   * @param opts - Marks a model prompt that receives connector runtime tools.
+   * @param opts - Marks a model prompt that receives connector runtime tools,
+   *   and names the agent a room turn is for (DOR-2091).
    */
   private async *runOpenCodeTurn(
     sessionId: string,
@@ -444,7 +452,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       dorkosApplied: boolean,
       connectionsApplied: boolean
     ) => Promise<void>,
-    opts?: { connectorTurn?: boolean }
+    opts?: { connectorTurn?: boolean; forAgent?: string }
   ): AsyncGenerator<StreamEvent> {
     const ocSessionId = await this.resolveOpenCodeSession(sessionId, cwd, title);
     const client = await this.provider.getClient(cwd);
@@ -476,13 +484,20 @@ export class OpenCodeRuntime implements AgentRuntime {
         turn.phase = 'setup';
       }
 
-      const meshAgent = opts?.connectorTurn ? this.meshCore?.getByPath(cwd) : undefined;
-      if (this.connectorRuntimeTools && meshAgent) {
+      // Whose identity this turn carries: the directory's own agent, or the one
+      // a room worktree was handed to — never by prefix, and never another agent
+      // than the room turn names (DOR-2091, `identity-anchor.ts`). A worktree
+      // looked up exactly hosts nobody, which is how opencode agents in a room
+      // with files used to get no `dorkos` server at all.
+      const agentPath = anchorPath(resolveIdentityAnchor(cwd, opts?.forAgent));
+      const meshAgent =
+        opts?.connectorTurn && agentPath ? this.meshCore?.getByPath(agentPath) : undefined;
+      if (this.connectorRuntimeTools && meshAgent && agentPath) {
         turn.connectorBinding = await this.connectorRuntimeTools.principals.openTurn(
           {
             runtime: this.type,
             canonicalSessionId: sessionId,
-            agentPath: cwd,
+            agentPath,
             canonicalCwd: directory,
             signal: controller.signal,
           },
@@ -501,8 +516,16 @@ export class OpenCodeRuntime implements AgentRuntime {
       }
 
       // Registration and the lease use the sidecar's canonical directory. The
-      // original cwd remains the agent lookup key when symlinks differ.
-      const mcpResult = await this.mcp.ensureManaged(client, directory, connectorInjection, cwd);
+      // anchored agent path is the agent lookup key — the original cwd when it
+      // anchors to itself, which also covers symlinks that differ — and `null`
+      // when the turn anchors to nobody, so a refused turn standing in another
+      // agent's folder is given none of that agent's servers.
+      const mcpResult = await this.mcp.ensureManaged(
+        client,
+        directory,
+        connectorInjection,
+        agentPath ?? null
+      );
       if (connectorInjection && !mcpResult.connectorApplied) {
         await this.revokeConnectorTurn(turn, 'setup_failed');
       } else if (turn.connectorBinding && this.connectorRuntimeTools) {

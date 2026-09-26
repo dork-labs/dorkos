@@ -108,6 +108,9 @@ export function RoomDetailsHeader({
               placeholder="Add a topic"
               commitEmpty
               startEditing={startTopicEditing}
+              // The one line in the panel that is prose: it wraps rather than
+              // truncating, so a long topic can be read here at all (DOR-2117).
+              wrap
               className="text-muted-foreground text-sm"
             />
           )}

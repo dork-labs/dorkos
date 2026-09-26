@@ -1,0 +1,64 @@
+# Nightly delete of Neon preview databases no git branch will come back for.
+#
+# The Vercel-Neon integration gives every git branch Vercel deploys a Neon
+# branch, `preview/<git-branch>`, and removes it only when the git branch is
+# deleted. Branches that never become a pull request keep theirs forever: the
+# project reached 52 on 2026-09-25 (ledger: ci/ledger/260925-230012-neon-preview-branch-leak.md).
+# apps/site/vercel.json stops the deploys that never needed a preview; this
+# catches the rest. The rules, and why every unknown keeps, are in the header of
+# scripts/neon-preview-sweep.ts.
+#
+# NOT A REQUIRED CHECK: schedule and on demand only, never pull_request or
+# merge_group, so it can never block a PR.
+#
+# SETUP (the operator, once): add the repository secret NEON_API_KEY (a Neon API
+# key that can delete branches in the site's project) and the repository
+# variable NEON_PROJECT_ID. Until both exist every run is green with a notice in
+# the job summary. After that, a red run means the sweep could not read Neon or
+# GitHub, or a delete failed; the job summary says which, and nothing was
+# deleted on a read failure.
+#
+# Run it by hand with `gh workflow run neon-preview-sweep.yml` (dry run by
+# default when started by hand; pass `-f dry_run=false` to delete).
+name: neon-preview-sweep
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report what would be deleted, delete nothing
+        type: boolean
+        default: true
+
+concurrency:
+  group: neon-preview-sweep
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read # open PRs keep their preview database
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    # A run is a checkout plus a few dozen API calls, about a minute; the
+    # script has no dependencies, so there is no install to wait on.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Sweep stale Neon preview branches
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN_FLAG: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '--dry-run' || '' }}
+        run: node scripts/neon-preview-sweep.ts $DRY_RUN_FLAG

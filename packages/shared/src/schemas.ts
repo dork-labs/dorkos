@@ -4030,6 +4030,10 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when the one-time existing-user role prompt was dismissed, or null',
         }),
+        identityPromptDismissedAt: z.string().nullable().openapi({
+          description:
+            'ISO timestamp when the one-time name-and-handle question was closed (saved or skipped), or null',
+        }),
       })
       .optional()
       .openapi({
@@ -4157,6 +4161,10 @@ export const ServerConfigSchema = z
         maxAutomaticTurnsTotalPerHour: z.number().int().optional().openapi({
           description:
             'The most automatic replies this DorkOS may run in an hour, across every room. The one limit no room may override',
+        }),
+        maxConcurrentTurnsPerAgent: z.number().int().optional().openapi({
+          description:
+            'How many conversations one agent may work in at the same time. A message that finds the agent at this limit waits for one of its turns to finish. Never more than one turn per room, whatever this says. Writable from Settings',
         }),
       })
       .optional()

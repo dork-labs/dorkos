@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { resolveSessionForCwd, notifySessionLookupFailed } from '../../lib/resolve-session-for-cwd';
-import { reportClientError } from '@/layers/shared/lib';
+import { reportClientError, toSession } from '@/layers/shared/lib';
 import { beginSessionNavigation } from '../../lib/session-navigation-intent';
 
 /** Options for the directory setter returned by {@link useDirectoryState}. */
@@ -65,10 +65,7 @@ export function useDirectoryState(): [
       if (dir) {
         if (opts?.preserveSession) {
           setStoreDir(dir);
-          void navigate({
-            to: '/session',
-            search: (prev) => ({ ...prev, dir }),
-          });
+          void navigate(toSession((prev) => ({ ...prev, dir })));
           opts?.onOpened?.();
           return;
         }
@@ -94,7 +91,7 @@ export function useDirectoryState(): [
               return;
             }
             setStoreDir(dir);
-            void navigate({ to: '/session', search: { dir, session: resolved.sessionId } });
+            void navigate(toSession({ dir, session: resolved.sessionId }));
             opts?.onOpened?.();
           })
           .catch((error: unknown) => {
@@ -107,10 +104,7 @@ export function useDirectoryState(): [
           });
         return;
       }
-      void navigate({
-        to: '/session',
-        search: (prev) => ({ ...prev, dir: undefined }),
-      });
+      void navigate(toSession((prev) => ({ ...prev, dir: undefined })));
     },
   ];
 }

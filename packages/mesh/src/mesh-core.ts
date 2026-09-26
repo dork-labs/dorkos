@@ -326,17 +326,11 @@ export class MeshCore {
    * agent's IDENTITY — registered, renamed, re-iconed, moved, removed — by
    * every path that goes through the registry: the HTTP routes, the in-session
    * and external `mesh_register` / `mesh_unregister` tools, `create_agent`, a
-   * marketplace install, an agent editing itself, `syncFromDisk`, and the
-   * five-minute reconciler adopting a `.dork/agent.json`. `AgentRegistry` is
-   * the seam every one of them passes through, which is why the observer lives
-   * there rather than on each route (the eighth route would forget).
-   *
-   * **One known path does NOT go through the registry**, so it is honest to
-   * name it rather than let "any path" quietly cover it: a marketplace agent
-   * UNINSTALL deletes `.dork/agent.json` directly, with no mesh call
-   * (`services/marketplace/flows/uninstall.ts`), so nothing fires until the
-   * reconciler's next sweep notices the manifest is gone. That is a gap in the
-   * uninstall flow rather than in this seam, and it has its own follow-up.
+   * marketplace install or uninstall, an agent editing itself, `syncFromDisk`,
+   * and the five-minute reconciler adopting a `.dork/agent.json`.
+   * `AgentRegistry` is the seam every one of them passes through, which is why
+   * the observer lives there rather than on each route (the eighth route would
+   * forget).
    *
    * The DorkOS server wires this to the `/api/events` fan-out as
    * `agents_changed`, so a sidebar in every open window follows a registration

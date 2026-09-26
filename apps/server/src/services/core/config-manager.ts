@@ -3033,6 +3033,41 @@ export function seedDisplayNameSourceDefault(store: {
 }
 
 /**
+ * Seed `profile.identityPromptDismissedAt` — whether the one-time "what should
+ * we call you?" question has been put (DOR-677).
+ *
+ * **The mechanism, not an anchor**, for the reason
+ * {@link seedDisplayNameSourceDefault} gives: a nested leaf inside a section
+ * every stored config already carries, and conf's pre-migration merge is
+ * shallow, so nothing else writes it to disk for an upgraded install.
+ *
+ * **It seeds `null` — "never asked" — for everyone, including an install whose
+ * operator already has a name and a handle.** That is honest (nobody was asked)
+ * and harmless: every surface that asks also checks what is missing, so a
+ * person with both never sees the question. Seeding a timestamp instead would
+ * record a dismissal nobody made.
+ *
+ * Absence is tested with `in`, because the default is `null` and a `== null`
+ * guard would rewrite a stored `null` on every corrupt-recovery re-run.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedIdentityPromptDismissedDefault(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const profile = store.get('profile');
+  if (profile == null || typeof profile !== 'object') return;
+  const current = profile as Record<string, unknown>;
+  if ('identityPromptDismissedAt' in current) return;
+  store.set('profile', {
+    ...current,
+    identityPromptDismissedAt: USER_CONFIG_DEFAULTS.profile.identityPromptDismissedAt,
+  });
+}
+
+/**
  * Migration body: reserve `harness.refusedHooks: []` on a `harness` block that
  * predates durable refusals (DOR-1849).
  *
@@ -3171,6 +3206,42 @@ export function seedRoomCanvasOps(store: {
   store.set('rooms', {
     ...current,
     maxCanvasOpsPerTurn: USER_CONFIG_DEFAULTS.rooms.maxCanvasOpsPerTurn,
+  });
+}
+
+/**
+ * Migration body: seed `rooms.maxConcurrentTurnsPerAgent` on a `rooms` block
+ * that predates the setting (DOR-2104).
+ *
+ * Load-bearing for the same reason as {@link seedRoomCanvasOps}: `rooms` is a
+ * section every stored config already carries, and conf's pre-write merge is
+ * SHALLOW, so a stored `rooms` object never gains a member without this body.
+ *
+ * **Not safety-neutral, and deliberately so.** Before this setting existed the
+ * ceiling was a hard-coded one turn per agent folder; seeding `3` lets an
+ * upgraded install run up to three at once, which is the default the issue
+ * chose for everybody (DOR-500's damage curve was measured at six writers on
+ * one tree). Anyone who wants the old behaviour sets it to `1` in Settings.
+ * There is no earlier value a person could have chosen, so there is nothing
+ * here to overwrite.
+ *
+ * Additive and idempotent — it writes only when the leaf is absent, so a
+ * corrupt-recovery re-run leaves a number somebody chose exactly where it is.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedMaxConcurrentTurnsPerAgent(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const rooms = store.get('rooms');
+  if (rooms == null || typeof rooms !== 'object') return;
+  const current = rooms as Record<string, unknown>;
+  if (current.maxConcurrentTurnsPerAgent != null) return;
+  store.set('rooms', {
+    ...current,
+    maxConcurrentTurnsPerAgent: USER_CONFIG_DEFAULTS.rooms.maxConcurrentTurnsPerAgent,
   });
 }
 
@@ -4136,6 +4207,37 @@ export const CONFIG_MIGRATIONS = {
     set: (key: string, value: unknown) => void;
   }) => {
     seedPermissionPresetFromDoor(store);
+  },
+  // 0.83.0 is the newest tag, so 0.84.0 is the next key. Frozen from merge, not
+  // from the release bump, for the reason `'0.60.0'` above states; anything
+  // further opens `'0.85.0'`.
+  //
+  // Disjoint from every other key here: it writes one nested leaf under `rooms`
+  // that nothing above names. `'0.66.0'`, `'0.70.0'`, `'0.79.0'` and `'0.81.0'`
+  // also touch `rooms`, and this body preserves every member they write.
+  '0.84.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.maxConcurrentTurnsPerAgent` — how many conversations one agent may
+    // work in at once. A nested leaf, so this body is the only thing that writes
+    // it; see `seedMaxConcurrentTurnsPerAgent`.
+    seedMaxConcurrentTurnsPerAgent(store);
+  },
+  // 0.84.0 has merged (the per-agent concurrency limit), so 0.85.0 is the next
+  // key. Frozen from merge, not from the release bump, for the reason `'0.60.0'`
+  // above states; anything further opens `'0.86.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under `profile`,
+  // a section `'0.45.0'` seeds whole and `'0.73.0'` extends with a different
+  // leaf; both are preserved.
+  '0.85.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `profile.identityPromptDismissedAt` — whether the name-and-handle
+    // question was put (DOR-677). See `seedIdentityPromptDismissedDefault`.
+    seedIdentityPromptDismissedDefault(store);
   },
 } as const;
 

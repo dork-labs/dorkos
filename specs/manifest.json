@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "260925-225543",
+      "slug": "disconnected-account-removal",
+      "title": "Remove disconnected accounts",
+      "created": "2026-09-12",
+      "status": "implemented",
+      "project": "DorkOS Connections",
+      "linearIssue": "DOR-1994"
+    },
+    {
       "id": "260925-192121",
       "slug": "obsidian-retirement",
       "title": "Retire the Obsidian plugin",
@@ -788,7 +797,7 @@
       "slug": "handles",
       "title": "Handles — one addressable name for every author in a room",
       "created": "2026-07-28",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260728-213721",

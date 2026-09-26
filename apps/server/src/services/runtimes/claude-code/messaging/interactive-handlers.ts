@@ -7,7 +7,10 @@ import type {
 import type { QuestionItem } from '@dorkos/shared/types';
 import { QuestionItemSchema, UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import { PermissionModeSchema, type PermissionModeId } from '@dorkos/shared/schemas';
-import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
+import {
+  createInSessionContextResolver,
+  resolveIdentityAnchor,
+} from '../../../core/agent-identity/index.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { logRefusal } from '../../../observability/refusals.js';
@@ -349,7 +352,8 @@ export const DORKOS_AGENT_TOOLS = new Set(
  *
  * ## Where identity comes from
  *
- * One KEY — the session's working directory — resolved here by
+ * One KEY — the session's identity anchor (its working directory, or the agent
+ * a room working copy was handed to, DOR-2091) — resolved here by
  * {@link createInSessionContextResolver}, the same function, with the same
  * argument, that `mcp-tools/index.ts` builds the capability resolver from. For
  * the rooms verbs that is also the same STORE, so this gate and the caller they
@@ -366,9 +370,10 @@ export const DORKOS_AGENT_TOOLS = new Set(
  * a different failure from the one this fix was about. Both directions are pinned
  * in `core/__tests__/mcp-relay-notify-tools.test.ts`.
  *
- * A room turn is handed the addressed agent's own directory
- * (`room-turn-runner.ts`), and an agent a room dispatched to is in the mesh by
- * construction, so the two agree wherever this was meant to work: the verbs are
+ * A room turn is handed the addressed agent's own directory, or — in a room
+ * with files — its worktree, which anchors back to that agent (DOR-2091). An
+ * agent a room dispatched to is in the mesh by construction, so the two agree
+ * wherever this was meant to work: the verbs are
  * frictionless there. An ordinary cockpit session in a plain project directory
  * resolves neither, and keeps today's card.
  *
@@ -969,7 +974,15 @@ async function hasAgentIdentity(
   log: ToolGateLogger
 ): Promise<boolean> {
   try {
-    return (await resolveIdentity()) !== undefined;
+    // An `identity`, not merely an answer: a session standing in a working copy
+    // nobody can vouch for answers `agentIdentityPresented` with no identity
+    // (DOR-2091), and that is a machine this gate cannot name — so it asks.
+    const context = await resolveIdentity();
+    return (
+      typeof context === 'object' &&
+      context !== null &&
+      (context as { identity?: unknown }).identity !== undefined
+    );
   } catch (err) {
     log.info('[canUseTool] could not resolve this session identity; asking instead', {
       error: err instanceof Error ? err.message : String(err),
@@ -1000,9 +1013,10 @@ async function hasAgentIdentity(
  *   snapshot is guaranteed captured before the SDK applies the edit; a rejection
  *   is swallowed by the caller's wiring so capture never blocks a tool.
  * @param resolveIdentity - Answers "whose identity does this session call as?",
- *   for {@link IDENTITY_SCOPED_TOOLS}. Defaults to a resolver over the session's
- *   own `cwd` — the SAME call `mcp-tools/index.ts` builds the capability
- *   resolver from, so the gate and the caller the tool runs as cannot disagree.
+ *   for {@link IDENTITY_SCOPED_TOOLS}. A launch hands in the resolver over the
+ *   SAME identity anchor it hands `mcp-tools/index.ts`, so the gate and the
+ *   caller the tool runs as cannot disagree; the default anchors the session's
+ *   own `cwd`, for a caller with nothing better.
  *   Injectable so a test can state the identity instead of staging an agent on
  *   disk.
  */
@@ -1010,7 +1024,9 @@ export function createCanUseTool(
   session: InteractiveSession & { permissionMode: PermissionModeId },
   log: ToolGateLogger,
   onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
-  resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(session.cwd)
+  resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(
+    resolveIdentityAnchor(session.cwd)
+  )
 ): (
   toolName: string,
   input: Record<string, unknown>,

@@ -296,6 +296,30 @@ describe('createCanUseTool — approval gate', () => {
     }
   );
 
+  it.each(OWNER_FACING_VERBS)(
+    // A session standing where some agent works but that cannot be tied to the
+    // turn's agent answers `agentIdentityPresented` with NO identity (DOR-2091).
+    // That is an answer, but it names nobody, so it must ask — a gate that
+    // tested "any answer" would wave the call through. Seeded: reverting
+    // `hasAgentIdentity` to `!== undefined` reddens every row.
+    'still raises a card for %s when the session is a machine nobody can name',
+    async (toolName, input) => {
+      const session = makeSession('default');
+      const canUseTool = createCanUseTool(session, noopLog, undefined, () =>
+        Promise.resolve({ agentIdentityPresented: true })
+      );
+
+      const result = canUseTool(toolName, input, makeContext(`refused-${toolName}`));
+      const settled = await Promise.race([
+        result.then(() => 'settled' as const),
+        Promise.resolve('pending' as const),
+      ]);
+
+      expect(settled).toBe('pending');
+      expect(session.eventQueue[0].type).toBe('approval_required');
+    }
+  );
+
   it('asks rather than skipping the card when the identity lookup throws', async () => {
     // Fail-closed: the fallback caller on the other side of these verbs is the
     // person who owns the install, so "could not tell" must never mean "allow".

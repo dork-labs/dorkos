@@ -38,7 +38,7 @@ a one-line summary. Reading the feed does not change anything.
 ## Which agents were active recently
 
 - Tool: \`agents_recent_activity\` returns each agent joined with the timestamp of
-  its most recent session, newest first: the same map the cockpit uses for
+  its most recent session, newest first: the same map the DorkOS app uses for
   "recently active".
 - By capability id: \`dorkos call operator.agents_recent_activity\`
 

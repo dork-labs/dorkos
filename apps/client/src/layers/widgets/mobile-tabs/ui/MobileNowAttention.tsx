@@ -36,6 +36,7 @@ import {
 } from '@/layers/entities/attention';
 import { AskList } from '@/layers/features/ask';
 import { ApprovalList, ApprovalsUnavailable, useApprovalCards } from '@/layers/features/approvals';
+import { toSession } from '@/layers/shared/lib';
 
 /** Nothing covered — one shared array, so an empty slot never rebuilds the model. */
 const NOTHING_COVERED: readonly string[] = [];
@@ -124,7 +125,7 @@ export function useNowAttentionSlot(): NowAttentionSlot {
             // up, `onBeforeLoad` lowers it, and the route lands on the same
             // conversation a tap on any other Now row would open.
             onOpenSession={(sessionId) => {
-              void navigate({ to: '/session', search: { session: sessionId } });
+              void navigate(toSession({ session: sessionId }));
             }}
           />
         )}

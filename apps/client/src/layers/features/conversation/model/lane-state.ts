@@ -94,6 +94,13 @@ export interface LaneHeldAuthor {
   behind: { roomId: string; title: string | null };
   /** True when this agent is holding a message in at least one other conversation. */
   othersWaiting: boolean;
+  /**
+   * True when more than one of this agent's turns is running elsewhere, so the
+   * room in `behind` is only the one that has run longest and any of them
+   * finishing may let this message start. Optional so a host that predates it
+   * reads as one turn in the way.
+   */
+  severalInTheWay?: boolean;
 }
 
 /**
@@ -519,7 +526,8 @@ function heldRung(held: readonly LaneHeldAuthor[]): LaneState {
     ? heldCountSentence(held.length)
     : heldSentence(
         held.map((agent) => agent.name),
-        oldest.behind.title
+        oldest.behind.title,
+        oldest.severalInTheWay === true
       );
   return {
     kind: 'held',

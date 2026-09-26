@@ -295,8 +295,12 @@ export interface OperatingSkill {
  *   schedule that follows the agent moves with them. \`managing-agents\` teaches
  *   it. An agent seeded at 29 has no page naming the capability, so a refused
  *   \`update_agent\` or \`NEEDS_APPROVAL\` from the HTTP API would read as broken.
+ * - 31: `reading-activity` stops naming the app by a word DorkOS retired
+ *   (DOR-1517, caught by DOR-2068). An agent seeded at 30 would repeat it to the person it
+ *   works for. The banned-words guard now scans this package, which is how it
+ *   was caught.
  */
-export const OPERATING_SKILLS_VERSION = 30;
+export const OPERATING_SKILLS_VERSION = 31;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

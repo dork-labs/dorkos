@@ -3,7 +3,7 @@
  *
  * DorkBot arrives (first light), then speaks a fixed script built from the real
  * components: the shared message row (composed here as {@link NarrationMessage}),
- * a typing indicator, inline personality and
+ * a typing indicator, inline name-and-handle, personality, role and
  * discovery widgets, and — at the final beat — a live composer. The user's first
  * real message dissolves the overlay into a real session (ADR 260722-111316).
  * Every DorkBot line here is client-generated; no tokens are spent until the
@@ -18,7 +18,7 @@ import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { useAgentBirthStore, useAppStore, type AgentBirthRecord } from '@/layers/shared/model';
-import { fireCelebration, resolveAgentVisual } from '@/layers/shared/lib';
+import { fireCelebration, resolveAgentVisual, toSession } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { Conversation } from '@/layers/features/conversation';
 import { NARRATION_CAPABILITIES } from '../model/narration-capabilities';
@@ -26,20 +26,21 @@ import { TypingDots, FirstLight, resolveMessageAuthor } from '@/layers/features/
 import type { MessageAuthorAgent } from '@/layers/features/chat';
 import { NarrationMessage } from './NarrationMessage';
 import { Composer } from '@/layers/features/composer';
+import { OperatorIdentityForm } from '@/layers/features/profile';
 import { useDefaultAgentSession } from '@/layers/entities/config';
+import { ProfileRolePicker, useProfile } from '@/layers/entities/user-profile';
 import { PersonalityPicker, useUpdateAgent, useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useRuntimeRequirements, selectRuntimeReadiness } from '@/layers/entities/runtime';
 import { chooseDefaultRuntime } from '../model/use-onboarding-runtime-default';
 import { useOnboarding } from '../model/use-onboarding';
-import { useProfile } from '../model/use-profile';
+import { useIdentityQuestion } from '../model/use-identity-prompt';
 import {
   useOnboardingConversation,
   type OnboardingConversationPorts,
 } from '../model/use-onboarding-conversation';
 import { ConversationDiscoveryBeat } from './ConversationDiscoveryBeat';
 import { OnboardingWidgetCard } from './OnboardingWidgetCard';
-import { ProfileRolePicker } from './ProfileRolePicker';
 
 /** How long the first-light arrival lingers before DorkBot speaks (ms). */
 const FIRST_LIGHT_MS = 1500;
@@ -172,7 +173,8 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
 
   const [traits, setTraits] = useState<Traits>({ ...DEFAULT_TRAITS });
   const [profileRoles, setProfileRoles] = useState<string[]>([]);
-  const { saveRoles } = useProfile();
+  const { saveRoles, dismissIdentityPrompt } = useProfile();
+  const identityQuestion = useIdentityQuestion();
   const [composerValue, setComposerValue] = useState('');
   // One-way latch so a double Enter during the exit never double-dissolves.
   const dissolvedRef = useRef(false);
@@ -186,6 +188,12 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
 
   const ports: OnboardingConversationPorts = {
     reducedMotion,
+    identityQuestion,
+    closeIdentityQuestion: () => {
+      void dismissIdentityPrompt().catch(() => {
+        // Only costs a later surface asking once more; the conversation moves on.
+      });
+    },
     saveTraits: (next) =>
       traitsSavePath
         ? updateAgent
@@ -229,10 +237,9 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       // its binding hint — the lever that makes the fallback above real rather
       // than cosmetic, since the server would otherwise resolve this session
       // from the manifest and the configured default.
-      navigate({
-        to: '/session',
-        search: { dir: defaultAgentDir, session: newSessionId, runtime: firstSessionRuntime },
-      });
+      navigate(
+        toSession({ dir: defaultAgentDir, session: newSessionId, runtime: firstSessionRuntime })
+      );
       onComplete();
     },
   };
@@ -389,6 +396,19 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
 
         {/* Inline widgets, revealed once the beat's lines have landed. Each sits
             in a card so it reads as an interactive control, not more chat text. */}
+        {convo.activeWidget === 'identity' && (
+          <div className="mt-3 px-1">
+            <OnboardingWidgetCard>
+              <OperatorIdentityForm
+                onSaved={convo.confirmIdentity}
+                confirmLabel="That’s me"
+                onSkip={convo.skipIdentity}
+                skipLabel="Skip this"
+              />
+            </OnboardingWidgetCard>
+          </div>
+        )}
+
         {convo.activeWidget === 'personality' && (
           <div className="mt-3 px-1">
             <OnboardingWidgetCard>

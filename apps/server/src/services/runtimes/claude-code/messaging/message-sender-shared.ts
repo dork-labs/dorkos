@@ -17,6 +17,7 @@ import { editToolFilePath, isEditFamilyTool } from '@dorkos/shared/diff-tools';
 import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { editBaselineStore } from '../../../diff/index.js';
+import type { IdentityAnchor } from '../../../core/agent-identity/index.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -78,6 +79,14 @@ export interface McpServerLaunch {
    * on this list: the gate refuses a Blocked call whatever the list says.
    */
   hiddenToolNames?: ReadonlySet<string>;
+  /**
+   * Whose identity the session's in-process tools act as, resolved once by the
+   * launch (DOR-2091): the session's own directory, or the agent a room working
+   * copy was handed to — and refused when neither can be tied to the agent the
+   * turn is for. The SAME anchor feeds the approval gate, so the gate and the
+   * caller the tool runs as cannot disagree.
+   */
+  identity?: IdentityAnchor;
 }
 
 /** Builds the per-query MCP server configs for one session's turn. */
