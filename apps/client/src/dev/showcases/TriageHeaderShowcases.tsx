@@ -73,6 +73,7 @@ const SCHEDULES: Task[] = [
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: '/Users/dev/agents/dorkbot/.dork/tasks/morning-standup/SKILL.md',
     createdAt: minutesFromLoad(-26),

@@ -118,6 +118,7 @@ export function createMockSchedule(overrides: Partial<Task> = {}): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     filePath: '/tmp/tasks/daily-review/SKILL.md',
     nextRun: new Date(Date.now() + 86400000).toISOString(),
     nextRuns: [],

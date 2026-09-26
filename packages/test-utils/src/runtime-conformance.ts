@@ -23,6 +23,7 @@ import { isAbsolute } from 'node:path';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import type {
   AgentRuntime,
+  DirectoryGrant,
   RuntimeCapabilities,
   RuntimeSettingsCapability,
   RuntimeSettingsSection,
@@ -538,6 +539,55 @@ export interface RuntimeConformanceOpts {
    * in the suite that would notice.
    */
   systemPromptAppendUnprovenReason?: string;
+  /**
+   * Drives TWO turns on ONE session with two DIFFERENT
+   * {@link MessageOpts.additionalDirectories} sets, and reports what the BACKEND
+   * was handed each time — the gate behind `agent-home-desk` §4.6.
+   *
+   * **Return the backend's input, never the suite's.** claude-code reads the
+   * launch options' `settings.permissions` off each process it started; codex
+   * reads the options `startThread`/`resumeThread` were given; opencode reads
+   * what its ask handler answered the sidecar for asks inside each folder. A
+   * driver that echoed the grants back would assert only that the suite can
+   * pass an argument.
+   *
+   * **The second turn is the whole point** (I5): a grant an earlier turn
+   * carried must not survive into a turn that does not carry it, including on
+   * a process that is still warm.
+   *
+   * Wire this, or declare {@link directoryGrantsUnprovenReason}; a runtime that
+   * supplies neither fails the case.
+   *
+   * @param runtime - The runtime under test.
+   * @param sessionId - The session BOTH turns run on.
+   * @param grants - The grants for turn one, then for turn two.
+   * @returns What the backend was handed for turn one, then for turn two.
+   */
+  directoryGrantTurns?: (
+    runtime: AgentRuntime,
+    sessionId: string,
+    grants: readonly [readonly DirectoryGrant[], readonly DirectoryGrant[]]
+  ) => Promise<readonly [HandedGrants, HandedGrants]>;
+  /**
+   * Why this run cannot see what its backend was handed for a turn's folder
+   * grants, in a sentence somebody wrote (whitespace declares nothing). The
+   * same two honest uses as {@link systemPromptAppendUnprovenReason}: a
+   * fixture with no backend, or a live-binary run with no seam to read.
+   */
+  directoryGrantsUnprovenReason?: string;
+}
+
+/**
+ * What a backend was handed for one turn's folder grants, as a
+ * {@link RuntimeConformanceOpts.directoryGrantTurns} driver observed it.
+ */
+export interface HandedGrants {
+  /** Folders the backend will let file tools write. */
+  writable: string[];
+  /** Folders it can read but refuses file-tool writes to. */
+  readOnly: string[];
+  /** Read grants the backend reads with no restriction to hand (codex's sandbox reads everywhere). */
+  readOpen: string[];
 }
 
 /**
@@ -1192,6 +1242,94 @@ const CONTENT_EVENT_TYPES = new Set([
   'thinking_delta',
 ]);
 
+/** The two turns the directory-grants case drives: `{A write, B read}`, then `{C write}`. */
+export const CONFORMANCE_GRANT_TURNS: readonly [
+  readonly DirectoryGrant[],
+  readonly DirectoryGrant[],
+] = [
+  [
+    { path: '/dorkos-conformance/grant-a', access: 'write' },
+    { path: '/dorkos-conformance/grant-b', access: 'read' },
+  ],
+  [{ path: '/dorkos-conformance/grant-c', access: 'write' }],
+];
+
+/**
+ * The directory-grants declaration rule: a runtime wires the driver OR gives a
+ * reason it cannot, never both and never neither.
+ *
+ * @param wired - Whether {@link RuntimeConformanceOpts.directoryGrantTurns} was supplied.
+ * @param reason - {@link RuntimeConformanceOpts.directoryGrantsUnprovenReason}; whitespace declares nothing.
+ * @returns What is wrong, or null when the declaration is honest.
+ */
+export function evaluateDirectoryGrantsDeclaration(
+  wired: boolean,
+  reason: string | undefined
+): string | null {
+  const said = (reason ?? '').trim().length > 0;
+  if (wired && said) {
+    return 'this run wired `directoryGrantTurns`, so the property IS provable here and a reason it is not would be dead copy';
+  }
+  if (!wired && !said) {
+    return 'this run wired no `directoryGrantTurns` driver and gave no reason it could not, so nothing here proves a room turn can reach its folders, or that an earlier turn’s folders are taken away (see RuntimeConformanceOpts.directoryGrantTurns)';
+  }
+  return null;
+}
+
+/**
+ * What is wrong with what a backend was handed for two turns' grants: each
+ * turn's `write` grants writable, each `read` grant handed but never writable
+ * (neither itself nor through a writable folder around it), and nothing in
+ * turn two that only turn one carried (I5).
+ *
+ * @param grants - The grants the two turns were given.
+ * @param handed - What the driver observed the backend was handed for each.
+ * @returns Every problem found; empty when the runtime handed each turn exactly its own set.
+ */
+export function evaluateHandedGrants(
+  grants: readonly [readonly DirectoryGrant[], readonly DirectoryGrant[]],
+  handed: readonly [HandedGrants, HandedGrants]
+): string[] {
+  const problems: string[] = [];
+  const later = new Set(grants[1].map((grant) => grant.path));
+  grants.forEach((turnGrants, turn) => {
+    const got = handed[turn]!;
+    const readable = new Set([...got.readOnly, ...got.readOpen]);
+    for (const grant of turnGrants) {
+      if (grant.access === 'write' && !got.writable.includes(grant.path)) {
+        problems.push(`turn ${turn + 1}: write grant ${grant.path} was not handed as writable`);
+      }
+      if (grant.access === 'read' && got.writable.includes(grant.path)) {
+        problems.push(
+          `turn ${turn + 1}: READ grant ${grant.path} was handed as writable, so file tools could write a folder meant to be read-only`
+        );
+      }
+      if (grant.access === 'read' && !readable.has(grant.path)) {
+        problems.push(`turn ${turn + 1}: read grant ${grant.path} was not handed at all`);
+      }
+      const around =
+        grant.access === 'read'
+          ? got.writable.find((folder) => grant.path.startsWith(`${folder}/`))
+          : undefined;
+      if (around) {
+        problems.push(
+          `turn ${turn + 1}: READ grant ${grant.path} sits inside the writable folder ${around}, so file tools could write it anyway`
+        );
+      }
+    }
+  });
+  const second = handed[1];
+  for (const grant of grants[0]) {
+    if (later.has(grant.path)) continue;
+    if ([...second.writable, ...second.readOnly, ...second.readOpen].includes(grant.path)) {
+      problems.push(
+        `turn 2 still reached ${grant.path}, which only turn 1 was granted — grants are per turn (I5)`
+      );
+    }
+  }
+  return problems;
+}
+
 /**
  * Register the shared AgentRuntime conformance suite for one runtime.
  *
@@ -1233,6 +1371,8 @@ export function runtimeConformance(
     userLastMessageAtOmittedReason,
     systemPromptAppendTurns,
     systemPromptAppendUnprovenReason,
+    directoryGrantTurns,
+    directoryGrantsUnprovenReason,
     echoesTriggerReason,
   } = opts;
 
@@ -3608,6 +3748,30 @@ export function runtimeConformance(
             secondDelivered,
             'the second turn’s backend input still carried the append the session started under'
           ).not.toContain('<dorkos_conformance_append_one/>');
+        });
+      }
+    });
+
+    describe('directory grants (agent-home-desk §4)', () => {
+      it('either proves a turn’s grants reach its backend or says why it cannot be proven here', () => {
+        expect(
+          evaluateDirectoryGrantsDeclaration(
+            directoryGrantTurns !== undefined,
+            directoryGrantsUnprovenReason
+          )
+        ).toBeNull();
+      });
+
+      if (directoryGrantTurns) {
+        it('hands each turn exactly its own grants, on one live session', async () => {
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          const handed = await directoryGrantTurns(runtime, sessionId, CONFORMANCE_GRANT_TURNS);
+          // THE GATE (I5) is the second turn: a runtime that binds grants at
+          // session start, or a backend whose rules only accumulate, fails there.
+          expect(evaluateHandedGrants(CONFORMANCE_GRANT_TURNS, handed)).toEqual([]);
         });
       }
     });

@@ -1,0 +1,74 @@
+<style>
+  .card-image{display:block!important;height:auto!important;min-height:0!important;aspect-ratio:auto!important;overflow:visible!important;background:#f4f4f4!important;padding:16px!important;text-align:left}
+  .sheet{background:#fff;border:1px solid #d4d4d4;border-radius:14px;padding:18px;max-width:380px;margin:0 auto;font-size:13px}
+  .t{font-weight:700;font-size:15px;display:flex;gap:8px;align-items:center}
+  .logo{width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:12px;background:#ea4335}
+  .muted{color:#777}
+  .big{display:block;text-align:center;background:#111;color:#fff;border-radius:9px;padding:10px;margin-top:14px;font-weight:600}
+  .link{display:block;text-align:center;color:#2563eb;font-size:12px;margin-top:10px}
+  .opt{border:1px solid #e5e5e5;border-radius:10px;padding:10px 12px;margin-top:8px}
+  .opt b{display:block}
+  .opt small{color:#888}
+  .steps{font-size:11px;color:#999;letter-spacing:.04em;text-transform:uppercase;margin-bottom:10px}
+  .banner{background:#fff;border:1px solid #d4d4d4;border-radius:12px;padding:14px;margin-bottom:10px}
+  .ghost{opacity:.4}
+  .row{display:flex;gap:10px;align-items:center;padding:9px 12px;background:#fff;border-bottom:1px solid #f0f0f0;font-size:13px}
+  .row .l{width:24px;height:24px;border-radius:6px;color:#fff;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center}
+  .row .c{margin-left:auto;font-size:11px;background:#111;color:#fff;padding:4px 10px;border-radius:6px}
+  .note{font-size:12px;color:#6d28d9;margin-top:10px}
+  .fold{margin-top:8px;border-top:1px solid #f0f0f0;padding-top:8px}
+</style>
+
+<h2>Step 6 — The very first time you connect an app</h2>
+<p class="subtitle">DorkOS needs a way to talk to 1,000+ apps. Today that's hidden at the bottom of the page, and the search just says "No matching services". Fix: <b>always show the full list</b>, and ask for the one-time setup at the moment you click your first Connect.</p>
+
+<div class="cards">
+  <div class="card" data-choice="inline" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sheet">
+        <div class="steps">Step 1 of 2 · only once, ever</div>
+        <div class="t"><span class="logo">M</span>Connect Gmail</div>
+        <p class="muted" style="margin:8px 0 0">First, pick how DorkOS reaches your apps. You'll only do this once.</p>
+        <span class="big">Use my DorkOS account</span>
+        <div class="muted" style="font-size:11px;text-align:center;margin-top:4px">Easiest. Nothing to set up.</div>
+        <div class="fold">
+          <span class="link" style="margin-top:0">Other ways ▾</span>
+          <div class="opt"><b>My own Composio key</b><small>You have a Composio account. Paste the key.</small></div>
+          <div class="opt"><b>My own Nango server</b><small>You run Nango yourself. Logins stay in your database.</small></div>
+        </div>
+      </div>
+      <div class="note">Then Step 2 = Google's sign-in, as before. Next app: straight to sign-in, no setup.<br>"Other ways" is folded until you open it.</div>
+    </div>
+    <div class="card-body">
+      <h3>A · Ask at the first Connect (recommended)</h3>
+      <p>The list works from minute one. You meet the setup only when you've already decided what you want, and it's one button. Composio and Nango are one click further down, for people who want them.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="banner" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="banner"><b>Set up connections</b><div class="muted" style="font-size:12px;margin:4px 0 8px">Pick how DorkOS reaches your apps before you connect one.</div>
+        <span class="big" style="margin-top:0;display:inline-block;padding:7px 14px;font-size:12px">Use my DorkOS account</span> <span style="font-size:12px;color:#2563eb;margin-left:8px">Other ways</span></div>
+      <div class="ghost">
+        <div class="row"><div class="l" style="background:#ea4335">M</div>Gmail<span class="c">Connect</span></div>
+        <div class="row"><div class="l" style="background:#4285f4">31</div>Google Calendar<span class="c">Connect</span></div>
+        <div class="row"><div class="l" style="background:#000">N</div>Notion<span class="c">Connect</span></div>
+      </div>
+      <div class="note">List is greyed out until setup is done.</div>
+    </div>
+    <div class="card-body">
+      <h3>B · Setup banner on top of the page</h3>
+      <p>Clear and up front. But it's a gate before you've even picked an app, and it's the "first decision you can't make yet" problem again.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;max-width:880px">
+  <p class="label">Things that are true either way</p>
+  <ul style="font-size:13px;color:#555;padding-left:18px">
+    <li><b>Say whose sign-in page it is.</b> Right before Google's page opens: "Google will ask you to allow <i>Composio</i> — that's the service DorkOS uses to connect." No surprise at the most trusting moment.</li>
+    <li><b>Some apps won't need this at all.</b> Apps that connect directly (no Composio) skip Step 1 entirely.</li>
+    <li><b>Chat apps never need it.</b> Telegram and Slack have their own simple setup (paste a bot token), unchanged.</li>
+    <li><b>Changing it later:</b> Settings → Connections → "How DorkOS reaches your apps". Not on this page.</li>
+  </ul>
+</div>

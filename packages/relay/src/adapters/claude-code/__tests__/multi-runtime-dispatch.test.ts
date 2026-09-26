@@ -93,7 +93,7 @@ function taskEnvelope(payload: TaskDispatchPayload): RelayEnvelope {
   return {
     id: 'msg-task-001',
     subject: `relay.system.tasks.${payload.taskId}`,
-    from: 'system:tasks',
+    from: 'relay.system.tasks.scheduler',
     budget: {
       hopCount: 0,
       maxHops: 5,
@@ -250,6 +250,35 @@ describe('the relay adapter picks the runtime a message names', () => {
       expect(result.error).toContain('opencode');
       expect(claude.sendMessage).not.toHaveBeenCalled();
       expect(codex.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('refuses a forged dispatch for its sender before it looks at the runtime (DOR-2416)', async () => {
+      // A dispatch the scheduler did not send gets ONE answer whatever runtime
+      // it names. The sender check runs before the runtime is picked, and so
+      // before a concurrency slot is taken: had it run after, this would be the
+      // "not registered" refusal above instead.
+      const envelope = {
+        ...taskEnvelope(
+          taskPayload({ runtime: 'opencode', runId: 'run-g', permissionMode: 'bypassPermissions' })
+        ),
+        from: 'relay.agent.mallory',
+      } as RelayEnvelope;
+
+      const result = await adapter.deliver(envelope.subject, envelope);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('only relay.system.tasks.scheduler may start a task run');
+      expect(claude.ensureSession).not.toHaveBeenCalled();
+      expect(claude.sendMessage).not.toHaveBeenCalled();
+      expect(codex.sendMessage).not.toHaveBeenCalled();
+      expect(taskStore.updateRun).not.toHaveBeenCalled();
+      expect(deps.traceStore.insertSpan).toHaveBeenCalledOnce();
+      expect(deps.traceStore.insertSpan).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'failed', fromEndpoint: 'relay.agent.mallory' })
+      );
+      // A slot a forged dispatch never took is one a real run can still have.
+      const real = taskEnvelope(taskPayload({ runId: 'run-h' }));
+      expect((await adapter.deliver(real.subject, real)).success).toBe(true);
     });
 
     it('runs an opencode task on opencode when this build registered it', async () => {

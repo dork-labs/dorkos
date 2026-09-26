@@ -430,23 +430,46 @@ export const TopupRequestSchema = z
 export type TopupRequest = z.infer<typeof TopupRequestSchema>;
 
 /**
- * `POST /v1/refunds` — ask for one charge to be refunded.
+ * Why the two refund shapes below are withdrawn, and why they are still here.
  *
- * Opaque identifiers only. The amount is the charge`s own, so the request never
- * names one, and a refund asked for after the window has closed is refused with
- * `refund_window_closed`. How long the window is is server policy and is not
- * published here.
+ * DorkOS Cloud does not offer refunds through this API. No release of the
+ * service ever served `POST /v1/refunds`; it answers `not_found`.
+ *
+ * The shapes stay exported because this package is additive within `/v1`:
+ * deleting an export would break the build of anyone who imported it from an
+ * earlier release, and that is a `/v2` change. They are marked deprecated in the
+ * types and in the JSON Schema, and they go when `/v2` does.
+ */
+const REFUNDS_WITHDRAWN =
+  'Withdrawn: DorkOS Cloud does not offer refunds through this API, and no release of the service answers this route. Kept only so imports from an earlier release keep compiling.';
+
+/**
+ * `POST /v1/refunds` — withdrawn. A request no release of the service accepts.
+ *
+ * @deprecated DorkOS Cloud does not offer refunds through this API, and the
+ * route answers `not_found`. Kept only so an import from an earlier release
+ * still compiles; it is removed in `/v2`.
  */
 export const RefundRequestSchema = z
   .object({
     chargeId: IdSchema.describe('The charge to refund, as an opaque identifier the server issued.'),
   })
-  .describe('Ask for one charge to be refunded. Opaque identifiers only, and no amount.');
+  .meta({ description: REFUNDS_WITHDRAWN, deprecated: true });
 
-/** Ask for one charge to be refunded. */
+/**
+ * A withdrawn refund request.
+ *
+ * @deprecated See {@link RefundRequestSchema}.
+ */
 export type RefundRequest = z.infer<typeof RefundRequestSchema>;
 
-/** `POST /v1/refunds` — the accepted refund. */
+/**
+ * `POST /v1/refunds` — withdrawn. An answer no release of the service sends.
+ *
+ * @deprecated DorkOS Cloud does not offer refunds through this API, and the
+ * route answers `not_found`. Kept only so an import from an earlier release
+ * still compiles; it is removed in `/v2`.
+ */
 export const RefundResponseSchema = z
   .object({
     refundId: IdSchema,
@@ -454,7 +477,11 @@ export const RefundResponseSchema = z
     refundedMicro: MicroAmountSchema.describe('How much came back, in micro-units.'),
     refundedAt: TimestampSchema,
   })
-  .describe('The accepted refund: which charge it settles, how much came back, and when.');
+  .meta({ description: REFUNDS_WITHDRAWN, deprecated: true });
 
-/** The accepted refund. */
+/**
+ * A withdrawn refund answer.
+ *
+ * @deprecated See {@link RefundResponseSchema}.
+ */
 export type RefundResponse = z.infer<typeof RefundResponseSchema>;

@@ -24,6 +24,7 @@ const WORK_FIELDS = [
   'effort',
   'maxRuntime',
   'sticky',
+  'account',
 ] as const satisfies readonly (keyof IncomingTaskContent)[];
 
 /**
@@ -108,6 +109,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     // which is what NULL already means, so it is dropped here rather than
     // travelling as an `EffortLevel` into an adapter that cannot map it.
     effort: readEffort(row.effort),
+    account: row.account ?? null,
     status: row.status as Task['status'],
     filePath: row.filePath,
     createdAt: row.createdAt,

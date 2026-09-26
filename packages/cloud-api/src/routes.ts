@@ -33,6 +33,11 @@ export const V1_ROUTES = {
   checkout: '/v1/checkout',
   topup: '/v1/topup',
   portal: '/v1/portal',
+  /**
+   * @deprecated Withdrawn. DorkOS Cloud does not offer refunds through this
+   * API, and the service answers `not_found` here. Kept so `/v1` code that
+   * names it still compiles; removed in `/v2`.
+   */
   refunds: '/v1/refunds',
   statement: '/v1/statement',
   inferenceTokens: '/v1/inference/tokens',

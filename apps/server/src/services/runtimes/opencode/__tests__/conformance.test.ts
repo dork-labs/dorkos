@@ -79,7 +79,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { OpencodeClient, GlobalEvent, Message, Part } from '@opencode-ai/sdk';
-import { runtimeConformance } from '@dorkos/test-utils';
+import { runtimeConformance, type HandedGrants } from '@dorkos/test-utils';
 
 /**
  * The live-mode decision, hoisted so the (also hoisted) vi.mock factory can
@@ -159,9 +159,12 @@ import {
   OC_SESSION_A,
   assistantMessage,
   globalEvent,
+  messageUpdated,
   opencodeErrorTurn,
   opencodeSimpleTurn,
   opencodeRepublishedImageTurn,
+  permissionAsked,
+  permissionRequest,
   providerAuthError,
   serverConnected,
   sessionCompacted,
@@ -574,8 +577,96 @@ runtimeConformance(
           // talks TO. The mocked run below is where the property is proven.
           systemPromptAppendUnprovenReason:
             'a live OpenCode sidecar is a separate process this suite can only send to, so what its prompt carried is only observable in the mocked run',
+          directoryGrantsUnprovenReason:
+            'a live sidecar asks only when a model chooses to reach a folder, which this suite cannot script; the ask handler is proven in the mocked run against the live-captured ask shapes',
         }
       : {
+          // The `agent-home-desk` §4.6 gate. OpenCode's grants are enforced at
+          // the sidecar's ask (NOTES.md "Folder grants"), so what the backend
+          // was HANDED is what the adapter answered it: each turn is scripted
+          // to ask to reach, and then to edit, a file in every folder either
+          // turn names, and the answers are read off the mocked respond call.
+          // Reach answered `once` = the folder is granted; an edit answered
+          // `reject` = it is read-only. The session is in `default` mode, so
+          // nothing but a grant auto-answers either ask.
+          directoryGrantTurns: async (runtime, sessionId, grants) => {
+            const client = lastClient;
+            if (!client) {
+              throw new Error('OpenCode conformance: no mocked client to script grant asks on');
+            }
+            const probed = [...new Set(grants.flat().map((grant) => grant.path))];
+            const askId = (turn: number, kind: string, index: number) =>
+              `per_grant_${turn}_${kind}_${index}`;
+            let turn = 0;
+            vi.mocked(client.global.event).mockImplementation(
+              async (options?: { signal?: AbortSignal }) => {
+                const queue = new TurnEventQueue<GlobalEvent>();
+                options?.signal?.addEventListener('abort', () => queue.end(), { once: true });
+                queue.push(globalEvent(PROJECT_DIR, serverConnected()));
+                const events: OpenCodeWireEvent[] = [
+                  statusEvent(OC_SESSION_A, { type: 'busy' }),
+                  messageUpdated(assistantMessage(OC_SESSION_A)),
+                  ...probed.flatMap((folder, index) => {
+                    const file = path.join(folder, 'notes.md');
+                    return [
+                      permissionAsked(
+                        permissionRequest(OC_SESSION_A, {
+                          id: askId(turn, 'reach', index),
+                          permission: 'external_directory',
+                          patterns: [path.join(folder, '*')],
+                          metadata: { filepath: file, parentDir: folder },
+                        })
+                      ),
+                      permissionAsked(
+                        permissionRequest(OC_SESSION_A, {
+                          id: askId(turn, 'edit', index),
+                          permission: 'edit',
+                          patterns: [path.relative('/', file)],
+                          metadata: { filepath: file, diff: '' },
+                        })
+                      ),
+                    ];
+                  }),
+                  messageUpdated(assistantMessage(OC_SESSION_A, { completed: true })),
+                  statusEvent(OC_SESSION_A, { type: 'idle' }),
+                  sessionIdle(OC_SESSION_A),
+                ];
+                for (const event of events) queue.push(globalEvent(PROJECT_DIR, event));
+                return { stream: queue };
+              }
+            );
+            const respond = vi.mocked(client.postSessionIdPermissionsPermissionId);
+            const handed: HandedGrants[] = [];
+            for (const additionalDirectories of grants) {
+              respond.mockClear();
+              for await (const _event of runtime.sendMessage(sessionId, CONFORMANCE_PROMPT, {
+                cwd: PROJECT_DIR,
+                additionalDirectories,
+              })) {
+                // Drained: the answers are the observation.
+              }
+              const calls = respond.mock.calls as unknown as Array<
+                [{ path: { permissionID: string }; body: { response: string } }]
+              >;
+              const answer = (id: string) =>
+                calls.find(([call]) => call.path.permissionID === id)?.[0].body.response;
+              const reached = probed.filter((_f, i) => answer(askId(turn, 'reach', i)) === 'once');
+              const refused = new Set(
+                probed.filter((_f, i) => answer(askId(turn, 'edit', i)) === 'reject')
+              );
+              handed.push({
+                writable: reached.filter((folder) => !refused.has(folder)),
+                readOnly: reached.filter((folder) => refused.has(folder)),
+                readOpen: [],
+              });
+              turn += 1;
+            }
+            expect(
+              client.session.create,
+              'both turns were supposed to run on one sidecar session'
+            ).toHaveBeenCalledTimes(1);
+            return [handed[0]!, handed[1]!] as const;
+          },
           // The `project-rooms` §3.3 gate. OpenCode's caller append rides
           // `body.system` on `session.promptAsync` (`buildOpenCodeSystem`,
           // DOR-477) — composed per turn, never at session start — so the
