@@ -14,6 +14,7 @@ import { decodeCursor, encodeCursor } from '../cursor.js';
 import {
   assertPrincipalCurrent,
   assertPrincipalCurrentInTransaction,
+  communityHeld,
   lockChannel,
   requireJoined,
   requirePrincipal,
@@ -23,6 +24,7 @@ import {
 import { ApiError, json, readJson } from '../http.js';
 import { entryProjection, originKeyForPrincipal } from './entries.js';
 import { attachmentsForEntries } from './attachments.js';
+import { isReadOnlyLifecycle } from '../tenant-context.js';
 
 interface LiveChannel {
   id: string;
@@ -68,6 +70,34 @@ function channelWire(channel: LiveChannel) {
     joined: true,
     unreadCount: Math.max(0, Number(channel.last_seq) - Number(channel.read_seq)),
   });
+}
+
+/** One fresh look at a stream's credential, channel, and community. */
+interface StreamAccess {
+  active: boolean;
+  joined: boolean;
+  archived: boolean;
+  epoch: number;
+  lifecycle: string;
+}
+
+/**
+ * Why a live stream must close now, or null to keep it open.
+ *
+ * A read-only community (archived by its owner or held by its host) closes the stream as
+ * `archived`: the person can still read, just not live. A missing credential, a removal, or
+ * any other lifecycle closes it as `removed`.
+ */
+function streamCloseReason(
+  state: StreamAccess | null | undefined,
+  epoch: number
+): 'archived' | 'removed' | null {
+  if (!state) return 'removed';
+  if (state.lifecycle === 'active') {
+    if (state.active && state.joined && !state.archived && state.epoch === epoch) return null;
+    return state.archived ? 'archived' : 'removed';
+  }
+  return state.active && isReadOnlyLifecycle(state.lifecycle) ? 'archived' : 'removed';
 }
 
 /** Register durable SSE replay and monotonic per-member read positions. */
@@ -194,6 +224,12 @@ export function registerEventRoutes(
     const principal = await requirePrincipal(c, auth, pool, 'read');
     if (principal.credentialKind === 'grant' && principal.historyOnly)
       throw new ApiError(403, 'FORBIDDEN', 'This read-only connection cannot open live updates.');
+    // Reads go on through a hold; live updates wait for its release. Refuse before any event.
+    const community = await pool.query<{ lifecycle: string }>(
+      'SELECT lifecycle FROM communities WHERE id=$1',
+      [principal.community_id]
+    );
+    if (community.rows[0]?.lifecycle === 'held') throw communityHeld();
     const openedSession = principal.credentialHash
       ? null
       : await auth.api.getSession({ headers: c.req.raw.headers });
@@ -296,22 +332,17 @@ export function registerEventRoutes(
       ];
       if (cookie) values.push(openedSession!.user.id, openedSession!.session.token);
       if (principal.kind === 'agent') values.push(principal.ownerMemberId);
-      const active = await pool.query<{
-        active: boolean;
-        joined: boolean;
-        archived: boolean;
-        epoch: number;
-      }>(
+      const active = await pool.query<StreamAccess>(
         principal.kind === 'agent'
-          ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch
+          ? `SELECT (a.active AND owner.active) AS active,(cm.agent_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle
            FROM agents a JOIN members owner ON owner.id=a.owner_member_id
-           JOIN communities co ON co.id=a.community_id AND co.lifecycle='active'
+           JOIN communities co ON co.id=a.community_id
            JOIN channels ch ON ch.id=$2
            LEFT JOIN agent_channel_members cm ON cm.channel_id=ch.id AND cm.agent_id=a.id
            WHERE a.id=$1 AND a.community_id=$3 AND ch.community_id=$3
              AND a.owner_member_id=$5 AND ${credential}`
-          : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch
-           FROM members m JOIN communities co ON co.id=m.community_id AND co.lifecycle='active'
+          : `SELECT m.active,(cm.member_id IS NOT NULL) AS joined,ch.archived,ch.epoch,co.lifecycle
+           FROM members m JOIN communities co ON co.id=m.community_id
            JOIN channels ch ON ch.id=$2
            LEFT JOIN channel_members cm ON cm.channel_id=ch.id AND cm.member_id=m.id
            WHERE m.id=$1 AND m.community_id=$3 AND ch.community_id=$3 AND ${credential}`,
@@ -349,19 +380,13 @@ export function registerEventRoutes(
           revocationTimer = setInterval(() => {
             void checkAccess()
               .then((state) => {
-                if (
-                  closed ||
-                  (state?.active &&
-                    state.joined &&
-                    !state.archived &&
-                    state.epoch === channel.epoch)
-                )
-                  return;
+                const reason = streamCloseReason(state, channel.epoch);
+                if (closed || !reason) return;
                 stop();
                 if (controller.desiredSize !== null && controller.desiredSize > 0) {
                   writeEvent(controller, {
                     type: 'closed',
-                    reason: state?.archived ? 'archived' : 'removed',
+                    reason,
                     cursor: currentCursor(),
                   });
                   controller.close();
@@ -402,16 +427,12 @@ export function registerEventRoutes(
               }
               const state = await checkAccess();
               if (closed) return;
-              if (
-                !state?.active ||
-                !state.joined ||
-                state.archived ||
-                state.epoch !== channel.epoch
-              ) {
+              const reason = streamCloseReason(state, channel.epoch);
+              if (reason) {
                 stop();
                 writeEvent(controller, {
                   type: 'closed',
-                  reason: state?.archived ? 'archived' : 'removed',
+                  reason,
                   cursor: currentCursor(),
                 });
                 controller.close();
@@ -430,16 +451,12 @@ export function registerEventRoutes(
                 await hooks?.afterEntryAttachmentLookup?.();
                 const afterEnrichment = await checkAccess();
                 if (closed) return;
-                if (
-                  !afterEnrichment?.active ||
-                  !afterEnrichment.joined ||
-                  afterEnrichment.archived ||
-                  afterEnrichment.epoch !== channel.epoch
-                ) {
+                const closeReason = streamCloseReason(afterEnrichment, channel.epoch);
+                if (closeReason) {
                   stop();
                   writeEvent(controller, {
                     type: 'closed',
-                    reason: afterEnrichment?.archived ? 'archived' : 'removed',
+                    reason: closeReason,
                     cursor: currentCursor(),
                   });
                   controller.close();

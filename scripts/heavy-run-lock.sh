@@ -38,8 +38,9 @@
 #     holder and running again.
 #   * Every slot is held by something alive, for longer than the wait bound
 #     -> RUN ANYWAY, loudly, and record it. Skipping the command would be the
-#     other option and is rejected: the commands this guards are a commit's lint
-#     and typecheck, whose whole value is the verdict, and a gate that
+#     other option and is rejected: the command this guards is a commit's lint
+#     (typecheck too, until it left the hook on 2026-09-24), whose whole value
+#     is the verdict, and a gate that
 #     sometimes silently declines to answer is worse than one that sometimes
 #     adds to the load. Nothing above this wrapper bounds the run, so "run
 #     anyway" really does mean uncapped — which is why it is recorded as

@@ -8,9 +8,11 @@
  *
  * @module commands/doctor-checks
  */
+import { execFileSync } from 'node:child_process';
 import net from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
+import { gitProtectionCheck } from '@dorkos/shared/git-hardening';
 import type { CheckResult } from '@dorkos/shared/health-schemas';
 import { checkNodeVersion } from '../startup-diagnostics.js';
 import { checkCoreExtensions } from '../check-core-extensions.js';
@@ -106,6 +108,29 @@ export function checkClaudeCli(): CheckResult {
     detail: 'Agent sessions need the Claude Code CLI. DorkOS still opens without it.',
     fix: `Install it, then sign in:\n  ${installCmd}`,
   };
+}
+
+/**
+ * Whether the installed git protects agents' git (DOR-2326): git 2.38 or later
+ * refuses a folder set up to look like a git repository, and git 2.31 or later
+ * reads the settings DorkOS gives every agent session. Older git gets a `warn`
+ * naming the version to update to; no git at all is `info`.
+ *
+ * @param readVersion - Prints `git --version`; throws when git cannot run.
+ */
+export function checkGitProtection(readVersion: () => string = readGitVersion): CheckResult {
+  let output: string | undefined;
+  try {
+    output = readVersion();
+  } catch (err) {
+    output = (err as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : '';
+  }
+  return gitProtectionCheck(output);
+}
+
+/** `git --version`, as printed. */
+function readGitVersion(): string {
+  return execFileSync('git', ['--version'], { encoding: 'utf-8', stdio: 'pipe', timeout: 10_000 });
 }
 
 /**

@@ -50,7 +50,7 @@ const SAMPLE_ROOM_CONTEXT = {
 const SAMPLE_UI_STATE = {
   canvas: { open: false, contentType: null },
   panels: { settings: false, tasks: false, relay: false, picker: false },
-  sidebar: { open: true, activeTab: 'sessions' },
+  sidebar: { open: true },
   agent: { id: 'abc', cwd: '/proj' },
 };
 

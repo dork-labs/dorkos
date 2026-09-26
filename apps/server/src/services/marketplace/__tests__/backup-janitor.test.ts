@@ -24,6 +24,7 @@ import {
 } from '../backup-janitor.js';
 import { IN_FLIGHT_FLOOR_MS, _internal as recoveryInternal } from '../install-recovery.js';
 import { currentRecordOwner, formatRecordOwner } from '../lib/record-owner.js';
+import { createUninstallSibling, writeJournal } from '../lib/uninstall-journal.js';
 
 /** Returns true when `target` exists on disk. */
 async function pathExists(target: string): Promise<boolean> {
@@ -51,7 +52,13 @@ async function writePackage(dir: string, version: string): Promise<void> {
 }
 
 /** An empty summary, to compare against. */
-const nothing: InstallSweepSummary = { settled: 0, kept: 0, discarded: 0, inFlightTargets: [] };
+const nothing: InstallSweepSummary = {
+  settled: 0,
+  kept: 0,
+  discarded: 0,
+  inFlightTargets: [],
+  restoredAgentRoots: [],
+};
 
 describe('recoverInterruptedInstalls', () => {
   let dorkHome: string;
@@ -83,6 +90,31 @@ describe('recoverInterruptedInstalls', () => {
       'v1'
     );
     expect(await readdir(pluginsRoot)).toEqual(['code-review-suite']);
+  });
+
+  // Purpose (DOR-2245 review 8): an agent whose uninstall a crash interrupted
+  // gets its agent.json back from recovery, which runs before Mesh exists; the
+  // sweep names the root so startup can register the agent again.
+  it('names the roots where a rolled-back uninstall restored an agent', async () => {
+    const root = path.join(dorkHome, 'agents', 'bot');
+    await mkdir(path.join(root, '.dork'), { recursive: true });
+    await writeFile(path.join(root, '.dork', 'uninstalled-agent.json'), '{"id":"01A"}');
+    const sibling = await createUninstallSibling(root);
+    await mkdir(path.join(sibling, '.dork'), { recursive: true });
+    await writeFile(path.join(sibling, '.dork', 'manifest.json'), '{}');
+    await writeJournal(sibling, {
+      version: 1,
+      root,
+      package: { name: 'bot', type: 'agent' },
+      moves: [{ path: '.dork/manifest.json' }],
+      phase: 'side-effects',
+      agentUnregistered: true,
+    });
+
+    const summary = await recoverInterruptedInstalls(globalSweepDirs(dorkHome), noopLogger);
+
+    expect(summary).toEqual({ ...nothing, settled: 1, restoredAgentRoots: [root] });
+    expect(await readFile(path.join(root, '.dork', 'agent.json'), 'utf8')).toBe('{"id":"01A"}');
   });
 
   it('sweeps every root a transaction writes into, global and per project', async () => {

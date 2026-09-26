@@ -104,6 +104,7 @@ interface ParsedInstalled {
   agentPath?: string;
   agentId?: string;
   agentName?: string;
+  integrity?: unknown;
 }
 
 function parseToolResult(result: { content: { type: 'text'; text: string }[] }): {
@@ -186,6 +187,29 @@ describe('createListInstalledHandler', () => {
     expect(installed).toHaveLength(2);
     const names = installed.map((p) => p.name).sort();
     expect(names).toEqual(['researcher', 'sentry-monitor']);
+  });
+
+  // Purpose (DOR-2197): with `verify` an agent can tell a person which
+  // package was hand-edited; without it the list stays cheap and unchanged.
+  it('adds integrity only with verify', async () => {
+    const pluginDir = join(dorkHome, 'plugins', 'sentry-monitor');
+    await writeManifest(pluginDir, {
+      schemaVersion: 1,
+      type: 'plugin',
+      name: 'sentry-monitor',
+      version: '1.2.3',
+    });
+    const handler = createListInstalledHandler(buildDeps(dorkHome));
+
+    const plain = parseToolResult(await handler({}));
+    expect(plain.installed[0]).not.toHaveProperty('integrity');
+
+    const verified = parseToolResult(await handler({ verify: true }));
+    expect(verified.installed[0].integrity).toEqual({
+      status: 'unknown',
+      reason: 'no-record',
+      check: { source: 'local' },
+    });
   });
 
   it('filters by type when the `type` arg is supplied', async () => {

@@ -11,10 +11,101 @@ export const CommunityAdminLifecycleSchema = z.enum([
   'active',
   'archived',
   'suspended',
+  'held',
   'deletion_pending',
 ]);
 /** Community admission policy. */
 export const CommunityAdminAdmissionPolicySchema = z.enum(['invite_only', 'closed']);
+
+/** The grammar of a community short name: 3-32 lowercase ASCII letters, digits, and hyphens. */
+export const COMMUNITY_SHORT_NAME_PATTERN = /^[a-z](?:[a-z0-9]|-(?=[a-z0-9])){2,31}$/;
+/**
+ * A community short name: a mutable address alias, never identity. Input is trimmed and
+ * lowercased before the grammar applies, so `Acme` and ` acme ` both mean `acme`. ASCII only,
+ * so no two names can look alike.
+ */
+export const CommunityShortNameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(COMMUNITY_SHORT_NAME_PATTERN);
+/**
+ * Top-level paths the Community server or its browser already owns or may soon own. No
+ * community can take one as its short name; a host can add more by configuration.
+ */
+export const COMMUNITY_RESERVED_SHORT_NAMES: readonly string[] = [
+  'api',
+  'assets',
+  'c',
+  'claim',
+  'host',
+  'join',
+  'pairing',
+  'health',
+  'auth',
+  'login',
+  'logout',
+  'signin',
+  'signup',
+  'settings',
+  'admin',
+  'static',
+  'public',
+  'www',
+  'help',
+  'docs',
+  'status',
+  'well-known',
+  'favicon',
+  'robots',
+  'sitemap',
+  'new',
+  'import',
+  'invite',
+  'deletion',
+  // First-host setup is reached through the browser app, and a host would expect the word kept.
+  'setup',
+  // Pages a host is likely to publish, and words that would let a community pose as the host.
+  'terms',
+  'privacy',
+  'abuse',
+  'report',
+  'legal',
+  'security',
+  'account',
+  'recovery',
+  'oauth',
+  'callback',
+  'verify',
+  'reset',
+  'communities',
+  'community',
+  'support',
+  'billing',
+  'official',
+  'dorkos',
+];
+/** Set, change, or clear (`null`) a community's short name. */
+export const CommunityAdminShortNameUpdateRequestSchema = z.strictObject({
+  shortName: CommunityShortNameSchema.nullable(),
+});
+/** A community's current short name and the retired ones that still lead to it. */
+export const CommunityAdminShortNamesSchema = z.strictObject({
+  communityId: id,
+  current: CommunityShortNameSchema.nullable(),
+  retired: z.array(z.strictObject({ shortName: CommunityShortNameSchema, retiredAt: timestamp })),
+});
+/**
+ * Whether a short name could be given to a community now. `cooling_off` is a released name
+ * still held back from reuse until `availableAt`, given as the next UTC midnight after the hold
+ * ends so it never dates the release to the second; the public lookup cannot tell it from an
+ * unknown name, by design, so a host needs this to explain a refusal.
+ */
+export const CommunityAdminShortNameAvailabilitySchema = z.strictObject({
+  shortName: z.string(),
+  availability: z.enum(['available', 'taken', 'cooling_off', 'reserved', 'invalid']),
+  availableAt: timestamp.nullable(),
+});
 
 /** Host-visible metadata without membership or content details. */
 export const CommunityAdminHostProjectionSchema = z.strictObject({
@@ -26,6 +117,23 @@ export const CommunityAdminHostProjectionSchema = z.strictObject({
   settingsVersion: version,
   ownerPresent: z.boolean(),
   deletionState: z.enum(['waiting', 'deleting', 'retrying']).nullable(),
+  /** The published date after which the host may delete a held community. */
+  deletionNoticeAt: timestamp.nullable(),
+  /** Who asked for a pending deletion; the host cannot cancel or speed an owner's. */
+  deletionRequestedBy: z.enum(['owner', 'host']).nullable(),
+  /** The current short name, if the community has one. */
+  shortName: CommunityShortNameSchema.nullable(),
+  /**
+   * The host's legal hold, if one stands: no permanent deletion of the community runs until the
+   * host releases it. Host-only; no tenant projection carries it.
+   */
+  legalHold: z
+    .strictObject({
+      since: timestamp,
+      /** The host's own pointer to why (a case or ticket number). Never shown to members. */
+      reference: z.string().min(1).max(200).nullable(),
+    })
+    .nullable(),
   createdAt: timestamp,
 });
 
@@ -88,6 +196,8 @@ export const CommunityAdminCreateRequestSchema = z.strictObject({
   admissionPolicy: CommunityAdminAdmissionPolicySchema.optional(),
   /** Set in the same transaction and part of the idempotency key's payload. */
   limits: CommunityAdminLimitsUpdateRequestSchema.omit({ limitsVersion: true }).optional(),
+  /** Set in the same transaction and part of the idempotency key's payload. */
+  shortName: CommunityShortNameSchema.optional(),
 });
 /** Private creation handoff. A retry returns the receipt without replaying its one-time secret. */
 export const CommunityAdminCreateResponseSchema = z.strictObject({
@@ -134,10 +244,35 @@ export const CommunityAdminSettingsUpdateRequestSchema = z
   })
   .refine((value) => Object.keys(value).length > 0);
 
-/** Host suspension transition uses the current lifecycle version. */
-export const CommunityAdminHostLifecycleRequestSchema = z.strictObject({
-  action: z.enum(['suspend', 'resume']),
+/**
+ * Host lifecycle transitions, each against the current lifecycle version. A hold makes a
+ * community read-only while its owner can still export it; a notice date is when the host may
+ * delete it at the earliest.
+ */
+export const CommunityAdminHostLifecycleRequestSchema = z.discriminatedUnion('action', [
+  z.strictObject({ action: z.literal('suspend'), lifecycleVersion: version }),
+  z.strictObject({ action: z.literal('resume'), lifecycleVersion: version }),
+  z.strictObject({
+    action: z.literal('hold'),
+    lifecycleVersion: version,
+    deletionNoticeAt: timestamp.nullable(),
+  }),
+  z.strictObject({ action: z.literal('release'), lifecycleVersion: version }),
+  z.strictObject({
+    action: z.literal('set_notice'),
+    lifecycleVersion: version,
+    deletionNoticeAt: timestamp.nullable(),
+  }),
+]);
+/** Host-started deletion of a held community whose notice date has passed. */
+export const CommunityAdminHostDeletionRequestSchema = z.strictObject({
   lifecycleVersion: version,
+  confirmIdSuffix: z.string().length(8),
+});
+
+/** Place a legal hold, or update the reference of the one in place. */
+export const CommunityAdminHostLegalHoldRequestSchema = z.strictObject({
+  reference: z.string().trim().min(1).max(200).nullable(),
 });
 
 /** Owner lifecycle mutation with recent password confirmation. */
@@ -163,6 +298,10 @@ export const CommunityAdminDeletionStatusSchema = z.strictObject({
   deleteAfter: timestamp.nullable(),
   state: z.enum(['waiting', 'deleting', 'retrying']).nullable(),
   attempts: z.int().nonnegative(),
+  /** Who asked for a pending deletion. Only the owner can cancel their own; only the host its. */
+  requestedBy: z.enum(['owner', 'host']).nullable(),
+  /** Where a cancel of a pending deletion returns the community. */
+  returnsTo: z.enum(['archived', 'suspended', 'held']).nullable(),
 });
 
 /** Host API key scopes. Host authority only; no scope reaches community content. */
@@ -171,6 +310,8 @@ export const CommunityAdminHostApiKeyScopeSchema = z.enum([
   'communities:write',
   'communities:lifecycle',
   'communities:import',
+  /** Place and release a legal hold. `communities:lifecycle` does not imply it. */
+  'communities:legal_hold',
 ]);
 
 /** Host API key projection. Never carries the secret or its hash. */
@@ -178,7 +319,7 @@ export const CommunityAdminHostApiKeySchema = z.strictObject({
   id,
   label: z.string().trim().min(1).max(80),
   prefix: z.string().regex(/^dkh_[A-Za-z0-9_-]{6}$/),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(5),
   issuedVia: z.enum(['browser', 'command']),
   /** The issuing host operator's display name; null for a key issued by the offline command. */
   issuedByOperator: z.string().min(1).nullable(),
@@ -194,7 +335,7 @@ export const CommunityAdminHostApiKeyListSchema = z.strictObject({
 /** Issue a host API key. Needs a host operator's session and password; a key cannot issue keys. */
 export const CommunityAdminHostApiKeyIssueRequestSchema = z.strictObject({
   label: z.string().trim().min(1).max(80),
-  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(4),
+  scopes: z.array(CommunityAdminHostApiKeyScopeSchema).min(1).max(5),
   expiresInDays: z.int().min(1).max(365).nullable(),
   password: z.string().min(1),
 });

@@ -102,7 +102,7 @@ describe('useTurnEndReconcile — carrying receipts', () => {
         useTurnEndReconcile({
           sessionId: SESSION_ID,
           transport,
-          sessionCwd: { cwd: null, resolved: true },
+          sessionCwd: { cwd: null },
           streamState: streamStateWith(lifecycle),
           queryClient: new QueryClient(),
         }),
@@ -179,7 +179,7 @@ describe('useTurnEndReconcile — carrying receipts', () => {
         useTurnEndReconcile({
           sessionId: SESSION_ID,
           transport,
-          sessionCwd: { cwd: null, resolved: true },
+          sessionCwd: { cwd: null },
           streamState: streamStateWith(lifecycle),
           queryClient: new QueryClient(),
         }),

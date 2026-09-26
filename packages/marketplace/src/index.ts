@@ -8,6 +8,7 @@
  *   import { validatePackage } from '@dorkos/marketplace/package-validator';
  *   import { createPackage } from '@dorkos/marketplace/scaffolder';
  *   import { scanPackageDirectory } from '@dorkos/marketplace/package-scanner';
+ *   import { findAgentWorkspaceConfig } from '@dorkos/marketplace/agent-workspace-config';
  *
  * @module @dorkos/marketplace
  */
@@ -123,6 +124,25 @@ export {
   PACKAGE_MANIFEST_FILENAME,
   PACKAGE_MANIFEST_PATH,
   CLAUDE_PLUGIN_MANIFEST_PATH,
+  AGENT_MANIFEST_PATH,
   MARKETPLACE_JSON_FILENAME,
   PACKAGE_MANIFEST_VERSION,
+  INSTALLED_FILES_PATH,
+  INSTALL_METADATA_POSIX_PATH,
+  UNINSTALLED_AGENT_PATH,
+  PACKAGE_DATA_DIR,
+  PACKAGE_SECRETS_PATH,
+  KEPT_COPY_SUFFIXES,
+  AGENT_IDENTITY_FILES,
+  EFFECT_BEARING_PATHS,
 } from './constants.js';
+
+// Who owns which paths inside a package (ADR 260923-163513, 260923-163514)
+export {
+  isReservedPackagePath,
+  matchesUserEditable,
+  userEditableReaches,
+  UserEditablePathSchema,
+  validUserEditable,
+  declaredEffectPaths,
+} from './user-editable.js';

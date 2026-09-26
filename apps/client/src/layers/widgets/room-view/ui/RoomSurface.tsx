@@ -28,6 +28,7 @@ import { RoomFlow, RoomHistorySkeleton } from './RoomFlow';
 import { RoomApprovalCards } from './RoomApprovalCards';
 import { RoomLiveLane } from './RoomLiveLane';
 import { RoomThreadPanel } from './RoomThreadPanel';
+import { RoomThreadSplit } from './RoomThreadSplit';
 
 /** What {@link RoomSurface} needs to draw a room. */
 export interface RoomSurfaceProps {
@@ -364,6 +365,7 @@ export function RoomSurface({
         viewerAuthorId={room.viewerAuthorId}
         entries={entries}
         members={room.members}
+        formerAuthors={room.formerAuthors}
         lastReadSeq={frozenReadSeq}
         reactionFrequents={room.reactionFrequents}
         streamStalled={stream.stalled}
@@ -491,10 +493,7 @@ export function RoomSurface({
 
   return (
     <Conversation.Root {...conversation}>
-      <div className="flex h-full overflow-hidden">
-        {roomColumn}
-        {panel}
-      </div>
+      <RoomThreadSplit room={roomColumn} thread={panel} />
     </Conversation.Root>
   );
 }

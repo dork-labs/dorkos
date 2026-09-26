@@ -417,6 +417,50 @@ describe('trigger rules', () => {
     expect(ids(second)).toEqual([]);
   });
 
+  it('8b. reads a job against an inner deadline that fires before its own time limit', () => {
+    const days = Array.from({ length: 2 }, (_, i) =>
+      gateDay(addDays(TODAY, -1 - i), 'wf.test.test-shard', { runs: 10, seconds: 300, timeout: 10 })
+    );
+    // Half of its 10-minute timeout: nothing to say.
+    expect(ids(triage(input({ snapshots: days })))).toEqual([]);
+    // A deadline inside the job at 5.5 minutes is the one that ends it: 90.9%.
+    const r = repo();
+    r.files.config.deadlines = [
+      { gate: 'wf.test.test-shard', minutes: 5.5, source: 'a runner-level deadline' },
+    ];
+    const t = triage(input({ ...r, snapshots: days }));
+    expect(ids(t)).toEqual(['headroom:wf.test.test-shard']);
+    expect(t.open[0]!.what).toContain('90.9%');
+  });
+
+  it('7c. keeps a spell open past a commit that did not run the workflow that failed', () => {
+    const at = (h: number) => `${addDays(TODAY, -2)}T0${h}:00:00Z`;
+    const c = (sha: string, h: number, workflows: Record<string, boolean>) => ({
+      sha,
+      at: at(h),
+      done: at(h),
+      red: Object.values(workflows).some(Boolean),
+      workflows,
+    });
+    const t = triage(
+      input({
+        snapshots: [
+          snap(addDays(TODAY, -2), {
+            main: [
+              c('aaaaaaaa', 1, { 'desktop-smoke.yml': true, 'db-check.yml': false }),
+              c('bbbbbbbb', 2, { 'db-check.yml': false }),
+              c('cccccccc', 4, { 'desktop-smoke.yml': false, 'db-check.yml': false }),
+            ],
+          }),
+        ],
+      })
+    );
+    // Three hours, to the commit where desktop-smoke itself went green; the
+    // old rule said one, at bbbbbbbb, which never ran desktop-smoke.
+    expect(ids(t)).toEqual(['main-red:aaaaaaaa']);
+    expect(t.open[0]!.what).toBe('main red 180 min (aaaaaaa).');
+  });
+
   it('9. fires when the collector was unhealthy on any of the last 3 days, and clears after 3 good ones', () => {
     const bad = [
       snap(addDays(TODAY, -1), {

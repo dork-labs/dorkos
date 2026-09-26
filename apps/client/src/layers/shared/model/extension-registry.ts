@@ -176,14 +176,6 @@ export interface RightPanelContribution extends BaseContribution {
    */
   headerActions?: ComponentType;
   /**
-   * Optional predicate evaluated against the current route pathname, the active
-   * {@link Transport}, and the active agent context — the id of the agent
-   * registered at the selected working directory and that directory itself.
-   * Return false to hide this contribution where it is not relevant: a wrong
-   * route, a transport that lacks a capability (the terminal tab is web-only and
-   * hides under the in-process transport), or an agent/folder the tab does not
-   * apply to. When omitted, the contribution is always visible.
-   *
    * `transport`, `agentId`, `cwd`, `explicitAgentPath`, and
    * `isRemoteCommunityRoom` are optional so unit
    * callers can pass a bare `{ pathname }`; the shell (RightPanelContainer)

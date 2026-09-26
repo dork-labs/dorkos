@@ -14,13 +14,8 @@
  * @module services/marketplace-mcp/update-approval-detail
  */
 import { APPROVAL_DETAIL_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
-import {
-  describeHookEvent,
-  describeProgramLine,
-  describeScheduleArrival,
-  describeSchedulePermissionMode,
-  revealHiddenCharacters,
-} from '@dorkos/shared/marketplace-schemas';
+import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
+import { describeEffectsInFull } from '../marketplace/disclosed-effects.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 
 /** The longest detail a card stores; a longer list is refused, never cut. */
@@ -51,46 +46,6 @@ function whenProgramsStart(update: ApprovableUpdate): string {
     : 'declared, but not started for a project install';
 }
 
-/** Every line saying what one new version would run. */
-function effectsOf(update: ApprovableUpdate): string[] {
-  const effects = update.disclosed;
-  if (!effects) return ['  runs nothing on its own'];
-  const where = whenProgramsStart(update);
-  const lines = [
-    ...effects.hooks.map(
-      (hook) =>
-        `  runs ${whole(hook.command)} ${describeHookEvent(hook.event, hook.matcher ?? undefined)}` +
-        (hook.source ? `, while the skill in ${whole(hook.source)} is in use` : '')
-    ),
-    ...effects.skillTools.map(
-      (entry) =>
-        `  skill ${whole(entry.skill)} (${whole(entry.source)}) may use without asking: ${entry.tools.map(whole).join(', ')}`
-    ),
-    ...effects.schedules.map(
-      (job) =>
-        `  scheduled job ${whole(job.name)}: ${job.cron ? `runs on ${whole(job.cron)}` : 'runs only when asked'}, ` +
-        `${describeSchedulePermissionMode(job.permissionMode)}, ${describeScheduleArrival(job.startsEnabled)}`
-    ),
-    ...effects.mcpServers.map((server) =>
-      server.command !== null
-        ? `  MCP server ${whole(server.name)} (${where}): ${describeProgramLine(server.command, server.args)}`
-        : `  remote MCP server ${whole(server.name)} (${where}) at ${whole(server.url ?? '')}`
-    ),
-    ...effects.lspServers.map(
-      (server) =>
-        `  language server ${whole(server.name)} (${where}): ${describeProgramLine(server.command, server.args)}`
-    ),
-    ...effects.monitors.map(
-      (monitor) =>
-        `  background monitor ${whole(monitor.name)} (${where}${monitor.when ? `, ${whole(monitor.when)}` : ''}): ${describeProgramLine(monitor.command)}`
-    ),
-    ...effects.executables.map(
-      (name) => `  adds the command ${whole(name)} to the agent's PATH (${where})`
-    ),
-  ];
-  return lines.length > 0 ? lines : ['  runs nothing on its own'];
-}
-
 /**
  * Every reinstall, one block each, in the order given.
  *
@@ -104,7 +59,7 @@ export function describeUpdatesInFull(updates: readonly ApprovableUpdate[]): str
       [
         `${whole(update.packageName)} (${update.type}, ${placeOf(update)}): ${whole(update.installedVersion)} → ${whole(update.latestVersion)}`,
         `  at ${whole(update.installPath)}`,
-        ...effectsOf(update),
+        ...describeEffectsInFull(update.disclosed, whenProgramsStart(update)),
       ].join('\n')
     )
     .join('\n\n');

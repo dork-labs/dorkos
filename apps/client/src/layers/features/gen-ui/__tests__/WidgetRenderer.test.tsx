@@ -166,11 +166,6 @@ describe('widget actions', () => {
   });
 
   it('degrades a ui open_terminal action to a notice when the transport has no terminal', async () => {
-    // A widget firing `open_terminal` under a terminal-less transport
-    // (DirectTransport/Obsidian) must surface a notice, not focus a phantom
-    // Terminal tab — the same graceful-degradation contract the agent-stream
-    // dispatch path honors. Proves supportsTerminal is threaded into the
-    // widget's DispatcherContext, not just the agent path.
     const user = userEvent.setup();
     const noTerminalTransport = createMockTransport({ supportsTerminal: false });
     render(

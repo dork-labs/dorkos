@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { unzipSync, strFromU8 } from 'fflate';
+import { drainExports, openArchive } from './export-test-helpers.js';
 import {
   CommunityWireEntryPageSchema,
   CommunityWireErasureResponseSchema,
@@ -175,16 +175,18 @@ beforeAll(async () => {
   const emailShaped = await qPost(`write to bob@${pA.handle}`, 'q-email');
   const qReply = await qPost('replying to your post', 'q-reply', seededA.rootEntryId);
 
-  const personal = await body<{ archiveId: string }>(
+  const personal = await body<{ export: { id: string } }>(
     await h.call(`${baseA}/me/export`, { cookie: q.cookie, body: {} }),
-    201,
+    202,
     'personal export'
   );
-  const owner = await body<{ archiveId: string }>(
+  const owner = await body<{ export: { id: string } }>(
     await h.call(`${baseA}/owner/export`, { cookie: ownerA.cookie, body: { password: PASSWORD } }),
-    201,
+    202,
     'owner export'
   );
+  // Both archives are ready before the erasure, which must delete them.
+  await drainExports(h.pool, h.blobStore);
   // Better Auth keeps one-time identifiers with the account id or email as the value.
   await h.pool.query(
     `INSERT INTO verification(id,identifier,value,"expiresAt")
@@ -223,7 +225,7 @@ beforeAll(async () => {
     qFreeText: freeText.id,
     qEmailShaped: emailShaped.id,
     qReplyToP: qReply.id,
-    exports: { personal: personal.archiveId, owner: owner.archiveId },
+    exports: { personal: personal.export.id, owner: owner.export.id },
     blobsA: await blobs(communityA),
     blobsB: await blobs(communityB),
     adminChannelId: adminChannel.channel.id,
@@ -469,7 +471,9 @@ describe('residue scan (AC-1, AC-10)', () => {
       { cookie: q.cookie, body: { text: before.qThanks.text, idempotencyKey: before.qThanks.key } }
     );
     expect(retry.status).toBe(200);
-    // Every changed entry of P and of Q has exactly one redaction row for the feed.
+    // Every changed entry of P and of Q has exactly one redaction row for the feed, and P's
+    // file post one more: erasing its file changed its file list before it was tombstoned
+    // (an intended difference since removal moved erasure onto content-removal.ts).
     const redactions = await h.pool.query<{ entry_id: string }>(
       'SELECT entry_id FROM entry_redactions WHERE community_id=$1',
       [communityA]
@@ -482,6 +486,7 @@ describe('residue scan (AC-1, AC-10)', () => {
         before.qAgentMention,
         // Today's resolver read `bob@handle` as a mention; its row went, so the entry changed.
         before.qEmailShaped,
+        seededA.fileEntryId,
       ].sort()
     );
   });
@@ -504,22 +509,29 @@ describe('residue scan (AC-1, AC-10)', () => {
       (await h.call(`${base}/exports/${before.exports.owner}`, { cookie: ownerA.cookie })).status
     ).toBe(404);
 
-    const fresh = await body<{ archiveId: string }>(
+    const fresh = await body<{ export: { id: string } }>(
       await h.call(`${base}/owner/export`, { cookie: ownerA.cookie, body: { password: PASSWORD } }),
-      201,
+      202,
       'owner export after erasure'
     );
-    const download = await h.call(`${base}/exports/${fresh.archiveId}`, { cookie: ownerA.cookie });
+    await drainExports(h.pool, h.blobStore);
+    const download = await h.call(`${base}/exports/${fresh.export.id}/archive`, {
+      cookie: ownerA.cookie,
+    });
     expect(download.status).toBe(200);
-    const archive = unzipSync(new Uint8Array(await download.arrayBuffer()));
-    const manifest = JSON.parse(strFromU8(archive['manifest.json'])) as {
-      members: { id: string; display_name: string; email: string | null }[];
-    };
-    expect(manifest.members.find((member) => member.id === pA.memberId)).toMatchObject({
+    const archive = await openArchive(Buffer.from(await download.arrayBuffer()));
+    expect(
+      archive
+        .rows<{ id: string; display_name: string; email: string | null }>('members')
+        .find((member) => member.id === pA.memberId)
+    ).toMatchObject({
       display_name: 'Erased member',
       email: null,
     });
-    const text = strFromU8(archive['manifest.json']).toLowerCase();
+    const text = [...archive.files.values()]
+      .map((bytes) => bytes.toString('utf8'))
+      .join('\n')
+      .toLowerCase();
     // Only the named leftovers' words may appear: Q's free text, code, and email-shaped text,
     // and the channel P named.
     const leftoverWords = [CANARY.channel, pA.handle, 'Zephyrine', 'Quill'];

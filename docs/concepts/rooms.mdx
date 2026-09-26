@@ -569,21 +569,26 @@ so an answer cannot arrive as nine bubbles. You can change it in Settings.
 
 ### When your agent is busy in another conversation
 
-An agent works in one folder at a time, so it can only run one thing at once — even if you talk to
-it in several places. Send it a message while it's working somewhere else and DorkOS **keeps your
-message**. You never have to send it again.
+An agent works in one folder, even if you talk to it in several places. Two conversations at once
+means two turns changing the same files, and past a point they trip over each other. So DorkOS lets
+one agent work in up to **three conversations at the same time** and no more. You can change that
+number in Settings → Rooms → **Conversations at once**, from 1 (one thing at a time) to 8.
 
-The line above the message box says what will happen while you wait:
+Send an agent a message while it's already at that limit and DorkOS **keeps your message**. You
+never have to send it again. The line above the message box says what will happen while you wait:
 
 **Kai will pick this up when it finishes in #deploys · 40s**
+
+If Kai is working in several conversations, any of them finishing can free it, so the line says
+**… when it finishes in #deploys or another conversation**.
 
 Click it and you get two things: a way to open the conversation that's in the way, and — if your
 agent has messages waiting in more than one place — **Answer here first**, which moves this
 conversation to the front of its queue. It doesn't interrupt anything. The work already running
 finishes first either way.
 
-When that work ends, your message becomes the agent's next turn and the answer lands here, in the
-room where you asked. Because rooms show messages in the order they arrive, a late answer says which
+When one of those turns ends, your message becomes the agent's next turn and the answer lands here,
+in the room where you asked. Because rooms show messages in the order they arrive, a late answer says which
 message it's answering.
 
 **Two things worth knowing.** If your agent is stuck on something for a very long time — an hour by

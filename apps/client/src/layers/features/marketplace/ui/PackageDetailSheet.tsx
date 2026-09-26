@@ -48,6 +48,7 @@ import {
   usePermissionPreview,
   useInstalledPackages,
   usePackageInstallations,
+  PreviewRefusedNotice,
 } from '@/layers/entities/marketplace';
 import { useConfig } from '@/layers/entities/config';
 import { useRequestInstall } from '../model/use-request-install';
@@ -345,7 +346,11 @@ export function PackageDetailSheet() {
   // loaded so a still-loading list can't briefly fire a preview that is then
   // discarded.
   const { data: installations } = usePackageInstallations(packageName, { enabled: isInstalled });
-  const { data: previewDetail, isLoading: isPreviewLoading } = usePermissionPreview(packageName, {
+  const {
+    data: previewDetail,
+    isLoading: isPreviewLoading,
+    error: previewError,
+  } = usePermissionPreview(packageName, {
     enabled: enabled && !isInstalled && !isInstalledListLoading,
   });
 
@@ -473,6 +478,11 @@ export function PackageDetailSheet() {
                   onReinstall={handleReinstall}
                   onUninstall={handleUninstall}
                 />
+              ) : previewError ? (
+                // Never a preview (or "no special permissions") over a package
+                // the server refused to preview: it refuses to install it too,
+                // and the detail's own preview is the same check (DOR-2314).
+                <PreviewRefusedNotice error={previewError} />
               ) : permissionPreview ? (
                 <section>
                   <h3 className="mb-3 text-sm font-semibold">What this can do</h3>

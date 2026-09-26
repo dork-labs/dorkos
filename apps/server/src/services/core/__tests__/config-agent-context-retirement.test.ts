@@ -22,7 +22,8 @@ afterEach(() => {
 /** A temp data directory whose config still carries the retired switches. */
 function seed(
   agentContext: Record<string, unknown> | undefined,
-  permissions?: Record<string, unknown>
+  permissions?: Record<string, unknown>,
+  migratedTo?: string
 ): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-agent-context-'));
   dirs.push(dir);
@@ -32,6 +33,7 @@ function seed(
       version: 1,
       ...(agentContext !== undefined ? { agentContext } : {}),
       ...(permissions ? { permissions } : {}),
+      ...(migratedTo ? { __internal__: { migrations: { version: migratedTo } } } : {}),
     })
   );
   return dir;
@@ -105,6 +107,18 @@ describe('retiring agentContext (real conf + Ajv)', () => {
     const before = fs.readFileSync(path.join(dir, 'config.json'), 'utf8');
     expect(manager.retireAgentContext()).toBeNull();
     expect(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')).toBe(before);
+  });
+
+  it('still retires on an install already migrated to 0.83.0, whose migrations will not run again', () => {
+    const dir = seed(
+      { ...ALL_ON, meshTools: false },
+      { preset: 'careful', defaults: { areas: {}, actions: {} } },
+      '0.83.0'
+    );
+    expect(new ConfigManager(dir).retireAgentContext()).toEqual(['agents']);
+    const disk = readDisk(dir);
+    expect(disk.permissions?.defaults?.areas).toEqual({ agents: 'blocked' });
+    expect(disk).not.toHaveProperty('agentContext');
   });
 
   it('is a no-op the second time', () => {

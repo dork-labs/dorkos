@@ -137,6 +137,8 @@ function sourceText(source: PermissionSource, preset: PermissionPreset | null): 
       return 'Never Allowed';
     case 'inactive':
       return 'This agent is no longer active, so everything but reading is Blocked';
+    case 'always-asks':
+      return 'Always asks, so you see what it would change';
   }
 }
 

@@ -1,13 +1,33 @@
 import { useState } from 'react';
-import { Trash2, RefreshCw, FolderOpen, Bot, Shapes, AlertTriangle } from 'lucide-react';
-import type { InstalledPackage } from '@dorkos/shared/marketplace-schemas';
-import { useApplyingInstallPaths, useInstalledPackages } from '@/layers/entities/marketplace';
+import {
+  Trash2,
+  RefreshCw,
+  FolderOpen,
+  Bot,
+  Shapes,
+  AlertTriangle,
+  ShieldAlert,
+  FileCheck2,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  disclosesAnything,
+  type InstallIntegrity,
+  type InstalledPackage,
+} from '@dorkos/shared/marketplace-schemas';
+import {
+  useApplyingInstallPaths,
+  useInstalledIntegrity,
+  useInstalledPackages,
+  useReviewHeldBackPackage,
+} from '@/layers/entities/marketplace';
 import { useShapes } from '@/layers/entities/shapes';
 import { Badge, Button } from '@/layers/shared/ui';
 import { humanizePackageName } from '@/layers/shared/lib';
 import { useAppStore } from '@/layers/shared/model';
 import { useUninstallWithToast } from '../model/use-uninstall-with-toast';
 import { useApplyUpdatesWithToast } from '../model/use-apply-updates-with-toast';
+import { useCheckFilesWithToast } from '../model/use-check-files-with-toast';
 import { useInstalledUpdatesView } from '../model/use-installed-updates-view';
 import { useFocusRescue, type FocusRescue } from '../model/use-focus-rescue';
 import {
@@ -24,6 +44,7 @@ import { PackageErrorState } from './PackageErrorState';
 import { InstalledUpdatesSummary } from './InstalledUpdatesSummary';
 import { InstallationUpdateStatus } from './InstallationUpdateStatus';
 import { ConfirmUpdatesDialog } from './ConfirmUpdatesDialog';
+import { canCheckFiles, InstallationIntegrityNote } from './InstallationIntegrityNote';
 
 // ---------------------------------------------------------------------------
 // Package row sub-component
@@ -37,11 +58,62 @@ interface PackageRowProps {
   isUninstalling: boolean;
   /** Where this installation stands with respect to updates. */
   updateState: RowUpdateState;
+  /** Whether its files still match what was installed, once verification answers. */
+  integrity?: InstallIntegrity;
+  /** This installation's files are being checked (DOR-2320). */
+  isCheckingFiles: boolean;
+  /** Check the files of an installation an older DorkOS made against the version installed. */
+  onCheckFilesClick: () => void;
   /** Open the Shape switcher to apply this Shape (Shapes only). */
   onApplyClick: () => void;
   /** Update this installation (offered only when an update is available). */
   onUpdateClick: () => void;
   onUninstallClick: () => void;
+  /** Raise the approval card for a held-back global package (DOR-2306). */
+  onReviewClick: () => void;
+  /** True while that card is being raised. */
+  isRaisingReview: boolean;
+}
+
+/**
+ * Says a global package is held back from every session, why, and (when it can
+ * be put on a card) offers to ask again, so a package never just vanishes from
+ * sessions without a word (DOR-2306).
+ */
+function HeldBackNotice({
+  heldBack,
+  label,
+  onReviewClick,
+  isRaisingReview,
+}: {
+  heldBack: NonNullable<InstalledPackage['heldBack']>;
+  label: string;
+  onReviewClick: () => void;
+  isRaisingReview: boolean;
+}) {
+  return (
+    // On a phone the note takes the row and Review sits on its own line under
+    // it, lined up with the text; from `sm` up they share one line.
+    <div className="mt-1.5 flex flex-col items-start gap-1.5 text-xs text-amber-700 sm:flex-row sm:gap-2 dark:text-amber-300">
+      <div className="flex min-w-0 items-start gap-2">
+        <ShieldAlert className="mt-0.5 size-3 shrink-0" aria-hidden />
+        {/* A linked install's note names a folder path, which must wrap. */}
+        <span className="min-w-0 [overflow-wrap:anywhere]">{heldBack.note}</span>
+      </div>
+      {heldBack.reviewable && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-5 h-6 shrink-0 px-2 text-xs sm:ml-0"
+          onClick={onReviewClick}
+          disabled={isRaisingReview}
+          aria-label={`Review ${label}`}
+        >
+          {isRaisingReview ? 'Asking…' : 'Review'}
+        </Button>
+      )}
+    </div>
+  );
 }
 
 /**
@@ -94,9 +166,14 @@ function PackageRow({
   isConfirmingUninstall,
   isUninstalling,
   updateState,
+  integrity,
+  isCheckingFiles,
+  onCheckFilesClick,
   onApplyClick,
   onUpdateClick,
   onUninstallClick,
+  onReviewClick,
+  isRaisingReview,
 }: PackageRowProps) {
   const { name, version, type, scope, installedFrom, installedAt, adapterType } = installation;
   const dependencyWarnings = installation.dependencyWarnings ?? [];
@@ -126,6 +203,14 @@ function PackageRow({
         <div className="mb-1 flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold">{displayName}</span>
           <PackageTypeBadge type={type} adapterType={adapterType} />
+          {installation.heldBack && (
+            <Badge
+              variant="outline"
+              className="border-amber-500/60 text-amber-700 dark:text-amber-300"
+            >
+              Held back
+            </Badge>
+          )}
           {isActiveShape && <Badge variant="secondary">Active</Badge>}
           <Badge variant="outline" className="font-mono">
             v{version}
@@ -164,6 +249,23 @@ function PackageRow({
         >
           <InstallationUpdateStatus state={updateState} />
         </div>
+        {installation.heldBack && (
+          <HeldBackNotice
+            heldBack={installation.heldBack}
+            label={label}
+            onReviewClick={onReviewClick}
+            isRaisingReview={isRaisingReview}
+          />
+        )}
+        <InstallationIntegrityNote
+          integrity={integrity}
+          updateAvailable={
+            updateState.kind === 'update-available' || updateState.kind === 'applying'
+          }
+          label={label}
+          onCheckFiles={onCheckFilesClick}
+          isCheckingFiles={isCheckingFiles}
+        />
         {/* A package whose npm libraries did not install is on disk and usable
             but incomplete, and that outlives the toast the person dismissed at
             install time. The note carries its own remedy, so it is shown in
@@ -197,6 +299,25 @@ function PackageRow({
           >
             <Shapes className="mr-1 size-3" aria-hidden />
             Apply…
+          </Button>
+        )}
+
+        {/* An install an older DorkOS made has no record of its files until
+            they are checked against the version installed (DOR-2320). Offered
+            only when that can help: not for a package installed from a folder,
+            and not once its files were found to differ (the note says why). */}
+        {canCheckFiles(integrity) && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCheckFilesClick}
+            disabled={isCheckingFiles}
+            aria-label={
+              isCheckingFiles ? `Checking the files of ${label}` : `Check the files of ${label}`
+            }
+          >
+            <FileCheck2 className="mr-1 size-3" aria-hidden />
+            {isCheckingFiles ? 'Checking…' : 'Check files'}
           </Button>
         )}
 
@@ -268,12 +389,18 @@ export function InstalledPackagesView() {
   const updates = useInstalledUpdatesView();
   const applying = useApplyingInstallPaths();
   const { apply } = useApplyUpdatesWithToast();
+  const review = useReviewHeldBackPackage();
+  // Whether each installation's files still match what was installed
+  // (DOR-2197): one verified request beside the list, never one per row.
+  const { data: integrityByPath } = useInstalledIntegrity();
+  const checkFiles = useCheckFilesWithToast();
 
   // Track which installation (by installPath — unique per scope, unlike the
   // package name) is in the confirm-uninstall window.
   const [confirmingPath, setConfirmingPath] = useState<string | null>(null);
-  // What "Update all" is asking about, snapshotted when the dialog opens, so a
-  // check that lands meanwhile cannot change what the person confirms.
+  // What the confirm step is asking about ("Update all", or one row whose new
+  // version runs something), snapshotted when the dialog opens, so a check
+  // that lands meanwhile cannot change what the person confirms.
   const [confirmingUpdate, setConfirmingUpdate] = useState<StaleInstallation[] | null>(null);
 
   // ---------------------------------------------------------------------------
@@ -320,9 +447,42 @@ export function InstalledPackagesView() {
     }
   }
 
-  function handleConfirmUpdateAll(stale: StaleInstallation[]) {
+  function handleReview(pkg: InstalledPackage) {
+    review.mutate(pkg.name, {
+      onSuccess: () =>
+        toast.info(`Review ${humanizePackageName(pkg.name)} on the approval card`, {
+          description: 'It stays held back until you allow it there.',
+        }),
+      onError: (err) =>
+        toast.error(`Couldn’t ask about ${humanizePackageName(pkg.name)}`, {
+          description: err.message,
+        }),
+    });
+  }
+
+  function handleConfirmUpdate(stale: StaleInstallation[]) {
     setConfirmingUpdate(null);
     apply(stale);
+  }
+
+  function handleCheckFilesClick(pkg: InstalledPackage) {
+    checkFiles.mutate({
+      name: pkg.name,
+      options: {
+        installRoot: pkg.installPath,
+        ...(pkg.agentPath && { projectPath: pkg.agentPath }),
+      },
+      where: installationPlace(pkg) ?? undefined,
+    });
+  }
+
+  /** Whether the in-flight file check targets this exact installation. */
+  function isCheckingFiles(pkg: InstalledPackage): boolean {
+    return (
+      checkFiles.isPending &&
+      checkFiles.variables?.name === pkg.name &&
+      (checkFiles.variables?.options?.installRoot ?? pkg.installPath) === pkg.installPath
+    );
   }
 
   /** Whether the in-flight uninstall targets this exact installation. */
@@ -363,13 +523,25 @@ export function InstalledPackagesView() {
                 isConfirmingUninstall={confirmingPath === pkg.installPath}
                 isUninstalling={isUninstalling(pkg)}
                 updateState={updateState}
+                integrity={integrityByPath?.get(pkg.installPath)}
+                isCheckingFiles={isCheckingFiles(pkg)}
+                onCheckFilesClick={() => handleCheckFilesClick(pkg)}
                 onApplyClick={() => openShapeSwitcherToShape(pkg.name)}
                 onUpdateClick={() => {
-                  if (updateState.kind === 'update-available') {
-                    apply([{ installation: pkg, check: updateState.check }]);
+                  if (updateState.kind !== 'update-available') return;
+                  const item = { installation: pkg, check: updateState.check };
+                  // A new version that runs anything on its own is confirmed
+                  // first, with what it runs listed; one that runs nothing
+                  // updates straight away (DOR-2306).
+                  if (disclosesAnything(updateState.check.disclosed)) {
+                    setConfirmingUpdate([item]);
+                  } else {
+                    apply([item]);
                   }
                 }}
                 onUninstallClick={() => handleUninstallClick(pkg)}
+                onReviewClick={() => handleReview(pkg)}
+                isRaisingReview={review.isPending && review.variables === pkg.name}
               />
             </div>
           );
@@ -378,8 +550,9 @@ export function InstalledPackagesView() {
 
       <ConfirmUpdatesDialog
         stale={confirmingUpdate}
+        integrityByPath={integrityByPath}
         onCancel={() => setConfirmingUpdate(null)}
-        onConfirm={handleConfirmUpdateAll}
+        onConfirm={handleConfirmUpdate}
       />
     </div>
   );

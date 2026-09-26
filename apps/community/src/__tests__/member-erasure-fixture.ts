@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { constants as zlibConstants, inflateRawSync } from 'node:zlib';
 import type { Pool } from 'pg';
 import { sweepErasures } from '../erasure/worker.js';
 import type { ErasureOptions } from '../erasure/erasure.js';
@@ -367,11 +368,36 @@ export async function scanBlobs(
 ): Promise<{ key: string; needle: string }[]> {
   const hits: { key: string; needle: string }[] = [];
   for (const name of await readdir(directory)) {
-    const text = (await readFile(join(directory, name))).toString('utf8').toLowerCase();
+    const bytes = await readFile(join(directory, name));
+    const text = [bytes, ...deflatedEntries(bytes)]
+      .map((part) => part.toString('utf8'))
+      .join('\n')
+      .toLowerCase();
     for (const needle of needles)
       if (text.includes(needle.toLowerCase())) hits.push({ key: name, needle });
   }
   return hits;
+}
+
+/**
+ * Inflate every deflated zip entry found in one stored blob (an export segment keeps its
+ * NDJSON rows deflated), so a residue scan reads what an archive says, not its compressed bytes.
+ */
+function deflatedEntries(bytes: Buffer): Buffer[] {
+  const found: Buffer[] = [];
+  const signature = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  for (let at = bytes.indexOf(signature); at >= 0; at = bytes.indexOf(signature, at + 4)) {
+    if (at + 30 > bytes.length || bytes.readUInt16LE(at + 8) !== 8) continue;
+    const start = at + 30 + bytes.readUInt16LE(at + 26) + bytes.readUInt16LE(at + 28);
+    try {
+      found.push(
+        inflateRawSync(bytes.subarray(start), { finishFlush: zlibConstants.Z_SYNC_FLUSH })
+      );
+    } catch {
+      // Not an entry: the signature appeared inside other bytes.
+    }
+  }
+  return found;
 }
 
 /** The blob store directory of a filesystem-backed harness. */

@@ -116,7 +116,7 @@ If you do stand one up by hand:
 - **Copying a `DORK_HOME` between paths carries stale absolute agent paths** in
   its SQLite. Recreate agents via `POST /api/agents` at the new path instead.
 - Dismiss onboarding headlessly with `PATCH /api/config`
-  (`{onboarding:{dismissedAt},profile:{rolePromptDismissedAt}}`) —
+  (`{onboarding:{dismissedAt},profile:{rolePromptDismissedAt,identityPromptDismissedAt}}`) —
   `apps/e2e/global-setup.ts` already does this idempotently, so call it rather
   than restating it. Pin a cheap model with
   `{runtimes:{claudeCode:{defaultModel:"sonnet"}}}`; new sessions otherwise start

@@ -2,7 +2,13 @@ import { useState, type ReactNode } from 'react';
 import { Check, Copy, Link, QrCode, X, type LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui';
-import { cn, COLLAPSE_TRANSITION, COLLAPSE_VARIANTS, useCopyFeedback } from '@/layers/shared/lib';
+import {
+  cn,
+  COLLAPSE_TRANSITION,
+  COLLAPSE_VARIANTS,
+  sessionHref,
+  useCopyFeedback,
+} from '@/layers/shared/lib';
 import { TunnelQrCode, tunnelHost } from '@/layers/entities/tunnel';
 import { latencyColor } from '../lib/tunnel-utils';
 
@@ -75,7 +81,11 @@ export function TunnelConnected({ url, activeSessionId, latencyMs }: TunnelConne
   const { copied: sessionCopied, failed: sessionFailed, copy: copySession } = useCopyFeedback();
   const [showQr, setShowQr] = useState(false);
 
-  const sessionUrl = activeSessionId ? `${url}?session=${activeSessionId}` : null;
+  // The session's own address under the tunnel's origin. It used to be the
+  // origin plus `?session=` with no `/session` in front of it (DOR-2077).
+  const sessionUrl = activeSessionId
+    ? new URL(sessionHref({ session: activeSessionId }), url).toString()
+    : null;
 
   return (
     <div data-testid="tunnel-connected" className="space-y-3">

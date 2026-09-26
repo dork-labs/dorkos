@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
-import { TaskDispatchPayloadSchema } from '@dorkos/shared/relay-schemas';
+import { TaskDispatchPayloadSchema, TASK_SCHEDULER_PRINCIPAL } from '@dorkos/shared/relay-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createRunOutcomeTracker } from '@dorkos/shared/run-outcome';
 import {
@@ -119,6 +119,58 @@ async function consumeRunStream(
   }
 }
 
+/**
+ * Refuse a task dispatch the scheduler did not send (DOR-2416).
+ *
+ * A dispatch carries the whole run — prompt, folder, permission mode, account,
+ * and whether anybody is watching — and an agent's `relay_send` can reach
+ * `relay.system.tasks.*`, so trusting the payload from any sender handed every
+ * agent an unattended `bypassPermissions` run of its own text. `from` is
+ * stamped by the publish pipeline and is not reachable from a model: the same
+ * fact the stop path (`task-cancel-handler.ts`) trusts.
+ *
+ * The adapter asks this before it picks a runtime or takes a concurrency slot,
+ * so every forged dispatch gets the same answer and spends nothing. A refusal
+ * writes no run row, because the run id is the sender's claim too; it logs,
+ * records a failed trace span naming the sender, and returns `success: false`,
+ * which the publish pipeline dead-letters.
+ *
+ * @param envelope - The dispatch envelope.
+ * @param startTime - When delivery began, for `durationMs`.
+ * @param deps - Where the refusal is recorded, and the clock to record it by.
+ * @returns The refusal, or `undefined` when the scheduler sent it.
+ */
+export function refuseForeignTaskDispatch(
+  envelope: RelayEnvelope,
+  startTime: number,
+  deps: Pick<TasksHandlerDeps, 'traceStore' | 'logger' | 'now'>
+): DeliveryResult | undefined {
+  if (envelope.from === TASK_SCHEDULER_PRINCIPAL) return undefined;
+  const clock = deps.now ?? Date.now;
+  const now = clock();
+  const error = `only ${TASK_SCHEDULER_PRINCIPAL} may start a task run`;
+  deps.logger?.warn(
+    `[CCA] task dispatch: refusing a run from ${envelope.from} on ${envelope.subject} — ${error}`
+  );
+  deps.traceStore.insertSpan({
+    messageId: envelope.id,
+    traceId: randomUUID(),
+    spanId: randomUUID(),
+    parentSpanId: null,
+    subject: envelope.subject,
+    fromEndpoint: envelope.from,
+    toEndpoint: 'tasks:unknown',
+    status: 'failed',
+    budgetHopsUsed: envelope.budget.hopCount,
+    budgetTtlRemainingMs: envelope.budget.ttl - now,
+    sentAt: now,
+    deliveredAt: now,
+    processedAt: now,
+    error: `Refused task dispatch from ${envelope.from}: ${error}`,
+  });
+  return { success: false, error, durationMs: clock() - startTime };
+}
+
 /** Dependencies required by the tasks handler. */
 export interface TasksHandlerDeps {
   agentManager: AgentRuntimeLike;
@@ -210,6 +262,11 @@ export async function handleTasksMessage(
   const clock = deps.now ?? Date.now;
   const now = clock();
 
+  // Backstop for a caller that reaches this handler without the adapter's
+  // sender check in front of it; see {@link refuseForeignTaskDispatch}.
+  const refused = refuseForeignTaskDispatch(envelope, startTime, deps);
+  if (refused) return refused;
+
   // Validate tasks payload
   const parsed = TaskDispatchPayloadSchema.safeParse(envelope.payload);
   if (!parsed.success) {
@@ -249,6 +306,12 @@ export async function handleTasksMessage(
   const executionSettings = {
     ...(payload.model !== undefined ? { model: payload.model } : {}),
     ...(payload.effort !== undefined ? { effort: payload.effort } : {}),
+    // The schedule's own Claude account as the launch hint (DOR-2384). The
+    // account is the operator's approved choice for that schedule, which is why
+    // no account guard applies here — and it is trusted only because the sender
+    // check at the top of this function already refused every dispatch the
+    // scheduler did not publish (DOR-2416).
+    ...(payload.account !== undefined ? { accountHint: payload.account } : {}),
   };
   const effectiveCwd = cwd ?? context?.agent?.directory ?? config.defaultCwd;
   // The session this run runs on, decided on the scheduler side and carried here

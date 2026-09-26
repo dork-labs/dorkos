@@ -136,13 +136,7 @@ function LiveGroup({ diagnostics: d, live }: { diagnostics: SessionDiagnostics; 
       <DetailRow label="Last event">
         {d.lastEventSeq === 0 ? 'none yet' : `seq ${d.lastEventSeq}`}
       </DetailRow>
-      {/*
-        The wire `Last-Event-ID` is `<sessionId>-<serverEpoch>-<generation>-<seq>` and lives
-        only inside the SSE connection (the in-process Obsidian pump has none at
-        all), so the honest client-side form of "where is this stream" is the pair
-        of cursors this client actually holds: what it resumed from, and how far
-        it has got since.
-      */}
+      {}
       <DetailRow label="Resumed from">
         {d.snapshotCursor === null ? 'not hydrated' : `cursor ${d.snapshotCursor}`}
       </DetailRow>

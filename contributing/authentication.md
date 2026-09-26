@@ -162,7 +162,7 @@ Cookies are `httpOnly`, `secure` in production, `sameSite: 'lax'` (the P2 device
 
 ### Client wiring
 
-The client auth slice (`features/auth`) exposes Better Auth only through hooks (`useSignIn`, `useSignUp`, `useSignOut`, `useCurrentUser`, `useApiKeys`) so no component imports the library directly. `AuthGuard` renders `LoginScreen` when the app-wide auth-required signal is set (a gated request returned `401 AUTH_REQUIRED`); otherwise it is a transparent pass-through (progressive disclosure — no user affordances appear when login is off). It is wired into the web shell (`main.tsx`) only; Obsidian embedded mode (`DirectTransport`, in-process) never mounts it and stays unauthenticated. `HttpTransport`'s fetch paths send `credentials: 'include'` so the session cookie rides along. See `contributing/architecture.md` for the Transport story.
+The client auth slice (`features/auth`) exposes Better Auth only through hooks (`useSignIn`, `useSignUp`, `useSignOut`, `useCurrentUser`, `useApiKeys`) so no component imports the library directly. `AuthGuard` renders `LoginScreen` when the app-wide auth-required signal is set (a gated request returned `401 AUTH_REQUIRED`); otherwise it is a transparent pass-through (progressive disclosure — no user affordances appear when login is off). It is wired into the client shell (`main.tsx`). `HttpTransport`'s fetch paths send `credentials: 'include'` so the session cookie rides along. See `contributing/architecture.md` for the Transport story.
 
 ## Config fields & migrations
 
@@ -321,7 +321,7 @@ Revoke from `/account/instances` (or `POST /api/instances/revoke`, ownership-enf
 - **Config:** the `cloud` section (`packages/shared/src/config-schema.ts`) — `instanceToken` (sensitive), `instanceName`, `linkedAccountLabel`; migration `0.45.0` `backfillCloudDefaults`.
 - **Local routes:** `apps/server/src/routes/cloud.ts` — `POST /api/cloud/link/start`, `GET /api/cloud/link/status` (`idle | pending | linked | expired | denied | unlinked`), `POST /api/cloud/unlink`, `GET /api/cloud/status`.
 - **CLI:** `dorkos cloud login | logout | status` (`packages/cli/src/commands/cloud-dispatcher.ts`) — the device flow talks directly to the cloud, so it works headless.
-- **Client:** the Settings → "DorkOS account" panel (`apps/client/src/layers/features/cloud-link/`) drives the four `Transport` cloud methods (`cloud-methods.ts`); it is visible regardless of local login. Obsidian `DirectTransport` stubs them.
+- **Client:** the Settings → "DorkOS account" panel (`apps/client/src/layers/features/cloud-link/`) drives the four `Transport` cloud methods (`cloud-methods.ts`); it is visible regardless of local login.
 
 See `specs/accounts-and-auth/02-specification.md` for the full design and `contributing/configuration.md` for the config + env-var reference.
 

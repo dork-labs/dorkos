@@ -10,7 +10,42 @@
 import type { pulseSchedules, pulseRuns } from '@dorkos/db';
 import type { Task, TaskRun, TaskRunStatus, TaskRunTrigger } from '@dorkos/shared/types';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
-import { effectiveTiming } from './timing/effective-timing.js';
+import { effectiveTiming, effectiveWork } from './timing/effective-timing.js';
+import { parseContentKey, type IncomingTaskContent } from './schedule-permission-clamp.js';
+
+/** The parts of the approved work, in the order the card lists them. */
+const WORK_FIELDS = [
+  'prompt',
+  'cron',
+  'timezone',
+  'name',
+  'runtime',
+  'model',
+  'effort',
+  'maxRuntime',
+  'sticky',
+  'account',
+] as const satisfies readonly (keyof IncomingTaskContent)[];
+
+/**
+ * What changed since a waiting schedule was last approved (DOR-2323): each part
+ * of the work that differs between the approval a park withdrew and what would
+ * run now. Nothing for a schedule that is not waiting, or has no withdrawn
+ * approval this build can read.
+ */
+function approvalChangesOf(row: typeof pulseSchedules.$inferSelect): Task['approvalChanges'] {
+  if (row.status !== 'pending_approval' || row.previousApprovalKey === null) return [];
+  const approved = parseContentKey(row.previousApprovalKey);
+  if (!approved) return [];
+  const now = effectiveWork(row);
+  return WORK_FIELDS.filter((field) => approved[field] !== now[field]).map((field) =>
+    // The instructions are not quoted: the card says they changed and shows
+    // the new ones in full, and the old ones need not travel with every task.
+    field === 'prompt'
+      ? { field, from: null, to: null }
+      : { field, from: approved[field], to: now[field] }
+  );
+}
 
 /**
  * Read a stored effort rung, or `null` for one this build cannot read.
@@ -56,6 +91,10 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     defaultCron: row.cron,
     defaultTimezone: row.timezone,
     timingOverridden: row.cronOverride !== null || row.timezoneOverride !== null,
+    // `unknown` is the sync's own bookkeeping for a row older than the column,
+    // not something to show anyone.
+    packageOwned: row.packageOwned === 'unknown' ? null : (row.packageOwned ?? null),
+    approvalChanges: approvalChangesOf(row),
     agentId: row.agentId ?? null,
     enabled: row.enabled,
     sticky: row.sticky,
@@ -70,6 +109,7 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     // which is what NULL already means, so it is dropped here rather than
     // travelling as an `EffortLevel` into an adapter that cannot map it.
     effort: readEffort(row.effort),
+    account: row.account ?? null,
     status: row.status as Task['status'],
     filePath: row.filePath,
     createdAt: row.createdAt,

@@ -6,7 +6,6 @@ status: active
 actor: agent
 gates:
   - lefthook.pre-commit.lint
-  - lefthook.pre-commit.typecheck
 prs: [1969]
 hypothesis:
   metric: 'local-commit'
@@ -18,6 +17,8 @@ hypothesis:
 ratchet-release: []
 field-changes: []
 ---
+
+<!-- Amended 2026-09-24: `lefthook.pre-commit.typecheck` removed from `gates:` because the command no longer exists (ci/ledger/260919-175506-*). The hypothesis is unchanged. -->
 
 ## What changed
 
@@ -120,3 +121,14 @@ that identifies the condition (3 of 8 capped runs red, 0 of 9 uncapped, 12/12 in
 isolation) and the fix direction. Read that before reverting: if the third red
 file turns out to be another wall-clock-deadline test, the cap is revealing a
 fragility rather than causing one, and the cheaper fix is that test.
+
+## Overlap with 260919-175506 (typecheck leaves pre-commit)
+
+Added 2026-09-24. That entry removes `typecheck` from the pre-commit hook on
+2026-09-24, inside this entry's after-window (to 2026-10-05), and scores the
+same hook. Both name `lefthook.pre-commit.lint`, so the verdict code will list
+it as a confounder here, beside 260919-175505, and that is the right answer:
+taking a command that ran about 110 minutes a day out of the hook moves
+`local-commit` far more directly than a vitest worker cap can. As "Why
+`local-commit`" above says, the hooks run no vitest, so this entry's
+`local-commit` reading was always a weak attribution. The hypothesis is left as it was, on purpose.

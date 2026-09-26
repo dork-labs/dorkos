@@ -1,7 +1,7 @@
 ---
 id: 260920-203201
 title: Exchange invitation fragments for server-side admission transactions
-status: proposed
+status: accepted
 created: 2026-09-20
 spec: community-membership-journeys
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Proposed
+Accepted
 
 ## Context
 

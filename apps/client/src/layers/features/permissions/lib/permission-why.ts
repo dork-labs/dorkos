@@ -57,6 +57,8 @@ export function stateWhy(input: StateWhyInput): string {
       return `${state}. This is a locked area, so it can never be Allowed.`;
     case 'unchanged':
       return `${state}. No preset is chosen yet, so it works as it did before.`;
+    case 'always-asks':
+      return `${state}. This always shows you what it would change before it runs, so it is never Allowed.`;
     default:
       break;
   }

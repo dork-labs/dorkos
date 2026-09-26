@@ -61,6 +61,24 @@ import {
   isState,
   ownState,
 } from './permission-values.js';
+import { narrowArrivedPermissions } from './arrival-narrowing.js';
+
+/** Who a setting DorkOS declined on arrival is recorded under. */
+const ARRIVAL_WRITER: PermissionWriter = {
+  attribution: 'outside',
+  actorType: 'system',
+  actorLabel: 'DorkOS',
+};
+
+/** The line a declined-on-arrival event carries. */
+export const ARRIVAL_NOTE =
+  "Permissions in this folder's settings file that were not stricter than everyone's " +
+  'defaults were not applied. Set them in DorkOS.';
+
+/** The line an arrival whose file could not be written back carries. */
+export const ARRIVAL_WRITE_FAILED_NOTE =
+  "DorkOS couldn't apply this folder's settings file, so this agent follows everyone's " +
+  'defaults except where its file is stricter. Set its permissions in DorkOS.';
 
 export { AUTONOMY_ACK_MESSAGE, PermissionError } from './permission-values.js';
 
@@ -76,6 +94,8 @@ export interface PermissionActionInfo {
   area: PermissionAreaId | null;
   /** The MCP tool name the action is listed under, when it has one. */
   toolName?: string;
+  /** Its card shows the change it would make, so it is never Allowed (DOR-2328). */
+  alwaysAsks?: true;
 }
 
 /** One registered agent, as the service needs it. */
@@ -134,9 +154,17 @@ export interface PermissionServiceDeps {
     readPermissions: (projectPath: string) => Promise<AgentPermissions | undefined>;
     /** Write an agent's overrides through the manifest (absent = inherit all). */
     writePermissions: (agentId: string, next: AgentPermissions | undefined) => Promise<void>;
+    /**
+     * The agent's settings exactly as its file holds them, for the arrival
+     * screen, which must see what it is narrowing. Defaults to
+     * {@link readPermissions}.
+     */
+    readStoredPermissions?: (projectPath: string) => Promise<AgentPermissions | undefined>;
   };
   /** Every action an agent can reach, with its area. Read per call. */
   actions: () => PermissionActionInfo[];
+  /** Whether the record of screened arrivals can be read and saved. */
+  arrivalsHealthy?: () => boolean;
   /** The Activity log, absent in a process with none. */
   activity?: Pick<ActivityService, 'emit' | 'list' | 'get'>;
 }
@@ -245,6 +273,12 @@ export class PermissionService {
         throw new PermissionError(
           'FLOOR_NEVER_ALLOWED',
           `"${action.title}" is in an area that is never Allowed. Choose Ask or Blocked.`
+        );
+      }
+      if (state === 'allowed' && action.alwaysAsks) {
+        throw new PermissionError(
+          'ALWAYS_ASKS',
+          `"${action.title}" always shows you what it would change, so it is never Allowed. Choose Ask or Blocked.`
         );
       }
     }
@@ -396,6 +430,59 @@ export class PermissionService {
     titles: (id: string) => string
   ) {
     await recordPermissionChange(this.deps.activity, { ...record, actionTitle: titles });
+  }
+
+  /**
+   * Screen the settings a newly arrived agent brought in its own folder.
+   *
+   * An agent is registered from a folder whose `.dork/agent.json` anybody (or
+   * any agent with file tools) may have written, so the permissions in it were
+   * never a person's choice in DorkOS. Every arrival is screened: the agent
+   * keeps only what is strictly stricter than the defaults it would otherwise
+   * follow ({@link narrowArrivedPermissions}), the rest is dropped from the
+   * file, and one history line says so.
+   *
+   * Until this returns `written: true` the agent is pending in the arrival
+   * record, and every reader narrows its settings the same way, so a write
+   * that cannot land (a read-only file) never leaves the folder's settings in
+   * force. A failed write is recorded too, and left for the next boot to retry.
+   *
+   * @param agentId - The agent that just arrived.
+   * @returns What was dropped, and whether the file now says what the agent keeps.
+   */
+  async screenArrivedAgent(
+    agentId: string
+  ): Promise<{ changes: PermissionChange[]; written: boolean }> {
+    const agent = this.deps.agents.list().find((a) => a.id === agentId);
+    if (!agent) return { changes: [], written: false };
+    const read = this.deps.agents.readStoredPermissions ?? this.deps.agents.readPermissions;
+    const stored = await read(agent.projectPath);
+    const actions = this.actionIndex();
+    const { kept, dropped, droppedUnknown } = narrowArrivedPermissions(stored, {
+      config: this.deps.config.get(),
+      actions,
+      globalStop: this.deps.config.trustStops().global,
+    });
+    const target = this.agentTarget(agent);
+    const changes: PermissionChange[] = dropped.map((d) => ({ ...d, target, after: null }));
+    if (changes.length === 0 && !droppedUnknown) return { changes, written: true };
+
+    try {
+      await this.deps.agents.writePermissions(agentId, kept);
+    } catch (err) {
+      await this.record(
+        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_WRITE_FAILED_NOTE },
+        this.titleFor(actions)
+      );
+      throw err;
+    }
+    if (changes.length > 0) {
+      await this.record(
+        { changes, surface: 'file-edit', writer: ARRIVAL_WRITER, note: ARRIVAL_NOTE },
+        this.titleFor(actions)
+      );
+    }
+    return { changes, written: true };
   }
 
   /**
@@ -679,9 +766,17 @@ export class PermissionService {
     area: PermissionAreaId,
     actionId: string,
     tier: CapabilityTier,
-    agent?: AgentPermissions
+    agent?: AgentPermissions,
+    alwaysAsks?: true
   ): ResolvedPermission {
-    return resolvePermission({ area, actionId, tier, config, ...(agent ? { agent } : {}) });
+    return resolvePermission({
+      area,
+      actionId,
+      tier,
+      config,
+      ...(agent ? { agent } : {}),
+      ...(alwaysAsks ? { alwaysAsks } : {}),
+    });
   }
 
   /**
@@ -712,9 +807,22 @@ export class PermissionService {
           actions: actions
             .filter((a) => a.area === id)
             .map((a): z.infer<typeof PermissionActionEntrySchema> => {
-              const actionResolved = this.resolveDefault(config, id, a.id, a.tier, own);
+              const actionResolved = this.resolveDefault(
+                config,
+                id,
+                a.id,
+                a.tier,
+                own,
+                a.alwaysAsks
+              );
               return withLastChange(
-                { id: a.id, title: a.title, tier: a.tier, resolved: actionResolved },
+                {
+                  id: a.id,
+                  title: a.title,
+                  tier: a.tier,
+                  ...(a.alwaysAsks ? { alwaysAsks: true as const } : {}),
+                  resolved: actionResolved,
+                },
                 lastChangeFor(lastChanges, {
                   area: id,
                   actionId: a.id,
@@ -831,6 +939,9 @@ export class PermissionService {
       areas: this.areaEntries(config, actions, lastChanges),
       exceptions,
       agentCount: agents.length,
+      ...(this.deps.arrivalsHealthy && !this.deps.arrivalsHealthy()
+        ? { newAgentRecordUnreadable: true as const }
+        : {}),
     };
   }
 

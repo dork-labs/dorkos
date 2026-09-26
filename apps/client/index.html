@@ -122,7 +122,7 @@
         // Without the second caller the shell would reload this panel away,
         // clear caches under it, and restart the app over a JavaScript error,
         // ending on a page that says LESS than the one it destroyed. Guarded
-        // because there is no bridge in a browser or the Obsidian embed, and
+        // because there is no bridge in a browser, and
         // wrapped because a bridge that throws must not change what the page
         // does.
         function reportAlive() {

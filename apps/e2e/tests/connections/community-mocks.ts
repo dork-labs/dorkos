@@ -64,7 +64,8 @@ function descriptor(community: CommunitySpec) {
   };
 }
 
-function room(community: CommunitySpec) {
+/** The one room every mocked Community serves, as the local API describes it. */
+export function room(community: CommunitySpec) {
   const capability = capabilities(true);
   return {
     community: community.ref,

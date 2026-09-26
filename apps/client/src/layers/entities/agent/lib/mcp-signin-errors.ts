@@ -78,8 +78,8 @@ export function describeSigninError(args: {
  * `detail`, when the transport carried them.
  *
  * Read defensively off an unknown rejection rather than typed, because a
- * rejection is not always the server's: a dropped request, an abort, or an
- * embedded-mode stub all arrive here as plain `Error`s with neither field, and
+ * rejection is not always the server's: a dropped request or an abort can
+ * arrive here as a plain `Error` with neither field, and
  * every one of them must degrade to "no code" rather than throw on the way past.
  *
  * @param err - Whatever the start mutation rejected with.

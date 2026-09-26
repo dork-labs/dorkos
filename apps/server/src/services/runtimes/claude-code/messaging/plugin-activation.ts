@@ -14,6 +14,11 @@
  * CLI and DorkOS sessions see the same thing. Global-scope projection is deferred
  * (DOR-174), so global installs keep SDK injection for now.
  *
+ * The names it is handed are already the consented ones: a global package that
+ * runs anything on its own (hooks, MCP or language servers, monitors, `bin/`
+ * commands, skills allowed to use tools) is left out until a person approved
+ * exactly that (`marketplace/global-plugin-consent.ts`, DOR-2306).
+ *
  * Plugins whose install directory no longer exists (uninstalled between install
  * and session start) are silently filtered out with a warning; the session still
  * starts without the missing plugin rather than failing outright.

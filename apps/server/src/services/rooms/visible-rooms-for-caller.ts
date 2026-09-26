@@ -35,9 +35,7 @@
  * owner account when one appears. That is the same write every room verb already
  * performs on its first call from a given principal, so this adds no new
  * behaviour; it is written down because a function that looks like a read and
- * writes is worth being told about, and because it is why this cannot be used on
- * a read-only database (`AuthorRegistry.peekOperator` is the non-minting twin,
- * and it answers a narrower question).
+ * writes is worth being told about.
  *
  * @module server/services/rooms/visible-rooms-for-caller
  */

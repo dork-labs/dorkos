@@ -28,7 +28,7 @@ async function mockAdmission(page: Page, owner = false) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/auth-options'))
-      return route.fulfill({ json: { google: true, github: false } });
+      return route.fulfill({ json: { google: true, github: false, oidc: null } });
     if (path.endsWith('/community'))
       return route.fulfill(
         owner

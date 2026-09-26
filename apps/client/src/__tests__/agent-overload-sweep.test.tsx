@@ -71,11 +71,6 @@ import { ProgressCard } from '@/layers/features/onboarding/ui/ProgressCard';
 
 /**
  * Every sidebar source file, tests and fixtures excluded.
- *
- * The three directories an operator experiences as "the sidebar": the panel
- * itself, the embedded variant, and the phone's four tabs. Same set the
- * `one-create-surface` scan uses, for the same reason — a claim about the
- * sidebar that reads one directory is a claim about one directory.
  */
 function sidebarSource(): Map<string, string> {
   const roots: [string, string][] = [

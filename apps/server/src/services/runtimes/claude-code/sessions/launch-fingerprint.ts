@@ -96,6 +96,8 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { EffortLevel } from '@dorkos/shared/types';
 import { AGENT_TOKEN_ENV_VAR } from '../../../core/agent-identity/index.js';
+import { directoryGrantsFingerprint } from '@dorkos/shared/directory-grants';
+import { grantsFromSettings } from '../messaging/directory-grants.js';
 import { toSdkEffort } from '../messaging/thinking-config.js';
 
 /**
@@ -162,6 +164,15 @@ export const PIN_DISPOSITIONS = {
   effort: 'relaunch',
   /** `settings.fastMode`. */
   fastMode: 'relaunch',
+  /**
+   * The turn's folder grants (`settings.permissions`, spec `agent-home-desk`
+   * §4.2), as the sorted `path:access` list, so a reordered set rides and a
+   * changed one relaunches. The CLI reads settings at launch and has no live
+   * setter for them, and a grant a later turn does not carry must not stay
+   * reachable in a warm process (I5). Room sessions carry a stable set, so the
+   * steady state costs nothing.
+   */
+  additionalDirectories: 'relaunch',
   /** Swapped on the live query with `setMcpServers`. */
   mcpServers: 'live',
   /** Refreshed on the live query with `reloadPlugins`. */
@@ -206,9 +217,21 @@ export interface AccountPin {
   readonly configDirEnv: string | undefined;
 }
 
-/** Who the process was launched to act as, if anyone. */
+/**
+ * Who the process was launched to act as, if anyone.
+ *
+ * Only the TOKEN's identity is pinned, not the in-session tool server's
+ * (DOR-2091). Both are resolved per launch through `resolveIdentityAnchor`, from
+ * the same worktree-owner record and against the same turn's agent, so they can
+ * differ only when `session.cwd` and the launch directory differ. On a room turn
+ * each is then either that turn's agent or refused, never a different agent, so
+ * the drift can only narrow what a warm process may do. Outside a room a
+ * per-message `cwd` override has always been able to split the two; that
+ * predates the anchor and is why the tools key on `session.cwd`
+ * (`launch-resolver.ts`, above `loadsAgentToAgentTools`).
+ */
 export interface AgentIdentityPin {
-  /** The agent's project directory. */
+  /** The agent's project directory — the anchored agent, not a worktree. */
   readonly agentPath: string;
   /** The agent's display name, as attribution labels show it. */
   readonly displayName: string | undefined;
@@ -330,8 +353,13 @@ export interface RelaunchDecision {
   readonly action: 'relaunch';
   readonly from: LaunchFingerprint;
   readonly to: LaunchFingerprint;
-  /** Every pin that moved, in {@link PIN_DISPOSITIONS} order. Never empty. */
-  readonly changed: readonly RelaunchPin[];
+  /**
+   * Every pin that moved, in {@link PIN_DISPOSITIONS} order. Never empty.
+   * `plugins` appears only when the wanted set DROPS a plugin the process
+   * loaded ({@link withdrawnPlugins}); a plugin set that only grows is still
+   * applied live.
+   */
+  readonly changed: readonly (RelaunchPin | 'plugins')[];
   /** A log-safe sentence naming the pins. Carries no secret. */
   readonly reason: string;
 }
@@ -444,6 +472,30 @@ function describePlugins(plugins: readonly SdkPluginConfig[] | undefined): strin
     .join(FIELD_SEP);
 }
 
+/**
+ * The plugins a running process loaded that the wanted launch no longer hands
+ * it: a package withdrawn from global activation, or uninstalled (DOR-2306).
+ *
+ * The `plugins` pin is otherwise live, but `reloadPlugins` re-reads the plugin
+ * paths the process was LAUNCHED with, so it can add what a new path brings
+ * and can never take a launched plugin away. A process that loaded a plugin
+ * nobody approves any more has to be relaunched before its next turn, and the
+ * relaunch is never held for what it costs the prompt cache.
+ *
+ * @param live - The plugins the running process was launched with
+ * @param wanted - The plugins this dispatch would launch with
+ * @returns The descriptors of every live plugin missing from `wanted`
+ */
+function withdrawnPlugins(
+  live: readonly SdkPluginConfig[] | undefined,
+  wanted: readonly SdkPluginConfig[] | undefined
+): string[] {
+  const kept = new Set((wanted ?? []).map((plugin) => `${plugin.type}:${plugin.path}`));
+  return (live ?? [])
+    .map((plugin) => `${plugin.type}:${plugin.path}`)
+    .filter((descriptor) => !kept.has(descriptor));
+}
+
 /** The identity pin as a comparable descriptor. */
 function describeAgentIdentity(identity: AgentIdentityPin | undefined): string {
   if (!identity) return '<unattributed>';
@@ -500,6 +552,7 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
           ? ((options.settings as { fastMode?: boolean }).fastMode ?? false)
           : false
       ),
+      additionalDirectories: directoryGrantsFingerprint(grantsFromSettings(options.settings)),
     },
     live: {
       model: options.model,
@@ -659,14 +712,19 @@ export function compareLaunchFingerprints(
     }
     if (live.pins[pin] !== wanted.pins[pin]) changed.add(pin);
   }
-  if (changed.size > 0) {
-    const moved = RELAUNCH_PINS.filter((pin) => changed.has(pin));
+  const withdrawn = withdrawnPlugins(live.live.plugins, wanted.live.plugins);
+  if (changed.size > 0 || withdrawn.length > 0) {
+    const moved: (RelaunchPin | 'plugins')[] = RELAUNCH_PINS.filter((pin) => changed.has(pin));
+    if (withdrawn.length > 0) moved.push('plugins');
     return {
       action: 'relaunch',
       from: live,
       to: wanted,
       changed: moved,
-      reason: `relaunching: ${moved.join(', ')} changed since this process was launched`,
+      reason:
+        changed.size > 0
+          ? `relaunching: ${moved.join(', ')} changed since this process was launched`
+          : 'relaunching: a plugin this process loaded was withdrawn',
     };
   }
   return {

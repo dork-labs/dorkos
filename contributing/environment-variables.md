@@ -62,7 +62,7 @@ The following files are carved out and do not receive the warning:
 - `**/__tests__/**` and `**/*.test.ts` — tests stub process.env for mocking
 - `packages/cli/src/cli.ts` and `src/config-commands.ts` — CLI bootstrap writes env vars for the server subprocess
 
-Everything after the first bullet is granted per package, in that package's own `eslint.config.js`; `apps/server`, `apps/desktop` and `apps/obsidian-plugin` name additional files there with a comment each explaining why.
+Everything after the first bullet is granted per package, in that package's own `eslint.config.js`; `apps/server` and `apps/desktop` name additional files there with a comment each explaining why.
 
 For any legitimate `process.env` access outside these carve-outs, add an inline disable comment explaining why:
 

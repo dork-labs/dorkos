@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./account-usage": {
+      "types": "./src/account-usage.ts",
+      "default": "./dist/account-usage.js"
+    },
     "./capabilities": {
       "types": "./src/capabilities.ts",
       "default": "./dist/capabilities.js"
@@ -41,6 +45,14 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./bounded-read": {
+      "types": "./src/bounded-read.ts",
+      "default": "./dist/bounded-read.js"
+    },
+    "./git-hardening": {
+      "types": "./src/git-hardening.ts",
+      "default": "./dist/git-hardening.js"
+    },
     "./atomic-write": {
       "types": "./src/atomic-write.ts",
       "default": "./dist/atomic-write.js"
@@ -68,6 +80,10 @@
     "./error-report": {
       "types": "./src/error-report.ts",
       "default": "./dist/error-report.js"
+    },
+    "./session-link": {
+      "types": "./src/session-link.ts",
+      "default": "./dist/session-link.js"
     },
     "./telemetry-consent": {
       "types": "./src/telemetry-consent.ts",
@@ -108,6 +124,10 @@
     "./agent-runtime": {
       "types": "./src/agent-runtime.ts",
       "default": "./dist/agent-runtime.js"
+    },
+    "./directory-grants": {
+      "types": "./src/directory-grants.ts",
+      "default": "./dist/directory-grants.js"
     },
     "./connector-provider": {
       "types": "./src/connector-provider.ts",

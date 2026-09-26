@@ -196,6 +196,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'profile.displayNameSource.kind',
   'profile.displayNameSource.agentName',
   'profile.rolePromptDismissedAt',
+  'profile.identityPromptDismissedAt',
   'agents.defaultDirectory',
   'agents.defaultAgent',
   'workspace.enabled',
@@ -329,6 +330,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // A real bound of the same kind, and the tightest a person might want is
   // lower, which is why it carries.
   'rooms.maxCanvasOpsPerTurn': 3,
+  // How many conversations one agent may work in at once. A bound that starts
+  // on — well short of the six writers per folder DOR-500 measured as damaging —
+  // and the tightest a person might want is `1`, which is why it carries.
+  'rooms.maxConcurrentTurnsPerAgent': 3,
   // The two welcome-back bounds (spec `team-room-home`, D5.2). Both bound the
   // noise a return can produce: four hours before an absence counts at all, and
   // at most three posts when it does. Both carry across a wipe, in opposite

@@ -11,6 +11,10 @@ import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { BlockList, isIP } from 'node:net';
 import type { LookupFunction } from 'node:net';
 import {
+  COMMUNITY_RESERVED_SHORT_NAMES,
+  COMMUNITY_SHORT_NAME_PATTERN,
+} from '@dorkos/shared/community-admin-wire';
+import {
   CommunityWireErrorCodeSchema,
   type CommunityWireErrorCode,
 } from '@dorkos/shared/community-wire';
@@ -76,11 +80,23 @@ const communityIdPattern =
 export interface ParsedCommunityLink {
   /** Origin used for DNS validation and every network request. */
   origin: URL;
-  /** Explicit immutable tenant, or null for the singleton compatibility path. */
+  /** Explicit immutable tenant, or null for the singleton path and for a short-name link. */
   communityId: string | null;
+  /**
+   * A lower-cased short name from a `/<name>` link, or null. It is only an address: the caller
+   * resolves it to the community's UUID through the host's lookup and stores only the UUID.
+   */
+  shortName: string | null;
 }
 
-/** Parse either an origin root or the exact canonical `/c/:communityId` browser link. */
+const reservedShortNames = new Set(COMMUNITY_RESERVED_SHORT_NAMES);
+
+/**
+ * Parse an origin root, the exact canonical `/c/:communityId` browser link, or an exact
+ * `/<name>` short-name link. A short name is lower-cased and must match the grammar and not be
+ * reserved; it is read from the raw path, so a percent-encoded spelling (`/%61cme`), a trailing
+ * slash, or a deeper path is refused rather than guessed at.
+ */
 export function parseCommunityLink(input: string): ParsedCommunityLink {
   let url: URL;
   try {
@@ -98,13 +114,29 @@ export function parseCommunityLink(input: string): ParsedCommunityLink {
     url.hash
   )
     throw new PinnedOriginError('INVALID_ORIGIN');
-  const match = /^\/c\/([^/]+)$/.exec(url.pathname);
-  if (url.pathname !== '/' && url.pathname !== '' && !match)
+  const origin = new URL(url.origin);
+  if (url.pathname === '/' || url.pathname === '') {
+    return { origin, communityId: null, shortName: null };
+  }
+  const canonical = /^\/c\/([^/]+)$/.exec(url.pathname);
+  if (canonical) {
+    if (!communityIdPattern.test(canonical[1])) throw new PinnedOriginError('INVALID_ORIGIN');
+    return { origin, communityId: canonical[1], shortName: null };
+  }
+  const named = /^\/([^/]+)$/.exec(url.pathname);
+  const shortName = named?.[1].toLowerCase();
+  if (
+    !shortName ||
+    !COMMUNITY_SHORT_NAME_PATTERN.test(shortName) ||
+    reservedShortNames.has(shortName)
+  )
     throw new PinnedOriginError('INVALID_ORIGIN');
-  const communityId = match?.[1] ?? null;
-  if (communityId !== null && !communityIdPattern.test(communityId))
-    throw new PinnedOriginError('INVALID_ORIGIN');
-  return { origin: new URL(url.origin), communityId };
+  return { origin, communityId: null, shortName };
+}
+
+/** Whether a string is a canonical community UUID, as `/c/<uuid>` links carry it. */
+export function isCommunityId(value: string): boolean {
+  return communityIdPattern.test(value);
 }
 
 /** Qualify one fixed v1 API path with the selected immutable tenant UUID. */
@@ -117,7 +149,7 @@ export function communityApiPath(communityId: string, path: string): string {
 /** Accept HTTPS hosts, or literal localhost for disposable development servers. */
 export function parseCommunityOrigin(input: string): URL {
   const parsed = parseCommunityLink(input);
-  if (parsed.communityId) throw new PinnedOriginError('INVALID_ORIGIN');
+  if (parsed.communityId || parsed.shortName) throw new PinnedOriginError('INVALID_ORIGIN');
   return parsed.origin;
 }
 

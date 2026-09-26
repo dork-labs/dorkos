@@ -85,9 +85,11 @@ function ActionRow({
   const affected = useAffectedAgentCount({ kind: 'action', action: action.id, area: area.id });
   const hint = here
     ? 'Set on its own'
-    : action.resolved.destructiveAsk
-      ? 'Always asks unless you set it here'
-      : `Follows ${area.label}`;
+    : action.alwaysAsks
+      ? 'Always asks, so you see what it would change'
+      : action.resolved.destructiveAsk
+        ? 'Always asks unless you set it here'
+        : `Follows ${area.label}`;
   const preview =
     scope.kind === 'default' && affected !== undefined ? describeAffectedAgents(affected) : null;
   return (
@@ -107,7 +109,7 @@ function ActionRow({
         {here ? reset : null}
         <PermissionStateSwitch
           value={action.resolved.state}
-          floor={area.floor}
+          floor={area.floor || action.alwaysAsks === true}
           disabled={disabled}
           aria-label={action.title}
           onChange={(next) => {

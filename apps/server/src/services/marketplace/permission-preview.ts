@@ -11,10 +11,12 @@
  *
  * @module services/marketplace/permission-preview
  */
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
-import { PackageTypeSchema } from '@dorkos/marketplace';
+import { EFFECT_BEARING_PATHS, PackageTypeSchema } from '@dorkos/marketplace';
+import { describePackageLink, findPackageLinks } from '@dorkos/marketplace/package-links';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
@@ -123,7 +125,7 @@ async function pathExists(path: string): Promise<boolean> {
 async function readExtensionManifests(
   packagePath: string
 ): Promise<Array<{ id: string; manifest: ReturnType<typeof ExtensionManifestSchema.parse> }>> {
-  const extRoot = join(packagePath, '.dork', 'extensions');
+  const extRoot = join(packagePath, ...EFFECT_BEARING_PATHS.extensions.split('/'));
   if (!(await pathExists(extRoot))) return [];
 
   const entries = await readdir(extRoot, { withFileTypes: true });
@@ -137,7 +139,13 @@ async function readExtensionManifests(
     const manifestPath = join(extRoot, entry.name, 'extension.json');
     if (!(await pathExists(manifestPath))) continue;
     try {
-      const raw = await readFile(manifestPath, 'utf-8');
+      // Inside the package, never through a link out of it (DOR-2319).
+      const raw = await readPackageFileWithin(
+        packagePath,
+        join(EFFECT_BEARING_PATHS.extensions, entry.name, 'extension.json'),
+        PACKAGE_TEXT_MAX_BYTES,
+        "The package's extension.json"
+      );
       const parsed = ExtensionManifestSchema.safeParse(JSON.parse(raw));
       if (parsed.success) {
         results.push({ id: entry.name, manifest: parsed.data });
@@ -168,8 +176,8 @@ async function readExtensionManifests(
  * ## The one case this under-reports, said rather than papered over
  *
  * `upsertFromFile` lets a file KEEP a `bypassPermissions` the schedule row
- * already holds, when the row is active and its prompt and cron still match the
- * file. So re-installing a package over a task whose bypass a person raised
+ * already holds, when the row is active and its prompt, cron and timezone still
+ * match the file. So re-installing a package over a task whose bypass a person raised
  * themselves, with byte-identical content, keeps that bypass while this preview
  * says `acceptEdits`.
  *
@@ -184,7 +192,7 @@ async function readExtensionManifests(
  * file, or a task that is not already raised, clamps.
  */
 async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
-  const tasksRoot = join(packagePath, '.dork', 'tasks');
+  const tasksRoot = join(packagePath, ...EFFECT_BEARING_PATHS.tasks.split('/'));
   if (!(await pathExists(tasksRoot))) return [];
 
   const entries = await readdir(tasksRoot, { withFileTypes: true });
@@ -195,7 +203,12 @@ async function readTaskSkills(packagePath: string): Promise<PreviewSchedule[]> {
     const skillPath = join(tasksRoot, entry.name, 'SKILL.md');
     if (!(await pathExists(skillPath))) continue;
     try {
-      const content = await readFile(skillPath, 'utf-8');
+      const content = await readPackageFileWithin(
+        packagePath,
+        join(EFFECT_BEARING_PATHS.tasks, entry.name, 'SKILL.md'),
+        PACKAGE_TEXT_MAX_BYTES,
+        'The SKILL.md'
+      );
       // Read with the UNIFIED schema since DOR-1486: scheduling lives in the
       // `schedule:` block, and a package still shipping the retired top-level
       // fields declares no schedule at all — nothing materializes it, nothing
@@ -312,6 +325,64 @@ async function resolveRequirement(
   return { ...parsed, satisfied };
 }
 
+/** Everything a package declares that runs on its own, and whatever of it could not be read. */
+export type RunnableDeclarations = Pick<
+  PermissionPreview,
+  | 'hooks'
+  | 'unreadableHooks'
+  | 'skillTools'
+  | 'skillCommands'
+  | 'mcpServers'
+  | 'lspServers'
+  | 'monitors'
+  | 'executables'
+  | 'unreadableDeclarations'
+>;
+
+/**
+ * Read everything a package directory declares that runs on its own: hooks
+ * (plugin, plugin.json, and skill or command frontmatter), each skill's
+ * `allowed-tools`, MCP and language servers, monitors and `bin/` commands,
+ * plus every declaration that could not be read.
+ *
+ * The one reader for both sides of a consent: the install preview a person
+ * approves reads a staged package with it, and global activation reads the
+ * installed package with it (`global-plugin-consent.ts`), so the two can only
+ * disagree when the files do.
+ *
+ * For an agent package it also reads the skills and commands its sessions
+ * load from its working directory (`.claude/skills`, `.claude/commands`,
+ * `.agents/skills`, DOR-2314). The rest of what a harness loads from there is
+ * refused at validation (`@dorkos/marketplace` `agent-workspace-config`).
+ *
+ * @param packagePath - Absolute path to a package directory, staged or installed.
+ * @param options.agentWorkspace - The package is an agent: its folder is the
+ *   working directory its sessions run in.
+ * @returns The runnable declarations, verbatim.
+ */
+export async function readRunnableDeclarations(
+  packagePath: string,
+  { agentWorkspace = false }: { agentWorkspace?: boolean } = {}
+): Promise<RunnableDeclarations> {
+  const pluginJson = await readPluginJson(packagePath);
+  const hookDeclarations = await readPackageHooks(packagePath, pluginJson);
+  // A skill's or command's frontmatter hooks run while it is in use, and the
+  // model picks skills by description, so they are listed with the plugin's.
+  const skills = await readPackageSkills(packagePath, pluginJson, agentWorkspace);
+  const programs = await readPackagePrograms(packagePath, pluginJson);
+  return {
+    hooks: [...hookDeclarations.hooks, ...skills.hooks],
+    unreadableHooks: [...hookDeclarations.unreadable, ...skills.unreadable],
+    skillTools: skills.skillTools,
+    skillCommands: skills.skillCommands,
+    mcpServers: programs.mcpServers,
+    lspServers: programs.lspServers,
+    monitors: programs.monitors,
+    executables: programs.executables,
+    unreadableDeclarations: programs.unreadable,
+  };
+}
+
 /**
  * Builds {@link PermissionPreview} reports for marketplace package installs.
  *
@@ -348,8 +419,8 @@ export class PermissionPreviewBuilder {
    *   `hooks/hooks.json` and plugin.json `hooks` (`lib/package-hooks.ts`),
    *   flattened to `{ event, matcher?, command }` with the command verbatim,
    *   plus every hook in a skill's or command's frontmatter, tagged with its
-   *   `source` (`lib/package-skills.ts`), and each one's `allowed-tools` in
-   *   `skillTools`.
+   *   `source` (`lib/package-skills.ts`), each one's `allowed-tools` in
+   *   `skillTools`, and the shell commands its text runs in `skillCommands`.
    * - `unreadableHooks` — every hook declaration the package ships that could
    *   not be parsed. Reported separately so "declares hooks we could not read"
    *   never renders as "declares no hooks".
@@ -401,6 +472,8 @@ export class PermissionPreviewBuilder {
       monitors: [],
       executables: [],
       skillTools: [],
+      skillCommands: [],
+      skippedLinks: [],
       unreadableDeclarations: [],
       schedules: [],
       secrets: [],
@@ -418,21 +491,17 @@ export class PermissionPreviewBuilder {
       slots: extractSlots(extManifest.contributions),
     }));
 
-    const pluginJson = await readPluginJson(packagePath);
-    const hookDeclarations = await readPackageHooks(packagePath, pluginJson);
-    // A skill's or command's frontmatter hooks run while it is in use, and the
-    // model picks skills by description, so they are listed with the plugin's.
-    const skills = await readPackageSkills(packagePath, pluginJson);
-    preview.hooks = [...hookDeclarations.hooks, ...skills.hooks];
-    preview.unreadableHooks = [...hookDeclarations.unreadable, ...skills.unreadable];
-    preview.skillTools = skills.skillTools;
+    Object.assign(
+      preview,
+      await readRunnableDeclarations(packagePath, { agentWorkspace: manifest.type === 'agent' })
+    );
 
-    const programs = await readPackagePrograms(packagePath, pluginJson);
-    preview.mcpServers = programs.mcpServers;
-    preview.lspServers = programs.lspServers;
-    preview.monitors = programs.monitors;
-    preview.executables = programs.executables;
-    preview.unreadableDeclarations = programs.unreadable;
+    // Staging drops every shortcut, so each one is named rather than a skill
+    // folder silently missing once installed (DOR-2319).
+    preview.skippedLinks = (await findPackageLinks(packagePath)).map((link) => ({
+      path: link.path,
+      message: describePackageLink(link),
+    }));
 
     preview.schedules = [
       ...(await readTaskSkills(packagePath)),

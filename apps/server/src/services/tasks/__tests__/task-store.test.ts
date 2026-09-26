@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
+import type { TaskFileSync } from '../../../services/tasks/sync/task-file-sync.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 import { pulseSchedules, pulseRuns, pulseDispatchLog } from '@dorkos/db';
@@ -865,7 +866,7 @@ describe('TaskStore', () => {
     it('pauses only the exact file, never a same-slug task elsewhere', () => {
       const { globalTask, projectTask, globalPath } = createSlugTwins('flow-drain');
 
-      expect(store.markRemovedByFilePath(globalPath)).toBe(1);
+      expect(store.fileSync.markRemovedByFilePath(globalPath)).toBe(1);
 
       expect(store.getTask(globalTask.id)?.status).toBe('paused');
       // Paused, with the person's own switch left as it was (FB-26).
@@ -876,7 +877,7 @@ describe('TaskStore', () => {
     });
 
     it('reports zero when no task owns that path', () => {
-      expect(store.markRemovedByFilePath('/nowhere/SKILL.md')).toBe(0);
+      expect(store.fileSync.markRemovedByFilePath('/nowhere/SKILL.md')).toBe(0);
     });
   });
 
@@ -894,16 +895,16 @@ describe('TaskStore', () => {
         filePath,
         dirPath: filePath.replace(`/${SKILL_FILENAME}`, ''),
         scope: 'global',
-      } as Parameters<TaskStore['upsertFromFile']>[0];
+      } as Parameters<TaskFileSync['upsertFromFile']>[0];
     }
 
     it('un-pauses a task whose file came back', () => {
       const filePath = '/home/u/.dork/tasks/back-again/SKILL.md';
       const task = store.createTask(taskInput({ name: 'back-again', filePath }));
-      store.markRemovedByFilePath(filePath);
+      store.fileSync.markRemovedByFilePath(filePath);
       expect(store.getTask(task.id)?.status).toBe('paused');
 
-      store.upsertFromFile(definition('back-again', filePath));
+      store.fileSync.upsertFromFile(definition('back-again', filePath));
 
       // The scheduler requires BOTH — restoring only `enabled` leaves a task
       // that reads as live and never fires.
@@ -917,7 +918,7 @@ describe('TaskStore', () => {
       const task = store.createTask(taskInput({ name: 'needs-ok', filePath }));
       store.updateTask(task.id, { status: 'pending_approval' });
 
-      store.upsertFromFile(definition('needs-ok', filePath));
+      store.fileSync.upsertFromFile(definition('needs-ok', filePath));
 
       expect(store.getTask(task.id)?.status).toBe('pending_approval');
     });
@@ -925,11 +926,11 @@ describe('TaskStore', () => {
     it('still honours enabled: false from the file', () => {
       const filePath = '/home/u/.dork/tasks/off/SKILL.md';
       const task = store.createTask(taskInput({ name: 'off', filePath }));
-      store.markRemovedByFilePath(filePath);
+      store.fileSync.markRemovedByFilePath(filePath);
 
       const def = definition('off', filePath);
       def.meta.schedule.enabled = false;
-      store.upsertFromFile(def);
+      store.fileSync.upsertFromFile(def);
 
       // A person pausing a task writes `enabled: false` in the file; the
       // status recovery must not override that choice.
@@ -953,7 +954,7 @@ describe('TaskStore', () => {
         filePath,
         dirPath: filePath.replace(`/${SKILL_FILENAME}`, ''),
         scope: 'global',
-      } as Parameters<TaskStore['upsertFromFile']>[0];
+      } as Parameters<TaskFileSync['upsertFromFile']>[0];
     }
 
     it('defaults sticky off, and round-trips it on through createTask', () => {
@@ -977,11 +978,11 @@ describe('TaskStore', () => {
 
     it("caches the file's schedule.sticky through upsertFromFile", () => {
       const filePath = '/home/u/.dork/tasks/from-file/SKILL.md';
-      const created = store.upsertFromFile(definition('from-file', filePath, true));
+      const created = store.fileSync.upsertFromFile(definition('from-file', filePath, true));
       expect(store.getTask(created.id)?.sticky).toBe(true);
 
       // Editing the file back to non-sticky is reflected on the row.
-      store.upsertFromFile(definition('from-file', filePath, false));
+      store.fileSync.upsertFromFile(definition('from-file', filePath, false));
       expect(store.getTask(created.id)?.sticky).toBe(false);
     });
 

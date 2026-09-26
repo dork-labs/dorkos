@@ -11,7 +11,7 @@
  * person's own**. It has no members to check, so the gate is one question with
  * three answers: an id that is not a session id (400), an agent this machine
  * cannot verify (401) and one it can (403). The fourth refusal is the process
- * itself having no canvas (503), which an embedded host really is.
+ * itself having no canvas during startup (503).
  *
  * @vitest-environment node
  */
@@ -253,7 +253,7 @@ describe('the session canvas routes', () => {
     });
 
     it('503s when this process stood no canvas up', async () => {
-      // The Obsidian embed, and a server mid-boot. An honest refusal rather
+      // A server mid-boot gives an honest refusal rather
       // than a fabricated empty table.
       const { peekCanvasService } = await import('../../services/canvas/index.js');
       expect(peekCanvasService()).toBeDefined();

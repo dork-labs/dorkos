@@ -206,6 +206,31 @@ describe('checkCapabilityConformance — seeded drift must fail', () => {
     ).toBe(true);
   });
 
+  it('described change on a tier that never stops for a card (DOR-2328)', () => {
+    // Purpose: a card detail with no card is a declaration nothing reads.
+    const act = { ...actCapability(), describeApprovalChange: async () => 'x' };
+    const registry = conformantRegistry([observeCapability(), act]);
+    const violations = checkCapabilityConformance(registry, conformantFixtures(registry));
+    expect(
+      violations.some(
+        (v) => v.check === 'approval-card-fields' && v.detail.includes('describeApprovalChange')
+      )
+    ).toBe(true);
+  });
+
+  it('described change beside a detail field: one card, one detail (DOR-2328)', () => {
+    const destroy = {
+      ...destructiveCapability(),
+      approvalDetailField: 'target',
+      describeApprovalChange: async () => 'x',
+    };
+    const registry = conformantRegistry([observeCapability(), actCapability(), destroy]);
+    const violations = checkCapabilityConformance(registry, conformantFixtures(registry));
+    expect(
+      violations.some((v) => v.check === 'approval-card-fields' && v.detail.includes('BOTH'))
+    ).toBe(true);
+  });
+
   it('orphan registration: a server tool no capability declares', () => {
     const registry = conformantRegistry();
     const fixtures = conformantFixtures(registry);

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HttpTransport } from '../transport';
-import { DirectTransport } from '../direct-transport';
 
 const BASE_URL = 'http://localhost:4242/api';
 
@@ -141,32 +140,5 @@ describe('HttpTransport — Relay Bindings', () => {
       const transport = new HttpTransport(BASE_URL);
       await expect(transport.deleteBinding('missing-id')).rejects.toThrow('Binding not found');
     });
-  });
-});
-
-describe('DirectTransport — Relay Bindings', () => {
-  it('getBindings() returns an empty array (not supported in embedded mode)', async () => {
-    const transport = new DirectTransport({} as never);
-    const result = await transport.getBindings();
-    expect(result).toEqual([]);
-  });
-
-  it('createBinding() throws (not supported in embedded mode)', async () => {
-    const transport = new DirectTransport({} as never);
-    await expect(
-      transport.createBinding({
-        adapterId: 'x',
-        agentId: 'y',
-        sessionStrategy: 'per-chat',
-        label: '',
-      })
-    ).rejects.toThrow('Relay bindings are not supported in embedded mode');
-  });
-
-  it('deleteBinding() throws (not supported in embedded mode)', async () => {
-    const transport = new DirectTransport({} as never);
-    await expect(transport.deleteBinding('some-id')).rejects.toThrow(
-      'Relay bindings are not supported in embedded mode'
-    );
   });
 });

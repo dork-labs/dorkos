@@ -85,7 +85,7 @@ describe('scanSkillCommands', () => {
   });
 
   it('SK-08: hides a skill that says user-invocable: no — YAML 1.1 words mean what they say', async () => {
-    // gray-matter (js-yaml v4, YAML 1.2 core) hands `no` over as the STRING
+    // The frontmatter reader (js-yaml v4, YAML 1.2 core) hands `no` over as the STRING
     // "no". Treating that as "not a boolean, ignore it" would leave a skill
     // its author hid sitting in the palette.
     await writeSkill(cwd, 'deploy', 'Ship the app to production');

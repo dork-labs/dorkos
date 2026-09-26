@@ -21,7 +21,7 @@
  * @module server/services/search/registry
  */
 import path from 'path';
-import { authors, roomEntries, rooms, and, asc, eq, gt, sql, type Db } from '@dorkos/db';
+import { authors, roomEntries, rooms, and, asc, eq, gt, inArray, sql, type Db } from '@dorkos/db';
 import { resolveClaudeRootSet } from '../runtimes/claude-code/claude-config-dir.js';
 import { resolveCodexRolloutRoots } from '../runtimes/codex/codex-home.js';
 import { resolveOpenCodeStorePath } from '../runtimes/opencode/opencode-data-dir.js';
@@ -44,6 +44,46 @@ import type { FileSource, RowContainer, RowSource, SearchSource, SnapshotSource 
  * slug; it does not unsay what was said, and a person searching their own
  * history is precisely the reader who has forgotten which room it was in.
  */
+/**
+ * The room-log columns the room projection reads. Explicit fields, never `SELECT *` — the index
+ * reads what it projects and nothing else. A LEFT JOIN onto `authors` because dropping an entry
+ * whose author row is missing would lose a real message to a broken join; the projection reads a
+ * null kind as "not a human" instead.
+ */
+function selectRoomEntryRows(db: Db) {
+  return db
+    .select({
+      roomId: roomEntries.roomId,
+      seq: roomEntries.seq,
+      kind: roomEntries.kind,
+      authorKind: authors.kind,
+      body: roomEntries.body,
+      createdAt: roomEntries.createdAt,
+    })
+    .from(roomEntries)
+    .leftJoin(authors, eq(authors.id, roomEntries.authorId));
+}
+
+/**
+ * Read chosen entries of one room in the projection's shape, for re-indexing rows that changed
+ * in place.
+ *
+ * @param db - The database holding the room log.
+ * @param roomId - The room.
+ * @param seqs - The entries' `seq` values.
+ */
+export function readRoomEntriesAt(
+  db: Db,
+  roomId: string,
+  seqs: readonly number[]
+): RoomEntrySourceRow[] {
+  if (!seqs.length) return [];
+  return selectRoomEntryRows(db)
+    .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.seq, [...seqs])))
+    .orderBy(asc(roomEntries.seq))
+    .all();
+}
+
 export const roomsSource: RowSource = {
   id: 'rooms',
   mechanism: 'rows',
@@ -75,21 +115,7 @@ export const roomsSource: RowSource = {
   },
 
   readSince(db: Db, originKey: string, afterOrdinal: number) {
-    // Explicit fields, never `SELECT *` — the index reads what it projects and
-    // nothing else. A LEFT JOIN onto `authors` because dropping an entry whose
-    // author row is missing would lose a real message to a broken join; the
-    // projection reads a null kind as "not a human" instead.
-    const rows: RoomEntrySourceRow[] = db
-      .select({
-        roomId: roomEntries.roomId,
-        seq: roomEntries.seq,
-        kind: roomEntries.kind,
-        authorKind: authors.kind,
-        body: roomEntries.body,
-        createdAt: roomEntries.createdAt,
-      })
-      .from(roomEntries)
-      .leftJoin(authors, eq(authors.id, roomEntries.authorId))
+    const rows: RoomEntrySourceRow[] = selectRoomEntryRows(db)
       .where(and(eq(roomEntries.roomId, originKey), gt(roomEntries.seq, afterOrdinal)))
       // Stated rather than inherited. `room_entries` is keyed `(room_id, seq)`,
       // so this ordering already falls out of the primary key and no test can

@@ -159,10 +159,10 @@ beforeAll(async () => {
       cookie: operatorCookie,
       body: { password: TENANCY_PASSWORD },
     }),
-    201,
+    202,
     'owner export'
   );
-  exportId = (await exported.json()).archiveId;
+  exportId = (await exported.json()).export.id;
   const uploaded = await expectStatus(
     await call(`${tenant(a)}/channels/${channelA}/attachments`, {
       method: 'POST',
@@ -206,7 +206,9 @@ const contentReads = () => [
   '/members',
   '/invites',
   '/agents',
+  '/exports',
   `/exports/${exportId}`,
+  `/exports/${exportId}/archive`,
   `/attachments/${attachmentId}`,
   `/channels/${channelA}/events`,
 ];

@@ -4,6 +4,7 @@
  *
  * @module features/profile/model/profile-home
  */
+import { SESSION_ROUTE } from '@dorkos/shared/session-link';
 
 /** Where the profile is being asked to open. */
 export interface ProfileHomeContext {
@@ -19,9 +20,6 @@ export interface ProfileHomeContext {
    */
   sessionAgentMemberId: string | null;
 }
-
-/** The route the docked profile lives on. */
-const SESSION_ROUTE = '/session';
 
 /**
  * Should this profile open **docked** in the right panel instead of as a sheet?

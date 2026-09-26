@@ -356,7 +356,7 @@ export interface RuntimeReadiness {
  * Per-runtime requirements entry: the raw checks plus the derived Ready/Connect
  * projection. `state`/`connect` are optional on the type only for backward-compat
  * during the T0 client rollout (setup fixtures predate the projection); the
- * server and DirectTransport always populate `state`.
+ * server always populates `state`.
  */
 export interface RuntimeRequirements extends Partial<RuntimeReadiness> {
   /** Raw dependency results — consumed by the client's Advanced disclosure. */
@@ -456,8 +456,7 @@ export function runtimeSupportsLogin(type: string): boolean {
  * - satisfied binary + missing auth → `login` (or, for OpenCode's
  *   provider-agnostic auth, `provider-picker`)
  *
- * Pure and runtime-agnostic so the HTTP route and the in-process
- * DirectTransport project identically.
+ * Pure and runtime-agnostic so the HTTP route projects consistently.
  *
  * @param type - Runtime type identifier (drives the label and the OpenCode
  *   provider-picker special case).
@@ -775,10 +774,32 @@ export interface SessionOpts extends SessionSettings {
   unattended?: boolean;
 }
 
+/**
+ * A folder a turn may reach without standing in it (spec `agent-home-desk` §4).
+ * Validated by `@dorkos/shared/directory-grants`.
+ */
+export interface DirectoryGrant {
+  /** Absolute, `realpath`-resolved. Never the turn's own cwd, never inside it. */
+  path: string;
+  /** `write` lets file tools create and change files there; `read` asks the backend to refuse them. */
+  access: 'read' | 'write';
+}
+
 /** Options for sending a message to a session. */
 export interface MessageOpts extends SessionSettings {
   cwd?: string;
   systemPromptAppend?: string;
+  /**
+   * Folders this turn may reach beyond its cwd, recomputed by the dispatcher for
+   * every turn. A runtime hands exactly this set to its backend on this turn — a
+   * grant absent here is absent from the turn, even if an earlier turn of the
+   * same session carried it. Absent means none.
+   *
+   * File tools only: a shell command reaches whatever its permission mode
+   * allows on every runtime, grant or not. The shared runtime conformance suite
+   * pins that each runtime hands the set per turn (`agent-home-desk` §4.6).
+   */
+  additionalDirectories?: readonly DirectoryGrant[];
   /**
    * Neutral additional-context bag for this turn (git_status, ui_state,
    * queue_note, env, relay_context). Delivered OUT-OF-BAND relative to
@@ -817,6 +838,16 @@ export interface MessageOpts extends SessionSettings {
      * the tree its path was resolved against.
      */
     cwd?: string;
+    /**
+     * The directory of the agent this turn is FOR — its identity anchor, which
+     * since DOR-1597 is not where it stands in a room with files.
+     *
+     * Runtimes resolve the turn's identity against it (DOR-2091): the agent a
+     * worktree belongs to is accepted only when it is this agent, so a turn for
+     * one agent can never be minted another's identity, whatever directory it
+     * ended up in. Server-derived, like every field here.
+     */
+    agentPath?: string;
     /**
      * Commits this agent's working copy has that the room's `main` does not, as
      * the dispatcher measured them for THIS turn.
@@ -1831,15 +1862,24 @@ export interface AgentRuntime {
    * question is not asserting anything. Since the answer only steers a log line,
    * a wrong one now costs a diagnostic rather than an answer.
    *
-   * @param session.cwd - The session's working directory, which is the agent's
-   *   directory for every agent-bound session. The two production runtimes that
-   *   answer this key on it, because MCP configuration is per directory.
+   * @param session.cwd - The session's working directory: the agent's own
+   *   directory, or — in a room with files — its worktree there. The two
+   *   production runtimes that answer this key on it, because MCP configuration
+   *   is per directory.
    * @param session.sessionId - The session about to take the turn, for a runtime
    *   whose answer is per session rather than per directory.
+   * @param session.agentPath - The agent the room turn is for, when a room asks.
+   *   A runtime that resolves identity from it (DOR-2091) must apply the SAME
+   *   cross-check here that its turn applies, or the answer describes a
+   *   different turn.
    * @returns `true` only when the tools are known to be reachable from a turn on
    *   that session right now.
    */
-  carriesRoomTools?(session: { cwd: string; sessionId: string }): Promise<boolean>;
+  carriesRoomTools?(session: {
+    cwd: string;
+    sessionId: string;
+    agentPath?: string;
+  }): Promise<boolean>;
 
   // --- Dependency injection (optional) ---
 

@@ -9,9 +9,10 @@
  *
  * @module services/marketplace/conflict-detector
  */
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import matter from 'gray-matter';
+import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
+import { parseFrontmatter } from '@dorkos/skills/frontmatter';
 import type { MarketplacePackageManifest } from '@dorkos/marketplace';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { AdapterManager } from '../relay/adapter-manager.js';
@@ -23,6 +24,7 @@ import {
   projectScopeRoot,
   type InstallRootDir,
 } from './lib/install-roots.js';
+import { hasPackageIdentity } from './lib/locate-install.js';
 import type { ConflictReport } from './types.js';
 
 /**
@@ -193,7 +195,7 @@ export class ConflictDetector {
   ): Promise<ConflictReport[]> {
     const installRoot = installRootDirForType(ctx.manifest.type);
     const targetPath = join(scopeRoot, installRoot, ctx.manifest.name);
-    if (await pathExists(targetPath)) {
+    if (await hasPackageIdentity(targetPath)) {
       return [
         {
           level: 'warning',
@@ -213,7 +215,7 @@ export class ConflictDetector {
     for (const otherRoot of INSTALL_ROOT_DIRS) {
       if (otherRoot === installRoot) continue;
       const otherTypePath = join(scopeRoot, otherRoot, ctx.manifest.name);
-      if (await pathExists(otherTypePath)) {
+      if (await hasPackageIdentity(otherTypePath)) {
         return [
           {
             level: 'warning',
@@ -231,7 +233,7 @@ export class ConflictDetector {
         join(this.#dorkHome, root, ctx.manifest.name)
       );
       for (const candidate of globalCandidates) {
-        if (await pathExists(candidate)) {
+        if (await hasPackageIdentity(candidate)) {
           return [
             {
               level: 'warning',
@@ -397,8 +399,10 @@ export class ConflictDetector {
     const extensionIds = await listSubdirectories(extensionsDir);
     const records: ExtensionRecord[] = [];
     for (const extensionId of extensionIds) {
-      const manifestPath = join(extensionsDir, extensionId, 'extension.json');
-      const bindings = await readSlotBindings(manifestPath);
+      const bindings = await readSlotBindings(
+        packageRoot,
+        join('.dork', 'extensions', extensionId, 'extension.json')
+      );
       records.push({ packageName, extensionId, bindings });
     }
     return records;
@@ -407,15 +411,14 @@ export class ConflictDetector {
   /**
    * Read every `SKILL.md` under `${packageRoot}/.dork/tasks/*`. Returns
    * one record per skill, with the cron field (if any) extracted from
-   * the gray-matter frontmatter.
+   * the parsed frontmatter.
    */
   async #readPackageSkills(packageRoot: string, packageName: string): Promise<SkillRecord[]> {
     const tasksDir = join(packageRoot, '.dork', 'tasks');
     const skillNames = await listSubdirectories(tasksDir);
     const records: SkillRecord[] = [];
     for (const skillName of skillNames) {
-      const skillPath = join(tasksDir, skillName, 'SKILL.md');
-      const cron = await readSkillCron(skillPath);
+      const cron = await readSkillCron(packageRoot, join('.dork', 'tasks', skillName, 'SKILL.md'));
       if (cron === undefined) continue;
       records.push({ packageName, skillName, cron });
     }
@@ -513,24 +516,23 @@ function dropSelfInstall<T extends { kind: InstallRootDir; packageName: string }
   return records.filter((record) => installKey(record.kind, record.packageName) !== selfKey);
 }
 
-/** Best-effort `stat` to test for path existence without throwing. */
-async function pathExists(target: string): Promise<boolean> {
-  try {
-    await stat(target);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Read an `extension.json` and pull `.slots[]` entries. Coerces non-numeric
- * priority to `0` and silently drops malformed entries.
+ * priority to `0` and silently drops malformed entries. The file is read
+ * inside the package, never through a symbolic link (DOR-2319).
+ *
+ * @param packageRoot - The package root.
+ * @param manifestPath - The `extension.json`, relative to `packageRoot`.
  */
-async function readSlotBindings(manifestPath: string): Promise<SlotBinding[]> {
+async function readSlotBindings(packageRoot: string, manifestPath: string): Promise<SlotBinding[]> {
   let raw: string;
   try {
-    raw = await readFile(manifestPath, 'utf-8');
+    raw = await readPackageFileWithin(
+      packageRoot,
+      manifestPath,
+      PACKAGE_TEXT_MAX_BYTES,
+      "The extension's extension.json"
+    );
   } catch {
     return [];
   }
@@ -559,16 +561,25 @@ async function readSlotBindings(manifestPath: string): Promise<SlotBinding[]> {
  * `null` when the file exists but has no cron, and `undefined` when the
  * file is missing or unreadable (so callers can skip the record entirely).
  */
-async function readSkillCron(skillPath: string): Promise<string | null | undefined> {
+async function readSkillCron(
+  packageRoot: string,
+  skillPath: string
+): Promise<string | null | undefined> {
   let raw: string;
   try {
-    raw = await readFile(skillPath, 'utf-8');
+    // Inside the package, never through a link out of it (DOR-2319).
+    raw = await readPackageFileWithin(
+      packageRoot,
+      skillPath,
+      PACKAGE_TEXT_MAX_BYTES,
+      'The SKILL.md'
+    );
   } catch {
     return undefined;
   }
   let data: Record<string, unknown>;
   try {
-    data = matter(raw).data;
+    data = parseFrontmatter(raw).data;
   } catch {
     return null;
   }

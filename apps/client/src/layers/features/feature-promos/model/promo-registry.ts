@@ -67,7 +67,7 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
   },
   {
     id: 'relay-adapters',
-    placements: ['agent-sidebar', 'dashboard-sidebar'],
+    placements: ['dashboard-sidebar'],
     priority: 80,
     shouldShow: (ctx) =>
       ctx.isRelayEnabled && !ctx.hasAdapter('slack') && !ctx.hasAdapter('telegram'),
@@ -81,7 +81,7 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
   },
   {
     id: 'schedules',
-    placements: ['agent-sidebar', 'dashboard-sidebar'],
+    placements: ['dashboard-sidebar'],
     priority: 70,
     // Earned twice over: agents have been run here, and there is still nothing
     // on the books. Without the second half this offers to set up scheduling to
@@ -102,7 +102,7 @@ export const PROMO_REGISTRY: PromoDefinition[] = [
   },
   {
     id: 'agent-chat',
-    placements: ['agent-sidebar'],
+    placements: [],
     priority: 60,
     shouldShow: (ctx) => ctx.isMeshEnabled && ctx.agentCount >= 2,
     content: {

@@ -25,6 +25,7 @@ import type { PackageFetcher } from '../marketplace/package-fetcher.js';
 import type { MarketplaceCache } from '../marketplace/marketplace-cache.js';
 import type { UninstallFlow } from '../marketplace/flows/uninstall.js';
 import type { UpdateFlow } from '../marketplace/flows/update.js';
+import type { GlobalConsentRecorder } from '../marketplace/global-plugin-consent.js';
 import type { AgentScopeRef } from '../marketplace/installed-scanner.js';
 import type { NotifyPluginsChanged } from '../marketplace/types.js';
 
@@ -57,9 +58,16 @@ export interface MarketplaceMcpDeps {
    * share its check memos and its server-wide cap on concurrent checks. Used by
    * `marketplace_update` and by `marketplace_list_installed` with `checkUpdates`.
    */
-  updateFlow: Pick<UpdateFlow, 'checkInstallations' | 'planInstallations' | 'applyPlan'>;
+  updateFlow: Pick<UpdateFlow, 'planInstallations' | 'applyPlan'>;
   /** Confirmation provider that gates mutation tools. */
   confirmationProvider: ConfirmationProvider;
+  /**
+   * Records a person's approval of what a global package runs when they grant
+   * an install or update card, so it loads into sessions without a second card
+   * (`marketplace/global-plugin-consent.ts`, DOR-2306). Never called for a
+   * `preApproved` call: nobody was shown anything.
+   */
+  consent: GlobalConsentRecorder;
   /**
    * Fired after an approved `marketplace_install` / `marketplace_uninstall`
    * succeeds, and once per reinstall an approved `marketplace_update` lands, so a package an agent installs is set up exactly as one installed

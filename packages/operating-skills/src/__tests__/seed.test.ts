@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import matter from 'gray-matter';
+import { parseFrontmatter, stringifyFrontmatter } from '@dorkos/skills/frontmatter';
 import { seedOperatingSkills } from '../seed.js';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '../pack.js';
 
@@ -29,7 +29,7 @@ describe('seedOperatingSkills', () => {
 
     for (const skill of OPERATING_SKILLS_PACK) {
       const raw = await readFile(skillFile(skill.name), 'utf-8');
-      const { data, content } = matter(raw);
+      const { data, content } = parseFrontmatter(raw);
       expect(data.name).toBe(skill.name);
       expect(content.trim()).toBe(skill.body.trim());
       expect((data.metadata as Record<string, string>).dorkosPack).toBe('operating-dorkos');
@@ -72,7 +72,7 @@ describe('seedOperatingSkills', () => {
     // A user authored their own `operating-dorkos` skill (no pack stamp).
     const dir = path.join(root, '.agents', 'skills', UMBRELLA);
     await mkdir(dir, { recursive: true });
-    const foreign = matter.stringify('My own operating notes.', {
+    const foreign = stringifyFrontmatter('My own operating notes.', {
       name: UMBRELLA,
       description: 'A hand-written skill I control.',
     });
@@ -90,13 +90,12 @@ describe('seedOperatingSkills', () => {
 
     // Rewrite the stamp to an older version, preserving the body hash so the file
     // still reads as unmodified-since-seed. Build a fresh metadata object rather
-    // than mutating gray-matter's parse result (it caches and returns a shared,
-    // mutable object keyed by input string).
-    const { data, content } = matter(await readFile(skillFile(UMBRELLA), 'utf-8'));
+    // than mutating the parse result.
+    const { data, content } = parseFrontmatter(await readFile(skillFile(UMBRELLA), 'utf-8'));
     const meta = { ...(data.metadata as Record<string, string>), dorkosPackVersion: '0' };
     await writeFile(
       skillFile(UMBRELLA),
-      matter.stringify(content, { ...data, metadata: meta }),
+      stringifyFrontmatter(content, { ...data, metadata: meta }),
       'utf-8'
     );
 
@@ -118,11 +117,11 @@ describe('seedOperatingSkills', () => {
     // disk.
     await seedOperatingSkills(root);
     for (const skill of OPERATING_SKILLS_PACK) {
-      const { data, content } = matter(await readFile(skillFile(skill.name), 'utf-8'));
+      const { data, content } = parseFrontmatter(await readFile(skillFile(skill.name), 'utf-8'));
       const meta = { ...(data.metadata as Record<string, string>), dorkosPackVersion: '0' };
       await writeFile(
         skillFile(skill.name),
-        matter.stringify(content, { ...data, metadata: meta }),
+        stringifyFrontmatter(content, { ...data, metadata: meta }),
         'utf-8'
       );
     }
@@ -139,7 +138,7 @@ describe('seedOperatingSkills', () => {
 
     // And the upgraded bodies really are the current pack, not the older text.
     for (const skill of OPERATING_SKILLS_PACK) {
-      const { content } = matter(await readFile(skillFile(skill.name), 'utf-8'));
+      const { content } = parseFrontmatter(await readFile(skillFile(skill.name), 'utf-8'));
       expect(content.trim()).toBe(skill.body.trim());
     }
   });

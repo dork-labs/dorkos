@@ -3,11 +3,7 @@
  *
  * @module entities/session
  */
-export {
-  useSessions,
-  useSessionListWarnings,
-  insertOptimisticSession,
-} from './model/query/use-sessions';
+export { useSessions, insertOptimisticSession } from './model/query/use-sessions';
 export { useAgentSessions } from './model/query/use-agent-sessions';
 export { selectAgentSessions } from './lib/select-agent-sessions';
 export { switchAgentCwd } from './lib/switch-agent-cwd';
@@ -70,10 +66,7 @@ export type { SetDirOptions } from './model/navigation/use-directory-state';
 export { useModels, modelsQueryOptions } from './model/query/use-models';
 export { useSubagents } from './model/query/use-subagents';
 export { useSessionSearch } from './model/navigation/use-session-search';
-export {
-  useSessionScopedCwd,
-  isSessionScopeReady,
-} from './model/navigation/use-session-scoped-cwd';
+export { useSessionScopedCwd } from './model/navigation/use-session-scoped-cwd';
 export type { SessionScopedCwd } from './model/navigation/use-session-scoped-cwd';
 export {
   useSessionChatStore,
@@ -156,11 +149,6 @@ export { useRenameSession } from './model/rename/use-rename-session';
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';
 export type { SessionRowProps } from './ui/SessionRow';
-// The session row in the sidebar's own grammar (`shared/ui/SidebarRow`). Kept
-// out of `SessionRow`'s `variant` union on purpose: this one renders its own
-// list item, so it belongs inside a `SidebarMenu` and nowhere a `<div>` row goes.
-export { SessionRowSidebar } from './ui/SessionRowSidebar';
-export type { SessionRowSidebarProps } from './ui/SessionRowSidebar';
 export { SessionContextGauge } from './ui/SessionContextGauge';
 // The leaf that holds the live verb, so the sidebar model never has to (R1).
 export { SessionVerbLine } from './ui/SessionVerbLine';

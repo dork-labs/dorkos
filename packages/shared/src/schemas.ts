@@ -33,6 +33,8 @@ import type { WidgetDocument } from './ui-widget.js';
 // Type-only: the stop vocabulary's home is the runtime contract, and this module
 // only restates it for the wire (see `PermissionStopSchema`).
 import type { PermissionStop } from './agent-runtime.js';
+// A leaf module (zod only), so this value import forms no load-time cycle.
+import { AccountUsageSchema } from './account-usage.js';
 
 extendZodWithOpenApiOnce();
 
@@ -277,6 +279,74 @@ export const SessionOriginSchema = z
   .openapi('SessionOrigin');
 export type SessionOrigin = z.infer<typeof SessionOriginSchema>;
 
+/**
+ * Coarse lifecycle phase of a session. `streaming` while a turn produces
+ * output, `blocked` while an interaction awaits the operator, `interrupted`
+ * when a turn was aborted, `error` on a terminal failure, `idle` otherwise.
+ *
+ * Defined here rather than in `session-stream.ts` (which re-exports it) because
+ * {@link SessionSchema} carries it, and `session-stream.ts` imports this module:
+ * the other direction would be a load-time cycle.
+ */
+export const SessionLifecycleSchema = z
+  .enum(['idle', 'streaming', 'blocked', 'error', 'interrupted'])
+  .openapi('SessionLifecycle');
+
+/** Inferred type for {@link SessionLifecycleSchema}. */
+export type SessionLifecycle = z.infer<typeof SessionLifecycleSchema>;
+
+/**
+ * What happens next for a session whose account ran out of usage (spec
+ * `claude-account-fleet` D9):
+ *
+ * - `ask`: nothing until the operator picks (the default).
+ * - `auto`: the work carries over to account `target` at `fireAt` (ISO-8601).
+ * - `waiting`: the operator chose to wait for the reset.
+ * - `continued`: the work carried over to session `sessionId` on account `accountId`.
+ */
+export const LimitPlanSchema = z
+  .discriminatedUnion('mode', [
+    z.object({ mode: z.literal('ask') }),
+    z.object({
+      mode: z.literal('auto'),
+      target: z.string(),
+      fireAt: z.string().datetime({ offset: true }),
+    }),
+    z.object({ mode: z.literal('waiting') }),
+    z.object({ mode: z.literal('continued'), sessionId: z.string(), accountId: z.string() }),
+  ])
+  .openapi('LimitPlan');
+
+/** Inferred type for {@link LimitPlanSchema}. */
+export type LimitPlan = z.infer<typeof LimitPlanSchema>;
+
+/**
+ * A hard usage limit the session's account reported during its last turn
+ * (spec `claude-account-fleet` D4). A session in this state is shown as
+ * "limited" (see `sessionDisplayState` in `session-stream.ts`); its lifecycle
+ * is untouched.
+ *
+ * Defined here rather than in `session-stream.ts` (which re-exports it) for the
+ * same reason as {@link SessionLifecycleSchema}.
+ */
+export const SessionLimitSchema = z
+  .object({
+    /** The registry id of the account that ran out, or `null` when it is not registered. */
+    accountId: z.string().nullable(),
+    /** The ledger window key that rejected work, such as `five_hour`. */
+    window: z.string(),
+    /** When that window resets, ISO-8601, or `null` when unknown. */
+    resetsAt: z.string().nullable(),
+    /** When the limit was hit, ISO-8601. */
+    since: z.string(),
+    /** What happens next ({@link LimitPlanSchema}); `ask` when absent. */
+    plan: LimitPlanSchema.default({ mode: 'ask' }),
+  })
+  .openapi('SessionLimit');
+
+/** Inferred type for {@link SessionLimitSchema}. */
+export type SessionLimit = z.infer<typeof SessionLimitSchema>;
+
 export const SessionSchema = z
   .object({
     id: z.string().uuid(),
@@ -366,6 +436,35 @@ export const SessionSchema = z
      * registered accounts in `GET /api/config`.
      */
     account: z.string().optional(),
+    /**
+     * The account registry id (`runtimes.claudeCode.accounts[].id`) matching
+     * {@link Session.account}. ABSENT for an unregistered or unknown account.
+     */
+    accountId: z.string().optional(),
+    /**
+     * The session's live status in this server process: its lifecycle and any
+     * usage limit it hit. ABSENT means the session is not live in this process;
+     * read it as idle.
+     */
+    status: z
+      .object({
+        lifecycle: SessionLifecycleSchema,
+        limit: SessionLimitSchema.nullable(),
+      })
+      .optional(),
+    /**
+     * The work item a flow run serves, read from flow's `flow-state.json`
+     * (shared contract §1.3): the run whose `sessionId` is this session's id.
+     * `id` is the item identifier; `stage` and `runStatus` are the run's own.
+     * ABSENT when no run names this session.
+     */
+    trackerItem: z
+      .object({
+        id: z.string(),
+        stage: z.string().optional(),
+        runStatus: z.string().optional(),
+      })
+      .optional(),
     /**
      * ISO-8601 timestamp of the last message a PERSON sent in this session —
      * the server half of the sidebar's interaction-recency order key
@@ -1221,6 +1320,12 @@ export const SessionListResponseSchema = z
     sessions: z.array(SessionSchema),
     /** Present only when at least one runtime failed or timed out. */
     warnings: z.array(SessionListWarningSchema).optional(),
+    /**
+     * Usage for each Claude account the listed sessions run on, so a list
+     * can draw every account's windows without a second request. Absent
+     * when the server has no account usage to report.
+     */
+    accountUsage: z.array(AccountUsageSchema).optional(),
   })
   .openapi('SessionListResponse');
 
@@ -1799,6 +1904,11 @@ export const SessionStatusEventSchema = z
      * runtime has nothing meaningful to report.
      */
     usage: UsageStatusSchema.optional(),
+    /**
+     * A hard usage limit the session's account reported, or `null` to clear
+     * one. Absent when this status says nothing about limits.
+     */
+    limit: SessionLimitSchema.nullable().optional(),
   })
   .openapi('SessionStatusEvent');
 
@@ -4030,6 +4140,10 @@ export const ServerConfigSchema = z
           description:
             'ISO timestamp when the one-time existing-user role prompt was dismissed, or null',
         }),
+        identityPromptDismissedAt: z.string().nullable().openapi({
+          description:
+            'ISO timestamp when the one-time name-and-handle question was closed (saved or skipped), or null',
+        }),
       })
       .optional()
       .openapi({
@@ -4140,6 +4254,10 @@ export const ServerConfigSchema = z
         maxAutomaticTurnsTotalPerHour: z.number().int().optional().openapi({
           description:
             'The most automatic replies this DorkOS may run in an hour, across every room. The one limit no room may override',
+        }),
+        maxConcurrentTurnsPerAgent: z.number().int().optional().openapi({
+          description:
+            'How many conversations one agent may work in at the same time. A message that finds the agent at this limit waits for one of its turns to finish. Never more than one turn per room, whatever this says. Writable from Settings',
         }),
       })
       .optional()
@@ -4530,6 +4648,52 @@ export const TaskSchema = z
      * value the person chose and their choice still stands.
      */
     timingOverridden: z.boolean().default(false),
+    /**
+     * Whether an installed package owns this schedule's file, as DorkOS last
+     * found it (DOR-2272).
+     *
+     * `record`: the package lists the file, so its next update puts its own copy
+     * back. DorkOS does not change what the schedule does; its switch and its
+     * timing can still be changed, and a person can make their own copy.
+     * `legacy`: the package was installed by an older DorkOS, which kept no list
+     * of its files, so DorkOS cannot yet tell them from the person's and treats
+     * the schedule the same way until the package's next update. `null`: the
+     * schedule is the person's own.
+     */
+    packageOwned: z.enum(['record', 'legacy']).nullable().default(null).openapi({
+      description:
+        "Whether an installed package owns this schedule's file: 'record' (the package lists it), 'legacy' (installed before DorkOS kept file lists), or null (the person's own).",
+    }),
+    /**
+     * What changed since this schedule was last approved, for a schedule
+     * waiting again (DOR-2323): each part of the approved work that differs,
+     * with its approved value and the one that would run now. Empty when the
+     * schedule is not waiting, or nobody approved it before.
+     */
+    approvalChanges: z
+      .array(
+        z.object({
+          field: z.enum([
+            'prompt',
+            'cron',
+            'timezone',
+            'name',
+            'runtime',
+            'model',
+            'effort',
+            'maxRuntime',
+            'sticky',
+            'account',
+          ]),
+          from: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+          to: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+        })
+      )
+      .default([])
+      .openapi({
+        description:
+          'For a schedule waiting for approval again: each part of the approved work that changed since it was approved, with the approved value (from) and the one that would run now (to).',
+      }),
     agentId: z.string().nullable().default(null),
     enabled: z.boolean(),
     /**
@@ -4574,6 +4738,14 @@ export const TaskSchema = z
      * ladder, or `null` to follow the agent and the server default.
      */
     effort: EffortLevelSchema.nullable().default(null),
+    /**
+     * Which Claude account this task's runs start on, as a registry id, or
+     * `null` to follow the agent and then the default (DOR-2384). It decides
+     * which subscription pays for a run. Only claude-code runs use it, and only
+     * when a run starts a conversation: a sticky schedule stays on the account
+     * its conversation began on.
+     */
+    account: z.string().nullable().default(null),
     status: TaskStatusSchema,
     filePath: z.string(),
     createdAt: z.string(),
@@ -4858,6 +5030,14 @@ export const CreateTaskRequestSchema = z
     /** How hard the model thinks during this task's runs. `null` = follow the agent. */
     effort: EffortLevelSchema.nullable().optional(),
     /**
+     * Which Claude account this task's runs start on, as a registry id
+     * (DOR-2384). Omitted or `null` follows the agent, then the default. Not
+     * checked against the registry at write, for the reason
+     * {@link TaskSchema.model} gives: an id nobody registered falls through the
+     * launch ladder at run time. Mirrors `ScheduleBlockSchema.account`.
+     */
+    account: z.string().min(1).nullable().optional(),
+    /**
      * How much this schedule's runs may do without asking.
      *
      * **Deliberately without a default** (spec `full-power-defaults`, D6). It
@@ -4896,15 +5076,10 @@ export type CreateTaskInput = z.input<typeof CreateTaskRequestSchema>;
 
 /**
  * The shape of a sidebar tab id: starts alphanumeric, then alphanumerics, `_`,
- * `.`, `:`, and `-`. Bounds the widened string so an agent-issued command or a
- * Shape manifest can't carry arbitrary garbage into localStorage or
- * `.dork/manifest.json`. The `:` (a legacy `extId:tabId` namespace separator)
- * stays accepted so existing Shape manifests that pinned a contributed tab keep
- * validating, even though no host renders contributed sidebar tabs anymore.
- *
- * Declared here rather than beside its main consumer ({@link UiSidebarTabSchema},
- * further down) because {@link ShapeLiveLayoutCaptureSchema} below is evaluated
- * first and shares it.
+ * `.`, `:`, and `-`. Bounds stored Shape metadata so a manifest cannot carry
+ * arbitrary garbage into `.dork/manifest.json`. The `:` (a legacy
+ * `extId:tabId` namespace separator) stays accepted so existing Shape
+ * manifests that pinned a contributed tab keep validating.
  *
  * Keep in sync with the mirrors in `@dorkos/marketplace` `manifest-schema.ts`
  * (`sidebarTab`) and the server's `openapi-registry.ts` `LocalShapeLayoutSchema`.
@@ -5035,6 +5210,13 @@ export const UpdateTaskRequestSchema = z
     model: z.string().min(1).nullable().optional(),
     /** Change the reasoning effort, or `null` to clear it. */
     effort: EffortLevelSchema.nullable().optional(),
+    /**
+     * Change which Claude account this task's runs start on, or `null` to go
+     * back to following the agent (DOR-2384). Refused on a sticky schedule
+     * whose conversation has already started (`STICKY_ACCOUNT_LOCKED`): one
+     * conversation cannot change accounts. See {@link TaskSchema.account}.
+     */
+    account: z.string().min(1).nullable().optional(),
     permissionMode: PermissionModeSchema.optional(),
     status: SettableTaskStatusSchema.optional(),
     /** Why this schedule should exist. See {@link CreateTaskRequestSchema}. */
@@ -5352,31 +5534,6 @@ export const UiPanelIdSchema = z
 
 export type UiPanelId = z.infer<typeof UiPanelIdSchema>;
 
-/**
- * Identifies a tab in the sidebar navigation.
- *
- * The sidebar tab strip is a legacy surface that now exists ONLY in the embedded
- * (Obsidian) shell, where it carries the four built-ins (`overview`, `sessions`,
- * `schedules`, `connections`). The standalone web cockpit retired the strip for
- * the roster-plus-inspector layout, so a `switch_sidebar_tab` command is a no-op
- * there. The type stays a bounded string (not a closed enum) so existing Shape
- * manifests that pinned a tab — including old namespaced ids — keep validating.
- */
-export const UiSidebarTabSchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .regex(SIDEBAR_TAB_ID_PATTERN, 'Not a valid sidebar tab id')
-  .describe(
-    "Sidebar tab id, e.g. a built-in ('overview', 'sessions', 'schedules', " +
-      "'connections'). The sidebar tab strip exists only in the embedded " +
-      '(Obsidian) app; in the web app there is no strip, so switching a ' +
-      'sidebar tab is a no-op there.'
-  )
-  .openapi('UiSidebarTab');
-
-export type UiSidebarTab = z.infer<typeof UiSidebarTabSchema>;
-
 /** Severity level for agent-emitted toast notifications. */
 export const UiToastLevelSchema = z
   .enum(['success', 'error', 'info', 'warning'])
@@ -5448,7 +5605,7 @@ export type CelebrationKind = z.infer<typeof CelebrationKindSchema>;
  * member of it: a room it is not in answers the same "no such room" a room that
  * does not exist answers, so a room id is never something to probe with.
  *
- * It rides the six CANVAS verbs and nothing else. The other sixteen actions are
+ * It rides the six CANVAS verbs and nothing else. The other fifteen actions are
  * imperatives to one window — a toast, a panel, the command palette — and a
  * room has no window to push them to.
  */
@@ -5463,7 +5620,7 @@ export type UiCommandTarget = z.infer<typeof UiCommandTargetSchema>;
 
 /**
  * A command issued by an agent to mutate the DorkOS client UI.
- * Discriminated on `action` — 22 variants covering panels, sidebar, canvas,
+ * Discriminated on `action` — 21 variants covering panels, sidebar, canvas,
  * PIP, file/terminal/browser opening, notifications, theme, scroll, agent
  * switching, shape switching, command palette, and celebration.
  *
@@ -5480,7 +5637,6 @@ export const UiCommandSchema = z
     // Sidebar commands
     z.object({ action: z.literal('open_sidebar') }),
     z.object({ action: z.literal('close_sidebar') }),
-    z.object({ action: z.literal('switch_sidebar_tab'), tab: UiSidebarTabSchema }),
 
     // Canvas commands
     z.object({
@@ -5675,7 +5831,7 @@ export type UiCommandReach = 'client-only' | 'reaches-the-machine';
  * ask is the writing, rewiring and deleting — which is plenty.
  *
  * The table lives HERE, in the same file as the union, because the failure mode
- * is a twenty-third action added without anyone thinking about the gate. Being a
+ * is a new action added without anyone thinking about the gate. Being a
  * `Record` over `UiCommand['action']` makes that a `tsc` error in the file you are
  * already editing: you cannot add a variant above without classifying it below.
  * That is the same closed-end trick `resolveModeDecision` uses with its `never`
@@ -5693,7 +5849,6 @@ export const UI_COMMAND_REACH: Record<UiCommand['action'], UiCommandReach> = {
   toggle_panel: 'client-only',
   open_sidebar: 'client-only',
   close_sidebar: 'client-only',
-  switch_sidebar_tab: 'client-only',
   open_canvas: 'client-only',
   update_canvas: 'client-only',
   close_canvas: 'client-only',
@@ -5785,7 +5940,6 @@ export const UiStateSchema = z
     }),
     sidebar: z.object({
       open: z.boolean(),
-      activeTab: UiSidebarTabSchema.nullable(),
     }),
     agent: z.object({
       id: z.string().nullable(),

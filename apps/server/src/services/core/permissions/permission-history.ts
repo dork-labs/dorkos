@@ -619,7 +619,8 @@ function resolverKeys(entry: {
  * setting, and naming it would credit the state to the wrong change.
  *
  * `unchanged` decides at the same place `preset` does (no preset chosen yet).
- * `floor` hides which layer said Allowed, so every key is a candidate.
+ * `floor` and `always-asks` clamp a stored Allowed and hide which layer said
+ * it, so every key is a candidate.
  *
  * @param index - The last change per key.
  * @param entry - The area, the action (absent for the area as a whole), the
@@ -633,7 +634,8 @@ export function lastChangeFor(
   const keys = resolverKeys(entry);
   const decider = entry.source === 'unchanged' ? 'preset' : entry.source;
   const stop = keys.findIndex((k) => k.source === decider);
-  const candidates = entry.source === 'floor' || stop === -1 ? keys : keys.slice(0, stop + 1);
+  const hidden = entry.source === 'floor' || entry.source === 'always-asks';
+  const candidates = hidden || stop === -1 ? keys : keys.slice(0, stop + 1);
   return newestOf(
     index,
     candidates.map((k) => k.key)

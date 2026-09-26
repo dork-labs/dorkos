@@ -172,6 +172,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       // fixture built on it would leave that path unexercised (DOR-1022).
       displayNameSource: { kind: 'agent', agentName: 'DorkBot' },
       rolePromptDismissedAt: '2026-08-05T12:00:00.000Z',
+      identityPromptDismissedAt: '2026-08-05T12:00:00.000Z',
     },
     workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },
     tunnel: {

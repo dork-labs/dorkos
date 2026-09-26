@@ -90,9 +90,6 @@ describe('PipMiniBar', () => {
 
   it('docks above the phone cockpit rather than on the bottom edge (DOR-1177)', () => {
     render(<PipMiniBar content={WIDGET} onRestore={vi.fn()} onClose={vi.fn()} />);
-    // The variable the mobile cockpit publishes while its bar is on screen.
-    // Absent — desktop, the Obsidian embed — the fallback is the bottom edge the
-    // bar has always sat on.
     expect(declaredBottom()).toBe('max(var(--mobile-tab-dock, 0px), 0px)');
   });
 

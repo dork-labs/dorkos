@@ -160,6 +160,7 @@ export async function sweepExpiredAttachments(
           attempt.error = error;
           return;
         }
+        // content-change: unposted-upload-sweep
         await client.query('DELETE FROM attachments WHERE id=$1 AND entry_id IS NULL', [
           candidate.id,
         ]);

@@ -22,6 +22,13 @@ const FIXTURE_ACTIONS: PermissionActionInfo[] = [
   { id: 'rooms.post', title: 'Post in a room', tier: 'act', area: null },
   { id: 'operator.config_patch', title: 'Change settings', tier: 'act', area: null },
   { id: 'permissions.change', title: 'Change a permission', tier: 'act', area: 'permissions' },
+  {
+    id: 'operator.update_agent_execution',
+    title: 'Change what an agent runs on',
+    tier: 'destructive',
+    area: 'agents',
+    alwaysAsks: true,
+  },
 ];
 
 /** One agent in the fixture world. */
@@ -46,6 +53,10 @@ export function createPermissionWorld(
     runtimeStops?: Record<string, PermissionStop | null>;
     /** Whether an acknowledgement of Full autonomy is on file. */
     autonomyAcknowledged?: boolean;
+    /** Make every agent write throw, as a read-only settings file would. */
+    writeFails?: boolean;
+    /** Whether the record of screened arrivals can be read. */
+    arrivalsHealthy?: boolean;
   } = {}
 ) {
   const config = {
@@ -140,12 +151,14 @@ export function createPermissionWorld(
         return agent?.permissions ? structuredClone(agent.permissions) : undefined;
       },
       writePermissions: async (agentId, next) => {
+        if (options.writeFails) throw new Error('EACCES: permission denied');
         const agent = agents.get(agentId)!;
         if (next) agent.permissions = structuredClone(next);
         else delete agent.permissions;
       },
     },
     actions: () => FIXTURE_ACTIONS,
+    arrivalsHealthy: () => options.arrivalsHealthy ?? true,
     activity,
   });
 

@@ -88,18 +88,21 @@ describe('export-openapi', () => {
     expect(search?.get?.description).toContain('warnings');
   });
 
-  it('documents the all-packages update door: a read, and an apply that must say so', () => {
+  it('documents the all-packages update door: a read that discloses, and an apply bound to it', () => {
     const spec = generateOpenAPISpec();
     const updates = spec.paths?.['/api/marketplace/updates'];
 
     expect(Object.keys(updates ?? {}).sort()).toEqual(['get', 'post']);
-    // The read takes no body, and the apply names the per-installation result.
+    // The read takes no body, and the apply names the per-installation result,
+    // the card an agent waits on (202) and the refusal when what runs moved (409).
     expect(updates?.get?.requestBody).toBeUndefined();
     expect(Object.keys(updates?.post?.responses ?? {}).sort()).toEqual([
       '200',
+      '202',
       '400',
       '403',
       '404',
+      '409',
       '502',
     ]);
     const body = (
@@ -107,11 +110,23 @@ describe('export-openapi', () => {
         content: { 'application/json': { schema: { required?: string[] } } };
       }
     ).content['application/json'].schema;
-    expect(body.required).toEqual(['apply']);
-    expect(JSON.stringify(updates?.post?.requestBody)).toContain('installPaths');
+    // An apply names what it was shown: every target carries its disclosure (DOR-2306).
+    expect(body.required).toEqual(['apply', 'targets']);
+    const request = JSON.stringify(updates?.post?.requestBody);
+    for (const field of ['installPath', 'latestVersion', 'disclosed', 'confirmationToken']) {
+      expect(request).toContain(field);
+    }
+    expect(request).not.toContain('installPaths');
     expect(JSON.stringify(updates?.post?.responses?.['404'])).toContain('packageNames');
     const result = JSON.stringify(updates?.get?.responses?.['200']);
-    for (const field of ['installPath', 'scope', 'agentPath', 'applied', 'applyError']) {
+    for (const field of [
+      'installPath',
+      'scope',
+      'agentPath',
+      'applied',
+      'applyError',
+      'disclosed',
+    ]) {
       expect(result).toContain(field);
     }
   });

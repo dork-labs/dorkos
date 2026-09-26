@@ -44,9 +44,16 @@ DOR-148). Until those land, `--plugin-dir` against a local checkout is the
 sanctioned dogfood.
 
 There is no `@dorkos/flow` workspace package in dorkos anymore, and no esbuild
-build. If you find a stale reference to `packages/flow/`, `@dorkos/flow`, or
-`.agents/flow/` in dorkos, it is drift from the pre-extraction layout and should
-be removed.
+build. If you find a stale reference to `packages/flow/` or `@dorkos/flow` in
+dorkos, or engine code (skills, scripts, commands) under `.agents/flow/`, it is
+drift from the pre-extraction layout and should be removed.
+
+The one thing that does belong in `.agents/flow/` is this repo's flow settings
+(flow 0.8 and later): `config.json` is the committed team policy and holds no
+secrets, `.gitignore` is written by flow, and `config.local.json` (the tracker
+account, the team and the model bindings) stays in the main checkout, ignored by
+git. Keep them. The plugin's own `config/CONFIG.md` explains the split, and
+`config-files.ts resolve` prints which files flow is reading.
 
 ## Where the pieces live (inside the plugin)
 

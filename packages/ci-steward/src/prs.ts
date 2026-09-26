@@ -67,8 +67,12 @@ export interface PrFacts {
   queueWaitMin: number | null;
   /** Entry to merge, for a PR never removed from the queue except by merging. */
   queueBuildMin: number | null;
-  /** Each removal for failed or timed-out checks: when, and whether a new commit followed before re-queue. */
-  ejections: { at: string; newCommit: boolean }[];
+  /**
+   * Each removal for failed or timed-out checks: when, whether a new commit
+   * followed before re-queue, and `head`, how many pushes came before it. Two
+   * ejections with the same `head` happened to the same unchanged head.
+   */
+  ejections: { at: string; newCommit: boolean; head: number }[];
 }
 
 /**
@@ -94,7 +98,11 @@ function prFacts(p: Obj): PrFacts {
     .map((n) => {
       const r = at(n);
       const next = adds.find((a) => a > r) ?? mergedAt;
-      return { at: r, newCommit: pushes.some((c) => c > r && c <= next) };
+      return {
+        at: r,
+        newCommit: pushes.some((c) => c > r && c <= next),
+        head: pushes.filter((c) => c <= r).length,
+      };
     });
   return {
     number: Number(p.number),

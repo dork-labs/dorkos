@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { SessionConnectionAccessList } from '@/layers/entities/connectors';
-import { getPlatform, requestComposerInsert } from '@/layers/shared/lib';
+import { requestComposerInsert } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 
 const CONNECTION_REQUEST_PROMPT =
@@ -15,7 +15,6 @@ const CONNECTION_REQUEST_PROMPT =
  */
 export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
-  const embedded = getPlatform().isEmbedded;
   const askAgent = (
     <Button
       variant="secondary"
@@ -29,7 +28,7 @@ export function SessionConnectorsGroup({ sessionId }: { sessionId: string }) {
   return (
     <SessionConnectionAccessList
       sessionId={sessionId}
-      onManage={embedded ? undefined : () => void navigate({ to: '/connections' })}
+      onManage={() => void navigate({ to: '/connections' })}
       emptyAction={askAgent}
       footer={<div className="pt-1">{askAgent}</div>}
     />

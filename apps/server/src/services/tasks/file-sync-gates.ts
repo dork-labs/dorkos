@@ -19,12 +19,40 @@
 import type { PermissionMode } from '@dorkos/shared/schemas';
 import type { TaskDefinition } from '@dorkos/skills/types';
 import type { pulseSchedules } from '@dorkos/db';
+import { parseDuration } from '@dorkos/skills/duration';
 import {
+  CHANGED_REASON,
   resolveFileArmStatus,
   resolveFilePermissionMode,
+  scheduleContentKey,
+  scheduleSettingsOf,
   type FileArmVerdict,
+  type IncomingTaskContent,
+  type ScheduleSettings,
 } from './schedule-permission-clamp.js';
-import { effectiveTiming } from './timing/effective-timing.js';
+import {
+  AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
+  AGENT_TIMING_CHANGE_REASON,
+  effectiveContentKey,
+  effectiveTiming,
+} from './timing/effective-timing.js';
+
+/**
+ * The park sentences a sync keeps on a row still parked at the same content
+ * (DOR-2313): each says why a schedule that WAS approved is waiting, and stays
+ * true until the content changes again. Without this the next sync rewrote
+ * every one of them as "DorkOS found this schedule in a file", because a park
+ * withdraws the grant the gate reads to tell "changed" from "found". A
+ * validation complaint is deliberately not here: it is about the file, and the
+ * file's own answer on each sync is the one to show.
+ */
+const KEPT_PARK_REASONS: ReadonlySet<string> = new Set([
+  CHANGED_REASON,
+  AGENT_TIMING_CHANGE_REASON,
+  AGENT_CONTENT_CHANGE_REASON,
+  AGENT_SETTINGS_CHANGE_REASON,
+]);
 import { logger } from '../../lib/logger.js';
 
 /** Where a file-sourced write came from, and what is wrong with the file. */
@@ -34,14 +62,17 @@ export interface FileSyncSource {
   /** The validation complaint to park with, when there is one. */
   problem?: string | null;
   /**
-   * Whether an installed package owns this file — `isPackageOwnedInRoot`, asked
-   * by whoever found it.
+   * Whether an installed package owns this file, and how that is known —
+   * `packageOwnershipInRoot`, asked by whoever found it. `null` means the file
+   * is the person's; absent means nobody asked.
    *
    * Answered by the caller rather than here because it is a question about the
    * filesystem and this is a synchronous gate. Discovery asks it; a route or an
    * install does not need to, because the write it is making is a person's.
+   * The store keeps the answer on the row (`package_owned`), which is how the
+   * next sync sees a file STOP being a package's (DOR-2272).
    */
-  packageOwned?: boolean;
+  packageOwned?: 'record' | 'legacy' | null;
 }
 
 /** What the gates decided about one incoming file. */
@@ -66,6 +97,31 @@ export interface FileSyncVerdict {
    * is no longer a package's (DOR-2302). See {@link FileSyncGates.dropsTimingOverride}.
    */
   dropsTimingOverride: boolean;
+  /**
+   * The ownership to record on the row, or `undefined` to leave it alone (a
+   * write that did not ask). See {@link FileSyncGates.packageOwnedToWrite}.
+   */
+  packageOwned: 'record' | 'legacy' | 'unknown' | null | undefined;
+}
+
+/**
+ * The {@link ScheduleSettings} a SKILL.md declares, in the row's terms: the
+ * same values `TaskStore.upsertFromFile` writes into the row, so the key of
+ * what arrives and the key of the row it lands on can be compared.
+ *
+ * @param def - The parsed file.
+ */
+export function fileSettingsOf(def: TaskDefinition): ScheduleSettings {
+  const schedule = def.meta.schedule;
+  return {
+    name: def.name,
+    runtime: schedule.runtime ?? null,
+    model: schedule.model ?? null,
+    effort: schedule.effort ?? null,
+    maxRuntime: schedule['max-runtime'] ? parseDuration(schedule['max-runtime']) : null,
+    sticky: schedule.sticky,
+    account: schedule.account ?? null,
+  };
 }
 
 /**
@@ -108,15 +164,21 @@ export class FileSyncGates {
     // approve. A changed prompt still is. An override this sync drops runs no
     // longer, so it is not part of what arrives.
     const dropsTimingOverride = this.dropsTimingOverride(existing, options);
+    // The timezone is part of what runs, and of the approval, since DOR-2307;
+    // the settings since DOR-2323 (`ScheduleSettings`).
     const incoming = {
+      ...fileSettingsOf(def),
       prompt: def.body,
       cron: (dropsTimingOverride ? null : existing?.cronOverride) ?? fileCron,
+      timezone:
+        (dropsTimingOverride ? null : existing?.timezoneOverride) ?? def.meta.schedule.timezone,
     };
     const approved = existing && {
+      ...scheduleSettingsOf(existing),
       permissionMode: existing.permissionMode as PermissionMode,
       status: existing.status,
       prompt: existing.prompt,
-      cron: effectiveTiming(existing).cron,
+      ...effectiveTiming(existing),
       approvedContentKey: existing.approvedContentKey,
     };
 
@@ -131,17 +193,80 @@ export class FileSyncGates {
 
     // Only discovery is subject to the arm gate: a file DorkOS found is nobody's
     // decision to run, while a route write is a person's (ADR `260823-200726`).
-    const arm =
+    const verdict =
       options?.source === 'discovery'
         ? resolveFileArmStatus(approved, incoming, options.problem)
         : null;
+    const arm =
+      verdict && options && this.keepsParkReason(verdict, existing, incoming, options)
+        ? { ...verdict, reason: existing!.reason }
+        : verdict;
 
+    const keepsRowEnabled = this.keepsRowEnabled(existing, arm, options);
     return {
       permissionMode,
       arm,
-      keepsRowEnabled: this.keepsRowEnabled(existing, arm, options),
+      keepsRowEnabled,
       dropsTimingOverride,
+      packageOwned: this.packageOwnedToWrite(def, existing, keepsRowEnabled, options),
     };
+  }
+
+  /**
+   * Whether this sync keeps the sentence the row was parked with, instead of
+   * writing the arm gate's (DOR-2313).
+   *
+   * A park withdraws the grant, so the gate reading the same file afterwards has
+   * only "DorkOS found this schedule in a file" to say, which is false for a
+   * schedule a person approved before: an agent's own request that parked it
+   * (`TaskApprovals.settleApprovedWorkChange`), or an earlier sync that saw its
+   * file change. The earlier sentence ({@link KEPT_PARK_REASONS}) stands while
+   * it is still true: the row is parked, the file has nothing wrong with it,
+   * and what would run is exactly the work that was parked. Any new change to
+   * the file is new work, and the gate's own sentence takes over.
+   */
+  private keepsParkReason(
+    verdict: FileArmVerdict,
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    incoming: IncomingTaskContent,
+    options: FileSyncSource
+  ): boolean {
+    return (
+      verdict.status === 'pending_approval' &&
+      !options.problem &&
+      existing?.status === 'pending_approval' &&
+      existing.reasonSource === 'dorkos' &&
+      existing.reason !== null &&
+      KEPT_PARK_REASONS.has(existing.reason) &&
+      effectiveContentKey(existing) === scheduleContentKey(incoming)
+    );
+  }
+
+  /**
+   * The ownership to record on the row after this sync.
+   *
+   * Discovery's answer, with one exception that makes the release of a file
+   * TWO-PHASE (DOR-2272). While the row keeps a switch the file does not say
+   * yet, the row keeps its previous ownership, so every later sync, from the
+   * watcher or the reconciler, in any order, still sees a file being released
+   * and keeps the switch too. Only once the file says what the row does (the
+   * caller wrote it, `carrySwitchIntoReleasedFile`) is `null` recorded. A write
+   * that fails, or two syncs that interleave, therefore cost a retry, never the
+   * person's switch.
+   */
+  private packageOwnedToWrite(
+    def: TaskDefinition,
+    existing: typeof pulseSchedules.$inferSelect | undefined,
+    keepsRowEnabled: boolean,
+    options?: FileSyncSource
+  ): FileSyncVerdict['packageOwned'] {
+    if (options?.packageOwned === undefined) return undefined;
+    const switchNotInFile =
+      options.packageOwned === null &&
+      existing?.packageOwned != null &&
+      keepsRowEnabled &&
+      existing.enabled !== def.meta.schedule.enabled;
+    return switchNotInFile ? existing.packageOwned : options.packageOwned;
   }
 
   /**
@@ -170,8 +295,8 @@ export class FileSyncGates {
     existing: typeof pulseSchedules.$inferSelect | undefined,
     options?: FileSyncSource
   ): boolean {
-    // `packageOwned` is only ever answered by discovery; absent is not `false`.
-    if (options?.packageOwned !== false) return false;
+    // `packageOwned` is only ever answered by discovery; absent is not `null`.
+    if (options?.packageOwned !== null) return false;
     return (
       existing !== undefined &&
       (existing.cronOverride !== null || existing.timezoneOverride !== null)
@@ -208,6 +333,20 @@ export class FileSyncGates {
    * package's schedule `active` and switched off with no card and no
    * notification: the FB-26 symptom back, quieter.
    *
+   * **The moment a file stops being a package's, the row's switch still
+   * stands** (DOR-2272). Until then the row was the only place the person's
+   * switch could live, so it disagrees with the file on purpose; copying the
+   * file's value over it then would switch back ON a schedule the person had
+   * switched off. So on that one sync the row keeps an OFF switch outright, and
+   * an ON switch under the same approval rule as above, and the caller writes
+   * the kept switch into the file, which is now the person's to write
+   * (`carrySwitchIntoReleasedFile`). A lapse is reachable: a later version
+   * that stops shipping the file, a legacy record rebuilt without proof of it,
+   * a record edited by hand, or a row older than the column (`unknown`), which
+   * may have been a package's under the old rule; for that last one only an OFF
+   * switch is kept, since the file may be the person's own choice. The release lasts until the
+   * file agrees ({@link FileSyncGates.packageOwnedToWrite}).
+   *
    * @param existing - The row the file is landing on, when there is one.
    * @param arm - What the arm gate decided, or `null` for an operator write.
    * @param options - Where the write came from, and whether a package owns it.
@@ -218,8 +357,14 @@ export class FileSyncGates {
     arm: FileArmVerdict | null,
     options?: FileSyncSource
   ): boolean {
-    if (options?.packageOwned !== true || existing === undefined) return false;
-    return arm?.status === 'active';
+    if (existing === undefined || options?.packageOwned === undefined) return false;
+    if (options.packageOwned !== null) return arm?.status === 'active';
+    if (existing.packageOwned === null) return false;
+    // A row older than the column (`unknown`) may have been the person's all
+    // along, whose file then says what they last chose; only an OFF row is kept
+    // against it, the safe direction, never an ON one (DOR-2272 review, T4).
+    if (existing.packageOwned === 'unknown') return existing.enabled === false;
+    return existing.enabled === false || arm?.status === 'active';
   }
 
   /** Forget what was said about a path, because its file went away. */
@@ -247,4 +392,46 @@ export class FileSyncGates {
         `DorkOS synced it with the normal prompts instead; you can change that on the task.`
     );
   }
+}
+
+/**
+ * The provenance columns a discovery sync may write to a row that ALREADY
+ * EXISTS — which is usually none of them.
+ *
+ * Discovery re-reads every file every five minutes, and the legacy roots it
+ * reads hold rows that discovery did not create: an agent's proposal, carrying
+ * the case it made for itself and the session it was proposed from, and an
+ * operator's own schedule, carrying nothing. Writing the arm gate's generic
+ * story over either one destroys real provenance — an agent's reason replaced
+ * by "DorkOS found this schedule in a file", an operator's row stamped
+ * `origin: 'file'` in flat contradiction of what that column means (DOR-1485
+ * review, B2).
+ *
+ * So:
+ *
+ * - `origin` is written only when the row was BORN from discovery. A row that
+ *   arrived through a route is never re-labelled by a later sync of its file.
+ * - `reason` is written only when discovery owns the row, or when the row has
+ *   no story of its own to overwrite.
+ * - `reasonSource` rides with any reason we DO write, marking it as DorkOS's
+ *   own words. Without it the drift sentence on an operator's own schedule
+ *   rendered on the approval card as an agent's quoted case — our words in
+ *   somebody else's mouth.
+ *
+ * The arm STATUS is not conditional and is applied by the caller regardless:
+ * that is the security property, and it holds for every row whatever wrote it.
+ *
+ * @param existing - The row being updated.
+ * @param arm - What the arm gate decided.
+ * @returns The provenance columns to include in the update, possibly none.
+ */
+export function fileProvenance(
+  existing: { origin: string | null; reason: string | null },
+  arm: { reason: string | null }
+): { reason?: string | null; origin?: 'file'; reasonSource?: 'dorkos' | null } {
+  const source = arm.reason === null ? null : ('dorkos' as const);
+  if (existing.origin === 'file')
+    return { reason: arm.reason, origin: 'file', reasonSource: source };
+  if (existing.reason === null) return { reason: arm.reason, reasonSource: source };
+  return {};
 }

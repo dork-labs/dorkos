@@ -24,6 +24,7 @@ import { RoomEntryWriter } from '../messages/room-entry-writer.js';
 import { RoomLifecycle } from '../manage/room-lifecycle.js';
 import { RoomMemberDirectory } from '../manage/room-member-directory.js';
 import { RoomMembership } from '../manage/room-membership.js';
+import { RoomDepartures } from '../manage/room-departures.js';
 import { RoomMessageNotifier } from '../messages/room-message-notifier.js';
 import { RoomPosting } from '../messages/room-posting.js';
 import { RoomProjection } from './room-projection.js';
@@ -69,6 +70,8 @@ export interface RoomCollaborators {
   readonly bridgeLifecycle: RoomBridgeLifecycle;
   /** Who is in a room. */
   readonly membership: RoomMembership;
+  /** Agents leaving your team, and coming back (DOR-2095). */
+  readonly departures: RoomDepartures;
   /** The lists the app draws, and where each reader has got to in them. */
   readonly directory: RoomDirectory;
   /** The rooms an agent can find its own way around. */
@@ -158,6 +161,7 @@ export function createRoomCollaborators(
     bridgeCreation,
     bridgeLifecycle,
     membership,
+    departures: new RoomDepartures(core, membership),
     follow,
     directory: new RoomDirectory(core, visibility, projection),
     memberDirectory: new RoomMemberDirectory(core, visibility),

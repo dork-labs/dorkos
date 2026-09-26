@@ -29,7 +29,7 @@ vi.mock('@/layers/entities/marketplace', () => ({
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', async (importActual) => {
   const actual = await importActual<typeof import('@tanstack/react-router')>();
-  return { ...actual, useNavigate: () => mockNavigate };
+  return { ...actual, useRouter: () => ({}), useNavigate: () => mockNavigate };
 });
 
 const mockLoading = vi.fn(() => 'toast-id-abc');

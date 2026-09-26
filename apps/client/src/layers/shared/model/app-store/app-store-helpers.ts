@@ -24,12 +24,6 @@ export function writeBool(key: string, v: boolean): void {
   } catch {}
 }
 
-export interface ContextFile {
-  id: string;
-  path: string;
-  basename: string;
-}
-
 export interface RecentCwd {
   path: string;
   accessedAt: string;

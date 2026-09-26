@@ -13,6 +13,7 @@
  */
 import type { SidebarState } from '../sidebar-state';
 import { agent, emptyState, hoursAgo, person, prefs, room, session, thread } from './factories';
+import { sessionHref } from '@/layers/shared/lib/session-link';
 
 const TANGERINE = '/Users/dev/code/tangerine';
 const CARDAMOM = '/Users/dev/code/cardamom';
@@ -88,7 +89,7 @@ export const busyFixture: SidebarState = emptyState({
       primary: 'juniper',
       secondary: 'Audit the config migration',
       since: hoursAgo(0.75),
-      deepLink: '/session?sessionId=ses-7',
+      deepLink: sessionHref({ session: 'ses-7' }),
       agentPath: JUNIPER,
     },
     {
@@ -97,7 +98,7 @@ export const busyFixture: SidebarState = emptyState({
       primary: 'saffron',
       secondary: 'Which account should I use?',
       since: hoursAgo(0.5),
-      deepLink: '/session?sessionId=ses-3',
+      deepLink: sessionHref({ session: 'ses-3' }),
       agentPath: SAFFRON,
     },
     {
@@ -106,7 +107,7 @@ export const busyFixture: SidebarState = emptyState({
       primary: 'cardamom',
       secondary: 'Run pnpm test',
       since: hoursAgo(0.2),
-      deepLink: '/session?sessionId=ses-5',
+      deepLink: sessionHref({ session: 'ses-5' }),
       agentPath: CARDAMOM,
     },
   ],

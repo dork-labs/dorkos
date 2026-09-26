@@ -17,6 +17,40 @@ import { assertSupportedMarketplaceSourceUrl } from './source-url-policy.js';
 import type { MarketplaceSource } from './types.js';
 
 /**
+ * The names a NEW source may have: a letter or number, then letters, numbers,
+ * dots, dashes and underscores, at most 128 characters.
+ *
+ * A source's name is the key its listing is cached under, and removing a
+ * source removes that cache directory. A name like `x/..` resolved to the
+ * cache root itself, so removing it deleted every source's listing (DOR-2304).
+ * No separator and no leading dot rules out every such spelling at the door.
+ * Like the address, the name is checked only here: a name an older DorkOS
+ * saved still loads (see {@link MarketplaceSourceSchema}).
+ */
+const SOURCE_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/** What a person is told when a new source's name is refused. */
+export const INVALID_SOURCE_NAME_MESSAGE =
+  'A marketplace name can use letters, numbers, dots, dashes and underscores, and must start ' +
+  'with a letter or number (up to 128 characters).';
+
+/**
+ * A new source's name is not one DorkOS can use. Carries the operator-facing
+ * sentence as its `message`, so every surface can show it verbatim.
+ */
+export class InvalidSourceNameError extends Error {
+  /**
+   * Build the refusal.
+   *
+   * @param sourceName - The name that was refused, for the log.
+   */
+  constructor(public readonly sourceName: string) {
+    super(INVALID_SOURCE_NAME_MESSAGE);
+    this.name = 'InvalidSourceNameError';
+  }
+}
+
+/**
  * Zod schema for a single configured marketplace source as it exists ON DISK.
  *
  * The address is checked for shape only, deliberately: this schema also runs on
@@ -150,6 +184,8 @@ export class MarketplaceSourceManager {
    *
    * @param input - The new source spec (`enabled` defaults to `true`)
    * @returns The newly added source with `addedAt` filled in
+   * @throws {InvalidSourceNameError} When `input.name` is not a name DorkOS
+   *   can cache a listing under
    * @throws {UnsupportedSourceUrlError} When `input.source` is not an address
    *   DorkOS can fetch a marketplace from
    * @throws Error when a source with the same name already exists
@@ -159,8 +195,11 @@ export class MarketplaceSourceManager {
     source: string;
     enabled?: boolean;
   }): Promise<MarketplaceSource> {
-    // Ahead of the lock: a refused address should not make every other mutator
-    // wait on a file this call was never going to write.
+    // Ahead of the lock: a refused name or address should not make every other
+    // mutator wait on a file this call was never going to write.
+    if (!SOURCE_NAME_PATTERN.test(input.name)) {
+      throw new InvalidSourceNameError(input.name);
+    }
     assertSupportedMarketplaceSourceUrl(input.source);
 
     // Read-modify-write: the read must sit inside the lock (DOR-697). With

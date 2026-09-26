@@ -9,7 +9,7 @@ import {
   CollapsibleContent,
 } from '@/layers/shared/ui';
 import { cn, humanizePackageName, packageDisplayLabel } from '@/layers/shared/lib';
-import { useRovingGrid } from '@/layers/shared/model';
+import { usePendingRead, useRovingGrid } from '@/layers/shared/model';
 import { useMarketplacePackages } from '@/layers/entities/marketplace';
 import type { AggregatedPackage } from '@dorkos/shared/marketplace-schemas';
 import { DEFAULT_AGENT_FACE } from '../lib/agent-faces';
@@ -36,6 +36,10 @@ function toSelectedTemplate(pkg: AggregatedPackage): SelectedTemplate {
     icon: pkg.icon,
     tags: pkg.tags,
     category: pkg.category,
+    // A gallery agent is a marketplace package: created through the installer
+    // and held to its preview, never cloned blind (DOR-2325).
+    packageName: pkg.name,
+    ...(pkg.marketplace ? { marketplace: pkg.marketplace } : {}),
   };
 }
 
@@ -61,7 +65,10 @@ function slugFromUrl(url: string): string {
  * @param props - Selection handlers for design-your-own, a template, or import.
  */
 export function AgentGallery({ onDesignYourOwn, onSelectTemplate, onImport }: AgentGalleryProps) {
-  const { data: allPackages, error, isLoading } = useMarketplacePackages();
+  const { data: allPackages, error, isLoading: isFetchingPackages } = useMarketplacePackages();
+  // A paused read during the boot-cache restore is not an empty catalog (DOR-1914).
+  // Why `isLoading` cannot answer that on its own is in `usePendingRead`.
+  const isLoading = usePendingRead(isFetchingPackages);
   const [customUrl, setCustomUrl] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
 

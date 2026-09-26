@@ -210,11 +210,6 @@ const UI_ACTION_CATALOG: Record<UiCommand['action'], UiActionEntry> = {
   },
   open_sidebar: { args: '', sentence: 'Show the sidebar.' },
   close_sidebar: { args: '', sentence: 'Hide the sidebar.' },
-  switch_sidebar_tab: {
-    args: '{ tab: "overview"|"sessions"|"schedules"|"connections" }',
-    sentence:
-      'Select a sidebar tab. The sidebar tab strip exists ONLY in the embedded DorkOS app (the Obsidian plugin); the web app shows a standing agent roster with no tab strip, so this does nothing there — the same as open_terminal off the web.',
-  },
   open_canvas: {
     args: '{ content?: <canvas>, preferredWidth?: 20-80 }',
     sentence:
@@ -250,7 +245,7 @@ const UI_ACTION_CATALOG: Record<UiCommand['action'], UiActionEntry> = {
   open_terminal: {
     args: '{ cwd?: string }',
     sentence:
-      "Reveal the workbench Terminal so the person has a shell in this session's worktree. Use it when you are about to suggest commands to run, or want somebody to watch a build or a test as it happens. The terminal always runs in the session's own working directory; cwd is only a hint. Terminals are web-only — where there is none (the Obsidian plugin) this shows a brief notice instead of opening anything.",
+      "Reveal the workbench Terminal so the person has a shell in this session's worktree. Use it when you are about to suggest commands to run, or want somebody to watch a build or a test as it happens. The terminal always runs in the session's own working directory; cwd is only a hint. If a terminal is unavailable, this shows a brief notice instead of opening anything.",
   },
   browser_navigate: {
     args: '{ url: string }',
@@ -406,10 +401,6 @@ Notes:
 export const CONTROL_UI_INPUT = {
   action: z.string().describe('The UI action to perform'),
   panel: z.string().optional().describe('Panel ID for panel commands'),
-  tab: z
-    .string()
-    .optional()
-    .describe('Tab name for switch_sidebar_tab (embedded app only; no-op in the web app)'),
   // Not `z.record()`: a record anywhere in an in-session tool's schema crashes the
   // whole `tools/list` answer on claude-agent-sdk 0.3.257+ with zod 4.5.3+, and the
   // model is handed no DorkOS tools at all. `catchall` accepts the same values.

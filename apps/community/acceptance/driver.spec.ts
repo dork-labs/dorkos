@@ -55,7 +55,7 @@ test.describe('Packaged Community local-agent proof @integration', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           onboarding: { dismissedAt: now },
-          profile: { rolePromptDismissedAt: now },
+          profile: { rolePromptDismissedAt: now, identityPromptDismissedAt: now },
           telemetry: { userHasDecided: true },
           ui: { fullPowerDecidedAt: now, fullPowerChoice: 'supervised' },
         }),

@@ -330,6 +330,8 @@ test.describe('Community membership in the DorkOS app is accessible (task 3.2)',
     });
     await expect(phoneConfirm.getByRole('button', { name: 'Keep connected' })).toBeFocused();
     await axeBothSchemes(page, '[role="alertdialog"]', 'disconnect-phone', testInfo);
-    expect(await shortTargets(phoneConfirm, 'button', TOUCH_FLOOR)).toEqual([]);
+    // Restoring motion after axe restarts the dialog's entrance zoom. Measure
+    // its settled targets, not the transient 95% scale of the opening frame.
+    await expect.poll(() => shortTargets(phoneConfirm, 'button', TOUCH_FLOOR)).toEqual([]);
   });
 });

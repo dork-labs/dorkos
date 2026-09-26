@@ -2,11 +2,6 @@ import { toast } from 'sonner';
 import { errorCodeOf } from './error-code';
 
 /**
- * Boundary-safe CRUD error mapping for the file explorer (spec
- * right-panel-workbench, Chunk B). The Chunk-A transport attaches a stable
- * `code` to every thrown file-service error (both HttpTransport and
- * DirectTransport), so the UI branches on `err.code` rather than the message.
- *
  * @module features/file-explorer/lib/crud-errors
  */
 

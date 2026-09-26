@@ -65,7 +65,8 @@
  *   where the risk lives: `TaskStore.upsertFromFile` refuses a file-declared
  *   `bypassPermissions` and logs the downgrade, so **a file can never INTRODUCE
  *   one**. A file may only KEEP a bypass already in the row, and only while that
- *   row is `active` AND still holds the same prompt and cron the file carries —
+ *   row is `active` AND still holds the same prompt, cron and timezone the file
+ *   carries —
  *   so **a kept bypass is bound to an un-retired task doing the work a person
  *   approved**, never to a path. Rewriting the body under a kept grant clamps;
  *   dropping a file back where a paused task's row still sits clamps. Only a
@@ -163,7 +164,7 @@ export const TASK_WRITE_POLICY = {
   // A timing choice, like `cron`, not a power one — and treated exactly like a
   // cron change where it matters: a reset that changes when an approved
   // schedule runs parks it for a person, the same as an agent's own cron would
-  // (`TaskStore.settleTimingChange`).
+  // (`TaskApprovals.settleApprovedWorkChange`).
   resetTiming: 'agent-writable',
   // WHICH backend does the work, and how hard it thinks (DOR-1615/DOR-1347).
   // Not a power choice: every runtime here runs under the SAME
@@ -181,6 +182,11 @@ export const TASK_WRITE_POLICY = {
   runtime: 'agent-writable',
   model: 'agent-writable',
   effort: 'agent-writable',
+  // Which Claude account a run starts on (DOR-2384), classified with `model`
+  // and `runtime`: it chooses whose subscription pays, never what the run may
+  // do, and an agent's change to it on an approved schedule parks it for a
+  // person like any other settings change (`TaskApprovals.settleApprovedWorkChange`).
+  account: 'agent-writable',
 
   // The runtime's safety prompts, for a run nobody is watching.
   //

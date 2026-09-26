@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES } from '@dorkos/shared/bounded-read';
 import { scanSkillDirectory, scanUiTemplates } from '../scanner.js';
 import { SkillFrontmatterSchema } from '../schema.js';
 import { SKILL_FILENAME } from '../constants.js';
@@ -396,5 +397,28 @@ describe('scanUiTemplates', () => {
     const result = await scanUiTemplates(tmpDir);
     expect(result.templates).toHaveLength(1);
     expect(result.errors).toHaveLength(1);
+  });
+});
+
+describe('SKILL.md files larger than DorkOS reads (DOR-2319)', () => {
+  // Purpose: an oversized SKILL.md is reported as a failure that names the
+  // limit, and never as a missing file.
+  it('reports an oversized SKILL.md as unreadable, not missing', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'skills-scanner-big-'));
+    try {
+      await fs.mkdir(path.join(dir, 'huge'));
+      await fs.writeFile(
+        path.join(dir, 'huge', SKILL_FILENAME),
+        '---\nname: huge\ndescription: x\n---\n' + 'x'.repeat(PACKAGE_TEXT_MAX_BYTES)
+      );
+      const [result] = await scanSkillDirectory(dir, SkillFrontmatterSchema);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toMatch(/larger than 1 MB/);
+        expect(result.fileMissing).toBeUndefined();
+      }
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

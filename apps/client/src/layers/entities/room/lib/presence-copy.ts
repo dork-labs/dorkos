@@ -121,16 +121,35 @@ export function presenceActivitySentence(name: string, clause: string): string {
  * the honest answer, and it is deliberately vaguer rather than absent — a reader
  * who is told nothing cannot tell a busy agent from a broken one.
  *
+ * **One agent can be in the way more than once** (DOR-2104). When it is working
+ * in several conversations at once — up to `rooms.maxConcurrentTurnsPerAgent` —
+ * the room named is only the one it has been in longest, and whichever finishes
+ * first may be the one that lets this message start. Promising the named room
+ * would be a sentence that is wrong as often as it is right, so it says "or
+ * another conversation" and leaves the named room as the way to go and look.
+ *
  * @param names - The agents to name, oldest wait first. Up to
  *   {@link PRESENCE_NAME_LIMIT}; above that use {@link heldCountSentence}.
  * @param behind - What to call the conversation in the way, or `null` when this
  *   reader cannot see it. Read only in the single-agent case: with two or more
  *   there is more than one room in the way, and naming one of them would be
  *   picking a favourite.
+ * @param severalInTheWay - Whether that one agent has more than one turn running
+ *   elsewhere. Read only in the single-agent case, for the same reason.
  */
-export function heldSentence(names: readonly string[], behind: string | null): string {
+export function heldSentence(
+  names: readonly string[],
+  behind: string | null,
+  severalInTheWay = false
+): string {
   if (names.length <= 1) {
-    return `${names[0] ?? 'An agent'} will pick this up when it finishes in ${behind ?? 'another conversation'}`;
+    const name = names[0] ?? 'An agent';
+    if (!severalInTheWay) {
+      return `${name} will pick this up when it finishes in ${behind ?? 'another conversation'}`;
+    }
+    return behind === null
+      ? `${name} will pick this up when it finishes one of its other conversations`
+      : `${name} will pick this up when it finishes in ${behind} or another conversation`;
   }
   return `${readAsList(names)} will pick this up when they’re free`;
 }

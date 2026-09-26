@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import matter from 'gray-matter';
+import { stringifyFrontmatter } from '@dorkos/skills/frontmatter';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema } from '@dorkos/skills/schema';
 import { OPERATING_SKILLS_PACK, OPERATING_SKILLS_VERSION } from '../pack.js';
@@ -72,7 +72,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       // Each skill must serialize to a SKILL.md that the @dorkos/skills parser
       // accepts, with the frontmatter name matching its directory.
       const filePath = `/tmp/.agents/skills/${skill.name}/SKILL.md`;
-      const content = matter.stringify(skill.body, {
+      const content = stringifyFrontmatter(skill.body, {
         name: skill.name,
         description: skill.description,
       });
@@ -210,6 +210,25 @@ describe('the pack teaches the world as it actually is', () => {
     // …and says the true thing in its place.
     expect(bodyOf('using-the-marketplace')).toMatch(/dorkos uninstall[\s\S]{0,160}gated/);
     expect(bodyOf('operating-dorkos')).toMatch(/uninstall\W+ is gated/);
+  });
+
+  it('points an older install at Check files instead of a later update (DOR-2197)', () => {
+    // Purpose: pack v28 told agents that a schedule under a package an older
+    // DorkOS installed "works after the package's next update", and that such
+    // packages "don't offer" Make my own copy yet. Check files now fixes both
+    // at once, so an agent still reading v28 would tell a person to wait for an
+    // update that may never ship.
+    const scheduling = bodyOf('scheduling-tasks');
+    expect(scheduling).not.toMatch(/works after the package's next update/);
+    expect(scheduling).not.toMatch(/don't offer it yet/);
+    expect(scheduling.match(/Check files/g)?.length).toBeGreaterThanOrEqual(2);
+
+    // The marketplace page names both ways in: the app button and the CLI verb,
+    // plus the verify flag that says which packages need it.
+    const marketplace = bodyOf('using-the-marketplace');
+    expect(marketplace).toMatch(/\*\*Check files\*\*/);
+    expect(marketplace).toMatch(/dorkos marketplace check-files <name>/);
+    expect(marketplace).toMatch(/verify: true/);
   });
 
   it('teaches the three permission tiers', () => {

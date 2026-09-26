@@ -27,6 +27,11 @@ import {
   resolveUnattendedDefaultStop,
   resolveUnattendedPermissionMode,
 } from '../resolve-session-defaults.js';
+import {
+  initPermissionGate,
+  readAgentPermissionsFromManifest,
+  resetPermissionGate,
+} from '../../core/capabilities/permission-enforcement.js';
 
 /** The least manifest that validates, for the on-disk half of the ladder. */
 const BASE_MANIFEST: AgentManifest = {
@@ -470,13 +475,31 @@ describe('readAgentExecutionDefaults', () => {
     expect(await readAgentExecutionDefaults(dir)).toEqual({ runtime: 'claude-code' });
   });
 
-  it("reads the agent's own Files & commands stop", async () => {
+  it("reads the agent's own Files & commands stop, through the wired gate reader", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'agent-defaults-'));
     await writeManifest(dir, { ...BASE_MANIFEST, permissions: { filesAndCommands: 'ask' } });
-    expect(await readAgentExecutionDefaults(dir)).toEqual({
-      runtime: 'claude-code',
-      filesAndCommands: 'ask',
-    });
+    initPermissionGate({ readAgentPermissions: readAgentPermissionsFromManifest });
+    try {
+      expect(await readAgentExecutionDefaults(dir)).toEqual({
+        runtime: 'claude-code',
+        filesAndCommands: 'ask',
+      });
+    } finally {
+      resetPermissionGate();
+    }
+  });
+
+  it("reads the stop through the permission gate's reader, never off the file", async () => {
+    // The gate's reader narrows an arriving agent's unscreened folder settings,
+    // so what the file says must not start a session on its own.
+    const dir = await mkdtemp(path.join(tmpdir(), 'agent-defaults-'));
+    await writeManifest(dir, { ...BASE_MANIFEST, permissions: { filesAndCommands: 'autonomy' } });
+    initPermissionGate({ readAgentPermissions: async () => undefined });
+    try {
+      expect(await readAgentExecutionDefaults(dir)).toEqual({ runtime: 'claude-code' });
+    } finally {
+      resetPermissionGate();
+    }
   });
 
   it('says nothing for a directory with no agent, and never throws', async () => {

@@ -922,7 +922,6 @@ async function buildServer() {
       'express',
       'cors',
       'dotenv',
-      'gray-matter',
       'uuid',
       'zod',
       'conf',

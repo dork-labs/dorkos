@@ -41,6 +41,7 @@
  *
  * @module services/runtimes/opencode/approvals
  */
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { ApprovalEvent, PermissionModeId, StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger, logError } from '../../../../lib/logger.js';
@@ -48,6 +49,7 @@ import { logRefusal } from '../../../observability/refusals.js';
 import type { OpenCodePermissionState } from '../events/session-event-mapper.js';
 import type { OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import type { OpenCodeSessionRegistry } from '../sessions/session-registry.js';
+import { resolveGrantVerdict } from './directory-grants.js';
 
 /** How a permission request should be resolved under a DorkOS mode. */
 export type ApprovalDecision = 'ask' | 'auto-approve';
@@ -252,6 +254,12 @@ export interface ApprovalRouting {
   ocSessionId: string;
   cwd: string;
   permissions: OpenCodePermissionState;
+  /**
+   * The folders THIS turn was granted (spec `agent-home-desk` §4.4). Consulted
+   * before the session's mode: a reach inside one is allowed, a file write into
+   * a `read` one is refused in every mode (`directory-grants.ts`).
+   */
+  grants?: readonly DirectoryGrant[];
 }
 
 /**
@@ -338,12 +346,8 @@ export async function* enforceApprovals(
     // adapter. `resolveApprovalDecision`'s own literal-name fallback (any
     // unmatched mode asks) is what keeps an id that gate never checked from
     // silently escalating here, so this stays safe even if the invariant
-    // above is ever violated. It CAN be: the `DirectTransport` seam
-    // (`apps/client/src/layers/shared/lib/direct/session-methods.ts`, used
-    // by embedded hosts) calls `runtime.updateSession` straight through with
-    // no equivalent server-side check — it trusts the CLIENT's own picker to
-    // offer only declared ids, a materially weaker guarantee than the HTTP
-    // route's.
+    // above is ever violated by a direct runtime caller that bypasses the
+    // HTTP route's check.
 
     // The session that raised THIS ask. A subagent's prompt belongs to its
     // child session, and `POST /session/{id}/permissions/{permissionID}` is
@@ -363,8 +367,32 @@ export async function* enforceApprovals(
     // adapters cannot say that — Claude's CLI stops calling back at all under a
     // mode that never asks, and Codex's sandbox is fixed when the turn starts —
     // which is exactly why they DO report it. Do not "align" this one with them.
+    // This turn's folder grants answer first, and in every mode: a refusal
+    // inside a `read` grant has to beat `bypassPermissions`, which would
+    // otherwise approve the write below. A refusal that cannot be delivered
+    // falls to the person's card, never to the mode's auto-approve.
+    const grantVerdict = resolveGrantVerdict(approval, turn.grants ?? []);
+    if (grantVerdict !== undefined) {
+      try {
+        await respondPermission(
+          deps.provider,
+          { ocSessionId: askedIn, cwd },
+          approval.toolCallId,
+          grantVerdict === 'allow' ? 'once' : 'reject'
+        );
+        return; // Answered by the grant — never surfaces as a card.
+      } catch (err) {
+        logger.warn(
+          '[OpenCodeRuntime] folder-grant answer failed — forwarding to the user',
+          logError(err)
+        );
+      }
+    }
     const mode = deps.registry.get(sessionId)?.permissionMode;
-    if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
+    if (
+      grantVerdict !== 'deny' &&
+      resolveApprovalDecision(mode, approval.toolName) === 'auto-approve'
+    ) {
       try {
         await respondPermission(
           deps.provider,

@@ -461,9 +461,12 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 107 -> 108 for `marketplace_update` (DOR-2195). `<marketplace_tools>` names
     // it, prefixed, like every marketplace tool.
-    // 108 -> 109 for `change_permission` (spec `agent-permissions` D9): the
+    //
+    // 108 -> 109 for `update_agent_execution` (DOR-2328): no prompt block names
+    // it, so it stays deferred and unprefixed.
+    // 109 -> 110 for `change_permission` (spec `agent-permissions` D9): the
     // settings tool's description names it by its ENDING, never bare.
-    expect(advertised.size).toBe(109);
+    expect(advertised.size).toBe(110);
     expect(advertised.has('react_to_room_entry')).toBe(true);
     expect(
       [

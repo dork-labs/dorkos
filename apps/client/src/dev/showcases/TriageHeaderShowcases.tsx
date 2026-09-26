@@ -6,6 +6,7 @@ import { PinnedTriageHeaderView } from '@/layers/widgets/home';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { sessionHref } from '@/layers/shared/lib';
 
 /**
  * Frozen at module load, not read per render: `Date.now()` during render is
@@ -62,6 +63,8 @@ const SCHEDULES: Task[] = [
     defaultCron: '0 9 * * 1-5',
     defaultTimezone: 'America/Chicago',
     timingOverridden: false,
+    packageOwned: null,
+    approvalChanges: [],
     agentId: '/Users/dev/agents/dorkbot',
     enabled: false,
     sticky: false,
@@ -70,6 +73,7 @@ const SCHEDULES: Task[] = [
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: '/Users/dev/agents/dorkbot/.dork/tasks/morning-standup/SKILL.md',
     createdAt: minutesFromLoad(-26),
@@ -92,7 +96,7 @@ const ERRORS: AttentionSignal[] = [
     primary: 'tangerines',
     secondary: 'Stopped with an error',
     since: minutesFromLoad(-8),
-    deepLink: '/session?session=ses-9',
+    deepLink: sessionHref({ session: 'ses-9' }),
     agentPath: '/Users/dev/agents/tangerines',
   },
 ];

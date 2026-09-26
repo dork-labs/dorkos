@@ -47,6 +47,18 @@ export interface InlineTextFieldProps {
    * which Radix defends against exactly that.
    */
   inputRef?: RefObject<HTMLInputElement | null>;
+  /**
+   * Let the line wrap onto as many lines as it needs, instead of cutting it
+   * off with an ellipsis.
+   *
+   * For prose that is only worth showing whole — a topic of up to 500
+   * characters, read in a panel a few hundred pixels wide. Truncated, all but
+   * the first few words were unreachable without opening the editor, and a long
+   * unbroken token (a pasted link) is broken wherever it has to be rather than
+   * pushing the panel sideways (DOR-2117). A name stays on one line: it is a
+   * label, and the full text is one press away.
+   */
+  wrap?: boolean;
   /** Applied to the line AND the editor, so the text does not resize mid-edit. */
   className?: string;
 }
@@ -81,6 +93,7 @@ export function InlineTextField({
   commitEmpty = false,
   startEditing = false,
   inputRef,
+  wrap = false,
   className,
 }: InlineTextFieldProps) {
   const [isEditing, setIsEditing] = useState(startEditing);
@@ -196,6 +209,22 @@ export function InlineTextField({
   }
 
   const isEmpty = value === '';
+  const text = (
+    <span
+      className={cn(
+        wrap ? 'min-w-0 wrap-anywhere' : 'truncate',
+        isEmpty && 'text-muted-foreground font-normal'
+      )}
+    >
+      {isEmpty ? placeholder : value}
+    </span>
+  );
+  const pencil = (
+    <Pencil
+      aria-hidden
+      className="size-3.5 shrink-0 transition-opacity md:opacity-0 md:group-hover/inline:opacity-100 md:group-focus-visible/inline:opacity-100"
+    />
+  );
   return (
     <button
       ref={lineRef}
@@ -209,13 +238,21 @@ export function InlineTextField({
       {/* The action, so the control is not named by data alone — and the value
           stays in the name, which is what voice control needs to reach it. */}
       <span className="sr-only">{label}:</span>
-      <span className={cn('truncate', isEmpty && 'text-muted-foreground font-normal')}>
-        {isEmpty ? placeholder : value}
-      </span>
-      <Pencil
-        aria-hidden
-        className="size-3.5 shrink-0 transition-opacity md:opacity-0 md:group-hover/inline:opacity-100 md:group-focus-visible/inline:opacity-100"
-      />
+      {wrap ? (
+        // One more box, so a wrapped paragraph is still centred in the 44px
+        // touch target as a whole while the pencil stays beside its FIRST
+        // line — `h-lh` is one line of this text tall — instead of drifting to
+        // the middle of the paragraph.
+        <span className="flex min-w-0 items-start gap-1.5">
+          {text}
+          <span className="flex h-lh shrink-0 items-center">{pencil}</span>
+        </span>
+      ) : (
+        <>
+          {text}
+          {pencil}
+        </>
+      )}
     </button>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * Single source of truth for the server's default working directory (vault root).
  *
- * Prefers the `DORKOS_DEFAULT_CWD` env var (set by CLI, Obsidian plugin, etc.),
+ * Prefers the `DORKOS_DEFAULT_CWD` env var (set by the CLI and desktop),
  * falling back to the repository root resolved from this file's location.
  *
  * @module lib/resolve-root
@@ -29,7 +29,7 @@ const WORKSPACE_MARKER = 'pnpm-workspace.yaml';
  * to `<repo>/apps` rather than `<repo>` (DOR-1859). A fixed hop count has to
  * know how deep this module sits, and it sits at two different depths: `tsx`
  * runs it from `apps/server/src/lib/`, `tsc` emits it to `apps/server/dist/lib/`,
- * and the CLI and Obsidian bundlers inline it into a single file somewhere else
+ * and the CLI bundler inlines it into a single file somewhere else
  * again. Searching for the marker is right at every one of those depths.
  *
  * @param from - Directory to start the search at.
@@ -51,8 +51,8 @@ export function findWorkspaceRoot(from: string): string | null {
  *
  * Outside a checkout there is no repo root to find, so the last resort is the
  * process's own working directory. Every packaged surface sets
- * `DORKOS_DEFAULT_CWD` before the server boots (the CLI unconditionally, the
- * desktop shell and the Obsidian plugin from their own config), so that last
+ * `DORKOS_DEFAULT_CWD` before the server boots (the CLI unconditionally and
+ * the desktop shell from its own config), so that last
  * resort is a safety net rather than a normal path.
  */
 export const DEFAULT_CWD: string =

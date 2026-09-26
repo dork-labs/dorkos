@@ -46,11 +46,14 @@ const activeSchedule: Task = {
   defaultCron: '0 9 * * *',
   defaultTimezone: null,
   timingOverridden: false,
+  packageOwned: null,
+  approvalChanges: [],
   maxRuntime: null,
   permissionMode: 'acceptEdits',
   runtime: null,
   model: null,
   effort: null,
+  account: null,
   filePath: '/home/user/.dork/tasks/sched-1.json',
   nextRun: new Date(Date.now() + 3600000).toISOString(),
   createdAt: new Date().toISOString(),
@@ -660,6 +663,8 @@ describe('ScheduleRow', () => {
       defaultCron: '0 * * * *',
       defaultTimezone: 'UTC',
       timingOverridden: true,
+      packageOwned: null,
+      approvalChanges: [],
       filePath: '/home/user/.dork/plugins/flow/skills/flow-drain/SKILL.md',
     };
 

@@ -1596,6 +1596,19 @@ describe('runHarnessHooks', () => {
     );
   });
 
+  it('--list names a global package\u2019s decision as one about every session (DOR-2306)', async () => {
+    // Purpose: the same lists hold a person's yes for a globally installed
+    // package's programs; reading it as "another project" would be false.
+    writeStored({
+      approvedHooks: [`globex@global-${'a'.repeat(64)}`],
+      refusedHooks: [],
+    });
+
+    await runHarnessHooks({ list: true });
+
+    expect(printed()).toContain('globex — for the globally installed package, in every session');
+  });
+
   it('--list says the file could not be read rather than "nothing stored yet"', async () => {
     fs.writeFileSync(path.join(homeDir, 'config.json'), '{ "version": 1, "harness": {');
 

@@ -235,34 +235,43 @@ describe('buying credit', () => {
     expect(described).not.toMatch(/\d/);
   });
 
-  it('serves `/v1/topup` and `/v1/refunds` as their own routes', () => {
+  it('serves `/v1/topup` as its own route', () => {
     expect(V1_ROUTES.topup).toBe('/v1/topup');
-    expect(V1_ROUTES.refunds).toBe('/v1/refunds');
   });
 });
 
-describe('refunds', () => {
-  it('asks by opaque charge identifier and carries no amount in the request', () => {
+describe('the withdrawn refunds route', () => {
+  // DorkOS Cloud does not offer refunds through this API, and no release of the
+  // service ever answered `POST /v1/refunds`. Within `/v1` nothing published is
+  // deleted, so the shapes stay importable and parse exactly as they did; what
+  // changes is that every one of them says it is withdrawn, in the JSON Schema
+  // a non-TypeScript consumer reads as well as in the types.
+  const withdrawn = [
+    ['RefundRequestSchema', contract.RefundRequestSchema],
+    ['RefundResponseSchema', contract.RefundResponseSchema],
+  ] as const;
+
+  it.each(withdrawn)('marks %s deprecated in its JSON Schema', (_name, schema) => {
+    const json = z.toJSONSchema(schema) as { deprecated?: boolean; description?: string };
+    expect(json.deprecated).toBe(true);
+    expect(json.description).toMatch(/^Withdrawn:/);
+  });
+
+  it('keeps both shapes parsing as they did, so an older import still works', () => {
     expect(contract.RefundRequestSchema.safeParse({ chargeId: 'chg_0001' }).success).toBe(true);
-    expect(contract.RefundRequestSchema.safeParse({}).success).toBe(false);
     expect(Object.keys(contract.RefundRequestSchema.shape)).toEqual(['chargeId']);
-  });
-
-  it('answers with what came back and when', () => {
-    const accepted = {
-      refundId: 'rfnd_0001',
-      chargeId: 'chg_0001',
-      refundedMicro: '20000000',
-      refundedAt: '2026-09-15T12:00:00.000Z',
-    };
-    expect(contract.RefundResponseSchema.safeParse(accepted).success).toBe(true);
-    // The amount is an exact integer of micro-units, like every other one here.
     expect(
-      contract.RefundResponseSchema.safeParse({ ...accepted, refundedMicro: 20000000 }).success
-    ).toBe(false);
+      contract.RefundResponseSchema.safeParse({
+        refundId: 'rfnd_0001',
+        chargeId: 'chg_0001',
+        refundedMicro: '20000000',
+        refundedAt: '2026-09-15T12:00:00.000Z',
+      }).success
+    ).toBe(true);
+    expect(V1_ROUTES.refunds).toBe('/v1/refunds');
   });
 
-  it('refuses a late refund with its own code rather than a stand-in', () => {
+  it('keeps the route`s refusal code, because removing a member narrows a published type', () => {
     expect(contract.ProblemCodeSchema.safeParse('refund_window_closed').success).toBe(true);
   });
 });

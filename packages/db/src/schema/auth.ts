@@ -65,11 +65,6 @@ export const account = sqliteTable(
   'account',
   {
     id: text('id').primaryKey(),
-    // Better Auth 1.7 scopes account identity by issuer: every account row
-    // carries the identity provider that minted it, and lookups key on
-    // (issuer, accountId) rather than (providerId, accountId). Local
-    // email+password accounts use the synthetic issuer `local:credential`.
-    issuer: text('issuer').notNull(),
     accountId: text('account_id').notNull(),
     providerId: text('provider_id').notNull(),
     userId: text('user_id')
@@ -95,8 +90,11 @@ export const account = sqliteTable(
   },
   (table) => [
     index('account_userId_idx').on(table.userId),
-    // Mirrors Better Auth 1.7's own account index: one row per identity.
-    uniqueIndex('account_issuer_accountId_unique').on(table.issuer, table.accountId),
+    // One row per provider-side identity. Better Auth links accounts with a
+    // check-then-insert, so two racing sign-ins could otherwise write the same
+    // identity twice, after which every lookup of it throws and that person is
+    // locked out. The database is the only place this can be enforced (DOR-2036).
+    uniqueIndex('account_provider_accountId_unique').on(table.providerId, table.accountId),
   ]
 );
 

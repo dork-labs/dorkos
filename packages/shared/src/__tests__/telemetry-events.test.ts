@@ -326,7 +326,13 @@ describe('telemetry event registry', () => {
       // Introspect every property allowlist in the module: any z.object export
       // whose name ends in Properties (usage, feedback, exception, AI carve-outs).
       const registry = await import('../telemetry-events.js');
-      const bannedKeys = ['profile', 'roles', 'displayName', 'rolePromptDismissedAt'];
+      const bannedKeys = [
+        'profile',
+        'roles',
+        'displayName',
+        'rolePromptDismissedAt',
+        'identityPromptDismissedAt',
+      ];
       const propertySchemas = Object.entries(registry).filter(
         ([name, value]) =>
           /Properties(Schema)?$/.test(name) &&

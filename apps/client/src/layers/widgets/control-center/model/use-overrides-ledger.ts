@@ -26,7 +26,7 @@
  */
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { PermissionLastChange } from '@dorkos/shared/permissions';
-import { createModalHandoff, permissionModeLabel } from '@/layers/shared/lib';
+import { createModalHandoff, permissionModeLabel, toSession } from '@/layers/shared/lib';
 import { stopLabel } from '@/layers/shared/ui';
 import {
   useAppStore,
@@ -59,7 +59,7 @@ export interface OverrideRow {
   name: string;
   /** The power it runs at, in the runtime's own word for the mode. */
   detail: string;
-  /** Open the owning surface, or `null` where there is nowhere to navigate (the embed). */
+
   onOpen: (() => void) | null;
   /**
    * Put it back on the default in one tap. Only an agent's own permission has
@@ -88,6 +88,12 @@ export interface OverridesLedger {
    * an empty state it might have to take back a beat later.
    */
   isResolving: boolean;
+  /**
+   * True when agents' own permissions could not be read. The other rows still
+   * show, but "everything follows" would be a claim nobody checked, so the
+   * surface says it could not read them instead.
+   */
+  permissionsUnreadable: boolean;
 }
 
 /**
@@ -105,7 +111,8 @@ export function useOverridesLedger(): OverridesLedger {
   const tasksEnabled = useTasksEnabled();
   const { data: tasks } = useTasks(tasksEnabled);
   const { data: bindings } = useBindings();
-  const { data: permissions } = usePermissions();
+  const permissionsQuery = usePermissions();
+  const permissions = permissionsQuery.data;
   const resetPermission = useResetAgentPermission();
   const navigate = useSafeNavigate();
   const { open: openSettings } = useSettingsDeepLink();
@@ -119,7 +126,13 @@ export function useOverridesLedger(): OverridesLedger {
   // the same shape (DOR-1743), so the ordering lives in one place now.
   const openAndClose = createModalHandoff(() => setControlCenterOpen(false));
 
-  const isResolving = capabilityMap === undefined || config === undefined;
+  // Waits for the permissions too: an empty ledger shown before they arrive
+  // would say nothing is overridden, then take it back a beat later.
+  const permissionsUnreadable = permissionsQuery.isError;
+  const isResolving =
+    capabilityMap === undefined ||
+    config === undefined ||
+    (permissions === undefined && !permissionsUnreadable);
 
   const defaults = config?.executionDefaults;
   const defaultRuntime = defaults?.runtime ?? UNATTENDED_RUNTIME;
@@ -167,9 +180,7 @@ export function useOverridesLedger(): OverridesLedger {
         name: session.title || 'Untitled session',
         detail: descriptor?.label ?? permissionModeLabel(session.permissionMode),
         onOpen: navigate
-          ? openAndClose(() =>
-              navigate({ to: '/session', search: { session: session.id, dir: session.cwd } })
-            )
+          ? openAndClose(() => navigate(toSession({ session: session.id, dir: session.cwd })))
           : null,
       });
     }
@@ -209,8 +220,8 @@ export function useOverridesLedger(): OverridesLedger {
 
   // 5. Agents with a permission of their own (spec `agent-permissions`, task
   //    3.8): an area, a single action, or a Files & commands stop that differs
-  //    from what everyone has. Read from the permissions overview, and absent
-  //    where it cannot be read (the Obsidian embed has no permissions).
+  //    from what everyone has. Read from the permissions overview; when that
+  //    read fails the surface says so rather than claiming none differ.
   if (permissions) {
     const areaLabel = new Map(permissions.areas.map((area) => [area.id, area.label]));
     const actionTitle = new Map(
@@ -268,5 +279,10 @@ export function useOverridesLedger(): OverridesLedger {
     }
   }
 
-  return { rows, isEmpty: !isResolving && rows.length === 0, isResolving };
+  return {
+    rows,
+    isEmpty: !isResolving && !permissionsUnreadable && rows.length === 0,
+    isResolving,
+    permissionsUnreadable,
+  };
 }

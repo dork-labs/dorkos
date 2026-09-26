@@ -3,11 +3,18 @@
 # The ONE SessionStart hook. Replaces check-adr-curation.sh, check-adr-review.sh,
 # check-adr-drift.sh, check-docs-staleness.sh, and check-research-curation.sh.
 #
-# Contract: <500ms total, at most 5 lines, prints NOTHING when everything is
-# healthy. One line per finding, prefixed "[Harness]". Always exits 0.
+# Contract: <500ms total, at most one line per section, prints NOTHING when
+# everything is healthy. One line per finding, prefixed "[Harness]". Always exits 0.
+# Every section only reads, except (f), which may fast-forward the main
+# checkout's `main` and says so in its one line.
 
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 [ -n "$REPO_ROOT" ] || exit 0
+
+# The SessionStart payload (its "source" says startup, resume, clear or
+# compact). Only section (f) reads it; nothing else here touches stdin.
+HOOK_INPUT=""
+[ -t 0 ] || HOOK_INPUT=$(cat)
 
 # --- (a) ADR manifest drift (orphans, collisions, missing files) ------------
 # adr-drift-check.mjs is silent when clean; condense any report to one line.
@@ -91,5 +98,14 @@ if [ -f "$CI_LINE_SCRIPT" ] && [ -n "$CI_DATA_BRANCH" ] &&
   )
   [ -n "$CI_LINE" ] && printf '%s\n' "$CI_LINE" | head -1
 fi
+
+# --- (f) Local main kept level with origin/main --------------------------------
+# Fast-forwards the main checkout's `main` when it is clean and behind, warns
+# when it is dirty or diverged, and starts a background fetch for next time.
+# Acts only on a true startup, never on resume, /clear or compaction. Paused
+# per clone with `git config dorkos.mainSync warn|off`; the reasoning is in the
+# script's header.
+SYNC_SCRIPT="$REPO_ROOT/.claude/hooks/sync-main-checkout.sh"
+[ -x "$SYNC_SCRIPT" ] && printf '%s' "$HOOK_INPUT" | "$SYNC_SCRIPT" 2>/dev/null
 
 exit 0

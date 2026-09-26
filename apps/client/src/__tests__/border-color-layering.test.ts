@@ -103,9 +103,7 @@ function selectorAt(offset: number): string {
     .replace(/\s+/g, ' ');
 }
 
-/** The universal default's selector, and the Obsidian twin's. */
-const UNIVERSAL = '*:where(:not(.copilot-view-content *):not(.milkdown *))';
-const OBSIDIAN = '.copilot-view-content *:where(:not(.milkdown *))';
+const UNIVERSAL = '*:where(:not(.milkdown *))';
 
 describe('the default border colour (index.css)', () => {
   it('declares a neutral border colour on every element', () => {
@@ -121,33 +119,11 @@ describe('the default border colour (index.css)', () => {
     expect(enclosingAtRules(offset)).toContain(`@layer ${BORDER_LAYER}`);
   });
 
-  it('layers the Obsidian twin too, and keeps it after the universal default', () => {
-    // The Obsidian twin is the same kind of default — the neutral border,
-    // sourced from the vault's theme instead of the app's. Unlayered it
-    // outranked every utility inside the plugin's container for exactly the
-    // reason the `*` rule did, so it moves with it (DOR-1024). It stays LATER
-    // in the file so it wins the carve-out inside a shared layer.
-    const universal = withoutComments.indexOf(UNIVERSAL);
-    const obsidian = withoutComments.indexOf(OBSIDIAN);
-    expect(obsidian).toBeGreaterThan(universal);
-    expect(enclosingAtRules(obsidian)).toContain(`@layer ${BORDER_LAYER}`);
-  });
-
   it('stands every border-colour default down inside the canvas editor', () => {
-    // This layer sits ABOVE `blintz`, which inverts — for this one property —
-    // the thing the `blintz` slot exists for. The editor owns the borders on
-    // its blockquotes, tables, and controls; without this exclusion the app's
-    // neutral fallback would flatten those deliberate choices.
-    //
-    // Asserted over every rule IN the layer rather than over the two selectors
-    // this file happens to know about: each needs its own copy of the exclusion
-    // (the Obsidian selector out-specifies the universal one, so an exclusion
-    // written only on the latter would not reach the elements the former
-    // matches), and a third default added later would need one too.
     const defaults = borderColorDeclarations()
       .filter((offset) => enclosingAtRules(offset).includes(`@layer ${BORDER_LAYER}`))
       .map(selectorAt);
-    expect(defaults).toEqual([UNIVERSAL, OBSIDIAN]);
+    expect(defaults).toEqual([UNIVERSAL]);
     for (const selector of defaults) {
       expect(selector).toContain(':not(.milkdown *)');
     }

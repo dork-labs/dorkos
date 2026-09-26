@@ -2,11 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Hash, Menu, Plus, Settings2, X } from 'lucide-react';
 import { Admission, type AdmissionResume } from './components/Admission.js';
 import { ChannelView } from './components/Channel.js';
+import { HoldBanner } from './components/HoldBanner.js';
 import { Manage } from './components/Manage.js';
 import { SignedOutPanel } from './components/SignOut.js';
 import { returnToChooserWithNotice } from './components/CommunityChooser.js';
 import { rememberCommunity } from './remembered-community.js';
-import { describeError, hostRequest, RequestError, request } from './api.js';
+import { ErasureBanner } from './components/Erasure.js';
+import {
+  communityBasePath,
+  describeError,
+  hostRequest,
+  isCommunityPath,
+  RequestError,
+  request,
+  shortNameBasePath,
+} from './api.js';
 import { readInviteFragment } from './invite-fragment.js';
 import { readPendingAdmission } from './admission.js';
 import {
@@ -30,6 +40,8 @@ export function CommunityApp() {
   const inviteTokenRef = useRef(inviteToken);
   const [community, setCommunity] = useState<Community | null>(null);
   const [communityLifecycle, setCommunityLifecycle] = useState<CommunityLifecycle | null>(null);
+  const [communityShortName, setCommunityShortName] = useState<string | null>(null);
+  const [deletionNoticeAt, setDeletionNoticeAt] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
   const [unadmitted, setUnadmitted] = useState(false);
   const [hostSignIn, setHostSignIn] = useState(false);
@@ -40,7 +52,9 @@ export function CommunityApp() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // A DorkOS app opens `/c/<id>/settings[/<section>]` for invite, leave and
   // settings: those need this person's own sign-in, never the installation's.
-  const [settingsRoute] = useState(() => parseCommunitySettingsPath(window.location.pathname));
+  const [settingsRoute] = useState(() =>
+    parseCommunitySettingsPath(window.location.pathname, shortNameBasePath())
+  );
   const [settings, setSettings] = useState(settingsRoute !== null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -52,7 +66,7 @@ export function CommunityApp() {
     [channels, selectedId]
   );
   const returnToChooser = useCallback(() => {
-    if (/^\/c\/[^/]+(?:\/|$)/u.test(window.location.pathname)) returnToChooserWithNotice();
+    if (isCommunityPath(window.location.pathname)) returnToChooserWithNotice();
   }, []);
   const eraseInviteToken = useCallback(() => {
     inviteTokenRef.current = null;
@@ -94,11 +108,13 @@ export function CommunityApp() {
         returnToChooser();
         return null;
       }
-      if (membership.lifecycle !== 'active' && membership.lifecycle !== 'archived') {
+      if (!['active', 'archived', 'held'].includes(membership.lifecycle)) {
         returnToChooser();
         return null;
       }
       setCommunityLifecycle(membership.lifecycle);
+      setDeletionNoticeAt(membership.deletionNoticeAt);
+      setCommunityShortName(membership.shortName);
       return membership.lifecycle;
     },
     [returnToChooser]
@@ -127,7 +143,7 @@ export function CommunityApp() {
         setCommunity(metadata);
         rememberCommunity(metadata.id);
         if (window.location.pathname === '/' || window.location.pathname === '/join')
-          window.history.replaceState(null, '', `/c/${metadata.id}`);
+          window.history.replaceState(null, '', communityBasePath(metadata.id));
         const joinPath = /\/join$/u.test(window.location.pathname);
         if (inviteTokenRef.current && joinPath) {
           setMe(null);
@@ -149,7 +165,10 @@ export function CommunityApp() {
             setAdmissionResume({ kind: 'lost' });
           } catch (cause) {
             if (!active) return;
-            if (cause instanceof RequestError && cause.status === 409) {
+            if (
+              cause instanceof RequestError &&
+              (cause.status === 409 || cause.code === 'COMMUNITY_HELD')
+            ) {
               setAdmissionResume({ kind: 'refused', cause });
               setMe(null);
               return;
@@ -165,7 +184,7 @@ export function CommunityApp() {
           setMe(current);
           setUnadmitted(false);
           // Joined: the join URL has nothing left to resume, so a later reload enters directly.
-          if (joinPath) window.history.replaceState(null, '', `/c/${metadata.id}`);
+          if (joinPath) window.history.replaceState(null, '', communityBasePath(metadata.id));
           await refreshChannels();
         } catch (cause) {
           if (!active) return;
@@ -185,7 +204,7 @@ export function CommunityApp() {
         if (cause instanceof RequestError && cause.status === 404) {
           // An unknown tenant ID gets the same answer as one this account cannot enter; only
           // a host with no community at all offers first-host setup.
-          if (/^\/c\//u.test(window.location.pathname)) returnToChooser();
+          if (isCommunityPath(window.location.pathname)) returnToChooser();
           setCommunity(null);
           setMe(null);
         } else if (cause instanceof RequestError && cause.code === 'COMMUNITY_SELECTION_REQUIRED') {
@@ -292,8 +311,8 @@ export function CommunityApp() {
       />
     );
   const leaveSettingsPath = () => {
-    if (community && parseCommunitySettingsPath(window.location.pathname))
-      window.history.replaceState(null, '', `/c/${community.id}`);
+    if (community && parseCommunitySettingsPath(window.location.pathname, shortNameBasePath()))
+      window.history.replaceState(null, '', communityBasePath(community.id));
   };
   const choose = (id: string) => {
     setSelectedId(id);
@@ -301,7 +320,8 @@ export function CommunityApp() {
     setMobileOpen(false);
     leaveSettingsPath();
   };
-  const readOnly = communityLifecycle === 'archived';
+  const held = communityLifecycle === 'held';
+  const readOnly = communityLifecycle === 'archived' || held;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileOpen ? 'open' : ''}`} aria-label="Community channels">
@@ -390,13 +410,15 @@ export function CommunityApp() {
             </button>
             <div>
               <p className="eyebrow mb-0">
-                {readOnly
-                  ? 'Archived community'
-                  : settings
-                    ? 'Settings'
-                    : selected?.visibility === 'private'
-                      ? 'Private channel'
-                      : 'Channel'}
+                {held
+                  ? 'On hold'
+                  : readOnly
+                    ? 'Archived community'
+                    : settings
+                      ? 'Settings'
+                      : selected?.visibility === 'private'
+                        ? 'Private channel'
+                        : 'Channel'}
               </p>
               <h2>{settings ? 'Your space' : selected ? `# ${selected.name}` : 'Welcome'}</h2>
             </div>
@@ -429,10 +451,13 @@ export function CommunityApp() {
             {error}
           </div>
         )}
+        <ErasureBanner communityId={community!.id} />
+        {held && <HoldBanner deletionNoticeAt={deletionNoticeAt} />}
         {settings ? (
           <Manage
             communityId={community!.id}
             communityName={community!.name}
+            communityAddress={`${window.location.origin}${communityShortName ? `/${communityShortName}` : `/c/${community!.id}`}`}
             me={me.member}
             channels={channels}
             initialSection={settingsRoute?.section ?? null}
@@ -448,13 +473,18 @@ export function CommunityApp() {
               setSignedOut(true);
             }}
             readOnly={readOnly}
+            held={held}
           />
         ) : selected ? (
           <ChannelView
             key={selected.id}
+            communityId={community!.id}
             channel={selected}
+            me={me.member}
             onChanged={onChanged}
+            onMemberStale={() => void refreshCurrentMember().catch(() => {})}
             readOnly={readOnly}
+            held={held}
           />
         ) : (
           <div className="settings">

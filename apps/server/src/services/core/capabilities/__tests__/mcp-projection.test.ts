@@ -53,6 +53,7 @@ const EXPECTED_TOOL_NAMES = [
   'feedback_draft',
   'update_agent',
   'update_agent_boundaries',
+  'update_agent_execution',
   'config_patch',
   'sidebar_add_to_group',
   'sidebar_remove_from_group',
@@ -174,6 +175,14 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     idempotentHint: true,
     openWorldHint: false,
   },
+  // Tier `destructive` because every schedule that follows the agent moves with
+  // it (DOR-2328); setting the same values twice lands the same state.
+  update_agent_execution: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   // mutateCreateOpenWorld
   marketplace_install: {
     readOnlyHint: false,
@@ -219,14 +228,14 @@ const EXPECTED_CARVE_OUT = [
 ].sort();
 
 describe('operator + marketplace MCP projection', () => {
-  it('advertises the same 19 tools on the in-session server', () => {
+  it('advertises the same 20 tools on the in-session server', () => {
     const names = capabilitiesForMcpServer(registry, 'in-session')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();
     expect(names).toEqual(EXPECTED_TOOL_NAMES);
   });
 
-  it('advertises the same 19 tools on the external server', () => {
+  it('advertises the same 20 tools on the external server', () => {
     const names = capabilitiesForMcpServer(registry, 'external')
       .map((c) => c.surfaces.mcp!.toolName)
       .sort();

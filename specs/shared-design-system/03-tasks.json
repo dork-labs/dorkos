@@ -258,7 +258,7 @@
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
-      "status": "pending"
+      "status": "completed"
     },
     {
       "id": "4.2",
@@ -277,7 +277,7 @@
       "parallelWith": [],
       "issue": null,
       "parentIssue": null,
-      "status": "pending"
+      "status": "completed"
     }
   ]
 }

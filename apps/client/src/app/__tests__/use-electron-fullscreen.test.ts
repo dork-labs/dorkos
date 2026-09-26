@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe('useElectronFullscreen', () => {
-  it('is false in the browser/Obsidian, where window.electronAPI is absent', () => {
+  it('is false in the browser, where window.electronAPI is absent', () => {
     const { result } = renderHook(() => useElectronFullscreen());
     expect(result.current).toBe(false);
   });

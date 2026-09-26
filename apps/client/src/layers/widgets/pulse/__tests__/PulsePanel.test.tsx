@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { IsRestoringProvider } from '@tanstack/react-query';
 
 // --- Mutable mock state -----------------------------------------------------
 
@@ -263,6 +264,35 @@ describe('PulsePanel', () => {
     mockAttentionLoading = true;
 
     render(<PulsePanel />);
+
+    expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
+  });
+
+  // While `PersistQueryClientProvider` restores the boot cache every query is
+  // paused: pending but not fetching, so the hooks' own `isLoading` reads FALSE
+  // with nothing in hand. The mocks below report exactly that, and the section
+  // has to read the restore itself (DOR-1914).
+  it('does not flash the activity all-clear while the boot cache is restoring', () => {
+    mockActivity = { groups: [], isLoading: false };
+
+    render(
+      <IsRestoringProvider value={true}>
+        <PulsePanel />
+      </IsRestoringProvider>
+    );
+
+    expect(screen.queryByText('No recent activity.')).not.toBeInTheDocument();
+  });
+
+  it('does not flash the attention all-clear while the boot cache is restoring', () => {
+    mockAttentionItems = [];
+    mockAttentionLoading = false;
+
+    render(
+      <IsRestoringProvider value={true}>
+        <PulsePanel />
+      </IsRestoringProvider>
+    );
 
     expect(screen.queryByText('All quiet. Nothing needs you.')).not.toBeInTheDocument();
   });

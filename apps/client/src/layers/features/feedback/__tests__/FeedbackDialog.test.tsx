@@ -9,7 +9,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { FeedbackDialog } from '../ui/FeedbackDialog';
 import { __resetBreadcrumbsForTests, addBreadcrumb } from '@/layers/shared/lib/breadcrumbs';
-import { setPlatformAdapter } from '@/layers/shared/lib';
+
 import { ImageCompressError } from '@/layers/shared/lib/image-compress';
 import { AppCaptureError } from '@/layers/shared/lib/app-capture';
 
@@ -98,8 +98,6 @@ afterEach(() => {
   vi.clearAllMocks();
   // Reset the route to the default (non-session) location for the next test.
   routerState.location = { pathname: '/team', search: {} };
-  // And back to the standalone web surface, whatever an embed test set.
-  setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
   // A remembered reply address must not leak from one test into the next.
   localStorage.clear();
 });
@@ -2084,21 +2082,7 @@ describe('FeedbackDialog', () => {
         expect(warn).toHaveBeenCalled();
       });
 
-      it('never holds one on a transport that cannot send it', () => {
-        setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-        openWith('data:image/png;base64,GIVEN');
-
-        // The embed renders no thumbnail either way, so its absence proves
-        // nothing on its own. What IS observable is the words hint, which an
-        // attached picture with no words brings up.
-        expect(screen.queryByAltText('The screenshot you attached')).not.toBeInTheDocument();
-        expect(
-          screen.queryByText('Add a few words so we know what to look for.')
-        ).not.toBeInTheDocument();
-      });
-
       it('holds one on a surface that CAN send it', () => {
-        // The control for the assertion above: same prop, non-embedded surface.
         openWith('data:image/png;base64,GIVEN');
         expect(
           screen.getByText('Add a few words so we know what to look for.')
@@ -2147,43 +2131,6 @@ describe('FeedbackDialog', () => {
       // The guard is scoped to the dialog being open — dropping a file on the
       // app at any other time behaves as it always has.
       expect(drop.defaultPrevented).toBe(false);
-    });
-
-    it('leaves page drops alone under the in-process (Obsidian) transport', () => {
-      // No capture there, so no reason to claim the window's drops — the embed
-      // is a pane inside someone else's app, whose own drag-and-drop must work.
-      setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-      renderDialog();
-
-      const drop = new Event('drop', { bubbles: true, cancelable: true });
-      Object.defineProperty(drop, 'dataTransfer', { value: { types: ['Files'], files: [] } });
-      document.body.dispatchEvent(drop);
-
-      expect(drop.defaultPrevented).toBe(false);
-    });
-
-    it('offers no capture at all under the in-process (Obsidian) transport', async () => {
-      setPlatformAdapter({ isEmbedded: true, openFile: async () => {} });
-      renderDialog();
-
-      expect(screen.queryByLabelText('Add an image')).not.toBeInTheDocument();
-      // Asked of the live control, not of the labelled-soon string it replaced:
-      // that string no longer exists anywhere, so an assertion naming it passed
-      // whatever this dialog rendered.
-      expect(screen.queryByRole('button', { name: 'Point at it' })).not.toBeInTheDocument();
-      // Including the one-click capture, which is the easiest of the four to
-      // press by accident: a picture taken there is dropped on the way out, so
-      // offering it would promise something the send path cannot keep.
-      expect(screen.queryByRole('button', { name: 'Capture app' })).not.toBeInTheDocument();
-
-      // And the paste path is gone with it — that transport drops the field.
-      fireEvent.paste(screen.getByRole('dialog'), {
-        clipboardData: {
-          items: [{ kind: 'file', type: 'image/png', getAsFile: () => imageFile() }],
-        },
-      });
-      await act(async () => {});
-      expect(compressImage).not.toHaveBeenCalled();
     });
   });
 });

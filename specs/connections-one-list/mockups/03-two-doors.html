@@ -1,0 +1,105 @@
+<style>
+  .lane{border:1px solid #e5e5e5;border-radius:12px;background:#fff;padding:16px;margin-bottom:22px}
+  .lane h3{margin:0 0 2px}
+  .lane .why{font-size:13px;color:#666;margin-bottom:12px}
+  .steps{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch}
+  .s{flex:1;min-width:170px;border:1px solid #eee;border-radius:10px;padding:10px;background:#fafafa;font-size:12px;color:#333}
+  .s .n{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .ar{align-self:center;color:#bbb;font-size:18px}
+  .msg{background:#fff;border:1px solid #eee;border-radius:10px;padding:7px 9px;margin:4px 0}
+  .me{background:#111;color:#fff;border-color:#111;margin-left:18px}
+  .card2{background:#fff;border:1px solid #d4d4d4;border-radius:10px;padding:10px;margin-top:6px}
+  .card2 .t{font-weight:600;font-size:13px;display:flex;gap:8px;align-items:center}
+  .logo{width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:11px;background:#ea4335}
+  .b{display:inline-block;font-size:11px;padding:5px 10px;border-radius:7px;border:1px solid #ddd;background:#fff;margin:6px 4px 0 0}
+  .b.d{background:#111;color:#fff;border-color:#111}
+  .muted{color:#888}
+  .ok{color:#1a7f37;font-weight:600}
+  .shared{outline:2px dashed #7c3aed;outline-offset:2px}
+  .legend{font-size:12px;color:#6d28d9;margin:-6px 0 18px}
+  .chk{margin:3px 0}
+  .pill{display:inline-block;font-size:11px;padding:4px 9px;border-radius:99px;border:1px solid #e3e3e3;margin:3px 3px 0 0;background:#fff}
+</style>
+
+<h2>Step 3 — Two doors, one room</h2>
+<p class="subtitle">You're right: "done, but no agent can use it" is a dead end. So there are two ways in, and both end in the same place: <b>an account + the agents that can use it + you already using it.</b></p>
+<p class="legend">Dashed purple = the same piece of UI, used in both doors. Build it once.</p>
+
+<div class="lane">
+  <h3>Door 1 · From a chat (the main door)</h3>
+  <div class="why">You're talking to an agent. You never visit Connections.</div>
+  <div class="steps">
+    <div class="s"><div class="n">1 · You ask</div>
+      <div class="msg me">Summarise my inbox from today.</div>
+      <div class="msg">I'd need your Gmail for that.</div>
+    </div>
+    <div class="ar">→</div>
+    <div class="s"><div class="n">2 · A card in the chat</div>
+      <div class="card2 shared"><div class="t"><span class="logo">M</span>Connect Gmail</div>
+        <div class="muted" style="margin-top:4px">So DorkBot can read your email.</div>
+        <span class="b d">Connect Gmail</span><span class="b">Not now</span></div>
+    </div>
+    <div class="ar">→</div>
+    <div class="s"><div class="n">3 · Sign in</div>
+      <div class="msg">Google's page opens. You sign in. It closes.</div>
+      <div class="muted">Only moment you leave the chat.</div>
+    </div>
+    <div class="ar">→</div>
+    <div class="s"><div class="n">4 · Same card, one question</div>
+      <div class="card2 shared"><div class="t"><span class="logo">M</span>Let DorkBot use Gmail?</div>
+        <div class="muted" style="margin-top:4px">you@gmail.com</div>
+        <div class="chk">◉ Read email</div><div class="chk">○ Read and send</div>
+        <span class="b d">Allow</span><span class="b">Allow once</span></div>
+    </div>
+    <div class="ar">→</div>
+    <div class="s"><div class="n">5 · It just keeps going</div>
+      <div class="card2"><span class="ok">✓ Gmail connected</span> <span class="muted">· DorkBot can read</span></div>
+      <div class="msg">Here's today's inbox: 3 things need you…</div>
+    </div>
+  </div>
+  <div style="font-size:12px;color:#555;margin-top:10px">Already connected? Steps 2–3 are skipped: you only see "Let DorkBot use Gmail?". Two Gmail accounts? The card asks which one.</div>
+</div>
+
+<div class="lane">
+  <h3>Door 2 · From the Connections page (setting things up ahead)</h3>
+  <div class="why">You're planning, not mid-task. The flow ends by putting you to work, not on a dead end.</div>
+  <div class="steps">
+    <div class="s"><div class="n">1 · Pick an app</div>
+      <div class="msg"><span class="logo">M</span> Gmail <span class="b d" style="margin:0 0 0 6px">Connect</span></div>
+    </div>
+    <div class="ar">→</div>
+    <div class="s"><div class="n">2 · Sign in</div>
+      <div class="msg">Google's page opens. You sign in. It closes.</div>
+    </div>
+    <div class="ar">→</div>
+    <div class="s"><div class="n">3 · Who can use it?</div>
+      <div class="card2 shared"><div class="t"><span class="logo">M</span>Who can use Gmail?</div>
+        <div class="chk">☑ DorkBot</div><div class="chk">☐ mailroom</div><div class="chk muted">☐ Show all 35</div>
+        <div class="chk">◉ Read email ○ Read and send</div>
+        <div class="muted" style="margin-top:4px">Others can still ask in chat.</div>
+        <span class="b d">Save</span><span class="b">Skip</span></div>
+    </div>
+    <div class="ar">→</div>
+    <div class="s"><div class="n">4 · Try it</div>
+      <div class="card2"><div class="t">Try it with DorkBot</div>
+        <span class="pill">Summarise today's inbox</span>
+        <span class="pill">What needs a reply?</span>
+        <span class="pill">Draft a reply to Sam</span>
+        <div class="muted" style="margin-top:6px">One click opens a chat with that message.</div></div>
+    </div>
+  </div>
+</div>
+
+<h3>Why "Try it" buttons, not "a prompt to copy"</h3>
+<p style="font-size:13px;color:#555;max-width:820px">A prompt you copy and paste is homework. A button that opens the chat with the message already in it is one click. It also teaches what Gmail is <i>for</i>. If you picked no agents in step 3, the button still works: you pick an agent, and it walks you through Door 1.</p>
+
+<div class="options">
+  <div class="option" data-choice="agree" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>This is the shape</h3><p>Two doors, one shared card. Door 1 in chat, Door 2 on the page with "Who can use it?" and "Try it".</p></div>
+  </div>
+  <div class="option" data-choice="adjust" onclick="toggleSelect(this)">
+    <div class="letter">~</div>
+    <div class="content"><h3>Close, but change something</h3><p>Tell me what in the terminal.</p></div>
+  </div>
+</div>

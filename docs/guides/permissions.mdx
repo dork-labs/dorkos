@@ -52,6 +52,8 @@ Three areas are never Allowed: **Safety limits**, **Permissions**, and **Reach &
 
 Each area is made of actions, like "Delete a schedule" inside Tasks & schedules. Under a row, **Show individual actions** lists them, each with its own switch. A single action you set on its own beats its area, and shows under the row even when the list is closed, for example **"Except Open a room: Allowed"**.
 
+A few actions always show you exactly what they would change, before and after, such as changing which model an agent runs on. Those always ask: their cards never offer **Always allow**, and they can't be set to Allowed.
+
 An action that deletes or removes something asks even when its area is Allowed. Its line says **"Always asks unless you set it here"**: it runs without asking only if you set that one action to Allowed yourself.
 
 ### Files & commands
@@ -162,7 +164,9 @@ In DorkOS, only a person can. The permission pages, the `dorkos permissions` com
 
 An agent's own settings are kept in a file in its folder (`.dork/agent.json`). Anything that can edit files on your computer can edit that file, and that includes an agent that has file tools. DorkOS can't prevent that, and turning on login doesn't prevent it either, because login guards DorkOS, not your files.
 
-What DorkOS does is notice. The next time it checks that agent's permissions, it records the change in the history as **"Changed outside DorkOS"**, with what it was before and what it is now. The change takes effect, because you may have edited the file yourself on purpose. The agent's Permissions page marks the row too, so you can see it and set it back.
+A new agent is different. When DorkOS first adds an agent from a folder, whether you add it, an agent adds it, or DorkOS finds it on its own, the permissions already written in that folder's settings file were never your choice. So DorkOS keeps only the ones that are stricter than your defaults, drops the rest so the agent follows your defaults, and says so in the history. If DorkOS can't write the file back, it still ignores the dropped ones, and the history says it couldn't apply the file. You can give the agent more afterwards, in DorkOS.
+
+For an agent DorkOS already knows, what it does is notice. The next time it checks that agent's permissions, it records the change in the history as **"Changed outside DorkOS"**, with what it was before and what it is now. The change takes effect, because you may have edited the file yourself on purpose. The agent's Permissions page marks the row too, so you can see it and set it back.
 
 If an agent should never be able to do something, don't rely on its settings alone: give it no way to edit files in its own folder, or keep a close eye on the history.
 

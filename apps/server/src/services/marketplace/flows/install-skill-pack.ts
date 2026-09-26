@@ -10,8 +10,9 @@
  *
  * @module services/marketplace/flows/install-skill-pack
  */
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { SkillPackPackageManifest } from '@dorkos/marketplace';
 import type { Logger } from '@dorkos/shared/logger';
 import { SkillFrontmatterSchema } from '@dorkos/skills';
@@ -20,6 +21,7 @@ import { atomicMove } from '../lib/atomic-move.js';
 import { installRootDirForType } from '../lib/install-roots.js';
 import { installStagedNpmDependencies } from '../lib/npm-dependencies.js';
 import { stagePackageContents } from '../lib/stage-package.js';
+import { flowOwnership } from '../lib/flow-ownership.js';
 import { runTransaction } from '../transaction.js';
 import type { InstallRequest, InstallResult } from '../types.js';
 
@@ -62,14 +64,16 @@ export class SkillPackInstallFlow {
     // Filled during `stage` by the npm dependency step; read after the
     // transaction commits, so a rolled-back install reports nothing.
     const warnings: string[] = [];
+    const { ownership, finish } = flowOwnership(manifest, opts);
     await runTransaction({
       name: `install-skill-pack-${manifest.name}`,
       target: installRoot,
       stage: (staging) =>
         stageSkillPack(packagePath, staging.path, installRoot, warnings, this.deps.logger),
       activate: (staging) => activateSkillPack(staging.path, installRoot),
+      ownership,
     });
-    return buildInstallResult(manifest, installRoot, warnings);
+    return finish(buildInstallResult(manifest, installRoot, warnings));
   }
 }
 
@@ -206,6 +210,26 @@ function isUnderNodeModules(relativeDir: string): boolean {
 }
 
 /**
+ * Every `SKILL.md` under a package that DorkOS's parser rejects, one sentence
+ * each (outside `node_modules`). Content-only, so the installer runs it before
+ * an update's uninstall half (DOR-2245).
+ *
+ * @param packagePath - A package tree, staged or at its source.
+ * @returns One problem per rejected file; empty when all parse.
+ */
+export async function skillFileProblems(packagePath: string): Promise<string[]> {
+  const problems: string[] = [];
+  for (const absFile of await findSkillFiles(packagePath)) {
+    try {
+      await validateSkillFile(absFile);
+    } catch (err) {
+      problems.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return problems;
+}
+
+/**
  * Parse a single SKILL.md file via `@dorkos/skills` and throw a clear
  * `Error` on failure. The error message includes both the offending
  * file path and the parser's diagnostic so the install transaction
@@ -214,7 +238,7 @@ function isUnderNodeModules(relativeDir: string): boolean {
  * @internal
  */
 async function validateSkillFile(absFile: string): Promise<void> {
-  const content = await readFile(absFile, 'utf8');
+  const content = await readTextFileWithin(absFile, PACKAGE_TEXT_MAX_BYTES, 'The SKILL.md');
   const result = parseSkillFile(absFile, content, SkillFrontmatterSchema);
   if (!result.ok) {
     throw new Error(`Invalid SKILL.md at ${absFile}: ${result.error}`);

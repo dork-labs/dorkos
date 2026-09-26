@@ -2,11 +2,9 @@
  * @vitest-environment node
  */
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
-import { migrate } from 'drizzle-orm/pglite/migrator';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { toNextJsHandler } from 'better-auth/next-js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,10 +23,10 @@ import * as schema from '@/db/schema';
 import { listAudit, recordAudit } from '../audit-service';
 import { createAuth } from '../auth';
 import * as mailer from '../mailer';
+import { migrateCurrentSchema } from '@/db/__tests__/migrate-current-schema';
 
 const ORIGIN = 'http://localhost:3000';
 const PASSWORD = 'correct-horse-battery-staple';
-const MIGRATIONS_DIR = fileURLToPath(new URL('../../../drizzle/', import.meta.url));
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type Handlers = ReturnType<typeof toNextJsHandler>;
@@ -86,7 +84,7 @@ async function createHarness(): Promise<{
 }> {
   const client = new PGlite();
   const db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+  await migrateCurrentSchema(db);
   const auth = createAuth(
     drizzleAdapter(db, {
       provider: 'pg',

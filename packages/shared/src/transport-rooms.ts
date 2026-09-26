@@ -2,10 +2,8 @@
  * The rooms slice of the {@link Transport} port — channels, direct messages and
  * threads (spec `rooms`, ADR 260726-170125).
  *
- * Split out of `transport.ts` rather than declared inline: the HTTP adapter,
- * the Obsidian stubs and the mock Transport already keep rooms in a module of
- * their own, and the port is the one place that had them mixed in with fifteen
- * other domains. `Transport` extends this, so nothing consuming the port sees
+ * Split out of `transport.ts` rather than declared inline: the HTTP adapter
+ * and mock Transport already keep rooms in a module of their own. `Transport` extends this, so nothing consuming the port sees
  * a difference.
  *
  * @module shared/transport-rooms

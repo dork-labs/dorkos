@@ -49,16 +49,21 @@ import { OPENCODE_DORKOS_TOOL_PREFIX } from '../../shared/dorkos-tool-names.js';
  *   on the sidecar for this directory RIGHT NOW, as reported by the reconcile.
  *   Never an intention: an agent told it can post in rooms, whose server was
  *   refused or failed to register, spends a turn discovering that.
+ * @param agentPath - The agent this turn acts as, anchored (DOR-2091), or
+ *   `undefined` when it acts as nobody; its Blocked areas are the ones listed.
  */
 export async function buildOpenCodeTurnContext(
   cwd: string,
-  dorkosApplied: boolean
+  dorkosApplied: boolean,
+  agentPath: string | undefined
 ): Promise<string> {
   const neutralContext = (await buildAgentContextAppend(cwd)).text;
   if (!dorkosApplied) return neutralContext;
   // One line per Blocked permission area (spec `agent-permissions` D15); the
   // runtime listener hides the same area's tools from this turn's list.
-  const blocked = renderBlockedAreaLines((await resolveToolVisibilityFor(cwd)).blockedAreas);
+  // Read at the ANCHORED agent (DOR-2091): a room worktree reads as its agent,
+  // and a refused turn as nobody — never the directory's own agent.
+  const blocked = renderBlockedAreaLines((await resolveToolVisibilityFor(agentPath)).blockedAreas);
   const withRooms = `${neutralContext}\n\n${buildRoomToolsBlock(OPENCODE_DORKOS_TOOL_PREFIX)}`;
   return blocked ? `${withRooms}\n\n${blocked}` : withRooms;
 }

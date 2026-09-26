@@ -3,12 +3,6 @@
  * 5) — and in particular `canRemember`, which is the answer to "could this
  * install even keep the choice we are about to offer?".
  *
- * That question exists because of Obsidian. There the cockpit runs on the
- * in-process `DirectTransport`, whose `updateConfig` is a documented no-op and
- * whose `getConfig` builds no `ui` block at all. Offering "don't show this
- * again" against that backend produces the worst shape a setting can take: it
- * ticks, saves nothing, raises no error, and asks again forever.
- *
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -33,15 +27,9 @@ beforeEach(() => {
 });
 
 describe('canRemember', () => {
-  it('is false against a backend that returns no ui block (Obsidian)', () => {
-    // Exactly what `DirectTransport.getConfig` builds: a full-looking config
-    // with no `ui` in it. Nothing about the shape says "embedded" — the absence
-    // is the whole signal, which is why the hook reads the answer rather than
-    // asking which transport it is talking to.
+  it('cannot remember an acknowledgement when the response has no ui settings', () => {
     mockConfig = { version: '0.1.0', runtimes: ['claude-code'] } as Partial<ServerConfig>;
-
     const { result } = renderHook(() => useAutonomyAcknowledgement());
-
     expect(result.current.canRemember).toBe(false);
   });
 

@@ -22,7 +22,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useAppStore } from '@/layers/shared/model';
-import { useSessionScopedCwd, isSessionScopeReady } from '../use-session-scoped-cwd';
+import { useSessionScopedCwd } from '../use-session-scoped-cwd';
 
 beforeEach(() => {
   useAppStore.setState({ selectedCwd: null });
@@ -35,8 +35,7 @@ describe('useSessionScopedCwd without a RouterProvider', () => {
     // fails with it.
     const { result } = renderHook(() => useSessionScopedCwd());
 
-    expect(result.current).toEqual({ cwd: null, resolved: true });
-    expect(isSessionScopeReady('s1', result.current)).toBe(true);
+    expect(result.current).toEqual({ cwd: null });
   });
 
   it('still refuses to substitute the store default', () => {

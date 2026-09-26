@@ -302,6 +302,13 @@ jobs:
       - name: In-project hook wrapper fixtures
         run: bash scripts/test-in-project-hook.sh
 
+      # sync-main-checkout.sh moves the main checkout's `main` at session start
+      # without being asked, so each refusal (dirty, diverged, other branch,
+      # git op in flight, warn/off) is pinned beside the fast-forward. Hermetic:
+      # a throwaway origin, clone and worktree in a temp dir.
+      - name: Main-checkout sync hook fixtures
+        run: bash scripts/test-sync-main-checkout.sh
+
       # lint-changed.sh BLOCKS a write when eslint errors, so its scope is
       # load-bearing: it used to lint files outside the repo (the session
       # scratchpad), where there is no eslint config, and refuse the write with

@@ -231,8 +231,9 @@
     },
     "session-management": {
       "relatedCode": [
-        "apps/client/src/layers/features/session-list/ui/EmbedSidebar.tsx",
-        "apps/client/src/layers/entities/session/ui/SessionRow.tsx"
+        "apps/client/src/layers/features/session-list/ui/SessionsView.tsx",
+        "apps/client/src/layers/entities/session/ui/SessionRowFull.tsx",
+        "apps/client/src/layers/entities/session/model/query/use-sessions.ts"
       ]
     },
     "session-switcher": {

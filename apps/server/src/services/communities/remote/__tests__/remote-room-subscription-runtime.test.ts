@@ -414,6 +414,76 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     expect(mirrors.localRoomIdForOwner(REF, ROOM_ID, harness.human)).toBeNull();
   });
 
+  it('re-checks only member-only read-only connections every five minutes, and stops once released (AC-8)', async () => {
+    // Purpose: fails if a member-only connection never learns a hold ended, if it is checked
+    // before five minutes, or if the new timer double-polls a connection with an enrolled agent
+    // (the reconcile already re-checks those) or polls one that is not read-only.
+    vi.useFakeTimers();
+    try {
+      const harness = createRoomHarness({ agents: agentLookupFor({}) });
+      const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+      const memberOnly = 'remote_member_only' as CommunityRef;
+      const withAgent = 'remote_with_agent' as CommunityRef;
+      const stillActive = 'remote_still_active' as CommunityRef;
+      enrollments.activate({
+        communityRef: withAgent,
+        localAgentId: 'agent-local',
+        remoteMemberId: 'remote-agent',
+        ownerAuthorId: 'owner',
+      });
+      // What this install last stored for each connection, and what the fake Community says now.
+      const stored = new Map<CommunityRef, 'active' | 'archived'>([
+        [memberOnly, 'archived'],
+        [withAgent, 'archived'],
+        [stillActive, 'active'],
+      ]);
+      let heldRemotely = true;
+      const resolveConnectionAccess = vi.fn(async (ref: CommunityRef) => {
+        stored.set(ref, heldRemotely ? 'archived' : 'active');
+        return null;
+      });
+      const runtime = new RemoteRoomSubscriptionRuntime({
+        bridge: {} as never,
+        enrollments,
+        adapters: vi.fn(),
+        resolveConnectionAccess,
+        readOnlyConnections: async () =>
+          [...stored]
+            .filter(([, lifecycle]) => lifecycle === 'archived')
+            .map(([communityRef]) => ({ communityRef, ownerAuthorId: 'owner' })),
+        resolveLocalAgentAuthor: () => null,
+        // Keep the enrolled-agent reconcile out of the way so every call below is the timer's.
+        isReady: () => false,
+      });
+      const checked = (ref: CommunityRef) =>
+        resolveConnectionAccess.mock.calls.filter(([called]) => called === ref).length;
+      runtime.start();
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000 - 1);
+      expect(resolveConnectionAccess).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(checked(memberOnly)).toBe(1);
+      expect(stored.get(memberOnly)).toBe('archived');
+
+      // The host releases the hold; the next check stores active access.
+      heldRemotely = false;
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(checked(memberOnly)).toBe(2);
+      expect(stored.get(memberOnly)).toBe('active');
+
+      // Active again, so it is not polled any more.
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(checked(memberOnly)).toBe(2);
+      expect(checked(withAgent)).toBe(0);
+      expect(checked(stillActive)).toBe(0);
+      runtime.stop();
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      expect(resolveConnectionAccess).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('does not reopen enrolled-agent remote work after restart while owner access is unavailable', async () => {
     const harness = createRoomHarness({
       agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
@@ -518,6 +588,100 @@ describe('RemoteRoomSubscriptionRuntime', () => {
     runtime.refreshSubscriptions();
     await settleUntil(() => streamAborted, 'the unverified connection stream aborts');
     runtime.stop();
+  });
+
+  // Purpose (member erasure task 2.1): a subscribed room reads its redaction feed as the
+  // enrolled agent after every completed replay and again on the interval, and never before its
+  // replay completes. It fails if the sync is not wired, runs as the owner, or stops on the timer.
+  it('reads the redaction feed after each replay and on the interval, as the enrolled agent', async () => {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ '/agents/ana': { name: 'Ana', responseMode: 'always' } }),
+    });
+    const agent = harness.authors.resolveAgent('/agents/ana', 'Ana');
+    const enrollments = new CommunityAgentEnrollmentStore(harness.db);
+    enrollments.activate({
+      communityRef: REF,
+      localAgentId: agent.mintedForManifestId!,
+      remoteMemberId: 'remote-ana',
+      ownerAuthorId: harness.human,
+    });
+    const bridge = new RemoteRoomSubscriptionBridge(
+      new RemoteMirrorStore(harness.db, harness.store, harness.authors),
+      harness.service,
+      enrollments,
+      () => agent.id
+    );
+    const room = testRoom();
+    const expected = [
+      { communityRef: REF, remoteRoomId: ROOM_ID, ownerAuthorId: harness.human },
+      { actingMemberId: 'remote-ana' },
+    ];
+    const start = (redactionSyncMs: number, replayGate: Promise<void>) => {
+      const sync = vi.fn(async (..._args: unknown[]) => undefined);
+      const runtime = new RemoteRoomSubscriptionRuntime({
+        bridge,
+        enrollments,
+        resolveConnectionAccess: async () => VERIFIED_AGENT_ACCESS,
+        adapters: () => ({
+          listRooms: async () => [room],
+          subscribeNativeRoom: (_roomId, _cursor, signal) =>
+            (async function* () {
+              yield snapshot(room, [], 0);
+              await replayGate;
+              yield { type: 'replay_complete' as const, capturedSeq: 0 };
+              await new Promise<void>((resolve) =>
+                signal?.addEventListener('abort', () => resolve(), { once: true })
+              );
+            })(),
+        }),
+        resolveLocalAgentAuthor: () => agent.id,
+        isRoomJoined: () => true,
+        retryMs: 60_000,
+        redactions: { sync },
+        redactionSyncMs,
+      });
+      runtime.start();
+      return { runtime, sync };
+    };
+
+    // After the replay: once, and not before it.
+    let releaseReplay!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseReplay = resolve));
+    const replayed = start(60_000, gate);
+    try {
+      await settleUntil(
+        () => replayed.runtime.observation(REF, ROOM_ID, harness.human)?.snapshotComplete === true,
+        'the snapshot is cached'
+      );
+      expect(replayed.sync).not.toHaveBeenCalled();
+      releaseReplay();
+      await vi.waitFor(() => expect(replayed.sync).toHaveBeenCalledOnce());
+      // A replay also re-asks a server that lately answered without the feed.
+      expect(replayed.sync).toHaveBeenCalledWith(...expected, { recheck: true });
+    } finally {
+      replayed.runtime.stop();
+    }
+
+    // On the interval while subscribed, and never after stop.
+    const timed = start(20, Promise.resolve());
+    try {
+      await vi.waitFor(() => expect(timed.sync.mock.calls.length).toBeGreaterThanOrEqual(3));
+      // One replay call (which re-asks); every other call is the interval's, which honours the
+      // hour's wait.
+      const [replays, ticks] = [
+        timed.sync.mock.calls.filter((call) => call.length === 3),
+        timed.sync.mock.calls.filter((call) => call.length === 2),
+      ];
+      expect(replays).toEqual([[...expected, { recheck: true }]]);
+      expect(ticks.length).toBeGreaterThanOrEqual(2);
+      for (const call of ticks) expect(call).toEqual(expected);
+      timed.runtime.stop();
+      const stopped = timed.sync.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      expect(timed.sync.mock.calls.length).toBe(stopped);
+    } finally {
+      timed.runtime.stop();
+    }
   });
 
   it('preserves persisted grants and pending work until Mesh becomes authoritative after restart', async () => {

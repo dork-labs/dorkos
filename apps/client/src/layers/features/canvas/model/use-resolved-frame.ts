@@ -1,7 +1,4 @@
 /**
- * Deciding what the embedded browser should actually load, and saying so when it
- * cannot (DOR-1259, DOR-1260).
- *
  * A dev server is the interesting case, because "can this page load
  * `localhost:5178`?" has three different answers depending on where the person
  * is sitting, and only the browser itself can give the last one. The cascade
@@ -136,8 +133,6 @@ export function useResolvedFrame({
       let serverSees: boolean | 'unknown';
       try {
         const probe = await transport.probeLoopbackPort(port);
-        // A `null` answer means the transport has no server to ask (Obsidian) —
-        // unknown, not empty, so nothing is claimed.
         serverSees = probe === null ? 'unknown' : probe.listening;
       } catch {
         serverSees = 'unknown';

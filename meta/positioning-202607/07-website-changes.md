@@ -1,5 +1,7 @@
 # Website Changes: dorkos.ai
 
+> **Obsidian retirement, 2026-09-25:** The plugin has been retired from the active codebase. Any plugin build, launch, demo, directory submission, hardening or future release proposed below is cancelled. The remaining product focus is web, desktop, phone, Cloud and Community. Obsidian users can work with vault folders in the normal app, without in-vault features. See [migration and source recovery](../../docs/guides/obsidian-plugin.mdx). Earlier study text below is retained as dated planning context, not an active plugin commitment.
+
 > Positioning review deliverable (July 2026). Sources: full `apps/site` code/content audit, a live browser review of dorkos.ai (desktop viewport, homepage + /features + /marketplace), and the brand/meta docs. Ordered by priority within each section. Each item says what to change and why.
 
 ## How to read this

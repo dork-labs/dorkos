@@ -153,7 +153,12 @@ export async function readAgentPermissionsFromManifest(
 /** The sources used until boot wires the live config. */
 const DEFAULT_SOURCES: PermissionGateSources = {
   readConfig: () => UNCHOSEN,
-  readAgentPermissions: readAgentPermissionsFromManifest,
+  // Until the gate is wired, no agent's own settings are read at all: the
+  // wired reader is the one that narrows an arriving agent's unscreened folder
+  // settings (review D1), and anything that runs before it (a turn started
+  // early in boot) must not honour a folder as written. Every agent follows the
+  // defaults meanwhile.
+  readAgentPermissions: async () => undefined,
   listActions: () => [],
 };
 
@@ -192,6 +197,11 @@ export function permissionGateSources(): PermissionGateSources {
 export type PermissionGatedAction = Pick<GatedAction, 'id' | 'tier' | 'areasForInput'> & {
   /** The permission area, or `null` for an action that is always allowed on its tier. */
   area: PermissionAreaId | null;
+  /**
+   * Present on an action whose card shows the change it would make (DOR-2328):
+   * such an action is never Allowed, whatever is stored (`alwaysAsks`).
+   */
+  describeApprovalChange?: unknown;
 };
 
 /** How strict a state is: Blocked beats Ask beats Allowed. */
@@ -313,6 +323,7 @@ export async function resolveCallPermission(request: {
       area,
       // The action's own entries belong to its own area only.
       ...(index === 0 ? { actionId: action.id } : {}),
+      ...(index === 0 && action.describeApprovalChange ? { alwaysAsks: true } : {}),
       tier: action.tier,
       config,
       ...(agent ? { agent } : {}),

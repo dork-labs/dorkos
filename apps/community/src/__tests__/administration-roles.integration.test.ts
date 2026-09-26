@@ -31,6 +31,9 @@ import { registerAdministrationRoutes } from '../routes/administration.js';
 import { registerHostRoutes } from '../routes/host.js';
 import { registerMembershipRoutes } from '../routes/memberships.js';
 import { registerHostLimitRoutes } from '../routes/host-limits.js';
+import { registerHostLegalHoldRoutes } from '../routes/host-legal-hold.js';
+import { registerHostLifecycleRoutes } from '../routes/host-lifecycle.js';
+import { registerShortNameRoutes } from '../routes/short-names.js';
 import { registerOwnerClaimRoutes } from '../routes/owner-claims.js';
 import { registerHostKeyRoutes } from '../routes/host-keys.js';
 import { createHostAuthority } from '../host/authority.js';
@@ -241,6 +244,39 @@ async function account(name: string): Promise<{ userId: string; cookie: string }
   return { userId, cookie: await signIn(email) };
 }
 
+let shortNameSequence = 0;
+/** A short name no earlier matrix cell has used. */
+function freshName(): string {
+  shortNameSequence += 1;
+  return `roles-name-${shortNameSequence}`;
+}
+
+async function setAlphaName(name: string): Promise<void> {
+  await ok(
+    {
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/short-name`,
+      body: { shortName: name },
+    },
+    'founder',
+    200
+  );
+}
+
+/** Give A a fresh current short name and return it. */
+async function nameAlpha(): Promise<string> {
+  const name = freshName();
+  await setAlphaName(name);
+  return name;
+}
+
+/** Give A a name, then rename it, and return the name that is now retired. */
+async function retiredAlphaName(): Promise<{ name: string }> {
+  const name = await nameAlpha();
+  await nameAlpha();
+  return { name };
+}
+
 /** Issue a live key straight into the database, as the offline command would. */
 async function offlineKey(): Promise<{ id: string }> {
   const client = await pool.connect();
@@ -255,6 +291,45 @@ async function offlineKey(): Promise<{ id: string }> {
     });
     await client.query('COMMIT');
     return { id: issued.key.id };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * A claimed community already held by its host with a notice date in the past, so a host may
+ * delete it. Built in SQL: the matrix proves the deletion route's roles, not the hold's steps.
+ */
+async function heldPastNotice(): Promise<{ id: string; version: number }> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const userId = `held-owner-${randomUUID()}`;
+    await client.query('INSERT INTO "user"(id,name,email) VALUES($1,$2,$3)', [
+      userId,
+      'Held Owner',
+      `${userId}@roles.test`,
+    ]);
+    const community = await client.query<{ id: string }>(
+      "INSERT INTO communities(name,lifecycle) VALUES('Held for deletion','pending_owner') RETURNING id"
+    );
+    const id = community.rows[0].id;
+    await client.query(
+      `INSERT INTO members(community_id,user_id,display_name,handle,role)
+       VALUES($1,$2,'Held Owner',$3,'owner')`,
+      [id, userId, `held-${id.slice(0, 8)}`]
+    );
+    const held = await client.query<{ lifecycle_version: number }>(
+      `UPDATE communities SET lifecycle='held',activated_at=now(),held_from_state='active',
+         held_at=now()-interval '30 days',deletion_notice_at=now()-interval '1 day',
+         lifecycle_version=3 WHERE id=$1 RETURNING lifecycle_version`,
+      [id]
+    );
+    await client.query('COMMIT');
+    return { id, version: held.rows[0].lifecycle_version };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -549,14 +624,18 @@ const actions: Action<unknown>[] = [
         // Metadata only: no member directory, content counts, or messages.
         expect(Object.keys(row).sort()).toEqual([
           'createdAt',
+          'deletionNoticeAt',
+          'deletionRequestedBy',
           'deletionState',
           'description',
           'id',
+          'legalHold',
           'lifecycle',
           'lifecycleVersion',
           'name',
           'ownerPresent',
           'settingsVersion',
+          'shortName',
         ]);
       }
     },
@@ -594,14 +673,18 @@ const actions: Action<unknown>[] = [
       // The same metadata-only projection as the list.
       expect(Object.keys(row).sort()).toEqual([
         'createdAt',
+        'deletionNoticeAt',
+        'deletionRequestedBy',
         'deletionState',
         'description',
         'id',
+        'legalHold',
         'lifecycle',
         'lifecycleVersion',
         'name',
         'ownerPresent',
         'settingsVersion',
+        'shortName',
       ]);
     },
   }),
@@ -744,6 +827,128 @@ const actions: Action<unknown>[] = [
       expect(page.items.map((item) => item.communityId)).toContain(alphaId);
     },
   }),
+  define<{ id: string; version: number }>({
+    rule: 'Delete a held community after its notice date: host operator only',
+    route: 'POST /host/communities/:id/deletion',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: heldPastNotice,
+    call: ({ id, version }) => ({
+      method: 'POST',
+      path: `/api/v1/host/communities/${id}/deletion`,
+      body: { lifecycleVersion: version, confirmIdSuffix: id.slice(-8) },
+    }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query(
+        'SELECT lifecycle,delete_requested_by_host_actor IS NOT NULL AS host FROM communities WHERE id=$1',
+        [id]
+      );
+      expect(row.rows).toEqual([{ lifecycle: 'deletion_pending', host: true }]);
+    },
+  }),
+  define<{ id: string }>({
+    rule: 'Cancel a host-started deletion: host operator only',
+    route: 'DELETE /host/communities/:id/deletion',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => {
+      const held = await heldPastNotice();
+      await ok(
+        {
+          method: 'POST',
+          path: `/api/v1/host/communities/${held.id}/deletion`,
+          body: { lifecycleVersion: held.version, confirmIdSuffix: held.id.slice(-8) },
+        },
+        'founder',
+        200
+      );
+      return { id: held.id };
+    },
+    call: ({ id }) => ({ method: 'DELETE', path: `/api/v1/host/communities/${id}/deletion` }),
+    effect: async (_body, _role, { id }) => {
+      const row = await pool.query('SELECT lifecycle FROM communities WHERE id=$1', [id]);
+      expect(row.rows).toEqual([{ lifecycle: 'held' }]);
+    },
+  }),
+  define<{ name: string }>({
+    rule: 'Look up a community by its short name: anyone, signed in or not',
+    route: 'GET /community-names/:name',
+    allowed: ROLES,
+    status: 200,
+    prepare: async () => ({ name: await nameAlpha() }),
+    call: ({ name }) => ({ method: 'GET', path: `/api/v1/community-names/${name}` }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8')).communityId).toBe(alphaId);
+    },
+  }),
+  define({
+    rule: 'Check whether a short name is free: host operator only',
+    route: 'GET /host/short-names/:name',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: '/api/v1/host/short-names/free-name' }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8')).availability).toBe('available');
+    },
+  }),
+  define({
+    rule: "Read a community's short names: host operator only",
+    route: 'GET /host/communities/:id/short-names',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({ method: 'GET', path: `/api/v1/host/communities/${alphaId}/short-names` }),
+    effect: async (body) => {
+      expect(JSON.parse(body.toString('utf8')).communityId).toBe(alphaId);
+    },
+  }),
+  define<{ name: string }>({
+    rule: "Set a community's short name: host operator only",
+    route: 'PUT /host/communities/:id/short-name',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => ({ name: freshName() }),
+    call: ({ name }) => ({
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/short-name`,
+      body: { shortName: name },
+    }),
+    effect: async (body, _role, { name }) => {
+      expect(JSON.parse(body.toString('utf8')).shortName).toBe(name);
+    },
+  }),
+  define<{ name: string }>({
+    rule: 'Release a retired short name: host operator only',
+    route: 'DELETE /host/communities/:id/short-names/:name',
+    allowed: HOST_ROLES,
+    status: 204,
+    prepare: retiredAlphaName,
+    call: ({ name }) => ({
+      method: 'DELETE',
+      path: `/api/v1/host/communities/${alphaId}/short-names/${name}`,
+    }),
+    effect: async (_body, _role, { name }) => {
+      expect(
+        (await pool.query('SELECT 1 FROM community_short_names WHERE short_name=$1', [name]))
+          .rowCount
+      ).toBe(0);
+    },
+  }),
+  define<{ name: string }>({
+    rule: 'Lift the cool-off on a released short name: host operator only',
+    route: 'DELETE /host/short-name-holds/:name',
+    allowed: HOST_ROLES,
+    status: 204,
+    prepare: async () => {
+      const { name } = await retiredAlphaName();
+      await ok(
+        { method: 'DELETE', path: `/api/v1/host/communities/${alphaId}/short-names/${name}` },
+        'founder',
+        204
+      );
+      return { name };
+    },
+    call: ({ name }) => ({ method: 'DELETE', path: `/api/v1/host/short-name-holds/${name}` }),
+  }),
   define<{ key: string }>({
     rule: 'Create a pending_owner community: host operator yes, owner only if also host operator',
     route: 'POST /host/communities',
@@ -860,6 +1065,50 @@ const actions: Action<unknown>[] = [
     }),
     effect: async () => {
       expect((await alpha()).lifecycle).toBe('active');
+    },
+  }),
+  define({
+    rule: 'Place a legal hold: host operator only; owner and admin cannot, and are never told',
+    route: 'PUT /host/communities/:id/legal-hold',
+    allowed: HOST_ROLES,
+    status: 200,
+    call: () => ({
+      method: 'PUT',
+      path: `/api/v1/host/communities/${alphaId}/legal-hold`,
+      body: { reference: null },
+    }),
+    effect: async () => {
+      const held = await pool.query<{ legal_hold_at: Date | null }>(
+        'SELECT legal_hold_at FROM communities WHERE id=$1',
+        [alphaId]
+      );
+      expect(held.rows[0].legal_hold_at).not.toBeNull();
+      await pool.query(
+        `UPDATE communities SET legal_hold_at=NULL,legal_hold_by_host_actor=NULL,
+           legal_hold_reference=NULL WHERE id=$1`,
+        [alphaId]
+      );
+    },
+  }),
+  define({
+    rule: 'Release a legal hold: host operator only; owner and admin cannot',
+    route: 'DELETE /host/communities/:id/legal-hold',
+    allowed: HOST_ROLES,
+    status: 200,
+    prepare: async () => {
+      await pool.query(
+        `UPDATE communities SET legal_hold_at=now(),legal_hold_by_host_actor='api_key:matrix'
+         WHERE id=$1`,
+        [alphaId]
+      );
+    },
+    call: () => ({ method: 'DELETE', path: `/api/v1/host/communities/${alphaId}/legal-hold` }),
+    effect: async () => {
+      const held = await pool.query<{ legal_hold_at: Date | null }>(
+        'SELECT legal_hold_at FROM communities WHERE id=$1',
+        [alphaId]
+      );
+      expect(held.rows[0].legal_hold_at).toBeNull();
     },
   }),
   define<{ token: string }>({
@@ -1150,7 +1399,7 @@ const actions: Action<unknown>[] = [
     rule: 'Owner export: owner only, with reauthentication',
     route: 'POST /owner/export',
     allowed: OWNER,
-    status: 201,
+    status: 202,
     reauth: true,
     call: (_prepared, secret) => ({
       method: 'POST',
@@ -1158,16 +1407,16 @@ const actions: Action<unknown>[] = [
       body: { password: secret },
     }),
     effect: async (body) => {
-      const { archiveId } = JSON.parse(body.toString('utf8')) as { archiveId: string };
+      const { export: created } = JSON.parse(body.toString('utf8')) as { export: { id: string } };
       const archive = await pool.query(
-        'SELECT scope,community_id FROM export_archives WHERE id=$1',
-        [archiveId]
+        'SELECT scope,community_id,state FROM export_archives WHERE id=$1',
+        [created.id]
       );
-      expect(archive.rows).toEqual([{ scope: 'owner', community_id: alphaId }]);
+      expect(archive.rows).toEqual([{ scope: 'owner', community_id: alphaId, state: 'queued' }]);
     },
   }),
-  define<{ archiveId: string }>({
-    rule: 'Download an owner export: its owner requester only',
+  define<{ exportId: string }>({
+    rule: 'Read an owner export: its owner requester only',
     route: 'GET /exports/:id',
     allowed: OWNER,
     status: 200,
@@ -1175,22 +1424,20 @@ const actions: Action<unknown>[] = [
     prepare: async () => {
       const existing = await pool.query<{ id: string }>(
         `SELECT id FROM export_archives WHERE community_id=$1 AND scope='owner'
-           AND requester_member_id=$2 AND deleted_at IS NULL AND expires_at>now()
-         ORDER BY created_at LIMIT 1`,
+           AND requester_member_id=$2 ORDER BY created_at LIMIT 1`,
         [alphaId, ownerMemberId]
       );
-      if (existing.rows[0]) return { archiveId: existing.rows[0].id };
+      if (existing.rows[0]) return { exportId: existing.rows[0].id };
       const created = (await ok(
         { method: 'POST', path: scoped('/owner/export'), body: { password } },
         'owner',
-        201
-      )) as { archiveId: string };
-      return { archiveId: created.archiveId };
+        202
+      )) as { export: { id: string } };
+      return { exportId: created.export.id };
     },
-    call: ({ archiveId }) => ({ method: 'GET', path: scoped(`/exports/${archiveId}`) }),
-    effect: async (body) => {
-      // A zip archive starts with the local file header signature.
-      expect(body.subarray(0, 4).toString('hex')).toBe('504b0304');
+    call: ({ exportId }) => ({ method: 'GET', path: scoped(`/exports/${exportId}`) }),
+    effect: async (body, _role, { exportId }) => {
+      expect(JSON.parse(body.toString('utf8')).export.id).toBe(exportId);
     },
   }),
 
@@ -1540,9 +1787,13 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /bootstrap/complete': 'first installation; runs once on an empty host',
   'GET /community': 'public name and description of the URL community',
   'GET /auth-options': 'public sign-in options',
+  'GET /host-links': "the host's public terms, privacy and report links",
   'GET /me': "the caller's own membership",
   'POST /me/leave': 'the caller leaves; no authority over anyone else',
   'POST /me/export': "the caller's personal export",
+  'GET /exports': "lists the caller's own exports only",
+  'GET /exports/:id/archive': "downloads the caller's own export only; its authority is re-checked",
+  'POST /exports/:id/cancel': "cancels the caller's own export only",
   'GET /me/grants': "the caller's own installation grants",
   'DELETE /me/grants': "revokes the caller's own grants",
   'DELETE /me/grants/:id': "revokes one of the caller's own grants",
@@ -1557,11 +1808,18 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'POST /channels/:id/entries': 'ordinary posting',
   'GET /channels/:id/entries': 'ordinary reading',
   'GET /channels/:id/events': 'ordinary live stream',
+  'GET /channels/:id/threads': 'ordinary reading of reply counts',
+  'GET /channels/:id/redactions':
+    "ordinary reading of changed messages, with history's authority; redaction-feed.integration.test.ts",
   'GET /channels/:id/read-cursor': "the caller's own read position",
   'PUT /channels/:id/read-cursor': "the caller's own read position",
   'GET /attention': "the caller's own unread counts",
   'POST /channels/:id/attachments': 'ordinary upload',
   'GET /attachments/:id': 'ordinary reading',
+  'DELETE /entries/:entryId':
+    "the caller's own message, or one ranked below them; content-removal.integration.test.ts",
+  'DELETE /attachments/:attachmentId':
+    "the caller's own file, or one ranked below them; content-removal.integration.test.ts",
   'GET /agents': "the caller's own agents",
   'POST /agents': 'the caller enrolls their own agent',
   'POST /agents/recover': "the caller recovers their own agent's credential",
@@ -1577,6 +1835,8 @@ const OUTSIDE_ADMINISTRATION: Record<string, string> = {
   'GET /account/erasures': "the caller's own erasure requests",
   'POST /account/erasures': 'the caller erases their own membership or account',
   'POST /account/erasures/:id/cancel': 'the caller cancels their own erasure',
+  'GET /account/sign-in-methods': "how the caller's own account signs in",
+  'POST /account/password': 'the caller adds a first password to their own account',
   'GET /owner/erasures':
     'completed self-erasures only; member-erasure.integration.test.ts covers who may read it',
 };
@@ -1749,10 +2009,13 @@ it('classifies every registered route, and puts every host and settings route in
   const authority = createHostAuthority({ auth, pool, now, limitKeyMiss: () => undefined });
   // Only the route table is read here; no request ever runs.
   const unused = async () => undefined;
-  registerHostRoutes(modules, { pool, blobStore, authority, now });
+  registerHostRoutes(modules, { pool, config, blobStore, authority, now });
   registerOwnerClaimRoutes(modules, { pool, auth, config, authority, now });
   registerMembershipRoutes(modules, { pool, auth });
   registerHostLimitRoutes(modules, { pool, config, authority, now });
+  registerHostLifecycleRoutes(modules, { pool, config, blobStore, authority, now });
+  registerHostLegalHoldRoutes(modules, { pool, authority, now });
+  registerShortNameRoutes(modules, { pool, config, authority, now, limitLookup: () => undefined });
   registerHostKeyRoutes(modules, { pool, auth, authority, now, confirmPassword: unused });
   registerAdministrationRoutes(modules, { pool, auth, blobStore, confirmPassword: unused });
   const administration = [

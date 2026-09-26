@@ -28,6 +28,13 @@ import {
 interface ApplyOutcomeToast {
   kind: 'success' | 'warning' | 'error';
   message: string;
+  /** What the update had to say, such as files it kept (DOR-2322), under the message. */
+  description?: string;
+}
+
+/** Whether an applied update kept files it could not prove were the person's (DOR-2322). */
+function keptUnproven(check: InstallationUpdateCheck): boolean {
+  return check.applied?.fileNotices?.some((n) => n.outcome === 'kept-unproven') ?? false;
 }
 
 /** "Reviewer", or "Reviewer on Alpha" for an agent's installation, by its listed name. */
@@ -42,7 +49,12 @@ function describeOne(label: string, check: InstallationUpdateCheck | undefined):
   if (check?.applied) {
     const settled = settleAppliedCheck(check);
     const version = formatCheckVersion(settled.installedVersion, settled.installedVersionSource);
-    return { kind: 'success', message: `Updated ${label} to ${version}` };
+    const said = check.applied.warnings ?? [];
+    return {
+      kind: 'success',
+      message: `Updated ${label} to ${version}`,
+      ...(said.length > 0 && { description: said.join(' ') }),
+    };
   }
   if (check?.applyError) {
     return { kind: 'error', message: `Couldn’t update ${label}: ${check.applyError}` };
@@ -62,7 +74,12 @@ function describeMany(checks: readonly InstallationUpdateCheck[]): ApplyOutcomeT
   const total = checks.length;
   const applied = checks.filter((c) => c.applied).length;
   const failed = checks.filter((c) => c.applyError).length;
-  if (applied === total) return { kind: 'success', message: `Updated ${total} packages` };
+  if (applied === total) {
+    const message = checks.some(keptUnproven)
+      ? `Updated ${total} packages. One or more kept files DorkOS couldn’t sort; their rows say which.`
+      : `Updated ${total} packages`;
+    return { kind: 'success', message };
+  }
   if (applied > 0) {
     return {
       kind: 'warning',
@@ -97,11 +114,17 @@ function describeOutcome(
 
 /** Show a finished apply's toast in place of the loading one. */
 function showOutcome(outcome: ApplyOutcomeToast, toastId: string | number): void {
-  toast[outcome.kind](outcome.message, { id: toastId });
+  toast[outcome.kind](outcome.message, {
+    id: toastId,
+    ...(outcome.description && { description: outcome.description }),
+  });
 }
 
 /** The server's code for a batch that would need a person to approve each install. */
 const BATCH_NEEDS_APPROVAL = 'batch_update_needs_approval';
+
+/** The server's code when a new version runs something the person was not shown. */
+const DISCLOSURE_CHANGED = 'disclosure_changed';
 
 /**
  * Why a refused or failed apply failed, in a person's words. The one refusal
@@ -109,13 +132,20 @@ const BATCH_NEEDS_APPROVAL = 'batch_update_needs_approval';
  * API route, which is not something a person can act on.
  */
 function describeFailure(err: unknown, requested: readonly StaleInstallation[]): string {
-  if ((err as { code?: unknown } | null)?.code === BATCH_NEEDS_APPROVAL) {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === DISCLOSURE_CHANGED) {
+    // Nothing changed on this machine. The check refreshes on its own, so the
+    // next confirm shows what the package runs now.
+    const subject = requested.length === 1 ? 'This package' : 'One of these packages';
+    return `${subject} changed what it runs since you looked, so nothing was updated. Review it again before updating.`;
+  }
+  if (code === BATCH_NEEDS_APPROVAL) {
     // The next step names the command, with the package's own name when there
     // is one package (the name the update check and the CLI both use).
     const next =
       requested.length === 1
-        ? `Update it from the terminal with \`dorkos marketplace update ${requested[0]!.check.packageName}\`.`
-        : 'Update each one from the terminal with `dorkos marketplace update <name>`.';
+        ? `Update it from the terminal with \`dorkos marketplace update ${requested[0]!.check.packageName} --apply\`.`
+        : 'Update each one from the terminal with `dorkos marketplace update <name> --apply`.';
     return `Each of these installs needs your approval first, and DorkOS can’t ask for it here. ${next}`;
   }
   return err instanceof Error ? err.message : String(err);
@@ -144,7 +174,15 @@ export function useApplyUpdatesWithToast() {
   const apply = useCallback(
     (stale: readonly StaleInstallation[]) => {
       const fresh = stale.filter(({ check }) => !inFlight.current.has(check.installPath));
-      const [first, ...rest] = fresh.map(({ check }) => ({ installPath: check.installPath }));
+      // Each installation exactly as the check reported it and the person was
+      // shown it: the server installs only a version that still runs exactly
+      // this, and refuses the whole apply otherwise (DOR-2306).
+      const [first, ...rest] = fresh.map(({ check }) => ({
+        installPath: check.installPath,
+        latestVersion: check.latestVersion,
+        disclosed: check.disclosed ?? null,
+        contentHash: check.contentHash ?? '',
+      }));
       if (first === undefined) return;
       const paths = fresh.map(({ check }) => check.installPath);
       for (const path of paths) inFlight.current.add(path);

@@ -212,13 +212,22 @@ export interface AuthorRecord {
  *   its owner from anywhere. Pass `null` when the caller knows better: an author
  *   whose agent is gone still has a handle on its row and no longer answers to
  *   it, and offering it in a picker would insert a mention that reaches nobody.
+ * @param retired - Whether the caller asked the liveness question and this
+ *   author failed it: an agent nobody at its directory answers for any more
+ *   (DOR-2095). Only ever sent as `true`, because a caller that did not ask
+ *   cannot say an author is active either.
  */
-export function toAuthorRef(record: AuthorRecord, addressable?: string | null): AuthorRef {
+export function toAuthorRef(
+  record: AuthorRecord,
+  addressable?: string | null,
+  retired = false
+): AuthorRef {
   return {
     id: record.id,
     kind: record.kind,
     displayName: record.displayName,
     handle: addressable === undefined ? record.handle : addressable,
+    ...(retired ? { retired: true } : {}),
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),
     ...(record.imageUrl ? { imageUrl: record.imageUrl } : {}),
@@ -600,6 +609,45 @@ export class AuthorRegistry {
       naturalKey: externalNaturalKey(identity),
       displayName: externalDisplayName(identity),
     });
+  }
+
+  /**
+   * Give somebody outside this machine who was erased where they came from the
+   * name that platform now shows for them, and a handle derived from it.
+   *
+   * Unlike an ordinary rename ({@link AuthorRegistry.resolveExternal}, which
+   * keeps the handle), the handle is re-derived: it was derived from the name the
+   * person asked to have erased, so keeping it would keep that name. The old
+   * handle is released without a tombstone, and any tombstones this author left
+   * are dropped, for the same reason — nobody is left to reclaim them. The
+   * author's id is unchanged, so every entry keeps pointing at the same row.
+   *
+   * @param identity - Who this is, with the display name the platform now shows,
+   *   RAW (for a Community, `Erased member` or `Erased agent`).
+   * @returns The author as stored now.
+   */
+  renameErasedExternal(identity: ExternalAuthorIdentity): AuthorRecord {
+    const naturalKey = externalNaturalKey(identity);
+    const existing = this.activeRow('human', naturalKey);
+    if (!existing) return this.resolveExternal(identity);
+    const displayName = externalDisplayName(identity);
+    const claimant = { id: existing.id, kind: 'human' as const, naturalKey };
+    // Its own handle and tombstones are its lineage's, so they never count against it.
+    const taken = this.handles.spokenFor(claimant);
+    const { platform, platformUserId } = externalAuthorParts(naturalKey);
+    const handle =
+      deriveQualifiedHandle(displayName, platform, taken) ??
+      deriveQualifiedHandle(platformUserId, platform, taken) ??
+      null;
+    this.db.transaction((tx) => {
+      tx.delete(handleTombstones).where(eq(handleTombstones.authorId, existing.id)).run();
+      tx.update(authors).set({ displayName, handle }).where(eq(authors.id, existing.id)).run();
+    });
+    return {
+      ...toRecord(existing),
+      displayName,
+      handle,
+    };
   }
 
   /**
@@ -1084,47 +1132,6 @@ export class AuthorRegistry {
   }
 
   /**
-   * The operator's author row **if it already exists**, without creating one.
-   *
-   * The read-only twin of {@link AuthorRegistry.localHuman} and
-   * {@link AuthorRegistry.bindOwner}: same two natural keys, same active-row
-   * filter, no `INSERT` and no `UPDATE`.
-   *
-   * **It is NOT equivalent to them, and the difference is deliberate.**
-   * `bindOwner` ADOPTS the pre-login `'local'` sentinel onto the owner's key,
-   * which is how an install that gains a login keeps the rooms and memberships
-   * it already had. Adopting is a write, so this cannot do it — and must not
-   * imitate it by reading the sentinel and calling it the owner. That row is not
-   * the owner (`isOwnerRecord` says so), and handing back the owner's search
-   * scope for it is the widening this seam exists to refuse. On an owned install
-   * with only a sentinel row, the honest answer is `null`.
-   *
-   * **It exists because a reader is not allowed to mint** (DOR-1563). The
-   * Obsidian embed opens `dork.db` read-only — DorkOS may be writing it, and two
-   * writers on one index is the risk that shape avoids — and `localHuman()`
-   * writes: it upserts the author row when there is not one, which on a readonly
-   * connection raises "attempt to write a readonly database" on EVERY search.
-   * Measured, not predicted.
-   *
-   * `null` means nothing has ever acted as the operator on this database, which
-   * on any install DorkOS has actually booted cannot happen — it mints this row
-   * itself. A caller that gets `null` has a database no DorkOS has run against,
-   * and should refuse rather than invent an identity to search as.
-   *
-   * @param ownerUserId - The owning account's id, or `null` on an install with
-   *   no accounts — the same argument {@link isOwnerRecord} takes, so the two
-   *   cannot disagree about which key is the operator's.
-   * @returns The record, or `null` when the row is not there.
-   */
-  peekOperator(ownerUserId: string | null): AuthorRecord | null {
-    const row = this.activeRow('human', ownerNaturalKey(ownerUserId));
-    // The pre-login sentinel is deliberately NOT a fallback for a bound owner:
-    // reading it would hand the owner's scope to a row that is not the owner,
-    // which is the widening this whole seam is shaped to refuse.
-    return row ? toRecord(row) : null;
-  }
-
-  /**
    * The human author for a local account that is NOT this install's owner.
    *
    * Under ADR 260727-184933 D6 there is no such account: registration is closed
@@ -1377,6 +1384,27 @@ export class AuthorRegistry {
       .all();
     for (const row of rows) resolved.set(row.id, toRecord(row));
     return resolved;
+  }
+
+  /**
+   * Every author row ever minted for an agent directory, retired generations
+   * included — the rows an unregister cascade has to consider (DOR-2095).
+   *
+   * Retired rows are in it on purpose. A generation retired by
+   * {@link AuthorRegistry.retireAndMint} kept its memberships (the ADR
+   * 260801-003051 warning names them), and once nobody at the directory answers
+   * for it, those seats are exactly as dead as the current generation's.
+   *
+   * @param agentPath - The agent's project directory.
+   */
+  agentRowsAt(agentPath: string): AuthorRecord[] {
+    return this.db
+      .select()
+      .from(authors)
+      .where(and(eq(authors.kind, 'agent'), eq(authors.naturalKey, agentPath)))
+      .orderBy(asc(authors.createdAt))
+      .all()
+      .map(toRecord);
   }
 
   /** The stored display name of a human author, or `null` when it has no row yet. */

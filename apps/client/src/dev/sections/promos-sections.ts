@@ -59,13 +59,6 @@ export const PROMOS_SECTIONS: PlaygroundSection[] = [
     keywords: ['promo', 'card', 'dashboard', 'sidebar', 'compact', 'dismiss'],
   },
   {
-    id: 'promo-card-agent-sidebar',
-    title: 'Promo card — agent-sidebar',
-    page: 'promos',
-    category: 'Promos',
-    keywords: ['promo', 'card', 'agent', 'sidebar', 'compact', 'session', 'embed'],
-  },
-  {
     id: 'override-controls',
     title: 'Override Controls',
     page: 'promos',

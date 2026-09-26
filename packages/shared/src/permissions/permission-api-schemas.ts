@@ -56,6 +56,11 @@ export const PermissionActionEntrySchema = z
     id: z.string(),
     title: z.string(),
     tier: z.enum(CAPABILITY_TIERS),
+    /**
+     * Never Allowed: its card shows the change it would make, so a person sees
+     * every one. Offers Blocked and Ask only, like a floor area.
+     */
+    alwaysAsks: z.literal(true).optional(),
     /** What this action resolves to at the layer being viewed. */
     resolved: ResolvedPermissionSchema,
     /** The last change to the setting `resolved.source` names. */
@@ -164,6 +169,12 @@ export const PermissionsResponseSchema = z
     exceptions: z.array(PermissionExceptionSchema),
     /** How many registered agents the defaults reach. */
     agentCount: z.number().int().min(0),
+    /**
+     * Set when DorkOS cannot read or save its record of which new agents it has
+     * screened: until it can, every agent's own settings count only where they
+     * are stricter than the defaults.
+     */
+    newAgentRecordUnreadable: z.literal(true).optional(),
   })
   .openapi('PermissionsResponse');
 

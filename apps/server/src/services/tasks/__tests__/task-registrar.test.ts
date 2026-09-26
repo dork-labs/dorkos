@@ -78,7 +78,7 @@ describe('TaskRegistrar', () => {
       const task = store.createTask(taskInput({ name: 'vanished', cron: '0 2 * * *' }));
       registrar.syncTask(task.id);
 
-      store.markRemovedByFilePath(task.filePath);
+      store.fileSync.markRemovedByFilePath(task.filePath);
       registrar.syncTask(task.id);
 
       expect(scheduler.cronFor(task.id)).toBeNull();

@@ -3,7 +3,7 @@ import { PROMO_REGISTRY } from '../model/promo-registry';
 import type { PromoPlacement } from '../model/promo-types';
 import * as fs from 'node:fs';
 
-const VALID_PLACEMENTS: PromoPlacement[] = ['dashboard-sidebar', 'agent-sidebar'];
+const VALID_PLACEMENTS: PromoPlacement[] = ['dashboard-sidebar'];
 const KEBAB_CASE_REGEX = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 describe('promo-registry', () => {

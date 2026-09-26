@@ -367,9 +367,6 @@ export function ComposerShowcases() {
   const sessionIdle = buildSessionTarget();
   const sessionTyping = buildSessionTarget();
   const sessionQueued = buildSessionTarget();
-  // The session's REAL refusal, not an invented one: `useSessionTarget` closes
-  // the box only when there is no conversation selected — the Obsidian embed's
-  // first load — and says exactly this.
   const sessionNoConversation = buildSessionTarget({
     canSend: false,
     canSendReason: 'Pick a conversation, or start a new one.',

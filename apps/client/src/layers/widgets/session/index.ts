@@ -12,7 +12,6 @@
  * @module widgets/session
  */
 export { SessionPage } from './ui/SessionPage';
-export { ChatPanel } from './ui/ChatPanel';
 export { SessionTranscript } from './ui/SessionTranscript';
 export { SessionComposer } from './ui/SessionComposer';
 /**

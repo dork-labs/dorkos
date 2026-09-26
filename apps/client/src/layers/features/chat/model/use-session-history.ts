@@ -11,11 +11,7 @@ import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTabVisibility, useTransport } from '@/layers/shared/model';
 import { QUERY_TIMING } from '@/layers/shared/lib';
-import {
-  useSessionChatStore,
-  isSessionScopeReady,
-  type SessionScopedCwd,
-} from '@/layers/entities/session';
+import { useSessionChatStore, type SessionScopedCwd } from '@/layers/entities/session';
 import { mapHistoryMessage, reconcileTaggedMessages } from './stream/stream-history-helpers';
 import type { ChatMessage } from './chat-types';
 
@@ -73,9 +69,8 @@ export function useSessionHistory({
     staleTime: QUERY_TIMING.MESSAGE_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     // A null directory is a complete question — the server resolves the
-    // session's own (DOR-1444). Only an UNSETTLED one is worth waiting for,
-    // which is the double-fetch DOR-495 removed.
-    enabled: isSessionScopeReady(sessionId, sessionCwd),
+    // session's own (DOR-1444). The URL supplies the scope on the first render.
+    enabled: sessionId !== null,
     refetchInterval: () => {
       if (isStreaming) return false;
       if (!enableMessagePolling) return false;

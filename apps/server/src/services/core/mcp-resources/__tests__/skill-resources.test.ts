@@ -103,7 +103,7 @@ describe('dorkos://skills', () => {
   });
 
   it('withholds a skill that says disable-model-invocation: yes, but still serves it by name', async () => {
-    // YAML 1.1 word, delivered as the string "yes" by gray-matter.
+    // YAML 1.1 word, delivered as the string "yes" by the frontmatter reader.
     await writeSkill(cwd, 'analyze', 'Analyze the codebase');
     await writeSkill(cwd, 'release', 'Cut a release', 'disable-model-invocation: yes\n');
     client = await connect(cwd);

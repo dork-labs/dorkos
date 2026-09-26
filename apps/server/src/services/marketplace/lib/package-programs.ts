@@ -42,6 +42,7 @@ import {
   readDeclarationJson,
   type DeclarationSource,
 } from './package-declarations.js';
+import { EFFECT_BEARING_PATHS } from '@dorkos/marketplace';
 
 /** What {@link readPackagePrograms} found. */
 export interface PackagePrograms {
@@ -100,7 +101,7 @@ async function readMcpServers(
   unreadable: UnreadableDeclaration[]
 ): Promise<PreviewMcpServer[]> {
   const servers: PreviewMcpServer[] = [];
-  const sources = declarationsOf('.mcp.json', field);
+  const sources = declarationsOf(EFFECT_BEARING_PATHS.mcpServersFile, field);
   for (const { path, value } of await valuesOf(packagePath, sources, 'mcp-server', unreadable)) {
     const map = serverMap(value, 'mcpServers');
     if (!map) {
@@ -137,7 +138,7 @@ async function readLspServers(
   unreadable: UnreadableDeclaration[]
 ): Promise<PreviewLspServer[]> {
   const servers: PreviewLspServer[] = [];
-  const sources = declarationsOf('.lsp.json', field);
+  const sources = declarationsOf(EFFECT_BEARING_PATHS.lspServersFile, field);
   for (const { path, value } of await valuesOf(packagePath, sources, 'lsp-server', unreadable)) {
     const map = serverMap(value, 'lspServers');
     if (!map) {
@@ -164,7 +165,7 @@ async function readMonitors(
   const experimental = isRecord(pluginJson?.experimental) ? pluginJson.experimental : undefined;
   const field = experimental?.monitors ?? pluginJson?.monitors;
   const monitors: PreviewMonitor[] = [];
-  const sources = declarationsOf('monitors/monitors.json', field);
+  const sources = declarationsOf(EFFECT_BEARING_PATHS.monitorsFile, field);
   for (const { path, value } of await valuesOf(packagePath, sources, 'monitor', unreadable)) {
     const entries = Array.isArray(value) ? value : [value];
     for (const entry of entries) {
@@ -186,7 +187,7 @@ async function readMonitors(
 
 /** Every file (or link) directly in `bin/`; directories are not on `PATH`. */
 async function readExecutables(packagePath: string): Promise<string[]> {
-  const binDir = join(packagePath, 'bin');
+  const binDir = join(packagePath, EFFECT_BEARING_PATHS.executables);
   try {
     const stats = await lstat(binDir);
     if (!stats.isDirectory()) return [];

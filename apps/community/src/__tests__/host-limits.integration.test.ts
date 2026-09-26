@@ -26,6 +26,7 @@ import {
   type TenancyHarness,
   type TenancyMember,
 } from './tenancy-test-harness.js';
+import { drainExports } from './export-test-helpers.js';
 
 const MiB = 1024 * 1024;
 let h: TenancyHarness;
@@ -312,6 +313,54 @@ it('lets a channel invitation and an upload to that channel commit together with
   await setLimits(a, { maxActiveMembers: 4, maxStorageBytes: null });
 });
 
+it('lets a channel invitation and its own issuer uploading to that channel commit without a deadlock', async () => {
+  // Purpose: DOR-2277. Redeeming locks the issuer's member row and then the invitation's
+  // channel (the channel_members insert needs it); the issuer's upload locks the channel and
+  // then its own member row. With the member row held so both queue up behind it, the old
+  // opposite order made one of them fail with a deadlock. Both must now commit.
+  await setLimits(a, { maxActiveMembers: 100, maxStorageBytes: 1024 * MiB });
+  const room = await createChannel(h, a, operator.cookie, 'issuer-uploads');
+  const issued = await expectStatus(
+    await h.call(`${tenant(a)}/invites`, {
+      cookie: operator.cookie,
+      body: { seats: 1, channelId: room },
+    }),
+    201,
+    'channel invite'
+  );
+  const joiner = await boundJoiner((await issued.json()).token, 'issuer-race@limits.test');
+  const [joined, uploaded] = await holdingLock(
+    h,
+    'SELECT 1 FROM members WHERE id=$1 FOR UPDATE',
+    [operator.memberId],
+    async (release) => {
+      // The redemption queues on the issuer's row first, then the upload joins the queue.
+      const joining = redeem(joiner);
+      await waitForLockWaiters(h, 1);
+      const uploading = upload(1, 'issuer-during-join', room, operator.cookie);
+      await waitForLockWaiters(h, 2);
+      await release();
+      return Promise.all([joining, uploading]);
+    }
+  );
+  expect([joined.status, uploaded.status]).toEqual([200, 201]);
+  expect(
+    await count('SELECT 1 FROM channel_members WHERE channel_id=$1 AND member_id=$2', [
+      room,
+      (await joined.json()).memberId,
+    ])
+  ).toBe(1);
+  await expectStatus(
+    await h.call(`${tenant(a)}/me/leave`, {
+      cookie: joiner,
+      body: { password: TENANCY_PASSWORD, communityName: 'Operator Community' },
+    }),
+    204,
+    'issuer-race joiner leaves'
+  );
+  await setLimits(a, { maxActiveMembers: 4, maxStorageBytes: null });
+});
+
 it('lets only one of two first limit writes through', async () => {
   // Purpose: with no limit row yet there is nothing to lock, so both would pass the version
   // check; only the write itself can refuse the loser.
@@ -505,14 +554,20 @@ it('always lets the owner export, refuses a larger icon, and frees space when th
   // over-limit icon slips past either check, or if a same-size replacement is refused.
   const counted = (await usage(a)).storage.countedBytes;
   await setLimits(a, { maxActiveMembers: null, maxStorageBytes: counted });
-  await expectStatus(
+  const exported = await expectStatus(
     await h.call(`${tenant(a)}/owner/export`, {
       cookie: operator.cookie,
       body: { password: TENANCY_PASSWORD },
     }),
-    201,
+    202,
     'export at the limit'
   );
+  // The background job stores every segment although the community is at its limit.
+  await drainExports(h.pool, h.blobStore);
+  const ready = await h.pool.query('SELECT state FROM export_archives WHERE id=$1', [
+    (await exported.json()).export.id,
+  ]);
+  expect(ready.rows[0].state).toBe('ready');
 
   const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(64, 1)]);
   await setLimits(a, { maxActiveMembers: null, maxStorageBytes: counted + png.length });

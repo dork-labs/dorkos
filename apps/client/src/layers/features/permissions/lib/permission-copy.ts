@@ -53,6 +53,8 @@ export function defaultSourceText(
       return 'Not chosen yet, so it works as it did before';
     case 'floor':
       return 'Never Allowed';
+    case 'always-asks':
+      return 'Always asks, so you see what it would change';
     default:
       return '';
   }

@@ -233,6 +233,8 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     defaultCron: '0 3 * * *',
     defaultTimezone: 'UTC',
     timingOverridden: false,
+    packageOwned: null,
+    approvalChanges: [],
     agentId: null,
     // True: this fixture stands in for a schedule an AGENT proposed, which is
     // asking to run by definition (DOR-2059 only quiets a package-shipped
@@ -244,6 +246,7 @@ function parkedSchedule(overrides: Partial<Task> & Pick<Task, 'id'>): Task {
     runtime: null,
     model: null,
     effort: null,
+    account: null,
     status: 'pending_approval',
     filePath: `/tasks/${overrides.id}.json`,
     createdAt: '2026-08-19T09:00:00.000Z',

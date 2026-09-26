@@ -44,10 +44,6 @@
  * queries. The coalescing itself is `shared/model/query/use-coalesced-invalidation`,
  * which this hook and the two `*Sync` hooks in `entities/` all share.
  *
- * Mount ONCE, high in the tree (the app shell), alongside the other
- * `/api/events` sync hooks. In embedded mode (Obsidian) the in-process transport
- * yields no generic events, so every subscription is an inert no-op there.
- *
  * @module widgets/pulse/model/use-pulse-freshness
  */
 import type { QueryKey } from '@tanstack/react-query';

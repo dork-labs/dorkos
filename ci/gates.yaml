@@ -137,6 +137,11 @@ gates:
     source: .github/workflows/merge-tail.yml
     purpose: Every 10 minutes, arms auto-merge on PRs that are finished, green and unblocked, and re-requests a lost automated review on the ones whose review check is red.
 
+  # --- neon-preview-sweep.yml ---
+  - id: wf.neon-preview-sweep.sweep
+    source: .github/workflows/neon-preview-sweep.yml
+    purpose: Nightly, deletes Neon preview databases idle 7+ days whose git branch has no open PR; green with a notice until NEON_API_KEY is set, red when it cannot read Neon or GitHub or a delete fails. Never required.
+
   # --- operating-skills-version-check.yml ---
   - id: wf.operating-skills-version-check.version-outranks-base
     source: .github/workflows/operating-skills-version-check.yml
@@ -211,9 +216,6 @@ gates:
   - id: lefthook.pre-commit.lint
     source: lefthook.yml
     purpose: Lints the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
-  - id: lefthook.pre-commit.typecheck
-    source: lefthook.yml
-    purpose: Typechecks the packages the branch affects against origin/main, under the machine-wide heavy-run cap.
   - id: lefthook.pre-push.formatting
     source: lefthook.yml
     purpose: Fails a push whose changed files are not Prettier-clean, and prints the fix command.
@@ -254,7 +256,7 @@ gates:
     purpose: Runs Prettier over the files changed in the turn, once, at turn end.
   - id: claude.SessionStart.session-maintenance
     source: .claude/settings.json
-    purpose: Prints short nags at session start about ADR drift, backlog and stale state.
+    purpose: Prints short nags at session start about ADR drift, backlog and stale state, and fast-forwards the main checkout's clean main to origin/main on startup.
 
   # --- ruleset 19893973 "main: merge queue" ---
   - id: ruleset.merge_queue

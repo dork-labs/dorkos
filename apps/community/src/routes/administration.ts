@@ -10,7 +10,13 @@ import {
 } from '@dorkos/shared/community-admin-wire';
 import type { CommunityAuth } from '../auth.js';
 import type { ConfirmPassword } from '../password-confirmation.js';
-import { requireMember, requireSessionUser, transaction, type Member } from '../data.js';
+import {
+  communityHeld,
+  requireMember,
+  requireSessionUser,
+  transaction,
+  type Member,
+} from '../data.js';
 import { AdminSettingsConflict, ApiError, json, readJson } from '../http.js';
 import { assertStorageRoom, assertStorageWithinLimit, countedBlobBytes } from '../host/limits.js';
 import {
@@ -35,7 +41,7 @@ interface SettingsRow {
   icon_blob_key: string | null;
   icon_content_type: string | null;
   settings_version: number;
-  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'deletion_pending';
+  lifecycle: 'pending_owner' | 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending';
   lifecycle_version: number;
 }
 
@@ -134,19 +140,33 @@ function deletionProjection(row: {
   delete_after: Date | null;
   state: 'waiting' | 'deleting' | 'retrying' | null;
   attempts: number | null;
+  requested_by: 'owner' | 'host' | null;
+  returns_to: 'archived' | 'suspended' | 'held' | null;
 }) {
   return {
     communityId: row.community_id,
-    lifecycle: row.lifecycle as 'active' | 'archived' | 'suspended' | 'deletion_pending',
+    lifecycle: row.lifecycle as 'active' | 'archived' | 'suspended' | 'held' | 'deletion_pending',
     lifecycleVersion: row.lifecycle_version,
     deleteAfter: row.delete_after?.toISOString() ?? null,
     state: row.state,
     attempts: row.attempts ?? 0,
+    requestedBy: row.requested_by,
+    returnsTo: row.returns_to,
   };
 }
 
-/** Lifecycles the owner may ask to delete from. A suspension must not trap an owner. */
-const DELETABLE: readonly string[] = ['active', 'archived', 'suspended'];
+/** Who asked for a pending deletion, and where cancelling it would return the community. */
+const deletionOrigin = `CASE WHEN c.delete_requested_by_host_actor IS NOT NULL THEN 'host'
+    WHEN c.delete_requested_by IS NOT NULL THEN 'owner' END AS requested_by,
+  CASE WHEN c.lifecycle<>'deletion_pending' THEN NULL
+    WHEN c.deletion_from_state IN ('held','suspended') THEN c.deletion_from_state
+    ELSE 'archived' END AS returns_to`;
+
+/**
+ * Lifecycles the owner may ask to delete from. Neither a suspension nor a host's hold may trap
+ * an owner: a hold stops growth, never an owner's own decision to delete.
+ */
+const DELETABLE: readonly string[] = ['active', 'archived', 'suspended', 'held'];
 
 /** Register settings and owner lifecycle operations for one tenant-qualified Community. */
 export function registerAdministrationRoutes(
@@ -184,6 +204,7 @@ export function registerAdministrationRoutes(
         if (current.lifecycle === 'archived') {
           throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
         }
+        if (current.lifecycle === 'held') throw communityHeld();
         assertReadableLifecycle(current);
       }
       if (current.settings_version !== expectedVersion) {
@@ -241,6 +262,7 @@ export function registerAdministrationRoutes(
       if (current.lifecycle !== 'active') {
         if (current.lifecycle === 'archived')
           throw new ApiError(423, 'COMMUNITY_ARCHIVED', 'This community is archived.');
+        if (current.lifecycle === 'held') throw communityHeld();
         assertReadableLifecycle(current);
       }
       if (current.settings_version !== expectedVersion)
@@ -272,6 +294,7 @@ export function registerAdministrationRoutes(
       const row = await transaction(pool, async (client) => {
         const current = await lockSettings(client, actor.community_id);
         const currentActor = await lockMember(client, actor, ['owner', 'admin']);
+        if (current.lifecycle === 'held') throw communityHeld();
         if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
           throw new AdminSettingsConflict(projectSettings(current));
         await prepareManagedBlobCommit(client, reservation, stored);
@@ -312,6 +335,7 @@ export function registerAdministrationRoutes(
     const row = await transaction(pool, async (client) => {
       const current = await lockSettings(client, actor.community_id);
       const currentActor = await lockMember(client, actor, ['owner', 'admin']);
+      if (current.lifecycle === 'held') throw communityHeld();
       if (current.lifecycle !== 'active' || current.settings_version !== expectedVersion)
         throw new AdminSettingsConflict(projectSettings(current));
       const updated = await client.query<SettingsRow>(
@@ -394,6 +418,8 @@ export function registerAdministrationRoutes(
       if (current.lifecycle_version !== body.lifecycleVersion) {
         throw new AdminSettingsConflict(projectSettings(current));
       }
+      // Only the host releases a hold; an owner cannot archive or restore their way out of one.
+      if (current.lifecycle === 'held') throw communityHeld();
       if (body.action === 'archive') {
         if (current.lifecycle !== 'active') {
           throw new ApiError(409, 'STATE_CONFLICT', 'Only an active community can be archived.');
@@ -441,16 +467,21 @@ export function registerAdministrationRoutes(
       const currentActor = await lockMember(client, actor, ['owner']);
       const status = await client.query(
         `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                c.delete_requested_by,j.state,j.attempts
+                c.delete_requested_by,j.state,j.attempts,${deletionOrigin}
          FROM communities c LEFT JOIN community_deletion_jobs j ON j.community_id=c.id
          WHERE c.id=$1`,
         [current.id]
       );
       const row = status.rows[0];
-      if (current.lifecycle === 'deletion_pending' && row.delete_requested_by !== currentActor.id) {
+      // The owner sees their own deletion, and one the host started; never another member's.
+      if (
+        current.lifecycle === 'deletion_pending' &&
+        row.delete_requested_by !== null &&
+        row.delete_requested_by !== currentActor.id
+      ) {
         throw new ApiError(403, 'FORBIDDEN', 'Only the requesting owner can view this deletion.');
       }
-      if (!['active', 'archived', 'deletion_pending'].includes(current.lifecycle)) {
+      if (!['active', 'archived', 'held', 'deletion_pending'].includes(current.lifecycle)) {
         throw new ApiError(409, 'STATE_CONFLICT', 'Deletion status is unavailable.');
       }
       return row;
@@ -473,7 +504,7 @@ export function registerAdministrationRoutes(
       if (current.lifecycle === 'deletion_pending') {
         const pending = await client.query(
           `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                  j.state,j.attempts
+                  j.state,j.attempts,${deletionOrigin}
            FROM communities c JOIN community_deletion_jobs j ON j.community_id=c.id
            WHERE c.id=$1`,
           [current.id]
@@ -507,7 +538,7 @@ export function registerAdministrationRoutes(
       if (current.lifecycle === 'deletion_pending') {
         const existing = await client.query(
           `SELECT c.id AS community_id,c.lifecycle,c.lifecycle_version,c.delete_after,
-                  j.state,j.attempts
+                  j.state,j.attempts,${deletionOrigin}
            FROM communities c JOIN community_deletion_jobs j ON j.community_id=c.id
            WHERE c.id=$1`,
           [current.id]
@@ -526,11 +557,13 @@ export function registerAdministrationRoutes(
       await revokeTenantAccess(client, current.id);
       const requestedAt = new Date();
       const deleteAfter = new Date(requestedAt.getTime() + 7 * 24 * 60 * 60_000);
-      // Entering deletion_pending clears the suspension, so remember where a cancel returns.
+      // Entering deletion_pending clears the suspension, so remember where a cancel returns. A
+      // hold's own origin stays in held_from_state for as long as the hold lasts.
       const updated = await client.query<{ lifecycle_version: number }>(
         `UPDATE communities SET lifecycle='deletion_pending',archived_at=NULL,
            deletion_from_state=lifecycle,
-           deletion_from_prior_state=CASE WHEN lifecycle='suspended' THEN suspended_from_state END,
+           deletion_from_prior_state=CASE lifecycle
+             WHEN 'suspended' THEN suspended_from_state WHEN 'held' THEN held_from_state END,
            suspended_from_state=NULL,suspended_at=NULL,
            delete_requested_at=$2,delete_after=$3,delete_requested_by=$4,
            lifecycle_version=lifecycle_version+1
@@ -557,6 +590,11 @@ export function registerAdministrationRoutes(
         delete_after: deleteAfter,
         state: 'waiting',
         attempts: 0,
+        requested_by: 'owner',
+        returns_to:
+          current.lifecycle === 'held' || current.lifecycle === 'suspended'
+            ? current.lifecycle
+            : 'archived',
       };
     });
     return json(c, CommunityAdminDeletionStatusSchema, deletionProjection(result));
@@ -575,7 +613,7 @@ export function registerAdministrationRoutes(
           delete_after: Date | null;
           delete_requested_by: string | null;
           deletion_from_state: string | null;
-          deletion_from_prior_state: 'active' | 'archived' | null;
+          deletion_from_prior_state: 'active' | 'archived' | 'held' | null;
         }
       >(
         `SELECT id,name,description,admission_policy,icon_blob_key,settings_version,
@@ -586,6 +624,13 @@ export function registerAdministrationRoutes(
       );
       const row = current.rows[0];
       const currentActor = await lockMember(client, actor, ['owner']);
+      if (row?.lifecycle === 'deletion_pending' && row.delete_requested_by === null) {
+        throw new ApiError(
+          409,
+          'STATE_CONFLICT',
+          'The host started this deletion after its notice date. Only the host can cancel it.'
+        );
+      }
       if (
         !row ||
         row.lifecycle !== 'deletion_pending' ||
@@ -596,12 +641,15 @@ export function registerAdministrationRoutes(
       ) {
         throw new ApiError(409, 'STATE_CONFLICT', 'This deletion can no longer be cancelled.');
       }
-      // A deletion requested while suspended returns to that suspension, from where it began;
-      // one requested while active or archived keeps its content out of use, as archived.
+      // A deletion requested while suspended returns to that suspension, and one requested while
+      // held returns to the hold, so a cancel can never lift either; one requested while active
+      // or archived keeps its content out of use, as archived.
       const restored =
-        row.deletion_from_state === 'suspended' && row.deletion_from_prior_state
-          ? { lifecycle: 'suspended' as const, suspendedFrom: row.deletion_from_prior_state }
-          : { lifecycle: 'archived' as const, suspendedFrom: null };
+        row.deletion_from_state === 'held'
+          ? { lifecycle: 'held' as const, suspendedFrom: null }
+          : row.deletion_from_state === 'suspended' && row.deletion_from_prior_state
+            ? { lifecycle: 'suspended' as const, suspendedFrom: row.deletion_from_prior_state }
+            : { lifecycle: 'archived' as const, suspendedFrom: null };
       const updated = await client.query<{ lifecycle_version: number }>(
         `UPDATE communities SET lifecycle=$2,
            archived_at=CASE WHEN $2='archived' OR $3='archived' THEN now() END,
@@ -625,6 +673,8 @@ export function registerAdministrationRoutes(
         delete_after: null,
         state: null,
         attempts: 0,
+        requested_by: null,
+        returns_to: null,
       };
     });
     return json(c, CommunityAdminDeletionStatusSchema, deletionProjection(result));

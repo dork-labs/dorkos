@@ -116,15 +116,22 @@ vi.mock('../../../core/event-fan-out.js', () => ({
 }));
 // Mock the dynamic imports refreshActivatedPlugins() pulls in so the plugin-set
 // swap is deterministic and never touches the real filesystem.
-const { _mockListEnabledPluginNames, _mockBuildPluginsArray } = vi.hoisted(() => ({
-  _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
-  _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
-}));
+const { _mockListEnabledPluginNames, _mockListConsentedPluginNames, _mockBuildPluginsArray } =
+  vi.hoisted(() => ({
+    _mockListEnabledPluginNames: vi.fn().mockResolvedValue([]),
+    _mockListConsentedPluginNames: vi.fn().mockResolvedValue([]),
+    _mockBuildPluginsArray: vi.fn().mockResolvedValue([]),
+  }));
 vi.mock('../../../../lib/dork-home.js', () => ({
   resolveDorkHome: vi.fn().mockReturnValue('/tmp/dorkos-test'),
 }));
 vi.mock('../../../marketplace/installed-scanner.js', () => ({
   listEnabledPluginNames: _mockListEnabledPluginNames,
+}));
+// Which global packages a person approved is decided in the marketplace layer
+// (DOR-2306); the runtime must hand the SDK that list and nothing wider.
+vi.mock('../../../marketplace/global-plugin-consent.js', () => ({
+  listConsentedPluginNames: _mockListConsentedPluginNames,
 }));
 vi.mock('../messaging/plugin-activation.js', () => ({
   buildClaudeAgentSdkPluginsArray: _mockBuildPluginsArray,
@@ -317,6 +324,95 @@ describe('ClaudeCodeRuntime', () => {
         expect(principals.revoke).toHaveBeenCalledWith('binding-1', 'turn_terminal');
       }
     );
+
+    describe('which agent a room turn opens its connections as (DOR-2091)', () => {
+      // A room turn names the agent it is for. The connections binding is opened
+      // for the agent the directory anchors to, and only when that is the
+      // turn's agent — a turn for Ben that stands in Ana's folder must never
+      // open Ana's connections. Seeded: `agentPath = cwdKey` (no anchor, no
+      // cross-check) reddens the refusal row.
+      const ANA = '/agents/ana';
+      const WORKTREE = '/dork/rooms/01ROOM/worktrees/ana-1a2b3c4d';
+
+      afterEach(async () => {
+        (await import('../../../core/agent-identity/index.js')).setWorkingCopyOwnerPort(undefined);
+      });
+
+      async function turnFor(cwd: string, forAgent: string) {
+        const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+        const { setWorkingCopyOwnerPort } = await import('../../../core/agent-identity/index.js');
+        setWorkingCopyOwnerPort({
+          isRegisteredAgent: () => true,
+          ownerOf: (dir) => (dir === WORKTREE ? { owner: ANA } : null),
+        });
+        const principals: ConnectorRuntimePrincipalPort = {
+          openTurn: vi.fn().mockResolvedValue({
+            bindingId: 'binding-1',
+            bearer: 'turn-secret',
+            expiresAt: '2099-01-01T00:00:00.000Z',
+            renewalPermit: {} as never,
+          }),
+          renew: vi.fn(),
+          resolve: vi.fn().mockResolvedValue({
+            status: 'resolved',
+            principal: { claims: { kind: 'runtime' } } as ServerPrincipalProof,
+          }),
+          revoke: vi.fn().mockResolvedValue(undefined),
+        };
+        agentManager.setMeshCore({
+          getByPath: (p: string) => (p === ANA ? { id: 'agent-ana', name: 'ana' } : undefined),
+          listWithPaths: () => [],
+          updateLastSeen: () => undefined,
+        });
+        agentManager.setConnectorRuntimeTools({
+          principals,
+          listenerUrl: 'http://127.0.0.1:4341/mcp',
+          isConnectorCapabilityId: (id) => id === 'connectors.execute_read',
+          accessSnapshot: vi.fn().mockResolvedValue({ accountCount: 0, revision: 'r' }),
+        });
+        let connectorTurn: { resolvePrincipal(): Promise<ServerPrincipalProof> } | undefined;
+        agentManager.setMcpServerFactory((session) => {
+          connectorTurn = session.connectorTurn;
+          return {};
+        });
+        const source = sdkSimpleText('ok', 'canonical-room-session');
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(
+          wrapSdkQuery(
+            (async function* () {
+              for await (const message of source) {
+                yield message;
+                if (message.type === 'system' && message.subtype === 'init') {
+                  await connectorTurn?.resolvePrincipal();
+                }
+              }
+            })()
+          )
+        );
+        agentManager.ensureSession('room-session', { permissionMode: 'default', cwd });
+        for await (const event of agentManager.sendMessage('room-session', 'hi', {
+          cwd,
+          roomTurn: { roomId: '01ROOM', authorId: 'a-1', turnId: 't-1', cwd, agentPath: forAgent },
+        }))
+          void event;
+        return { principals, connectorTurn };
+      }
+
+      it('opens the connections as the agent its worktree belongs to', async () => {
+        const { principals } = await turnFor(WORKTREE, ANA);
+
+        expect(principals.openTurn).toHaveBeenCalledWith(
+          expect.objectContaining({ agentPath: ANA, canonicalCwd: WORKTREE }),
+          expect.anything()
+        );
+      });
+
+      it("opens nothing for a turn for Ben that stands in Ana's own folder", async () => {
+        const { principals, connectorTurn } = await turnFor(ANA, '/agents/ben');
+
+        expect(connectorTurn).toBeUndefined();
+        expect(principals.openTurn).not.toHaveBeenCalled();
+      });
+    });
 
     it('auto-creates session if not in memory', async () => {
       const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
@@ -1524,7 +1620,51 @@ describe('ClaudeCodeRuntime', () => {
     beforeEach(() => {
       _mockBroadcast.mockClear();
       _mockListEnabledPluginNames.mockResolvedValue([]);
+      _mockListConsentedPluginNames.mockResolvedValue([]);
       _mockBuildPluginsArray.mockResolvedValue([]);
+    });
+
+    it('hands the SDK only the global packages a person approved (DOR-2306)', async () => {
+      // Purpose: every installed global package is a candidate, but one whose
+      // programs nobody approved must never reach a session.
+      _mockListEnabledPluginNames.mockResolvedValue(['approved', 'held-back']);
+      _mockListConsentedPluginNames.mockResolvedValue(['approved']);
+
+      await agentManager.refreshActivatedPlugins();
+
+      expect(_mockBuildPluginsArray).toHaveBeenCalledWith(
+        expect.objectContaining({ enabledPluginNames: ['approved'] })
+      );
+    });
+
+    it('drops every global plugin when the approval check itself fails, never keeping the old list (DOR-2306, I-1)', async () => {
+      // Purpose: a refresh that cannot say which packages are approved must not
+      // leave the previous approved set loading into every session.
+      _mockListConsentedPluginNames.mockResolvedValue(['approved']);
+      _mockBuildPluginsArray.mockImplementation(async ({ enabledPluginNames }) =>
+        (enabledPluginNames as string[]).map((name) => ({
+          type: 'local',
+          path: `/h/plugins/${name}`,
+        }))
+      );
+      await agentManager.refreshActivatedPlugins();
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const optionsOfLastTurn = async (sessionId: string) => {
+        (mockedQuery as ReturnType<typeof vi.fn>).mockReturnValue(wrapSdkQuery(sdkSimpleText('')));
+        agentManager.ensureSession(sessionId, { permissionMode: 'default' });
+        for await (const _ of agentManager.sendMessage(sessionId, 'hello')) {
+          // drain
+        }
+        return (mockedQuery as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0]?.options;
+      };
+      expect((await optionsOfLastTurn('partition-ok'))?.plugins).toEqual([
+        { type: 'local', path: '/h/plugins/approved' },
+      ]);
+
+      _mockListConsentedPluginNames.mockRejectedValue(new Error('settings unreadable'));
+      await agentManager.refreshActivatedPlugins();
+
+      expect((await optionsOfLastTurn('partition-threw'))?.plugins ?? []).toEqual([]);
     });
 
     it('broadcasts commands_changed so clients re-fetch the registry', async () => {

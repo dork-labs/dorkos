@@ -14,6 +14,8 @@ superseded-by: null
 
 Accepted
 
+**Amended 2026-09-23 by ADR 260923-163513 (DOR-2245).** The five-step reinstall below is replaced. `update()` now uninstalls as the first half of a replace (in place, journaled, moving only the files the installed-files record proves are the package's) and then installs; the install transaction carries every file the person or their agents added or changed into the new version. There is no temp scratch directory, and `.dork/data/` and `.dork/secrets.json` are no longer special: they are simply files no package ships. The advisory-by-default decision itself is unchanged.
+
 ## Context
 
 Most package managers (npm, pip, brew, apt) ship some flavour of automatic update behaviour: a daemon, a notification, a `--auto-update` flag, or an opt-in subscription that pulls in new versions without explicit user action. The convenience is real — but the cost is that users wake up to a working system with mutated dependencies they did not approve.

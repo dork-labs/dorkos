@@ -17,14 +17,14 @@ Linear issue status change → webhook POST dorkos.ai/api/webhooks/linear
   → Neon status mirror → "shipped" email on the transition into shipped
 ```
 
-| Part                        | Where                                                                                                                     | Identity                                                                        |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| Site intake + Linear client | `apps/site/src/app/api/feedback/route.ts`, `apps/site/src/lib/feedback/linear.ts`                                         | Vercel project `dorkos-web` (team `dopel`)                                      |
-| Server forwarder            | `apps/server/src/services/core/feedback-reporter.ts`                                                                      | runs on every user's machine                                                    |
-| Target Linear team          | **DorkOS User Feedback** (key `FB`)                                                                                       | team id `81f94d0d-8c04-424c-affc-b8462769c6b0`                                  |
-| Kind labels (FB team)       | `Bug` / `Feature`                                                                                                         | `384c8c3f-3f98-492b-afea-a91f37ba117c` / `7d46bb73-289c-4a35-8e4f-552818d2d57b` |
-| Webhook                     | "DorkOS Feedback Issue Updates" → `https://dorkos.ai/api/webhooks/linear`, **Issue** data-change events, all public teams | created 2026-08-06, secret shared with Vercel                                   |
-| Triage routing              | Linear's Triage feature is ON for the FB team                                                                             | new API-created issues land in Triage automatically                             |
+| Part                        | Where                                                                                                                     | Identity                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Site intake + Linear client | `apps/site/src/app/api/feedback/route.ts`, `apps/site/src/lib/feedback/linear.ts`                                         | Vercel project `dorkos-web` (team `dopel`)                                                 |
+| Server forwarder            | `apps/server/src/services/core/feedback-reporter.ts`                                                                      | runs on every user's machine                                                               |
+| Target Linear team          | **DorkOS User Feedback** (key `FB`)                                                                                       | team id `81f94d0d-8c04-424c-affc-b8462769c6b0`                                             |
+| Kind labels (FB team)       | `reported/defect` / `reported/idea` / `reported/feedback`, one per issue, for the form's `bug` / `idea` / `feedback` kind | looked up by name at runtime (`apps/site/src/lib/feedback/reported-labels.ts`); no env var |
+| Webhook                     | "DorkOS Feedback Issue Updates" → `https://dorkos.ai/api/webhooks/linear`, **Issue** data-change events, all public teams | created 2026-08-06, secret shared with Vercel                                              |
+| Triage routing              | Linear's Triage feature is ON for the FB team                                                                             | new API-created issues land in Triage automatically                                        |
 
 There is deliberately **no** `LINEAR_FEEDBACK_PROJECT_ID`: issues file at team
 level, and the FB team's Triage is the intake surface.
@@ -52,14 +52,12 @@ URL does not leak the image.
 
 ## Vercel environment (project `dorkos-web`, set for Production AND Preview)
 
-| Var                       | Value                                                                                                                             |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `LINEAR_API_KEY`          | the write-scoped, FB-team-restricted key (sensitive)                                                                              |
-| `LINEAR_TEAM_ID`          | `81f94d0d-8c04-424c-affc-b8462769c6b0`                                                                                            |
-| `LINEAR_WEBHOOK_SECRET`   | the webhook's signing secret (copy from the webhook's settings page; rotating it there requires updating here in the same breath) |
-| `LINEAR_BUG_LABEL_ID`     | `384c8c3f-3f98-492b-afea-a91f37ba117c`                                                                                            |
-| `LINEAR_FEATURE_LABEL_ID` | `7d46bb73-289c-4a35-8e4f-552818d2d57b`                                                                                            |
-| `RESEND_API_KEY` etc.     | pre-existing; receipt/shipped emails                                                                                              |
+| Var                     | Value                                                                                                                             |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `LINEAR_API_KEY`        | the write-scoped, FB-team-restricted key (sensitive)                                                                              |
+| `LINEAR_TEAM_ID`        | `81f94d0d-8c04-424c-affc-b8462769c6b0`                                                                                            |
+| `LINEAR_WEBHOOK_SECRET` | the webhook's signing secret (copy from the webhook's settings page; rotating it there requires updating here in the same breath) |
+| `RESEND_API_KEY` etc.   | pre-existing; receipt/shipped emails                                                                                              |
 
 CLI shape (run from a directory linked to the project, e.g. `apps/site` in the
 main checkout): `vercel env rm <NAME> production -y` then
@@ -86,7 +84,8 @@ curl -s https://dorkos.ai/api/feedback/<row-id>
 #                               "received" means Linear creation failed — check scope/env.
 ```
 
-Then in Linear: the issue is in the FB team's Triage with the `Bug` label. Move
+Then in Linear: the issue is in the FB team's Triage with the `reported/defect`
+label (what the form's `bug` kind maps to). Move
 its state; re-fetch the status URL and confirm the mirror moved (`in_progress`
 etc.) — that proves the webhook secret matches (mismatch = 401s on the
 webhook's Delivery failures panel, and the mirror never moves). To also prove

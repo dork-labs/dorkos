@@ -149,6 +149,19 @@ export interface MarketplacePackageDetail {
   /** Permission preview computed for this package. */
   preview: PermissionPreview;
   /**
+   * The part of {@link preview} an install approval binds to: everything the
+   * package runs on its own, in canonical form. Send it back as
+   * `InstallOptions.approvedDisclosure` to install only this (DOR-2306).
+   */
+  disclosed: DisclosedEffects;
+  /**
+   * A hash of the package's files as they were staged for this preview. Send
+   * it back as `InstallOptions.approvedContentHash`: a globally installed
+   * package that runs anything loads into sessions only when its installed
+   * copy hashes the same (DOR-2306).
+   */
+  contentHash: string;
+  /**
    * Raw markdown of the package's root `README.md`, read from the staged clone
    * (case-insensitive, capped at 200 KB). Omitted when the package ships no
    * README so the UI renders nothing rather than an empty section.
@@ -372,6 +385,25 @@ export interface PreviewLspServer {
 }
 
 /**
+ * A shell command a skill's or command's text runs when it is used
+ * (DOR-2327): `` !`cmd` `` or a fenced block whose info string is `!`.
+ *
+ * Mirrors `PreviewSkillCommand` in `apps/server/src/services/marketplace/types.ts`.
+ */
+export interface PreviewSkillCommand {
+  /** Package-relative path of the skill or command file. */
+  source: string;
+  /** The skill's name. */
+  skill: string;
+  /** `inline` for `` !`cmd` ``, `block` for a ```` ```! ```` block. */
+  form: 'inline' | 'block';
+  /** The command exactly as written. */
+  command: string;
+  /** Whether it uses the text typed after the command, filled in before it runs. */
+  usesArguments: boolean;
+}
+
+/**
  * The tools a skill or command lets the agent use without asking.
  *
  * Mirrors `PreviewSkillTools` in `apps/server/src/services/marketplace/types.ts`.
@@ -527,8 +559,15 @@ export interface PermissionPreview {
   executables: string[];
   /** Tools each skill or command lets the agent use without asking. */
   skillTools: PreviewSkillTools[];
+  /** Shell commands each skill's or command's text runs when it is used. */
+  skillCommands: PreviewSkillCommand[];
   /** Program declarations that could not be read or point outside the package. */
   unreadableDeclarations: UnreadableDeclaration[];
+  /**
+   * Shortcuts (symbolic links) in the package, each with a sentence saying it
+   * will not be installed: staging drops every link (DOR-2319).
+   */
+  skippedLinks: { path: string; message: string }[];
   /** Scheduled jobs that will be created, and what each may do unattended. */
   schedules: PreviewSchedule[];
   /** Secrets the package will request from the user. */
@@ -548,6 +587,154 @@ export interface PermissionPreview {
   requires: { type: string; name: string; version?: string; satisfied: boolean }[];
   /** Conflicts with already-installed packages. */
   conflicts: ConflictReport[];
+}
+
+// ---------------------------------------------------------------------------
+// Disclosed effects — what an approval attests to
+// ---------------------------------------------------------------------------
+
+/** One shell command a package declares, as the approval showed it. */
+export interface DisclosedHook {
+  /** Harness event the command fires on (e.g. `PreToolUse`, `Stop`). */
+  event: string;
+  /** Tool/event matcher the hook narrows to; `null` when it matches everything. */
+  matcher: string | null;
+  /** The literal shell command, verbatim — never paraphrased or normalized. */
+  command: string;
+  /** The skill or command file it belongs to (it runs while that is in use); `null` for a plugin hook. */
+  source: string | null;
+}
+
+/**
+ * A shell command a skill's or command's text runs when it is used, as an
+ * approval binds it (DOR-2327). Same shape as {@link PreviewSkillCommand}.
+ */
+export type DisclosedSkillCommand = PreviewSkillCommand;
+
+/**
+ * What kind of file a skill-text command is written in, so every surface can
+ * say "when the skill "x" is used" (or command, agent, output style) the same
+ * way.
+ *
+ * @param source - Package-relative path of the file the command is written in.
+ * @returns `skill` for a `SKILL.md`, `agent` under an `agents` folder,
+ *   `output style` under an `output-styles` folder, `command` otherwise.
+ */
+export function skillCommandKind(source: string): 'skill' | 'command' | 'agent' | 'output style' {
+  const parts = source.split(/[\\/]/);
+  if (parts[parts.length - 1] === 'SKILL.md') return 'skill';
+  if (parts.includes('agents')) return 'agent';
+  if (parts.includes('output-styles')) return 'output style';
+  return 'command';
+}
+
+/** A skill or command's `allowed-tools`: tools it may use without asking. */
+export interface DisclosedSkillTools {
+  /** Package-relative path of the skill or command. */
+  source: string;
+  /** The skill's name. */
+  skill: string;
+  /** Each allowed-tools entry, verbatim. */
+  tools: string[];
+}
+
+/** One scheduled job the install would create, and what it may do unattended. */
+export interface DisclosedSchedule {
+  /** Job name as the package declares it. */
+  name: string;
+  /** Cron expression, or `null` when the job only runs when asked. */
+  cron: string | null;
+  /** How much the job may do without a person in the loop, after the clamp. */
+  permissionMode: string;
+  /**
+   * Whether the package asked for the job to be switched on. Its declared
+   * intent, not an outcome: every packaged schedule is parked at
+   * `pending_approval` on first sighting whatever this says.
+   */
+  startsEnabled: boolean;
+}
+
+/** One MCP server a package starts, as the approval showed it. */
+export interface DisclosedMcpServer {
+  /** The server's declared name. */
+  name: string;
+  /** `stdio` for a local program, else the remote transport. */
+  transport: string;
+  /** The program a local server runs, verbatim; `null` for a remote one. */
+  command: string | null;
+  /** Its arguments, verbatim and in order; empty for a remote server. */
+  args: string[];
+  /** The address a remote server connects to; `null` for a local one. */
+  url: string | null;
+}
+
+/** One language server or monitor: a named program and how it is started. */
+export interface DisclosedProgram {
+  /** Its declared name. */
+  name: string;
+  /** The program it runs, verbatim. */
+  command: string;
+  /** Its arguments, verbatim and in order. */
+  args: string[];
+  /** When it starts, for a monitor that says; `null` otherwise. */
+  when: string | null;
+}
+
+/**
+ * Everything executable a package declares, in the canonical shape an approval
+ * binds to (DOR-647, DOR-2195): the subset of a {@link PermissionPreview} that
+ * runs on its own. Hooks keep declaration order (they run in it); everything
+ * else is sorted, so the value does not move when a directory listing does.
+ *
+ * Built only by the server (`disclosedEffectsOf` in
+ * `apps/server/src/services/marketplace/disclosed-effects.ts`). A client shows
+ * it and sends it back untouched as what the person was shown (DOR-2306); the
+ * server compares it with the version it resolves now and refuses any other.
+ */
+export interface DisclosedEffects {
+  /** Every hook command the package declares, in declaration order. */
+  hooks: DisclosedHook[];
+  /** Every scheduled job the install would create, sorted. */
+  schedules: DisclosedSchedule[];
+  /** Every MCP server the package starts, sorted by name. */
+  mcpServers: DisclosedMcpServer[];
+  /** Every language server the package starts, sorted by name. */
+  lspServers: DisclosedProgram[];
+  /** Every background monitor the package runs, sorted by name. */
+  monitors: DisclosedProgram[];
+  /** The names of the commands the package puts on the agent's PATH, sorted. */
+  executables: string[];
+  /** Every skill or command's allowed tools, sorted by file. */
+  skillTools: DisclosedSkillTools[];
+  /**
+   * Every shell command a skill's or command's text runs when it is used,
+   * sorted by file and in document order within one (they run in it).
+   */
+  skillCommands: DisclosedSkillCommand[];
+}
+
+/**
+ * Whether a disclosure names anything that runs on its own: a hook, a program,
+ * a scheduled job, a skill allowed to use tools without asking, or a command a
+ * skill's text runs. `null`
+ * (nothing was previewed) runs nothing.
+ *
+ * @param effects - A disclosure, or `null`.
+ * @returns True when a person has something to read before approving.
+ */
+export function disclosesAnything(effects: DisclosedEffects | null | undefined): boolean {
+  if (!effects) return false;
+  return (
+    effects.hooks.length +
+      effects.schedules.length +
+      effects.mcpServers.length +
+      effects.lspServers.length +
+      effects.monitors.length +
+      effects.executables.length +
+      effects.skillTools.length +
+      effects.skillCommands.length >
+    0
+  );
 }
 
 /**
@@ -594,6 +781,15 @@ export interface InstallOptions {
   yes?: boolean;
   /** Project path for project-local installs. */
   projectPath?: string;
+  /**
+   * What the person was shown this package runs: the preview's `disclosed`,
+   * sent back untouched. The install refuses a package that now runs anything
+   * else, before writing anything, and a person's install of a global plugin
+   * is then recorded as their approval to load it (DOR-2306).
+   */
+  approvedDisclosure?: DisclosedEffects;
+  /** The preview's `contentHash`, sent back with {@link approvedDisclosure}. */
+  approvedContentHash?: string;
 }
 
 /**
@@ -615,6 +811,41 @@ export interface InstallResult {
    * view keeps reporting an incomplete package after the toast is gone.
    */
   dependencyWarnings?: string[];
+  /**
+   * What the install did with files the person may have changed (DOR-2245).
+   * Each notice is also one plain sentence on {@link InstallResult.warnings}.
+   */
+  fileNotices?: PackageFileNotice[];
+}
+
+/**
+ * What an install did with a file the person may have changed (DOR-2245).
+ * Paths are POSIX, relative to the install root.
+ */
+export interface PackageFileNotice {
+  /** The file the notice is about. */
+  path: string;
+  /**
+   * - `replaced-edit`: the package's copy is in place; the person's is at `savedAs`.
+   * - `kept-edit`: the person's copy is in place; the package's new default is at `savedAs`.
+   * - `kept-no-longer-shipped`: the person's copy is in place; the package no longer ships this file.
+   * - `late-write`: it changed while the update ran; the newest copy is in place
+   *   (the person's at `savedAs` when it collided with a package file).
+   * - `skipped-special`: a socket, pipe or device file, which was not copied.
+   * - `kept-unproven`: the install had no record and the version it came from
+   *   could not be checked, so DorkOS could not tell whether this was the
+   *   person's file or the old version's. It was kept, at `savedAs` when the new
+   *   version's copy took its place (DOR-2322).
+   */
+  outcome:
+    | 'replaced-edit'
+    | 'kept-edit'
+    | 'kept-no-longer-shipped'
+    | 'late-write'
+    | 'skipped-special'
+    | 'kept-unproven';
+  /** Where the other copy was saved, when one was written. */
+  savedAs?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -625,10 +856,38 @@ export interface InstallResult {
  * Options for `POST /api/marketplace/packages/:name/uninstall`.
  */
 export interface UninstallOptions {
-  /** Remove `.dork/data/` and `.dork/secrets.json` in addition to package files. */
+  /** Also remove the files you and your agents added or changed. */
   purge?: boolean;
   /** Project path for project-local uninstalls. */
   projectPath?: string;
+}
+
+/** Options for {@link Transport.checkPackageFiles} (DOR-2320). */
+export interface CheckFilesOptions {
+  /** Project path, for an installation scoped to a project or an agent. */
+  projectPath?: string;
+  /** The one installation to check, as the installed list names it (`installPath`). */
+  installRoot?: string;
+}
+
+/**
+ * What checking the files of a package an older DorkOS installed did (DOR-2320): only
+ * `rebuilt` and `sorted` changed anything, and `message` says the outcome in one sentence.
+ */
+export interface CheckFilesResult {
+  /**
+   * `sorted`: an update had kept files it could not prove, and Check files
+   * compared them with the earlier version: leftovers were removed, the rest
+   * kept as the person's (DOR-2322).
+   */
+  outcome: 'rebuilt' | 'sorted' | 'not-needed' | 'no-source' | 'fetch-failed' | 'mismatch';
+  message: string;
+}
+
+/** Options for listing installed packages. */
+export interface ListInstalledOptions {
+  /** Add each installation's {@link InstallIntegrity}; reads every shipped file (DOR-2197). */
+  verify?: boolean;
 }
 
 /**
@@ -641,8 +900,46 @@ export interface UninstallResult {
   packageName: string;
   /** Number of top-level entries removed from the install root. */
   removedFiles: number;
-  /** Absolute paths preserved on disk because `purge` was false. */
+  /**
+   * Absolute paths kept on disk because `purge` was false: the files you and
+   * your agents added or changed, collapsed to the highest directory whose
+   * whole contents were kept.
+   */
   preservedData: string[];
+  /**
+   * Set when uninstalling an agent package removed the agent from the team
+   * (DOR-2245). A reinstall restores none of {@link AgentRemovedSummary.removed}.
+   */
+  agentRemoved?: AgentRemovedSummary;
+  /**
+   * Absolute paths of files kept because the install had no record and nothing
+   * proved whether they were the package's or yours (DOR-2322). Also named in
+   * {@link UninstallResult.warnings}.
+   */
+  unproven?: string[];
+  /** Non-fatal notes, such as a cleanup the recovery sweep will finish later. */
+  warnings?: string[];
+}
+
+/** Something removing an agent from the team takes away with it. */
+export type AgentRemovalEffect =
+  | 'relay-endpoint'
+  | 'rooms'
+  | 'schedules-paused'
+  | 'task-roots'
+  | 'mcp-sign-ins'
+  | 'identity-tokens'
+  | 'community-enrollments'
+  | 'connection-access';
+
+/** What uninstalling an agent package did to the agent itself. */
+export interface AgentRemovedSummary {
+  /** The removed agent's id. */
+  id: string;
+  /** True when git tracks its `agent.json`, so the file stayed and the folder was denied instead. */
+  directoryDenied: boolean;
+  /** Everything removal took away. */
+  removed: AgentRemovalEffect[];
 }
 
 // ---------------------------------------------------------------------------
@@ -683,14 +980,13 @@ export interface UpdateCheckResult {
 }
 
 /**
- * The composite result of an update check, with optional applied reinstalls.
+ * The result of a one-package update check (`POST /api/marketplace/packages/:name/update`).
+ * Advisory: updates are applied only through `POST /api/marketplace/updates`.
  *
- * Mirrors `UpdateResult` in `apps/server/src/services/marketplace/flows/update.ts`.
+ * Mirrors `UpdateResult` in `apps/server/src/services/marketplace/flows/update-types.ts`.
  */
 export interface UpdateResult {
   checks: UpdateCheckResult[];
-  /** Populated only when `apply: true`; one entry per successful reinstall. */
-  applied: InstallResult[];
 }
 
 /**
@@ -724,18 +1020,40 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
   applied?: InstallResult;
   /** Set when an apply tried to reinstall this installation and failed: why. */
   applyError?: string;
+  /**
+   * What the new version would run, read from the version a reinstall would
+   * install. Present on every `update-available` check; `null` when nothing
+   * was previewed. An update is applied only with this sent back untouched
+   * ({@link ApplyUpdateTarget}), so it is what a confirm step must show.
+   */
+  disclosed?: DisclosedEffects | null;
+  /**
+   * A hash of the new version's files, as staged for this check. Sent back
+   * with {@link disclosed}: the apply refuses a new version whose files moved.
+   */
+  contentHash?: string;
+  /**
+   * What the version installed NOW runs, read from its install root, so a
+   * confirm step can say what the new version adds or changes.
+   */
+  installedDisclosed?: DisclosedEffects | null;
 }
 
 /**
- * One installation an apply is asked to update, as a check reported it.
- *
- * An object rather than a bare path so a later binding can travel with its
- * installation (DOR-2306 will bind each apply to the disclosure a person saw
- * for that installation's new version).
+ * One installation an apply is asked to update, exactly as a check reported
+ * it and a person was shown it: which installation, which version, and what
+ * that version runs. The server recomputes the last two and refuses the whole
+ * apply when either moved (DOR-2306).
  */
 export interface ApplyUpdateTarget {
   /** The installation, exactly as a check reported it. */
   installPath: string;
+  /** The version the check offered. */
+  latestVersion: string;
+  /** What that version runs, as the check reported it (`check.disclosed`). */
+  disclosed: DisclosedEffects | null;
+  /** The check's `contentHash` for that version. */
+  contentHash: string;
 }
 
 /**
@@ -832,6 +1150,150 @@ export interface InstalledPackage {
    * its update check is `unknown` and says to update the source instead.
    */
   linked?: true;
+  /**
+   * Set on a global installation that runs things on its own and is held
+   * back from every session because nobody approved it as it is now
+   * (DOR-2306). Absent when it loads.
+   */
+  heldBack?: HeldBackState;
+  /**
+   * Whether the installed files still match what was installed (DOR-2197).
+   * Present only when the caller asked for verification (`?verify=true`).
+   */
+  integrity?: InstallIntegrity;
+}
+
+/** Why a global package is held back from sessions. */
+export type HeldBackReason =
+  'unasked' | 'refused' | 'unrecorded' | 'unreadable' | 'unreadable-config';
+
+/** A global package held back from every session, and what a person can do about it. */
+export interface HeldBackState {
+  /**
+   * Why it is held back. `unrecorded`: it was installed before DorkOS recorded
+   * what an approval binds, so a person reviews it as it is now.
+   */
+  reason: HeldBackReason;
+  /** One plain sentence saying why, and what to do. */
+  note: string;
+  /**
+   * Set for a LINKED install (the install folder is a link to a developer's
+   * working copy): the folder it runs from. Its approval covers whatever is in
+   * that folder, so the listing and the card say so.
+   */
+  linkedPath?: string;
+  /**
+   * Whether an approval card can be raised for it. False when it cannot be
+   * shown in full: something in it could not be read, the settings file could
+   * not be read, or its list is too long for a card (the terminal can still
+   * show it: `dorkos marketplace held-back --allow <name>`).
+   */
+  reviewable: boolean;
+}
+
+/**
+ * One held-back global package as `GET /api/marketplace/held-back` lists it:
+ * everything a person needs to decide, and what a decision binds.
+ */
+export interface HeldBackPackage extends HeldBackState {
+  /** The package's directory name. */
+  name: string;
+  /** Its installed version, when recorded. */
+  version?: string;
+  /** Where it was installed from, when recorded. */
+  source?: string;
+  /** Whether an earlier approval exists for another install: it changed since then. */
+  changedSinceApproval: boolean;
+  /** What it runs, when it could be read. Sent back with a decision. */
+  effects?: DisclosedEffects;
+  /**
+   * What an allow or refuse is bound to, when it can be decided: the content
+   * hash its install recorded (`sha256:…`), or `linked:<path>` for a linked
+   * install. Opaque: send it back with {@link effects} exactly as listed.
+   */
+  bindsTo?: string;
+}
+
+/** Why an install's files cannot be checked against what was installed. */
+export type InstallIntegrityUnknownReason =
+  'no-record' | 'inferred' | 'unreadable-record' | 'linked';
+
+/**
+ * Files an update kept because the install it replaced had no record and
+ * nothing proved whose they were (DOR-2322): not the person's additions, and
+ * not known to be the package's. "Check files" sorts them once the earlier
+ * version can be fetched (see `check`).
+ */
+export interface InstallUnprovenFiles {
+  /** Where each kept file sits now, relative to the install folder, sorted (at most 50). */
+  files: string[];
+  /**
+   * The kept files that sit where a package keeps what it runs (a skill, a
+   * command, a hook, a program), so they still run. Sorted, at most 50.
+   */
+  running: string[];
+  /** Whether "Check files" can sort them, and what the last attempt said. */
+  check: InstallCheckInfo;
+}
+
+/**
+ * Whether an install's files still match what was installed (DOR-2197), read
+ * from its installed-files record (DOR-2245). Paths are relative to the
+ * install folder, sorted, and each list holds at most 50 (`truncated` when
+ * there were more).
+ *
+ * - `clean`: every shipped file is as installed. `customized` names shipped
+ *   files the package marks as yours to edit that you changed; those never
+ *   count as a modification.
+ * - `modified`: `changed` shipped files differ, `missing` ones are gone, and
+ *   `added` files sit where a package keeps what it runs (a new skill, a
+ *   hook), so they change what runs.
+ * - `unknown`: the record cannot speak for the install. `no-record` is an
+ *   install made before DorkOS recorded a package's files, and `inferred` one
+ *   whose record was only guessed by matching bytes ("Check files" can record
+ *   either; see `check`); `unreadable-record` is a damaged record; `linked` is
+ *   a developer's working copy.
+ *
+ * `clean` and `modified` carry `unproven` when an update kept files it could
+ * not prove were the person's or the package's.
+ */
+export type InstallIntegrity =
+  | { status: 'clean'; customized: string[]; unproven?: InstallUnprovenFiles; truncated?: true }
+  | {
+      status: 'modified';
+      changed: string[];
+      missing: string[];
+      added: string[];
+      customized: string[];
+      unproven?: InstallUnprovenFiles;
+      truncated?: true;
+    }
+  | {
+      status: 'unknown';
+      reason: InstallIntegrityUnknownReason;
+      /** Present for `no-record` and `inferred`: whether "Check files" can record its files. */
+      check?: InstallCheckInfo;
+    };
+
+/**
+ * Whether an install made before DorkOS recorded package files can have them
+ * recorded ("Check files", DOR-2320), and what the last attempt said.
+ */
+export interface InstallCheckInfo {
+  /**
+   * `fetchable`: DorkOS can fetch the exact version it came from. `local`: it
+   * was installed from a folder on this computer, so nothing can be fetched and
+   * a reinstall is the way to start tracking its files.
+   */
+  source: 'fetchable' | 'local';
+  /** Why the last attempt (the background check after boot, or a person's) recorded nothing. */
+  last?: InstallCheckResult;
+}
+
+/** A "Check files" attempt that recorded nothing, and why, in one sentence. */
+export interface InstallCheckResult {
+  outcome: 'mismatch' | 'fetch-failed' | 'no-source';
+  message: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -851,6 +1313,36 @@ export interface MarketplaceSource {
 }
 
 /**
+ * How the most recent attempt to fetch a source's listing went, as the server
+ * recorded it (DOR-2324). Every door that fetches a listing feeds it: adding
+ * the source, a refresh, the browse list, the update check. It lives on the
+ * server, so it survives a reload and every window agrees.
+ *
+ * - `never`: not fetched yet (or the cache was cleared).
+ * - `fetched`: the last attempt worked.
+ * - `failed`: the last attempt failed and there is no copy to show.
+ * - `stale`: the last attempt failed; an older copy, from `copyFetchedAt`, is
+ *   still what is listed.
+ */
+export type SourceLastFetch =
+  | { state: 'never' }
+  | { state: 'fetched'; checkedAt: string; packageCount: number }
+  | { state: 'failed'; checkedAt: string; reason: string }
+  | {
+      state: 'stale';
+      checkedAt: string;
+      reason: string;
+      copyFetchedAt: string;
+      packageCount: number;
+    };
+
+/** A configured source as `GET /api/marketplace/sources` lists it. */
+export interface ListedMarketplaceSource extends MarketplaceSource {
+  /** How the most recent fetch of its listing went. */
+  lastFetch: SourceLastFetch;
+}
+
+/**
  * Request body for `POST /api/marketplace/sources`.
  *
  * Mirrors `AddSourceBodySchema` in `apps/server/src/routes/marketplace.ts`.
@@ -859,6 +1351,55 @@ export interface AddSourceInput {
   name: string;
   source: string;
   enabled?: boolean;
+}
+
+/**
+ * What happened when DorkOS fetched a just-added source's listing (its
+ * `marketplace.json`) — the one fetch `POST /api/marketplace/sources` makes
+ * right after saving, through the same path `POST /sources/:name/refresh` takes.
+ *
+ * A failed fetch never undoes the add: the source stays saved, and `reason`
+ * says why the listing isn't there yet so a refresh can be tried later.
+ */
+export type SourceListingOutcome =
+  | {
+      /** The listing was fetched and cached; the source's packages can be installed now. */
+      fetched: true;
+      /** How many packages the listing names. */
+      packageCount: number;
+    }
+  | {
+      /** The listing could not be fetched; the source is saved all the same. */
+      fetched: false;
+      /** Why, in the fetcher's words (a status code, a timeout, a missing file). */
+      reason: string;
+    };
+
+/**
+ * What `POST /api/marketplace/sources/:name/refresh` reports. A refresh is
+ * "check now": when the source can't be reached but a copy is cached, the
+ * answer is that copy with `stale: true`, the reason, and when the copy was
+ * fetched — never the old copy passed off as new. Only the package count is
+ * read by its callers, so the listing is typed down to that part.
+ */
+export interface RefreshedMarketplaceSource {
+  /** The source's listing: fetched just now, or the last copy when `stale`. */
+  marketplace: { plugins: unknown[] };
+  /** When this copy of the listing was fetched, as an ISO timestamp. */
+  fetchedAt: string;
+  /** True when the source couldn't be reached and this is the last cached copy. */
+  stale: boolean;
+  /** Why the source couldn't be reached. Present only when `stale`. */
+  reason?: string;
+}
+
+/**
+ * Response body of `POST /api/marketplace/sources`: the saved source plus how
+ * the first fetch of its listing went.
+ */
+export interface AddedMarketplaceSource extends MarketplaceSource {
+  /** The outcome of the one best-effort listing fetch made after saving. */
+  listing: SourceListingOutcome;
 }
 
 // ---------------------------------------------------------------------------
@@ -880,6 +1421,23 @@ export interface AddSourceInput {
 export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';
 
 /**
+ * Basename fragment of the directory an install stages its new tree in, beside
+ * its target — `<target>.dorkos-stage-<createdAt>-<owner>-<uuid>` — so the
+ * activation is a same-filesystem rename and the person's carried files never
+ * pass through `os.tmpdir()` (DOR-2245). Recovery discards a crash-left one:
+ * it only ever holds copies and new package files.
+ */
+export const MARKETPLACE_STAGE_DIR_MARKER = '.dorkos-stage-';
+
+/**
+ * Basename fragment of the directory an in-place uninstall moves a package's
+ * own files into, beside its root — `<root>.dorkos-uninstall-<createdAt>-<owner>-<uuid>`
+ * (DOR-2245). It carries a journal, and recovery rolls the uninstall back or
+ * finishes it by that journal.
+ */
+export const MARKETPLACE_UNINSTALL_DIR_MARKER = '.dorkos-uninstall-';
+
+/**
  * Every basename marker the install engine writes beside an install target.
  * Anything carrying one of these is the engine's own bookkeeping — never an
  * installed package, agent, plugin or skill — whatever it contains (a backup
@@ -889,6 +1447,8 @@ export const MARKETPLACE_BACKUP_DIR_MARKER = '.dorkos-bak-';
  */
 export const MARKETPLACE_INSTALL_SIBLING_MARKERS: readonly string[] = [
   MARKETPLACE_BACKUP_DIR_MARKER,
+  MARKETPLACE_STAGE_DIR_MARKER,
+  MARKETPLACE_UNINSTALL_DIR_MARKER,
 ];
 
 /**
@@ -917,18 +1477,16 @@ export function isInstallSiblingName(name: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * The workspace chrome a Shape restores on apply (`ShapeLayoutSchema`). The
- * literal unions mirror `UiSidebarTab` / `UiPanelId` (`./types`) — redeclared
- * here to keep this module import-free and browser-safe.
+ * The workspace chrome a Shape restores on apply (`ShapeLayoutSchema`). Panel
+ * ids mirror `UiPanelId` (`./types`) and are redeclared here to keep this module
+ * import-free and browser-safe.
  */
 export interface ShapeLayout {
   /** Sidebar open on arrival. */
   sidebarOpen: boolean;
   /**
-   * Sidebar tab to select on arrival, when the Shape pins one. Any registered
-   * tab id — a built-in (`overview` | `sessions` | `schedules` | `connections`)
-   * or an extension-contributed tab (e.g. `linear-issues:linear-loop-sidebar`),
-   * mirroring `UiSidebarTab` (`./types`).
+   * Legacy tab metadata retained for installed Shapes. Applying a Shape ignores
+   * this value because the current app has no sidebar tab strip.
    */
   sidebarTab?: string;
   /** Panels to open on arrival. */

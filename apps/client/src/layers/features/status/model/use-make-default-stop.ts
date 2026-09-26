@@ -85,14 +85,6 @@ export interface MakeDefaultStop {
  * The offer is withheld in three cases, and each is a different way of saying
  * the same thing — there is nothing here worth interrupting for:
  *
- * 1. **It already is the default.** Compared against the EFFECTIVE default —
- *    the configured stop where there is one, otherwise the stop this runtime's
- *    own starting mode sits at — so a fresh install offering "make Ask first
- *    the default" (which it already is) never happens.
- * 2. **This session said no.** Remembered per session and swept with it.
- * 3. **Nothing could store the answer.** Obsidian's in-process transport has no
- *    config behind it, and an offer that saves nothing is worse than no offer.
- *
  * **It writes the leaf it compared.** Where this runtime carries an override,
  * the comparison was against THAT leaf, so accepting writes that leaf. Writing
  * the global one instead would leave the override in force: the person would
@@ -177,8 +169,6 @@ export function useMakeDefaultStop(opts: {
   // exactly the bug this hook exists to prevent (see above).
   const targetSection =
     override != null ? settingsForRuntime(capabilityMap, forRuntime)?.configSection : undefined;
-  // `canRemember` answers exactly the question that matters here: does config
-  // round-trip on this install at all. False in Obsidian.
   const canWrite = autonomyAck.canRemember;
 
   // The offer's own clock, started by the offer rather than by whatever draws
