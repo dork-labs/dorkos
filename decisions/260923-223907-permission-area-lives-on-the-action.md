@@ -1,7 +1,7 @@
 ---
 id: 260923-223907
 title: An action's permission area is declared on the action, and the compiler is the census
-status: draft
+status: accepted
 created: 2026-09-23
 spec: agent-permissions
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (extracted from spec: agent-permissions). Replaces the explicit tool-group lists and the implicit hierarchy of `0071` (trace follows relay, binding follows adapter) as part of `260923-223904`.
+Accepted (extracted from spec: agent-permissions; implemented in phase 3, DOR-2278). Replaces the explicit tool-group lists and the implicit hierarchy of `0071` (trace follows relay, binding follows adapter) as part of `260923-223904`.
 
 ## Context
 

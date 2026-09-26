@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { lex } from '../../../../../../../scripts/lib/code-only.mjs';
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
 
@@ -51,11 +52,16 @@ describe('every read of what an agent may do goes through the gate reader', () =
     for (const file of walk(SRC)) {
       const rel = path.relative(SRC, file).split(path.sep).join('/');
       if (ALLOWED[rel]) continue;
-      const lines = fs.readFileSync(file, 'utf-8').split('\n');
-      lines.forEach((line, i) => {
-        const code = line.replace(/\/\/.*$/, '');
-        if (/^\s*\*/.test(code)) return;
-        if (PATTERNS.some((p) => p.test(code))) offenders.push(`${rel}:${i + 1}: ${line.trim()}`);
+      const text = fs.readFileSync(file, 'utf-8');
+      // Code only: comments and string text blanked, positions kept, so a
+      // sentence that names a field is never mistaken for a read of it.
+      const { code, parseErrors } = lex(text, file);
+      if (parseErrors > 0) offenders.push(`${rel}: could not be read as code (${parseErrors})`);
+      const original = text.split('\n');
+      code.split('\n').forEach((line, i) => {
+        if (PATTERNS.some((p) => p.test(line))) {
+          offenders.push(`${rel}:${i + 1}: ${original[i]?.trim()}`);
+        }
       });
     }
     expect(
