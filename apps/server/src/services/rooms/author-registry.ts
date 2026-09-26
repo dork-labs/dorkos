@@ -212,13 +212,22 @@ export interface AuthorRecord {
  *   its owner from anywhere. Pass `null` when the caller knows better: an author
  *   whose agent is gone still has a handle on its row and no longer answers to
  *   it, and offering it in a picker would insert a mention that reaches nobody.
+ * @param retired - Whether the caller asked the liveness question and this
+ *   author failed it: an agent nobody at its directory answers for any more
+ *   (DOR-2095). Only ever sent as `true`, because a caller that did not ask
+ *   cannot say an author is active either.
  */
-export function toAuthorRef(record: AuthorRecord, addressable?: string | null): AuthorRef {
+export function toAuthorRef(
+  record: AuthorRecord,
+  addressable?: string | null,
+  retired = false
+): AuthorRef {
   return {
     id: record.id,
     kind: record.kind,
     displayName: record.displayName,
     handle: addressable === undefined ? record.handle : addressable,
+    ...(retired ? { retired: true } : {}),
     ...(record.emoji ? { emoji: record.emoji } : {}),
     ...(record.color ? { color: record.color } : {}),
     ...(record.imageUrl ? { imageUrl: record.imageUrl } : {}),
@@ -1375,6 +1384,27 @@ export class AuthorRegistry {
       .all();
     for (const row of rows) resolved.set(row.id, toRecord(row));
     return resolved;
+  }
+
+  /**
+   * Every author row ever minted for an agent directory, retired generations
+   * included — the rows an unregister cascade has to consider (DOR-2095).
+   *
+   * Retired rows are in it on purpose. A generation retired by
+   * {@link AuthorRegistry.retireAndMint} kept its memberships (the ADR
+   * 260801-003051 warning names them), and once nobody at the directory answers
+   * for it, those seats are exactly as dead as the current generation's.
+   *
+   * @param agentPath - The agent's project directory.
+   */
+  agentRowsAt(agentPath: string): AuthorRecord[] {
+    return this.db
+      .select()
+      .from(authors)
+      .where(and(eq(authors.kind, 'agent'), eq(authors.naturalKey, agentPath)))
+      .orderBy(asc(authors.createdAt))
+      .all()
+      .map(toRecord);
   }
 
   /** The stored display name of a human author, or `null` when it has no row yet. */

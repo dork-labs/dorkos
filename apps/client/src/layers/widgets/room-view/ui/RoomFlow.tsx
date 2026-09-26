@@ -27,7 +27,7 @@ import { buildTimelineRows, unreadPlacement } from '@/layers/shared/lib';
 import type { MessageGrouping } from '@/layers/shared/model';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
-import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
+import type { RoomEntry, RoomFormerAuthor, RoomRosterEntry } from '@/layers/entities/room';
 import {
   honestReplyCount,
   isRoomMember,
@@ -78,8 +78,13 @@ interface RoomFlowProps {
    * and {@link groupByThread} is the only thing allowed to leave a reply out.
    */
   entries: RoomEntry[];
-  /** The room's roster — the only place an author's name comes from. */
+  /** The room's roster — the live answer to whose name an entry carries. */
   members: RoomRosterEntry[];
+  /**
+   * Everybody who wrote here and is no longer on the roster, so their messages
+   * keep a name (DOR-2095). Omitted means nobody.
+   */
+  formerAuthors?: readonly RoomFormerAuthor[];
   /** The reader's `(member, room)` cursor, or null when they are not a member. */
   lastReadSeq: number | null;
   /** This reader's three most-used emoji, as the room read resolved them. */
@@ -237,6 +242,7 @@ export function RoomFlow({
   viewerAuthorId,
   entries,
   members,
+  formerAuthors,
   lastReadSeq,
   reactionFrequents,
   streamStalled,
@@ -253,7 +259,7 @@ export function RoomFlow({
   onLoadOlder,
   ref,
 }: RoomFlowProps) {
-  const authors = useMemo(() => authorsById(members), [members]);
+  const authors = useMemo(() => authorsById(members, formerAuthors), [members, formerAuthors]);
   // Reactions go with the composer (DOR-1233): a room the operator sees but
   // is not a member of refuses a reaction the same `MEMBER_NOT_FOUND` way it
   // refuses a post, so the pills on every row here have to know it too.

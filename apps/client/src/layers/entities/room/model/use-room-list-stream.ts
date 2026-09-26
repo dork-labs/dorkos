@@ -11,11 +11,15 @@
  *
  * @module entities/room/model/use-room-list-stream
  */
+import { useRef } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { RoomSummary, RoomWithRoster, ThreadSummary } from '@dorkos/shared/room-schemas';
 import { useEventSubscription } from '@/layers/shared/model';
 import { roomKeys } from '../api/query-keys';
 import { useRoomWorkingStore } from './live/use-room-working';
+
+/** How long roster events for one open room are gathered into a single refetch. */
+const ROSTER_REFRESH_WINDOW_MS = 50;
 
 /** Global events that change what a room list row says. */
 const ROOM_LIST_EVENTS = [
@@ -261,6 +265,34 @@ export function useRoomListStream(): void {
     if (!isRoomUpdated(payload)) return;
     void queryClient.invalidateQueries({ queryKey: roomKeys.detail(payload.roomId) });
   });
+
+  // A roster that moved somewhere other than this client — an agent
+  // unregistered and taken off every channel (DOR-2095), a member removed or
+  // added from another window — changes what the OPEN room says about who will
+  // answer, its head count and its `@` picker. Same reason as `room_updated`
+  // above: nothing else refetches the detail. Both events carry the `roomId`.
+  //
+  // Coalesced per room over a short window: unregistering an agent sends one
+  // event per channel seat, and a burst for the same open room is one question,
+  // not several. A window rather than a microtask because each event on the
+  // stream arrives as its own task, so a microtask merged nothing a real burst
+  // sends. 50ms, because the server broadcasts a burst from one synchronous
+  // write — its frames land within milliseconds of each other — while a delay
+  // that short is below anything a person could see on a roster.
+  const pendingRosters = useRef(new Set<string>());
+  const refreshRoster = (payload: unknown) => {
+    if (!isRoomUpdated(payload)) return;
+    const pending = pendingRosters.current;
+    if (pending.has(payload.roomId)) return;
+    pending.add(payload.roomId);
+    const roomId = payload.roomId;
+    setTimeout(() => {
+      pending.delete(roomId);
+      void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
+    }, ROSTER_REFRESH_WINDOW_MS);
+  };
+  useEventSubscription('room_member_added', refreshRoster);
+  useEventSubscription('room_member_removed', refreshRoster);
 
   // Presence is the one room-list event that must NOT refetch. It fires when a
   // claim is taken and again every ten seconds while the work runs, so treating

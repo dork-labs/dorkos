@@ -22,6 +22,7 @@ import type {
   AuthorKind,
   AuthorRef,
   Room,
+  RoomFormerAuthor,
   RoomMember,
   RoomRosterEntry,
 } from '@dorkos/shared/room-schemas';
@@ -264,16 +265,49 @@ export class RoomRoster {
     // offered only when it would actually reach the member it is offered for,
     // and the roster an agent reads cannot disagree with the roster a picker
     // reads.
-    const handles = addressableHandles(rosterMentionCandidates(members, authors, this.agents).live);
+    const candidates = rosterMentionCandidates(members, authors, this.agents);
+    const handles = addressableHandles(candidates.live);
+    // The same walk answers "retired": every member it could not reach is an
+    // agent nobody at its directory answers for any more. After DOR-2095 that is
+    // only ever seen in a direct message — a channel drops the seat instead.
+    const retired = new Set(candidates.unreachable.map((candidate) => candidate.authorId));
     return members.map((member) => {
       const author = authors.get(member.authorId);
       if (!author) return { ...member, ...unknownMember(member.authorId) };
       return {
         ...member,
         lastReadSeq: cursorFor(member, author.kind, read),
-        author: toAuthorRef(author, handles.get(member.authorId) ?? null),
+        author: toAuthorRef(author, handles.get(member.authorId) ?? null, retired.has(author.id)),
         origin: authorOrigin(author.naturalKey),
       };
+    });
+  }
+
+  /**
+   * Everybody who wrote in a room and is no longer on its roster, resolved the
+   * way a roster entry is (DOR-2095).
+   *
+   * Their messages stay — archiving ends a membership, never a memory — so a
+   * reader still needs the name and the face to draw beside them. None of them
+   * is addressable here, because mentions resolve against the CURRENT roster
+   * (`RoomService.post`), so every handle is withheld; an agent nobody answers
+   * for any more is also marked retired, which is what tells "unregistered"
+   * apart from "only taken out of this room".
+   *
+   * @param roomId - The room.
+   */
+  formerAuthors(roomId: string): RoomFormerAuthor[] {
+    const ids = this.store.listFormerAuthorIds(roomId);
+    const authors = this.authors.getMany(ids);
+    return ids.flatMap((id) => {
+      const author = authors.get(id);
+      if (!author) return [];
+      return [
+        {
+          author: toAuthorRef(author, null, !isLiveAuthor(author, this.agents)),
+          origin: authorOrigin(author.naturalKey),
+        },
+      ];
     });
   }
 
@@ -309,8 +343,8 @@ export class RoomRoster {
       // Per author rather than per room: liveness is a property of the author's
       // directory, not of the room it is being listed in, so one lookup answers
       // for every room it appears in.
-      const addressable = isLiveAuthor(author, this.agents) ? undefined : null;
-      byRoom.get(member.roomId)?.push(toAuthorRef(author, addressable));
+      const live = isLiveAuthor(author, this.agents);
+      byRoom.get(member.roomId)?.push(toAuthorRef(author, live ? undefined : null, !live));
     }
     return byRoom;
   }

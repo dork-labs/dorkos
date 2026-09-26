@@ -144,7 +144,10 @@ export function RoomThreadPanel({
   pushed,
   onClose,
 }: RoomThreadPanelProps) {
-  const authors = useMemo(() => authorsById(room.members), [room.members]);
+  const authors = useMemo(
+    () => authorsById(room.members, room.formerAuthors),
+    [room.members, room.formerAuthors]
+  );
   // The thread's OWN target. A reply goes to this thread, not to the room
   // behind the panel, so the panel publishes a conversation of its own — the
   // composer is physically inside the thread it posts to, which is the whole

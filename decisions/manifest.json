@@ -2,6 +2,23 @@
   "version": 1,
   "decisions": [
     {
+      "id": "260926-124159",
+      "slug": "an-unregistered-agent-leaves-every-channel-and-a-dm-keeps-it-retired",
+      "title": "An unregistered agent leaves every channel; a direct message keeps it, retired",
+      "status": "accepted",
+      "created": "2026-09-26",
+      "extractedFrom": null,
+      "specSlug": null,
+      "amends": "260801-003051",
+      "supersedes": null,
+      "affects": [
+        "apps/server/src/services/rooms/manage/departed-agents.ts",
+        "apps/server/src/services/rooms/manage/room-membership.ts",
+        "apps/server/src/services/rooms/room-roster.ts",
+        "packages/shared/src/room-schemas.ts"
+      ]
+    },
+    {
       "id": "260925-191411",
       "slug": "retire-the-obsidian-plugin",
       "title": "Retire the Obsidian plugin",

@@ -205,15 +205,20 @@ function voicesOf(
   roomKind: RoomKind,
   override?: LoudnessPreview
 ): Voice[] {
-  return members
-    .filter((member) => member.author.kind === 'agent')
-    .map((member) => ({
-      name: member.author.displayName,
-      rung:
-        override && member.authorId === override.authorId
-          ? override.rung
-          : rungOf(member.responseMode, roomKind),
-    }));
+  return (
+    members
+      // A retired agent answers nothing, whatever its membership row still says:
+      // it stays on a direct message's roster only because a DM is named by who
+      // is in it (DOR-2095), so counting it would promise an answer nobody gives.
+      .filter((member) => member.author.kind === 'agent' && member.author.retired !== true)
+      .map((member) => ({
+        name: member.author.displayName,
+        rung:
+          override && member.authorId === override.authorId
+            ? override.rung
+            : rungOf(member.responseMode, roomKind),
+      }))
+  );
 }
 
 /**

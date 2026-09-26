@@ -21,6 +21,7 @@ import {
   LoudnessMeter,
   OriginMark,
   RESPONSE_RUNGS,
+  RetiredMark,
   ResponseModeControl,
   levelOfRung,
   rungOf,
@@ -290,6 +291,12 @@ export function RoomMemberRow({
   const removeDragGuard = useDragVsTapGuard();
   const { author } = member;
   const isAgent = author.kind === 'agent';
+  // A retired agent answers nothing (DOR-2095), so it has no loudness to tune.
+  // It can still be taken out of the room: a channel may hold one the repair
+  // sweep left seated because its folder says it is coming back, and a person
+  // must be able to decide otherwise.
+  const retired = author.retired === true;
+  const tunable = isAgent && !retired;
   const rung = rungOf(member.responseMode, roomKind);
   const rungLabel = RESPONSE_RUNGS.find((option) => option.rung === rung)?.label ?? '';
   const working = presence !== null;
@@ -357,14 +364,17 @@ export function RoomMemberRow({
                   which platform in words. The message gutter pairs them the same
                   way. */}
               <OriginMark origin={member.origin} className="ml-1 shrink-0" />
+              <RetiredMark retired={retired} className="ml-1 shrink-0" />
             </p>
             <p id={secondaryId} className="text-muted-foreground truncate text-xs">
-              {memberSecondaryLine({ presence, lastSpokeAt, joinedAt: member.joinedAt })}
+              {retired
+                ? 'No longer on your team. Its messages stay.'
+                : memberSecondaryLine({ presence, lastSpokeAt, joinedAt: member.joinedAt })}
             </p>
           </div>
         </ProfileLink>
 
-        {isAgent && (
+        {tunable && (
           <button
             type="button"
             aria-expanded={expanded}
@@ -421,7 +431,9 @@ export function RoomMemberRow({
           </button>
         )}
 
-        {isAgent && !isMobile && dormantReasonId === null && (
+        {/* The menu is the only way to Remove on a phone for a retired row,
+            because the scale that carries Remove there never opens for it. */}
+        {isAgent && (!isMobile || retired) && dormantReasonId === null && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -478,7 +490,7 @@ export function RoomMemberRow({
           one scale open at a time and re-renders around it — does not perform
           the opening it did not do. */}
       <AnimatePresence initial={false}>
-        {isAgent && expanded && (
+        {tunable && expanded && (
           <motion.div
             id={controlId}
             initial={{ height: 0, opacity: 0 }}

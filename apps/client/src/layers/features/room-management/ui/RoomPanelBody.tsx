@@ -19,6 +19,23 @@ import { RoomLimitsSection } from './RoomLimitsSection';
 import { RoomMemberList } from './RoomMemberList';
 import { RoomMemberRow } from './RoomMemberRow';
 import { RoomPanelNotice } from './RoomPanelNotice';
+
+/**
+ * What the add-agents picker says in a one-to-one direct message.
+ *
+ * Adding somebody turns a one-to-one into a group, which is worth saying before
+ * it happens. When the one agent here is retired (DOR-2095) it answers nothing,
+ * so the sentence names that instead of calling a newcomer "a second agent".
+ *
+ * @param members - The DM's roster.
+ */
+function dmAddNote(members: readonly RoomRosterEntry[]): string {
+  const agent = members.find((member) => member.author.kind === 'agent');
+  if (agent?.author.retired === true) {
+    return `${agent.author.displayName} is no longer on your team. Adding an agent turns this into a group conversation.`;
+  }
+  return 'Adding a second agent turns this into a group conversation.';
+}
 // Lazy, so the file explorer stays the async chunk the Files tab loads rather
 // than being absorbed into this panel's. A room panel that never scrolls to
 // its files never pays for the tree, and the Files tab does not pay for the
@@ -543,11 +560,11 @@ export function RoomPanelBody({ roomId }: RoomPanelBodyProps) {
             // A conversation that already holds two is already a group, and a
             // channel is a channel however many agents are in it. The wording
             // is the one the "+" beside Direct messages already uses.
-            note={
-              detail.kind === 'dm' && view.agentCount === 1
-                ? 'Adding a second agent turns this into a group conversation.'
-                : null
-            }
+            //
+            // A DM whose one agent is retired (DOR-2095) says so instead: there
+            // is no "second" agent to speak of when the first one answers
+            // nothing, and the person is choosing who to talk to next.
+            note={detail.kind === 'dm' && view.agentCount === 1 ? dmAddNote(view.members) : null}
             isSubmitting={writes.isAdding}
             inputRef={searchRef}
           />

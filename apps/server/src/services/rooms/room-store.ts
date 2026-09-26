@@ -49,6 +49,7 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { RoomSessionLedger } from './session-bindings/room-session-ledger.js';
+import { DepartedSeatStore } from './manage/departed-seat-store.js';
 import {
   parseEntryBody,
   toEntry,
@@ -215,9 +216,17 @@ export class RoomStore {
    * else on this store — see `room-session-ledger.ts`.
    */
   readonly sessionLedger: RoomSessionLedger;
+  /**
+   * The channel seats departed agents left, and their return (DOR-2095). Public
+   * for the same reason `sessionLedger` is: one event in an agent's life, a
+   * different subject from everything else on this store — see
+   * `departed-seat-store.ts`.
+   */
+  readonly departedSeats: DepartedSeatStore;
 
   constructor(private readonly db: Db) {
     this.sessionLedger = new RoomSessionLedger(db);
+    this.departedSeats = new DepartedSeatStore(db);
   }
 
   // === Rooms ===
@@ -836,6 +845,43 @@ export class RoomStore {
       this.syncDmMemberKey(roomId, exec);
     });
     return existed;
+  }
+
+  /**
+   * Who wrote in a room and is no longer on its roster — the authors a reader
+   * still needs a name and a face for, because their messages stay
+   * (DOR-2095: membership is live state, history is archive).
+   *
+   * The system author is never one: it is on no roster by design, and a client
+   * that found it here would stop drawing the SUBJECT of a line the room wrote
+   * about somebody (`displayAuthorIdOf`).
+   *
+   * **The cost is per AUTHOR on the install, not per entry in the room.** One
+   * probe of `idx_room_entries_author_room` for each non-system author, rather
+   * than a scan of the room's whole log for its distinct authors — so a room
+   * with a long history costs nothing extra. What grows it is the authors table:
+   * agents, people, and everybody a bridged Telegram or Slack chat has ever
+   * projected. At a few thousand rows that is a few thousand indexed lookups on
+   * a room open (not measured at scale); if bridged chats ever make it tens of
+   * thousands, the fix is a per-room authors table maintained on write, not a
+   * different query here.
+   *
+   * @param roomId - The room.
+   */
+  listFormerAuthorIds(roomId: string): string[] {
+    return this.db
+      .select({ id: authors.id })
+      .from(authors)
+      .where(
+        and(
+          ne(authors.kind, 'system'),
+          sql`exists (select 1 from ${roomEntries} where ${roomEntries.authorId} = ${authors.id} and ${roomEntries.roomId} = ${roomId})`,
+          sql`not exists (select 1 from ${roomMembers} where ${roomMembers.authorId} = ${authors.id} and ${roomMembers.roomId} = ${roomId})`
+        )
+      )
+      .orderBy(authors.createdAt, authors.id)
+      .all()
+      .map((row) => row.id);
   }
 
   /**

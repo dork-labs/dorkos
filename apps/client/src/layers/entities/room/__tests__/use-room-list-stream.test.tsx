@@ -8,7 +8,7 @@
  * unrelated happens to refetch it. Both lists it feeds are asserted, because
  * the thread list rides the same events and was added to them later.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -28,6 +28,10 @@ import { useRoomWorkingStore } from '../model/live/use-room-working';
  * and `handlers.get(event)!(payload)` fires all of them, in registration
  * order — the same fan-out the real subscription gives every listener.
  */
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 const registry = new Map<string, Array<(payload?: unknown) => void>>();
 const handlers = {
   clear: () => registry.clear(),
@@ -156,6 +160,59 @@ describe('useRoomListStream', () => {
     handlers.get('room_updated')!({ roomId: 'room-1', title: 'renamed', archived: false });
 
     expect(invalidated).toContainEqual(roomKeys.detail('room-1'));
+  });
+
+  it.each(['room_member_removed', 'room_member_added'])(
+    'invalidates the open room itself on %s, so its roster and head count follow (DOR-2095)',
+    async (event) => {
+      vi.useFakeTimers();
+      // An agent unregistered elsewhere leaves every channel with only a
+      // membership event. Without this the open room kept listing it, kept
+      // saying "Two agents will answer you here", and kept offering its @.
+      const { invalidated, queryClient } = setup();
+      seedOpenRoom(queryClient, 'me', 0);
+
+      handlers.get(event)!({ roomId: 'room-1', authorId: 'agent-1' });
+      await vi.advanceTimersByTimeAsync(50);
+
+      expect(invalidated).toContainEqual(roomKeys.detail('room-1'));
+    }
+  );
+
+  it('refetches an open room once for a burst of roster events, even across tasks', async () => {
+    vi.useFakeTimers();
+    const { invalidated, queryClient } = setup();
+    seedOpenRoom(queryClient, 'me', 0);
+    const detail = JSON.stringify(roomKeys.detail('room-1'));
+    const refetches = () => invalidated.filter((key) => JSON.stringify(key) === detail).length;
+
+    // Each frame on the stream is its own task, so the burst is spread over time.
+    handlers.get('room_member_removed')!({ roomId: 'room-1', authorId: 'agent-1' });
+    await vi.advanceTimersByTimeAsync(5);
+    handlers.get('room_member_removed')!({ roomId: 'room-1', authorId: 'agent-2' });
+    await vi.advanceTimersByTimeAsync(5);
+    handlers.get('room_member_added')!({ roomId: 'room-1', authorId: 'agent-3' });
+    expect(refetches()).toBe(0);
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(refetches()).toBe(1);
+  });
+
+  it('refetches again for a burst that comes after the first has flushed', async () => {
+    vi.useFakeTimers();
+    // Red if the pending mark is never cleared: that room would stop following
+    // its roster for the rest of the session.
+    const { invalidated, queryClient } = setup();
+    seedOpenRoom(queryClient, 'me', 0);
+    const detail = JSON.stringify(roomKeys.detail('room-1'));
+    const refetches = () => invalidated.filter((key) => JSON.stringify(key) === detail).length;
+
+    handlers.get('room_member_removed')!({ roomId: 'room-1', authorId: 'agent-1' });
+    await vi.advanceTimersByTimeAsync(50);
+    handlers.get('room_member_added')!({ roomId: 'room-1', authorId: 'agent-1' });
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(refetches()).toBe(2);
   });
 
   it('leaves a room nobody has open alone on room_updated, minting no cache entry', () => {

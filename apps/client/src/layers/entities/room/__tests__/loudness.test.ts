@@ -27,6 +27,17 @@ function person(displayName: string, responseMode: ResponseMode = 'always'): Roo
 }
 
 describe('roomLoudness', () => {
+  it('counts no retired agent — one left on a DM roster answers nothing (DOR-2095)', () => {
+    const retired = agent('Ana', 'always');
+    const loudness = roomLoudness(
+      [person('You'), { ...retired, author: { ...retired.author, retired: true } }],
+      'dm'
+    );
+
+    expect(loudness.sentence).toBe('There is nobody here to answer you');
+    expect(loudness.level).toBe(0);
+  });
+
   it('counts the agents that keep talking, not every agent that can answer', () => {
     // Red if the count widens to include `@only`: it would read "Three agents
     // will answer you here" for a room where one of them answers exactly the

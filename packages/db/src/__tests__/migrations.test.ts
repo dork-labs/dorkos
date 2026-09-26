@@ -239,6 +239,9 @@ describe('Database Migrations', () => {
       // 0047, DOR-865).
       'room_bridge_messages',
       'room_bridges',
+      // The channel seats an unregistered agent held, replayed if the same
+      // agent is registered again (DOR-2095, migration 0113).
+      'room_departed_seats',
       // The room primitive: a membership-scoped durable stream, its roster, its
       // never-trimmed log, and the per-(room, agent) session bindings
       // (ADR 260726-170125, migration 0034).
