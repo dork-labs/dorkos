@@ -129,22 +129,6 @@ async function requireTestModeLeg(request: APIRequestContext): Promise<void> {
 }
 
 /**
- * Install a scenario and prove it took.
- *
- * **The read-back is the guard, not politeness.** The scenario store is
- * server-global, so a neighbour that resets it between this call and the turn
- * that needs it leaves the test driving a runtime it did not choose — and the
- * two ways that shows up both read as product bugs: an instant turn means
- * the room never reports itself busy ("the Stop button is broken"), and an
- * unexpected `long-turn` means a reply says `Working on it` instead of echoing
- * ("the room answered the wrong message"). Both happened here before this file
- * was made serial. Serial fixes it TODAY; this is what will name the cause if
- * anyone ever runs these with more than one worker.
- *
- * @param request - The test's API context.
- * @param name - The scenario to install.
- */
-/**
  * Set how many conversations one agent may work in at once
  * (`rooms.maxConcurrentTurnsPerAgent`, DOR-2104).
  *
@@ -166,6 +150,22 @@ async function setTurnsPerAgent(request: APIRequestContext, limit: number): Prom
 /** What `rooms.maxConcurrentTurnsPerAgent` ships as, restored after every test that moves it. */
 const TURNS_PER_AGENT_DEFAULT = 3;
 
+/**
+ * Install a scenario and prove it took.
+ *
+ * **The read-back is the guard, not politeness.** The scenario store is
+ * server-global, so a neighbour that resets it between this call and the turn
+ * that needs it leaves the test driving a runtime it did not choose — and the
+ * two ways that shows up both read as product bugs: an instant turn means
+ * the room never reports itself busy ("the Stop button is broken"), and an
+ * unexpected `long-turn` means a reply says `Working on it` instead of echoing
+ * ("the room answered the wrong message"). Both happened here before this file
+ * was made serial. Serial fixes it TODAY; this is what will name the cause if
+ * anyone ever runs these with more than one worker.
+ *
+ * @param request - The test's API context.
+ * @param name - The scenario to install.
+ */
 async function useScenario(request: APIRequestContext, name: string): Promise<void> {
   const res = await request.post('/api/test/scenario', { data: { name } });
   if (!res.ok()) throw new Error(`Could not set the scenario to ${name}: ${await res.text()}`);
@@ -493,9 +493,11 @@ test.describe('A room gathers what is said at once @smoke', () => {
     await seatThatAnswers(roomsApi, busy, name);
     const seat = await seatThatAnswers(roomsApi, asking, name);
 
-    await setTurnsPerAgent(request, 1);
-    await useScenario(request, 'long-turn');
     try {
+      // Inside the `try`, both of them: a scenario that failed to install must
+      // still leave the limit put back for the next file on this leg.
+      await setTurnsPerAgent(request, 1);
+      await useScenario(request, 'long-turn');
       // The agent takes a turn in the OTHER room and stays in it.
       await openRoom(page, basePage, roomsPage, busy.id);
       await roomsApi.postEntries(busy.id, [`over here ${tag}`]);
@@ -593,9 +595,9 @@ test.describe('A room gathers what is said at once @smoke', () => {
     await seatThatAnswers(roomsApi, first, name);
     await seatThatAnswers(roomsApi, second, name);
 
-    await setTurnsPerAgent(request, 3);
-    await useScenario(request, 'long-turn');
     try {
+      await setTurnsPerAgent(request, 3);
+      await useScenario(request, 'long-turn');
       await openRoom(page, basePage, roomsPage, first.id);
       await roomsApi.postEntries(first.id, [`over here ${tag}`]);
       await expectRoomBusy(page);

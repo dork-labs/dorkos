@@ -32,7 +32,7 @@
  *
  * Spec: `specs/room-hold-when-busy/02-specification.md`.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { InterruptReceipt } from '@dorkos/shared/types';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
@@ -881,7 +881,18 @@ describe('a message for an agent working elsewhere', () => {
       expect(service.listHolds().map((hold) => hold.roomId)).toEqual([b!.id]);
 
       limit = 2;
-      service.post(c!.id, { authorId: human, text: '@ana and here?' });
+      // A clock that moves on every read, while C is being decided: the
+      // millisecond straddle between C's `arrivedAt` and the moment B is
+      // re-armed, made certain rather than waited for. Re-armed from its own
+      // reading, B would be due after C and C would take the slot.
+      const real = Date.now;
+      let tick = real.call(Date);
+      const clock = vi.spyOn(Date, 'now').mockImplementation(() => (tick += 1));
+      try {
+        service.post(c!.id, { authorId: human, text: '@ana and here?' });
+      } finally {
+        clock.mockRestore();
+      }
       await settleUntil(() => runner.turns.length === 2, 'one more turn to start');
       await quiet();
 

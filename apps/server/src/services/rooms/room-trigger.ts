@@ -810,8 +810,9 @@ export class RoomTriggerDispatcher {
     // re-armed the messages already waiting for this agent — so a message sent
     // now would take the slot ahead of one that has waited minutes. Re-arming
     // them here, before this message is decided, puts them in the sweep first:
-    // a resumed collection is due at once, and the sweep takes the oldest.
-    this.resumeFreedHolds(candidate.agentPath);
+    // armed from THIS message's `arrivedAt`, they are due no later than it, so
+    // they share its sweep and the sweep takes the oldest.
+    this.resumeFreedHolds(candidate.agentPath, arrivedAt);
     const busyWith = this.busyWith(room.id, candidate.authorId, candidate.agentPath);
     const opened = this.collector.collect({
       room,
@@ -3484,9 +3485,11 @@ export class RoomTriggerDispatcher {
    * turn it is waiting for is about to start, and `holdClaim` resolves it then.
    *
    * @param agentPath - The working directory whose claim just released.
+   * @param from - The clock reading to arm from, passed through to
+   *   {@link RoomCollector.resumeAgent}. Omitted means now.
    */
-  private resumeElsewhere(agentPath: string): void {
-    this.collector.resumeAgent(agentPath);
+  private resumeElsewhere(agentPath: string, from?: number): void {
+    this.collector.resumeAgent(agentPath, from);
     for (const record of this.held.values()) {
       if (record.agentPath !== agentPath) continue;
       const busy = this.busyWith(record.roomId, record.authorId, record.agentPath);
@@ -3520,8 +3523,12 @@ export class RoomTriggerDispatcher {
    *
    * @param onlyPath - Consider only this agent's waits. Omitted on the beat,
    *   which considers every agent's.
+   * @param from - The clock reading to arm the waits from. `collectOne` passes
+   *   the fresh message's `arrivedAt`, so the re-armed waits are due no later
+   *   than it and share its sweep, oldest first; a later reading could put
+   *   them one millisecond behind and let the fresh message take the slot.
    */
-  private resumeFreedHolds(onlyPath?: string): void {
+  private resumeFreedHolds(onlyPath?: string, from?: number): void {
     const freed = new Set<string>();
     for (const record of this.held.values()) {
       if (onlyPath !== undefined && record.agentPath !== onlyPath) continue;
@@ -3530,7 +3537,7 @@ export class RoomTriggerDispatcher {
         freed.add(record.agentPath);
       }
     }
-    for (const agentPath of freed) this.resumeElsewhere(agentPath);
+    for (const agentPath of freed) this.resumeElsewhere(agentPath, from);
   }
 
   /**
