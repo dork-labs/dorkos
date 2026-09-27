@@ -11,6 +11,8 @@ covers:
   - 'fix(connectors): a new connection is ready to share until someone holds access (DOR-2418)'
   - 'fix(connections): review round 1 for the one list (DOR-2418)'
   - 'fix(connections): Needs you never reads a sign-in it did not open (DOR-2418)'
+  - 'fix(connectors): settle accounts connected before this change that nobody shares (DOR-2418)'
+  - 'fix(connections): Needs you keeps a sign-in only as long as it can be finished (DOR-2418)'
 ---
 
 ### Changed
@@ -22,4 +24,4 @@ covers:
 
 ### Fixed
 
-- An app you just connected can be given to an agent straight away, including when an agent asks for it; it no longer waits on a review nobody could do. After you change how DorkOS reaches your apps, only apps someone already shares ask for a review (DOR-2418).
+- An app you connected can be given to an agent straight away, including when an agent asks for it; it no longer waits on a review nobody could do. Apps you connected earlier and never shared are settled the same way when you update. After you change how DorkOS reaches your apps, only apps someone already shares ask for a review (DOR-2418).
