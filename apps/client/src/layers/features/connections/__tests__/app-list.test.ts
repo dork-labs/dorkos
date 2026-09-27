@@ -163,14 +163,21 @@ describe('accountRow', () => {
     expect(
       accountRow(connection({ reconciliationStatus: 'migration_needs_reconcile' }), SERVICES)
     ).toMatchObject({ tone: 'attention', action: 'review' });
-    // A brand-new account reads "needs reconcile" until anyone is granted:
-    // nothing to review, it is connected with no agents yet.
-    expect(
-      accountRow(
-        connection({ reconciliationStatus: 'migration_needs_reconcile', agentCount: 0 }),
-        SERVICES
-      )
-    ).toMatchObject({ tone: 'ready', action: null, detail: 'you@gmail.com · No agents yet' });
+    // Pinned: whatever the grants, never green until the server says ready.
+    for (const over of [
+      { agentCount: 0 },
+      {
+        agentCount: 0,
+        everyAgent: { operationRevisionIds: ['op-1'], classifications: ['read' as const] },
+      },
+    ]) {
+      expect(
+        accountRow(
+          connection({ reconciliationStatus: 'migration_needs_reconcile', ...over }),
+          SERVICES
+        )
+      ).toMatchObject({ tone: 'attention', action: 'review' });
+    }
     expect(
       accountRow(connection({ authoritySync: { status: 'failed', reason: 'x' } }), SERVICES)
     ).toMatchObject({ tone: 'broken', action: 'review' });
@@ -240,6 +247,14 @@ describe('chatAppRow', () => {
       waitingByChatApp: {},
     });
     expect(row).toMatchObject({ tone: 'attention', detail: '@lifeos_bot · No agent answers yet' });
+  });
+
+  it('marks a chat app DorkOS no longer offers', () => {
+    const retired = chatEntry('telegram', [instance()], { deprecated: true });
+    expect(
+      chatAppRow(retired, instance(), { bindings: [], agentNames: {}, waitingByChatApp: {} })
+        .deprecated
+    ).toBe(true);
   });
 
   it('reads a failed bot as broken with Fix, and a disabled one as paused', () => {

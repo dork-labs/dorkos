@@ -8,6 +8,7 @@ import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resour
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { connectorKeys } from '@/layers/entities/connectors';
 import { ConnectionsPage } from '../ui/ConnectionsPage';
 
 /** The page's URL state, as the router would hand it over. */
@@ -71,10 +72,11 @@ function transportWith(connections: ConnectorConnectionSummary[]): Transport {
   });
 }
 
-function renderPage(transport: Transport) {
+function renderPage(transport: Transport, seed?: (client: QueryClient) => void) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  seed?.(client);
   render(
     <QueryClientProvider client={client}>
       <TransportProvider transport={transport}>
@@ -161,5 +163,27 @@ describe('ConnectionsPage', () => {
 
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(nextSearch()).not.toHaveProperty('app');
+  });
+
+  it('waits for a refresh before closing a panel whose app it has not seen yet', async () => {
+    // Finishing a connect opens the new app's panel while the list is still
+    // being re-read; the panel must survive that read rather than close.
+    route.search = { app: 'c-new' };
+    let finish!: (value: { connections: ConnectorConnectionSummary[] }) => void;
+    const transport = transportWith([]);
+    vi.mocked(transport.getConnectorConnections).mockImplementation(
+      () => new Promise((resolve) => (finish = resolve))
+    );
+    vi.mocked(transport.getConnectorConnection).mockReturnValue(new Promise(() => {}));
+    renderPage(transport, (client) =>
+      client.setQueryData(connectorKeys.connections(), { connections: [] })
+    );
+
+    await waitFor(() => expect(transport.getConnectorConnections).toHaveBeenCalled());
+    expect(navigate).not.toHaveBeenCalled();
+    finish({ connections: [summary({ connectionId: 'c-new' as never })] });
+
+    expect(await screen.findByRole('dialog', { name: /Notion/ })).toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

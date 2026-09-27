@@ -464,7 +464,7 @@ describe('ManagementReviewDialog', () => {
       <NeedsYou services={new Map()} onOpenRequest={vi.fn()} onOpenReview={vi.fn()} />
     );
     expect(await screen.findByText(/still shared with every agent/)).toBeInTheDocument();
-    expect(screen.getByText('Every agent loses access')).toBeInTheDocument();
+    expect(screen.getByText('Every agent loses access.')).toBeInTheDocument();
     strip.unmount();
     renderWith(
       transport,

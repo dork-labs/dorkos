@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAdapterEvents, type AdapterEventMetadata } from '@/layers/entities/relay';
-import { formatRelativeTime } from '@/layers/shared/lib';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Button, Skeleton } from '@/layers/shared/ui';
 import { AdapterEventLog } from './AdapterEventLog';
 
@@ -45,7 +45,9 @@ function eventLine(subject: string, metadata: string | null | undefined): string
 export function ChatAppRecent({ adapterId }: { adapterId: string }) {
   const { data, isPending, isError, refetch } = useAdapterEvents(adapterId);
   const [showAll, setShowAll] = useState(false);
-  const events = [...(data?.events ?? [])].reverse();
+  // The server answers newest first (`trace-store` orders by sentAt DESC).
+  const events = data?.events ?? [];
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   if (isPending) return <Skeleton className="h-16 rounded-lg" />;
   if (isError) {
@@ -74,20 +76,38 @@ export function ChatAppRecent({ adapterId }: { adapterId: string }) {
   return (
     <div className="space-y-2">
       <ul className="space-y-1.5">
-        {events.slice(0, RECENT_LIMIT).map((event) => (
-          <li key={event.id} className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="min-w-0 truncate">{eventLine(event.subject, event.metadata)}</span>
+        {events.slice(0, RECENT_LIMIT).map((event) => {
+          const line = eventLine(event.subject, event.metadata);
+          const open = expanded === event.id;
+          const time = (
             <span className="text-muted-foreground shrink-0 text-xs">
               {formatRelativeTime(event.sentAt)}
             </span>
-          </li>
-        ))}
+          );
+          // An error's own words can be long; the line opens to show all of them.
+          return event.subject === 'adapter.error' ? (
+            <li key={event.id}>
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setExpanded(open ? null : event.id)}
+                className="focus-ring hover:bg-muted/50 -mx-1 flex w-full items-baseline justify-between gap-3 rounded px-1 text-left text-sm"
+              >
+                <span className={cn('min-w-0', open ? 'break-words' : 'truncate')}>{line}</span>
+                {time}
+              </button>
+            </li>
+          ) : (
+            <li key={event.id} className="flex items-baseline justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate">{line}</span>
+              {time}
+            </li>
+          );
+        })}
       </ul>
-      {events.length > RECENT_LIMIT && (
-        <Button variant="link" size="xs" className="h-auto p-0" onClick={() => setShowAll(true)}>
-          See all
-        </Button>
-      )}
+      <Button variant="link" size="xs" className="h-auto p-0" onClick={() => setShowAll(true)}>
+        See all
+      </Button>
     </div>
   );
 }

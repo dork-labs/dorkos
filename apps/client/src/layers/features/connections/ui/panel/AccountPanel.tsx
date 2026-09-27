@@ -142,7 +142,11 @@ function AccountPanelBody({
         />
       ) : signedOut ? (
         <PanelFix
-          message={`Signed out. Agents can’t use ${appName}.`}
+          message={
+            connection.authenticationStatus === 'pending'
+              ? `Sign-in didn’t finish. Agents can’t use ${appName} yet.`
+              : `Signed out. Agents can’t use ${appName}.`
+          }
           action="Sign in again"
           pending={reconnect.isPending}
           onAction={signInAgain}
@@ -153,7 +157,7 @@ function AccountPanelBody({
           action="Check exact actions"
           onAction={() => onEditExactActions(connectionId)}
         />
-      ) : connection.reconciliationStatus !== 'ready' && detail.agents.length > 0 ? (
+      ) : connection.reconciliationStatus !== 'ready' ? (
         <PanelFix
           message={`Some of ${appName}’s actions changed. Check who can use them.`}
           action="Review"
@@ -183,6 +187,8 @@ function AccountPanelBody({
 
       <AccountPanelMore
         detail={detail}
+        onSignInAgain={signInAgain}
+        signingIn={reconnect.isPending}
         appName={appName}
         onEditExactActions={onEditExactActions}
         onAddAnother={onAddAnother}

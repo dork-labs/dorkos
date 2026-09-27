@@ -39,12 +39,18 @@ export function AccountPanelMore({
   detail,
   appName,
   onEditExactActions,
+  onSignInAgain,
+  signingIn,
   onAddAnother,
   onClose,
 }: {
   detail: ConnectorConnectionDetail;
   appName: string;
   onEditExactActions: (connectionId: string) => void;
+  /** Start a fresh sign-in for this account (the page opens it). */
+  onSignInAgain: () => void;
+  /** True while that sign-in is starting. */
+  signingIn: boolean;
   onAddAnother: (toolkit: string) => void;
   onClose: () => void;
 }) {
@@ -116,6 +122,15 @@ export function AccountPanelMore({
           />
         )}
 
+        {!disconnected && (
+          <PanelMoreRow
+            label="Sign in again"
+            hint="Refresh its sign-in without changing who can use it"
+            disabled={signingIn}
+            onClick={onSignInAgain}
+          />
+        )}
+
         <PanelMoreRow
           label={`Connect another ${appName} account`}
           onClick={() => onAddAnother(connection.toolkit)}
@@ -125,6 +140,11 @@ export function AccountPanelMore({
           <p className="text-sm font-medium">How it’s connected</p>
           <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
             Through {provider.displayName}. {provider.disclosure}
+          </p>
+          <p className="text-muted-foreground mt-1 text-xs">
+            {connection.payer === 'dorkos_managed'
+              ? 'DorkOS covers service usage.'
+              : 'Service usage is billed to you.'}
           </p>
         </div>
 

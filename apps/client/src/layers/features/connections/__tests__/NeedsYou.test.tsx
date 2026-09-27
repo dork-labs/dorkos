@@ -76,7 +76,10 @@ describe('NeedsYou', () => {
     expect(await screen.findByRole('heading', { name: 'Needs you' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Researcher wants to use Gmail/ }));
     expect(onOpenRequest).toHaveBeenCalledWith('request-1');
-    await user.click(screen.getByRole('button', { name: /Pause work/ }));
+    await user.click(
+      screen.getByRole('button', { name: /A program asks to pause Gmail \(work\)/ })
+    );
+    expect(screen.getByText('Agents can’t use it until you resume it.')).toBeInTheDocument();
     expect(onOpenReview).toHaveBeenCalledWith('review-1');
   });
 
@@ -89,5 +92,94 @@ describe('NeedsYou', () => {
     // Let both reads settle before asserting absence.
     await vi.waitFor(() => expect(transport.getConnectorManagementReviews).toHaveBeenCalled());
     expect(screen.queryByTestId('needs-you')).not.toBeInTheDocument();
+  });
+
+  it('says when its reads fail, with a retry, instead of vanishing', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport({
+      getConnectorAgentRequests: vi.fn().mockRejectedValue(new Error('offline')),
+      getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
+    });
+    renderStrip(transport);
+
+    expect(
+      await screen.findByText('Couldn’t check for requests waiting on you.')
+    ).toBeInTheDocument();
+    vi.mocked(transport.getConnectorAgentRequests).mockResolvedValue([REQUEST]);
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(
+      await screen.findByRole('button', { name: /Researcher wants to use Gmail/ })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps an approved change it could not confirm, and drops a plain decided one', async () => {
+    const decided = (id: string, resolution: Record<string, unknown>) =>
+      ({
+        ...REVIEW,
+        reviewRequestId: id,
+        state: 'approved',
+        resolvedAt: new Date().toISOString(),
+        resolution,
+      }) as unknown as ConnectorManagementReviewItem;
+    const transport = createMockTransport({
+      getConnectorAgentRequests: vi.fn().mockResolvedValue([]),
+      getConnectorManagementReviews: vi.fn(async (state) =>
+        state === 'resolved'
+          ? [
+              decided('review-unknown', { kind: 'outcome_unknown' }),
+              decided('review-done', { kind: 'applied' }),
+            ]
+          : []
+      ),
+    });
+    const { onOpenReview } = renderStrip(transport);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole('button', { name: /Check Gmail \(work\) before another change/ })
+    );
+    expect(onOpenReview).toHaveBeenCalledWith('review-unknown');
+    expect(screen.queryByTestId('needs-you-review-review-done')).not.toBeInTheDocument();
+  });
+
+  it('keeps an approved connect only while its sign-in is still open', async () => {
+    const approvedConnect = {
+      ...REVIEW,
+      reviewRequestId: 'review-connect',
+      action: {
+        version: 1,
+        kind: 'connect',
+        providerInstanceId: 'p-1',
+        toolkit: 'gmail',
+        label: 'work',
+      },
+      context: {
+        kind: 'connect',
+        providerInstanceId: 'p-1',
+        providerDisplayName: 'Composio',
+        toolkit: 'gmail',
+        label: 'work',
+      },
+      state: 'approved',
+      resolvedAt: new Date().toISOString(),
+      resolution: {
+        kind: 'connect_authentication_required',
+        reviewRequestId: 'review-connect',
+        authentication: { flowId: 'flow-open' },
+      },
+    } as unknown as ConnectorManagementReviewItem;
+    const transport = createMockTransport({
+      getConnectorAgentRequests: vi.fn().mockResolvedValue([]),
+      getConnectorManagementReviews: vi.fn(async (state) =>
+        state === 'resolved' ? [approvedConnect] : []
+      ),
+      pollConnectorAuthentication: vi
+        .fn()
+        .mockResolvedValue({ flowId: 'flow-open', state: 'pending' }),
+    });
+    renderStrip(transport);
+    expect(
+      await screen.findByText('Approved: finish signing in to Gmail (work)')
+    ).toBeInTheDocument();
   });
 });

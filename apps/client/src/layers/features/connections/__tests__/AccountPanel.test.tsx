@@ -290,4 +290,42 @@ describe('AccountPanel', () => {
     await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(handlers.onClose).toHaveBeenCalled());
   });
+
+  it('asks for a review whenever the server says access needs one, even when only every agent holds it', async () => {
+    const user = userEvent.setup();
+    const handlers = renderPanel(
+      transportFor(
+        summary({
+          agentCount: 0,
+          reconciliationStatus: 'migration_needs_reconcile',
+          everyAgent: { operationRevisionIds: ['op-1'], classifications: ['read'] },
+        })
+      )
+    );
+    const fix = await screen.findByTestId('app-panel-fix');
+    await user.click(within(fix).getByRole('button', { name: 'Review' }));
+    expect(handlers.onEditExactActions).toHaveBeenCalledWith('c-1');
+  });
+
+  it('says a sign-in that never finished the way its row does', async () => {
+    renderPanel(transportFor(summary({ authenticationStatus: 'pending' })));
+    expect(await screen.findByTestId('app-panel-fix')).toHaveTextContent(
+      'Sign-in didn’t finish. Agents can’t use Gmail yet.'
+    );
+  });
+
+  it('keeps Sign in again and who pays for usage under More on a healthy account', async () => {
+    const user = userEvent.setup();
+    const transport = transportFor(summary());
+    vi.mocked(transport.reconnectConnectorConnection).mockResolvedValue({
+      flowId: 'flow-2',
+    } as never);
+    const handlers = renderPanel(transport);
+
+    await user.click(await screen.findByRole('button', { name: 'More' }));
+    const more = screen.getByTestId('app-panel-more');
+    expect(more).toHaveTextContent('DorkOS covers service usage.');
+    await user.click(within(more).getByRole('button', { name: /^Sign in again/ }));
+    await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-2'));
+  });
 });

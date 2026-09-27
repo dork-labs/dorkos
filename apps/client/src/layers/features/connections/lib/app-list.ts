@@ -56,6 +56,8 @@ export interface YourAppRow {
   action: AppRowAction | null;
   /** People waiting for someone to answer them (chat apps only). */
   waiting: number;
+  /** A chat app DorkOS no longer offers; set-up ones keep working. */
+  deprecated?: boolean;
 }
 
 /** A sign-in that has started and not finished, shown as a "Connecting" row. */
@@ -189,13 +191,9 @@ export function accountRow(
       detail: 'Couldn’t update who can use it. Check it again.',
     };
   }
-  // A new account reads "needs reconcile" until its access is first chosen;
-  // with nobody granted there is nothing to re-check, so it is simply
-  // connected with no agents yet. Only granted access can have gone stale.
-  if (
-    connection.reconciliationStatus !== 'ready' &&
-    (connection.agentCount > 0 || connection.everyAgent !== null)
-  ) {
+  // The server marks a connection for review only when access someone holds
+  // may have gone stale; until it says ready again, the row never reads green.
+  if (connection.reconciliationStatus !== 'ready') {
     return {
       ...base,
       tone: 'attention',
@@ -249,6 +247,7 @@ export function chatAppRow(
     account: botName,
     identity: null,
     waiting: input.waitingByChatApp[instance.id] ?? 0,
+    deprecated: manifest.deprecated === true,
   };
   const withBot = (line: string) => (botName ? `${botName} · ${line}` : line);
 
@@ -285,7 +284,12 @@ export function chatAppRow(
   };
 }
 
-/** Where a row sits in "Yours": the thing in progress, then what needs you, then the rest. */
+/**
+ * Where a row sits in "Yours": broken first, then what waits on you, then
+ * everything working (busy and ready share a place, so a row never jumps while
+ * it updates), then paused and disconnected. A sign-in in progress is not
+ * sorted here; it always leads (see {@link buildYourApps}).
+ */
 const TONE_ORDER: Record<AppRowTone, number> = {
   broken: 1,
   attention: 2,

@@ -32,6 +32,7 @@ function RowBody({
   iconKey,
   detail,
   chat,
+  deprecated = false,
   wrapDetail = false,
   detailClassName,
 }: {
@@ -39,6 +40,8 @@ function RowBody({
   iconKey: string;
   detail: string;
   chat: boolean;
+  /** Marks a chat app DorkOS no longer offers. */
+  deprecated?: boolean;
   /** Let the line wrap to two lines (a description) instead of cutting it off. */
   wrapDetail?: boolean;
   detailClassName?: string;
@@ -50,6 +53,11 @@ function RowBody({
         <span className="flex items-center gap-2">
           <span className="truncate text-sm font-medium">{name}</span>
           {chat && <ChatTag />}
+          {deprecated && (
+            <Badge size="xs" variant="outline" tone="warning" className="shrink-0">
+              Deprecated
+            </Badge>
+          )}
         </span>
         <span
           className={cn(
@@ -115,6 +123,7 @@ export function YourAppRowView({
             iconKey={row.iconKey}
             detail={row.detail}
             chat={row.kind === 'chat'}
+            deprecated={row.deprecated}
             // What broke is the one line worth reading in full.
             wrapDetail={row.tone === 'broken'}
             detailClassName={row.tone === 'broken' ? 'text-status-warning-fg' : undefined}

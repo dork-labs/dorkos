@@ -1,11 +1,18 @@
+import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
+import type { ConnectorManagementReviewItem } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorAgentRequests,
   useConnectorManagementReviews,
+  useConnectorReviewAuthentication,
 } from '@/layers/entities/connectors';
+import { Button } from '@/layers/shared/ui';
 import { accountAppName } from '../lib/app-list';
-import { presentManagementReview } from '../lib/management-review-presentation';
+import { pendingReviewLine, unsettledReviewLine, type NeedsYouLine } from '../lib/needs-you-copy';
+
+/** How long a decided review whose result is unknown keeps asking to be checked. */
+const UNKNOWN_OUTCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface NeedsYouProps {
   /** Catalog services by id, for app names. */
@@ -16,43 +23,36 @@ interface NeedsYouProps {
   onOpenReview: (reviewRequestId: string) => void;
 }
 
-/** One waiting decision, ready to render. */
-interface NeedsYouItem {
-  key: string;
-  title: string;
-  detail: string;
-  open: () => void;
-}
-
 /**
  * Decisions waiting on the owner, at the top of the page: agents asking to use
- * an app, and tools or programs asking to change a connection. Each opens its
- * own dialog. Renders nothing at all when nothing is waiting, so the page's
- * first line is only ever spent on something the person has to do.
+ * an app, tools or programs asking to change a connection, and two decided
+ * requests that still need the person (an approved connect with its sign-in
+ * still open, and an approved change DorkOS could not confirm). Each opens its
+ * own dialog.
+ *
+ * Renders nothing when nothing waits, so the page's first line is only ever
+ * spent on something the person has to do. A read that failed says so in one
+ * quiet line with a retry, rather than looking like "nothing waits".
  */
 export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProps) {
   const requests = useConnectorAgentRequests('pending');
-  const reviews = useConnectorManagementReviews('pending');
+  const pending = useConnectorManagementReviews('pending');
+  const resolved = useConnectorManagementReviews('resolved');
 
-  const items: NeedsYouItem[] = [
-    ...(requests.data ?? []).map((request) => ({
-      key: `request-${request.requestId}`,
-      title: `${request.agent.displayName} wants to use ${accountAppName(request.serviceSlug, services)}`,
-      detail: request.reason,
-      open: () => onOpenRequest(request.requestId),
-    })),
-    ...(reviews.data ?? []).map((review) => {
-      const presentation = presentManagementReview(review);
-      return {
-        key: `review-${review.reviewRequestId}`,
-        title: presentation.title,
-        detail: presentation.summary,
-        open: () => onOpenReview(review.reviewRequestId),
-      };
-    }),
-  ];
+  // Read once per mount: the window is days wide, so a render never needs a fresher clock.
+  const [now] = useState(() => Date.now());
+  const unsettled = (resolved.data ?? []).filter(
+    (review) =>
+      review.state === 'approved' &&
+      (review.resolution.kind === 'connect_authentication_required' ||
+        (review.resolution.kind === 'outcome_unknown' &&
+          now - Date.parse(review.resolvedAt) < UNKNOWN_OUTCOME_WINDOW_MS))
+  );
+  const failed = [requests, pending, resolved].filter((query) => query.isError);
 
-  if (items.length === 0) return null;
+  const hasItems =
+    (requests.data?.length ?? 0) + (pending.data?.length ?? 0) + unsettled.length > 0;
+  if (!hasItems && failed.length === 0) return null;
 
   return (
     <section
@@ -67,26 +67,116 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
         Needs you
       </h2>
       <ul>
-        {items.map((item) => (
-          <li key={item.key}>
-            <button
-              type="button"
-              data-testid={`needs-you-${item.key}`}
-              onClick={item.open}
-              className="hover:bg-background/60 focus-ring flex min-h-12 w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{item.title}</span>
-                <span className="text-muted-foreground block truncate text-xs">{item.detail}</span>
-              </span>
-              <span className="text-muted-foreground flex shrink-0 items-center gap-0.5 text-xs font-medium">
-                Review
-                <ChevronRight className="size-3.5" aria-hidden />
-              </span>
-            </button>
-          </li>
+        {(requests.data ?? []).map((request) => (
+          <NeedsYouRow
+            key={`request-${request.requestId}`}
+            testId={`needs-you-request-${request.requestId}`}
+            line={{
+              title: `${request.agent.displayName} wants to use ${accountAppName(request.serviceSlug, services)}`,
+              detail: request.reason,
+            }}
+            onOpen={() => onOpenRequest(request.requestId)}
+          />
+        ))}
+        {(pending.data ?? []).map((review) => (
+          <NeedsYouRow
+            key={`review-${review.reviewRequestId}`}
+            testId={`needs-you-review-${review.reviewRequestId}`}
+            line={pendingReviewLine(review, services)}
+            onOpen={() => onOpenReview(review.reviewRequestId)}
+          />
+        ))}
+        {unsettled.map((review) => (
+          <UnsettledReviewRow
+            key={`review-${review.reviewRequestId}`}
+            review={review}
+            services={services}
+            onOpen={() => onOpenReview(review.reviewRequestId)}
+          />
         ))}
       </ul>
+      {failed.length > 0 && (
+        <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 px-2.5 pb-1.5 text-xs">
+          Couldn’t check for requests waiting on you.
+          <Button
+            variant="link"
+            size="xs"
+            className="h-auto p-0"
+            onClick={() => failed.forEach((query) => void query.refetch())}
+          >
+            Try again
+          </Button>
+        </p>
+      )}
     </section>
+  );
+}
+
+/**
+ * A decided review that may still need the person. An approved connect stays
+ * only while its sign-in is open, read live, so it leaves once the sign-in
+ * finishes, fails or expires.
+ */
+function UnsettledReviewRow({
+  review,
+  services,
+  onOpen,
+}: {
+  review: ConnectorManagementReviewItem;
+  services: ReadonlyMap<string, ConnectorCatalogService>;
+  onOpen: () => void;
+}) {
+  const flowId =
+    review.state === 'approved' && review.resolution.kind === 'connect_authentication_required'
+      ? review.resolution.authentication.flowId
+      : null;
+  const flow = useConnectorReviewAuthentication(flowId, flowId !== null);
+  const line = unsettledReviewLine(review, services);
+  if (!line) return null;
+  if (flowId !== null && flow.data?.state !== 'starting' && flow.data?.state !== 'pending') {
+    return null;
+  }
+  return (
+    <NeedsYouRow
+      testId={`needs-you-review-${review.reviewRequestId}`}
+      line={line}
+      onOpen={onOpen}
+    />
+  );
+}
+
+/** One waiting decision: who asks for what, what it means, and Review. */
+function NeedsYouRow({
+  testId,
+  line,
+  onOpen,
+}: {
+  testId: string;
+  line: NeedsYouLine;
+  onOpen: () => void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        data-testid={testId}
+        onClick={onOpen}
+        className="hover:bg-background/60 focus-ring flex min-h-12 w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors"
+      >
+        <span className="min-w-0 flex-1">
+          {/* Two lines on a phone, where one would cut the ask in half. */}
+          <span className="line-clamp-2 block text-sm font-medium sm:line-clamp-1">
+            {line.title}
+          </span>
+          <span className="text-muted-foreground line-clamp-2 block text-xs sm:line-clamp-1">
+            {line.detail}
+          </span>
+        </span>
+        <span className="text-muted-foreground flex shrink-0 items-center gap-0.5 text-xs font-medium">
+          Review
+          <ChevronRight className="size-3.5" aria-hidden />
+        </span>
+      </button>
+    </li>
   );
 }

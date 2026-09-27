@@ -133,7 +133,7 @@ describe('dorkbot-templates', () => {
   describe('DORKBOT_TOUR_LINES', () => {
     it('has an offer and a caption for every tour', () => {
       expect(DORKBOT_TOUR_LINES.offers.tasks).toContain('schedule');
-      expect(DORKBOT_TOUR_LINES.offers.relay).toContain('integration');
+      expect(DORKBOT_TOUR_LINES.offers.relay).toContain('chat app');
       expect(DORKBOT_TOUR_LINES.offers.mesh).toContain('agents');
       expect(DORKBOT_TOUR_LINES.general.composer.length).toBeGreaterThan(0);
       expect(DORKBOT_TOUR_LINES.general.homeTabs.length).toBeGreaterThan(0);

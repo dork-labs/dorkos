@@ -12,7 +12,7 @@ Visual companion session, 2026-09-26. The mockups are copied into [`mockups/`](.
 **Options:** A) one list for everything — chat apps are rows with a small "Chat" tag. B) two tabs, "Apps" and "Chat".
 **Chosen:** A. Every connection answers the same question — which agents get this — so they can share one list. Nothing new to learn.
 
-This reverses ADR `260804-021140`'s "two permanently visible regions, Messaging and Accounts". A superseding ADR is owed.
+This reverses ADR `260804-021140`'s "two permanently visible regions, Messaging and Accounts". An amending ADR is owed.
 
 **Moves off the page:** Composio/Nango keys and message-delivery settings → Settings › Connections (§7). Communities → its own home (§10). Agent requests → the chat card (§3). The internal Claude Code relay row disappears (§9).
 
@@ -150,7 +150,7 @@ Follows ADR `260804-021140`'s ban on "integration", "connector", "adapter" and "
 
 ## Follow-ups this design creates
 
-- ADR superseding `260804-021140` (one list, not two regions) — lands with DOR-2418.
+- ADR amending `260804-021140` (one list, not two regions) — lands with DOR-2418.
 - ADR for owner-wide "every agent" grants (§4) — lands with DOR-2420.
 
 Work items, all in the **DorkOS Connections** project. Build order: the first four unblock the page.
