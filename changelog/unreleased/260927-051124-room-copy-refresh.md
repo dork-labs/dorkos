@@ -1,5 +1,7 @@
 ---
 covers:
+  - 'fix(rooms): hold a room copy with hidden edits, and clean up after a stopped refresh (DOR-2411)'
+  - 'docs(rooms): tell agents their room copy is brought up to date at turn start (DOR-2411)'
   - 'fix(rooms): keep a file name or commit subject on its own line in the what-moved heads-up (DOR-2411)'
   - "feat(rooms): bring an agent's copy of the room's files up to date when its turn starts (DOR-2411)"
 ---

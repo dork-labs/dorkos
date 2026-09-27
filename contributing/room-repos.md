@@ -162,7 +162,8 @@ fast-forwards the agent's copy to `main` — the one place the server writes int
 1. `main`'s tip is captured once; every later step uses that sha, never `main` by name.
 2. The copy is on its own branch, `room/<slug>` (a detached `HEAD` or another branch is
    `off-branch`).
-3. `git status --untracked-files=all` is empty (else `changes`).
+3. `git status --untracked-files=all` is empty, and `ls-files -v` shows no file marked
+   assume-unchanged or skip-worktree, whose edits `status` cannot see (else `changes`).
 4. The copy has no commit `main` lacks (else `ahead`).
 5. Already at the tip is `current`.
 6. **No untracked or ignored file sits at, inside, or above any path the fast-forward touches**
@@ -171,6 +172,13 @@ fast-forwards the agent's copy to `main` — the one place the server writes int
    step is the only thing that stops either. Paths compare case- and normalization-folded, which can
    only hold more copies, never fewer.
 7. `git merge --ff-only <tip>`. A failure is `unreadable`, logged, and nothing else is tried.
+   It gets a 120-second timeout, not a read's 30. If it is killed partway, the
+   `index.lock` it left is removed (never one that was there before), and nothing is
+   reset, because a reset is a second write on a tree in an unknown state. The honest cost:
+   the copy then holds files `main` wrote that its branch does not have, so it reads as
+   changed, every later launch holds it as `changes`, and `git merge main` refuses until
+   those files are discarded. The operator gets a warning naming the copy; nothing is lost,
+   but the agent (or a person) has to clear the half-written files by hand.
 
 Before any git call, and again right before the write, it asks whether **any session bound to this
 (room, agent)** has a turn in flight: the id `room_sessions` holds and every retired id that still

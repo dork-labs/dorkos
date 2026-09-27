@@ -25,6 +25,7 @@ import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
 import { resolveRoomTurnPlace, roomTurnLaunchStep } from '../room-turn-place.js';
 import {
+  afterFailedWrite,
   firstCollision,
   pathsCollide,
   refreshRoomWorktree,
@@ -252,6 +253,24 @@ describe('the turn-start refresh', () => {
       expect(await headOf(copy)).toBe(before);
     });
 
+    for (const flag of ['--assume-unchanged', '--skip-worktree']) {
+      it(`it holds an edit to a file marked ${flag}, which status cannot see`, async () => {
+        await onMain({ 'PLAN.md': 'v1\n' }, 'Plan v1');
+        await refreshRoomWorktree(target, deps());
+        await writeFile(path.join(copy, 'PLAN.md'), 'my hidden edit\n', 'utf-8');
+        await git(copy, 'update-index', flag, 'PLAN.md');
+        expect(await git(copy, 'status', '--porcelain')).toBe('');
+        await onMain({ 'PLAN.md': 'v2\n' }, 'Plan v2');
+        const before = await headOf(copy);
+
+        const { outcome } = await refreshRoomWorktree(target, deps());
+
+        expect(outcome).toMatchObject({ kind: 'held', reason: 'changes' });
+        expect(await readFile(path.join(copy, 'PLAN.md'), 'utf-8')).toBe('my hidden edit\n');
+        expect(await headOf(copy)).toBe(before);
+      });
+    }
+
     it('its HEAD is detached', async () => {
       await onMain({ 'PLAN.md': '# plan\n' }, 'Plan');
       const before = await headOf(copy);
@@ -332,6 +351,40 @@ describe('the turn-start refresh', () => {
       expect(outcome).toEqual({ kind: 'held', reason: 'busy', moved: null });
       expect(await headOf(copy)).toBe(before);
     });
+  });
+
+  describe('a fast-forward that is stopped partway', () => {
+    it('is unreadable, not refreshed, when the write is killed by its timeout', async () => {
+      await mkdir(path.join(repo, 'bulk'), { recursive: true });
+      for (let i = 0; i < 300; i += 1) {
+        await writeFile(path.join(repo, 'bulk', `f${i}.md`), `${i}\n`.repeat(200), 'utf-8');
+      }
+      await git(repo, 'add', 'bulk');
+      await git(repo, 'commit', '-q', '-m', 'Bulk');
+      const before = await headOf(copy);
+
+      const { outcome } = await refreshRoomWorktree(target, deps({ writeTimeoutMs: 1 }));
+
+      expect(outcome).toMatchObject({ kind: 'held', reason: 'unreadable' });
+      expect(await headOf(copy)).toBe(before);
+      // Whatever it left, no lock of its own stops the next git command.
+      expect(existsSync(lockOf())).toBe(false);
+      await expect(git(copy, 'status', '--porcelain')).resolves.toBeDefined();
+    }, 30_000);
+
+    it('removes a lock the stopped write left, and never one that was there before', async () => {
+      await writeFile(lockOf(), '', 'utf-8');
+      afterFailedWrite(lockOf(), true);
+      expect(existsSync(lockOf())).toBe(true);
+
+      afterFailedWrite(lockOf(), false);
+      expect(existsSync(lockOf())).toBe(false);
+    });
+
+    /** The copy's index lock, where git takes it for a linked worktree. */
+    function lockOf(): string {
+      return path.join(repo, '.git', 'worktrees', path.basename(copy), 'index.lock');
+    }
   });
 
   it('refreshes past an ignored file main does not touch', async () => {

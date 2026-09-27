@@ -18,8 +18,9 @@
  *    name, so a merge landing mid-refresh cannot move the target.
  * 2. `HEAD` must be the copy's own branch, `room/<slug>` — otherwise
  *    `off-branch`. A detached `HEAD` is off-branch too.
- * 3. No tracked or untracked change (`status --untracked-files=all`) —
- *    otherwise `changes`.
+ * 3. No tracked or untracked change (`status --untracked-files=all`), and no
+ *    file marked assume-unchanged or skip-worktree, whose edits `status` cannot
+ *    see (`ls-files -v`) — otherwise `changes`.
  * 4. No commit `main` lacks — otherwise `ahead`.
  * 5. Already at the tip — `current`.
  * 6. **Nothing on disk in the way, in either direction.** No untracked or
@@ -40,7 +41,7 @@
  *
  * @module server/services/rooms/repo/room-worktree-refresh
  */
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import type {
   MainMoved,
@@ -86,6 +87,63 @@ export interface RoomWorktreeRefreshDeps {
   ): Map<string, { kind: 'merge' | 'person'; who: string | null }>;
   /** Forget diff baselines for files the refresh moved, by absolute path. */
   forgetMoved(absPaths: readonly string[]): void;
+  /** How long the fast-forward may run; {@link FAST_FORWARD_TIMEOUT_MS} when absent. */
+  writeTimeoutMs?: number;
+}
+
+/**
+ * How long the one write may run before it is killed — four times a read's
+ * budget. A fast-forward writes every file `main` changed, and the room's caps
+ * bound that, but a slow disk under a large merge is the case a 30-second
+ * ceiling would cut in half.
+ */
+const FAST_FORWARD_TIMEOUT_MS = 120_000;
+
+/**
+ * The index lock git takes in a linked worktree's own admin folder, from the
+ * room's layout (the same pin every command here runs under).
+ *
+ * @param target - The copy.
+ */
+function indexLockOf(target: RoomWorktreeRefreshTarget): string {
+  return path.join(target.repo, '.git', 'worktrees', path.basename(target.worktree), 'index.lock');
+}
+
+/**
+ * Clean up after a fast-forward that failed or was killed.
+ *
+ * **The lock is removed only when this write left it.** A git process killed
+ * mid-checkout leaves `index.lock` behind, and every later git command in the
+ * copy — the agent's own included — then refuses to run. No other process can
+ * have taken it in between: every bound session was idle a moment before, and
+ * that is what let the write start. A lock that was already there is somebody
+ * else's and is left alone (the write failed on it).
+ *
+ * **What is NOT restored:** files the checkout had already written. Nothing is
+ * reset, because a reset is a second write on a tree in an unknown state. The
+ * cost, stated plainly: the copy then holds files `main` wrote that its branch
+ * does not have, so it reads as changed, every later launch holds it as
+ * `changes`, and `git merge main` in it refuses until those files are
+ * discarded by hand. Nothing is lost; the warning below names the copy.
+ *
+ * @param lock - The copy's index lock.
+ * @param lockedBefore - Whether it existed before the write started.
+ */
+export function afterFailedWrite(lock: string, lockedBefore: boolean): void {
+  if (lockedBefore || !existsSync(lock)) return;
+  try {
+    rmSync(lock, { force: true });
+    logger.warn(
+      '[rooms] a fast-forward of an agent’s copy stopped partway; removed its lock. The copy may ' +
+        'hold half-written files from main, which must be discarded before it can sync again',
+      { worktree: path.basename(path.dirname(lock)) }
+    );
+  } catch (err) {
+    logger.warn('[rooms] could not remove the lock a stopped fast-forward left', {
+      worktree: path.basename(path.dirname(lock)),
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /** A git failure that means "not this copy's own branch", not "unreadable". */
@@ -287,6 +345,13 @@ export async function refreshRoomWorktree(
       '-z',
     ]);
     if (status.length > 0) return await held('changes');
+    // `status` cannot see an edit to a file marked assume-unchanged or
+    // skip-worktree — git has been told not to look — and a fast-forward
+    // overwrites it. `ls-files -v` tags such a file with a lower-case letter
+    // (assume-unchanged) or `S` (skip-worktree); either is work in progress
+    // nobody can prove is not there.
+    const tagged = await queryList(target, ['ls-files', '-v', '-z']);
+    if (tagged.some((entry) => /^[a-zS]/.test(entry))) return await held('changes');
 
     // 4. Nothing `main` lacks.
     const ahead = Number.parseInt(
@@ -328,16 +393,23 @@ export async function refreshRoomWorktree(
       return { outcome: { kind: 'held', reason: 'busy', moved: null }, mainTip };
     }
 
-    // 7. The only write.
+    // 7. The only write, with a longer leash than a read: killing a checkout
+    //    halfway leaves the tree halfway (see `afterFailedWrite`).
+    const lock = indexLockOf(target);
+    const lockedBefore = existsSync(lock);
     try {
       await runGit(
         ['-c', 'merge.autoStash=false', 'merge', '--ff-only', '--quiet', '--no-stat', mainTip],
         target.worktree,
-        target.ceiling
+        target.ceiling,
+        { timeoutMs: deps.writeTimeoutMs ?? FAST_FORWARD_TIMEOUT_MS }
       );
       const landed = await query(target, ['rev-parse', '--verify', 'HEAD^{commit}']);
       if (landed !== mainTip) throw new Error(`landed on ${landed}, not ${mainTip}`);
     } catch (err) {
+      afterFailedWrite(lock, lockedBefore);
+      // Some of the moved files may have been written before it stopped.
+      deps.forgetMoved(movedAbsPaths(target.worktree, moved));
       return unreadable('fast-forward', err, mainTip, null);
     }
 
