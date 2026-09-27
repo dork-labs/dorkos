@@ -251,19 +251,9 @@ describe('BindingRouter', () => {
     );
   });
 
-  it('knows a session that answers a group chat is shared, and a direct chat is not', async () => {
-    vi.mocked(mockBindingStore.resolve!).mockReturnValue({
-      id: 'bind-1',
-      adapterId: 'tg-bot',
-      agentId: 'agent-a',
-      permissionMode: 'acceptEdits' as const,
-      sessionStrategy: 'per-chat',
-      label: '',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    });
+  describe('knowing which sessions answer a direct message (fails closed)', () => {
     const envelope = (subject: string) => ({
-      id: `msg-${subject}`,
+      id: `msg-${subject}-${Math.random()}`,
       subject,
       payload: { text: 'hello' },
       from: 'tg',
@@ -276,15 +266,56 @@ describe('BindingRouter', () => {
       },
       createdAt: '2026-01-01T00:00:00.000Z',
     });
-    vi.mocked(mockAgentManager.createSession)
-      .mockResolvedValueOnce({ id: 'session-dm' } as never)
-      .mockResolvedValueOnce({ id: 'session-group' } as never);
+    const bind = (sessionStrategy: 'per-chat' | 'per-user') =>
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+        id: 'bind-1',
+        adapterId: 'tg-bot',
+        agentId: 'agent-a',
+        permissionMode: 'acceptEdits' as const,
+        sessionStrategy,
+        label: '',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      });
 
-    await capturedHandler!(envelope('relay.human.telegram.tg-bot.123'));
-    await capturedHandler!(envelope('relay.human.telegram.tg-bot.group.555'));
+    it('marks a direct message, not a group, and knows nothing it never routed', async () => {
+      bind('per-chat');
+      vi.mocked(mockAgentManager.createSession)
+        .mockResolvedValueOnce({ id: 'session-dm' } as never)
+        .mockResolvedValueOnce({ id: 'session-group' } as never);
 
-    expect(router.isSharedChatSession('session-dm')).toBe(false);
-    expect(router.isSharedChatSession('session-group')).toBe(true);
+      await capturedHandler!(envelope('relay.human.telegram.tg-bot.123'));
+      await capturedHandler!(envelope('relay.human.telegram.tg-bot.group.555'));
+
+      expect(router.isDirectChatSession('session-dm')).toBe(true);
+      expect(router.isDirectChatSession('session-group')).toBe(false);
+      expect(router.isDirectChatSession('session-never-routed')).toBe(false);
+    });
+
+    it('follows a rename, so a renamed Claude Code session keeps being known', async () => {
+      bind('per-chat');
+      vi.mocked(mockAgentManager.createSession).mockResolvedValueOnce({ id: 'router-id' } as never);
+      await capturedHandler!(envelope('relay.human.telegram.tg-bot.123'));
+
+      router.rekeyDirectChatSession('router-id', 'sdk-id');
+
+      expect(router.isDirectChatSession('sdk-id')).toBe(true);
+      expect(router.isDirectChatSession('router-id')).toBe(false);
+    });
+
+    it('forgets a per-user session once the same person speaks in a group', async () => {
+      bind('per-user');
+      vi.mocked(mockAgentManager.createSession).mockResolvedValue({ id: 'session-ana' } as never);
+      const from = (subject: string) => ({
+        ...envelope(subject),
+        payload: { text: 'hi', platformData: { fromId: 7 } },
+      });
+
+      await capturedHandler!(from('relay.human.telegram.tg-bot.123'));
+      expect(router.isDirectChatSession('session-ana')).toBe(true);
+      await capturedHandler!(from('relay.human.telegram.tg-bot.group.555'));
+      expect(router.isDirectChatSession('session-ana')).toBe(false);
+    });
   });
 
   describe('the dispatch id crosses the bus', () => {

@@ -308,12 +308,20 @@ export class BindingRouter {
   /** Maps `bindingId:(chat|user):id` to the session that serves it. */
   private sessionMap: Map<string, SessionRecord> = new Map();
   /**
-   * Sessions a group chat routes into, so the agent's replies land in front of
-   * everyone there. In memory on purpose: a relay turn always starts with a
-   * message routed through here, so its session is known before the agent can
-   * act in it. Read by {@link isSharedChatSession}.
+   * Sessions whose latest routed message came from a direct message rather
+   * than a group, most recent last, capped at {@link MAX_SESSIONS}. Read by
+   * {@link isDirectChatSession} to decide whether a private link may be given
+   * to an agent answering there.
+   *
+   * Fails closed by design: an entry exists only while DorkOS positively saw a
+   * direct message route into the session. A group message removes it (a
+   * per-user session can hear the same person in a DM and in a group), a
+   * restart empties it, and an evicted or never-seen session reads as "not
+   * direct". It follows a session's rename ({@link rekeyDirectChatSession}),
+   * because a Claude Code session is renamed to the SDK's id after its first
+   * turn and later requests carry that id.
    */
-  private readonly sharedChatSessions = new Set<string>();
+  private readonly directChatSessions = new Map<string, true>();
   /** When session activity was last flushed to disk. */
   private lastActivitySaveAt = 0;
   /** In-flight session creation promises, keyed the same as sessionMap. */
@@ -751,7 +759,7 @@ export class BindingRouter {
           let sessionId: string;
           try {
             sessionId = await this.resolveSession(binding, chatId, envelope);
-            if (channelType === 'group') this.sharedChatSessions.add(sessionId);
+            this.noteChatKind(sessionId, channelType === 'group' ? 'group' : 'direct');
           } catch (err) {
             // A session that cannot be created is the one refusal that used to
             // reach only the catch-all below, where it became a log line with no
@@ -1045,14 +1053,38 @@ export class BindingRouter {
   }
 
   /**
-   * Whether a session answers a group chat on Telegram, Slack or another
-   * chat app, where everything the agent says reaches everyone in it. Used to
-   * keep private links (an agent request's `openUrl`) out of shared chats.
+   * Whether DorkOS positively knows a session answers a direct message on a
+   * chat app, so a private link the agent posts reaches only that person.
+   * `false` for a group, a session it never routed, or one it has forgotten
+   * since a restart: see {@link directChatSessions}.
    *
-   * @param sessionId - The session to ask about.
+   * @param sessionId - The session to ask about, by its current id.
    */
-  isSharedChatSession(sessionId: string): boolean {
-    return this.sharedChatSessions.has(sessionId);
+  isDirectChatSession(sessionId: string): boolean {
+    return this.directChatSessions.has(sessionId);
+  }
+
+  /**
+   * Follow a session's rename (`onProjectorRekey`), so a session renamed after
+   * its first turn keeps what DorkOS knows about the chat it answers.
+   *
+   * @param oldId - The id the session was routed under.
+   * @param newId - The id it goes by now.
+   */
+  rekeyDirectChatSession(oldId: string, newId: string): void {
+    if (!this.directChatSessions.delete(oldId)) return;
+    this.directChatSessions.set(newId, true);
+  }
+
+  /** Record what kind of chat a session's latest routed message came from. */
+  private noteChatKind(sessionId: string, kind: 'direct' | 'group'): void {
+    this.directChatSessions.delete(sessionId);
+    if (kind === 'group') return;
+    this.directChatSessions.set(sessionId, true);
+    if (this.directChatSessions.size > BindingRouter.MAX_SESSIONS) {
+      const oldest = this.directChatSessions.keys().next().value;
+      if (oldest !== undefined) this.directChatSessions.delete(oldest);
+    }
   }
 
   private async resolveSession(

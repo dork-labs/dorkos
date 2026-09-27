@@ -3240,9 +3240,10 @@ async function start() {
       // Slack). Only the remote-access address: a localhost link would not
       // open on the phone that link is sent to.
       appOrigin: () => getTunnelOrigin() ?? undefined,
-      // A group chat on Telegram or Slack is shared: no private link there.
-      sharedChatSession: (sessionId) =>
-        adapterManager?.getBindingRouter()?.isSharedChatSession(sessionId) ?? false,
+      // A private link only for a direct message DorkOS routed; never a group,
+      // a room, the app itself, or a session it cannot vouch for.
+      directChatSession: (sessionId) =>
+        adapterManager?.getBindingRouter()?.isDirectChatSession(sessionId) ?? false,
       onChanged: connectorAgentRequestsChangedAnnouncer(eventFanOut),
     });
     void connectorAgentRequests.reconcile().catch((error: unknown) => {
@@ -3282,6 +3283,11 @@ async function start() {
   // request id are not stranded on the pre-remap id (mirrors the projector +
   // DevTools-store rekeys).
   onProjectorRekey((oldId, newId) => sessionConnectorAttachmentStore.rekey(oldId, newId));
+  // The relay's record of which sessions answer a direct message follows the
+  // same rename, or a Claude Code session would lose it after its first turn.
+  onProjectorRekey((oldId, newId) =>
+    adapterManager?.getBindingRouter()?.rekeyDirectChatSession(oldId, newId)
+  );
   // A plugin reload that threw a conversation's prompt cache away leaves a line
   // in the feed — with what it cost and whether it waited first. Free reloads
   // stay silent (spec `plugin-reload-cache-cost`). Outside the mesh block below

@@ -36,13 +36,14 @@ function unansweredReason(
   error: Error | null,
   agentName: string,
   serviceName: string
-): { reason: string; retry: boolean; openConnections?: boolean } {
+): { reason: string; retry: boolean } {
   switch ((error as { code?: string } | null)?.code) {
     case 'session_access_off':
+      // No screen in the app changes a single chat's access yet, so the card
+      // says so rather than sending the person to a place without the control.
       return {
-        reason: `this chat has ${serviceName} turned off for ${agentName}. Turn it on for this chat on Connections, then try again.`,
-        retry: true,
-        openConnections: true,
+        reason: `this chat has ${serviceName} turned off for ${agentName}, and that can’t be changed from the app yet.`,
+        retry: false,
       };
     case 'request_already_resolved':
       return {
@@ -119,11 +120,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   const frameClass = cn('max-w-xl', className);
 
   if (allowedId && resolve.isError) {
-    const { reason, retry, openConnections } = unansweredReason(
-      resolve.error,
-      agentName,
-      serviceName
-    );
+    const { reason, retry } = unansweredReason(resolve.error, agentName, serviceName);
     return (
       <AccessCardFrame
         titleId={`agent-request-unanswered-${request.requestId}`}
@@ -135,21 +132,11 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           <Check className="text-success mr-1.5 inline size-4 align-text-bottom" aria-hidden />
           The access is saved, but {agentName}’s request wasn’t answered: {reason}
         </p>
-        {(retry || openConnections) && (
-          <div className="flex flex-wrap justify-end gap-2">
-            {openConnections && (
-              <Button asChild variant="secondary">
-                <Link to="/connections">
-                  Open Connections
-                  <ArrowUpRight className="size-4" aria-hidden />
-                </Link>
-              </Button>
-            )}
-            {retry && (
-              <Button onClick={() => answer(allowedId)} disabled={resolve.isPending}>
-                {resolve.isPending ? 'Sending…' : 'Try again'}
-              </Button>
-            )}
+        {retry && (
+          <div className="flex justify-end">
+            <Button onClick={() => answer(allowedId)} disabled={resolve.isPending}>
+              {resolve.isPending ? 'Sending…' : 'Try again'}
+            </Button>
           </div>
         )}
       </AccessCardFrame>

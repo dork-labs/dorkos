@@ -1021,6 +1021,31 @@ describe('ConnectorAgentRequestService', () => {
       }
     );
 
+    it("never counts another chat's own grant under an attached override", async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      overrideSession('attached');
+      db.insert(connectionOperationGrants)
+        .values({
+          id: 'other-session-grant',
+          subjectType: 'session',
+          subjectId: 'session-2',
+          agentId: 'agent-1',
+          connectionId: 'connection-1',
+          operationRevisionId: 'revision-read',
+          createdBy: 'local_install:install-1',
+          createdAt: NOW.toISOString(),
+        })
+        .run();
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
     it("counts only the session's own grants under an attached override", async () => {
       const requests = service();
       const created = await requests.create(principal(), INPUT);
@@ -1278,6 +1303,8 @@ describe('ConnectorAgentRequestService', () => {
     const requests = service({
       roomForSession: (sessionId) => (sessionId === 'session-1' ? 'room-1' : undefined),
       appOrigin: () => 'https://tunnel.example',
+      // Even a session DorkOS thinks is a direct chat: the room rule wins.
+      directChatSession: () => true,
     });
     const created = await requests.create(principal(), INPUT);
 
@@ -1291,30 +1318,40 @@ describe('ConnectorAgentRequestService', () => {
     expect(created).not.toHaveProperty('roomId');
   });
 
-  it('links a direct conversation to itself, and gives no link without a remote address', async () => {
-    const linked = service({ appOrigin: () => 'https://tunnel.example' });
-    const created = await linked.create(principal(), INPUT);
-    expect(created.openUrl).toBe('https://tunnel.example/session?session=session-1');
+  describe('the link to the card fails closed', () => {
+    const direct = (sessionId: string) => sessionId === 'session-dm';
 
-    // Remote access off: a link to this computer would not open on a phone.
-    const unlinked = service({ appOrigin: () => undefined });
-    expect(await unlinked.getForRuntime(principal(), created.requestId)).not.toHaveProperty(
-      'openUrl'
-    );
-  });
+    it('links a session DorkOS knows answers a direct message', async () => {
+      const requests = service({
+        appOrigin: () => 'https://tunnel.example',
+        directChatSession: direct,
+      });
+      const created = await requests.create(principal({ canonicalSessionId: 'session-dm' }), INPUT);
+      expect(created.openUrl).toBe('https://tunnel.example/session?session=session-dm');
+    });
 
-  it('gives no link to a session answering a group chat, where everyone would see it', async () => {
-    const requests = service({
-      appOrigin: () => 'https://tunnel.example',
-      sharedChatSession: (sessionId) => sessionId === 'session-1',
+    it('gives no link to a group chat, the app itself, or a session it cannot vouch for', async () => {
+      const requests = service({
+        appOrigin: () => 'https://tunnel.example',
+        directChatSession: direct,
+      });
+      // session-1 is not a known direct message: a group, an in-app chat (the
+      // card is on screen), or unknown all read the same.
+      const created = await requests.create(principal(), INPUT);
+      expect(created).not.toHaveProperty('openUrl');
     });
-    const created = await requests.create(principal(), INPUT);
-    expect(created).not.toHaveProperty('openUrl');
-    const direct = await requests.create(principal({ canonicalSessionId: 'session-2' }), {
-      ...INPUT,
-      reason: 'Direct chat',
+
+    it('gives no link after a restart, before DorkOS has seen the chat again', async () => {
+      const fresh = service({ appOrigin: () => 'https://tunnel.example' });
+      const created = await fresh.create(principal({ canonicalSessionId: 'session-dm' }), INPUT);
+      expect(created).not.toHaveProperty('openUrl');
     });
-    expect(direct.openUrl).toBe('https://tunnel.example/session?session=session-2');
+
+    it('gives no link without a remote address, even to a direct message', async () => {
+      const requests = service({ appOrigin: () => undefined, directChatSession: direct });
+      const created = await requests.create(principal({ canonicalSessionId: 'session-dm' }), INPUT);
+      expect(created).not.toHaveProperty('openUrl');
+    });
   });
 
   it("lists only one conversation's requests when asked for its session", async () => {

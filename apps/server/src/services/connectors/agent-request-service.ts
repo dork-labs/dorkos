@@ -144,11 +144,12 @@ export interface ConnectorAgentRequestServiceOptions {
    */
   readonly appOrigin?: () => string | undefined;
   /**
-   * Whether a session answers a group chat on a chat app (Telegram, Slack),
-   * where a link the agent posts reaches everyone there. Such a session gets no
-   * `openUrl`, the same as a room's turn.
+   * Whether DorkOS positively knows a session answers a direct message from a
+   * chat app (Telegram, Slack). Only such a session gets an `openUrl`; anything
+   * else (a group, a room, a conversation in the app where the card is already
+   * on screen, or a session it cannot vouch for) gets none. Fails closed.
    */
-  readonly sharedChatSession?: (sessionId: string) => boolean;
+  readonly directChatSession?: (sessionId: string) => boolean;
   /**
    * Told whenever a request appears or changes state, so open windows can
    * re-read their owner-scoped request lists. Carries nothing: the listener
@@ -1334,19 +1335,19 @@ export class ConnectorAgentRequestService {
   }
 
   /**
-   * The absolute link to the conversation holding a request's card, for an
-   * agent answering the owner directly somewhere the card cannot draw.
+   * The absolute link to the conversation holding a request's card, given only
+   * when DorkOS positively knows the agent is answering the owner in a direct
+   * message on a chat app, where the card cannot draw.
    *
-   * Left out wherever the agent's words reach more than the owner: a room's
-   * turn (the room already shows the owner the card, and a room can be shared,
-   * a bridged Telegram or Slack group among them) and a session answering an
-   * unbridged group chat on a chat app. Enforced here rather than left to the
-   * prompt. Also left out when the app has no address the owner can reach from
-   * elsewhere.
+   * Fails closed, and enforced here rather than left to the prompt: no link for
+   * a room's turn (the room shows the owner the card, and a room can be shared),
+   * a group chat, a conversation in the app (the card is already on screen), or
+   * any session DorkOS cannot vouch for (never routed, or forgotten since a
+   * restart). Also none when the app has no address reachable from elsewhere.
    */
   private openUrl(sessionId: string): { openUrl?: string } {
     if (this.options.roomForSession?.(sessionId)) return {};
-    if (this.options.sharedChatSession?.(sessionId)) return {};
+    if (!this.options.directChatSession?.(sessionId)) return {};
     const origin = this.options.appOrigin?.();
     if (!origin) return {};
     try {
@@ -1383,8 +1384,8 @@ export class ConnectorAgentRequestService {
         throw new ConnectorAgentRequestError(
           'session_access_off',
           access.denied === 'needs_reconciliation'
-            ? 'This chat’s access to that account needs a review on Connections first.'
-            : 'This chat has that account turned off for its agent. Change it on Connections.'
+            ? 'This chat’s access to that account is waiting on a review.'
+            : 'This chat has that account turned off for its agent.'
         );
       }
       const live = [...access.ids].sort();

@@ -293,7 +293,7 @@ describe('AgentRequestCard — an account exists', () => {
     });
   });
 
-  it('says plainly when this chat has the app turned off, and where to change it', async () => {
+  it('says plainly when this chat has the app turned off, without pointing at a control that does not exist', async () => {
     const user = userEvent.setup();
     const transport = transportWith([account('connection-1')]);
     vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
@@ -305,14 +305,11 @@ describe('AgentRequestCard — an account exists', () => {
     renderWith(transport, <AgentRequestCard request={REQUEST} />);
 
     await user.click(await screen.findByRole('button', { name: 'Allow' }));
-    expect(await screen.findByTestId('agent-request-unanswered')).toHaveTextContent(
-      'this chat has Gmail turned off for Bo'
-    );
-    expect(screen.getByRole('link', { name: /Open Connections/ })).toHaveAttribute(
-      'href',
-      '/connections?'
-    );
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    const unanswered = await screen.findByTestId('agent-request-unanswered');
+    expect(unanswered).toHaveTextContent('this chat has Gmail turned off for Bo');
+    expect(unanswered).toHaveTextContent('can’t be changed from the app yet');
+    expect(screen.queryByRole('link', { name: /Open Connections/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
   it.each([
