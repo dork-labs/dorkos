@@ -1,0 +1,199 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { AccountAdvisor } from '@dorkos/extension-api/server';
+import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
+import {
+  ADVISOR_TIMEOUT_MS,
+  __resetAccountAdvisorForTests,
+  accountAdvisorOwner,
+  callAdvisor,
+  hasAccountAdvisor,
+  registerAccountAdvisor,
+  validateAdvisorRanking,
+  validateCarryOverSeed,
+  validateLimitedPlan,
+} from '../account-advisor.js';
+import { logger } from '../../../../lib/logger.js';
+
+vi.mock('../../../../lib/logger.js', () => ({
+  logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+const ctx = { purpose: 'launch', caller: 'agent', cwd: '/w', runtime: 'claude-code' } as const;
+
+function advisor(overrides: Partial<AccountAdvisor> = {}): AccountAdvisor {
+  return { rank: () => ({ accounts: [], recommendedId: null }), ...overrides };
+}
+
+beforeEach(() => {
+  __resetAccountAdvisorForTests();
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('registerAccountAdvisor: one advisor at a time', () => {
+  it('a second registration replaces the first and warns naming both owners', async () => {
+    const first = advisor({ rank: () => ({ accounts: [], recommendedId: 'first' }) });
+    const second = advisor({ rank: () => ({ accounts: [], recommendedId: 'second' }) });
+    registerAccountAdvisor('flow', first);
+    registerAccountAdvisor('other-ext', second);
+
+    expect(accountAdvisorOwner()).toBe('other-ext');
+    expect((await callAdvisor('rank', [], ctx))?.recommendedId).toBe('second');
+    const warning = vi
+      .mocked(logger.warn)
+      .mock.calls.map((c) => String(c[0]))
+      .join('\n');
+    expect(warning).toContain('other-ext');
+    expect(warning).toContain('flow');
+  });
+
+  it('a stale unregister does not remove the advisor that replaced it', () => {
+    const unregisterFirst = registerAccountAdvisor('flow', advisor());
+    registerAccountAdvisor('other-ext', advisor());
+    unregisterFirst();
+    expect(accountAdvisorOwner()).toBe('other-ext');
+  });
+
+  it('its own unregister removes it', () => {
+    const unregister = registerAccountAdvisor('flow', advisor());
+    unregister();
+    expect(hasAccountAdvisor()).toBe(false);
+  });
+
+  it('refuses an advisor with no rank function', () => {
+    expect(() => registerAccountAdvisor('flow', {} as AccountAdvisor)).toThrow(TypeError);
+    expect(hasAccountAdvisor()).toBe(false);
+  });
+});
+
+describe('callAdvisor', () => {
+  it('answers undefined with no advisor or no such method', async () => {
+    expect(await callAdvisor('rank', [], ctx)).toBeUndefined();
+    registerAccountAdvisor('flow', advisor());
+    expect(await callAdvisor('carryOver', {} as never, 'work')).toBeUndefined();
+  });
+
+  it('answers undefined when the advisor throws, synchronously or not', async () => {
+    registerAccountAdvisor(
+      'flow',
+      advisor({
+        rank: () => {
+          throw new Error('boom');
+        },
+        onLimited: async () => {
+          throw new Error('boom');
+        },
+      })
+    );
+    expect(await callAdvisor('rank', [], ctx)).toBeUndefined();
+    expect(await callAdvisor('onLimited', {} as never)).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it(`gives up after ${ADVISOR_TIMEOUT_MS} ms`, async () => {
+    vi.useFakeTimers();
+    registerAccountAdvisor('flow', advisor({ rank: () => new Promise(() => {}) }));
+    let settled = false;
+    const call = callAdvisor('rank', [], ctx).then((answer) => {
+      settled = true;
+      return answer;
+    });
+    await vi.advanceTimersByTimeAsync(ADVISOR_TIMEOUT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await call).toBeUndefined();
+  });
+
+  it('passes an answer inside the bound through', async () => {
+    registerAccountAdvisor('flow', advisor({ onLimited: async () => ({ mode: 'ask' }) }));
+    expect(await callAdvisor('onLimited', {} as never)).toEqual({ mode: 'ask' });
+  });
+});
+
+describe('validateAdvisorRanking', () => {
+  const known = new Set(['claude-code:work', 'claude-code:client', 'codex:default']);
+  const opts = {
+    runtime: 'claude-code',
+    isKnown: (runtime: string, id: string) => known.has(`${runtime}:${id}`),
+  };
+
+  it('drops unknown ids, malformed rows and duplicates, and fills in the runtime', () => {
+    const result = validateAdvisorRanking(
+      {
+        accounts: [
+          { id: 'ghost', eligible: true, reason: 'x' },
+          { id: 'work', eligible: true, reason: 'Main', badge: 'reserved' },
+          { id: 'client', eligible: 'yes', reason: 'x' },
+          { id: 'work', eligible: false, reason: 'dup' },
+          { runtime: 'codex', id: 'default', eligible: true, reason: 'Fallback' },
+        ],
+        recommendedId: 'work',
+      },
+      opts
+    );
+    expect(result).toEqual({
+      accounts: [
+        { runtime: 'claude-code', id: 'work', eligible: true, reason: 'Main', badge: 'reserved' },
+        { runtime: 'codex', id: 'default', eligible: true, reason: 'Fallback' },
+      ],
+      recommendedId: 'work',
+    });
+  });
+
+  it('drops a recommendedId that names no kept row', () => {
+    expect(
+      validateAdvisorRanking({ accounts: [], recommendedId: 'ghost' }, opts)?.recommendedId
+    ).toBeNull();
+  });
+
+  it('refuses an answer that is not a ranking', () => {
+    expect(validateAdvisorRanking(null, opts)).toBeNull();
+    expect(validateAdvisorRanking({ accounts: 'work' }, opts)).toBeNull();
+  });
+});
+
+describe('validateLimitedPlan', () => {
+  const opts = { limitedAccountId: 'work', isRegistered: (id: string) => id !== 'ghost' };
+
+  it('clamps delaySeconds to 0..3600', () => {
+    expect(validateLimitedPlan({ mode: 'auto', target: 'client', delaySeconds: -5 }, opts)).toEqual(
+      { mode: 'auto', target: 'client', delaySeconds: 0 }
+    );
+    expect(
+      validateLimitedPlan({ mode: 'auto', target: 'client', delaySeconds: 99_999 }, opts)
+    ).toEqual({ mode: 'auto', target: 'client', delaySeconds: 3600 });
+  });
+
+  it('refuses an auto target that is unregistered or the limited account', () => {
+    expect(
+      validateLimitedPlan({ mode: 'auto', target: 'ghost', delaySeconds: 1 }, opts)
+    ).toBeNull();
+    expect(validateLimitedPlan({ mode: 'auto', target: 'work', delaySeconds: 1 }, opts)).toBeNull();
+  });
+
+  it('passes wait and ask through, and refuses nonsense', () => {
+    expect(validateLimitedPlan({ mode: 'ask' }, opts)).toEqual({ mode: 'ask' });
+    expect(validateLimitedPlan({ mode: 'wait', resumeAt: '2026-09-27T10:00:00Z' }, opts)).toEqual({
+      mode: 'wait',
+      resumeAt: '2026-09-27T10:00:00Z',
+    });
+    expect(validateLimitedPlan({ mode: 'wait', resumeAt: 'soon' }, opts)).toBeNull();
+    expect(validateLimitedPlan({ mode: 'move' }, opts)).toBeNull();
+  });
+});
+
+describe('validateCarryOverSeed', () => {
+  it('refuses a seed longer than SEED_CONTEXT_MAX_LENGTH', () => {
+    expect(
+      validateCarryOverSeed({ seedContext: 'x'.repeat(SEED_CONTEXT_MAX_LENGTH + 1) })
+    ).toBeNull();
+  });
+
+  it('keeps a seed within the limit', () => {
+    const seed = { seedContext: 'x'.repeat(SEED_CONTEXT_MAX_LENGTH), prompt: 'Go on.' };
+    expect(validateCarryOverSeed(seed)).toEqual(seed);
+  });
+});
