@@ -2,6 +2,7 @@
 covers:
   - 'feat(accounts): find unregistered Claude account folders and let Settings dismiss them (server)'
   - 'feat(settings): offer the Claude account folders found on this computer (DOR-2387)'
+  - "fix(settings): let a found folder's buttons wrap under its name on a phone"
 ---
 
 ### Added

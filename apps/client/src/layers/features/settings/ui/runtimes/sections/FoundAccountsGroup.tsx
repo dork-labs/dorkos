@@ -81,11 +81,17 @@ export function FoundAccountsGroup({
           const rowError = error?.path === folder.path ? error.message : null;
           return (
             <li key={folder.path} className="py-2" data-testid="found-account-row">
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Wide enough for a name and its path; on a phone the buttons
+                    wrap under it rather than squeezing the text. */}
+                <div className="min-w-40 flex-1">
                   <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-sm">
-                    <span className="font-semibold">{folder.name}</span>
-                    {used && <span className="text-muted-foreground text-xs">· {used}</span>}
+                    <span className="font-semibold break-all">{folder.name}</span>
+                    {used && (
+                      <span className="text-muted-foreground text-xs whitespace-nowrap">
+                        · {used}
+                      </span>
+                    )}
                     {folder.orgManaged && (
                       <span
                         className={cn(
