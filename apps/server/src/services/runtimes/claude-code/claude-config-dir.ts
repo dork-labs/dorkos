@@ -45,7 +45,7 @@ import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
-import { ACCOUNT_ID_PATTERN, IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
+import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import { ambientClaudeConfigDir } from './claude-config-env-lock.js';
 import {
   canonicalAccountPath,
@@ -228,24 +228,6 @@ export function machineDefaultClaudeRoot(config: ConfigReader = configManager): 
 }
 
 /**
- * Where an explicit `default` launch runs: the routable registered row that
- * `default` is an alias of (its own spelling of the folder), else the machine
- * default.
- */
-function defaultLaunchRoot(config: ConfigReader, accounts: readonly ReadClaudeAccount[]): string {
-  const root = machineDefaultClaudeRoot(config);
-  const target = canonicalAccountPath(root, undefined);
-  const alias = accounts.find(
-    (account) =>
-      account.id !== IMPLICIT_ACCOUNT_ID &&
-      ACCOUNT_ID_PATTERN.test(account.id) &&
-      path.isAbsolute(account.path) &&
-      canonicalAccountPath(account.path, undefined) === target
-  );
-  return alias?.path ?? root;
-}
-
-/**
  * Resolve the Claude root ONE launch runs and bills on, through the full ladder
  * (ADR 260821-205323):
  *
@@ -255,8 +237,8 @@ function defaultLaunchRoot(config: ConfigReader, accounts: readonly ReadClaudeAc
  * 4. The environment (`$CLAUDE_CONFIG_DIR`, else `~/.claude`).
  *
  * **`default` is the machine-wide default account** (shared contract rev 6d). An
- * explicit `default` on either rung launches in {@link machineDefaultClaudeRoot}
- * (or the row it aliases), never in the folder the server process inherited;
+ * explicit `default` on either rung launches in {@link machineDefaultClaudeRoot},
+ * never in the folder the server process inherited;
  * `~/.claude` then reaches the subprocess as an UNSET `CLAUDE_CONFIG_DIR`
  * ({@link claudeConfigDirEnv}). A hand-edited row whose id is `default` never
  * takes the name.
@@ -297,7 +279,10 @@ export function resolveLaunchAccountRoot(
     // id, so `find(a => a.id === id)` with an absent `id` on both sides would
     // return the first row and bill an account nobody named.
     if (!id) continue;
-    if (id === IMPLICIT_ACCOUNT_ID) return defaultLaunchRoot(config, accounts);
+    // Always the machine root itself, never an aliased row's own spelling: a row
+    // reaching `~/.claude` through a symlink is the same account, and only this
+    // spelling lets `claudeConfigDirEnv` unset the variable for it.
+    if (id === IMPLICIT_ACCOUNT_ID) return machineDefaultClaudeRoot(config);
     const match = findRegisteredAccount(accounts, id);
     if (match) return match.path;
     logger.warn('[claude-config-dir] account id is not registered; falling through', {
@@ -457,8 +442,14 @@ export function resolveClaudeRootSet(config: ConfigReader = configManager): stri
  */
 export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | undefined } {
   const ambient = ambientClaudeConfigDir();
-  const isDefaultRoot = path.resolve(root) === path.resolve(path.join(os.homedir(), '.claude'));
-  const ambientNamesRoot = ambient !== undefined && path.resolve(ambient) === path.resolve(root);
+  // Compared by real path (`canonicalAccountPath`), so a symlink or another
+  // spelling of `~/.claude` is still `~/.claude` and still reaches the child as
+  // an UNSET variable, which is the only spelling its Keychain entry answers to.
+  const target = canonicalAccountPath(root, undefined);
+  const isDefaultRoot =
+    target === canonicalAccountPath(path.join(os.homedir(), '.claude'), undefined);
+  const ambientNamesRoot =
+    ambient !== undefined && canonicalAccountPath(ambient, undefined) === target;
   return { CLAUDE_CONFIG_DIR: isDefaultRoot && !ambientNamesRoot ? undefined : root };
 }
 

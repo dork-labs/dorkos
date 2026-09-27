@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import {
-  setAccountUsageStore,
-  type AccountUsageStore,
-} from '../../../../core/usage/account-usage-store.js';
+import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
+import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
 import { recordSessionUsage } from '../account-usage-feed.js';
 
 vi.mock('../../claude-config-dir.js', () => ({

@@ -1,8 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import {
-  setAccountUsageStore,
-  type AccountUsageStore,
-} from '../../../../core/usage/account-usage-store.js';
+import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
+import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
 import { handleAccountsUsage } from '../account-tools.js';
 
 describe('accounts_usage', () => {

@@ -4,10 +4,8 @@ import request from '@dorkos/test-utils/supertest';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import runtimesRouter from '../runtimes.js';
-import {
-  setAccountUsageStore,
-  type AccountUsageStore,
-} from '../../services/core/usage/account-usage-store.js';
+import type { AccountUsageStore } from '../../services/core/usage/account-usage-store.js';
+import { setAccountUsageStore } from '../../services/core/usage/current-usage-store.js';
 
 const app = express();
 app.use('/api/runtimes', runtimesRouter);

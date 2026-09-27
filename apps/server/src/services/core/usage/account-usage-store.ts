@@ -25,11 +25,8 @@
  *
  * @module services/core/usage/account-usage-store
  */
-import fs from 'node:fs';
-import path from 'node:path';
 import {
   IMPLICIT_ACCOUNT_ID,
-  LEDGER_FACT_KINDS,
   LEDGER_RUNTIMES,
   mergeLedger,
   resolveAccountColor,
@@ -43,30 +40,27 @@ import {
 import type { LedgerCredits, LedgerSpend } from '@dorkos/shared/account-usage';
 import { logger } from '../../../lib/logger.js';
 import {
-  deleteLedger,
   ledgerDir,
-  ledgerIdOfFileName,
   listLedgerFiles,
   readLedger,
-  withLedgerLock,
   writeLedger,
-  type LedgerFileEntry,
   type LedgerLockOptions,
 } from './ledger-file.js';
 import {
   accountForPath,
   canonicalAccountPath,
-  pruneTargets,
   resolveAccountRef,
-  resolveRuntimeAccounts,
   systemRealpath,
   type DefaultFolderResolver,
   type RealpathLookup,
   type RuntimeAccount,
 } from './runtime-accounts.js';
-
-/** What {@link AccountUsageStoreOptions.readConfig} returns when `config.json` cannot be read in full. */
-export const CONFIG_UNREADABLE: unique symbol = Symbol('config-unreadable');
+import {
+  observationsOf,
+  reconcileAccounts,
+  type ReconcileHost,
+} from './account-usage-reconcile.js';
+import { LedgerFolderWatcher } from './ledger-folder-watcher.js';
 
 /** Timings, overridable by tests. */
 export interface AccountUsageStoreTimings {
@@ -88,7 +82,7 @@ export interface AccountUsageStoreOptions {
   dorkHome: string;
   /**
    * Read `<dorkHome>/config.json` from disk, in full, on every call (never a
-   * cached copy): `null` when the file is missing, {@link CONFIG_UNREADABLE}
+   * cached copy): `null` when the file is missing, `CONFIG_UNREADABLE` (`account-usage-reconcile.ts`)
    * when it exists but cannot be read or parsed.
    */
   readConfig: () => Promise<unknown>;
@@ -139,18 +133,6 @@ interface UsageRecord {
 
 const HOUR_MS = 60 * 60 * 1000;
 
-/** The windows and facts of a ledger, as observations, so two ledgers merge newest-wins. */
-function observationsOf(ledger: UsageLedger | null): LedgerObservation[] {
-  if (!ledger) return [];
-  const out: LedgerObservation[] = [];
-  for (const [key, entry] of Object.entries(ledger.windows)) out.push({ key, ...entry });
-  for (const kind of LEDGER_FACT_KINDS) {
-    const fact = ledger[kind];
-    if (fact) out.push({ kind, ...fact } as LedgerObservation);
-  }
-  return out;
-}
-
 /** What an account shows, minus the parts that change on every reading. */
 function signatureOf(usage: AccountUsage): string {
   return JSON.stringify({
@@ -173,8 +155,7 @@ export class AccountUsageStore {
   private accounts: RuntimeAccount[] = [];
   private readonly records = new Map<string, UsageRecord>();
   private readonly listeners = new Set<(usage: AccountUsage) => void>();
-  private readonly watchers = new Map<LedgerRuntime, fs.FSWatcher>();
-  private readonly watchTimers = new Map<LedgerRuntime, NodeJS.Timeout>();
+  private readonly watcher: LedgerFolderWatcher;
   private readonly loggedOnce = new Set<string>();
   private scanTimer?: NodeJS.Timeout;
   private reconciling?: Promise<void>;
@@ -196,6 +177,15 @@ export class AccountUsageStore {
       pruneMinAgeMs: 60_000,
       ...opts.timings,
     };
+    this.watcher = new LedgerFolderWatcher(
+      (runtime) => this.dir(runtime),
+      this.timings.watchDebounceMs,
+      (runtime) => {
+        void this.reloadRuntime(runtime).catch((err: unknown) => {
+          logger.debug('[account-usage] ledger re-read failed', { runtime, err: String(err) });
+        });
+      }
+    );
   }
 
   private now(): Date {
@@ -222,7 +212,7 @@ export class AccountUsageStore {
   async load(): Promise<void> {
     await this.reconcileAccounts();
     await this.reloadFiles({ baseline: true });
-    this.watchExistingDirs();
+    this.watcher.watchExisting();
     if (!this.scanTimer) {
       this.scanTimer = unref(setInterval(() => void this.scan(), this.timings.scanIntervalMs));
     }
@@ -233,7 +223,7 @@ export class AccountUsageStore {
     if (this.stopped) return;
     try {
       await this.reconcileAccounts();
-      this.watchExistingDirs();
+      this.watcher.watchExisting();
       await this.reloadFiles({ baseline: false });
     } catch (err) {
       logger.warn('[account-usage] usage scan failed', { err: String(err) });
@@ -260,10 +250,7 @@ export class AccountUsageStore {
     this.stopped = true;
     if (this.scanTimer) clearInterval(this.scanTimer);
     this.scanTimer = undefined;
-    for (const watcher of this.watchers.values()) watcher.close();
-    this.watchers.clear();
-    for (const timer of this.watchTimers.values()) clearTimeout(timer);
-    this.watchTimers.clear();
+    this.watcher.close();
     for (const record of this.records.values()) {
       if (record.flushTimer) clearTimeout(record.flushTimer);
       if (record.broadcastTimer) clearTimeout(record.broadcastTimer);
@@ -358,27 +345,23 @@ export class AccountUsageStore {
   }
 
   private fileRecord(runtime: LedgerRuntime, ledgerId: string): UsageRecord {
-    const mapKey = `${runtime}:${ledgerId}`;
-    let record = this.records.get(mapKey);
-    if (!record) {
-      record = { runtime, ledgerId, path: '', ledger: null, pending: [], subscriptionType: null };
-      this.records.set(mapKey, record);
-    }
-    return record;
+    return this.recordAt(`${runtime}:${ledgerId}`, runtime, ledgerId, '');
   }
 
   private memoryRecord(runtime: LedgerRuntime, canonical: string): UsageRecord {
-    const mapKey = `${runtime}@${canonical}`;
+    return this.recordAt(`${runtime}@${canonical}`, runtime, null, canonical);
+  }
+
+  /** The record under `mapKey`, created empty when missing. */
+  private recordAt(
+    mapKey: string,
+    runtime: LedgerRuntime,
+    ledgerId: string | null,
+    path: string
+  ): UsageRecord {
     let record = this.records.get(mapKey);
     if (!record) {
-      record = {
-        runtime,
-        ledgerId: null,
-        path: canonical,
-        ledger: null,
-        pending: [],
-        subscriptionType: null,
-      };
+      record = { runtime, ledgerId, path, ledger: null, pending: [], subscriptionType: null };
       this.records.set(mapKey, record);
     }
     return record;
@@ -428,6 +411,9 @@ export class AccountUsageStore {
         this.warnFlush(record, String(err));
       } finally {
         record.flushing = undefined;
+        // Readings put back after a give-up or a failed write must not wait for
+        // the next reading to reach disk.
+        if (record.pending.length > 0) this.scheduleFlush(record);
       }
     })();
     return record.flushing;
@@ -620,246 +606,68 @@ export class AccountUsageStore {
     }
   }
 
-  /** Watch each runtime's ledger folder that exists now; later ones are found by the scan. */
-  private watchExistingDirs(): void {
-    if (this.stopped) return;
-    for (const runtime of LEDGER_RUNTIMES) {
-      if (this.watchers.has(runtime)) continue;
-      const dir = this.dir(runtime);
-      if (!fs.existsSync(dir)) continue;
-      try {
-        const watcher = fs.watch(dir, (_event, filename) => {
-          if (filename && ledgerIdOfFileName(filename.toString()) === null) return;
-          this.onDirChange(runtime);
-        });
-        watcher.on('error', () => {
-          watcher.close();
-          this.watchers.delete(runtime);
-        });
-        watcher.unref?.();
-        this.watchers.set(runtime, watcher);
-      } catch (err) {
-        logger.debug('[account-usage] could not watch a ledger folder', { dir, err: String(err) });
-      }
-    }
-  }
-
-  private onDirChange(runtime: LedgerRuntime): void {
-    const existing = this.watchTimers.get(runtime);
-    if (existing) clearTimeout(existing);
-    this.watchTimers.set(
-      runtime,
-      unref(
-        setTimeout(() => {
-          this.watchTimers.delete(runtime);
-          void this.reloadRuntime(runtime).catch((err: unknown) => {
-            logger.debug('[account-usage] ledger re-read failed', { runtime, err: String(err) });
-          });
-        }, this.timings.watchDebounceMs)
-      )
-    );
-  }
-
   // === Registry transitions ===
 
   /**
    * Bring memory and the ledger files in line with the registry on disk
-   * (spec §6 R "Registry transitions keep state"). Idempotent; run at boot, on
-   * every scan and after an in-app config write.
-   *
-   * The ledger files are listed FIRST and the registry read LAST, and a file
-   * younger than 60 s is never pruned, so a ledger flow writes for an account it
-   * has just added is not removed. Nothing is deleted when `config.json` cannot
-   * be read in full.
+   * (`account-usage-reconcile.ts`). Idempotent, and never two at once; run at
+   * boot, on every scan and after an in-app config write.
    */
   reconcileAccounts(): Promise<void> {
     if (!this.reconciling) {
-      this.reconciling = this.doReconcile().finally(() => {
+      this.reconciling = reconcileAccounts(this.reconcileHost()).finally(() => {
         this.reconciling = undefined;
       });
     }
     return this.reconciling;
   }
 
-  private async doReconcile(): Promise<void> {
-    const onDisk = {} as Record<LedgerRuntime, LedgerFileEntry[]>;
-    for (const runtime of LEDGER_RUNTIMES)
-      onDisk[runtime] = await listLedgerFiles(this.dir(runtime));
-
-    let config: unknown;
-    try {
-      config = await this.opts.readConfig();
-    } catch {
-      config = CONFIG_UNREADABLE;
-    }
-    if (config === CONFIG_UNREADABLE) {
-      this.logOnce(
-        'config-unreadable',
-        '[account-usage] config.json could not be read in full; kept the accounts as they were and deleted no ledger'
-      );
-      return;
-    }
-    this.loggedOnce.delete('config-unreadable');
-
-    const accounts: RuntimeAccount[] = [];
-    for (const runtime of LEDGER_RUNTIMES) {
-      const read = resolveRuntimeAccounts(runtime, {
-        config,
-        realpath: this.realpath,
-        defaultFolder: this.opts.resolveDefaultRoot,
-      });
-      accounts.push(...read.accounts);
-      for (const warning of read.warnings) {
-        this.logOnce(
-          `warn:${runtime}:${warning.code}:${warning.message}`,
-          '[account-usage] ' + warning.message,
-          {
-            runtime,
-            code: warning.code,
-          }
-        );
-      }
-    }
-    this.accounts = accounts;
-
-    const registered = {} as Record<LedgerRuntime, string[]>;
-    const diskIds = {} as Record<LedgerRuntime, string[]>;
-    for (const runtime of LEDGER_RUNTIMES) {
-      registered[runtime] = accounts
-        .filter((a) => a.runtime === runtime && a.ledgerId !== null)
-        .map((a) => a.ledgerId!);
-      diskIds[runtime] = onDisk[runtime].map((e) => e.id);
-    }
-
-    for (const runtime of LEDGER_RUNTIMES) {
-      const alias = accounts.find((a) => a.runtime === runtime && a.isDefault && !a.implicit);
-      if (alias?.ledgerId) await this.foldDefaultInto(runtime, alias.ledgerId, diskIds[runtime]);
-    }
-
-    const targets = pruneTargets(registered, diskIds);
-    const nowMs = this.now().getTime();
-    for (const runtime of LEDGER_RUNTIMES) {
-      const aliased = accounts.some((a) => a.runtime === runtime && a.isDefault && !a.implicit);
-      for (const id of targets[runtime]) {
-        // An aliased default's file was folded into its row above, never just deleted.
-        if (aliased && id === IMPLICIT_ACCOUNT_ID) continue;
-        const entry = onDisk[runtime].find((e) => e.id === id);
-        if (!entry || nowMs - entry.mtimeMs < this.timings.pruneMinAgeMs) continue;
-        const deleted = await deleteLedger(this.dir(runtime), id, this.opts.lockOptions);
-        if (deleted) {
-          logger.info('[account-usage] deleted the usage ledger of an account that was removed', {
-            runtime,
-            accountId: id,
-          });
-        }
-      }
-      // Forget file-backed records whose account is no longer registered.
-      const known = new Set(registered[runtime]);
-      for (const [mapKey, record] of this.records) {
-        if (record.runtime !== runtime || record.ledgerId === null) continue;
-        if (known.has(record.ledgerId)) continue;
-        if (record.flushTimer) clearTimeout(record.flushTimer);
-        if (record.broadcastTimer) clearTimeout(record.broadcastTimer);
-        this.records.delete(mapKey);
-      }
-    }
-  }
-
-  /**
-   * `default` became an alias of `aliasId`: merge `default.json` into
-   * `<aliasId>.json` under both locks, THEN delete `default.json` under its
-   * lock, and move the in-memory `default` record's readings to the row, so
-   * nothing writes `default.json` while aliased.
-   */
-  private async foldDefaultInto(
-    runtime: LedgerRuntime,
-    aliasId: string,
-    diskIds: string[]
-  ): Promise<void> {
-    const memory = this.records.get(`${runtime}:${IMPLICIT_ACCOUNT_ID}`);
-    if (memory) {
-      if (memory.flushTimer) clearTimeout(memory.flushTimer);
-      if (memory.broadcastTimer) clearTimeout(memory.broadcastTimer);
-      await memory.flushing;
-      this.records.delete(`${runtime}:${IMPLICIT_ACCOUNT_ID}`);
-      const target = this.fileRecord(runtime, aliasId);
-      const moved = [...observationsOf(memory.ledger), ...memory.pending];
-      if (moved.length > 0) {
-        this.record(runtime, { accountId: aliasId }, moved, {
-          subscriptionType: target.subscriptionType ?? memory.subscriptionType,
-        });
-      }
-    }
-    if (!diskIds.includes(IMPLICIT_ACCOUNT_ID)) return;
-    const dir = this.dir(runtime);
-    const folded = await withLedgerLock(
-      dir,
-      IMPLICIT_ACCOUNT_ID,
-      async () => {
-        const standalone = await readLedger(dir, IMPLICIT_ACCOUNT_ID);
-        if (standalone) {
-          const result = await writeLedger(
-            dir,
-            aliasId,
-            observationsOf(standalone),
-            this.now(),
-            this.opts.lockOptions
-          );
-          if (result.gaveUp) return false;
-          if (result.ledger)
-            this.mergeFileIntoMemory(this.fileRecord(runtime, aliasId), result.ledger);
-        }
-        await fs.promises.rm(path.join(dir, `${IMPLICIT_ACCOUNT_ID}.json`), { force: true });
-        return true;
+  private reconcileHost(): ReconcileHost {
+    return {
+      dir: (runtime) => this.dir(runtime),
+      readConfig: this.opts.readConfig,
+      resolveDefaultRoot: this.opts.resolveDefaultRoot,
+      realpath: this.realpath,
+      lockOptions: this.opts.lockOptions,
+      pruneMinAgeMs: this.timings.pruneMinAgeMs,
+      now: () => this.now(),
+      logOnce: (key, message, meta) => this.logOnce(key, message, meta),
+      forgetLog: (key) => this.loggedOnce.delete(key),
+      setAccounts: (accounts) => {
+        this.accounts = accounts;
       },
-      this.opts.lockOptions
-    );
-    if (!folded.gaveUp && folded.value) {
-      logger.info(
-        '[account-usage] the default account is now a registered account; merged its usage',
-        {
-          runtime,
-          accountId: aliasId,
-        }
-      );
+      moveDefaultInMemory: (runtime, aliasId) => this.moveDefaultInMemory(runtime, aliasId),
+      mergeWritten: (runtime, id, ledger) =>
+        this.mergeFileIntoMemory(this.fileRecord(runtime, id), ledger),
+      forgetUnregistered: (runtime, registered) => this.forgetUnregistered(runtime, registered),
+    };
+  }
+
+  /** `default` became an alias of `aliasId`: move its in-memory readings to the row. */
+  private async moveDefaultInMemory(runtime: LedgerRuntime, aliasId: string): Promise<void> {
+    const memory = this.records.get(`${runtime}:${IMPLICIT_ACCOUNT_ID}`);
+    if (!memory) return;
+    if (memory.flushTimer) clearTimeout(memory.flushTimer);
+    if (memory.broadcastTimer) clearTimeout(memory.broadcastTimer);
+    await memory.flushing;
+    this.records.delete(`${runtime}:${IMPLICIT_ACCOUNT_ID}`);
+    const target = this.fileRecord(runtime, aliasId);
+    const moved = [...observationsOf(memory.ledger), ...memory.pending];
+    if (moved.length > 0) {
+      this.record(runtime, { accountId: aliasId }, moved, {
+        subscriptionType: target.subscriptionType ?? memory.subscriptionType,
+      });
     }
   }
-}
 
-/**
- * Read a `config.json` from disk, in full, for {@link AccountUsageStoreOptions.readConfig}:
- * `null` when the file is missing (no registered accounts), {@link CONFIG_UNREADABLE}
- * when it exists but cannot be read or parsed (so nothing is deleted on its word).
- *
- * @param configPath - `<dorkHome>/config.json`.
- */
-export async function readConfigFile(configPath: string): Promise<unknown> {
-  let text: string;
-  try {
-    text = await fs.promises.readFile(configPath, 'utf8');
-  } catch (err) {
-    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? null : CONFIG_UNREADABLE;
+  /** Forget file-backed records whose account is no longer registered. */
+  private forgetUnregistered(runtime: LedgerRuntime, registered: ReadonlySet<string>): void {
+    for (const [mapKey, record] of this.records) {
+      if (record.runtime !== runtime || record.ledgerId === null) continue;
+      if (registered.has(record.ledgerId)) continue;
+      if (record.flushTimer) clearTimeout(record.flushTimer);
+      if (record.broadcastTimer) clearTimeout(record.broadcastTimer);
+      this.records.delete(mapKey);
+    }
   }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return CONFIG_UNREADABLE;
-  }
-}
-
-let currentStore: AccountUsageStore | undefined;
-
-/**
- * Install the process's one usage store, so the runtime feeds, the route and
- * the MCP tool reach it (mirrors `setSessionEventStore`).
- *
- * @param store - The store, or `undefined` to clear it (tests).
- */
-export function setAccountUsageStore(store: AccountUsageStore | undefined): void {
-  currentStore = store;
-}
-
-/** The installed usage store, or `undefined` before boot wires one. */
-export function getAccountUsageStore(): AccountUsageStore | undefined {
-  return currentStore;
 }

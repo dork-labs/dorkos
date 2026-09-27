@@ -136,6 +136,36 @@ describe('writeLedger (contract §1.2 "Writing")', () => {
     expect((await fs.readdir(dir)).filter((n) => n.includes('.stale-'))).toEqual([]);
   });
 
+  it('a stale lock replaced by a fresh one before its token is read is never broken', async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const lock = path.join(dir, 'work.json.lock');
+    await fs.writeFile(lock, '1:stale');
+    const old = new Date(Date.now() - 20_000);
+    await fs.utimes(lock, old, old);
+
+    // The first time this writer reads the lock's token, another breaker has
+    // already broken the stale lock and a third writer holds a FRESH one. Had the
+    // age been checked first, this writer would read the fresh token, move the
+    // fresh lock, see its token match, and delete a live lock.
+    const realReadFile = fs.readFile.bind(fs);
+    let replaced = false;
+    vi.spyOn(fs, 'readFile').mockImplementation((async (file: string, ...rest: unknown[]) => {
+      if (!replaced && file === lock) {
+        replaced = true;
+        await fs.rm(lock);
+        await fs.writeFile(lock, '2:fresh');
+      }
+      return (realReadFile as (...a: unknown[]) => Promise<unknown>)(file, ...rest);
+    }) as typeof fs.readFile);
+
+    const result = await writeLedger(dir, 'work', [obs('five_hour', 5)], NOW, { giveUpMs: 60 });
+
+    expect(replaced).toBe(true);
+    expect(result).toMatchObject({ written: false, gaveUp: true });
+    expect(await realReadFile(lock, 'utf8')).toBe('2:fresh');
+    expect((await fs.readdir(dir)).filter((n) => n.includes('.stale-'))).toEqual([]);
+  });
+
   it('never deletes a lock that now holds a foreign token on release', async () => {
     const lock = path.join(dir, 'work.json.lock');
     const result = await withLedgerLock(dir, 'work', async () => {
@@ -153,6 +183,24 @@ describe('writeLedger (contract §1.2 "Writing")', () => {
     const names = await fs.readdir(dir);
     expect(names.some((n) => /^work\.json\.corrupt-\d+$/.test(n))).toBe(true);
     expect((await readLedger(dir, 'work'))?.windows.five_hour?.usedPct).toBe(7);
+  });
+
+  it('sets aside valid JSON that is not a ledger, never overwriting it', async () => {
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'work.json'), '{"hello":1}');
+    const result = await writeLedger(dir, 'work', [obs('five_hour', 7)], NOW);
+    expect(result.written).toBe(true);
+    const corrupt = (await fs.readdir(dir)).find((n) => /^work\.json\.corrupt-\d+$/.test(n));
+    expect(await fs.readFile(path.join(dir, corrupt!), 'utf8')).toBe('{"hello":1}');
+  });
+
+  it('leaves a ledger of another version alone', async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const future = JSON.stringify({ v: 2, accountId: 'work', windows: {} });
+    await fs.writeFile(path.join(dir, 'work.json'), future);
+    const result = await writeLedger(dir, 'work', [obs('five_hour', 7)], NOW);
+    expect(result.written).toBe(false);
+    expect(await fs.readFile(path.join(dir, 'work.json'), 'utf8')).toBe(future);
   });
 
   it('does not rewrite the file when the merge changes nothing', async () => {

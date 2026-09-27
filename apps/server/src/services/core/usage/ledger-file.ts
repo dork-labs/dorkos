@@ -143,21 +143,32 @@ async function readToken(file: string): Promise<string | null> {
   }
 }
 
+/** Whether a file's mtime is older than {@link LOCK_STALE_MS}; a missing file is `null`. */
+async function isStale(file: string): Promise<boolean | null> {
+  try {
+    return Date.now() - (await fs.stat(file)).mtimeMs > LOCK_STALE_MS;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Break the lock at `lockPath` when it is stale (contract step 2). Returns true
  * when the caller should retry at once (the lock is gone or was just broken),
  * false when a live lock is held.
+ *
+ * The token is read BEFORE the age is checked. Checking the age first would let
+ * a lock replaced in between (another breaker broke the stale one and a writer
+ * took a fresh one) hand over the FRESH token, which the moved file would then
+ * match, and a live lock would be deleted. Read first, a replacement shows up as
+ * a fresh mtime (no break) or as a token that no longer matches (put back).
  */
 async function breakIfStale(lockPath: string): Promise<boolean> {
-  let mtimeMs: number;
-  try {
-    mtimeMs = (await fs.stat(lockPath)).mtimeMs;
-  } catch {
-    return true;
-  }
-  if (Date.now() - mtimeMs <= LOCK_STALE_MS) return false;
   const judged = await readToken(lockPath);
   if (judged === null) return true;
+  const stale = await isStale(lockPath);
+  if (stale === null) return true;
+  if (!stale) return false;
   const moved = `${lockPath}.stale-${randomHex(8)}`;
   try {
     await fs.rename(lockPath, moved);
@@ -166,9 +177,10 @@ async function breakIfStale(lockPath: string): Promise<boolean> {
     return true;
   }
   const movedToken = await readToken(moved);
-  if (movedToken !== judged) {
-    // We moved a FRESH lock (its holder replaced the stale one between our read
-    // and our rename). Put it back; a newer lock already there wins (EEXIST).
+  // We moved a lock that is not the one judged stale, or one that is fresh: its
+  // holder replaced the stale lock between our read and our rename. Put it back;
+  // a newer lock already there wins (EEXIST).
+  if (movedToken !== judged || (await isStale(moved)) === false) {
     try {
       await fs.link(moved, lockPath);
     } catch (err) {
@@ -243,10 +255,12 @@ export async function withLedgerLock<T>(
 
 /**
  * Read the file under the lock (contract step 4): missing = empty; not JSON, or
- * not a ledger-shaped object, = renamed to `.corrupt-<ms>` and empty. A ledger
- * of another version is returned as is, for `mergeLedger` to leave alone.
+ * JSON that is not a version-1 ledger object, = set aside as `.corrupt-<ms>`
+ * and read as empty, never overwritten. A ledger of ANOTHER version is returned
+ * as is, for `mergeLedger` to leave alone.
  */
-async function readUnderLock(file: string): Promise<unknown> {
+async function readUnderLock(dir: string, accountId: string): Promise<unknown> {
+  const file = path.join(dir, `${accountId}.json`);
   let text: string;
   try {
     text = await fs.readFile(file, 'utf8');
@@ -260,21 +274,42 @@ async function readUnderLock(file: string): Promise<unknown> {
   } catch {
     parsed = undefined;
   }
-  const shaped =
-    parsed !== null &&
-    typeof parsed === 'object' &&
-    !Array.isArray(parsed) &&
-    ((parsed as { v?: unknown }).v !== 1 ||
-      ((parsed as { windows?: unknown }).windows !== null &&
-        typeof (parsed as { windows?: unknown }).windows === 'object'));
-  if (shaped) return parsed;
+  if (isLedgerShaped(parsed)) return parsed;
+  await setLedgerAside(dir, accountId);
+  return null;
+}
+
+/** A version-1 ledger object, or an object naming another version (left alone). */
+function isLedgerShaped(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const { v, windows } = value as { v?: unknown; windows?: unknown };
+  if (v === undefined) return false;
+  if (v !== 1) return true;
+  return windows !== null && typeof windows === 'object' && !Array.isArray(windows);
+}
+
+/**
+ * Set a ledger file that cannot be read aside as `<id>.json.corrupt-<epoch ms>`,
+ * so nothing it held is lost to a rewrite. Call it under the ledger's lock. A
+ * missing file is fine.
+ *
+ * @param dir - The runtime's ledger folder.
+ * @param accountId - The ledger id.
+ */
+export async function setLedgerAside(dir: string, accountId: string): Promise<void> {
+  assertAccountId(accountId);
+  const file = path.join(dir, `${accountId}.json`);
   const corrupt = `${file}.corrupt-${Date.now()}`;
-  await fs.rename(file, corrupt);
+  try {
+    await fs.rename(file, corrupt);
+  } catch (err) {
+    if (isErrno(err, 'ENOENT')) return;
+    throw err;
+  }
   logger.warn('[ledger-file] a usage ledger could not be read; set it aside and started empty', {
     file,
     movedTo: corrupt,
   });
-  return null;
 }
 
 /** Write `ledger` over `file` through a temp file, `fsync` and `rename` (contract step 6). */
@@ -322,7 +357,7 @@ export async function writeLedger(
     dir,
     accountId,
     async (): Promise<WriteLedgerResult> => {
-      const existing = await readUnderLock(file);
+      const existing = await readUnderLock(dir, accountId);
       const merged = mergeLedger(existing, observations, now, { runtime, accountId });
       if (!merged.changed) {
         const parsed = UsageLedgerSchema.safeParse(existing);

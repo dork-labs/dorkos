@@ -10,7 +10,7 @@
  * @module services/runtimes/claude-code/mcp-tools/account-tools
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
-import { getAccountUsageStore } from '../../../core/usage/account-usage-store.js';
+import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 

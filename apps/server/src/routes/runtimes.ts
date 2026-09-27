@@ -50,7 +50,7 @@ import {
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/providers/ollama-catalog.js';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
-import { getAccountUsageStore } from '../services/core/usage/account-usage-store.js';
+import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { logger } from '../lib/logger.js';
 import { isLocalCaller } from '../lib/caller-authority.js';
 

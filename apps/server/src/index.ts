@@ -492,11 +492,9 @@ import {
   formatFirstRunTelemetryNotice,
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
-import {
-  AccountUsageStore,
-  readConfigFile,
-  setAccountUsageStore,
-} from './services/core/usage/account-usage-store.js';
+import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
+import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
+import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
 import { claudeDefaultAccountFolder } from './services/runtimes/claude-code/claude-config-dir.js';
 import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
 import {

@@ -4,7 +4,8 @@
  * machine-wide default folder, from config and the OS home only, never in the
  * folder the server process inherited.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import type { UserConfig } from '@dorkos/shared/config-schema';
@@ -75,11 +76,25 @@ describe('launching `default` (contract rev 6d)', () => {
     expect(resolveLaunchAccountRoot({ hintId: 'default', config })).toBe('/staged/chosen');
   });
 
-  it('launches the aliased row in its own spelling', () => {
-    const config = fakeConfig({
-      accounts: [{ id: 'main', path: `${HOME_ROOT}/`, label: 'Main' }],
-    });
-    expect(resolveLaunchAccountRoot({ hintId: 'default', config })).toBe(`${HOME_ROOT}/`);
+  it('a registered row reaching ~/.claude through a symlink launches with CLAUDE_CONFIG_DIR unset', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'default-launch-')));
+    try {
+      const home = path.join(tmp, 'home');
+      await fs.mkdir(path.join(home, '.claude'), { recursive: true });
+      const link = path.join(tmp, 'main-link');
+      await fs.symlink(path.join(home, '.claude'), link);
+      vi.spyOn(os, 'homedir').mockReturnValue(home);
+      const config = fakeConfig({ accounts: [{ id: 'main', path: link, label: 'Main' }] });
+
+      const root = resolveLaunchAccountRoot({ hintId: 'default', config });
+      expect(root).toBe(path.join(home, '.claude'));
+      expect(claudeConfigDirEnv(root)).toEqual({ CLAUDE_CONFIG_DIR: undefined });
+      // The row's own spelling is the same account, so it unsets the variable too.
+      expect(claudeConfigDirEnv(link)).toEqual({ CLAUDE_CONFIG_DIR: undefined });
+    } finally {
+      vi.restoreAllMocks();
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
   });
 
   it('a hand-edited row named `default` never takes the name', () => {
