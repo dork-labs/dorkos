@@ -152,3 +152,15 @@ Spec: §6.9, §7.4.
 - A window with no reading shows the word "unknown" in the compact usage bar too (with the dashed empty track, Q6).
 
 Spec: §6.0, §8.3, §14.
+
+## 10. The Flow panel (D11, orchestrator's option A, 2026-09-27; the operator deferred)
+
+Mockup: [`design/flow-panel.html`](design/flow-panel.html). **Option A:** a "Flow" tab in the right-side panel, contributed by the Flow extension, shown only when flow is installed (option B, a section on the Activity page, was not chosen).
+
+- **Accounts:** a dot, the name, two mini bars (5-hour and week), and state text ("out · resets Tue", "reserved").
+- **Running:** flow runs with their item id and title, the account dot, and a state pill (building, in review, waiting on you, handing off, parked).
+- **Footer:** "Pause flow" and "2 of 3 slots busy".
+- Clicking a run opens its session; clicking an account opens its details.
+- Open: the empty state (Q24), the paused footer (Q25), the panel's own account popover (Q26).
+
+Spec: §8.5.

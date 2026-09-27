@@ -396,6 +396,18 @@ A read-only discovery the Settings section calls, plus one small write for Dismi
 - `modelFallback(info)`: not implemented; S4's default ("sonnet" when Opus or another non-Sonnet model bucket is out) applies.
 - `carryOver(info, target)`: for a flow run, the seed is flow's checkpoint: the run's worktree `.dork/flow/HANDOFF.md` (bounded to `SEED_CONTEXT_MAX_LENGTH`) plus the item's identifier and title, and `prompt` = flow's `resume-from-handoff` text (S3 §1); a missing checkpoint throws, so S4 uses its default summary. For any other session it throws, and S4 uses its default summary (S4 logs the fallback; the advisor's error message says "not a flow run" so the log is plain).
 
+### 8.5 The Flow panel (D11, DOR-2389; orchestrator's option A, mockup `design/flow-panel.html`)
+
+A "Flow" tab in DorkOS's right-side panel, contributed by the Flow extension through the `right-panel` slot (`api.registerComponent('right-panel', 'panel', FlowPanel, { label: 'Flow' })`), so it exists only when flow is installed and its extension runs. It is `flow fleet` made visual, for glancing at while you work.
+
+- **Accounts** (caption "Accounts"): one row per account of every runtime, in `flow fleet`'s order: the account dot, the name, two stacked mini bars (5-hour, then weekly; the mockup's 70px bars) and, when it applies, muted state text after the name: "out · resets Tue" (`limitText`-style day of the reset) when the account is out, or "reserved" when it is Main outside its spend-down window. A window with no reading is an empty track (the host's unknown rule), never 0%. Bar colors follow the host's `barTone` thresholds (amber at 70%, red when out or 100%).
+- **Running** (caption "Running"): one row per live flow run: the account dot of the account it runs on, the item id and title ("DOR-2387 account chip", truncated to one line), and a state pill: **building**, **in review**, **waiting on you**, **handing off** or **parked** (mapped from the run's drain phase and limit state; the mapping lives in one function with a table test). No runs: one muted line "Nothing is running." (new copy, Q24).
+- **Footer:** a "Pause flow" button and muted "· 2 of 3 slots busy" (live runs of `drain.parallel`). While paused the button reads "Resume flow" and the slots text reads "paused" (Q25).
+- **Clicks:** a run opens its session in DorkOS (`api.navigate` to the session's route); an account opens a small details popover drawn by the extension to the decided account-popover content (§6.1: name and plan, one bar per window with its reset time), since an extension cannot open the host's own popover (Q26).
+- **Data:** the extension's server side builds the panel's model from flow's own fleet code (the modules behind `flow fleet --json`, imported directly and zod-free like 4.2's, or the CLI through `execFile` with `node` from `PATH` if a module needs zod), plus `ctx.accounts.usage()` for usage. `GET /api/ext/flow/panel` returns it; the server re-emits `ctx.accounts.onUsage` changes and run-store changes as an extension event (`ctx.emit('panel', …)`) that the panel subscribes to, so it updates live without polling. `POST /api/ext/flow/pause` / `…/resume` call flow's own `pauseFlow` / resume for every project the panel shows runs for.
+- **Look:** built on host CSS variables like the Flow tab (§8.1), matching the mockup's sizes (10px uppercase captions, 12px rows, 8px dots, 4px bar tracks, pill badges). Anything beyond the mockup is an open question.
+- **Accessibility:** rows are buttons with the account or item named in full; the bars are `role="img"` with the same sentences the host uses; pills are text; the Pause button's pressed state is announced.
+
 ## 9. One account vs two or more
 
 | Surface                                  | Codex / OpenCode session                                | Claude, 0 or 1 account                                    | Claude, 2+ accounts            |
@@ -486,7 +498,7 @@ Per `maintaining-dev-playground`: render the real components with injected data,
 
 Data: `settings-mock-data.ts` gains `color`/`colorIsDefault` on `MOCK_SERVER_CONFIG_MULTI_ACCOUNT` and a `MOCK_ACCOUNT_USAGE` set (one per state, plus a Codex one); `createPlaygroundTransport()` answers `getAccountUsage`, `getContinueOptions` and `getLimitHistory` from fixtures and resolves the write methods without effect; banner showcases pass a `limit` built by `createMockSessionLimit`. The Flow tab lives in the marketplace and is not in the core playground.
 
-## 14. Design questions (all resolved)
+## 14. Design questions (Q0-Q23 resolved; Q24-Q26 open)
 
 All resolved. The operator approved every proposed default on 2026-09-27, with the Q13 variant below; the orchestrator's behavioral answers are recorded with them. `04-design-decisions.md` §6 is the decision record.
 
@@ -514,6 +526,9 @@ All resolved. The operator approved every proposed default on 2026-09-27, with t
 - ~~**Q21. Implicit account color.**~~ Stone.
 - ~~**Q22. Guide link words.**~~ "How to use all your accounts" (orchestrator, 2026-09-27).
 - ~~**Q23. Roles saved but no Main and nothing in Rotation.**~~ Show a notice, since flow then has nothing it may use: "Flow can't use any account yet. Make one account Main or Rotation." (orchestrator, 2026-09-27).
+- **Q24 (open). The Flow panel with nothing running.** Proposed: one muted line "Nothing is running."
+- **Q25 (open). Paused state in the panel footer.** Proposed: the button reads "Resume flow" and the slots text reads "paused".
+- **Q26 (open). The account details popover in the panel.** An extension cannot open the host's account popover, so the panel draws its own with the decided content (§6.1). Proposed as that, styled like the host popover.
 
 ## 15. Decisions and assumptions (autonomy grant; reversible)
 
