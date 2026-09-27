@@ -29,7 +29,7 @@ A work, organization or client account belongs in kept out.
 
 ## Set it up in the DorkOS app
 
-1. **Add your accounts.** Open Settings, then **Runtimes**. On the Claude Code card, under **Billing account**, choose **Add account**. Pick the **Account folder** and give it a **Name**. The same card's **Default account** sets which account new chats use. See [Choose an account](/docs/guides/runtimes#choose-an-account).
+1. **Add your accounts.** Open Settings, then **Runtimes**. On the Claude Code card, under **Billing account**, choose **Add account**. Pick the **Account folder**, give it a **Name**, then choose **Add**. The same card's **Default account** sets which account new chats use. See [Choose an account](/docs/guides/runtimes#choose-an-account).
 2. **Pick each account's role.** With the flow plugin installed from the [Marketplace](/docs/marketplace), Settings has a **Flow** tab under Add-ons. Under **Which accounts flow may use**, set each account to **Main**, **Rotation** or **Kept out**. For your main account, **Keep N% for me** sets how much of its weekly limit flow leaves alone. For a kept-out account, **Only for these repos** lets it serve the repositories you list. If the tab says to update DorkOS, update it, or use the terminal steps below.
 
 The app and flow share one list of accounts, so an account you add in Settings shows up in `flow accounts setup` too, and the reverse.
@@ -72,7 +72,7 @@ flow accounts setup --yes --rotation all --keep-out ~/.claude-work --statusline
 
 - `--rotation all` puts every account in the rotation except your default, the ones you keep out now or kept out before, and any that look organization-managed. It says which it skipped and why. To use one of those anyway, name it: `--rotation ~/.claude-work`.
 - `--keep-out` names the accounts to keep out.
-- `--main` picks a different main account. There is only one main, so an account you had made main moves to rotation. Your default, if you never set its role, then counts as rotation too. The plan shows both before anything changes.
+- `--main` picks a different main account. Each runtime has only one main, so an account you had made main moves to rotation. Your default, if you never set its role, then counts as rotation too. The plan shows both before anything changes.
 - `--statusline` adds the usage recorder where it can.
 
 Without `--rotation`, `--yes` never puts an account in the rotation. Apart from the old main giving way to a new one, it never changes an account you did not name. The changes are still printed; `--dry-run` shows them without making them.
@@ -82,7 +82,7 @@ Without `--rotation`, `--yes` never puts an account in the rotation. Apart from 
 - `flow accounts` lists every account with its role, how much is held back, and how much room it has left.
 - `flow fleet` shows every account's usage next to every running session.
 
-While you have several accounts flow could use and only your default is in the rotation, `flow status`, `flow fleet` and `flow next` end with one reminder line. Work, client and kept-out accounts don't count. To turn it off, set `"fleet": { "nudge": false }` in your project's flow config (see [The dials](/docs/guides/flow/the-dials)). Outside a project there is no config to read, so the line stays until you run setup.
+While you have several accounts flow could use and only your default is in the rotation, `flow status`, `flow fleet` and `flow next` end with one reminder line. Work, client and kept-out accounts don't count. To turn it off, set `"fleet": { "nudge": false }` in your project's flow config. Outside a project there is no config to read, so the line stays until you run setup.
 
 ## When something looks wrong
 
