@@ -101,3 +101,34 @@ describe('GET /api/cron/event-retention', () => {
     expect(await response.text()).not.toContain('private provider data');
   });
 });
+
+// DOR-2441: once accounts are handed to the accounts service, the site's own
+// database no longer holds these rows. The job answers and touches nothing.
+describe('GET /api/cron/event-retention with accounts handed over', () => {
+  afterEach(() => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = undefined;
+  });
+
+  it('sweeps as before when the variable is unset', async () => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = undefined;
+    const res = await GET(cronRequest(`Bearer ${SECRET}`));
+    expect(res.status).toBe(200);
+    expect(sweepManagedConnectorEventRetention).toHaveBeenCalledTimes(1);
+    expect(recoverManagedEventCleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers 200 without sweeping when the variable is set', async () => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = 'https://accounts.example.test';
+    const res = await GET(cronRequest(`Bearer ${SECRET}`));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: 'accounts-service' });
+    expect(sweepManagedConnectorEventRetention).not.toHaveBeenCalled();
+    expect(recoverManagedEventCleanup).not.toHaveBeenCalled();
+  });
+
+  it('still refuses an unauthenticated caller when the variable is set', async () => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = 'https://accounts.example.test';
+    const res = await GET(cronRequest());
+    expect(res.status).toBe(401);
+  });
+});

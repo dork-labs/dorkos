@@ -14,6 +14,8 @@
 import { getTransactionDb } from '@/db/transaction-client';
 import { recoverManagedEventCleanup } from '@/lib/connectors/managed/event-cleanup-service';
 import { sweepManagedConnectorEventRetention } from '@/lib/connectors/managed/event-delivery-service';
+import { env } from '@/env';
+import { cloudAccountsForwarding } from '@/lib/cloud-accounts/forward';
 import { rejectUnauthorizedCron } from '@/lib/cron/auth';
 
 export const runtime = 'nodejs';
@@ -25,6 +27,16 @@ export async function GET(request: Request): Promise<Response> {
   // so every unauthorized request armed a 25s timer on its way to a 401.
   const unauthorized = rejectUnauthorizedCron(request);
   if (unauthorized) return unauthorized;
+
+  // Once accounts are handed to the accounts service (DOR-2441), the site's
+  // database holds only its own public tables. The managed-connector event
+  // rows this sweeps are not among them, so there is nothing here to sweep.
+  // Retention for those rows moves to the service with managed connections
+  // itself; until then, hand accounts over only with managed connections off.
+  // Answer 200 so the scheduler sees a healthy job, and touch nothing.
+  if (cloudAccountsForwarding(env.DORKOS_CLOUD_ACCOUNTS_ORIGIN)) {
+    return Response.json({ ok: true, skipped: 'accounts-service' }, { status: 200 });
+  }
 
   const eventMaintenance = AbortSignal.any([request.signal, AbortSignal.timeout(25_000)]);
   try {
