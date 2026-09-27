@@ -4,6 +4,7 @@ covers:
   - 'fix(connectors): be honest about every-agent access everywhere it applies (DOR-2420)'
   - 'fix(connectors): keep every-agent review facts and the Activity trail true (DOR-2420)'
   - 'feat(connections): offer "Every agent" in the page access card (DOR-2420)'
+  - 'fix(connections): show every-agent access as it is, with a real warning (DOR-2420)'
 ---
 
 ### Added

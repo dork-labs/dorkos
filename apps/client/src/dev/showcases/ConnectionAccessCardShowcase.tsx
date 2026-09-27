@@ -60,7 +60,12 @@ function preview(connectionId: string, label: string): ConnectorReconciliationPr
         ? { available: false, operationRevisionIds: [] }
         : {
             available: true,
-            operationRevisionIds: connectionId === 'gmail-shared' ? ['list-messages'] : [],
+            operationRevisionIds:
+              connectionId === 'gmail-shared'
+                ? ['list-messages']
+                : connectionId === 'gmail-exact'
+                  ? ['list-messages', 'send-message', 'delete-message']
+                  : [],
           },
     catalogComplete: true,
     createdAt: '2026-09-26T00:00:00.000Z',
@@ -95,6 +100,7 @@ const SHOWCASE_LABELS: Record<string, string> = {
   'gmail-work': 'work',
   'gmail-shared': 'shared',
   'gmail-managed': 'managed',
+  'gmail-exact': 'exact',
 };
 
 /** How the scripted server answers a save. */
@@ -188,6 +194,16 @@ export function ConnectionAccessCardShowcase() {
         <CardDemo
           answer="ready"
           props={{ mode: 'page', connectionId: 'gmail-shared', serviceName: 'Gmail' }}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Page: every agent holds exact actions, including delete (no level, warning shown)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <CardDemo
+          answer="ready"
+          props={{ mode: 'page', connectionId: 'gmail-exact', serviceName: 'Gmail' }}
         />
       </ShowcaseDemo>
 

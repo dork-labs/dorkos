@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
   cardDecision,
+  everyAgentCanWrite,
   everyAgentDecision,
+  initialEveryAgentLevel,
   heldAccess,
   initialCardLevel,
   initialWhoCanUse,
@@ -273,6 +275,12 @@ describe('everyAgentDecision (DOR-2420)', () => {
     expect(everyAgentDecision(exact, { who: 'every', level: null, levelTouched: false })).toEqual({
       needsLevel: false,
     });
+    // Even with a level on the switch, an untouched exact set is never overwritten.
+    expect(everyAgentDecision(exact, { who: 'every', level: 'read', levelTouched: false })).toEqual(
+      {
+        needsLevel: false,
+      }
+    );
     expect(everyAgentDecision(exact, { who: 'every', level: 'read', levelTouched: true })).toEqual({
       everyAgent: { operationRevisionIds: ['read'] },
       needsLevel: false,
@@ -289,5 +297,19 @@ describe('everyAgentDecision (DOR-2420)', () => {
     expect(everyAgentWriteWarning('asana', 'Asana')).toBe(
       'Every agent — including ones you add later — could make changes in Asana as you.'
     );
+  });
+
+  it('never starts on Read, or hides the warning, while every agent can write or delete', () => {
+    const exact = withEvery({ available: true, operationRevisionIds: ['read', 'send', 'delete'] });
+    expect(initialEveryAgentLevel(exact)).toBeNull();
+    expect(everyAgentCanWrite(exact, null)).toBe(true);
+    expect(everyAgentCanWrite(exact, 'read')).toBe(false);
+    const reading = withEvery({ available: true, operationRevisionIds: ['read'] });
+    expect(initialEveryAgentLevel(reading)).toBe('read');
+    expect(everyAgentCanWrite(reading, null)).toBe(false);
+    expect(initialEveryAgentLevel(off)).toBe('read');
+    expect(
+      initialEveryAgentLevel(withEvery({ available: true, operationRevisionIds: ['read', 'send'] }))
+    ).toBe('read-write');
   });
 });

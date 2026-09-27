@@ -261,4 +261,50 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
       await screen.findByText('Gmail is no longer shared with every agent.')
     ).toBeInTheDocument();
   });
+
+  it('shows exact shared actions as they are: no level, the plain line, and the write warning', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview({ available: true, operationRevisionIds: ['read-v1', 'send-v1', 'delete-v1'] })
+    );
+    renderCard(transport, PAGE);
+
+    expect(await screen.findByRole('radio', { name: /Every agent/ })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Read' })).not.toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Read and write' })).not.toBeChecked();
+    expect(
+      screen.getByText('Every agent has exact actions chosen now. Pick a level to replace them.')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('every-agent-warning')).toHaveTextContent(
+      'Every agent — including ones you add later — could send email as you.'
+    );
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('refuses to call a pending every-agent save done when the saved set reads back different', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      ...applied({ operationRevisionIds: ['read-v1'] }),
+      authoritySync: { status: 'pending' },
+    });
+    // Reading back: nothing is shared with every agent after all.
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      connection: {
+        connectionId: 'connection-1',
+        reconciliationStatus: 'ready',
+        authoritySync: { status: 'ready' },
+        everyAgent: null,
+      },
+      agents: [],
+    } as never);
+    renderCard(transport, PAGE);
+
+    await user.click(await screen.findByRole('radio', { name: /Every agent/ }));
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.click(await screen.findByRole('button', { name: 'Check sync status' }));
+    expect(await screen.findByText(/couldn’t confirm that access was saved/i)).toBeInTheDocument();
+    expect(screen.queryByText('Access updated')).not.toBeInTheDocument();
+  });
 });

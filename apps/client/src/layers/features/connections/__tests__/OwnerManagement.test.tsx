@@ -106,6 +106,34 @@ function renderWith(transport: Transport, ui: ReactNode) {
 }
 
 describe('ConnectionAccessDialog', () => {
+  it('says what every agent also has when the account is shared with every agent', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue({
+      ...PREVIEW,
+      everyAgent: { available: true, operationRevisionIds: ['read-v1', 'write-v2'] },
+    });
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+    const line = await screen.findByTestId('exact-editor-every-agent');
+    expect(line).toHaveTextContent(
+      'Every agent also has 2 actions here through “Every agent”, including agents you add later.'
+    );
+    expect(line).toHaveTextContent('stop sharing this account with every agent');
+  });
+
+  it('says nothing about every agent when it is not shared', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(PREVIEW);
+    renderWith(
+      transport,
+      <ConnectionAccessDialog connectionId="connection-1" open onOpenChange={vi.fn()} />
+    );
+    await screen.findByRole('group', { name: 'Access for Bo' });
+    expect(screen.queryByTestId('exact-editor-every-agent')).not.toBeInTheDocument();
+  });
+
   it('submits only the changed named agent and keeps sensitive actions out of quick access', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();

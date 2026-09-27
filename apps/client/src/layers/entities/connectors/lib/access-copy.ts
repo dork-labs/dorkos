@@ -3,20 +3,17 @@
  *
  * @module entities/connectors/lib/access-copy
  */
-import type { ConnectorOperationClassification } from '@dorkos/shared/connector-schemas';
+import {
+  serviceNameFromToolkit,
+  type ConnectorOperationClassification,
+} from '@dorkos/shared/connector-schemas';
 
 /**
  * A service's display name from its toolkit id when no catalog name is at hand:
- * `gmail` → `Gmail`, `google_calendar` → `Google Calendar`. The one helper for
- * this in the client; prefer the catalog's own `displayName` when you have it.
+ * `gmail` → `Gmail`, `google_calendar` → `Google Calendar`. The server's
+ * Activity entries use the same shared rule, so both name an app the same way.
  */
-export function serviceName(toolkit: string): string {
-  return toolkit
-    .split(/[._-]/u)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
+export const serviceName = serviceNameFromToolkit;
 
 const LEVEL_WORDS: Record<ConnectorOperationClassification, string> = {
   read: 'read',

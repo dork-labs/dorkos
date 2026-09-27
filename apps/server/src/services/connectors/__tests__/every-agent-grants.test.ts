@@ -39,6 +39,7 @@ import { ConnectorManagementReviewContextBuilder } from '../management-review-co
 import {
   createEveryAgentArrivalReaction,
   createEveryAgentEndedRecorder,
+  recordEveryAgentChange,
   setOnEveryAgentEnded,
   EVERY_AGENT_CHANGED_EVENT,
   EVERY_AGENT_INHERITED_EVENT,
@@ -936,5 +937,26 @@ describe('every-agent grants', () => {
     expect(
       builder.build(OWNER, { version: 1, kind: 'disconnect', connectionId: CONNECTION_ID })
     ).toMatchObject({ everyAgent: false });
+  });
+
+  it('names an app in Activity the way the app does ("Google Calendar")', async () => {
+    await recordEveryAgentChange(
+      activity,
+      { actorType: 'user', actorLabel: 'Someone on this computer' },
+      {
+        connectionId: 'connection-cal',
+        toolkit: 'google_calendar',
+        label: 'Work',
+        before: [],
+        after: ['read'],
+        operationCount: 1,
+      }
+    );
+    expect(activity.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary:
+          'Shared Google Calendar (Work) with every agent, including agents added later: read',
+      })
+    );
   });
 });

@@ -245,3 +245,40 @@ export function everyAgentDecision(
     ? { needsLevel: false }
     : { everyAgent: { operationRevisionIds: target }, needsLevel: false };
 }
+
+/**
+ * Where the level switch starts for "Every agent": the preset every agent
+ * holds, Read when it is not shared yet, and `null` ("mixed", nothing
+ * selected) when the shared set is exact actions the card can't express — so
+ * the card never says "Read" while every agent can in fact write or delete.
+ * A set drifts to exact actions without anyone choosing it, when the app adds
+ * a new action to a preset.
+ *
+ * @param preview - Server snapshot.
+ */
+export function initialEveryAgentLevel(
+  preview: ConnectorReconciliationPreview
+): CardAccessLevel | null {
+  const held = heldAccess(preview.candidates, preview.everyAgent.operationRevisionIds);
+  return held === 'custom' ? null : initialCardLevel([held]);
+}
+
+/**
+ * Whether saving "Every agent" as chosen leaves every agent able to write or
+ * delete: the chosen level when there is one, otherwise what every agent
+ * holds now. Drives the one plain warning the card shows.
+ *
+ * @param preview - Server snapshot.
+ * @param level - The chosen level, or `null` while the switch is mixed.
+ */
+export function everyAgentCanWrite(
+  preview: ConnectorReconciliationPreview,
+  level: CardAccessLevel | null
+): boolean {
+  if (level) return level === 'read-write';
+  const shared = new Set(preview.everyAgent.operationRevisionIds);
+  return preview.candidates.some(
+    (candidate) =>
+      shared.has(candidate.operationRevisionId) && candidate.capabilityClassification !== 'read'
+  );
+}

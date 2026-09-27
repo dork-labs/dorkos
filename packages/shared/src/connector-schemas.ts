@@ -1118,3 +1118,19 @@ export function encodeConnectorReviewAction(action: ConnectorReviewAction): stri
 export function decodeConnectorReviewAction(payload: string): ConnectorReviewAction {
   return ConnectorReviewActionSchema.parse(JSON.parse(payload));
 }
+
+/**
+ * A service's display name from its toolkit id when no catalog name is at
+ * hand: `gmail` → `Gmail`, `google_calendar` → `Google Calendar`. The one rule
+ * for this, shared so the app and the server's Activity entries name an app
+ * the same way. Prefer the catalog's own `displayName` when you have it.
+ *
+ * @param toolkit - A toolkit id such as `google_calendar`.
+ */
+export function serviceNameFromToolkit(toolkit: string): string {
+  return toolkit
+    .split(/[._-]/u)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}

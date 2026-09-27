@@ -21,7 +21,10 @@
  * @module services/connectors/every-agent-activity
  */
 import type { ActivityCategory, ActorType } from '@dorkos/shared/activity-schemas';
-import type { ConnectorOperationClassification } from '@dorkos/shared/connector-schemas';
+import {
+  serviceNameFromToolkit,
+  type ConnectorOperationClassification,
+} from '@dorkos/shared/connector-schemas';
 import type { ConnectorEveryAgentGrants } from '@dorkos/shared/connector-resource-schemas';
 import { logger } from '../../lib/logger.js';
 import type { CreatedAgentInfo } from '../core/agent-created-hook.js';
@@ -80,10 +83,8 @@ export interface EveryAgentChange {
   readonly operationCount: number;
 }
 
-/** A service's display name from its toolkit id, e.g. `gmail` → `Gmail`. */
-export function serviceName(toolkit: string): string {
-  return toolkit.charAt(0).toUpperCase() + toolkit.slice(1);
-}
+/** A service's display name from its toolkit id; the one rule the app uses too. */
+export const serviceName = serviceNameFromToolkit;
 
 /**
  * What a set of classifications lets an agent do, in words: `read`,

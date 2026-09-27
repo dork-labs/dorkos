@@ -13,6 +13,7 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReviewActionSchema,
   ConnectorUsageItemSchema,
+  serviceNameFromToolkit,
   decodeConnectorReviewAction,
   encodeConnectorReviewAction,
 } from '../connector-schemas.js';
@@ -495,5 +496,14 @@ describe('agent event review bounds', () => {
         ],
       }).success
     ).toBe(false);
+  });
+});
+
+describe('serviceNameFromToolkit', () => {
+  it('names an app the same way everywhere', () => {
+    expect(serviceNameFromToolkit('gmail')).toBe('Gmail');
+    expect(serviceNameFromToolkit('google_calendar')).toBe('Google Calendar');
+    expect(serviceNameFromToolkit('microsoft-teams')).toBe('Microsoft Teams');
+    expect(serviceNameFromToolkit('slack.bot')).toBe('Slack Bot');
   });
 });

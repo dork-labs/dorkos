@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, ShieldAlert } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
 import {
@@ -13,7 +13,9 @@ import {
   cardDecision,
   everyAgentDecision,
   heldAccess,
+  everyAgentCanWrite,
   initialCardLevel,
+  initialEveryAgentLevel,
   initialWhoCanUse,
   type CardAccessLevel,
   type CardDecision,
@@ -141,11 +143,11 @@ function AccessStep(
       const startWho = props.mode === 'page' ? initialWhoCanUse(preview) : 'picked';
       setWho(startWho);
       setLevel(
-        initialCardLevel(
-          startWho === 'every'
-            ? [heldAccess(preview.candidates, preview.everyAgent.operationRevisionIds)]
-            : subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
-        )
+        startWho === 'every'
+          ? initialEveryAgentLevel(preview)
+          : initialCardLevel(
+              subjects.map((agentId) => heldAccess(preview.candidates, current[agentId] ?? []))
+            )
       );
       setLevelTouched(false);
     },
@@ -462,8 +464,16 @@ function AccessEditor({
                   : 'Your agents have different access. Pick one to give it to every ticked agent.'}
               </p>
             )}
-            {props.mode === 'page' && who === 'every' && level === 'read-write' && (
-              <p role="note" className="text-warning text-xs" data-testid="every-agent-warning">
+            {props.mode === 'page' && who === 'every' && everyAgentCanWrite(preview, level) && (
+              <p
+                role="note"
+                data-testid="every-agent-warning"
+                className="border-status-warning-border bg-status-warning-bg text-foreground flex items-start gap-2 rounded-lg border px-3 py-2 text-xs"
+              >
+                <ShieldAlert
+                  className="text-status-warning-dot mt-0.5 size-3.5 shrink-0"
+                  aria-hidden
+                />
                 {everyAgentWriteWarning(preview.connection.toolkit, props.serviceName)}
               </p>
             )}
