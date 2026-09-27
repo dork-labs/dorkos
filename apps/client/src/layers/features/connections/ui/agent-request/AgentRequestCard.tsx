@@ -6,11 +6,11 @@ import {
   useConnectorCatalog,
   useConnectorConnections,
   useResolveConnectorAgentRequest,
+  serviceName as appServiceName,
 } from '@/layers/entities/connectors';
 import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { accountAttention, usableAccounts } from '../../lib/account-readiness';
-import { serviceNameFromSlug } from '../../lib/presentation';
 import { AccessCardFrame } from '../access/AccessCardFrame';
 import { ConnectionAccessCard } from '../access/ConnectionAccessCard';
 import { AccountAttentionStep } from './AccountAttentionStep';
@@ -88,7 +88,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
     catalog.data?.pages
       .flatMap((page) => page.services)
       .find((candidate) => candidate.serviceSlug === request.serviceSlug) ?? null;
-  const serviceName = service?.displayName ?? serviceNameFromSlug(request.serviceSlug);
+  const serviceName = service?.displayName ?? appServiceName(request.serviceSlug);
   const agentName = request.agent.displayName;
   // The account a sign-in from this card just made; the access step skips the
   // "which account?" question for it.

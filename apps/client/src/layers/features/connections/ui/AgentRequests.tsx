@@ -12,6 +12,7 @@ import {
   usePreviewConnectorReconciliation,
   useResolveConnectorAgentRequest,
   serviceName,
+  serviceName as appServiceName,
 } from '@/layers/entities/connectors';
 import {
   Badge,
@@ -32,7 +33,6 @@ import {
   SelectValue,
   Skeleton,
 } from '@/layers/shared/ui';
-import { serviceNameFromSlug } from '../lib/presentation';
 import { AgentRequestEventScopes } from './AgentRequestEventScopes';
 
 interface AgentRequestsProps {
@@ -139,7 +139,7 @@ export function AgentRequests({
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-medium">
-                      {request.agent.displayName} · {serviceNameFromSlug(request.serviceSlug)}
+                      {request.agent.displayName} · {appServiceName(request.serviceSlug)}
                     </span>
                     <Badge size="xs" variant="outline">
                       {requestStateLabel(request.status)}
@@ -318,7 +318,7 @@ function AgentRequestDialog({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold">{request.data.agent.displayName}</p>
                   <Badge size="xs" variant="outline">
-                    {serviceNameFromSlug(request.data.serviceSlug)}
+                    {appServiceName(request.data.serviceSlug)}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-2 text-sm">{request.data.reason}</p>

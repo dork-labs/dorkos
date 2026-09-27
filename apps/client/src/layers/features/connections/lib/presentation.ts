@@ -57,20 +57,6 @@ export function providerName(type: string): string {
 }
 
 /**
- * A readable name for a service slug when the catalog's display name is not
- * at hand: `google_calendar` reads "Google Calendar".
- *
- * @param slug - The service slug an agent asked for.
- */
-export function serviceNameFromSlug(slug: string): string {
-  return slug
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-/**
  * A plain name for one service operation: `GMAIL_SEND_EMAIL` or
  * `gmail.send_email` reads "Send email". The app's own name is dropped since
  * the card already says which app.
