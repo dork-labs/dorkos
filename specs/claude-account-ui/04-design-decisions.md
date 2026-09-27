@@ -109,15 +109,15 @@ Spec: §6.8.
 
 ## 6. Operator approvals of the open questions (2026-09-27)
 
-The operator approved every proposed default (spec §14), with one change to Q13. The orchestrator's behavioral answers are recorded beside them.
+The operator approved the proposed defaults (spec §14), with four answers that differ from what was proposed: Q13 (tone), Q1 (a wait on a flow run goes to flow, not "accept"), Q15 (show a spend line, not nothing) and Q18 (only while out, as a final rule). The orchestrator's behavioral answers are recorded beside them.
 
 - **Q13 (changed):** the banner is **red only while an account is out and needs action**, and **neutral grey** for waiting for the reset, reset ready, and moved.
-- **Q1:** a "Wait for reset" on a flow run is handed to flow (the advisor waits and resumes; DorkOS does not resume it too).
+- **Q1 (changed):** a "Wait for reset" on a flow run is handed to flow (the advisor waits and resumes; DorkOS does not resume it too).
 - **Q2:** a reserved Main is selectable but dimmed.
 - **Q11:** "Continue here anyway" lasts for this reset window only.
-- **Q15:** a runtime that reports spend but no windows shows a small "$4.20 spent this month" line in Settings.
+- **Q15 (changed):** a runtime that reports spend but no windows shows a small "$4.20 spent this month" line in Settings.
 - **Q16:** cross-runtime fallback is one fleet-wide toggle.
-- **Q18:** "Continue on another account" shows only while the session is out.
+- **Q18 (changed):** "Continue on another account" shows only while the session is out.
 - **Q21:** implicit accounts are stone.
 - **Approved as proposed:** Q4 (dot leads the title, name in the tooltip), Q5 (omit "started on this account"), Q6 (dashed empty track and "unknown"), Q7 (pre-launch chip with a chevron), Q8 (swatch popover plus "Default"), Q9 (inline "owner/name" field), Q10 (one muted line with a small icon), Q12 (reset-ready wording), Q14 (no sidebar tint after a move), Q17 (muted number, "as of" line), Q19 (amber when only a model is out), Q20 (bar placement in Settings).
 
@@ -127,7 +127,7 @@ Spec: §14 (all resolved), §6.5, §6.7, §7.3 N10.
 
 - A first-visit state that explains the three roles in one plain line each (Main: yours, kept in reserve and used last; Rotation: flow may use it fully; Kept out: flow never uses it), with a link to the guide `docs/use-all-your-accounts.mdx`.
 - When no account is in rotation: "Nothing is in rotation yet, so flow only uses your main account."
-- Built as a notice above the approved rows; anything beyond that is a design question.
-- A core "we found ~/.claude2 on this computer, add it?" prompt in Settings → Runtimes is a pending design question; not built yet.
+- Built as a notice above the approved rows; anything beyond that is a design question. Open: the link's words (Q22) and the case with roles stored but no Main and nothing in Rotation (Q23).
+- A core "we found ~/.claude2 on this computer, add it?" prompt in Settings → Runtimes is being taken to the operator as a design question; not built.
 
 Spec: §8.3.
