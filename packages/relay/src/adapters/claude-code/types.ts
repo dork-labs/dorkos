@@ -64,7 +64,20 @@ export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'> & {
  *   holding `.dork/agent.json` — not necessarily where the turn runs, which a
  *   payload can move without changing who is answering. Absent when nothing
  *   resolved either, and the manifest tier then has nothing to read.
+ * @param opts.requestedAccount - The Claude account (registry id) the message
+ *   asked the conversation to launch on, from the payload's `account`. Set only
+ *   when the turn starts a new conversation. It is the SENDER's words, and any
+ *   agent can write it, so the host answers with an `accountHint` only when its
+ *   account policy allows the pick; a refusal means no hint, never a dropped
+ *   message (DOR-2384).
  */
+export type ExecutionSettingsResolver = (opts: {
+  sessionId: string;
+  runtimeType: string;
+  agentDirectory?: string;
+  requestedAccount?: string;
+}) => Promise<TurnExecutionSettings>;
+
 /**
  * The host's desk guard for a turn whose payload names its own folder (spec
  * `agent-home-desk` §3.4). A payload `cwd` is the SENDER's words — any agent can
@@ -83,12 +96,6 @@ export type TurnDeskCheck = (input: {
   /** The session key this turn runs under, for a host that looks its agent up. */
   sessionKey: string;
 }) => Promise<string | null>;
-
-export type ExecutionSettingsResolver = (opts: {
-  sessionId: string;
-  runtimeType: string;
-  agentDirectory?: string;
-}) => Promise<TurnExecutionSettings>;
 
 /**
  * Which runtime one TURN on an agent-addressed conversation runs on, asked of

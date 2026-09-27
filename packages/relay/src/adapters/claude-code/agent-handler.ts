@@ -412,7 +412,23 @@ export async function handleAgentMessage(
   // `session.model` when it launches a query, and that field is written once,
   // when the session record is created. A model handed over afterwards reaches
   // nothing (see `messaging/launch-resolver.ts`).
-  const executionSettings = await resolveTurnSettings(deps, ccaSessionKey, agentManifestDir, log);
+  //
+  // The payload's `account` asks which Claude account a NEW conversation
+  // launches and bills on (spec `claude-account-fleet` D6, DOR-2384). It is read
+  // off the raw payload, not `shaping`: an agent's `relay_send` is the sender it
+  // exists for. That is safe only because this adapter never honors it itself.
+  // Every sender's request, a person's and a chat bridge's included, goes to
+  // the host, which answers with a hint only when the account advisor allows
+  // the pick. A conversation that has already started is never asked about: its
+  // account is settled on disk, and the launch ladder would ignore a hint anyway.
+  const requestedAccount = persistedSdkSessionId ? undefined : requestedAccountOf(payloadObj);
+  const executionSettings = await resolveTurnSettings(
+    deps,
+    ccaSessionKey,
+    agentManifestDir,
+    requestedAccount,
+    log
+  );
 
   log.debug?.(
     `[CCA] handleAgentMessage agentId=${agentId} ccaSessionKey=${ccaSessionKey}, ` +
@@ -858,12 +874,15 @@ export async function handleAgentMessage(
  * @param deps - The handler's dependencies; the resolver is optional on them.
  * @param sessionId - The key this turn runs under (`ccaSessionKey`).
  * @param agentDirectory - Where the turn runs, which is where its manifest is.
+ * @param requestedAccount - The account the message asked a new conversation to
+ *   launch on, for the host to allow or refuse.
  * @param log - Where a failed lookup is reported.
  */
 async function resolveTurnSettings(
   deps: AgentHandlerDeps,
   sessionId: string,
   agentDirectory: string | undefined,
+  requestedAccount: string | undefined,
   log: NonNullable<AgentHandlerDeps['logger']> | Console
 ): Promise<TurnExecutionSettings> {
   if (!deps.resolveExecutionSettings) return {};
@@ -872,6 +891,7 @@ async function resolveTurnSettings(
       sessionId,
       runtimeType: deps.runtimeType ?? deps.agentManager.type ?? 'claude-code',
       ...(agentDirectory ? { agentDirectory } : {}),
+      ...(requestedAccount ? { requestedAccount } : {}),
     });
   } catch (err) {
     log.warn(
@@ -880,6 +900,19 @@ async function resolveTurnSettings(
     );
     return {};
   }
+}
+
+/**
+ * The account a payload asks a new conversation to launch on: its `account`
+ * when that is a non-empty string, else nothing. Anything else is ignored
+ * rather than refused, because a malformed billing preference is never a reason
+ * to drop a message.
+ *
+ * @param payload - The envelope payload, when it is an object.
+ */
+function requestedAccountOf(payload: Record<string, unknown> | null): string | undefined {
+  const account = payload?.account;
+  return typeof account === 'string' && account.length > 0 ? account : undefined;
 }
 
 /**
