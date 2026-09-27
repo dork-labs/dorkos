@@ -8,8 +8,14 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
 import { claudeAccountId } from '@dorkos/shared/config-schema';
+import {
+  FLOW_FLEET_SETTINGS_TAB_ID,
+  IMPLICIT_ACCOUNT_ID,
+  type AccountUsage,
+} from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
+  accountWindow,
   claudeAccountName,
   claudeAccountOptions,
   isAbsoluteAccountPath,
@@ -27,8 +33,18 @@ import {
   SelectTrigger,
   SelectValue,
   SettingRow,
+  UsageBar,
 } from '@/layers/shared/ui';
+import {
+  useAccountUsage,
+  useSettingsDeepLink,
+  useSlotContributions,
+  type AccountUsageView,
+} from '@/layers/shared/model';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
+import { useAccountIdentityGate } from '@/layers/entities/runtime';
+import { AccountColorControl } from './AccountColorControl';
+import { AccountUsageBars } from './AccountUsageBars';
 
 /**
  * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
@@ -133,6 +149,13 @@ export function ClaudeAccountsSection() {
   const [adding, setAdding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
+  // Every account-identity surface opens on this one gate (spec invariant 1):
+  // the dots, the color control, the per-row bars and the Flow note.
+  const identityGate = useAccountIdentityGate('claude-code');
+  const usage = useAccountUsage('claude-code');
+  const hasFlowTab = useSlotContributions('settings.tabs').some(
+    (tab) => tab.id === FLOW_FLEET_SETTINGS_TAB_ID
+  );
 
   const claudeCode = config?.claudeCode;
   const accounts: Account[] = claudeCode?.accounts ?? [];
@@ -212,6 +235,16 @@ export function ClaudeAccountsSection() {
     );
   }
 
+  /** Store one account's color: a palette hex, or `null` to show its default again. */
+  function chooseColor(path: string, color: string | null) {
+    write({
+      accounts: toWritableAccounts(accounts).map((row, i) =>
+        accounts[i]!.path === path ? { ...row, color } : row
+      ),
+      accountsSeen: shownIds(accounts),
+    });
+  }
+
   function removeAccount(path: string) {
     const remaining = toWritableAccounts(accounts.filter((account) => account.path !== path));
     // Removing the account work is currently running on has to release it too,
@@ -246,6 +279,8 @@ export function ClaudeAccountsSection() {
           Add account
         </Button>
       </div>
+
+      {!identityGate && <ClaudeUsageBlock accounts={accounts} usage={usage} />}
 
       {/* "Default", not "Account": this is the bottom of a three-rung ladder now
           (spec `billing-account-ladder`), and an agent or a single session can
@@ -285,9 +320,21 @@ export function ClaudeAccountsSection() {
           accounts={accounts}
           isActive={!inherited && resolvedAccount === account.path}
           onRemove={() => removeAccount(account.path)}
+          onChooseColor={(color) => chooseColor(account.path, color)}
           disabled={updateConfig.isPending}
+          identity={
+            identityGate
+              ? {
+                  usage:
+                    (account.id ? usage.byId.get(account.id) : undefined) ??
+                    usage.byPath.get(account.path),
+                }
+              : null
+          }
         />
       ))}
+
+      {identityGate && hasFlowTab && <FlowNote />}
 
       {adding && (
         <SettingRow
@@ -345,6 +392,7 @@ export function ClaudeAccountsSection() {
 
       {writeError && (
         <p
+          role="alert"
           className="text-destructive flex items-start gap-1.5 text-xs"
           data-testid="claude-account-error"
         >
@@ -363,24 +411,87 @@ export function ClaudeAccountsSection() {
   );
 }
 
+/**
+ * Claude Code's usage while accounts are not told apart (0 or 1 registered):
+ * the one account's 5-hour and weekly bars under "Billing account", labelled
+ * with that account, or the implicit `default` account's when none is
+ * registered. Nothing when that account has no reading.
+ */
+function ClaudeUsageBlock({
+  accounts,
+  usage,
+}: {
+  accounts: readonly Account[];
+  usage: AccountUsageView;
+}) {
+  if (accounts.length > 1) return null;
+  const only = accounts[0];
+  const record: AccountUsage | undefined = only
+    ? ((only.id ? usage.byId.get(only.id) : undefined) ?? usage.byPath.get(only.path))
+    : usage.byId.get(IMPLICIT_ACCOUNT_ID);
+  if (!record) return null;
+  const name = only
+    ? claudeAccountName(only.path, accounts)
+    : (record.label ?? claudeAccountName(record.path, []));
+  return <AccountUsageBars usage={record} name={name} />;
+}
+
+/**
+ * The pointer to the Flow tab, shown only when accounts are told apart and the
+ * Flow extension contributes its tab. The dialog is already open, so the link
+ * switches tabs without closing it.
+ */
+function FlowNote() {
+  const { setTab } = useSettingsDeepLink();
+  return (
+    <p className="bg-muted text-muted-foreground rounded-md px-3 py-2 text-xs">
+      Flow uses these accounts for your work. Choose how in{' '}
+      <button
+        type="button"
+        onClick={() => setTab(FLOW_FLEET_SETTINGS_TAB_ID)}
+        className="text-foreground font-semibold underline-offset-2 hover:underline"
+      >
+        Settings → Flow
+      </button>
+      .
+    </p>
+  );
+}
+
 /** One registered account: what it is called, where it lives, and whether DorkOS can read it. */
 function AccountRow({
   account,
   accounts,
   isActive,
   onRemove,
+  onChooseColor,
   disabled,
+  identity,
 }: {
   account: Account;
   accounts: Account[];
   isActive: boolean;
   onRemove: () => void;
+  onChooseColor: (color: string | null) => void;
   disabled: boolean;
+  /** The account's identity and usage, present only while the identity gate is open. */
+  identity: { usage: AccountUsage | undefined } | null;
 }) {
   const name = claudeAccountName(account.path, accounts);
   return (
-    <div className="flex items-start justify-between gap-4" data-testid="claude-account-row">
-      <div className="min-w-0">
+    <div className="flex items-start gap-3" data-testid="claude-account-row">
+      {identity && (
+        <span className="mt-1 flex">
+          <AccountColorControl
+            name={name}
+            color={account.color}
+            colorIsDefault={account.colorIsDefault}
+            onChoose={onChooseColor}
+            disabled={disabled}
+          />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">
           {name}
           {isActive && <span className="text-muted-foreground ml-2 text-xs">in use</span>}
@@ -401,6 +512,12 @@ function AccountRow({
           </p>
         )}
       </div>
+      {identity && (
+        <div className="w-36 shrink-0 space-y-1 pt-0.5">
+          <UsageBar window={accountWindow(identity.usage, 'five_hour')} label="5h" compact />
+          <UsageBar window={accountWindow(identity.usage, 'seven_day')} label="wk" compact />
+        </div>
+      )}
       <Button
         variant="ghost"
         size="sm"

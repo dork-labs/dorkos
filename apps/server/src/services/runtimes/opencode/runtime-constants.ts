@@ -119,11 +119,12 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   // field in either the pinned or the current SDK — effort exists there only as
   // config-file variants with no API selection. The `opencode-power-source`
   // section is the provider picker; the current provider is dynamic and stays
-  // on `GET /api/config`.
+  // on `GET /api/config`. `runtime-usage` shows what the account spent this
+  // month (spec `claude-account-ui` §6.5).
   settings: {
     configSection: 'opencode',
     supportsEffort: false,
-    sections: [{ kind: 'opencode-power-source' }],
+    sections: [{ kind: 'opencode-power-source' }, { kind: 'runtime-usage' }],
   },
   // OpenCode fulfills `compact` via its native sidecar compaction
   // (`client.session.summarize`; DOR-109 task 2.2, ADR-0273) —

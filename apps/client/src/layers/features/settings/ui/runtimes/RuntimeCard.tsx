@@ -41,7 +41,8 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { runtimeAuthConnectKind, runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { claudeAccountName, cn } from '@/layers/shared/lib';
-import { useTransport } from '@/layers/shared/model';
+import { LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
+import { useAccountUsage, useTransport } from '@/layers/shared/model';
 import { Badge, Button, InlineCode, Spinner } from '@/layers/shared/ui';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
@@ -162,6 +163,12 @@ export function RuntimeCard({
   onMakeDefault,
 }: RuntimeCardProps) {
   const { data: config } = useConfig();
+  // Fresh account usage while this tab is open, for the card's usage rows
+  // (spec `claude-account-ui` §6.5). Only a runtime that keeps a usage ledger
+  // has a route to ask; the rest read nothing.
+  useAccountUsage((LEDGER_RUNTIMES as readonly string[]).includes(type) ? type : null, {
+    fetch: true,
+  });
   const { data: capabilityMap } = useRuntimeCapabilities();
   const { data: requirements } = useRuntimeRequirements();
   const { registered } = useRuntimeReadiness(type);

@@ -117,7 +117,17 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'switch',
       'section',
       'runtime card',
+      'usage',
+      'color',
+      'flow',
     ],
+  },
+  {
+    id: 'runtime-usage',
+    title: 'Runtime Usage',
+    page: 'settings',
+    category: 'Runtimes',
+    keywords: ['codex', 'opencode', 'usage', 'spend', 'limit', 'weekly', 'runtime card'],
   },
   {
     id: 'execution-exceptions-strip',

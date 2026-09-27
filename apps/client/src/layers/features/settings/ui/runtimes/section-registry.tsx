@@ -15,6 +15,7 @@
 import type { ReactNode } from 'react';
 import { ClaudeAccountsSection } from './sections/ClaudeAccountsSection';
 import { PowerSourceSection } from './sections/PowerSourceSection';
+import { RuntimeUsageSection } from './sections/RuntimeUsageSection';
 
 /**
  * What a section renderer is told about the card it is rendering inside.
@@ -36,6 +37,9 @@ type SectionRenderer = (ctx: RuntimeSettingsSectionContext) => ReactNode;
 const SECTION_RENDERERS: Record<string, SectionRenderer> = {
   'claude-accounts': () => <ClaudeAccountsSection />,
   'opencode-power-source': ({ type }) => <PowerSourceSection type={type} />,
+  // Codex and OpenCode: the account's usage, which Claude Code draws under
+  // "Billing account" instead.
+  'runtime-usage': ({ type }) => <RuntimeUsageSection type={type} />,
 };
 
 /**

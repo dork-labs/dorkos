@@ -51,3 +51,4 @@ export { SessionInspector, SessionReadout } from './ui/SessionInspector';
 export { useSessionDiagnostics } from './model/use-session-diagnostics';
 export { formatDiagnostics } from './model/session-diagnostics';
 export type { SessionDiagnostics, ActiveSubagent } from './model/session-diagnostics';
+export { formatCost } from './lib/format-tokens';

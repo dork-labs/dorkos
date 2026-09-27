@@ -835,8 +835,12 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
               },
             ],
           },
-          // Effort is real; no bespoke section — Codex's card is the common rows.
-          settings: { configSection: 'codex', supportsEffort: true, sections: [] },
+          // Effort is real; the one bespoke section is the account's usage.
+          settings: {
+            configSection: 'codex',
+            supportsEffort: true,
+            sections: [{ kind: 'runtime-usage' }],
+          },
           features: {},
         },
         opencode: {
@@ -879,11 +883,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
             ],
           },
           // No effort leaf at OpenCode's API, and its bespoke section is the
-          // power-source picker — both load-bearing absences for the cards.
+          // power-source picker, then the account's usage.
           settings: {
             configSection: 'opencode',
             supportsEffort: false,
-            sections: [{ kind: 'opencode-power-source' }],
+            sections: [{ kind: 'opencode-power-source' }, { kind: 'runtime-usage' }],
           },
           features: {},
         },
