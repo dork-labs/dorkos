@@ -423,9 +423,16 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
   if (!accountPlan.ok) {
     return { ok: false, error: 'Validation failed', details: accountPlan.details };
   }
-  const mergedClaude = (merged.runtimes as { claudeCode?: unknown } | undefined)?.claudeCode;
+  const mergedRuntimes = merged.runtimes;
+  const mergedClaude = isPlainObject(mergedRuntimes) ? mergedRuntimes.claudeCode : undefined;
   if (isPlainObject(mergedClaude) && (namesAccounts || Array.isArray(storedAccounts))) {
-    mergedClaude.accounts = accountPlan.accounts;
+    // Copied, never assigned in place: when the patch does not name `runtimes`,
+    // `deepMerge` hands back the stored section by reference, and that object is
+    // `before`, which the audit line and the account-change check compare with.
+    merged.runtimes = {
+      ...(mergedRuntimes as Record<string, unknown>),
+      claudeCode: { ...mergedClaude, accounts: accountPlan.accounts },
+    };
   }
   const parseResult = UserConfigSchema.safeParse(merged);
 

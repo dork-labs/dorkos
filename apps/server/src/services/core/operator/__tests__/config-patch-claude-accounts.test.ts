@@ -260,3 +260,25 @@ describe('applyConfigPatch on the Claude account registry', () => {
     expect(accountsOnDisk()).toEqual([{ id: 'flow-added', path: '/f', label: null, color: null }]);
   });
 });
+
+describe('an unrelated write beside rows the read rules skip', () => {
+  beforeEach(() => {
+    fs.writeFileSync(configPath, JSON.stringify({}), 'utf-8');
+    initConfigManager(dir);
+  });
+
+  it('reports the registry as unchanged', () => {
+    writeAccountsExternally([
+      { id: 'a', path: '/a', label: null },
+      { id: 'hand', path: 'relative', label: null },
+    ]);
+
+    const result = applyConfigPatch({ ui: { theme: 'light' } });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.before.runtimes.claudeCode.accounts).toEqual(
+      result.config.runtimes.claudeCode.accounts
+    );
+  });
+});
