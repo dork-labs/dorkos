@@ -872,8 +872,9 @@ export function subscriptionUsageOf(usage: AccountUsage): UsageStatus | undefine
 /**
  * A session's `usage` with its subscription fields taken from the account and
  * its own cost kept: the account's binding window plus the session's
- * `costUsd`/`costBasis`. Returns `held` unchanged when the account has no plan
- * window with a percentage.
+ * `costUsd`/`costBasis` and its `detail` line (such as "Using overage
+ * capacity"). Returns `held` unchanged when the account has no plan window with
+ * a percentage.
  *
  * @param held - The session's current `usage`, or `null`.
  * @param account - The account the session bills.
@@ -888,5 +889,6 @@ export function withAccountSubscription(
     ...subscription,
     ...(held?.costUsd !== undefined ? { costUsd: held.costUsd } : {}),
     ...(held?.costBasis !== undefined ? { costBasis: held.costBasis } : {}),
+    ...(held?.detail !== undefined ? { detail: held.detail } : {}),
   };
 }

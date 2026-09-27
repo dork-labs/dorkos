@@ -95,8 +95,7 @@ import {
   turnAgentOf,
 } from '../../core/agent-identity/index.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { resolveClaudeCredentialEnv } from '../../core/credential-env.js';
-import { creditsTurnEnv } from '../../core/cloud/credits-inference.js';
+import { predictLaunchBillsPerToken } from './messaging/per-token-billing.js';
 import {
   disposeProjector,
   getOrCreateProjector,
@@ -1294,8 +1293,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * Whether this session bills per token rather than against its account's
    * subscription (spec `claude-account-fleet` §6 U): what its last launch here
    * did, else whether it has had a subscription reading of its own, else what
-   * its next launch would do (a stored API key or DorkOS credits apply to every
-   * launch). A per-token session's `usage` stays its own cost.
+   * its next launch would do, read off the environment a launch would get (a
+   * stored key, credits, or one inherited from the server's own environment),
+   * and per token when that cannot be told. A per-token session's `usage` stays
+   * its own cost.
    *
    * Not on the `AgentRuntime` port, for the reason `accountRootForSession`
    * is not: accounts are a Claude-Code-only concept.
@@ -1306,8 +1307,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const session = this.sessionStore.findSession(sessionId);
     if (session?.launchedPerToken !== undefined) return session.launchedPerToken;
     if (session?.lastSubscriptionUsage?.kind === 'subscription') return false;
-    const keyEnv = await resolveClaudeCredentialEnv();
-    return Object.keys(keyEnv).length > 0 || Object.keys(creditsTurnEnv('claude-code')).length > 0;
+    return predictLaunchBillsPerToken();
   }
 
   /**

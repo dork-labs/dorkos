@@ -26,6 +26,7 @@ import {
 import { SessionEventStore } from '../../session-event-store.js';
 import { feedProjector } from '../../session-event-normalizer.js';
 import { SessionContextStore } from '../session-context-store.js';
+import { predictLaunchBillsPerToken } from '../../../runtimes/claude-code/messaging/per-token-billing.js';
 import {
   installSessionStatusHydration,
   type SessionStatusHydration,
@@ -172,6 +173,27 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
     store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 60)]);
     await settleBroadcast(1);
     expect(projector.getStatus().usage).toEqual({ kind: 'pay-as-you-go', costUsd: 0.4 });
+  });
+
+  it("a key inherited from the server's environment reads as per token on open and after a store change", async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'inherited');
+    // The runtime's real prediction: what a launch made now would receive.
+    claude.sessionBillsPerToken.mockImplementation(() => predictLaunchBillsPerToken());
+    try {
+      store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 40)]);
+      launched.set('s-inherit', work());
+      const opened1 = await open('s-inherit');
+      expect(opened1.accountUsage?.accountId).toBe('work');
+      expect(opened1.usage).toBeNull();
+
+      store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 60)]);
+      await settleBroadcast(1);
+      const after = await open('s-inherit');
+      expect(after.accountUsage!.windows[0]).toMatchObject({ usedPct: 60 });
+      expect(after.usage).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('a single-account Claude session opens with the implicit default', async () => {

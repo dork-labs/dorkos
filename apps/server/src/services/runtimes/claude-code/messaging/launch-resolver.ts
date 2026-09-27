@@ -56,6 +56,7 @@ import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
+import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants } from './directory-grants.js';
@@ -335,15 +336,6 @@ export async function resolveLaunch(args: {
   // attribute a dead sign-in to the wrong account. It is deliberately not
   // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
   session.launchedAccountRoot = accountRoot;
-  // A launch that injects a key or credits bills per token, so the folder's
-  // subscription windows are not this session's usage (spec §6 U).
-  session.launchedPerToken =
-    Object.keys(claudeCredentialEnv).length > 0 || Object.keys(creditsEnv).length > 0;
-  // The session's shown account usage follows the account it now runs on: a
-  // new session's per-send hint is only known here (spec `claude-account-fleet`
-  // §6 U, "the first send re-stamps").
-  noteSessionAccountLaunched(sessionId, accountRoot, session.launchedPerToken);
-
   const sdkOptions: Options = {
     cwd: effectiveCwd,
     includePartialMessages: true,
@@ -429,6 +421,17 @@ export async function resolveLaunch(args: {
     }),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };
+
+  // Whether this launch bills per token, read off the FINAL environment the
+  // binary receives (a stored key, credits, or a key inherited from the server's
+  // own environment), so the folder's subscription windows are never shown as
+  // this session's usage when it pays per token (spec §6 U). The binary's own
+  // `apiKeySource` on session init overrides this guess.
+  session.launchedPerToken = envBillsPerToken(sdkOptions.env ?? {});
+  // The session's shown account usage follows the account it now runs on: a
+  // new session's per-send hint is only known here (spec `claude-account-fleet`
+  // §6 U, "the first send re-stamps").
+  noteSessionAccountLaunched(sessionId, accountRoot, session.launchedPerToken);
 
   // Set the session title on the first turn when the caller supplies one
   // (SDK 0.2.113 `title` option — skips auto-generation). Ignored on resume.

@@ -471,7 +471,12 @@ describe('account_usage matching and the Claude subscription bar', () => {
       status: {
         ...STATUS,
         accountUsage: usage('claude-code', 10),
-        usage: { kind: 'subscription', utilization: 0.1, costUsd: 0.3 },
+        usage: {
+          kind: 'subscription',
+          utilization: 0.1,
+          costUsd: 0.3,
+          detail: 'Using overage capacity',
+        },
       },
     });
     store.applySnapshot('key', {
@@ -489,6 +494,7 @@ describe('account_usage matching and the Claude subscription bar', () => {
       utilization: 0.7,
       windowLabel: '5-hour window',
       costUsd: 0.3,
+      detail: 'Using overage capacity',
     });
     expect(get('key')).toEqual({ kind: 'pay-as-you-go', costUsd: 2 });
   });

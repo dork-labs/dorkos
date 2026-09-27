@@ -92,8 +92,10 @@ export interface AgentSession {
    */
   launchedAccountRoot?: string;
   /**
-   * True when the last launch this process resolved billed per token: it
-   * injected a stored API key or DorkOS credits. Such a session's `usage` is
+   * True when the last launch this process resolved billed per token: its
+   * final environment carried an API key or gateway token (stored, credits, or
+   * inherited), or the binary's session-init `apiKeySource` said so, which
+   * overrides the environment's guess. Such a session's `usage` is
    * its own pay-as-you-go cost, never its folder's subscription windows (spec
    * `claude-account-fleet` §6 U). Undefined until the first launch here.
    */

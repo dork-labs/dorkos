@@ -89,6 +89,15 @@ describe('withAccountSubscription', () => {
     });
   });
 
+  it("keeps the session's detail line, so an overage note survives an account update", () => {
+    expect(
+      withAccountSubscription(
+        { kind: 'subscription', utilization: 0.2, detail: 'Using overage capacity' },
+        account([win('five_hour', 50)])
+      )
+    ).toMatchObject({ utilization: 0.5, detail: 'Using overage capacity' });
+  });
+
   it('leaves the held usage alone when the account has no plan window', () => {
     const held = { kind: 'pay-as-you-go' as const, costUsd: 1 };
     expect(withAccountSubscription(held, account([]))).toBe(held);
