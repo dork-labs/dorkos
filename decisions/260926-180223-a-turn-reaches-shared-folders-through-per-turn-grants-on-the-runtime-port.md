@@ -57,7 +57,10 @@ each backend was handed exactly each turn's set.
   sandboxed (Claude Code's Bash under `bypassPermissions`) can still write the room's shared git
   storage, as it can any folder; agents' own sessions keep a person's hooks on purpose
   (`SESSION_GIT_CONFIG`), so such a write can run in another agent's commit. That is the same
-  exposure as that shell writing anywhere else, and is stated, not solved, here.
+  exposure as that shell writing anywhere else, and is stated, not solved, here. Such a shell can
+  also write `repo/.git/config` (a plain `git config` in a copy lands there); the server audits that
+  config before every git command in the room and refuses (`ROOM_REPO_CONFIG_UNSAFE`) rather than
+  run any filter, driver, include, fsmonitor or credential helper it defines.
 - The `objects/` and `refs/heads/room/` grants are shared folders. An agent can overwrite a loose
   object (git does not re-hash on read, so `main`'s content can change without a commit) and can
   move or erase another agent's `room/<slug>` branch and reflog. No code runs; closing both needs a
