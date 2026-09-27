@@ -1,5 +1,5 @@
 import { DEFAULT_ACCOUNT_COLORS } from '@dorkos/shared/account-usage';
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -11,6 +11,7 @@ import {
   resolveActiveClaudeRoot,
   resolveClaudeRootSet,
 } from '../claude-config-dir.js';
+import { logger } from '../../../../lib/logger.js';
 
 /**
  * A config reader over one `runtimes.claudeCode` section, standing in for the
@@ -279,6 +280,27 @@ describe('describeClaudeCodeAccounts (the GET /api/config block)', () => {
       inherited: true,
       accounts: [],
     });
+  });
+
+  it('logs a minted id at debug level, since every un-migrated install has one', () => {
+    const debug = vi.spyOn(logger, 'debug').mockImplementation(() => {});
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      const rows = [
+        { path: path.join(tmp, 'minted-row'), label: null },
+        { id: 'Bad_Id', path: path.join(tmp, 'bad-row'), label: null },
+      ] as unknown as UserConfig['runtimes']['claudeCode']['accounts'];
+      describeClaudeCodeAccounts(fakeConfig({ accounts: rows }));
+      const codes = (spy: typeof debug) =>
+        spy.mock.calls
+          .filter(([message]) => String(message).startsWith('[claude-accounts]'))
+          .map(([, meta]) => (meta as { code: string }).code);
+      expect(codes(debug)).toEqual(['id-minted']);
+      expect(codes(warn)).toEqual(['id-invalid']);
+    } finally {
+      debug.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   it('reports a chosen account as not inherited', () => {

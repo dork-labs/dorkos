@@ -95,7 +95,12 @@ function warnOnce(warnings: readonly ClaudeAccountReadWarning[]): void {
   for (const warning of warnings) {
     if (loggedAccountWarnings.has(warning.message)) continue;
     loggedAccountWarnings.add(warning.message);
-    logger.warn(`[claude-accounts] ${warning.message}`, { code: warning.code });
+    // A minted id is expected on every install the '0.65.0' migration has not
+    // reached (a dev tree runs none), so it is not worth a warning each boot.
+    logger[warning.code === 'id-minted' ? 'debug' : 'warn'](
+      `[claude-accounts] ${warning.message}`,
+      { code: warning.code }
+    );
   }
 }
 

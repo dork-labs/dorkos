@@ -137,7 +137,6 @@ const RUNNERS: Record<string, (c: Case) => void> = {
   },
 
   'eligibility.cases.json': ({ name, input, expected }) => {
-    if (ELIGIBILITY_FLOW_ONLY.has(name)) return;
     const usage = toAccountUsage(
       (input.ledger as UsageLedger | null) ?? null,
       {
@@ -152,6 +151,10 @@ const RUNNERS: Record<string, (c: Case) => void> = {
     const room = usage.state === 'unknown' ? null : usage.state !== 'limited';
     expect(room).toBe(expected.room);
     if (expected.spendRoom === false) expect(usage.limit?.window).toBe('spend');
+    if (expected.spendRoom === true) {
+      expect(usage.spend).not.toBeNull();
+      expect(usage.limit?.window).not.toBe('spend');
+    }
     if (expected.spendRoom === null) expect(usage.spend).toBeNull();
   },
 };
@@ -194,7 +197,9 @@ describe('the flow fleet conformance fixture', () => {
     describe(file, () => {
       for (const c of load(file)) {
         // Purpose: one contract case; see the file's `about` for the rule.
-        it(c.name, () => runner(c));
+        // The eligibility cases that pin flow's routing only are reported skipped.
+        const skipped = file === 'eligibility.cases.json' && ELIGIBILITY_FLOW_ONLY.has(c.name);
+        (skipped ? it.skip : it)(c.name, () => runner(c));
       }
     });
   }

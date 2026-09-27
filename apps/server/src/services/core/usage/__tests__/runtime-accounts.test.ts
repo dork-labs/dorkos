@@ -101,6 +101,25 @@ describe('resolveRuntimeAccounts (contract §1.1a rev 6d)', () => {
   });
 });
 
+describe('registry warnings name the runtime', () => {
+  it("calls a Codex or OpenCode row by its own runtime's name, and a Claude Code row a Claude account", () => {
+    const rows = [{ id: 'Bad_Id', path: '/x' }];
+    const messages = (runtime: 'claude-code' | 'codex' | 'opencode', key: string) =>
+      resolveRuntimeAccounts(runtime, {
+        config: { runtimes: { [key]: { accounts: rows } } },
+        home: HOME,
+        realpath,
+      }).warnings.map((w) => w.message);
+    expect(messages('claude-code', 'claudeCode')).toEqual([
+      expect.stringMatching(/^Claude account "Bad_Id"/),
+    ]);
+    expect(messages('codex', 'codex')).toEqual([expect.stringMatching(/^Codex account "Bad_Id"/)]);
+    expect(messages('opencode', 'opencode')).toEqual([
+      expect.stringMatching(/^OpenCode account "Bad_Id"/),
+    ]);
+  });
+});
+
 describe('pruneTargets (prune.cases shapes, rev 6d)', () => {
   it('removes unregistered ids per runtime, in on-disk order', () => {
     expect(

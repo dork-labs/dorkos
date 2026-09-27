@@ -44,6 +44,13 @@ const RUNTIME_CONFIG_KEYS: Readonly<Record<LedgerRuntime, string>> = {
   opencode: 'opencode',
 };
 
+/** What a registry warning calls one row of each runtime. */
+const ACCOUNT_NOUNS: Readonly<Record<LedgerRuntime, string>> = {
+  'claude-code': 'Claude account',
+  codex: 'Codex account',
+  opencode: 'OpenCode account',
+};
+
 /** A warning the account rules raise, named as the contract's fixtures name them. */
 export interface AccountWarning {
   /** What happened, e.g. `id-invalid`, `id-reserved`, `default-account-invalid`. */
@@ -240,7 +247,7 @@ function readRegistered(
 ): { accounts: RuntimeAccount[]; warnings: AccountWarning[] } {
   const runtimes = isObject(config) ? config.runtimes : undefined;
   const section = isObject(runtimes) ? runtimes[RUNTIME_CONFIG_KEYS[runtime]] : undefined;
-  const read = readClaudeAccountSettings(section);
+  const read = readClaudeAccountSettings(section, ACCOUNT_NOUNS[runtime]);
   const accounts = read.accounts.map((row): RuntimeAccount => {
     const routable = row.id !== IMPLICIT_ACCOUNT_ID && ACCOUNT_ID_PATTERN.test(row.id);
     const expanded = expandAccountPath(row.path, home);
