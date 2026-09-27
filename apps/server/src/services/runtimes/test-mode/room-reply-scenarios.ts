@@ -32,6 +32,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import { getRoomService } from '../../rooms/index.js';
 import { roomsDomain } from '../../rooms/room-capabilities.js';
@@ -249,6 +250,21 @@ const STRIPED_PNG = Buffer.from(
 );
 
 /**
+ * The agent's copy of the room's files this turn was granted to write
+ * (`<rooms>/<room>/worktrees/<name>`), or `null` for a turn with none.
+ *
+ * @param opts - The turn's options, which carry its folder grants.
+ */
+function grantedRoomCopy(opts: MessageOpts | undefined): string | null {
+  const copy = opts?.additionalDirectories?.find(
+    (grant) =>
+      grant.access === 'write' &&
+      /[\\/]rooms[\\/][^\\/]+[\\/]worktrees[\\/][^\\/]+$/.test(grant.path)
+  );
+  return copy?.path ?? null;
+}
+
+/**
  * Write a file into this turn's working directory and post it to the room.
  *
  * The one scenario that attaches, and it calls the capability itself for the
@@ -342,18 +358,28 @@ export function roomReplyScenarios(finishRequested: FinishRequested): Record<str
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     },
     // Opens a REVIEW of one of the room's files, from inside the turn — so the
-    // document lands labelled with the tree that turn was standing in, which for
-    // a project room is the agent's own working copy. It is the only way a
-    // browser test can produce the one document a room's table treats as work
-    // waiting for a decision (spec `canvas-agent-seat` §8).
+    // document lands labelled as the agent's own copy of the room's files. It is
+    // the only way a browser test can produce the one document a room's table
+    // treats as work waiting for a decision (spec `canvas-agent-seat` §8).
+    //
+    // A room turn stands in the agent's HOME and reaches its copy by full path
+    // (spec `agent-home-desk` §5.6), exactly as `working-in-room-repos` teaches a
+    // real agent: a relative path would name a file in the agent's own project.
+    // So the scenario names the file inside the copy the turn was granted.
     'rooms-open-diff': async function* (_content, _ctx, opts) {
       yield {
         type: 'session_status',
         data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
       } as StreamEvent;
+      const copy = grantedRoomCopy(opts);
       yield {
         type: 'ui_command',
-        data: { command: { action: 'open_diff', sourcePath: ROOM_DIFF_PATH } },
+        data: {
+          command: {
+            action: 'open_diff',
+            sourcePath: copy ? path.join(copy, ROOM_DIFF_PATH) : ROOM_DIFF_PATH,
+          },
+        },
       } as StreamEvent;
       await sayInRoom(opts, 'Put the diff on the canvas.');
       yield { type: 'text_delta', data: { text: 'Put the diff on the canvas.' } } as StreamEvent;

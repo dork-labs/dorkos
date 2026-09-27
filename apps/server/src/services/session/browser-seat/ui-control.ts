@@ -630,9 +630,10 @@ function applyToTargetedRoom(input: {
       roomId,
       authorId,
       command,
-      // The turn's own directory, preferred over the session's, for the reason
-      // `applyToRoomCanvas` gives: in a project room they differ.
+      // The turn's own directory, preferred over the session's, and its copy of
+      // the room's files, for the reasons `applyToRoomCanvas` gives.
       ...(cwd !== undefined ? { cwd } : {}),
+      ...(roomTurn?.worktree !== undefined ? { worktree: roomTurn.worktree } : {}),
     });
     if (!applied.applied) {
       throw new CapabilityToolError({
@@ -718,9 +719,12 @@ function applyToRoomCanvas(
       authorId: roomTurn.authorId,
       turnId: roomTurn.turnId,
       command,
-      // The turn's own directory, preferred over the session's: in a project
-      // room they differ, and the marker's is the tree this TURN was placed in.
+      // The turn's own directory (the agent's home), preferred over the
+      // session's, and its copy of the room's files, so a document naming a file
+      // by an absolute path inside that copy is labelled as the copy (spec
+      // `agent-home-desk` §5.6).
       ...((roomTurn.cwd ?? sessionCwd) ? { cwd: roomTurn.cwd ?? sessionCwd } : {}),
+      ...(roomTurn.worktree !== undefined ? { worktree: roomTurn.worktree } : {}),
       ...(roomTurn.aheadOfMain !== undefined ? { aheadOfMain: roomTurn.aheadOfMain } : {}),
     });
   } catch (err) {

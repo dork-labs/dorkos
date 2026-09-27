@@ -15,6 +15,7 @@
  *
  * @module server/services/rooms/room-turn-port
  */
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
@@ -22,6 +23,7 @@ import type { InterruptReceipt } from '@dorkos/shared/types';
 import type { ProjectableAttachment } from './room-context.js';
 import type { RoomTurnUnanswered } from './notices/notice-log.js';
 import type { WaitingKind } from './notices/notice-copy.js';
+import type { DispatchMessageOpts } from '../session/index.js';
 
 /**
  * The runner's refusal when a room's session is bound to a runtime this server
@@ -74,28 +76,35 @@ export interface RoomTurnRequest {
   /** The agent author being triggered. */
   authorId: string;
   /**
-   * The agent's directory — its IDENTITY, and nothing about where files go.
+   * The agent's home — who the turn is for, and where it stands.
    *
-   * It selects the runtime, keys the claim map and both busy ceilings, and names
-   * the worktree the turn may run in. It stopped being the working directory in
-   * DOR-1597; {@link RoomTurnRequest.cwd} is that now, and the two are the same
-   * string for every room without files of its own.
+   * It selects the runtime, keys the claim map and both busy ceilings, names the
+   * agent's copy of the room's files, and is the turn's working directory
+   * (spec `agent-home-desk` §5.1, invariant I4).
    */
   agentPath: string;
   /**
-   * The directory this turn actually runs in (spec `project-rooms` §3.5).
-   *
-   * Resolved ONCE per turn, by the dispatcher, BEFORE the room context is built
-   * — because the context names attachment paths relative to it and the runner
-   * puts the files there, so a cwd decided later would describe files the model
-   * cannot open. The dispatcher's `resolveCwd`, feeding the session-cwd
-   * resolver's rung 2, is what decides it.
-   *
-   * For a room with no files of its own this is {@link RoomTurnRequest.agentPath}
-   * exactly. For a project room it is that agent's standing working copy of the
-   * room's repo. Nothing downstream may substitute one for the other.
+   * The directory this turn runs in: always {@link RoomTurnRequest.agentPath}
+   * for a room turn. Kept as its own field because it is where attachments are
+   * projected (§5.4) and what the projector is keyed with, and because the desk
+   * guard checks it before the runtime is called.
    */
   cwd: string;
+  /**
+   * The folders this turn may reach beyond its home, exactly as placement
+   * computed them: the agent's copy of the room's files, the room's shared tree
+   * read-only, and the parts of its git storage a commit writes. Empty for a room
+   * with no files.
+   */
+  additionalDirectories: readonly DirectoryGrant[];
+  /** The agent's copy of the room's files, or `null` when the room has none. */
+  worktree: string | null;
+  /**
+   * Work to do when the turn LAUNCHES rather than when it is placed — see
+   * `DispatchMessageOpts.prepareLaunch`. Supplied by the dispatcher, which holds
+   * the room's session bindings and its worktree manager.
+   */
+  prepareLaunch?: (sessionId: string) => Promise<Partial<Pick<DispatchMessageOpts, 'roomContext'>>>;
   /** The session bound to this `(room, agent)`, or `null` on its first answer. */
   sessionId: string | null;
   /** The entry that triggered this turn. */

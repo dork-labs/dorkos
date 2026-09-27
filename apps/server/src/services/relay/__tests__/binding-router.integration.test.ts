@@ -12,6 +12,10 @@
  * crashed turn surfacing as the error+done sequence at the platform.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { initBoundary } from '../../../lib/boundary.js';
 import { AgentManifestSchema } from '@dorkos/shared/mesh-schemas';
 import type { WorkspaceManager } from '@dorkos/shared/workspace';
@@ -140,6 +144,10 @@ beforeEach(async () => {
   PROJECT_PATH = path.join(agentRoot, 'proj', 'agent-a');
   WORKTREE_CWD = path.join(agentRoot, 'workspaces', 'dorkos', 'agent-a-checkout');
   await initBoundary(boundaryRoot);
+  // Whose folders these are, as the boot-wired registry says (the workspace
+  // store records the checkout's owner) — what the desk guard asks before a
+  // turn is dispatched (spec `agent-home-desk` §3.4).
+  registerTestHomes([PROJECT_PATH], { managed: { [WORKTREE_CWD]: PROJECT_PATH } });
 
   // A REAL manifest on disk, carrying a `managed` binding — the chain reads
   // this file, derives the workspace key from it, and asks the manager below.
@@ -206,6 +214,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearTestHomes();
   await router.shutdown();
   await bindingStore.shutdown();
   await relay.close();

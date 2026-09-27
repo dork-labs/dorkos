@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
-import type { ConnectorToolkit, ProviderConnectedAccount } from '@dorkos/shared/connector-provider';
+import type { ProviderConnectedAccount } from '@dorkos/shared/connector-provider';
 import { ConnectorRegistry } from '../registry.js';
 import { recommendConnector, type RelayAdapterCatalog } from '../routing.js';
 
@@ -20,8 +20,8 @@ class HungProvider extends FakeConnectorProvider {
     super({ type: 'hung' });
   }
 
-  override listToolkits(): Promise<ConnectorToolkit[]> {
-    return new Promise<ConnectorToolkit[]>(() => {});
+  override listToolkitPage(): ReturnType<FakeConnectorProvider['listToolkitPage']> {
+    return new Promise(() => {});
   }
   override listAccounts(): Promise<ProviderConnectedAccount[]> {
     return Promise.resolve([]);
@@ -119,8 +119,8 @@ describe('recommendConnector', () => {
   });
 
   it('degrades a hung provider to a warning instead of blocking (bounded by the registry timeout)', async () => {
-    // A short timeout keeps the test fast; the hung provider never resolves
-    // listToolkits, so without the timeout this call would hang forever.
+    // A short timeout keeps the test fast; the hung provider never answers a
+    // catalog page, so without the timeout this call would hang forever.
     const bounded = new ConnectorRegistry({ db, providerTimeoutMs: 50 });
     bounded.register(new FakeConnectorProvider({ type: 'composio', custody: 'managed' }));
     bounded.register(new HungProvider());

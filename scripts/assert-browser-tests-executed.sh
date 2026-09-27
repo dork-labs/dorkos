@@ -91,9 +91,9 @@
 # somebody adds a test, and a gate whose expectation is stale gets edited to
 # match reality rather than the other way round.
 #
-# SHARDING (DOR-1363). CI cuts the suite three ways with `playwright test
-# --shard=i/N`, so NO SINGLE RUN'S REPORT CONTAINS EVERY SPEC — assertion 2 read
-# against one shard would name two thirds of the suite as missing. The reports
+# SHARDING (DOR-1363). CI cuts the suite N ways (six since 2026-09-27) with
+# `playwright test --shard=i/N`, so NO SINGLE RUN'S REPORT CONTAINS EVERY SPEC —
+# assertion 2 read against one shard would name the rest of the suite as missing. The reports
 # are therefore unioned: this script takes one path per shard and treats their
 # combined contents as the run. Every assertion below is then exactly the
 # assertion it always was, over the whole suite.
@@ -340,8 +340,8 @@ same change."
     # contributed it: a shard that executed nothing while its siblings covered
     # the suite between them is caught today only by the accident of how
     # `--shard` happened to split the files. That is the one shape where the set
-    # of reports is complete, the total is healthy, and a third of the suite
-    # still never ran — so it is named here, per shard, rather than left to luck.
+    # of reports is complete, the total is healthy, and one shard's share of the
+    # suite still never ran — so it is named here, per shard, rather than left to luck.
     ran_here=$(jq -r '
       [ .suites[] | recurse(.suites[]?) | .specs[]? | .tests[]?
         | select(.status != "skipped") ] | length
@@ -379,8 +379,8 @@ shard uploaded its results.json."
   wanted=$(seq 1 "$declared_total" | tr '\n' ' ')
   if [ "$seen" != "$wanted" ]; then
     fail "the shard reports are not 1..$declared_total exactly: got [ $seen], wanted [ $wanted].
-A repeated shard would count one third of the suite twice and leave another
-third unchecked."
+A repeated shard would count one shard's share of the suite twice and leave
+another shard's share unchecked."
   fi
   # No test may run in two shards. The cut is made by a custom reporter
   # (apps/e2e/reporters/balanced-shard-reporter.ts) that every shard computes

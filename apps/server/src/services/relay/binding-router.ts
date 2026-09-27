@@ -52,7 +52,8 @@ import {
 } from './platform-identity.js';
 import type { UnclaimedChat, UnclaimedChatStore } from './unclaimed-chat-store.js';
 import type { ChatBridgeIngest } from './chat-bridge/index.js';
-import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
+import { resolveSessionCwd, type ResolvedCwd } from '../workspace/resolve-session-cwd.js';
+import { assertOwnDesk, deskBindingFor, DeskNotOwnError } from '../core/agent-identity/index.js';
 
 /**
  * Whether an inbound envelope's `content` is the empty string.
@@ -219,7 +220,9 @@ export interface BindingRouterDeps {
    * imported so the router stays unit-testable, and defaulted in the
    * constructor to the real resolver so the server wiring says nothing.
    */
-  resolveCwd?: (req: { agentPath: string }) => Promise<{ cwd: string }>;
+  resolveCwd?: (req: {
+    agentPath: string;
+  }) => Promise<Pick<ResolvedCwd, 'cwd' | 'rung' | 'degraded'>>;
 }
 
 /** One rate-limit window's worth of suppressed unclaimed-chat broadcasts. */
@@ -323,7 +326,9 @@ export class BindingRouter {
   private unclaimedBroadcastSummarySent = false;
 
   /** Where a turn for the bound agent runs — see {@link BindingRouterDeps.resolveCwd}. */
-  private readonly resolveCwd: (req: { agentPath: string }) => Promise<{ cwd: string }>;
+  private readonly resolveCwd: (req: {
+    agentPath: string;
+  }) => Promise<Pick<ResolvedCwd, 'cwd' | 'rung' | 'degraded'>>;
 
   constructor(private readonly deps: BindingRouterDeps) {
     this.sessionMapPath = pathJoin(deps.relayDir, 'sessions.json');
@@ -741,6 +746,28 @@ export class BindingRouter {
             return;
           }
 
+          // Where the turn runs, from the shared precedence chain rather than
+          // from `projectPath` directly. For the default `home` binding the two
+          // are the same path; for an agent that asked for a checkout of its
+          // own they are not, and this stamp is what the runtime obeys.
+          // `agentPath` above stays the agent's OWN directory — it answers "who
+          // is this", not "where does it work", and `@botusername` addressing
+          // keys on identity. Asked BEFORE the session is resolved, so a refused
+          // folder never gets a session created in it either.
+          const placement = await this.resolveCwd({ agentPath: projectPath });
+          const dispatchCwd = placement.cwd;
+          // **The desk guard** (spec `agent-home-desk` §3.4, DOR-2356): a turn
+          // dispatched as this binding's agent never stands in another agent's
+          // home, a copy of it, or a room's folder. A refusal is the person's
+          // one-line notice and the reason on the refusal line — nothing reaches
+          // an agent.
+          try {
+            assertOwnDesk(projectPath, dispatchCwd, deskBindingFor(placement));
+          } catch (err) {
+            if (!(err instanceof DeskNotOwnError)) throw err;
+            return this.refuse(envelope, binding, 'session_failed', `${err.code}: ${err.message}`);
+          }
+
           let sessionId: string;
           try {
             sessionId = await this.resolveSession(binding, chatId, envelope);
@@ -750,15 +777,6 @@ export class BindingRouter {
             // binding attached and no way for the person to know.
             return this.refuse(envelope, binding, 'session_failed', logError(err).error);
           }
-
-          // Where the turn runs, from the shared precedence chain rather than
-          // from `projectPath` directly. For the default `home` binding the two
-          // are the same path; for an agent that asked for a checkout of its
-          // own they are not, and this stamp is what the runtime obeys.
-          // `agentPath` above stays the agent's OWN directory — it answers "who
-          // is this", not "where does it work", and `@botusername` addressing
-          // keys on identity.
-          const { cwd: dispatchCwd } = await this.resolveCwd({ agentPath: projectPath });
 
           const enrichedPayload =
             envelope.payload && typeof envelope.payload === 'object'

@@ -52,10 +52,42 @@
  * - **`GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_SYSTEM=/dev/null`.** The
  *   room repo behaves the same on every machine, so a person's own global git
  *   config cannot change what DorkOS commits or how it reads a worktree.
+ * - **A command run in an agent's worktree is pinned to the room's own git
+ *   storage** (spec `agent-home-desk` §5.1, {@link worktreePin}). A worktree
+ *   finds its repository through its `.git` file and the admin folder's
+ *   `commondir`, and both are in folders its agent's turns may write. Left to
+ *   discovery, a rewritten pointer would hand the server's `git status` a config
+ *   the agent wrote — and a config can name programs git runs on a read (a
+ *   filter driver, say). So `GIT_DIR`, `GIT_COMMON_DIR` and `GIT_WORK_TREE` are
+ *   set from the room's layout, and the only config git reads is `repo/.git`'s.
+ * - **`repo/.git/config` is audited before every command that reads the room**
+ *   ({@link assertRoomRepoConfigSafe}). No agent is GRANTED it, but a shell that
+ *   is not sandboxed can write it — a plain `git config …` in an agent's copy
+ *   lands there — so any key that names a program (a filter, a diff or merge
+ *   driver, an include, an fsmonitor, a credential helper…) stops every server
+ *   git command in the room with `ROOM_REPO_CONFIG_UNSAFE` until a person
+ *   removes it. The server refuses to run anything that config defines.
+ * - **`-c diff.ignoreSubmodules=all` (with `status.submoduleSummary=false` and
+ *   `submodule.recurse=false`).** A submodule is a folder with its OWN git
+ *   config, and an agent can commit a gitlink into its copy beside a `sub/`
+ *   whose `.git/config` names a filter program; `git status` in the copy
+ *   recursed into it and ran that program as the server (measured, with or
+ *   without the pin above). Ignoring submodules stops the recursion; merges
+ *   refuse submodules anyway.
+ * - **Drivers named by committed `.gitattributes` run nothing.** An agent
+ *   writes `.gitattributes`, and a `filter`, `diff` or `merge` attribute names a
+ *   driver — but a driver is only a program when a config git reads defines it.
+ *   The configs the server's git reads are `repo/.git/config` (audited above)
+ *   and nothing else: global and system config are `/dev/null`, and a
+ *   copy's `config.worktree` is read only when `repo/.git/config` turns worktree
+ *   config on, which it never does. Pinned against real git in
+ *   `__tests__/room-turn-place.test.ts`, merge included.
  *
  * **What none of this claims:** a repo-local `.git/hooks/` directory that some
  * other program populated is neutralised by `core.hooksPath`, but nothing here
- * inspects a checkout for hostile content. What this module contributes to a
+ * inspects a checkout for hostile content. A shell that is not sandboxed can
+ * still write anywhere, `repo/.git/config` included; what it writes there is
+ * refused, never run. What this module contributes to a
  * SAFE merge is the four reads the policy is made of — {@link aheadBehind},
  * {@link listTree}, {@link readBlob} and {@link shortstat} — plus
  * {@link mergeNoFf}, which is the one command in the domain that can leave a
@@ -77,7 +109,9 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { promises as fsp } from 'node:fs';
 import { internalGitArgs } from '../../../lib/git-safety.js';
+import { RoomError } from '../room-errors.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -111,7 +145,22 @@ const LARGE_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
  * refuses a bare repository git merely finds. See the module doc for what
  * the hook and fsmonitor settings were measured to stop.
  */
-const SHARED_CONFIG_ARGS = internalGitArgs();
+const SHARED_CONFIG_ARGS = [
+  ...internalGitArgs(),
+  // **Never look inside a submodule.** An agent can commit a gitlink into its
+  // copy beside a `sub/` holding its own `.git/config` — a folder the agent
+  // wrote, whose filter, textconv or fsmonitor program a status read would run
+  // as the server when git recursed into it. `diff.ignoreSubmodules=all` is what
+  // stops that recursion for `status` and `diff` (measured: `submodule.recurse`
+  // alone does not). Submodules are refused at merge anyway
+  // (`SUBMODULE_NOT_ALLOWED`), so nothing a room keeps depends on them.
+  '-c',
+  'diff.ignoreSubmodules=all',
+  '-c',
+  'status.submoduleSummary=false',
+  '-c',
+  'submodule.recurse=false',
+];
 
 /**
  * Environment variables that point a git command at a DIFFERENT repository's
@@ -260,12 +309,15 @@ export function personGitEmail(authorId: string): string {
  * @param ceilingDir - The directory git's repository search may not climb past.
  * @returns The child environment.
  */
-function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
+function gitEnv(ceilingDir: string, cwd: string): NodeJS.ProcessEnv {
   // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME; this REMOVES the redirecting vars and adds the confinement, which is only expressible against the real environment.
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of REDIRECTING_GIT_VARS) delete env[name];
   return {
     ...env,
+    // Set from the room's layout — never read from a pointer the agent can
+    // write — when the command runs in one of the room's worktrees.
+    ...worktreePin(ceilingDir, cwd),
     // Absolute, and the room's own home: git stops the upward search here
     // rather than reaching whatever repository encloses the data directory.
     GIT_CEILING_DIRECTORIES: ceilingDir,
@@ -275,6 +327,150 @@ function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
     // Nothing here talks to a remote; a credential prompt would only hang.
     GIT_TERMINAL_PROMPT: '0',
   };
+}
+
+/**
+ * The git storage a command run in `<room home>/worktrees/<name>` (or below it)
+ * must use: `repo/.git` as the common directory, its `worktrees/<name>` admin
+ * folder as the git directory, and the worktree as the work tree. Empty for
+ * every other directory, which discovers its repository as before.
+ *
+ * Computed from the path alone. A worktree whose admin folder has another name
+ * (git suffixes one when the name is taken) fails as "not a git repository",
+ * which every caller reads as unreadable — work that is spared, never deleted.
+ *
+ * @param ceilingDir - The room's home directory.
+ * @param cwd - Where the command runs.
+ */
+function worktreePin(ceilingDir: string, cwd: string): Record<string, string> {
+  const rel = path.relative(path.resolve(ceilingDir), path.resolve(cwd));
+  const [top, name] = rel.split(path.sep);
+  if (top !== 'worktrees' || !name || name === '..' || path.isAbsolute(rel)) return {};
+  const commonDir = path.join(path.resolve(ceilingDir), 'repo', '.git');
+  return {
+    GIT_COMMON_DIR: commonDir,
+    GIT_DIR: path.join(commonDir, 'worktrees', name),
+    GIT_WORK_TREE: path.join(path.resolve(ceilingDir), 'worktrees', name),
+  };
+}
+
+/**
+ * Config keys that make git run a program, or send it somewhere else, when the
+ * server's own git reads the room's repository. Matched case-insensitively on
+ * the key as `git config --list` prints it.
+ *
+ * - `filter.*` — clean/smudge/process programs, run on status, add, checkout
+ *   and merge for any path a committed `.gitattributes` names;
+ * - `diff.external`, `diff.<x>.textconv|command`, `merge.<x>.driver` — the
+ *   same for diffs and merges;
+ * - `include.*`, `includeIf.*` — pull in a config file from anywhere;
+ * - `core.fsmonitor`, `core.hooksPath`, `core.sshCommand`, `core.askPass`,
+ *   `core.gitProxy`, `core.alternateRefsCommand`, `sequence.editor`,
+ *   `credential.*`, `gpg.*`, `commit.gpgSign`, `tag.gpgSign` — programs git
+ *   runs for a read, a commit, a merge or a credential (hooks and fsmonitor are
+ *   overridden on every call too; their presence here is still a tamper sign);
+ * - `core.worktree` — redirects where a command writes;
+ * - `extensions.worktreeConfig` — would make each copy's own, agent-writable
+ *   `config.worktree` part of what git reads;
+ * - `uploadpack.*`, `receivepack.*`, `protocol.*`, `url.*` — transport
+ *   behaviour a room never needs, refused rather than reasoned about.
+ */
+const UNSAFE_ROOM_CONFIG_KEY =
+  /^(?:filter\.|include\.|includeif\.|credential\.|gpg\.|uploadpack\.|receivepack\.|protocol\.|url\.|diff\.external$|diff\.[^.]+\.(?:textconv|command)$|merge\.[^.]+\.driver$|core\.(?:fsmonitor|hookspath|sshcommand|askpass|gitproxy|alternaterefscommand|worktree)$|sequence\.editor$|commit\.gpgsign$|tag\.gpgsign$|extensions\.worktreeconfig$)/i;
+
+/** The last config file a check passed, keyed by path, with the stat it passed at. */
+const safeConfigSeen = new Map<string, string>();
+
+/** Whether a command run in `cwd` reads the room's repository under `ceilingDir`. */
+function readsRoomRepo(ceilingDir: string, cwd: string): boolean {
+  const rel = path.relative(path.resolve(ceilingDir), path.resolve(cwd));
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  const top = rel.split(path.sep)[0];
+  return top === 'repo' || top === 'worktrees';
+}
+
+/** The unsafe key names one settings file declares, read without following includes. */
+async function unsafeKeysIn(file: string, ceilingDir: string): Promise<string[]> {
+  let listing: string;
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['config', '--file', file, '--no-includes', '--name-only', '--list'],
+      { cwd: path.dirname(file), timeout: GIT_TIMEOUT_MS, env: gitEnv(ceilingDir, ceilingDir) }
+    );
+    listing = stdout;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') throw new GitUnavailableError(err);
+    throw new RoomError(
+      'ROOM_REPO_CONFIG_UNSAFE',
+      `This room’s git settings (${file}) could not be read, so DorkOS will not work on its files ` +
+        `until they can be.`
+    );
+  }
+  return [
+    ...new Set(
+      listing
+        .split('\n')
+        .map((key) => key.trim())
+        .filter((key) => key !== '' && UNSAFE_ROOM_CONFIG_KEY.test(key))
+    ),
+  ];
+}
+
+/**
+ * Refuse to let the server's git touch a room whose shared config names a
+ * program (spec `agent-home-desk` §5.2, the T4 review).
+ *
+ * No agent is GRANTED `repo/.git/config`, but a shell that is not sandboxed
+ * can write it — a plain `git config …` run in an agent's copy lands there —
+ * and a `filter.x.smudge` defined in it runs as the server on the next merge,
+ * checkout or status for any path a member's `.gitattributes` names. `-c` can
+ * neutralise a key only when its name is known in advance, and a filter or
+ * driver name is the author's choice, so the config is audited instead: every
+ * key matching {@link UNSAFE_ROOM_CONFIG_KEY} stops every server git command in
+ * the room with `ROOM_REPO_CONFIG_UNSAFE`, naming the keys, until a person
+ * removes them.
+ *
+ * What git would READ is covered, not just the one file: an `include.path` or
+ * `includeIf.*.path` is refused outright rather than followed, so nothing an
+ * included file says is ever read; and `extensions.worktreeConfig` is refused,
+ * so no copy's `repo/.git/worktrees/<slug>/config.worktree` is read either. An
+ * agent is granted that folder and may write the file, but while the extension
+ * is off git never opens it — so an inert file is left alone rather than
+ * allowed to lock the room. Git's global and system settings are the
+ * operator's own.
+ *
+ * Cached by the config file's size and times, so a room whose config has not
+ * changed costs one `stat` per git command.
+ *
+ * Exported so a caller that is about to run a command which can execute
+ * drivers — a merge, a fast-forward — can ask first and fail before it starts.
+ *
+ * @param ceilingDir - The room's home directory (`<room>/repo/.git` is read).
+ * @throws {RoomError} `ROOM_REPO_CONFIG_UNSAFE` naming the offending keys.
+ */
+export async function assertRoomRepoConfigSafe(ceilingDir: string): Promise<void> {
+  const file = path.join(path.resolve(ceilingDir), 'repo', '.git', 'config');
+  let stamp: string;
+  try {
+    const stat = await fsp.stat(file);
+    stamp = `${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}:${stat.ino}`;
+  } catch {
+    return; // No repository yet (or none here): nothing configures anything.
+  }
+  if (safeConfigSeen.get(file) === stamp) return;
+  const unsafe = await unsafeKeysIn(file, ceilingDir);
+  if (unsafe.length > 0) {
+    safeConfigSeen.delete(file);
+    throw new RoomError(
+      'ROOM_REPO_CONFIG_UNSAFE',
+      `This room’s shared git settings (${file}) contain entries that can make git run programs: ` +
+        `${unsafe.join(', ')}. DorkOS will not merge, save or read this room’s files until they are ` +
+        `removed. Something outside DorkOS added them, most likely a command an agent ran. Remove ` +
+        `each one with \`git config --file "${file}" --unset-all <name>\`.`
+    );
+  }
+  safeConfigSeen.set(file, stamp);
 }
 
 /**
@@ -328,11 +524,14 @@ export async function runGitRaw(
   ceilingDir: string,
   options: RunGitOptions = {}
 ): Promise<Buffer> {
+  // Any command that reads the room's own repository reads its config, so none
+  // runs while that config names a program (see {@link assertRoomRepoConfigSafe}).
+  if (readsRoomRepo(ceilingDir, cwd)) await assertRoomRepoConfigSafe(ceilingDir);
   try {
     const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
       cwd,
       timeout: GIT_TIMEOUT_MS,
-      env: gitEnv(ceilingDir),
+      env: gitEnv(ceilingDir, cwd),
       maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
       // Bytes, not characters: this function's whole purpose is to answer what
       // git wrote rather than what a decoder made of it.
@@ -1331,7 +1530,7 @@ export async function mergeNoFf(
       ceilingDir
     );
   } catch (err) {
-    if (err instanceof GitUnavailableError) throw err;
+    if (err instanceof GitUnavailableError || err instanceof RoomError) throw err;
     try {
       await runGit(['merge', '--abort'], repoDir, ceilingDir);
     } catch {

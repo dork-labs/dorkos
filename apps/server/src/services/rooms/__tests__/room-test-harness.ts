@@ -94,16 +94,24 @@ export async function settleUntil(reached: () => boolean, described: string): Pr
 export interface RecordedTurn {
   roomId: string;
   authorId: string;
-  /** The agent's directory — its IDENTITY, whatever tree the turn runs in. */
+  /** The agent's home — its identity, and where the turn stands. */
   agentPath: string;
   /**
-   * The directory the turn actually runs in (spec `project-rooms` §3.5).
-   *
-   * Equal to {@link RecordedTurn.agentPath} for every room without files of its
-   * own, and recorded separately because the whole claim of the cwd rung is that
-   * the two can differ — a test that read one for the other could not see it.
+   * The directory the turn runs in: always {@link RecordedTurn.agentPath} for a
+   * room turn (spec `agent-home-desk` §5.1). Recorded separately so a test can
+   * pin that the two are one value.
    */
   cwd: string;
+  /**
+   * The folders the turn is granted, exactly as placement computed them.
+   * Optional only so a hand-written runner that records less still fits; both
+   * runners this module builds record it.
+   */
+  additionalDirectories?: RoomTurnRequest['additionalDirectories'];
+  /** The agent's copy of the room's files, or `null` for a room without files. */
+  worktree?: string | null;
+  /** The launch-time step the dispatcher runs, when the turn has a copy. */
+  prepareLaunch?: RoomTurnRequest['prepareLaunch'];
   sessionId: string | null;
   /**
    * The words the turn was asked with. Equal to the triggering entry's text for
@@ -285,6 +293,9 @@ export function outcomeRunner(
         authorId: request.authorId,
         agentPath: request.agentPath,
         cwd: request.cwd,
+        additionalDirectories: request.additionalDirectories,
+        worktree: request.worktree,
+        prepareLaunch: request.prepareLaunch,
         sessionId: request.sessionId,
         prompt: request.prompt,
         roomContext: request.roomContext,
@@ -455,6 +466,9 @@ export function gatedRunner({
         authorId: request.authorId,
         agentPath: request.agentPath,
         cwd: request.cwd,
+        additionalDirectories: request.additionalDirectories,
+        worktree: request.worktree,
+        prepareLaunch: request.prepareLaunch,
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,

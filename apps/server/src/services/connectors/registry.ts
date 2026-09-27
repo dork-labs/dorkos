@@ -25,6 +25,7 @@ import type {
 } from '@dorkos/shared/connector-provider';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
 import { connectorExecutionConfigDigest } from './execution/execution-config.js';
+import { ConnectorCatalogCache, type KeptCatalogRead } from './resources/catalog-cache.js';
 import {
   ConnectionStore,
   type ConnectorProviderDeploymentMode,
@@ -77,6 +78,8 @@ export interface ConnectorRegistryOpts {
     readonly ownerKind: 'user' | 'local_install';
     readonly ownerId: string;
   };
+  /** Each provider's kept app list. Default: kept in memory only. */
+  catalogCache?: ConnectorCatalogCache;
 }
 
 /**
@@ -111,6 +114,9 @@ export class ConnectorRegistry {
   private readonly _connections: ConnectionStore;
   private readonly _providers = new Map<string, ConnectorProvider>();
   private readonly _defaultInstanceByType = new Map<string, ConnectorProviderInstanceId>();
+  private readonly _catalog: ConnectorCatalogCache;
+  /** Setup fingerprint each live instance registered with; binds its kept app list. */
+  private readonly _configDigests = new Map<ConnectorProviderInstanceId, string>();
   private readonly _removalListeners = new Set<(instanceId: ConnectorProviderInstanceId) => void>();
 
   /**
@@ -120,6 +126,10 @@ export class ConnectorRegistry {
    */
   constructor(opts: ConnectorRegistryOpts) {
     this._providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+    this._catalog = opts.catalogCache ?? new ConnectorCatalogCache();
+    // The kept app list is dropped through the same notice as every other
+    // copy kept for a way, so there is one invalidation path.
+    this.onProviderInstanceRemoved((instanceId) => this._catalog.drop(instanceId));
     this._connections =
       opts.connectionStore ??
       new ConnectionStore({
@@ -168,28 +178,30 @@ export class ConnectorRegistry {
     executionConfigDigest?: string,
     mode: ConnectorProviderDeploymentMode = 'byo'
   ): void {
+    const digest =
+      executionConfigDigest ??
+      connectorExecutionConfigDigest({
+        source: 'direct-registration',
+        instanceId: provider.instanceId,
+        type: provider.type,
+        capabilities: provider.getCapabilities(),
+      });
     if (this._connections.health().status === 'ready') {
-      this._connections.registerProvider(
-        provider,
-        executionConfigDigest ??
-          connectorExecutionConfigDigest({
-            source: 'direct-registration',
-            instanceId: provider.instanceId,
-            type: provider.type,
-            capabilities: provider.getCapabilities(),
-          }),
-        mode
-      );
+      this._connections.registerProvider(provider, digest, mode);
     }
-    const replaced = this._providers.get(provider.instanceId);
+    // Registering over a live registration, even with the same object, is a
+    // setup change too: everything kept for the way is dropped.
+    const wasLive = this._providers.has(provider.instanceId);
     this._providers.set(provider.instanceId, provider);
+    this._configDigests.set(provider.instanceId, digest);
     this._defaultInstanceByType.set(provider.type, provider.instanceId);
-    if (replaced && replaced !== provider) this.notifyRemoved(provider.instanceId);
+    if (wasLive) this.notifyRemoved(provider.instanceId);
   }
 
   /**
-   * Be told whenever a configured instance is removed or replaced by a new
-   * object, so anything kept for it (such as an app's action list) is dropped.
+   * Be told whenever a configured instance is removed or registered again
+   * over a live registration, so anything kept for it (its app list, an app's
+   * action list) is dropped.
    *
    * @param listener - Called with the instance id after it leaves the registry.
    * @returns A function that stops the notifications.
@@ -233,6 +245,10 @@ export class ConnectorRegistry {
     const provider = this._providers.get(instanceId);
     if (!provider) return;
     this._providers.delete(instanceId);
+    // Every key change, setup change and removal passes through here, so the
+    // kept app list goes with the registration it was listed under.
+    this._configDigests.delete(instanceId);
+    this.notifyRemoved(instanceId);
     if (this._defaultInstanceByType.get(provider.type) === instanceId) {
       const fallback = [...this._providers.values()]
         .filter((candidate) => candidate.type === provider.type)
@@ -243,7 +259,6 @@ export class ConnectorRegistry {
     if (this._connections.health().status === 'ready') {
       this._connections.unregisterProvider(instanceId);
     }
-    this.notifyRemoved(instanceId);
   }
 
   /**
@@ -402,6 +417,22 @@ export class ConnectorRegistry {
   }
 
   /**
+   * One registered provider's whole app list, read through its kept copy when
+   * its service type keeps one (see `resources/catalog-cache.ts`).
+   *
+   * @param provider - A provider this registry currently holds.
+   * @param signal - The reader's deadline; it stops this read waiting, never the shared listing.
+   * @throws When the provider is no longer registered, or it has no kept list and listing fails.
+   */
+  readCatalog(provider: ConnectorProvider, signal: AbortSignal): Promise<KeptCatalogRead> {
+    const digest = this._configDigests.get(provider.instanceId);
+    if (digest === undefined || this._providers.get(provider.instanceId) !== provider) {
+      return Promise.reject(new Error(`${provider.type} is no longer set up.`));
+    }
+    return this._catalog.read(provider, digest, signal);
+  }
+
+  /**
    * Aggregate connectable toolkits across every registered provider in parallel
    * with the same per-provider degradation, deduped by slug (first provider to
    * offer a service wins the row) so the discovery picker shows each service
@@ -416,9 +447,9 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Find every registered provider that lists `toolkitSlug`, with the same
-   * per-provider timeout + degradation as the aggregation paths: a provider
-   * that throws or hangs on `listToolkits` becomes a `warnings[]` entry rather
+   * Find every registered provider whose kept app list includes `toolkitSlug`,
+   * with the same per-provider timeout + degradation as the aggregation paths:
+   * a provider that throws or hangs listing its apps becomes a `warnings[]` entry rather
    * than blocking the caller. Used by the provider-neutral recommendation
    * capability so discovery degrades on a slow provider instead of hanging.
    *
@@ -431,7 +462,14 @@ export class ConnectorRegistry {
     const providers = this.listProviders();
     const settled = await Promise.allSettled(
       providers.map((provider) =>
-        withTimeout(provider.listToolkits(), this._providerTimeoutMs, provider.type)
+        withTimeout(
+          // The kept app list, so a recommendation never re-lists a whole catalog.
+          this.readCatalog(provider, new AbortController().signal).then((read) =>
+            read.status === 'ok' ? read.toolkits : Promise.reject(new Error(read.reason))
+          ),
+          this._providerTimeoutMs,
+          provider.type
+        )
       )
     );
 

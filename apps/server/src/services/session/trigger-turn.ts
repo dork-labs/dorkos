@@ -483,6 +483,18 @@ export interface TriggerTurnOpts {
    */
   additionalDirectories?: MessageOpts['additionalDirectories'];
   /**
+   * Work that must happen at the moment this turn LAUNCHES — after its write
+   * lock is held and any turn still open on the session has settled, before
+   * the room context is rendered and the runtime is called (spec
+   * `agent-home-desk` §5.9, §6.1). What it returns is merged into the turn.
+   *
+   * Launch, not acceptance: a turn can wait in the queue behind another turn
+   * on the same session, and work done while it waited would happen under that
+   * running turn. A rejection is logged and the turn runs as it was accepted —
+   * nothing here may cost a person their answer.
+   */
+  prepareLaunch?: () => Promise<Partial<Pick<TriggerTurnOpts, 'roomContext'>>>;
+  /**
    * Which billing account this LAUNCH should run on, as a Claude account
    * registry id. Set only by the route that accepted a person's pre-launch
    * choice on the send that creates a claude-code session; passed straight
@@ -600,6 +612,28 @@ export interface TriggerTurnResult {
 }
 
 /**
+ * Run a turn's {@link TriggerTurnOpts.prepareLaunch}, never letting it fail the
+ * turn: a rejection is logged and the turn launches as it was accepted.
+ *
+ * @param prepare - The caller's launch-time step.
+ * @param sessionId - For the log line.
+ */
+async function runPrepareLaunch(
+  prepare: NonNullable<TriggerTurnOpts['prepareLaunch']>,
+  sessionId: string
+): Promise<Partial<Pick<TriggerTurnOpts, 'roomContext'>>> {
+  try {
+    return await prepare();
+  } catch (err) {
+    logger.warn('[turn] launch preparation failed; starting the turn as it was accepted', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return {};
+  }
+}
+
+/**
  * Acquire the lock, start a detached turn feeding the projector, and resolve the
  * canonical session id for the 202 response. The returned promise settles as
  * soon as the lock is taken and the canonical id is known (or the timeout
@@ -631,7 +665,6 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     content,
     cwd,
     context,
-    roomContext,
     roomTurn,
     seedContext,
     approvalVerdict,
@@ -737,6 +770,14 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   // unguarded, one throwing context assembly would hold the lock to its TTL and
   // wedge every later turn this client sends to this session (DOR-1088).
   try {
+    // Launch-time preparation, under this turn's write lock — so no other turn
+    // on this session is running — see `prepareLaunch`. Its result replaces the
+    // accepted room context BEFORE the bag below renders it, so what the model
+    // is told matches what is on disk as it starts.
+    const prepared = opts.prepareLaunch
+      ? await runPrepareLaunch(opts.prepareLaunch, sessionId)
+      : {};
+    const roomContext = prepared.roomContext ?? opts.roomContext;
     // Assemble the neutral context bag once, server-side: git_status is derived
     // here (identical for every runtime), client signals are normalized, and any
     // kind the runtime injects natively is omitted. `content` is passed through

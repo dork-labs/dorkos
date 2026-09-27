@@ -68,7 +68,7 @@ import sessionCanvasRouter from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
-import type { RoomSessionPlacePort } from '../services/workspace/room-session-cwd.js';
+import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
 import {
   dispatchSessionMessage,
   isSessionLaunchRefusal,
@@ -1054,7 +1054,11 @@ router.post('/:id/messages', async (req, res) => {
     roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
   });
   if (isSessionLaunchRefusal(result)) {
-    return sendError(res, 400, result.message, result.refused);
+    // A request naming something that does not exist is the caller's mistake;
+    // a turn refused for WHERE it would stand is a conflict with the session.
+    const status =
+      result.refused === 'ROOM_SESSION_MOVED' || result.refused === 'DESK_NOT_OWN' ? 409 : 400;
+    return sendError(res, status, result.message, result.refused);
   }
 
   res.status(202).json({

@@ -199,9 +199,7 @@ describe('ConnectionAccessCard — every agent (DOR-2420)', () => {
 
     const every = await screen.findByRole('radio', { name: /Every agent/ });
     expect(every).toBeDisabled();
-    expect(
-      screen.getByText(/Not available yet for apps connected through your DorkOS account/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Not available for this app right now/)).toBeInTheDocument();
     await user.click(every);
     expect(screen.getByRole('radio', { name: 'Only agents I pick' })).toBeChecked();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();

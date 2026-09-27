@@ -35,6 +35,7 @@
  * @module server/services/rooms/room-turn-runner
  */
 import { randomUUID } from 'node:crypto';
+import path from 'node:path';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Room } from '@dorkos/shared/room-schemas';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
@@ -51,6 +52,8 @@ import { ulid } from 'ulidx';
 import type { UiCommand } from '@dorkos/shared/schemas';
 import { getRoomAttachmentStore, getRoomService, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { assertOwnDesk } from '../core/agent-identity/index.js';
+import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
 // import there would load the dispatcher to raise a refusal it hands back to it.
@@ -167,12 +170,11 @@ export interface RoomTurnRunnerOptions {
  * question that threw, is worth a line.
  *
  * @param opts.runtime - The runtime about to take the turn.
- * @param opts.cwd - **Where the turn will actually RUN**, which since DOR-1597
- *   is not the agent's identity path: a turn in a room with files stands in that
- *   agent's worktree. It has to be the run cwd, because that is what the two
- *   runtimes that can be given these tools key their MCP configuration on —
- *   asking about the identity path would answer for a session nobody
- *   configured. The runtime anchors it back to its agent itself (DOR-2091).
+ * @param opts.cwd - **Where the turn will actually RUN** — the agent's home for
+ *   every room turn (spec `agent-home-desk` §5.1). It is the run cwd that is
+ *   asked about, because that is what the two runtimes that can be given these
+ *   tools key their MCP configuration on. The runtime resolves it to its agent
+ *   itself (DOR-2091).
  * @param opts.sessionId - The session the turn will run on.
  * @param opts.agentPath - The agent the turn is FOR, which the runtime checks
  *   the directory's owner against exactly as its turn will (DOR-2091).
@@ -424,7 +426,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
   };
   return {
     async run(request: RoomTurnRequest): Promise<RoomTurnResult> {
-      const sessionId = request.sessionId ?? randomUUID();
+      // The session this (room, agent) is bound to — unless it cannot be carried
+      // to the agent's home (below), in which case this turn starts a fresh one.
+      let boundSessionId = request.sessionId;
+      let sessionId = boundSessionId ?? randomUUID();
       // **This turn is the room asking again, so no older Stop is aimed at it**
       // (DOR-1424). A stop that never found a turn is remembered until one shows
       // up; the one it was meant for is the turn that was already running when
@@ -449,13 +454,38 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // refuses to re-bind). The manifest governs the NEXT session now, exactly
       // as it does for the cockpit, the relay and every scheduled run.
       //
-      // `request.sessionId`, not the minted `sessionId` above: an id this line
+      // `boundSessionId`, not the minted `sessionId` above: an id this line
       // just invented has nothing to consult, and asking about it would spend a
       // read to be told so.
-      const runtimeType = await resolveTurnRuntimeType({
-        sessionId: request.sessionId,
+      let runtimeType = await resolveTurnRuntimeType({
+        sessionId: boundSessionId,
         agentPath: request.agentPath,
       });
+      // **An OpenCode session that stood in the room's copy cannot move home**
+      // (spec `agent-home-desk` §8.1, measured): every session-scoped call routes
+      // by the directory the session was created in, and it cannot be changed.
+      // Room turns before this spec stood in the agent's copy of the room's
+      // files, so such a session's next turn starts a fresh one at home; the
+      // room's own log carries the conversation, and the old session stays in
+      // the agent's list.
+      if (
+        boundSessionId !== null &&
+        runtimeType === 'opencode' &&
+        runtimeRegistry.has(runtimeType) &&
+        (await sessionStandsInRoomCopy(runtimeRegistry.get(runtimeType), boundSessionId, request))
+      ) {
+        logger.info('[rooms] starting a fresh session at the agent’s home for this room', {
+          roomId: request.room.id,
+          previousSessionId: boundSessionId,
+        });
+        boundSessionId = null;
+        sessionId = randomUUID();
+        stopsWaitingForATurn.delete(sessionId);
+        runtimeType = await resolveTurnRuntimeType({
+          sessionId: null,
+          agentPath: request.agentPath,
+        });
+      }
       // Resolve the runtime WITHOUT writing anything. `persistSessionRuntime`
       // used to run here, before the turn was known to have started, so a
       // runtime that reliably throws left one orphan `session_metadata` row (and
@@ -483,16 +513,22 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // {@link RoomTurnRuntimeGoneError}, it reaches the dispatcher carrying the
       // runtime, which is the fact the room's line is written out of.
       //
-      // `request.sessionId`, which is what the binding was read off. It is
+      // `boundSessionId`, which is what the binding was read off. It is
       // non-null whenever this branch is reachable — an unbound session resolves
       // through the agent's manifest, and `resolveAgentRuntimeType` never
       // returns a type the registry does not have — so the null carries through
       // to the message rather than being papered over with the id this call
       // just invented, which nothing is bound to.
       if (!runtimeRegistry.has(runtimeType)) {
-        throw new RoomTurnRuntimeGoneError(runtimeType, request.sessionId);
+        throw new RoomTurnRuntimeGoneError(runtimeType, boundSessionId);
       }
       const runtime = runtimeRegistry.get(runtimeType);
+      // **The desk guard** (spec `agent-home-desk` §3.4, invariant I3, DOR-2356).
+      // A room turn stands in its agent's home and nowhere else — never a room's
+      // folder, never another agent's home or a copy of it. Asked before anything
+      // is registered or written, so a refusal is a turn that never started, which
+      // is exactly what a throw out of `run` must mean.
+      assertOwnDesk(request.agentPath, request.cwd, 'home');
       // **This turn is committed to that runtime as of this line, so the stop
       // path is told so as of this line** (DOR-1721). Everything below runs on
       // this instance; nothing re-derives it, and from here until the turn can
@@ -516,27 +552,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // {@link warnIfTurnCannotPost} for why the honest answer to a wiring gap
       // is a log line rather than a second delivery.
       //
-      // **`request.cwd` for where, `request.agentPath` for whom** (DOR-1597,
-      // DOR-2091). Since the cwd rung split identity from where a turn stands, a
-      // turn in a room with files runs in that agent's WORKTREE, and both
-      // runtimes that can be given the room tools key their MCP configuration on
-      // the directory the session actually launches in — so that is the `cwd`
-      // asked about. Asking about the identity path instead would answer for a
-      // session nobody configured.
-      //
-      // **Who the worktree belongs to is no longer a gap.** It used to be: the
-      // injection gate was an exact `meshCore.getByPath(cwd)`, a worktree hosts
-      // no agent, and so every agent taking a turn in a room with files got no
-      // identity token and — for codex and opencode — no `dorkos` server. For
-      // claude-code the tools still LOOKED available and refused every call as
-      // `UNIDENTIFIED_CALLER`, which is how two agents went silent in one room on
-      // 2026-09-16. Every runtime now resolves identity through
-      // `resolveAgentHome` (`core/agent-identity/agent-home.ts`): a
-      // worktree anchors to the agent the worktree manager handed it to — a
-      // record, never a prefix or a name match — and when this turn names its
-      // agent, as it does below and on `roomTurn`, anything else is refused
-      // rather than reading as the operator. This line warns only when that
-      // wiring genuinely fails.
+      // **`request.cwd` for where, `request.agentPath` for whom** (DOR-2091). For
+      // a room turn the two are the same folder — the agent's home — and every
+      // runtime resolves identity through `resolveAgentHome`
+      // (`core/agent-identity/agent-home.ts`) against the agent this turn names.
+      // This line warns only when that wiring genuinely fails.
       await warnIfTurnCannotPost({
         runtime,
         cwd: request.cwd,
@@ -653,27 +673,13 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // for forty-one minutes on 2026-07-31 there was not a single row anywhere
       // to say whether it had run, failed, or never started (DOR-784).
       // **The turn's own directory, handed over where the projector asks for
-      // it** (DOR-1597). The second argument IS cwd — `request.agentPath` used
-      // to be passed here and then overwritten a line later, which was both a
-      // lie about what the argument means and a redundant write.
+      // it** — the agent's home (spec `agent-home-desk` §5.1).
       //
-      // `agentPath` and `cwd` are two values now: the first is identity, and
-      // selects the runtime and keys the claim map; the second is where the turn
-      // stands, and in a project room it is that agent's working copy of the
-      // room's repo, resolved once by the dispatcher before the context that
-      // names attachment paths relative to it was built (`resolve-session-cwd.ts`
-      // rung 2, spec §3.5). For every room without files of its own they are the
-      // same string.
-      //
-      // **Where this meets ROOM.md delivery (DOR-1593), and why nothing is owed
-      // to it here.** The room's conventions block is read off the room repo's
-      // MAIN checkout and rides `roomContext` like every other framing — it is a
-      // fact about the ROOM, identical for every member, so it is deliberately
-      // NOT read out of the tree this turn happens to stand in. A worktree may
-      // be days behind main, or hold an agent's own edit to `ROOM.md`, and
-      // neither may change what the room's conventions ARE. So the cwd rung
-      // moves the turn and leaves that block exactly where it was:
-      // cwd-independent, resolved upstream, never re-read from `request.cwd`.
+      // **Where this meets ROOM.md delivery (DOR-1593).** The room's conventions
+      // block is read off the room repo's MAIN checkout and rides `roomContext`
+      // like every other framing — a fact about the ROOM, identical for every
+      // member, never read out of the agent's copy, which may be days behind main
+      // or hold the agent's own edit to `ROOM.md`.
       const projector = getOrCreateProjector(sessionId, request.cwd, {
         persist: persistenceModeFor(runtime.getCapabilities()),
       });
@@ -704,10 +710,8 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       await projectRoomAttachments({
         store: getRoomAttachmentStore,
         roomId: request.room.id,
-        // The turn's own directory, not the agent's home. In a project room
-        // those differ, and a file projected under the wrong one is a file the
-        // model is told about by a relative path that does not resolve — which
-        // is the exact invariant this projection exists to hold.
+        // The turn's own directory — the agent's home — which is what the
+        // context's attachment paths are relative to.
         cwd: request.cwd,
         attachments: request.attachmentProjection,
       });
@@ -776,6 +780,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // records where its path was resolved — and every later read of it is
         // judged against that directory rather than against nothing.
         cwd: request.cwd,
+        // The agent's copy of the room's files, so a document naming a file by
+        // an absolute path inside it is labelled as the copy (§5.6).
+        worktree: request.worktree,
         // And how far that copy is ahead of the room's `main`, as the dispatcher
         // measured it for this turn. `null` is "not measured".
         aheadOfMain: request.roomContext.files?.ahead ?? null,
@@ -879,6 +886,17 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // The agent this turn is dispatched AS, in the runtime-neutral field
         // every named-agent dispatch uses (spec `agent-home-desk` §4.1).
         forAgent: request.agentPath,
+        // Exactly the folders placement granted THIS turn (invariant I5): the
+        // agent's copy of the room's files and the room's shared tree. Absent
+        // for a room without files, which grants nothing.
+        ...(request.additionalDirectories.length > 0
+          ? { additionalDirectories: request.additionalDirectories }
+          : {}),
+        // Run at LAUNCH — immediately, or when a turn queued behind this
+        // session's running one is released — never at placement (§5.9, §6.1).
+        ...(request.prepareLaunch !== undefined
+          ? { prepareLaunch: () => request.prepareLaunch!(sessionId) }
+          : {}),
         roomContext,
         // Routing metadata, never prompt context: the room, the acting member and
         // this turn's id, so a `control_ui` the turn takes lands on the ROOM's
@@ -889,6 +907,10 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
           authorId: request.authorId,
           turnId: canvasTurnId,
           cwd: request.cwd,
+          // The agent's copy of the room's files, so a canvas document naming a
+          // file by an absolute path inside it is labelled as this agent's copy
+          // (spec `agent-home-desk` §5.6).
+          ...(request.worktree !== null ? { worktree: request.worktree } : {}),
           // Who this turn is FOR. The runtime resolves the turn's identity
           // against it, so a turn can act as this agent and no other, wherever
           // it stands (DOR-2091).
@@ -1152,6 +1174,7 @@ function applyRoomCanvasCommand(
     authorId: string;
     turnId: string;
     cwd?: string;
+    worktree?: string | null;
     aheadOfMain?: number | null;
   },
   command: UiCommand
@@ -1163,6 +1186,7 @@ function applyRoomCanvasCommand(
       turnId: bounds.turnId,
       command,
       ...(bounds.cwd !== undefined ? { cwd: bounds.cwd } : {}),
+      ...(bounds.worktree ? { worktree: bounds.worktree } : {}),
       // **Carried, like the directory beside it.** The claude-code handler has
       // always passed this; the tap did not, so every document a CODEX,
       // OpenCode or scripted turn put on a room's table recorded "not measured"
@@ -1370,6 +1394,8 @@ function collectReply(
      * read this" — which is exactly the rule inverted.
      */
     cwd: string;
+    /** The agent's copy of the room's files, or `null` for a room without files. */
+    worktree: string | null;
     /**
      * Commits this agent's working copy has that the room's `main` does not, as
      * the dispatcher measured them for this turn — the label half of §8, taken

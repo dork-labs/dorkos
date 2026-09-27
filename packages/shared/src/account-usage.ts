@@ -619,8 +619,13 @@ const WINDOW_LABELS: Record<string, string> = {
   overage: 'Extra usage',
 };
 
-/** The display label for a window key; an unknown key labels itself. */
-function windowLabel(key: string): string {
+/**
+ * The display label for a window key, such as `Weekly` for `seven_day`; an
+ * unknown key labels itself.
+ *
+ * @param key - The ledger window key.
+ */
+export function windowLabel(key: string): string {
   if (key.startsWith('model:')) return `Weekly ${key.slice('model:'.length)}`;
   return WINDOW_LABELS[key] ?? key;
 }

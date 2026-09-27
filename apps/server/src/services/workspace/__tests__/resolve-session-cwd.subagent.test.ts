@@ -48,27 +48,24 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  * - the task scheduler — a cron tick starting a scheduled run;
  * - the relay binding router — an inbound chat message opening or feeding a
  *   session;
- * - the room trigger dispatcher — a message in a room starting an agent's turn.
+ * - the relay adapter factory — the desk guard the claude-code adapter asks
+ *   when a relay message arrives, before its turn starts, reads the agent's
+ *   desk from the same chain the router stamps it from (spec `agent-home-desk`
+ *   §3.4). It runs once per delivery, never inside a running turn.
  *
  * Adding a file here is a deliberate act. Adding one that runs INSIDE a turn —
  * a tool handler, a runtime adapter, a transcript reader — breaks the invariant
  * this suite exists for, and this list is where that argument has to be made.
  *
- * **The room dispatcher is the fourth, added for DOR-1597, and the argument is
- * this.** A room turn BEGINS there: `runOneInDispatch` is the moment a room
- * message becomes an agent's turn, and nothing is running yet. It resolves the
- * directory once, before `buildRoomContext` — which has to be before, because
- * the context names attachment paths anchored on that directory and the runner
- * then puts the files there (DOR-1266), so a cwd decided later would describe
- * files the model cannot open. It is the DISPATCHER rather than
- * `room-turn-runner.ts` for the same reason: by the time the runner has the
- * request, the context describing it has already been built.
+ * The room dispatcher was a fourth from DOR-1597 until spec `agent-home-desk`
+ * moved room turns home: a room turn always stands in its agent's home
+ * (`services/rooms/repo/room-turn-place.ts`), so it no longer asks the chain.
  */
 const ALLOWED = new Set([
   'services/session/launch/launch-session.ts',
   'services/tasks/task-scheduler-service.ts',
   'services/relay/binding-router.ts',
-  'services/rooms/room-trigger.ts',
+  'services/relay/adapter-factory.ts',
 ]);
 
 /** Every `.ts` file under `apps/server/src`, relative to it, tests excluded. */
@@ -90,14 +87,14 @@ async function sourceFiles(dir: string): Promise<string[]> {
  * Every specifier that reaches the chain, and therefore every one this guard
  * has to watch.
  *
- * `room-session-cwd.js` is the second because it CALLS the resolver: it fills in
+ * `room-session-place.js` is the second because it CALLS the resolver: it fills in
  * the room a bare session id is bound to and hands the request straight on
  * (DOR-1624). Watching only the resolver's own specifier would have made it a
  * laundering path — anything inside a turn could reach the chain through it and
  * read as an allowed importer, because the one allowed importer of the resolver
  * would be the wrapper itself.
  */
-const RESOLVER_SPECIFIERS = ['resolve-session-cwd.js', 'room-session-cwd.js'];
+const RESOLVER_SPECIFIERS = ['resolve-session-cwd.js', 'room-session-place.js'];
 
 /**
  * The two modules that ARE the chain, and may of course name themselves.
@@ -111,7 +108,7 @@ const RESOLVER_SPECIFIERS = ['resolve-session-cwd.js', 'room-session-cwd.js'];
  */
 const CHAIN_ITSELF = new Set([
   'services/workspace/resolve-session-cwd.ts',
-  'services/workspace/room-session-cwd.ts',
+  'services/workspace/room-session-place.ts',
 ]);
 
 /**
@@ -120,7 +117,7 @@ const CHAIN_ITSELF = new Set([
  * A `import type { … }` line is erased at build and cannot call anything, so it
  * is not a call site and this guard is about call sites. It is what lets the
  * rooms domain declare that it implements the port
- * (`services/rooms/repo/room-worktree-cwd.ts`) without that reading as a second place
+ * (`services/rooms/repo/room-turn-place.ts`) without that reading as a second place
  * a turn's directory gets decided. The inline `{ type X }` form is deliberately
  * NOT stripped: it sits on a line that also imports values, and the conservative
  * answer there is to fail loudly and make the argument here.

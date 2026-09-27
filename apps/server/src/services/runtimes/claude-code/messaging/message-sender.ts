@@ -126,6 +126,9 @@ export async function* executeSdkQuery(
   // detector (DOR-1087) — the suppression window is scoped to the turn the
   // operator actually interrupted.
   session.interruptRequestedAt = undefined;
+  // A usage limit is reported once per turn (spec claude-account-fleet D4).
+  session.limitReportedThisTurn = false;
+  session.rejectedLimitThisTurn = undefined;
 
   // The ONE cwd resolution for this turn, handed to both the boundary gate and
   // the launch below. Resolved twice by two routes, the gate would answer about

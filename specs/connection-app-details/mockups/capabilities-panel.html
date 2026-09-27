@@ -1,0 +1,76 @@
+<style>
+  .tile{width:32px;height:32px;border-radius:8px;background:#fff;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-weight:700;color:#c5221f;flex-shrink:0}
+  .row{display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid #e5e5e5;border-radius:8px;background:var(--bg,#fff)}
+  .muted{color:#777;font-size:12px}
+  .panel{border:1px solid #e5e5e5;border-radius:10px;padding:14px;font-size:13px;line-height:1.45}
+  .panel h4{margin:12px 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#666}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;background:#f1f1f1;font-size:12px;margin:2px 2px 0 0}
+  .chip.w{background:#fff4e5}
+  .seg{display:flex;border:1px solid #ddd;border-radius:8px;overflow:hidden;margin:6px 0}
+  .seg div{flex:1;text-align:center;padding:5px;font-size:12px}
+  .seg .on{background:#222;color:#fff}
+  .lock{color:#999}
+  .link{color:#2563eb;font-size:12px}
+  .act{display:flex;justify-content:space-between;border-bottom:1px solid #f0f0f0;padding:4px 0;font-size:12px}
+</style>
+
+<h2>Where should "what it can do" live?</h2>
+<p class="subtitle">Gmail shown. Same idea for every app. Pick the side-panel style you like best.</p>
+
+<div class="section">
+  <div class="label">Everywhere (same in all options)</div>
+  <div class="split">
+    <div>
+      <div class="muted" style="margin-bottom:4px">1 · The list row: one plain line</div>
+      <div class="row"><div class="tile">M</div><div><b>Gmail</b><div class="muted">Read, search and send email.</div></div></div>
+    </div>
+    <div>
+      <div class="muted" style="margin-bottom:4px">2 · The chat card: just what this agent needs</div>
+      <div class="row"><div class="tile">M</div><div><b>Let Scout use Gmail?</b><div class="muted">To do this it needs to <b>send email</b>.</div></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="label">3 · The side panel: pick one</div>
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="panel">
+      <b>Gmail</b>
+      <h4>Who can use it</h4>
+      <div class="seg"><div>Read</div><div class="on">Read &amp; write</div></div>
+      <h4>With “Read &amp; write”, agents can</h4>
+      <div><b>Look</b><br><span class="chip">read email</span><span class="chip">search</span><span class="chip">see labels</span></div>
+      <div style="margin-top:6px"><b>Change</b><br><span class="chip w">send email</span><span class="chip w">draft replies</span><span class="chip w">move to trash</span></div>
+      <div class="muted" style="margin-top:6px">Pick “Read” and only the Look list stays.</div>
+      <div style="margin-top:8px" class="link">See all 42 actions ›</div>
+    </div></div>
+    <div class="card-body"><h3>A · Tied to the access choice</h3><p>Two buckets, Look and Change, right under "Who can use it". Switch the level and you see what changes. Full list one tap away.</p></div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="panel">
+      <b>Gmail</b>
+      <h4>What agents can do · 42</h4>
+      <input class="mock-input" placeholder="Search actions" style="width:100%;margin-bottom:6px">
+      <div class="act"><span>Fetch emails</span><span class="muted">Look</span></div>
+      <div class="act"><span>Send email</span><span class="muted">Change</span></div>
+      <div class="act"><span>Create draft</span><span class="muted">Change</span></div>
+      <div class="act"><span>List labels</span><span class="muted">Look</span></div>
+      <div class="act"><span>Move to trash</span><span class="muted">Change</span></div>
+      <div class="muted">…37 more</div>
+    </div></div>
+    <div class="card-body"><h3>B · The full list</h3><p>Every action, searchable, tagged Look or Change. Complete and honest, but long (Gmail has dozens, GitHub has hundreds).</p></div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image"><div class="panel">
+      <b>Gmail</b>
+      <div class="muted" style="margin:6px 0">Read, search and send email. Agents get 42 actions.</div>
+      <h4>Who can use it</h4>
+      <div class="seg"><div>Read</div><div class="on">Read &amp; write</div></div>
+      <h4>Try it</h4>
+      <div class="muted">“Summarize my unread email” …</div>
+    </div></div>
+    <div class="card-body"><h3>C · Just a sentence</h3><p>One line and a count. Simplest, but you can't tell what "Read &amp; write" actually lets an agent do.</p></div>
+  </div>
+</div>

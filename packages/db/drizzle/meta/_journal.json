@@ -820,6 +820,13 @@
       "when": 1790492925870,
       "tag": "0116_unshared_connections_ready",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "6",
+      "when": 1790520925199,
+      "tag": "0117_session_limits",
+      "breakpoints": true
     }
   ]
 }

@@ -511,7 +511,9 @@ describe('every-agent grants', () => {
     expect(everyAgentRows()).toEqual([]);
   });
 
-  it('is unavailable on a connection through a DorkOS account, and ignored there if present', async () => {
+  it('is unavailable through a DorkOS account only while nothing can carry it to hosted authority', async () => {
+    // This service has no managed synchronizer, so nothing could reach the
+    // hosted side that decides every managed call (DOR-2439).
     db.update(connectorProviderInstances)
       .set({ mode: 'managed' })
       .where(eq(connectorProviderInstances.id, provider.instanceId))
@@ -527,7 +529,8 @@ describe('every-agent grants', () => {
     await expect(refused).rejects.toMatchObject({ code: 'every_agent_unavailable' });
     expect(everyAgentRows()).toEqual([]);
 
-    // A row that somehow exists still grants nothing: hosted authority cannot see it.
+    // A local row hosted authority never applied still runs nothing: a
+    // managed call needs the applied hosted scope that authorizes it.
     db.insert(connectionOperationGrants)
       .values({
         id: 'stray-every-agent',
@@ -544,10 +547,7 @@ describe('every-agent grants', () => {
       await refusal(
         execute(agentPrincipal('agent-new'), revisionId(snapshot, 'gmail.read'), 'read')
       )
-    ).toBe('CONNECTOR_GRANT_REQUIRED');
-    await expect(access.listConnections(OWNER, 'agent-new')).resolves.toEqual({ connections: [] });
-    expect((await query.listConnections(OWNER))[0]?.everyAgent).toBeNull();
-    expect(query.everyAgentGrants(OWNER)).toEqual({ connections: [] });
+    ).not.toBeUndefined();
   });
 
   it('shows the owner what every agent, including a new one, will get', async () => {
@@ -694,7 +694,7 @@ describe('every-agent grants', () => {
     expect(everyAgentRows().map((row) => row.revokedAt)).toEqual([null]);
   });
 
-  it("counts it in an agent's own list only for this owner and never on a managed connection", async () => {
+  it("counts it in an agent's own list only for this owner, managed connections included", async () => {
     const snapshot = await giveEveryAgent(['gmail.read']);
     const read = revisionId(snapshot, 'gmail.read');
     // A second owner's provider instance with its own every-agent row.
@@ -751,9 +751,16 @@ describe('every-agent grants', () => {
     strayEveryAgentRow('every-managed', 'connection-managed', 'managed-read');
 
     const own = await query.agentConnections(OWNER, 'agent-new');
-    expect(own.connections.map((connection) => connection.connectionId)).toEqual([CONNECTION_ID]);
-    expect(own.connections[0]?.operationRevisionIds).toEqual([read]);
-    expect(query.disconnectImpact(OWNER, 'connection-managed').everyAgent).toBe(false);
+    // The other owner's row never shows; this owner's managed row does, since
+    // hosted authority honours every agent too (DOR-2439).
+    expect(own.connections.map((connection) => connection.connectionId).sort()).toEqual(
+      [CONNECTION_ID, 'connection-managed'].sort()
+    );
+    expect(
+      own.connections.find((connection) => connection.connectionId === CONNECTION_ID)
+        ?.operationRevisionIds
+    ).toEqual([read]);
+    expect(query.disconnectImpact(OWNER, 'connection-managed').everyAgent).toBe(true);
   });
 
   function namedRevokedAt(id: string) {

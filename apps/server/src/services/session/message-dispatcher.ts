@@ -153,7 +153,12 @@ import {
 import { onSessionRemoved } from './session-list-broadcaster.js';
 import { runtimeLockHolder } from './session-lock.js';
 import { getStagedContextStore, holdStagedContext } from './staged-context-store.js';
-import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
+import {
+  triggerTurn,
+  type TriggerTurnDeps,
+  type TriggerTurnOpts,
+  type TriggerTurnResult,
+} from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
 import { ROOMS, SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
@@ -755,6 +760,14 @@ export interface DispatchMessageOpts {
    */
   additionalDirectories?: MessageOpts['additionalDirectories'];
   /**
+   * Work to do when this turn LAUNCHES, not when it is accepted — immediately
+   * for a turn on an idle session, or when a queued turn is released (spec
+   * `agent-home-desk` §5.9, §6.1). Its result is merged into the turn before
+   * the runtime is called. Passed straight through; see
+   * {@link TriggerTurnOpts.prepareLaunch} for where it runs.
+   */
+  prepareLaunch?: TriggerTurnOpts['prepareLaunch'];
+  /**
    * Claude account registry id this LAUNCH should bill to, when the sender made
    * an explicit pre-launch choice. Passed straight through to the turn.
    */
@@ -971,6 +984,7 @@ interface DispatchPlan {
     | 'approvalVerdict'
     | 'systemPromptAppend'
     | 'additionalDirectories'
+    | 'prepareLaunch'
     | 'accountHint'
     | 'settings'
     | 'newSessionPermissionMode'
@@ -1257,6 +1271,7 @@ function launchDispatch(
       ...(turn.additionalDirectories !== undefined
         ? { additionalDirectories: turn.additionalDirectories }
         : {}),
+      ...(turn.prepareLaunch !== undefined ? { prepareLaunch: turn.prepareLaunch } : {}),
       ...(turn.accountHint ? { accountHint: turn.accountHint } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.newSessionPermissionMode !== undefined
@@ -1891,6 +1906,34 @@ export async function dispatchCommandIntent(
     clearIfOurs();
     throw err;
   }
+}
+
+/**
+ * Whether a turn is running on this session right now, by every authority
+ * that can know (spec `agent-home-desk` §6.1).
+ *
+ * True when ANY of three says so: the dispatcher's in-flight slot, the
+ * runtime's real write lock, or the session's projector holding an open turn.
+ * The slot alone is lossy — a turn launched with its queue budget exhausted
+ * runs holding the runtime lock and never takes the slot
+ * ({@link launchDispatch}), the same hole {@link deliverSteer} closes by asking
+ * the lock. A caller that must not act under a running turn (the room's
+ * launch-time work on an agent's copy of a room's files) asks here.
+ *
+ * @param sessionId - The session, by any id it has held.
+ * @param runtime - The runtime that session runs on.
+ */
+export function isTurnInFlight(
+  sessionId: string,
+  runtime: Pick<AgentRuntime, 'isLocked' | 'getInternalSessionId'>
+): boolean {
+  const lockKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const sessionKey = primaryOf(lockKey);
+  if (inFlight.has(sessionKey)) return true;
+  if (runtime.isLocked(lockKey) || (lockKey !== sessionId && runtime.isLocked(sessionId))) {
+    return true;
+  }
+  return (projectorFor(sessionKey)?.peekInProgressTurn() ?? null) !== null;
 }
 
 /** Inputs for {@link deliverSteer}. */

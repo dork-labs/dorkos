@@ -259,7 +259,16 @@
   --status-warning-dot: 38 92% 40%;
   --status-warning-bg: 38 92% 96%;
   --status-warning-border: 38 92% 80%;
-  --status-warning-fg: 38 92% 40%;
+  /* DOR-2444: this used to equal `--status-warning-dot` (40%), which is only
+     tuned for the 3:1 non-text bar above — as TEXT it read 3.29:1 on white,
+     3.10:1 on the `-bg` wash, and as low as 2.75:1 on `--secondary`, all
+     under WCAG AA's 4.5:1. The binding case is `--secondary` (92% lightness
+     — the darkest common ground this token is painted on, so the closest to
+     this token's own luminance and the tightest ratio): 30% clears it at
+     4.51:1, `--accent` at 4.73:1, `--muted` at 4.95:1, the `-bg` wash at
+     5.08:1, and plain white at 5.40:1. Dark mode's `-fg` (50%) already
+     clears every ground by a wide margin and is unchanged. */
+  --status-warning-fg: 38 92% 30%;
 
   --status-info: 217 91% 60%;
   --status-info-bg: 217 91% 96%;

@@ -119,8 +119,11 @@ export function ManagementReviewDialog({
             <>
               <ReviewContext context={review.context} />
               {review.targetStatus === 'unavailable' && review.state === 'pending' && (
-                <div className="border-warning/30 bg-warning/5 flex gap-3 rounded-lg border p-3">
-                  <ShieldAlert className="text-warning mt-0.5 size-4 shrink-0" aria-hidden />
+                <div className="border-status-warning/30 bg-status-warning/5 flex gap-3 rounded-lg border p-3">
+                  <ShieldAlert
+                    className="text-status-warning-dot mt-0.5 size-4 shrink-0"
+                    aria-hidden
+                  />
                   <div>
                     <p className="text-sm font-medium">This request can’t be approved</p>
                     <p className="text-muted-foreground mt-1 text-sm">

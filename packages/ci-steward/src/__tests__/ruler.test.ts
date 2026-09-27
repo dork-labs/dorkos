@@ -10,8 +10,10 @@ import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { emptySnapshot, SnapshotSchema, type Snapshot } from '../data.ts';
 import { floorValues } from '../floors.ts';
+import { gateMapper } from '../gatemap.ts';
 import { loadHandFiles } from '../load.ts';
 import { computeSlos, effectiveTimeouts, sloRuler, type SloInputs } from '../slo.ts';
+import { loadWorkflows } from '../workflows.ts';
 
 const REPO = path.resolve(import.meta.dirname, '..', '..', '..', '..');
 const { files } = loadHandFiles(REPO);
@@ -142,6 +144,12 @@ describe('the recorded week 2026-09-12..18 under the new ruler', () => {
   const snapshots = Object.values(recorded.days).map((d) => SnapshotSchema.parse(d));
   const readings = computeSlos(slos, floorValues(slos, null), {
     ...sloRuler(files!.config),
+    // The deadline this week's three-shard runs actually ran under. Today's
+    // config says 25 (six shards since 2026-09-27, ledger 260919-175503), and
+    // readers apply it to every day, so a recorded three-shard week read
+    // against it says 1.172: the transient ci/config.yaml's `deadlines:` warns
+    // about, not what this block pins.
+    deadlines: { 'wf.browser-test.browser-shard': 30 },
     snapshots,
     local: [],
     toolCeilingSeconds: 600,
@@ -202,6 +210,29 @@ describe('the ruler files agree with what they restate', () => {
     expect(wf).toContain('E2E_SHARD_TOTAL: ${{ strategy.job-total }}');
     expect(files!.config.deadlines).toContainEqual(
       expect.objectContaining({ gate: 'wf.browser-test.browser-shard', minutes })
+    );
+  });
+
+  it("maps every browser shard's check name to the one gate its deadline, flakes and ejections are keyed on", () => {
+    // headroom, flaky-test-runs and repeat-ejection all read
+    // wf.browser-test.browser-shard. A matrix resize or a renamed job must not
+    // scatter the shards across gate ids the collector does not know.
+    const wf = readFileSync(path.join(REPO, '.github/workflows/browser-test.yml'), 'utf8');
+    const shards = /shard: \[([\d, ]+)\]/
+      .exec(wf)![1]!
+      .split(',')
+      .map((s) => Number(s.trim()));
+    const mapper = gateMapper(
+      loadWorkflows(REPO, '.github/workflows', (file, message) => {
+        throw new Error(`${file}: ${message}`);
+      })
+    );
+    for (const i of shards)
+      expect(
+        mapper('.github/workflows/browser-test.yml', `browser-shard (${i}/${shards.length})`)
+      ).toBe('wf.browser-test.browser-shard');
+    expect(mapper('.github/workflows/browser-test.yml', 'browser-test')).toBe(
+      'wf.browser-test.browser-test'
     );
   });
 });

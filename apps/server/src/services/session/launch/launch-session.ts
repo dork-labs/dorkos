@@ -18,18 +18,24 @@
  */
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
-import { homeOf, readHomeManifest, resolveAgentHome } from '../../core/agent-identity/index.js';
+import {
+  homeOf,
+  isInsideRoomsDir,
+  readHomeManifest,
+  resolveAgentHome,
+} from '../../core/agent-identity/index.js';
 import { reportUsageEvent } from '../../core/usage-reporter.js';
 import { recordDispatchEnd, recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { getWorkspaceManager } from '../../workspace/index.js';
 import {
   resolveSessionCwdWithRoom,
   type RoomSessionPlacePort,
-} from '../../workspace/room-session-cwd.js';
+} from '../../workspace/room-session-place.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
@@ -63,12 +69,19 @@ export interface DispatchSessionMessageOpts {
 }
 
 /**
- * Why {@link dispatchSessionMessage} started nothing. Each code maps to one of
- * the route's existing `400` answers, with the same message.
+ * Why {@link dispatchSessionMessage} started nothing, with the sentence the
+ * route answers.
+ *
+ * - `INVALID_AGENT_PATH`, `UNKNOWN_RUNTIME` — the request named something that
+ *   does not exist (`400`).
+ * - `ROOM_SESSION_MOVED` — a room conversation its runtime keeps inside the
+ *   room's files, from before room turns moved home (`409`).
+ * - `DESK_NOT_OWN` — the turn would stand inside a room's files, or a room's
+ *   agent would stand in a folder that is not its own (`409`).
  */
 export interface SessionLaunchRefusal {
   /** Which check refused the launch. */
-  refused: 'INVALID_AGENT_PATH' | 'UNKNOWN_RUNTIME';
+  refused: 'INVALID_AGENT_PATH' | 'UNKNOWN_RUNTIME' | 'ROOM_SESSION_MOVED' | 'DESK_NOT_OWN';
   /** The sentence a caller shows as-is. */
   message: string;
 }
@@ -151,7 +164,7 @@ async function resolveRuntimeTypeForNewSession(opts: {
  *
  * @param opts - The session, the parsed request, and who is starting it.
  * @returns The dispatcher's result, or a {@link SessionLaunchRefusal} when the
- *   named agent or runtime does not exist (nothing was started or written).
+ *   launch was refused (nothing was started or written).
  */
 export async function dispatchSessionMessage(
   opts: DispatchSessionMessageOpts
@@ -192,6 +205,10 @@ export async function dispatchSessionMessage(
   // Additive + resilient: with no key (or a disabled/failing manager) the turn
   // proceeds with the original cwd, byte-for-byte unchanged.
   let effectiveCwd = cwd;
+  // A room-bound session's agent and grants, when the room answered for it
+  // (spec `agent-home-desk` §5.7): the turn carries the room's agent as
+  // `forAgent` and the same folder grants a room turn carries.
+  let roomPlace: { forAgent?: string; additionalDirectories?: DirectoryGrant[] } = {};
   if (workspaceKey) {
     try {
       const source = cwd ?? DEFAULT_CWD;
@@ -230,16 +247,34 @@ export async function dispatchSessionMessage(
     // has no opinion about its directory must not acquire one here.
     //
     // The room binding is offered to the chain rather than resolved here
-    // (DOR-1624). A conversation this machine also answers in a room runs its
-    // room turns in that room's worktree, so a resume from the app that took the
-    // ordinary rungs would put the operator in the agent's own folder and hide
-    // every uncommitted edit the agent has made in the room. The port answers
+    // (DOR-1624, spec `agent-home-desk` §5.7). A conversation this machine also
+    // answers in a room stands in the agent's home and reaches the room's files
+    // through folder grants, so a resume from the app must carry the same
+    // grants or the agent loses the files it was working on. The port answers
     // `null` for every other session, which leaves the chain exactly as it was.
     const resolved = await resolveSessionCwdWithRoom(
-      { cwd, agentPath: verifiedAgentPath, sessionId },
+      { ...(cwd !== undefined ? { cwd } : {}), agentPath: verifiedAgentPath, sessionId },
       roomSessionPlace
     );
+    if (resolved.refusal) {
+      return { refused: resolved.refusal.code, message: resolved.refusal.message };
+    }
     if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
+    roomPlace = resolved;
+  }
+
+  // **No turn stands in a room's files** (spec `agent-home-desk` I3), whichever
+  // way it got there: a body `cwd` naming a room's folder, a session with no
+  // room binding, anything. Asked before the session is bound, so a refused
+  // launch writes nothing — and nothing that runs in a turn's folder (the
+  // per-turn git status, a hook, the agent's shell) ever runs in one.
+  if (effectiveCwd !== undefined && isInsideRoomsDir(effectiveCwd)) {
+    return {
+      refused: 'DESK_NOT_OWN',
+      message:
+        `This conversation would run inside a room's files ("${path.resolve(effectiveCwd)}"), ` +
+        `which is never where an agent works. Start it in the agent's own folder instead.`,
+    };
   }
 
   // First-message binding: choose + persist the runtime BEFORE resolving.
@@ -349,6 +384,13 @@ export async function dispatchSessionMessage(
       ...(seedContext ? { seedContext } : {}),
       // Only ever set on the session-creating claude-code send (see above).
       ...(accountHint ? { accountHint } : {}),
+      // A room-bound session resumed here is its room's agent, standing at home
+      // with the room's folders granted — never refreshed (§6.1): that is a
+      // room turn's own launch step.
+      ...(roomPlace.forAgent !== undefined ? { forAgent: roomPlace.forAgent } : {}),
+      ...(roomPlace.additionalDirectories !== undefined
+        ? { additionalDirectories: roomPlace.additionalDirectories }
+        : {}),
       // Absent means `queue`, which is also what every disposition resolves to
       // until the native rungs land (P4). The receipt says which it was.
       ...(disposition ? { disposition } : {}),

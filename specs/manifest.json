@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260927-155808",
+      "slug": "connection-app-details",
+      "title": "Connections: app logos, descriptions, actions and a kept app list",
+      "created": "2026-09-27",
+      "status": "ideation",
+      "project": "DorkOS Connections"
+    },
+    {
       "id": "260926-193136",
       "slug": "local-workspace-lifecycle",
       "title": "Local workspace reconciler lifecycle pilot",

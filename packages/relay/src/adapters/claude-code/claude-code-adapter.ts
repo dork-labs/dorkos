@@ -851,6 +851,7 @@ export class ClaudeCodeAdapter implements RelayAdapter {
             traceStore: this.deps.traceStore,
             agentSessionStore: this.deps.agentSessionStore,
             resolveExecutionSettings: this.deps.resolveExecutionSettings,
+            ...(this.deps.checkTurnDesk ? { checkTurnDesk: this.deps.checkTurnDesk } : {}),
             // Recorded for the one shape that has nobody else to record it: a
             // mesh endpoint creates no session, so until the turn writes its own
             // owner there is nothing for the next turn to resolve against

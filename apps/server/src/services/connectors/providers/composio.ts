@@ -195,11 +195,11 @@ export class ComposioConnectorProvider implements ConnectorProvider {
   private readonly _client: ComposioHttpClient;
   /**
    * One upstream listing per catalog read. Composio has no server-side paging
-   * that matches ours, so each page is a slice of the whole list. A caller
-   * pages one read under one signal; keying on it fetches the list once for
-   * that read (instead of once per page, which cost ~81 calls for ~850
-   * services) and lets the entry go with the signal. It is never a cache
-   * across reads.
+   * that matches ours, so each page is a slice of the whole list. The kept app
+   * list (`resources/catalog-cache.ts`) pages one refresh under one signal; keying on it
+   * fetches the list once for that refresh (instead of once per page, which
+   * cost ~81 calls for ~850 services) and lets the entry go with the signal.
+   * Keeping the list between reads is the kept app list's job, not this one's.
    */
   private readonly _toolkitsByRead = new WeakMap<AbortSignal, Promise<ConnectorToolkit[]>>();
   private readonly _operationClient: ComposioOperationClient | null;

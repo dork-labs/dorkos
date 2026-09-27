@@ -60,8 +60,6 @@ import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
 
-const CATALOG_PROVIDER_PAGE_SIZE = 100;
-const CATALOG_PROVIDER_PAGE_LIMIT = 100;
 const CatalogCursorSchema = z
   .object({ offset: z.number().int().nonnegative(), queryHash: z.string().length(64) })
   .strict();
@@ -342,62 +340,56 @@ export class ConnectorOperatorQueryService {
     await Promise.all(
       this.registry.listProviders().map(async (provider) => {
         try {
-          let cursor: string | undefined;
-          for (let pageIndex = 0; pageIndex < CATALOG_PROVIDER_PAGE_LIMIT; pageIndex += 1) {
-            input.signal.throwIfAborted();
-            const result = await provider.listToolkitPage({
-              ...(cursor ? { cursor } : {}),
-              ...(query ? { query } : {}),
-              limit: CATALOG_PROVIDER_PAGE_SIZE,
-              signal: input.signal,
+          // The kept whole list: paging and search slice it here, so neither
+          // asks the service again while the copy is fresh.
+          const result = await this.registry.readCatalog(provider, input.signal);
+          if (result.status === 'unsupported') {
+            warnings.push({
+              code: 'catalog_unavailable',
+              message: `${this.providerDisplayName(provider)} cannot list services right now.`,
             });
-            if (result.status === 'unsupported') {
-              warnings.push({
-                code: 'catalog_unavailable',
-                message: `${this.providerDisplayName(provider)} cannot list services right now.`,
-              });
-              return;
-            }
-            const signInThrough = signInThroughFor(provider.type);
-            for (const rawToolkit of result.toolkits) {
-              const toolkit = projectConnectorAuthentication(
-                rawToolkit,
-                input.includeAuthenticationSetup === true
-              );
-              const disclosure = this.providerDisclosure(provider);
-              const routeAuthentication =
-                disclosure.capabilities.authentication.status === 'available'
-                  ? (toolkit.authentication ?? disclosure.capabilities.authentication)
-                  : disclosure.capabilities.authentication;
-              const current = services.get(toolkit.slug) ?? {
-                serviceSlug: toolkit.slug,
-                displayName: toolkit.displayName,
-                iconKey: toolkit.slug,
-                accountRoutes: [],
-              };
-              current.accountRoutes.push({
-                ...disclosure,
-                ...(toolkit.authentication && {
-                  capabilities: {
-                    ...disclosure.capabilities,
-                    authentication: routeAuthentication,
-                  },
-                }),
-                authKind: toolkit.authKind,
-                ...(toolkit.authenticationSetup
-                  ? { authenticationSetup: toolkit.authenticationSetup }
-                  : {}),
-                ...(signInThrough !== undefined && { signInThrough }),
-              });
-              services.set(toolkit.slug, current);
-            }
-            cursor = result.nextCursor;
-            if (!cursor) return;
+            return;
           }
-          warnings.push({
-            code: 'catalog_truncated',
-            message: `${this.providerDisplayName(provider)} returned more services than DorkOS can list safely.`,
-          });
+          const signInThrough = signInThroughFor(provider.type);
+          const disclosure = this.providerDisclosure(provider);
+          for (const rawToolkit of result.toolkits) {
+            if (!matchesQuery(query, rawToolkit.slug, rawToolkit.displayName)) continue;
+            const toolkit = projectConnectorAuthentication(
+              rawToolkit,
+              input.includeAuthenticationSetup === true
+            );
+            const routeAuthentication =
+              disclosure.capabilities.authentication.status === 'available'
+                ? (toolkit.authentication ?? disclosure.capabilities.authentication)
+                : disclosure.capabilities.authentication;
+            const current = services.get(toolkit.slug) ?? {
+              serviceSlug: toolkit.slug,
+              displayName: toolkit.displayName,
+              iconKey: toolkit.slug,
+              accountRoutes: [],
+            };
+            current.accountRoutes.push({
+              ...disclosure,
+              ...(toolkit.authentication && {
+                capabilities: {
+                  ...disclosure.capabilities,
+                  authentication: routeAuthentication,
+                },
+              }),
+              authKind: toolkit.authKind,
+              ...(toolkit.authenticationSetup
+                ? { authenticationSetup: toolkit.authenticationSetup }
+                : {}),
+              ...(signInThrough !== undefined && { signInThrough }),
+            });
+            services.set(toolkit.slug, current);
+          }
+          if (result.truncated) {
+            warnings.push({
+              code: 'catalog_truncated',
+              message: `${this.providerDisplayName(provider)} returned more services than DorkOS can list safely.`,
+            });
+          }
         } catch (error) {
           if (input.signal.aborted) throw error;
           warnings.push({
@@ -631,8 +623,7 @@ export class ConnectorOperatorQueryService {
     return ConnectorDisconnectImpactSchema.parse({
       connectionId,
       affectedAgentCount: new Set(agents.flatMap((row) => (row.agentId ? [row.agentId] : []))).size,
-      // The same managed rule as the summary: hosted authority never honors it.
-      everyAgent: owned.mode !== 'managed' && this.everyAgentAccess(connectionId) !== null,
+      everyAgent: this.everyAgentAccess(connectionId) !== null,
       affectedSessionCount: new Set(sessions.map((row) => row.sessionId)).size,
       affectedSubscriptionCount: subscriptions.length,
       pendingDeliveryCount: pendingDeliveries,
@@ -681,7 +672,8 @@ export class ConnectorOperatorQueryService {
       .all();
     // Every agent inherits the owner's every-agent grants, so they belong in
     // this agent's effective access exactly as the authorization check counts
-    // them: connections that are not managed, no per-agent exclusion.
+    // them: on every connection, managed ones included (DOR-2439), with no
+    // per-agent exclusion.
     const inherited = this.db
       .select({
         connectionId: connections.id,
@@ -707,7 +699,6 @@ export class ConnectorOperatorQueryService {
           everyAgentGrantSubject(),
           isNull(connectionOperationGrants.revokedAt),
           isNull(connections.removedAt),
-          eq(connectorProviderInstances.mode, 'byo'),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),
           eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
@@ -771,7 +762,6 @@ export class ConnectorOperatorQueryService {
         and(
           isNull(connections.removedAt),
           eq(connections.lifecycleState, 'connected'),
-          eq(connectorProviderInstances.mode, 'byo'),
           eq(connectorProviderInstances.ownerKind, owned.ownerKind),
           eq(connectorProviderInstances.ownerId, owned.ownerId)
         )
@@ -1028,7 +1018,7 @@ export class ConnectorOperatorQueryService {
       custody: row.custody,
       payer: row.mode === 'managed' ? 'dorkos_managed' : 'operator_byo',
       agentCount: new Set(grants.flatMap((grant) => (grant.agentId ? [grant.agentId] : []))).size,
-      everyAgent: row.mode === 'managed' ? null : this.everyAgentAccess(row.connectionId),
+      everyAgent: this.everyAgentAccess(row.connectionId),
       subscriptionCount: subscriptions.length,
       usage,
       warnings: [],

@@ -11,6 +11,9 @@
  *   derive it. What does happen is that the escalation clock starts, because
  *   `session.error` is a Blocking condition and a machine nobody is sitting at
  *   is exactly when one matters (DOR-1387).
+ * - **A usage limit** — the turn that fell over carried the account's usage
+ *   limit. Told once per account episode as `account.limited`, never as
+ *   `session.error`, and never escalated: it ends on its own at the reset.
  * - **An error cleared** — a session that was stopped on an error is not stopped
  *   any more. A standing condition ending, so this is where its one history row
  *   is written; the disarm rides `resolveStanding` rather than happening here.
@@ -31,13 +34,17 @@
  *
  * @module services/notifications/emitters/session-lifecycle
  */
+import { createHash } from 'node:crypto';
 import path from 'node:path';
-import type { SessionLifecycle } from '@dorkos/shared/session-stream';
+import type { SessionLifecycle, SessionLimit } from '@dorkos/shared/session-stream';
 import { onProjectorStatusChange } from '../../session/session-state-projector.js';
 import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { notify, resolveStanding } from '../notification-service.js';
 import { armEscalation } from '../escalation-service.js';
 import type { NotificationPayload } from '../notification-registry.js';
+import { withSessionLimitStore } from '../../session/fleet/session-limit-store.js';
+import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
+import { canonicalAccountPath } from '../../core/usage/runtime-accounts.js';
 
 /**
  * What to call a session in a sentence.
@@ -78,6 +85,59 @@ function sessionErrorPayload(
 }
 
 /**
+ * A short, stable stand-in for an account folder: the first 12 hex digits of
+ * the SHA-256 of its canonical path.
+ *
+ * @param accountPath - The folder the session ran in.
+ */
+function accountRefOf(accountPath: string): string {
+  const canonical = canonicalAccountPath(accountPath, undefined);
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 12);
+}
+
+/**
+ * Describe a usage limit a session hit, naming the account the way the
+ * operator does.
+ *
+ * The label comes from the usage store: the account's registered name, or the
+ * machine default's. An unregistered folder (`accountId` null) is found by the
+ * folder the session's stored limit recorded, which is also its identity in
+ * the dedupe key, as a short hash ({@link accountRefOf}) so the path itself is
+ * never stored in the notification.
+ *
+ * @param sessionId - The session that stopped.
+ * @param cwd - Its working directory, when the projector knew one.
+ * @param limit - The limit its status carries.
+ */
+function accountLimitedPayload(
+  sessionId: string,
+  cwd: string | undefined,
+  limit: SessionLimit
+): NotificationPayload<'account.limited'> {
+  const agentId = resolveAgentIdForPath(cwd);
+  const accountPath =
+    withSessionLimitStore('get', (store) => store.get(sessionId))?.accountPath ?? undefined;
+  const usageStore = getAccountUsageStore();
+  const usage = limit.accountId
+    ? usageStore?.peek('claude-code', [limit.accountId])[0]
+    : accountPath
+      ? (usageStore?.usageAtPath('claude-code', accountPath) ?? undefined)
+      : undefined;
+  return {
+    sessionId,
+    sessionLabel: sessionLabelFor(cwd),
+    accountId: limit.accountId,
+    // A raw id (`default`, `default-2`) is never shown: without a label, say what it is.
+    accountLabel: usage?.label ?? 'Your Claude account',
+    window: limit.window,
+    resetsAt: limit.resetsAt,
+    since: limit.since,
+    ...(!limit.accountId && accountPath ? { accountRef: accountRefOf(accountPath) } : {}),
+    ...(agentId ? { agentId } : {}),
+  };
+}
+
+/**
  * Watch every session's lifecycle and raise what it implies.
  *
  * @returns An unsubscribe function.
@@ -114,6 +174,16 @@ export function watchSessionLifecycle(): () => void {
         completedAt: new Date().toISOString(),
         ...(agentId ? { agentId } : {}),
       });
+      return;
+    }
+
+    if (status.lifecycle === 'error' && status.limit) {
+      // The turn stopped because the account ran out of usage (spec
+      // claude-account-fleet D4). That is not breakage: it ends on its own at a
+      // known time, so it is told once per ACCOUNT episode (however many
+      // sessions hit it) and arms no `session.error` escalation. With no
+      // episode stamped in `errorSince`, the clear below has nothing to resolve.
+      void notify('account.limited', accountLimitedPayload(sessionId, cwd, status.limit));
       return;
     }
 
