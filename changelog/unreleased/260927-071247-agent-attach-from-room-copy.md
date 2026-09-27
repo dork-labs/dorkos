@@ -2,6 +2,7 @@
 covers:
   - "fix(rooms): let an agent attach a file from its own copy of a room's files (DOR-2410)"
   - "fix(rooms): attach only from the posting room's own copy, found by its exact name (DOR-2410)"
+  - "fix(rooms): finish git's housekeeping before a room's git command returns (DOR-2410)"
 ---
 
 ### Fixed

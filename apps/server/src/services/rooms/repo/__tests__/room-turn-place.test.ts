@@ -72,7 +72,20 @@ async function agentGit(cwd: string, ...args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
       'git',
-      ['-c', 'user.name=Agent', '-c', 'user.email=agent@example.com', ...args],
+      [
+        '-c',
+        'user.name=Agent',
+        '-c',
+        'user.email=agent@example.com',
+        // No background maintenance: a detached `gc`/`maintenance` writing into
+        // `repo/.git` raced the sandbox's tree walk (`maintenance.lock`
+        // vanishing mid-`lstat`) and its cleanup.
+        '-c',
+        'maintenance.auto=false',
+        '-c',
+        'gc.auto=0',
+        ...args,
+      ],
       {
         cwd,
         env: {
@@ -147,20 +160,41 @@ describe('room turn placement and grants', () => {
   });
 
   afterEach(async () => {
-    for (const dir of locked) chmodTree(dir, true);
+    // Every locked tree is made writable again even if one of them cannot be,
+    // so the scratch folder is always removable whatever the test body did.
+    for (const dir of locked.splice(0)) {
+      try {
+        chmodTree(dir, true);
+      } catch {
+        // Best effort: the removal below reports anything still stuck.
+      }
+    }
     await removeFixtureTree(scratch);
   });
 
-  /** Make everything under `dir` read-only (or writable again), folders and files. */
+  /** Whether an error is a path that vanished while the tree was being walked. */
+  function vanished(err: unknown): boolean {
+    return (err as NodeJS.ErrnoException)?.code === 'ENOENT';
+  }
+
+  /**
+   * Make everything under `dir` read-only (or writable again), folders and
+   * files. A path that disappears mid-walk (a lock file git just released) is
+   * skipped rather than failing the walk.
+   */
   function chmodTree(dir: string, writable: boolean): void {
-    const stat = lstatSync(dir);
-    if (stat.isSymbolicLink()) return;
-    if (stat.isDirectory()) {
-      if (writable) chmodSync(dir, 0o755);
-      for (const name of readdirSync(dir)) chmodTree(path.join(dir, name), writable);
-      if (!writable) chmodSync(dir, 0o555);
-    } else {
-      chmodSync(dir, writable ? 0o644 : 0o444);
+    try {
+      const stat = lstatSync(dir);
+      if (stat.isSymbolicLink()) return;
+      if (stat.isDirectory()) {
+        if (writable) chmodSync(dir, 0o755);
+        for (const name of readdirSync(dir)) chmodTree(path.join(dir, name), writable);
+        if (!writable) chmodSync(dir, 0o555);
+      } else {
+        chmodSync(dir, writable ? 0o644 : 0o444);
+      }
+    } catch (err) {
+      if (!vanished(err)) throw err;
     }
   }
 
@@ -270,6 +304,19 @@ describe('room turn placement and grants', () => {
     expect(await agentGit(copy, 'log', '--format=%s', '-3')).toContain('Add the plan');
     expect(existsSync(path.join(copy, 'NOTES.md'))).toBe(true);
     expect(await agentGit(copy, 'status', '--porcelain')).toBe('');
+  });
+
+  it('runs git`s automatic housekeeping in the foreground, never detached, in the server`s git', async () => {
+    // A detached `gc`/maintenance keeps writing `repo/.git` after the server's
+    // call has returned, racing the next command and the turn-start refresh.
+    // Asked of the server's own git, so it is the effective setting a commit or
+    // merge runs with. Seeded: dropping either setting reddens this.
+    await service.enable(ROOM_ID, OPERATOR);
+    const repo = store.repoPath(ROOM_ID);
+    const home = store.homeDir(ROOM_ID);
+
+    expect(await runGit(['config', '--get', 'maintenance.autoDetach'], repo, home)).toBe('false');
+    expect(await runGit(['config', '--get', 'gc.autoDetach'], repo, home)).toBe('false');
   });
 
   it('refuses a sandboxed shell a hook or a config edit in the room`s shared git', async () => {
