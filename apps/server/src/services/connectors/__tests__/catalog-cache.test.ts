@@ -467,6 +467,10 @@ describe('ConnectorCatalogCache', () => {
      * existing entry: when `ConnectorToolkitSchema` changes, add the new field
      * list under the next number and bump `CONNECTOR_TOOLKIT_SHAPE_VERSION`,
      * so lists kept by an older DorkOS are re-listed instead of served.
+     *
+     * This pin sees top-level field names only. A change INSIDE a field — a
+     * new optional key on `authenticationSetup`, a widened enum, a re-typed
+     * value — passes it silently and still needs a manual bump.
      */
     const SHAPES: Record<number, string[]> = {
       1: [
@@ -483,6 +487,35 @@ describe('ConnectorCatalogCache', () => {
       expect(Object.keys(ConnectorToolkitSchema.shape).sort()).toEqual(
         SHAPES[CONNECTOR_TOOLKIT_SHAPE_VERSION]
       );
+    });
+
+    it.each([
+      ['with no shape version', `dorkos:connector-catalog:${DIGEST}`],
+      [
+        'under the previous shape version',
+        `dorkos:connector-catalog:shape-${CONNECTOR_TOOLKIT_SHAPE_VERSION - 1}:${DIGEST}`,
+      ],
+    ])('re-lists a copy kept %s instead of serving it', async (_label, keyMaterial) => {
+      await fs.writeFile(
+        fileFor(dir, INSTANCE),
+        JSON.stringify({
+          version: 1,
+          setupKey: createHash('sha256').update(keyMaterial).digest('hex'),
+          fetchedAt: now,
+          truncated: false,
+          toolkits: toolkits(2, 'old'),
+        })
+      );
+      const { provider, state } = countingProvider(toolkits(2, 'new'));
+
+      const read = await new ConnectorCatalogCache({ dir, now: clock }).read(
+        provider,
+        DIGEST,
+        signal()
+      );
+
+      expect(read.status === 'ok' && read.toolkits[0]!.slug).toBe('new-000');
+      expect(state.listings).toBe(1);
     });
   });
 
