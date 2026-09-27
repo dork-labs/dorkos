@@ -82,6 +82,22 @@ async function openCard(page: Page, approvalId: string) {
   return card;
 }
 
+/**
+ * Wait until the server has recorded the answer a card click sent. The card's
+ * receipt is optimistic, drawn before the answer lands, so a retry sent the
+ * moment the button is clicked can still find the request pending. An Always
+ * allow saves the setting before it grants, which widens that window.
+ */
+async function answerLanded(request: APIRequestContext, approvalId: string): Promise<void> {
+  await expect
+    .poll(async () => {
+      const res = await request.get('/api/approvals/pending');
+      const body = (await res.json()) as { approvals: { approvalId: string }[] };
+      return body.approvals.some((a) => a.approvalId === approvalId);
+    })
+    .toBe(false);
+}
+
 /** Load a route with no card of its own, so the Inbox holds the only copy. */
 async function gotoActivity(basePage: { page: Page; waitForAppReady(): Promise<void> }) {
   await basePage.page.goto('/activity');
@@ -149,6 +165,7 @@ test.describe('The request card @permissions', () => {
     await expect(card.getByRole('button', { name: 'Always allow' })).toBeVisible();
     await expect(card.getByRole('button', { name: 'Deny' })).toBeVisible();
     await card.getByRole('button', { name: 'Allow', exact: true }).click();
+    await answerLanded(request, approvalId);
     await expect(card.getByText('Allowed once')).toBeVisible();
 
     const retried = await invokeAsAgent(
@@ -190,6 +207,7 @@ test.describe('The request card @permissions', () => {
     await gotoActivity(basePage);
     const card = await openCard(basePage.page, approvalId);
     await card.getByRole('button', { name: 'Always allow' }).click();
+    await answerLanded(request, approvalId);
     await expect(card.getByText(/^Always allowed for .*: Open a room$/)).toBeVisible();
 
     const retried = await invokeAsAgent(
@@ -261,6 +279,7 @@ test.describe('The request card @permissions', () => {
     await expect(card.getByText(/is blocked from Rooms and is asking to be allowed/)).toBeVisible();
     await expect(card.getByText(reason)).toBeVisible();
     await card.getByRole('button', { name: 'Always allow' }).click();
+    await answerLanded(request, approvalId);
 
     const retried = await invokeAsAgent(
       request,
@@ -303,6 +322,7 @@ test.describe('The request card @permissions', () => {
     await gotoActivity(basePage);
     const card = await openCard(basePage.page, approvalId);
     await card.getByRole('button', { name: 'Deny' }).click();
+    await answerLanded(request, approvalId);
     await expect(card.getByText('Not allowed')).toBeVisible();
 
     const again = await invokeAsAgent(request, token, 'permissions.request_access', request_);
@@ -347,6 +367,7 @@ test.describe('The request card @permissions', () => {
       card.getByText("Always allow isn't offered here. Changing this needs your yes every time.")
     ).toBeVisible();
     await card.getByRole('button', { name: 'Deny' }).click();
+    await answerLanded(request, approvalId);
     await expect(card.getByText('Not allowed')).toBeVisible();
   });
 });

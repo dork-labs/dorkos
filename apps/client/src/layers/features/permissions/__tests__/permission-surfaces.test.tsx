@@ -207,7 +207,13 @@ describe('PermissionList (default scope)', () => {
     preset: 'full',
     defaults: { areas: {}, actions: {} },
     changeCount: 0,
-    filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
+    filesAndCommands: {
+      stop: 'autonomy',
+      presetStop: 'autonomy',
+      runtimes: [],
+      exceptions: [],
+      followingAgentIds: [],
+    },
     areas: [
       {
         id: 'rooms',
@@ -274,7 +280,13 @@ describe('individual actions', () => {
     preset: 'full',
     defaults: { areas: {}, actions: {} },
     changeCount: 0,
-    filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
+    filesAndCommands: {
+      stop: 'autonomy',
+      presetStop: 'autonomy',
+      runtimes: [],
+      exceptions: [],
+      followingAgentIds: [],
+    },
     areas: [
       {
         id: 'tasks',

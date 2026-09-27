@@ -7,6 +7,8 @@
  * - `GET /api/approvals/pending` — approvals still waiting on a person
  * - `POST /api/approvals/:id/grant` — allow the requested action, once or always
  * - `POST /api/approvals/:id/deny` — refuse it, with an optional reason
+ * - `POST /api/approvals/:id/dismiss-suggestion` — "Not now" on the card's
+ *   Always allow suggestion, for that agent and action for good
  *
  * Decisions are made by approval id, never by token: the person deciding should
  * not have to hold the requester's secret, and no response here ever returns
@@ -103,10 +105,12 @@ import {
 } from '@dorkos/shared/approval-schemas';
 import {
   PERMISSION_ANSWERED_EVENT,
+  PERMISSION_SUGGESTION_DISMISSED_EVENT,
   type PermissionAnswer,
   type PermissionAnsweredMetadata,
   type PermissionChange,
   type PermissionState,
+  type PermissionSuggestionDismissedMetadata,
 } from '@dorkos/shared/permissions';
 import type {
   ApprovalAnswerScope,
@@ -545,6 +549,53 @@ export function createApprovalsRouter(
         : undefined;
     const answerIt = () => grantAnswer(req.params.id, res, authority, answer);
     return key ? serializedAlways(key, answerIt) : answerIt();
+  });
+
+  // POST /:id/dismiss-suggestion -- "Not now" on the Always allow suggestion
+  //
+  // Guarded like an answer: only the person the suggestion is for may turn it
+  // off, and an agent that could would be quieting a question about itself.
+  // Recorded as a `permission.suggestion_dismissed` event, which is what the
+  // suggestion reads, so it stays off for this agent and action for good.
+  router.post('/:id/dismiss-suggestion', async (req, res) => {
+    const authority = personOrRefuse(req, res);
+    if (!authority) return;
+    const scope = approvals.answerScope(req.params.id);
+    if (!scope) {
+      const mapped = decisionFailureResponse('unknown');
+      return res.status(mapped.status).json(mapped.body);
+    }
+    if (!scope.agentPath || !scope.alwaysOffered) {
+      return res.status(409).json({
+        error: 'This request never suggests Always allow, so there is nothing to turn off.',
+        code: 'SUGGESTION_NOT_OFFERED',
+      });
+    }
+    if (options.activity) {
+      const writer = writerForPosture(authority.posture, res);
+      const agent = options.permissions?.agentByPath(scope.agentPath);
+      const agentName = agent ? agent.displayName || agent.name : 'this agent';
+      const metadata: PermissionSuggestionDismissedMetadata = {
+        ...(agent ? { agentId: agent.id } : {}),
+        agentPath: scope.agentPath,
+        action: scope.capabilityId,
+        approvalId: req.params.id,
+      };
+      await options.activity.emit({
+        actorType: writer.actorType,
+        actorLabel: writer.actorLabel,
+        ...(writer.actorId ? { actorId: writer.actorId } : {}),
+        category: 'permissions',
+        eventType: PERMISSION_SUGGESTION_DISMISSED_EVENT,
+        resourceType: agent ? 'agent' : 'approval',
+        resourceId: agent?.id ?? req.params.id,
+        resourceLabel: agentName,
+        summary: `Stopped suggesting Always allow for ${agentName} running "${titleFor(scope.capabilityId)}"`,
+        linkPath: null,
+        metadata: metadata as unknown as Record<string, unknown>,
+      });
+    }
+    return res.json({ ok: true, approvalId: req.params.id });
   });
 
   // POST /:id/deny -- refuse the requested action

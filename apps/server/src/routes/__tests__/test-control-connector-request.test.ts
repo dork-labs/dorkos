@@ -93,6 +93,36 @@ describe('POST /api/test/seed-agent', () => {
     expect(syncFromDisk).toHaveBeenNthCalledWith(3, denied.body.agentDir);
   });
 
+  it('seeds a fresh agent per instance, inside its slot, and refuses a path-shaped instance', async () => {
+    const syncFromDisk = vi.fn().mockResolvedValue('synced');
+    const app = express();
+    app.use(express.json());
+    app.locals.meshCore = { syncFromDisk };
+    app.use('/api/test', testControlRouter);
+    fixtureTarget.mount(app);
+
+    const base = await request(fixtureServer)
+      .post('/api/test/seed-agent')
+      .send({ slot: 'suggestion-requester' });
+    const first = await request(fixtureServer)
+      .post('/api/test/seed-agent')
+      .send({ slot: 'suggestion-requester', instance: 'a1-r0' });
+    const second = await request(fixtureServer)
+      .post('/api/test/seed-agent')
+      .send({ slot: 'suggestion-requester', instance: 'a1-r1' });
+    const escape = await request(fixtureServer)
+      .post('/api/test/seed-agent')
+      .send({ slot: 'suggestion-requester', instance: '../x' });
+
+    expect([base.status, first.status, second.status]).toEqual([200, 200, 200]);
+    expect(first.body.agentDir).toBe(`${base.body.agentDir}-a1-r0`);
+    expect(new Set([base.body.agentId, first.body.agentId, second.body.agentId]).size).toBe(3);
+    expect(escape.status).toBe(400);
+    await Promise.all(
+      [base, first, second].map((r) => rm(r.body.agentDir, { recursive: true, force: true }))
+    );
+  });
+
   it('refuses caller-defined fixture slots before writing or registering an agent', async () => {
     const syncFromDisk = vi.fn().mockResolvedValue('synced');
     const app = express();

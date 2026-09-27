@@ -1,16 +1,24 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronDown, RotateCcw } from 'lucide-react';
-import type {
-  PermissionActionEntry,
-  PermissionAreaEntry,
-  PermissionState,
-  PermissionSurface,
+import {
+  describeAffectedAgents,
+  type PermissionActionEntry,
+  type PermissionAreaEntry,
+  type PermissionPreset,
+  type PermissionState,
+  type PermissionSurface,
 } from '@dorkos/shared/permissions';
-import { useSetPermission, type PermissionScope } from '@/layers/entities/permissions';
+import {
+  useAffectedAgentCount,
+  useSetPermission,
+  type PermissionScope,
+} from '@/layers/entities/permissions';
 import { Button, PermissionStateSwitch } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { STATE_LABEL } from '../lib/permission-copy';
+import { stateWhy } from '../lib/permission-why';
 import { reportPermissionFailure } from '../lib/report-failure';
+import { PermissionWhy } from './PermissionWhy';
 
 /** Props for {@link ActionOverrides}. */
 export interface ActionOverridesProps {
@@ -22,11 +30,95 @@ export interface ActionOverridesProps {
   };
   /** Where a change is made, recorded with it. */
   surface: PermissionSurface;
+  /** The chosen preset, for the "why?" lines. */
+  preset: PermissionPreset | null;
+  /** The agent, at the agent layer, for the "why?" questions. */
+  agentName?: string;
 }
 
 /** Whether an action has a setting of its own at this layer. */
 function setHere(action: PermissionActionEntry, scope: PermissionScope): boolean {
   return action.resolved.source === (scope.kind === 'agent' ? 'agent-action' : 'default-action');
+}
+
+/** The "Why?" link for one action's state. */
+function ActionWhy({
+  action,
+  preset,
+  agentName,
+}: {
+  action: PermissionActionEntry;
+  preset: PermissionPreset | null;
+  agentName?: string;
+}) {
+  const state = STATE_LABEL[action.resolved.state];
+  return (
+    <PermissionWhy
+      question={`Why is ${action.title} set to ${state}${agentName ? ` for ${agentName}` : ''}?`}
+      sentence={stateWhy({ ...action.resolved, preset })}
+      {...(action.lastChange ? { lastChange: action.lastChange } : {})}
+    />
+  );
+}
+
+/** One action's switch, with where it comes from and, for everyone, what changing it reaches. */
+function ActionRow({
+  action,
+  area,
+  scope,
+  preset,
+  agentName,
+  disabled,
+  reset,
+  onSave,
+}: {
+  action: PermissionActionEntry;
+  area: ActionOverridesProps['area'];
+  scope: PermissionScope;
+  preset: PermissionPreset | null;
+  agentName?: string;
+  disabled: boolean;
+  reset: ReactNode;
+  onSave: (next: PermissionState) => void;
+}) {
+  const here = setHere(action, scope);
+  const affected = useAffectedAgentCount({ kind: 'action', action: action.id, area: area.id });
+  const hint = here
+    ? 'Set on its own'
+    : action.alwaysAsks
+      ? 'Always asks, so you see what it would change'
+      : action.resolved.destructiveAsk
+        ? 'Always asks unless you set it here'
+        : `Follows ${area.label}`;
+  const preview =
+    scope.kind === 'default' && affected !== undefined ? describeAffectedAgents(affected) : null;
+  return (
+    <li
+      className="flex flex-col gap-2 py-2 @md:flex-row @md:items-center @md:justify-between"
+      data-testid={`permission-action-${action.id}`}
+    >
+      <div className="min-w-0">
+        <p className="text-sm">{action.title}</p>
+        <p className="text-muted-foreground text-xs">
+          <span>{hint}</span>
+          {preview ? <span> · {preview}</span> : null} ·{' '}
+          <ActionWhy action={action} preset={preset} {...(agentName ? { agentName } : {})} />
+        </p>
+      </div>
+      <div className="flex items-center gap-1">
+        {here ? reset : null}
+        <PermissionStateSwitch
+          value={action.resolved.state}
+          floor={area.floor || action.alwaysAsks === true}
+          disabled={disabled}
+          aria-label={action.title}
+          onChange={(next) => {
+            if (next !== action.resolved.state) onSave(next);
+          }}
+        />
+      </div>
+    </li>
+  );
 }
 
 /**
@@ -41,7 +133,7 @@ function setHere(action: PermissionActionEntry, scope: PermissionScope): boolean
  *
  * @param props - See {@link ActionOverridesProps}.
  */
-export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) {
+export function ActionOverrides({ scope, area, surface, preset, agentName }: ActionOverridesProps) {
   const write = useSetPermission(scope);
   const [open, setOpen] = useState(false);
   if (area.actions.length === 0) return null;
@@ -76,7 +168,11 @@ export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) 
           {own.map((action) => (
             <li key={action.id} className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground min-w-0">
-                Except {action.title}: {STATE_LABEL[action.resolved.state]}
+                <span>
+                  Except {action.title}: {STATE_LABEL[action.resolved.state]}
+                </span>{' '}
+                ·{' '}
+                <ActionWhy action={action} preset={preset} {...(agentName ? { agentName } : {})} />
               </span>
               {reset(action)}
             </li>
@@ -100,40 +196,19 @@ export function ActionOverrides({ scope, area, surface }: ActionOverridesProps) 
 
       {open ? (
         <ul className="divide-border w-full divide-y" aria-label={`${area.label} actions`}>
-          {area.actions.map((action) => {
-            const here = setHere(action, scope);
-            const hint = here
-              ? 'Set on its own'
-              : action.alwaysAsks
-                ? 'Always asks, so you see what it would change'
-                : action.resolved.destructiveAsk
-                  ? 'Always asks unless you set it here'
-                  : `Follows ${area.label}`;
-            return (
-              <li
-                key={action.id}
-                className="flex flex-col gap-2 py-2 @md:flex-row @md:items-center @md:justify-between"
-                data-testid={`permission-action-${action.id}`}
-              >
-                <div className="min-w-0">
-                  <p className="text-sm">{action.title}</p>
-                  <p className="text-muted-foreground text-xs">{hint}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  {here ? reset(action) : null}
-                  <PermissionStateSwitch
-                    value={action.resolved.state}
-                    floor={area.floor || action.alwaysAsks === true}
-                    disabled={write.isPending}
-                    aria-label={action.title}
-                    onChange={(next) => {
-                      if (next !== action.resolved.state) save(action, next);
-                    }}
-                  />
-                </div>
-              </li>
-            );
-          })}
+          {area.actions.map((action) => (
+            <ActionRow
+              key={action.id}
+              action={action}
+              area={area}
+              scope={scope}
+              preset={preset}
+              {...(agentName ? { agentName } : {})}
+              disabled={write.isPending}
+              reset={reset(action)}
+              onSave={(next) => save(action, next)}
+            />
+          ))}
         </ul>
       ) : null}
     </div>

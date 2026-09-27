@@ -37,6 +37,7 @@ import {
   wayName,
 } from '../lib/connect-route';
 import { FirstConnectStep } from './FirstConnectStep';
+import { ConnectionAccessCard } from './access/ConnectionAccessCard';
 
 interface ConnectDialogProps {
   /** Service selected from the account-free catalog. */
@@ -49,7 +50,10 @@ interface ConnectDialogProps {
   onFlowIdChange: (flowId: string | null) => void;
   /** Clears the transient service selection after the dialog closes. */
   onClose: () => void;
-  /** Opens exact agent access for the newly connected stable account. */
+  /**
+   * Opens the exact per-action access editor for the newly connected account,
+   * or hands a request-bound connection back to its request.
+   */
   onChooseAccess: (connectionId: string) => void;
 }
 
@@ -139,6 +143,12 @@ export function ConnectDialog({
   const close = () => {
     setOpen(false);
     onClose();
+  };
+
+  /** Leave a finished connection: forget its flow and close. */
+  const finish = () => {
+    onFlowIdChange(null);
+    close();
   };
 
   const begin = () => {
@@ -370,6 +380,24 @@ export function ConnectDialog({
                   />
                 )}
               </div>
+            ) : activeFlow.state === 'connected' && !agentRequestId ? (
+              <div className="space-y-4">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  <CheckCircle2 className="text-success size-4" aria-hidden />
+                  <span>{serviceName} is connected</span>
+                </p>
+                <ConnectionAccessCard
+                  mode="page"
+                  connectionId={activeFlow.connectionId}
+                  serviceName={serviceName}
+                  onSkip={finish}
+                  onFinished={finish}
+                  onEditExactActions={(connectionId) => {
+                    onChooseAccess(connectionId);
+                    finish();
+                  }}
+                />
+              </div>
             ) : activeFlow.state === 'connected' ? (
               <div className="space-y-4">
                 <div className="bg-success/5 flex items-start gap-3 rounded-lg p-4">
@@ -377,9 +405,7 @@ export function ConnectDialog({
                   <div>
                     <p className="text-sm font-medium">{serviceName} is connected</p>
                     <p className="text-muted-foreground mt-1 text-xs">
-                      {agentRequestId
-                        ? 'Return to the request to choose its exact actions.'
-                        : 'No agent can use it until you choose access.'}
+                      Return to the request to choose its exact actions.
                     </p>
                   </div>
                 </div>
@@ -387,11 +413,10 @@ export function ConnectDialog({
                   className="w-full"
                   onClick={() => {
                     onChooseAccess(activeFlow.connectionId);
-                    onFlowIdChange(null);
-                    close();
+                    finish();
                   }}
                 >
-                  {agentRequestId ? 'Review requested access' : 'Choose agents'}
+                  Review requested access
                   <ArrowUpRight className="size-4" aria-hidden />
                 </Button>
               </div>

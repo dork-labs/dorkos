@@ -14,6 +14,8 @@ import type {
   PermissionHistoryResponse,
   PermissionsResponse,
   SetPermissionPresetBody,
+  UndoPermissionChangeBody,
+  UndoPermissionChangeResponse,
 } from '@dorkos/shared/permissions';
 import type { PermissionWriteResult } from '@dorkos/shared/transport';
 import { fetchJSON } from './http-client';
@@ -70,6 +72,16 @@ export function createPermissionMethods(baseUrl: string) {
       if (query.limit) params.set('limit', String(query.limit));
       const search = params.toString();
       return fetchJSON(baseUrl, `/permissions/history${search ? `?${search}` : ''}`);
+    },
+
+    undoPermissionChange(
+      eventId: string,
+      body: UndoPermissionChangeBody = {}
+    ): Promise<UndoPermissionChangeResponse> {
+      return fetchJSON(baseUrl, `/permissions/history/${encodeURIComponent(eventId)}/undo`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
     },
   };
 }

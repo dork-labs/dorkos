@@ -37,6 +37,7 @@ export interface FixtureAgent {
   name: string;
   displayName?: string;
   projectPath: string;
+  runtime?: string;
   permissions?: AgentPermissions;
 }
 
@@ -102,6 +103,7 @@ export function createPermissionWorld(
         metadata: event.metadata ?? null,
       });
     },
+    get: async (id: string) => events.find((e) => e.id === id),
     list: async (query: ListActivityQuery) => {
       const cats = query.categories?.split(',');
       const rows = [...events]
@@ -125,6 +127,11 @@ export function createPermissionWorld(
         stops.global = stop;
         if (acknowledge) autonomy.acknowledgedAt = new Date(clock).toISOString();
       },
+      setRuntimeTrustStop: (runtime, stop) => {
+        if (!['claude-code', 'codex', 'opencode'].includes(runtime)) return false;
+        stops.perRuntime[runtime] = stop;
+        return true;
+      },
       hasAutonomyAck: () => autonomy.acknowledgedAt !== null,
       recordAutonomyAck: () => {
         autonomy.acknowledgedAt = new Date(clock).toISOString();
@@ -137,6 +144,7 @@ export function createPermissionWorld(
           name: a.name,
           ...(a.displayName ? { displayName: a.displayName } : {}),
           projectPath: a.projectPath,
+          ...(a.runtime ? { runtime: a.runtime } : {}),
         })),
       readPermissions: async (projectPath) => {
         const agent = [...agents.values()].find((a) => a.projectPath === projectPath);

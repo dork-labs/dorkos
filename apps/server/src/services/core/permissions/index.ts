@@ -44,6 +44,7 @@ export {
   type StandingGrantLicence,
 } from './ended-standing-grants.js';
 export { PermissionObserver } from './permission-observer.js';
+export { createAlwaysSuggestion } from './always-suggestion.js';
 export { ArrivalRecord } from './arrival-record.js';
 export { narrowArrivedPermissions, type NarrowingContext } from './arrival-narrowing.js';
 export { readAgentPermissionsFromManifest } from '../capabilities/permission-enforcement.js';
@@ -173,9 +174,12 @@ export function narrowingReader(
   }
 ): (agentPath: string) => Promise<AgentPermissions | undefined> {
   return async (agentPath) => {
-    const stored = await read(agentPath);
     const agentId = deps.agentAt(agentPath);
-    if (!agentId || !deps.arrivals.isPending(agentId)) return stored;
+    // A folder that is not a registered agent has no settings of its own: its
+    // file was never screened, so it follows the defaults.
+    if (!agentId) return undefined;
+    const stored = await read(agentPath);
+    if (!deps.arrivals.isPending(agentId)) return stored;
     return narrowArrivedPermissions(stored, deps.context()).kept;
   };
 }
@@ -231,6 +235,12 @@ export function createPermissionService(wiring: PermissionServiceWiring): Permis
           });
         }
         wiring.config.setDot('runtimes.defaultTrustStop', stop);
+      },
+      setRuntimeTrustStop: (runtime, stop) => {
+        const path = RUNTIME_TRUST_STOP_PATHS[runtime];
+        if (!path) return false;
+        wiring.config.setDot(path, stop);
+        return true;
       },
       hasAutonomyAck: hasStandingAutonomyAck,
       recordAutonomyAck: () =>

@@ -29,7 +29,13 @@ const OVERVIEW = {
   preset: 'full',
   defaults: { areas: { rooms: 'ask' }, actions: {} },
   changeCount: 1,
-  filesAndCommands: { stop: 'autonomy', presetStop: 'autonomy', runtimes: [], exceptions: [] },
+  filesAndCommands: {
+    stop: 'autonomy',
+    presetStop: 'autonomy',
+    runtimes: [],
+    exceptions: [],
+    followingAgentIds: ['a1', 'a2'],
+  },
   areas: [
     {
       id: 'rooms',
@@ -101,6 +107,8 @@ describe('dorkos permissions', () => {
       surface: 'cli',
     });
     expect(out()).toContain('rooms is now Ask for every agent.');
+    // The same count every app surface shows: the auditor has Rooms of its own.
+    expect(out()).toContain('Affects 1 agent.');
     expect(out()).toContain('1 agent keeps its own settings');
   });
 
@@ -185,6 +193,88 @@ describe('dorkos permissions', () => {
       '/api/permissions/history?limit=5&agentId=a2'
     );
     expect(out()).toContain('Rooms: Ask');
+    // The id is what `undo` takes.
+    expect(out()).toMatch(/^e1\s/m);
+  });
+
+  it('undoes one change, and says what it left alone', async () => {
+    apiCallMock.mockResolvedValue({
+      changes: [
+        {
+          target: { kind: 'default' },
+          key: { kind: 'area', area: 'rooms' },
+          before: 'ask',
+          after: null,
+        },
+      ],
+      skipped: [
+        {
+          change: {
+            target: { kind: 'agent', agentId: 'a1', agentPath: '/a1', agentName: 'Auditor' },
+            key: { kind: 'area', area: 'rooms' },
+            before: 'blocked',
+            after: null,
+          },
+          current: 'ask',
+          reason: 'changed-since',
+        },
+      ],
+    });
+    expect(await runPermissionsDispatcher(['undo', 'e1'])).toBe(0);
+    expect(apiCallMock).toHaveBeenCalledWith('POST', '/api/permissions/history/e1/undo', {});
+    expect(out()).toContain('Undid 1 change.');
+    expect(out()).toMatch(/Auditor\s+rooms\s+Blocked\s+changed since: now Ask/);
+  });
+
+  it('names a Files & commands stop as the stop, not the state that shares its value', async () => {
+    apiCallMock.mockResolvedValue({
+      changes: [],
+      skipped: [
+        {
+          change: {
+            target: { kind: 'default' },
+            key: { kind: 'files' },
+            before: 'ask',
+            after: 'autonomy',
+          },
+          current: 'act',
+          reason: 'changed-since',
+        },
+      ],
+    });
+    expect(await runPermissionsDispatcher(['undo', 'e2'])).toBe(0);
+    expect(out()).toMatch(/Everyone\s+files\s+Ask first\s+changed since: now Act/);
+  });
+
+  it('on a conflict, names it and the --force next step', async () => {
+    apiCallMock.mockRejectedValue(
+      new ApiError(409, {
+        error: 'This has changed since. Set it back anyway?',
+        code: 'UNDO_CONFLICT',
+        conflicts: [
+          {
+            change: {
+              target: { kind: 'default' },
+              key: { kind: 'area', area: 'rooms' },
+              before: null,
+              after: 'ask',
+            },
+            current: 'blocked',
+            reason: 'changed-since',
+          },
+        ],
+      } as { error: string; code: string })
+    );
+    expect(await runPermissionsDispatcher(['undo', 'e1'])).toBe(1);
+    expect(err()).toContain('This has changed since.');
+    expect(err()).toMatch(/Everyone\s+rooms\s+not set\s+changed since: now Blocked/);
+    expect(err()).toContain('dorkos permissions undo e1 --force');
+
+    apiCallMock.mockResolvedValue({ changes: [], skipped: [] });
+    expect(await runPermissionsDispatcher(['undo', 'e1', '--force'])).toBe(0);
+    expect(apiCallMock).toHaveBeenLastCalledWith('POST', '/api/permissions/history/e1/undo', {
+      force: true,
+    });
   });
 });
 

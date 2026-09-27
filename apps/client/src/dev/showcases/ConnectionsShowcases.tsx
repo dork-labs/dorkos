@@ -12,6 +12,7 @@ import { configKeys } from '@/layers/entities/config';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { ConnectionAccessCardShowcase } from './ConnectionAccessCardShowcase';
 
 function mockAccount(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
   return {
@@ -36,7 +37,8 @@ function mockAccount(over: Partial<ConnectorConnectionSummary>): ConnectorConnec
 }
 
 /**
- * Connections surface: the service tile, the connected-account row, and — see
+ * Connections surface: the service tile, the connected-account row, the shared
+ * "who can use it" access card, and — see
  * {@link AccountsRegionShowcase}, {@link MessagingRegionShowcase} — the two
  * composed regions the leaves live inside of.
  */
@@ -101,6 +103,7 @@ export function ConnectionsShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
+      <ConnectionAccessCardShowcase />
       <AccountsRegionShowcase />
       <MessagingRegionShowcase />
       <ConnectionWaysShowcase />

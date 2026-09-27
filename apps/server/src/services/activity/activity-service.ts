@@ -44,6 +44,25 @@ interface EmitEvent {
  */
 export type ActivityObserver = (event: ActivityItem) => void;
 
+/** One stored row, as the public shape: metadata parsed back into an object. */
+function toActivityItem(row: typeof activityEvents.$inferSelect): ActivityItem {
+  return {
+    id: row.id,
+    occurredAt: row.occurredAt,
+    actorType: row.actorType as ActorType,
+    actorId: row.actorId,
+    actorLabel: row.actorLabel,
+    category: row.category as ActivityCategory,
+    eventType: row.eventType,
+    resourceType: row.resourceType,
+    resourceId: row.resourceId,
+    resourceLabel: row.resourceLabel,
+    summary: row.summary,
+    linkPath: row.linkPath,
+    metadata: row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : null,
+  };
+}
+
 /**
  * Manages the activity_events table — append-only event log with
  * cursor-based pagination and time-based pruning.
@@ -169,26 +188,25 @@ export class ActivityService {
     const hasMore = rows.length > limit;
     const items = rows.slice(0, limit);
 
-    const mapped: ActivityItem[] = items.map((row) => ({
-      id: row.id,
-      occurredAt: row.occurredAt,
-      actorType: row.actorType as ActorType,
-      actorId: row.actorId,
-      actorLabel: row.actorLabel,
-      category: row.category as ActivityCategory,
-      eventType: row.eventType,
-      resourceType: row.resourceType,
-      resourceId: row.resourceId,
-      resourceLabel: row.resourceLabel,
-      summary: row.summary,
-      linkPath: row.linkPath,
-      metadata: row.metadata ? (JSON.parse(row.metadata) as Record<string, unknown>) : null,
-    }));
-
     return {
-      items: mapped,
+      items: items.map(toActivityItem),
       nextCursor: hasMore && items.length > 0 ? items[items.length - 1].occurredAt : null,
     };
+  }
+
+  /**
+   * Read one event by its id, e.g. the permission change an Undo names.
+   *
+   * @param id - The event's ULID.
+   * @returns The event, or `undefined` when there is none (or it was pruned).
+   */
+  async get(id: string): Promise<ActivityItem | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(activityEvents)
+      .where(eq(activityEvents.id, id))
+      .limit(1);
+    return row ? toActivityItem(row) : undefined;
   }
 
   /**

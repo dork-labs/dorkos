@@ -24,6 +24,7 @@ import {
   discardSettlingApprovals,
   holdDecidedApproval,
 } from '../model/settling-approvals';
+import { discardDismissedSuggestions } from '../model/use-dismiss-suggestion';
 import { ApprovalCard } from '../ui/ApprovalCard';
 
 /** Build a pending approval, overriding only what a test cares about. */
@@ -84,6 +85,7 @@ afterEach(() => {
   // survive the hold. A suite that answered something would otherwise carry it
   // into the next case twice over.
   discardSettlingApprovals();
+  discardDismissedSuggestions();
   vi.useRealTimers();
   vi.clearAllMocks();
 });
@@ -270,6 +272,68 @@ describe('ApprovalCard', () => {
     it('draws no blocked line on an ordinary request', () => {
       renderCard(ROOMS);
       expect(document.querySelector('[data-slot="approval-blocked-request"]')).toBeNull();
+    });
+  });
+
+  describe('the gentle suggestion (spec agent-permissions, task 4.4)', () => {
+    const SUGGESTED = buildApproval({
+      capabilityId: 'rooms.create',
+      capabilityTitle: 'Open a room',
+      tier: 'act',
+      requestedBy: 'DorkBot',
+      area: 'rooms',
+      alwaysOffered: true,
+      suggestAlways: true,
+      allowedThisWeek: 3,
+    });
+
+    it('highlights Always allow with the true count, keeping Allow first', () => {
+      const { container } = renderCard(SUGGESTED);
+      expect(screen.getByText(/You've allowed this 3 times this week\./)).toBeVisible();
+      expect(
+        container.querySelector('[data-slot="approval-always"]')?.getAttribute('data-suggested')
+      ).toBe('true');
+      // Never a reordering: the one-time yes stays the first, filled answer.
+      const names = screen
+        .getAllByRole('button')
+        .filter((b) => b.dataset.slot?.startsWith('approval-'))
+        .map((b) => b.textContent);
+      expect(names).toEqual(['Allow', 'Always allow', 'Deny']);
+    });
+
+    it('"Not now" asks the server to stop suggesting it, and the highlight goes at once', async () => {
+      const dismissAlwaysSuggestion = vi.fn().mockResolvedValue({ ok: true });
+      const { container } = renderCard(SUGGESTED, { dismissAlwaysSuggestion });
+
+      await userEvent.click(
+        screen.getByRole('button', {
+          name: 'Not now: stop suggesting Always allow for Open a room',
+        })
+      );
+
+      expect(dismissAlwaysSuggestion).toHaveBeenCalledWith(SUGGESTED.approvalId);
+      expect(screen.queryByText(/You've allowed this/)).not.toBeInTheDocument();
+      expect(
+        container.querySelector('[data-slot="approval-always"]')?.hasAttribute('data-suggested')
+      ).toBe(false);
+      // Always allow is still there to answer with; only the nudge went.
+      expect(screen.getByRole('button', { name: 'Always allow' })).toBeVisible();
+    });
+
+    it('puts the highlight back when "Not now" did not save', async () => {
+      const dismissAlwaysSuggestion = vi.fn().mockRejectedValue(new Error('no'));
+      renderCard(SUGGESTED, { dismissAlwaysSuggestion });
+      await userEvent.click(screen.getByRole('button', { name: /^Not now/ }));
+      expect(await screen.findByText(/You've allowed this 3 times/)).toBeVisible();
+    });
+
+    it('says nothing when the server does not suggest it, or does not offer Always allow', () => {
+      renderCard({ ...SUGGESTED, suggestAlways: undefined, allowedThisWeek: undefined });
+      expect(screen.queryByText(/You've allowed this/)).not.toBeInTheDocument();
+      cleanup();
+      renderCard({ ...SUGGESTED, alwaysOffered: false, area: 'reach' });
+      expect(screen.queryByText(/You've allowed this/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Not now/ })).not.toBeInTheDocument();
     });
   });
 

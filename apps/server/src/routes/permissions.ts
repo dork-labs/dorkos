@@ -1,7 +1,7 @@
 /**
  * The permission routes (spec `agent-permissions` D10): read the default layer
- * and one agent's settings, change the preset, the defaults and one agent, and
- * read the history.
+ * and one agent's settings, change the preset, the defaults and one agent, read
+ * the history, and undo one change from it (D14).
  *
  * ## Every mutating route proves a person
  *
@@ -28,6 +28,7 @@ import {
   PatchPermissionDefaultsBodySchema,
   PermissionHistoryQuerySchema,
   SetPermissionPresetBodySchema,
+  UndoPermissionChangeBodySchema,
 } from '@dorkos/shared/permissions';
 
 import { parseBody } from '../lib/route-utils.js';
@@ -99,7 +100,7 @@ export function writerForPosture(
 /** Answer a service refusal, or rethrow anything else. */
 function sendPermissionError(res: Response, err: unknown): Response {
   if (err instanceof PermissionError) {
-    return res.status(err.status).json({ error: err.message, code: err.code });
+    return res.status(err.status).json({ error: err.message, code: err.code, ...err.details });
   }
   throw err;
 }
@@ -157,6 +158,21 @@ export function createPermissionsRouter(deps: {
     try {
       const changes = await permissions.setDefaults(body, writer);
       return res.json({ changes, permissions: await permissions.getOverview() });
+    } catch (err) {
+      return sendPermissionError(res, err);
+    }
+  });
+
+  // Undo one recorded change: a new change, audited like any other. A key
+  // that changed since is a conflict the person decides on (409, then `force`).
+  router.post('/permissions/history/:eventId/undo', async (req, res) => {
+    const writer = person(req, res);
+    if (!writer) return;
+    // Express 5 leaves `req.body` undefined on an empty POST: a plain Undo.
+    const body = parseBody(UndoPermissionChangeBodySchema, req.body ?? {}, res);
+    if (!body) return;
+    try {
+      return res.json(await permissions.undo(req.params.eventId, body, writer));
     } catch (err) {
       return sendPermissionError(res, err);
     }
