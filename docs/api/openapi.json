@@ -26702,7 +26702,8 @@
                   "required": [
                     "providers",
                     "appConnections"
-                  ]
+                  ],
+                  "additionalProperties": false
                 }
               }
             }
