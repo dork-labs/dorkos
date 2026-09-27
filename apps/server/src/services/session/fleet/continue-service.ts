@@ -41,7 +41,12 @@ import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { peekProjector } from '../session-state-projector.js';
-import { carryOverSession, recordCarryOverActivity } from './carry-over.js';
+import {
+  carryOverSession,
+  clearUnpointedCarryOvers,
+  recordCarryOverActivity,
+  unpointedCarryOver,
+} from './carry-over.js';
 import {
   armClaimedHandoff,
   clearClaimedHandoff,
@@ -297,6 +302,9 @@ export async function continueSession(
   }
   // Idempotent per episode: a moved session answers with where it went.
   if (body.account && plan.mode === 'continued') return { sessionId: plan.sessionId };
+  // Moved, though the plan does not say so yet (its pointer is being retried).
+  const started = unpointedCarryOver(stored);
+  if (body.account && started) return { sessionId: started };
   const targetRuntime = body.runtime ?? LIMIT_RUNTIME;
   const crossRuntime = body.account !== undefined && targetRuntime !== LIMIT_RUNTIME;
   if (crossRuntime && !runtimeRegistry.has(targetRuntime)) {
@@ -423,7 +431,7 @@ export async function waitForReset(
   // Decide once and tell the advisor once; only the local write is retried.
   const stored = await requireLimit(sessionId);
   const current = stored.limit.plan;
-  if (current.mode === 'continued') throw alreadyMoved();
+  if (current.mode === 'continued' || unpointedCarryOver(stored)) throw alreadyMoved();
   if (continueInFlight(episodeKey(stored))) throw moving();
   const allowed = mayCarryOver(stored);
   if (opts.autoResume === true && !allowed) {
@@ -459,6 +467,7 @@ export async function cancelAutoContinue(sessionId: string): Promise<LimitPlan> 
   if (stored.limit.plan.mode !== 'auto') {
     throw new ContinueError(409, 'NOT_HANDING_OFF', 'There is no handoff to cancel.');
   }
+  if (unpointedCarryOver(stored)) throw alreadyMoved();
   // Core's own handoff already started the new session: too late to cancel.
   if (continueInFlight(episodeKey(stored))) throw moving();
   if (stored.claimedBy) {
@@ -604,5 +613,6 @@ export function installContinueService(opts: {
     setContinuationRecorder(undefined);
     activity = undefined;
     clearContinuesInFlight();
+    clearUnpointedCarryOvers();
   };
 }

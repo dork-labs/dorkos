@@ -44,6 +44,7 @@ import {
 } from './limit-plans.js';
 import type { StoredSessionLimit } from './session-limit-store.js';
 import { crossRuntimePermissionMode } from './carry-over-power.js';
+import { episodeKey } from './continue-in-flight.js';
 
 /** The first message of a carried-over session when the advisor gives none (spec D9, quoted). */
 export const CARRY_OVER_PROMPT =
@@ -217,6 +218,64 @@ export function recordCarryOverActivity(
     .catch(() => undefined);
 }
 
+/** How long to wait before each retry of a pointer write that failed. */
+export const POINTER_RETRY_DELAYS_MS = [1_000, 5_000] as const;
+
+/**
+ * New sessions already started for a limit episode whose source plan does not
+ * point at them yet (the pointer write failed), keyed by episode. In memory
+ * only, like the timers: every continue for that episode answers with this
+ * session instead of starting another. Dropped once the pointer lands.
+ */
+const unpointed = new Map<string, string>();
+
+/**
+ * The session a carry-over already started for this episode while its source
+ * plan does not point at it yet, if any.
+ *
+ * @param stored - The source's stored limit.
+ */
+export function unpointedCarryOver(stored: StoredSessionLimit): string | undefined {
+  return unpointed.get(episodeKey(stored));
+}
+
+/** Forget every unpointed carry-over (shutdown and tests). */
+export function clearUnpointedCarryOvers(): void {
+  unpointed.clear();
+}
+
+/**
+ * Try the pointer again, 1 s and then 5 s later: it is idempotent through the
+ * compare-and-set, and lands over whatever plan is there unless the episode is
+ * gone or already continued.
+ */
+function retryPointer(
+  source: StoredSessionLimit,
+  newSessionId: string,
+  accountId: string,
+  attempt = 0
+): void {
+  const delay = POINTER_RETRY_DELAYS_MS[attempt];
+  const key = episodeKey(source);
+  if (delay === undefined) {
+    logger.error('[carry-over] gave up pointing the old session at the new one', {
+      sourceSessionId: source.sessionId,
+      newSessionId,
+    });
+    return;
+  }
+  const timer = setTimeout(() => {
+    if (unpointed.get(key) !== newSessionId) return;
+    pointAtNewSession(source, newSessionId, accountId).then(
+      () => {
+        if (unpointed.get(key) === newSessionId) unpointed.delete(key);
+      },
+      () => retryPointer(source, newSessionId, accountId, attempt + 1)
+    );
+  }, delay);
+  timer.unref?.();
+}
+
 /**
  * Point the source's plan at the new session. The session has started, so
  * the pointer must land: a compare-and-set miss re-reads and writes again over
@@ -336,6 +395,8 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
   // The new session is running: from here on nothing may reject, or a caller
   // that retries (the automatic handoff's re-fire, a person's second click)
   // would start a second one. A failed pointer is logged; the session stands.
+  // Until the pointer lands, the episode remembers the new session in memory,
+  // so a second continue answers with it rather than starting another.
   try {
     await pointAtNewSession(source, newSessionId, targetAccountId);
   } catch (err) {
@@ -344,6 +405,8 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
       newSessionId,
       err: err instanceof Error ? err.message : String(err),
     });
+    unpointed.set(episodeKey(source), newSessionId);
+    retryPointer(source, newSessionId, targetAccountId);
   }
   recordCarryOverActivity(request.activity, {
     by,

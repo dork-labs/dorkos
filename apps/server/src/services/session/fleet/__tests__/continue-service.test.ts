@@ -1240,8 +1240,20 @@ describe('core’s automatic handoff', () => {
     await vi.advanceTimersByTimeAsync(60_000);
     held.release();
     expect(await person).toEqual({ sessionId: 'new-held' });
-    await vi.advanceTimersByTimeAsync(60_000);
     expect(thrown).toBe(true);
+    // The pointer has not landed yet: a second click answers with the same
+    // session, and a wait cannot hold work that already moved.
+    expect(plan('src-1')?.mode).toBe('auto');
+    expect(await continueSession('src-1', { account: 'spare' }, deps)).toEqual({
+      sessionId: 'new-held',
+    });
+    expect((await refusal(waitForReset('src-1', {}))).code).toBe('ALREADY_MOVED');
+    // The retry lands a second later.
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() =>
+      expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-held', accountId: 'busy' })
+    );
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
   });
 

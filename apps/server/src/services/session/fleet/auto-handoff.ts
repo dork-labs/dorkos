@@ -30,7 +30,7 @@ import { notifyAutoMoveFailed } from '../../notifications/emitters/session-lifec
 import type { MeshCore } from '@dorkos/mesh';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { isAgentLaunchCapFull } from '../launch/launch-session.js';
-import { carryOverSession } from './carry-over.js';
+import { carryOverSession, unpointedCarryOver } from './carry-over.js';
 import {
   ContinueError,
   continueInFlight,
@@ -181,7 +181,9 @@ export function fireAutoHandoff(
     stored.limit.since !== since ||
     plan?.mode !== 'auto' ||
     plan.fireAt !== fireAt ||
-    stored.claimedBy
+    stored.claimedBy ||
+    // Already moved; only the pointer is still being retried.
+    unpointedCarryOver(stored)
   ) {
     return Promise.resolve(undefined);
   }
