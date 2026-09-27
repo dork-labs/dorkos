@@ -8,6 +8,7 @@ import {
   accountAdvisorOwner,
   callAdvisor,
   hasAccountAdvisor,
+  invokeAdvisor,
   registerAccountAdvisor,
   validateAdvisorRanking,
   validateCarryOverSeed,
@@ -106,6 +107,31 @@ describe('callAdvisor', () => {
     expect(settled).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(await call).toBeUndefined();
+  });
+
+  it('invokeAdvisor tells a void success from a hang, a throw or a missing method', async () => {
+    vi.useFakeTimers();
+    const info = { sessionId: 's', cwd: '/w', runtime: 'claude-code', accountId: 'work' };
+    const target = { runtime: 'claude-code', accountId: 'client' };
+    registerAccountAdvisor('flow', advisor({ move: async () => {}, cancelAuto: () => {} }));
+    expect(await invokeAdvisor('move', info, target)).toBe(true);
+    expect(await invokeAdvisor('cancelAuto', info)).toBe(true);
+    expect(await invokeAdvisor('wait', info, null, false)).toBe(false);
+
+    __resetAccountAdvisorForTests();
+    registerAccountAdvisor(
+      'flow',
+      advisor({
+        move: () => new Promise(() => {}),
+        cancelAuto: () => {
+          throw new Error('boom');
+        },
+      })
+    );
+    const move = invokeAdvisor('move', info, target);
+    await vi.advanceTimersByTimeAsync(ADVISOR_TIMEOUT_MS);
+    expect(await move).toBe(false);
+    expect(await invokeAdvisor('cancelAuto', info)).toBe(false);
   });
 
   it('passes an answer inside the bound through', async () => {

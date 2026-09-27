@@ -91,8 +91,48 @@ type AdvisorFn<M extends AdvisorMethod> =
     ? { args: A; result: Awaited<R> }
     : never;
 
+const TIMED_OUT = Symbol('advisor-timed-out');
+
+type Settled<T> = { ok: true; value: T } | { ok: false };
+
+/** Run one advisor method within the bound; `ok: false` on no advisor, no method, a throw or a timeout. */
+async function settleAdvisor<M extends AdvisorMethod>(
+  method: M,
+  args: AdvisorFn<M>['args']
+): Promise<Settled<AdvisorFn<M>['result']>> {
+  const registration = current;
+  const fn = registration?.advisor[method] as ((...a: AdvisorFn<M>['args']) => unknown) | undefined;
+  if (!registration || typeof fn !== 'function') return { ok: false };
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ADVISOR_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  try {
+    const answer = await Promise.race([
+      Promise.resolve().then(() => fn.apply(registration.advisor, args)),
+      timeout,
+    ]);
+    if (answer === TIMED_OUT) {
+      logger.warn(
+        `[account-advisor] ${registration.ownerId}'s ${method} took longer than ${ADVISOR_TIMEOUT_MS} ms; using the default`
+      );
+      return { ok: false };
+    }
+    return { ok: true, value: answer as AdvisorFn<M>['result'] };
+  } catch (err) {
+    logger.warn(`[account-advisor] ${registration.ownerId}'s ${method} failed; using the default`, {
+      err: String(err),
+    });
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
- * Call one advisor method, bounded at {@link ADVISOR_TIMEOUT_MS}.
+ * Call one advisor method that ANSWERS something (`rank`, `onLimited`,
+ * `modelFallback`, `carryOver`, `claims`), bounded at {@link ADVISOR_TIMEOUT_MS}.
  *
  * @param method - The method to call.
  * @param args - Its arguments.
@@ -103,34 +143,26 @@ export async function callAdvisor<M extends AdvisorMethod>(
   method: M,
   ...args: AdvisorFn<M>['args']
 ): Promise<AdvisorFn<M>['result'] | undefined> {
-  const registration = current;
-  const fn = registration?.advisor[method] as ((...a: AdvisorFn<M>['args']) => unknown) | undefined;
-  if (!registration || typeof fn !== 'function') return undefined;
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<'timeout'>((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), ADVISOR_TIMEOUT_MS);
-    timer.unref?.();
-  });
-  try {
-    const answer = await Promise.race([
-      Promise.resolve().then(() => fn.apply(registration.advisor, args)),
-      timeout,
-    ]);
-    if (answer === 'timeout') {
-      logger.warn(
-        `[account-advisor] ${registration.ownerId}'s ${method} took longer than ${ADVISOR_TIMEOUT_MS} ms; using the default`
-      );
-      return undefined;
-    }
-    return answer as AdvisorFn<M>['result'];
-  } catch (err) {
-    logger.warn(`[account-advisor] ${registration.ownerId}'s ${method} failed; using the default`, {
-      err: String(err),
-    });
-    return undefined;
-  } finally {
-    clearTimeout(timer);
-  }
+  const settled = await settleAdvisor(method, args);
+  return settled.ok ? settled.value : undefined;
+}
+
+/**
+ * Call one advisor method whose only answer is whether it succeeded (`move`,
+ * `cancelAuto`, `wait` resolve to nothing), bounded at {@link ADVISOR_TIMEOUT_MS}.
+ * {@link callAdvisor} cannot tell those apart, since success and failure would
+ * both read as `undefined`.
+ *
+ * @param method - The method to call.
+ * @param args - Its arguments.
+ * @returns True when it resolved within the bound; false when no advisor is
+ *   registered, it lacks the method, it throws, or it takes too long.
+ */
+export async function invokeAdvisor<M extends AdvisorMethod>(
+  method: M,
+  ...args: AdvisorFn<M>['args']
+): Promise<boolean> {
+  return (await settleAdvisor(method, args)).ok;
 }
 
 /**

@@ -571,7 +571,7 @@ const unregister = ctx.accounts.registerAdvisor({
       recommendedId: candidates[0]?.id ?? null,
     };
   },
-  // Optional: onLimited, modelFallback, carryOver, claims, move, wait
+  // Optional: onLimited, modelFallback, carryOver, claims, move, cancelAuto, wait
 });
 ```
 

@@ -181,11 +181,20 @@ export interface AccountAdvisor {
   ): CarryOverSeed | Promise<CarryOverSeed>;
   /** Whether this extension owns the session, so only it moves the session. */
   claims?(info: SessionInfo): boolean | Promise<boolean>;
-  /** Move a claimed session to another account; returns the new session's id. */
-  move?(
-    info: SessionInfo,
-    target: { runtime: string; accountId: string }
-  ): { sessionId: string } | Promise<{ sessionId: string }>;
+  /**
+   * A person asked to move a claimed session to another account. Resolving
+   * within the 2 second bound means the extension ACCEPTED the move; core
+   * then shows the session as handing off. The handoff itself may take much
+   * longer (a minute or more): when it is done, report the new session with
+   * {@link AccountsApi.markContinued}. A throw or timeout refuses the move.
+   */
+  move?(info: SessionInfo, target: { runtime: string; accountId: string }): void | Promise<void>;
+  /**
+   * A person cancelled a pending automatic handoff on a claimed session.
+   * Resolving within the 2 second bound means it is cancelled and core asks the
+   * person again; a throw or timeout refuses the cancel.
+   */
+  cancelAuto?(info: SessionInfo): void | Promise<void>;
   /** A person chose to wait for the reset on a claimed session. */
   wait?(info: SessionInfo, resumeAt: string | null, autoResume: boolean): void | Promise<void>;
 }
@@ -205,7 +214,11 @@ export interface AccountsApi {
   onUsage(listener: (usage: AccountUsage) => void): () => void;
   /**
    * Tell DorkOS this extension moved a session it claimed to a new session, so
-   * the source session shows where its work went.
+   * the source session shows where its work went. This is how a move accepted
+   * by {@link AccountAdvisor.move} (or an automatic handoff the extension ran
+   * itself) finishes: call it once the new session exists. Core puts a handoff
+   * back to asking the person if no report arrives within 10 minutes, and still
+   * accepts a report that comes later.
    */
   markContinued(
     sourceSessionId: string,
