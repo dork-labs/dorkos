@@ -356,6 +356,24 @@ export class RuntimeRegistry {
   }
 
   /**
+   * Take back the binding row a caller wrote at a turn's launch when that turn
+   * then never ran (DOR-2447).
+   *
+   * A room records a session's owner as its turn launches, because a runtime may
+   * ask for authority that needs the row the moment it starts. If the dispatch
+   * then fails before any turn runs, the room never binds that freshly minted
+   * id and mints another next time — so the row would belong to nothing. Only
+   * the caller that wrote the row, for an id only it knows, may ask this.
+   *
+   * @param sessionId - The minted session id whose launch never produced a turn
+   */
+  async forgetUnstartedSession(sessionId: string): Promise<void> {
+    const db = this.requireDb('forgetUnstartedSession');
+    db.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).run();
+    return Promise.resolve();
+  }
+
+  /**
    * Return the runtime type string for a session.
    *
    * **This answer is sometimes a GUESS, and this signature cannot tell you
