@@ -175,7 +175,7 @@ describe('validateAdvisorRanking', () => {
       opts
     );
     const reason = result?.accounts[0]?.reason ?? '';
-    expect(reason.length).toBe(MAX_RANKING_REASON_LENGTH);
+    expect(Array.from(reason)).toHaveLength(MAX_RANKING_REASON_LENGTH);
     expect(reason.endsWith('\u2026')).toBe(true);
     expect(logger.warn).toHaveBeenCalled();
     const short = validateAdvisorRanking(
@@ -183,6 +183,29 @@ describe('validateAdvisorRanking', () => {
       opts
     );
     expect(short?.accounts[0]?.reason).toBe('x'.repeat(200));
+  });
+
+  it('cuts on code points, never leaving half an emoji', () => {
+    // 198 ASCII characters, then emoji straddling the UTF-16 cut at 199.
+    const reason = `${'x'.repeat(198)}${'\u{1F600}'.repeat(5)}`;
+    const cut =
+      validateAdvisorRanking(
+        { accounts: [{ id: 'work', eligible: true, reason }], recommendedId: null },
+        opts
+      )?.accounts[0]?.reason ?? '';
+    expect(cut).toBe(`${'x'.repeat(198)}\u{1F600}\u2026`);
+    expect(Array.from(cut)).toHaveLength(MAX_RANKING_REASON_LENGTH);
+    expect(cut).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+    );
+    // Exactly 200 code points (more UTF-16 units) is not cut.
+    const exact = `${'x'.repeat(199)}\u{1F600}`;
+    expect(
+      validateAdvisorRanking(
+        { accounts: [{ id: 'work', eligible: true, reason: exact }], recommendedId: null },
+        opts
+      )?.accounts[0]?.reason
+    ).toBe(exact);
   });
 
   it('drops a recommendedId that names no kept row', () => {

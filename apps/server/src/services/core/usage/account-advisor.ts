@@ -190,11 +190,16 @@ export function validateAdvisorRanking(
     if (seen.has(key) || !opts.isKnown(runtime, row.data.id)) continue;
     seen.add(key);
     let reason = row.data.reason;
-    if (reason.length > MAX_RANKING_REASON_LENGTH) {
+    // Measured and cut in code points, so an emoji is never split into a lone surrogate.
+    const codePoints = Array.from(reason);
+    if (codePoints.length > MAX_RANKING_REASON_LENGTH) {
       logger.warn(
-        `[account-advisor] a ranking reason for ${runtime}/${row.data.id} was ${reason.length} characters; cut to ${MAX_RANKING_REASON_LENGTH}`
+        `[account-advisor] a ranking reason for ${runtime}/${row.data.id} was ${codePoints.length} characters; cut to ${MAX_RANKING_REASON_LENGTH}`
       );
-      reason = `${reason.slice(0, MAX_RANKING_REASON_LENGTH - 1).trimEnd()}\u2026`;
+      reason = `${codePoints
+        .slice(0, MAX_RANKING_REASON_LENGTH - 1)
+        .join('')
+        .trimEnd()}\u2026`;
     }
     accounts.push({ ...row.data, reason, runtime });
   }
