@@ -6,6 +6,7 @@ import type { SDKControlGetUsageResponse } from '@anthropic-ai/claude-agent-sdk'
 import { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
 import { readConfigFile } from '../../../../core/usage/account-usage-reconcile.js';
 import { defaultAccountFolder } from '../../../../core/usage/runtime-accounts.js';
+import { claudeConfigDirEnv } from '../../claude-config-dir.js';
 import {
   AccountUsageUnavailableError,
   PROBE_FLOOR_MS,
@@ -15,6 +16,13 @@ import {
   type AccountProbeDeps,
   type ProbeQueryFactory,
 } from '../account-probe.js';
+
+// A spy over the real function, so every test keeps the real env and one test
+// can see which folder the probe asked it about.
+vi.mock('../../claude-config-dir.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../claude-config-dir.js')>();
+  return { ...actual, claudeConfigDirEnv: vi.fn(actual.claudeConfigDirEnv) };
+});
 
 let root: string;
 let dorkHome: string;
@@ -174,6 +182,18 @@ describe('probeAccount: an idle probe', () => {
     expect(calls.closed).toBe(1);
   });
 
+  it('reads plan limits with no window readings as failed, recording nothing', async () => {
+    const { factory, calls } = fakeQuery(async () =>
+      usageResponse({ rate_limits: { five_hour: { utilization: null, resets_at: null } } } as never)
+    );
+    const result = await probeAccount('work', deps(factory));
+    expect(result).toMatchObject({ probe: 'failed', reason: 'no-readings' });
+    expect(result.account.state).toBe('unknown');
+    expect(result.account.subscriptionType).toBeNull();
+    expect(workUsage().windows).toEqual([]);
+    expect(calls.closed).toBe(1);
+  });
+
   it('reads a thrown usage call as failed, records nothing, and closes both ends', async () => {
     const { factory, calls } = fakeQuery(async () => {
       throw new Error('boom\nstack line');
@@ -222,7 +242,7 @@ describe('probeAccount: which account', () => {
     expect(factory).not.toHaveBeenCalled();
   });
 
-  it('probes this computer’s own sign-in as `default` with CLAUDE_CONFIG_DIR unset', async () => {
+  it('probes this computer’s own sign-in as `default`, in the machine default folder', async () => {
     await writeConfig([]);
     store.stop();
     await startStore();
@@ -233,6 +253,16 @@ describe('probeAccount: which account', () => {
     expect(calls.options[0]?.env).toBeDefined();
     // `~/.claude` in this test is not the real one, so the folder is named.
     expect(calls.options[0]?.env?.CLAUDE_CONFIG_DIR).toBe(path.join(home, '.claude'));
+  });
+
+  it('builds the CLI environment from the account root, so ~/.claude reaches it unset', async () => {
+    const { factory, calls } = fakeQuery(async () => usageResponse());
+    vi.mocked(claudeConfigDirEnv).mockClear();
+    vi.mocked(claudeConfigDirEnv).mockReturnValueOnce({ CLAUDE_CONFIG_DIR: undefined });
+    await probeAccount('work', deps(factory));
+    expect(claudeConfigDirEnv).toHaveBeenCalledWith(workPath);
+    // Its answer is what the CLI gets: an unset variable, not the folder.
+    expect(calls.options[0]?.env).not.toHaveProperty('CLAUDE_CONFIG_DIR');
   });
 
   it('throws when the usage store is not running', async () => {

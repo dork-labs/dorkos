@@ -42,7 +42,10 @@ export interface AccountProbeResult {
   account: AccountUsage;
   /** `ok` recorded new readings; every other outcome recorded nothing. */
   probe: AccountProbeOutcome;
-  /** A short machine-readable reason for `failed` (and `throttled`). */
+  /**
+   * A short machine-readable reason for `failed` (`not-an-account`, `timeout`,
+   * `usage-unsupported`, `no-readings`, or the error's first line) and `throttled`.
+   */
   reason?: string;
 }
 
@@ -232,6 +235,9 @@ async function runProbe(
       return { account: store.usageOfAccount(account), probe: 'unavailable' };
     }
     const observations = mapSdkUsageWindows(response, new Date((deps.now ?? Date.now)()));
+    // Plan limits apply but no window carried a reading: nothing to record, and
+    // `ok` would claim a check that learned nothing.
+    if (observations.length === 0) return failed('no-readings');
     store.record('claude-code', { path: root }, observations, {
       subscriptionType: response.subscription_type ?? null,
     });
