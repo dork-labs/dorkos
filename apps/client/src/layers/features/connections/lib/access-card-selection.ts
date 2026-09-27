@@ -282,3 +282,24 @@ export function everyAgentCanWrite(
       shared.has(candidate.operationRevisionId) && candidate.capabilityClassification !== 'read'
   );
 }
+
+/**
+ * Whether saving "Every agent" as chosen leaves every agent able to delete.
+ * The card's levels never include delete actions, so this is only true while
+ * no level is chosen and the current shared set includes one.
+ *
+ * @param preview - Server snapshot.
+ * @param level - The chosen level, or `null` while the switch is mixed.
+ */
+export function everyAgentCanDelete(
+  preview: ConnectorReconciliationPreview,
+  level: CardAccessLevel | null
+): boolean {
+  if (level) return false;
+  const shared = new Set(preview.everyAgent.operationRevisionIds);
+  return preview.candidates.some(
+    (candidate) =>
+      shared.has(candidate.operationRevisionId) &&
+      candidate.capabilityClassification === 'destructive'
+  );
+}

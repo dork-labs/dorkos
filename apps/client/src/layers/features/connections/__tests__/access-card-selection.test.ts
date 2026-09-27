@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import {
   cardDecision,
+  everyAgentCanDelete,
   everyAgentCanWrite,
   everyAgentDecision,
   initialEveryAgentLevel,
@@ -297,6 +298,12 @@ describe('everyAgentDecision (DOR-2420)', () => {
     expect(everyAgentWriteWarning('asana', 'Asana')).toBe(
       'Every agent — including ones you add later — could make changes in Asana as you.'
     );
+    expect(everyAgentWriteWarning('gmail', 'Gmail', true)).toBe(
+      'Every agent — including ones you add later — could send and delete email as you.'
+    );
+    expect(everyAgentWriteWarning('asana', 'Asana', true)).toBe(
+      'Every agent — including ones you add later — could make changes and delete things in Asana as you.'
+    );
   });
 
   it('never starts on Read, or hides the warning, while every agent can write or delete', () => {
@@ -304,6 +311,15 @@ describe('everyAgentDecision (DOR-2420)', () => {
     expect(initialEveryAgentLevel(exact)).toBeNull();
     expect(everyAgentCanWrite(exact, null)).toBe(true);
     expect(everyAgentCanWrite(exact, 'read')).toBe(false);
+    // Delete is only ever held, never chosen: the card's levels leave it out.
+    expect(everyAgentCanDelete(exact, null)).toBe(true);
+    expect(everyAgentCanDelete(exact, 'read-write')).toBe(false);
+    expect(
+      everyAgentCanDelete(
+        withEvery({ available: true, operationRevisionIds: ['read', 'send'] }),
+        null
+      )
+    ).toBe(false);
     const reading = withEvery({ available: true, operationRevisionIds: ['read'] });
     expect(initialEveryAgentLevel(reading)).toBe('read');
     expect(everyAgentCanWrite(reading, null)).toBe(false);
