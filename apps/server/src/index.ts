@@ -546,6 +546,7 @@ import {
   setSessionLimitStore,
   startLimitPlanning,
   installContinueService,
+  installResumeService,
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
@@ -1282,7 +1283,21 @@ async function start() {
         roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
       }),
     });
+    // Waits for an account's reset, confirms it with a reading and resumes the
+    // session by itself. After the planner, which settles pre-restart `auto`
+    // plans before this re-arms the stored waits.
+    const uninstallResume = installResumeService({
+      launchDeps: () => ({
+        meshCore: app.locals.meshCore as MeshCore | undefined,
+        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
+      }),
+      // CONNECT (DOR-2381, task 2.2): once `probeAccount` lands, pass
+      // `probe: (accountId, { resumeAt }) => probeAccount(accountId, ...)` here,
+      // letting a throttled probe through when its last attempt was before
+      // `resumeAt`. Until then every reset is confirmed from store readings.
+    });
     stopSessionContinuation = () => {
+      uninstallResume();
       stopPlanning();
       uninstallContinue();
     };

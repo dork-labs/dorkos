@@ -13444,7 +13444,8 @@
           "signin.required",
           "update.installed",
           "report.daily",
-          "account.limited"
+          "account.limited",
+          "account.reset"
         ]
       },
       "NotificationTier": {

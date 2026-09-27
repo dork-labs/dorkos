@@ -310,6 +310,32 @@ export interface NotificationPayloads {
      */
     autoMoveFailed?: true;
   };
+  /**
+   * An account's usage reset while sessions waited on it, confirmed by a
+   * reading rather than the clock (spec `claude-account-fleet` D9 "Wait, then
+   * resume by itself").
+   *
+   * About the ACCOUNT's reset, not one session: {@link dedupeKey} raises it
+   * once per account and reset however many sessions were waiting. There is no
+   * account subject type, so the subject is the first waiting session, which is
+   * where "Open" goes.
+   */
+  'account.reset': {
+    sessionId: string;
+    agentId?: string;
+    /** The account's registry id, or `null` when its folder is not registered. */
+    accountId: string | null;
+    /** A short hash of an unregistered account's folder, as in `account.limited`. Never shown. */
+    accountRef?: string;
+    /** What the operator calls the account. */
+    accountLabel: string;
+    /** How many of that account's sessions were waiting for this reset when it was confirmed. */
+    pausedCount: number;
+    /** The reset the sessions waited for, ISO 8601, or `null` when it was unknown. */
+    resetsAt: string | null;
+    /** When a reading confirmed the reset, ISO 8601: the reset's identity when `resetsAt` is unknown. */
+    resetConfirmedAt: string;
+  };
   /** The daily digest. */
   'report.daily': {
     /** The day it covers, `YYYY-MM-DD` (the boundary's own date — see
@@ -903,6 +929,31 @@ const ENTRIES: NotificationRegistryMap = {
     relay: 'never',
   },
 
+  'account.reset': {
+    // Raised by `session/fleet/resume-service.ts` at the first confirmed reset
+    // of an account some sessions were waiting on. `notable`, like the limit it
+    // ends: good news, never an alarm.
+    kind: 'account.reset',
+    tier: 'notable',
+    storage: 'event',
+    subjectType: 'session',
+    locate: (p) => ({ subjectId: p.sessionId, sessionId: p.sessionId, agentId: p.agentId }),
+    title: (p) =>
+      `${p.accountLabel} is back: ${p.pausedCount} paused ${
+        p.pausedCount === 1 ? 'session' : 'sessions'
+      } can continue`,
+    actions: () => OPEN_ACTION,
+    // Per account RESET: three sessions waiting on one account are one thing
+    // to be told. The reset time names it; when it is unknown, the hour the
+    // reset was confirmed stands in for it.
+    dedupeKey: (p) =>
+      `account-reset:${p.accountId ?? p.accountRef ?? 'unregistered'}:${
+        p.resetsAt ?? p.resetConfirmedAt.slice(0, 13)
+      }`,
+    dedupeWindowMs: ACCOUNT_LIMITED_DEDUPE_WINDOW_MS,
+    relay: 'never',
+  },
+
   'report.daily': {
     // The one kind whose title AND body are already fully written when they
     // arrive — `shift-report.ts` composes both from the day's actual counts,
@@ -993,6 +1044,7 @@ export const WIRED_NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'update.installed',
   'report.daily',
   'account.limited',
+  'account.reset',
 ];
 
 /**

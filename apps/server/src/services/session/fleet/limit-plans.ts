@@ -52,11 +52,12 @@ import {
 
 /**
  * Whether core resumes a waiting session by itself once its reset is
- * confirmed. Off until the reset-and-resume engine (task 5.2) lands and turns
- * it on, so no unclaimed `waiting` plan promises a resume nothing would run.
- * A claimed session's `autoResume` is the advisor's to honour, and is kept.
+ * confirmed. On since the reset-and-resume engine (`resume-service.ts`, task
+ * 5.2) landed; it was off before so no unclaimed `waiting` plan promised a
+ * resume nothing would run. A claimed session's `autoResume` is the advisor's
+ * to honour, and is kept.
  */
-export const CORE_AUTO_RESUME_AVAILABLE = false;
+export const CORE_AUTO_RESUME_AVAILABLE: boolean = true;
 
 /** How long a claimed handoff may go unreported before the plan goes back to `ask`. */
 export const CLAIMED_HANDOFF_SETTLE_MS = 10 * 60_000;
@@ -219,8 +220,13 @@ export function rankForLimit(stored: StoredSessionLimit): Promise<AccountRanking
   });
 }
 
-/** The limited account's own usage, when the store knows it. */
-function limitedAccountUsage(stored: StoredSessionLimit): AccountUsage | null {
+/**
+ * The limited account's own usage, when the store knows it: by its id, else by
+ * the folder the session ran in (a memory-only root).
+ *
+ * @param stored - The session's stored limit.
+ */
+export function limitedAccountUsage(stored: StoredSessionLimit): AccountUsage | null {
   const store = getAccountUsageStore();
   if (!store) return null;
   try {
@@ -247,8 +253,9 @@ const planListeners = new Set<LimitPlanListener>();
 
 /**
  * Be told whenever a limited session's plan is written (a person's choice, the
- * advisor's, a timer's). The reset-and-resume service (task 5.2) arms its timer
- * for a `waiting` plan from here; a claimed row (`claimedBy`) is flow's to resume.
+ * advisor's, a timer's). The reset-and-resume service (`resume-service.ts`)
+ * arms its timer for a `waiting` plan from here; a claimed row (`claimedBy`)
+ * is flow's to resume.
  *
  * @param listener - Receives the stored limit as it now stands.
  * @returns A function that stops listening.

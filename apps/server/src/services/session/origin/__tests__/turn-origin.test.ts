@@ -58,6 +58,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // A limited session's work carried over to another account: the settings
   // row copied from the source session is its power, and the origin adds none.
   [{ kind: 'account-handoff' }, 'none'],
+  // A limited session resumed by itself after its account's reset: already
+  // bound, so its own row is its power.
+  [{ kind: 'account-resume' }, 'none'],
   // Not a surface anybody ships to.
   [{ kind: 'test-harness' }, 'none'],
 ];

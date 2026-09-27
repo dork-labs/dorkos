@@ -779,12 +779,15 @@ describe('with an advisor', () => {
     expect(plan('src-1')).toEqual({ mode: 'ask' });
   });
 
-  it('turns an onLimited wait into a waiting plan that promises no resume core cannot run yet', async () => {
+  it('turns an onLimited wait into a waiting plan that resumes by itself', async () => {
     advise({ onLimited: async () => ({ mode: 'wait' }) });
     await limitedSession('src-1');
-    expect(plan('src-1')).toEqual({ mode: 'waiting', resumeAt: RESETS, autoResume: false });
-    // Until task 5.2's resume engine lands, a person's wait promises none either.
-    expect(await waitForReset('src-1', { autoResume: true })).toMatchObject({ autoResume: false });
+    // Core's resume engine (task 5.2) runs it, so an unclaimed wait promises it.
+    expect(plan('src-1')).toEqual({ mode: 'waiting', resumeAt: RESETS, autoResume: true });
+    expect(await waitForReset('src-1', { autoResume: false })).toMatchObject({
+      autoResume: false,
+    });
+    expect(await waitForReset('src-1', { autoResume: true })).toMatchObject({ autoResume: true });
   });
 
   it('never lets a state refresh that read before a carry-over undo it', async () => {

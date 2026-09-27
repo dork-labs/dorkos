@@ -109,6 +109,13 @@ export type TurnOrigin =
    */
   | { readonly kind: 'account-handoff' }
   /**
+   * A limited session's account reset and core resumed the SAME session by
+   * itself (spec `claude-account-fleet` D9 "Wait, then resume by itself"). The
+   * session is already bound, so its settings row decides its power: this
+   * origin adds none.
+   */
+  | { readonly kind: 'account-resume' }
+  /**
    * The in-process end-to-end harness, reachable only on a server started with
    * `DORKOS_TEST_RUNTIME`. It drives a runtime tool against a session it binds
    * itself.
@@ -206,6 +213,9 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // mode, copied before the send; the origin must not add the operator's stop
     // on top of what the session already had.
     //
+    // A resume after an account's reset goes to a session that is already
+    // bound: its row is its power, and the origin must not add to it.
+    //
     // The harness is not a surface anybody ships to.
     case 'schedule':
     case 'relay-binding':
@@ -213,6 +223,7 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     case 'connector-event':
     case 'agent-launch':
     case 'account-handoff':
+    case 'account-resume':
     case 'test-harness':
       return 'none';
     default: {

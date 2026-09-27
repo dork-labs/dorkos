@@ -1518,6 +1518,20 @@ describe('RuntimeRegistry', () => {
       expect(registry.getSessionLaunchOrigin('new-2')).toBe('schedule');
     });
 
+    it('moves the last automatic resume with the row, into a merged destination too', async () => {
+      await registry.persistSessionRuntime('old', 'claude-code', { kind: 'interactive' });
+      registry.markAutoResumed('old', '2026-09-27T17:00:00.000Z');
+      await registry.rekeySessionSettings('old', 'new');
+      expect(registry.getLastAutoResumeFor('new')).toBe('2026-09-27T17:00:00.000Z');
+      expect(registry.getLastAutoResumeFor('old')).toBeNull();
+
+      await registry.persistSessionRuntime('old-2', 'claude-code', { kind: 'interactive' });
+      registry.markAutoResumed('old-2', '2026-09-27T18:00:00.000Z');
+      await registry.saveSessionSettings('new-2', { model: 'opus' });
+      await registry.rekeySessionSettings('old-2', 'new-2');
+      expect(registry.getLastAutoResumeFor('new-2')).toBe('2026-09-27T18:00:00.000Z');
+    });
+
     it('moves a stored usage limit, even for a session with no settings row (D4)', async () => {
       const limits = new SessionLimitStore(db);
       setSessionLimitStore(limits);

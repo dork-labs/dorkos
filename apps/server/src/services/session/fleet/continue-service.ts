@@ -422,8 +422,9 @@ async function requireOfferedElsewhere(
 
 /**
  * Wait for the reset: the plan becomes `waiting` until the account's window
- * resets (task 5.2 confirms the reset and resumes the session when
- * `autoResume` is on). For a claimed session, the advisor is told and holds it.
+ * resets (`resume-service.ts` confirms the reset with a reading and resumes
+ * the session when `autoResume` is on). For a claimed session, the advisor is
+ * told and holds it.
  *
  * @param sessionId - The session.
  * @param opts.autoResume - Continue by itself once the reset is confirmed.
@@ -444,8 +445,8 @@ export async function waitForReset(
     throw new ContinueError(400, 'WAIT_ONLY', WAIT_ONLY_MESSAGE);
   }
   const asked = opts.autoResume ?? (current.mode === 'waiting' ? current.autoResume : false);
-  // Only the advisor can honour an automatic resume until core's own resume
-  // engine lands (task 5.2); an unclaimed session never promises one.
+  // An unclaimed session's automatic resume is core's resume engine's to run,
+  // behind its switch; a claimed one's is the advisor's.
   const autoResume = stored.claimedBy ? asked : asked && CORE_AUTO_RESUME_AVAILABLE;
   const resumeAt = stored.limit.resetsAt;
   if (stored.claimedBy) {

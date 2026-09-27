@@ -51,6 +51,8 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // A person chose another model for their limited session and continued it:
   // their own message, in their own session.
   'services/session/fleet/continue-service.ts': ['interactive'],
+  // A limited session's account reset and core resumed the same session.
+  'services/session/fleet/resume-service.ts': ['account-resume'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
   'index.ts': ['test-harness'],
 };

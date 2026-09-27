@@ -28,6 +28,12 @@ export const sessionMetadata = sqliteTable('session_metadata', {
   // whether a limited session may carry its work to another account (spec
   // `claude-account-fleet` D9). NULL = bound before this column existed.
   launchOrigin: text('launch_origin'),
+  // The episode `resetsAt` (else `since`) of the last usage limit core resumed
+  // this session from by itself (spec `claude-account-fleet` D9 "Wait, then
+  // resume by itself"): at most one automatic resume per window reset. Kept
+  // here, not on the `session_limits` row, because the resumed turn's own
+  // `turn_start` deletes that row. NULL = never resumed automatically.
+  lastAutoResumeFor: text('last_auto_resume_for'),
   createdAt: text('created_at').notNull(),
   // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
   // NULL = "no explicit preference; use the runtime's default."

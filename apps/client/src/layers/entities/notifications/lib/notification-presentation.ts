@@ -19,6 +19,7 @@ import {
   LogIn,
   Mail,
   MessageSquare,
+  RotateCcw,
   ShieldQuestion,
   Sparkles,
   WifiOff,
@@ -79,6 +80,7 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'update.installed': Download,
   'report.daily': Sparkles,
   'account.limited': Hourglass,
+  'account.reset': RotateCcw,
 };
 
 /** How loudly a notification draws. */

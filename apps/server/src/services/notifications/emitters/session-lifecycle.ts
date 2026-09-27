@@ -188,6 +188,56 @@ export function notifyAutoMoveFailed(
   });
 }
 
+/** The account a reset confirmed, and the sessions that were waiting on it. */
+export interface AccountResetFacts {
+  /** The account's registry id, or `null` for an unregistered folder. */
+  accountId: string | null;
+  /** The folder the session ran in, for an unregistered account's label and identity. */
+  accountPath: string | null;
+  /** The reset the sessions waited for, or `null` when it was unknown. */
+  resetsAt: string | null;
+  /** When a reading confirmed it, ISO 8601. */
+  resetConfirmedAt: string;
+  /** How many of the account's sessions were waiting when it was confirmed. */
+  pausedCount: number;
+}
+
+/**
+ * Tell the person an account's usage reset while sessions waited on it (spec
+ * `claude-account-fleet` D9 "Wait, then resume by itself"): one per account
+ * and reset, whichever waiting session confirmed it first.
+ *
+ * @param sessionId - The waiting session that confirmed the reset, where "Open" goes.
+ * @param cwd - Its working directory, when known.
+ * @param facts - The account, the reset and the count.
+ */
+export function notifyAccountReset(
+  sessionId: string,
+  cwd: string | undefined,
+  facts: AccountResetFacts
+): void {
+  const agentId = resolveAgentIdForPath(cwd);
+  const usageStore = getAccountUsageStore();
+  const usage = facts.accountId
+    ? usageStore?.peek('claude-code', [facts.accountId])[0]
+    : facts.accountPath
+      ? (usageStore?.usageAtPath('claude-code', facts.accountPath) ?? undefined)
+      : undefined;
+  void notify('account.reset', {
+    sessionId,
+    accountId: facts.accountId,
+    // A raw id (`default`, `default-2`) is never shown: without a label, say what it is.
+    accountLabel: usage?.label ?? 'Your Claude account',
+    pausedCount: facts.pausedCount,
+    resetsAt: facts.resetsAt,
+    resetConfirmedAt: facts.resetConfirmedAt,
+    ...(!facts.accountId && facts.accountPath
+      ? { accountRef: accountRefOf(facts.accountPath) }
+      : {}),
+    ...(agentId ? { agentId } : {}),
+  });
+}
+
 /**
  * Watch every session's lifecycle and raise what it implies.
  *

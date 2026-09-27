@@ -601,6 +601,51 @@ export class RuntimeRegistry {
   }
 
   /**
+   * The usage-limit episode core last resumed this session from by itself
+   * (`session_metadata.last_auto_resume_for`), or null when it never did.
+   * Read by every later episode, so a resumed turn that runs out again in the
+   * same window is never resumed a second time (spec `claude-account-fleet`
+   * D9 "Wait, then resume by itself").
+   *
+   * @param sessionId - Session identifier
+   */
+  getLastAutoResumeFor(sessionId: string): string | null {
+    const db = this.requireDb('getLastAutoResumeFor');
+    const row = db
+      .select({ lastAutoResumeFor: sessionMetadata.lastAutoResumeFor })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row?.lastAutoResumeFor ?? null;
+  }
+
+  /**
+   * Record that core is resuming this session by itself from the episode
+   * named `episode`, before the resume is sent. Synchronous, so the record and
+   * the dispatch that follows it happen in one step. Creates an unbound row
+   * when the session has none, and never touches the binding.
+   *
+   * @param sessionId - Session identifier
+   * @param episode - The episode's key (its `resetsAt`, else its `since`), or
+   *   `null` to put back "never" when the resume could not be sent
+   */
+  markAutoResumed(sessionId: string, episode: string | null): void {
+    const db = this.requireDb('markAutoResumed');
+    db.insert(sessionMetadata)
+      .values({
+        sessionId,
+        runtime: null,
+        createdAt: new Date().toISOString(),
+        lastAutoResumeFor: episode,
+      })
+      .onConflictDoUpdate({
+        target: sessionMetadata.sessionId,
+        set: { lastAutoResumeFor: episode },
+      })
+      .run();
+  }
+
+  /**
    * Read a session's persisted settings, or null when no row exists. NULL
    * columns are omitted from the result (not surfaced as explicit values).
    *
@@ -927,6 +972,7 @@ export class RuntimeRegistry {
           fastMode: destination.fastMode ?? source.fastMode,
           agentPath: destination.agentPath ?? source.agentPath,
           launchOrigin: destination.launchOrigin ?? source.launchOrigin,
+          lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
         })
         .where(eq(sessionMetadata.sessionId, toId))
         .run();

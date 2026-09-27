@@ -56,6 +56,7 @@ export const notifications = sqliteTable(
         'update.installed',
         'report.daily',
         'account.limited',
+        'account.reset',
       ],
     }).notNull(),
 
