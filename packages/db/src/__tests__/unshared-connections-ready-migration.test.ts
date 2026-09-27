@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   agentConnectionAttachments,
+  sessionConnectionOverrides,
   connectionOperationGrants,
   connections,
   connectorOperationRevisions,
@@ -44,7 +45,16 @@ function seed() {
       discoveredAt: NOW,
     })
     .run();
-  for (const id of ['never-shared', 'shared', 'revoked-only', 'every-agent', 'legacy', 'ready']) {
+  for (const id of [
+    'never-shared',
+    'shared',
+    'revoked-only',
+    'every-agent',
+    'legacy',
+    'session-link',
+    'detached-link',
+    'ready',
+  ]) {
     db.insert(connections)
       .values({
         id,
@@ -87,6 +97,20 @@ function seed() {
   db.insert(agentConnectionAttachments)
     .values({ agentId: 'agent-a', connectionId: 'legacy', attachedAt: NOW })
     .run();
+  for (const [connectionId, state] of [
+    ['session-link', 'attached'],
+    ['detached-link', 'detached'],
+  ] as const) {
+    db.insert(sessionConnectionOverrides)
+      .values({
+        sessionId: `s-${connectionId}`,
+        agentId: 'agent-a',
+        connectionId,
+        state,
+        updatedAt: NOW,
+      })
+      .run();
+  }
   return db;
 }
 
@@ -113,6 +137,10 @@ describe('0116 unshared connections become ready', () => {
         'every-agent': 'migration_needs_reconcile',
         // The legacy migration marks attachments for the owner to re-confirm.
         legacy: 'migration_needs_reconcile',
+        // An attached legacy per-session link asks the owner to re-confirm too;
+        // a detached one grants nothing.
+        'session-link': 'migration_needs_reconcile',
+        'detached-link': 'ready',
         ready: 'ready',
       });
 
@@ -124,7 +152,7 @@ describe('0116 unshared connections become ready', () => {
             "SELECT count(*) AS count FROM connections WHERE grant_reconciliation_status = 'ready'"
           )
           .get()
-      ).toEqual({ count: 3 });
+      ).toEqual({ count: 4 });
     } finally {
       sqlite.close();
     }

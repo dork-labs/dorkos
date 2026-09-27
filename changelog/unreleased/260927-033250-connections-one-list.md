@@ -13,6 +13,7 @@ covers:
   - 'fix(connections): Needs you never reads a sign-in it did not open (DOR-2418)'
   - 'fix(connectors): settle accounts connected before this change that nobody shares (DOR-2418)'
   - 'fix(connections): Needs you keeps a sign-in only as long as it can be finished (DOR-2418)'
+  - 'fix(connectors): leave legacy per-session links for review when settling accounts (DOR-2418)'
 ---
 
 ### Changed
