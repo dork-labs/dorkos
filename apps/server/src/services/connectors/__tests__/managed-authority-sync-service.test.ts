@@ -772,6 +772,20 @@ describe('ManagedAuthoritySyncService', () => {
       }
     });
 
+    it('gives no retry reason to a pending command that recovery only re-reads', async () => {
+      cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
+        submitted.push(command);
+        return statusFor(command, 'pending');
+      });
+      await expect(replace()).resolves.toMatchObject({
+        applied: false,
+        authoritySync: { status: 'pending' },
+      });
+      const stored = outbox();
+      expect(stored).toMatchObject({ state: 'pending', safeReason: null });
+      expect((await replace()).authoritySync).toEqual({ status: 'pending' });
+    });
+
     it('does not send again once the hosted read says cleanup settled', async () => {
       cloud.submitConnectorAuthorityCommand = vi.fn(async (command) => {
         submitted.push(command);

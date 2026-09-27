@@ -1152,7 +1152,11 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
           : state === 'pending'
             ? cleanupPending
               ? CLEANUP_PENDING_REASON
-              : HOSTED_PENDING_REASON
+              : // Only a command recovery will send again is "trying again"; a
+                // read-only re-check gets no reason, so no retry time is shown.
+                this.progressesOnlyWhenRepeated(command, status)
+                ? HOSTED_PENDING_REASON
+                : null
             : null;
       const nextAttemptAt = state === 'pending' ? this.nextAttempt(row, now) : null;
       const updated = tx

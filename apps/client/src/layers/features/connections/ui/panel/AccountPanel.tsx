@@ -226,15 +226,25 @@ function DisconnectedFix({
   lastTry: ConnectorLifecycleResult | undefined;
 }) {
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const stored = detail.connection.authoritySync;
+  const storedKey = JSON.stringify(stored);
+  // The stored state the last "Finish disconnecting" was pressed against.
+  const [triedAgainst, setTriedAgainst] = useState<string | null>(null);
+  const finish = () => {
+    setTriedAgainst(storedKey);
+    onFinishDisconnecting();
+  };
   const cleanup = detail.connection.externalCleanup;
   const cleanedUp = cleanup === 'complete' || cleanup === 'not_required';
   if (!cleanedUp) {
-    // A refusal from the last try outranks the stored state: it is fresher,
-    // and some refusals (an unlinked instance) leave nothing stored at all.
+    // A refusal from the last try outranks the stored state while it is the
+    // newer of the two: some refusals (an unlinked instance) leave nothing
+    // stored at all. Once the stored state moves on (relinked elsewhere, and
+    // DorkOS is retrying again), the stored state is the truth.
     const sync =
-      lastTry?.authoritySync.status === 'failed'
+      lastTry?.authoritySync.status === 'failed' && triedAgainst === storedKey
         ? lastTry.authoritySync
-        : detail.connection.authoritySync;
+        : stored;
     if (cleanup === 'failed' || sync.status === 'failed') {
       // Nothing is retrying on its own here, so never say it is.
       return (
@@ -243,7 +253,7 @@ function DisconnectedFix({
           detail={sync.status === 'failed' ? sync.reason : undefined}
           action="Try disconnecting again"
           pending={finishing}
-          onAction={onFinishDisconnecting}
+          onAction={finish}
         />
       );
     }
@@ -271,7 +281,7 @@ function DisconnectedFix({
         detail={why}
         action={stillFinishing ? 'Try again now' : 'Finish disconnecting'}
         pending={finishing}
-        onAction={onFinishDisconnecting}
+        onAction={finish}
       />
     );
   }
