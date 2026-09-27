@@ -236,7 +236,13 @@ function calendarDaysBetween(now: Date, date: Date): number {
   return Math.round((day(date) - day(now)) / DAY_MS);
 }
 
-/** Local time as `2:10pm` or `3pm`: minutes dropped at `:00`, lowercase am/pm, no space. */
+/**
+ * Local time as `2:10pm` or `3pm`: minutes dropped at `:00`, lowercase am/pm, no space.
+ *
+ * The parts are always joined hour, minutes, period: the house short form of an
+ * English UI. A locale that puts the period first (ja, ko, zh) would read oddly,
+ * so revisit this when the app is translated.
+ */
 function timeOfDay(date: Date, locale: string | undefined): string {
   const parts = new Intl.DateTimeFormat(locale, {
     hour: 'numeric',
@@ -313,12 +319,18 @@ export function formatBackIn(ms: number): string {
  * @param windowKey - The window that ran out, such as `five_hour`.
  * @param resetsAt - When it resets, ISO-8601, or `null` when unknown.
  * @param now - The moment to read from.
+ * @param locale - The locale for day and month names; the runtime's default when absent.
  */
-export function limitText(windowKey: string, resetsAt: string | null, now: Date): string {
+export function limitText(
+  windowKey: string,
+  resetsAt: string | null,
+  now: Date,
+  locale?: string
+): string {
   if (resetsAt === null) return 'out';
   const wait = Date.parse(resetsAt) - now.getTime();
   if (windowKey === 'five_hour' && wait < DAY_MS) return `back in ${formatBackIn(wait)}`;
-  return `out until ${formatResetTime(resetsAt, now)}`;
+  return `out until ${formatResetTime(resetsAt, now, locale)}`;
 }
 
 const WINDOW_SHORT_NAMES: Record<string, string> = {
@@ -383,13 +395,14 @@ const STALE_AFTER_MS = HOUR_MS;
  *
  * @param observedAt - When the reading was observed, ISO-8601.
  * @param now - The moment to read from.
+ * @param locale - The locale for day and month names; the runtime's default when absent.
  */
-export function formatAsOf(observedAt: string, now: Date): string {
+export function formatAsOf(observedAt: string, now: Date, locale?: string): string {
   const age = now.getTime() - Date.parse(observedAt);
   if (age < MINUTE_MS) return 'just now';
   if (age < HOUR_MS) return `as of ${Math.floor(age / MINUTE_MS)} min ago`;
   if (age < DAY_MS) return `as of ${Math.floor(age / HOUR_MS)}h ago`;
-  return `as of ${formatResetTime(observedAt, now)}`;
+  return `as of ${formatResetTime(observedAt, now, locale)}`;
 }
 
 /**

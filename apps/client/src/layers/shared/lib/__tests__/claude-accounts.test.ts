@@ -301,6 +301,9 @@ describe('time wording', () => {
       [60 * MIN, '1h'],
       [72 * MIN, '1h 12m'],
       [120 * MIN, '2h'],
+      // Rounds up, so a partial minute never reads as less than it is.
+      [46.5 * MIN, '47 min'],
+      [0, '1 min'],
     ])('%d ms reads %s', (ms, text) => {
       expect(formatBackIn(ms)).toBe(text);
     });
@@ -312,12 +315,14 @@ describe('time wording', () => {
     });
 
     it('names the reset for a 5-hour window a day or more away', () => {
-      expect(limitText('five_hour', plus(25 * 60 * MIN), now)).toBe('out until Mon 1pm');
+      expect(limitText('five_hour', plus(25 * 60 * MIN), now, 'en-US')).toBe('out until Mon 1pm');
     });
 
     it('names the reset for every other window, however soon', () => {
-      expect(limitText('seven_day', '2026-09-29T15:00:00-04:00', now)).toBe('out until Tue 3pm');
-      expect(limitText('seven_day_opus', plus(30 * MIN), now)).toBe('out until 12:30pm');
+      expect(limitText('seven_day', '2026-09-29T15:00:00-04:00', now, 'en-US')).toBe(
+        'out until Tue 3pm'
+      );
+      expect(limitText('seven_day_opus', plus(30 * MIN), now, 'en-US')).toBe('out until 12:30pm');
     });
 
     it('says only out when the reset is unknown', () => {
@@ -336,7 +341,7 @@ describe('time wording', () => {
       [3 * 60 * MIN, 'as of 3h ago', true],
       [2 * 24 * 60 * MIN, 'as of Fri 12pm', true],
     ])('%d ms old reads %s', (ms, text, stale) => {
-      expect(formatAsOf(ago(ms), now)).toBe(text);
+      expect(formatAsOf(ago(ms), now, 'en-US')).toBe(text);
       expect(isStale(ago(ms), now)).toBe(stale);
     });
   });
