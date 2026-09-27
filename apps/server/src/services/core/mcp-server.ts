@@ -108,7 +108,7 @@ export function createExternalMcpServer(
   const registrar = gatedToolRegistrar(server, identity, hiddenToolNames);
   registerCoreTools(registrar, deps);
   registerAccountTools(registrar, deps);
-  registerSessionTools(registrar, deps);
+  registerSessionTools(registrar, deps, identity);
   registerTaskTools(registrar, deps);
   registerRelayTools(registrar, deps, relayIdentity);
   registerBindingTools(registrar, deps);

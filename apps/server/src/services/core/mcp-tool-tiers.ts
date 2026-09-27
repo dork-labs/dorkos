@@ -194,7 +194,9 @@ export const MCP_TOOL_TIERS = {
   session_start: {
     tier: 'act',
     area: 'agents',
-    approvalDisplayFields: ['cwd', 'account', 'prompt'],
+    // What the card grants: where, on whose bill, with what power (clamped by
+    // the input schema before the gate sees it), as whom, and to do what.
+    approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
     title: 'Start a new agent session',
   },
 

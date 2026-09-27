@@ -9,6 +9,11 @@
  *
  * ## What an agent can and cannot get from it
  *
+ * - **Only itself.** The session runs as the calling agent: `agentPath`, when
+ *   given, must be the caller's own home, and a folder that is another agent's
+ *   home (or inside one) is refused. A caller DorkOS cannot name as a registered
+ *   agent is refused outright. Otherwise an agent could start work as DorkBot or
+ *   as another agent, with that agent's permissions and its account.
  * - **No trust stop of the operator's.** The session is launched with the
  *   `agent-launch` origin, which seeds no permission mode. The only power it
  *   gets is the tool's own `permissionMode`, clamped by the same rule an
@@ -39,6 +44,8 @@ import {
 import { sessionPath } from '@dorkos/shared/session-link';
 import type { EffortLevel, PermissionMode } from '@dorkos/shared/types';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
+import { logError, logger } from '../../../../lib/logger.js';
+import { isInsideRoomsDir, resolveAgentHome } from '../../../core/agent-identity/index.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { checkAccountLaunch } from '../../../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
@@ -57,12 +64,22 @@ import { jsonContent } from './types.js';
 /** The client id every `session_start` launch holds its session's write lock under. */
 export const SESSION_START_CLIENT_ID = 'mcp:session_start';
 
-/** The actor label for a call nobody can name: the sessionless external `/mcp` server. */
-const EXTERNAL_CALLER_LABEL = 'external MCP';
+/** The refusal for a caller that is not a registered agent. */
+export const UNKNOWN_CALLER_MESSAGE =
+  'Only a registered agent can start a session, and DorkOS could not tell which agent is asking.';
+
+/** The refusal for a session that would run as some other agent. */
+export const NOT_THE_CALLER_MESSAGE =
+  'An agent can start a session only as itself. Leave out agentPath, or give your own folder.';
+
+/** The refusal for a folder that belongs to another agent. */
+export const OTHER_AGENTS_HOME_MESSAGE =
+  "That folder belongs to another agent. Start the session in a folder that is not another agent's.";
 
 /**
- * Who is calling, resolved at CALL time: the agent home of the session the tool
- * runs in. Absent on the external `/mcp` server, which carries no session.
+ * Who is calling, resolved at CALL time: the home of the agent making the call.
+ * In session, the session's identity anchor; on the external `/mcp` server, the
+ * agent the request's token names. `undefined` when neither names one.
  */
 export type SessionStartCallerResolver = () => { agentPath?: string } | undefined;
 
@@ -90,10 +107,14 @@ export const SessionStartInputShape = {
     .describe('The runtime to start on (e.g. `claude-code`). Absent: the usual choice.'),
   model: z.string().min(1).optional().describe('The model the session starts with.'),
   effort: EffortLevelSchema.optional().describe('The reasoning effort the session starts with.'),
-  permissionMode: PermissionModeSchema.optional().describe(
-    'The permission mode the session starts in. `bypassPermissions` is lowered to ' +
-      '`acceptEdits`. Absent: the runtime default, which asks before acting.'
-  ),
+  // Clamped in the schema, not only in the handler, so the arguments the tier
+  // gate shows on an approval card are the mode the session actually gets.
+  permissionMode: PermissionModeSchema.transform((mode) => clampSchedulePermissionMode(mode).mode)
+    .optional()
+    .describe(
+      'The permission mode the session starts in. `bypassPermissions` is lowered to ' +
+        '`acceptEdits`. Absent: the runtime default, which asks before acting.'
+    ),
   seedContext: z
     .string()
     .min(1)
@@ -104,7 +125,10 @@ export const SessionStartInputShape = {
     .string()
     .min(1)
     .optional()
-    .describe('The folder of a registered agent the session belongs to.'),
+    .describe(
+      'Your own agent folder. The session always runs as you, so this can be left out; any ' +
+        'other agent is refused.'
+    ),
 };
 
 /** Parsed `session_start` arguments. */
@@ -150,38 +174,81 @@ function findAccount(runtime: string, id: string): RuntimeAccount | null {
   return resolveAccountRef(store.listAccounts(runtime), runtime, id);
 }
 
-/** Who the Activity entry names: the calling agent, else the external server. */
+/** A registered agent, as Mesh lists it. */
+interface CallerAgent {
+  agentPath: string;
+  label: string;
+}
+
+/** The calling agent, when it is one Mesh has registered. */
 function callerOf(
   deps: McpToolDeps,
   resolveCaller: SessionStartCallerResolver | undefined
-): { label: string; agentPath?: string } {
-  if (!resolveCaller) return { label: EXTERNAL_CALLER_LABEL };
-  const agentPath = resolveCaller()?.agentPath;
-  const agent = agentPath
-    ? deps.meshCore?.listWithPaths().find((a) => a.projectPath === agentPath)
-    : undefined;
-  return {
-    label: agent ? (agent.displayName ?? agent.name) : 'An agent',
-    ...(agentPath ? { agentPath } : {}),
-  };
+): CallerAgent | null {
+  const agentPath = resolveCaller?.()?.agentPath;
+  if (!agentPath) return null;
+  const agent = deps.meshCore?.listWithPaths().find((a) => a.projectPath === agentPath);
+  return agent ? { agentPath, label: agent.displayName ?? agent.name } : null;
+}
+
+/** Whether `dir` is `root` or inside it. */
+function isWithin(root: string, dir: string): boolean {
+  const rel = path.relative(root, dir);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
+ * Whether `cwd` belongs to an agent other than `callerPath`: it resolves to
+ * another agent's home (its home, a managed workspace or a linked worktree of
+ * it), or it sits inside a registered agent's home that is not the caller's.
+ */
+function isOtherAgentsFolder(deps: McpToolDeps, cwd: string, callerPath: string): boolean {
+  if (resolveAgentHome(cwd, callerPath).kind === 'refused') return true;
+  const owner = (deps.meshCore?.listWithPaths() ?? [])
+    .map((agent) => path.resolve(agent.projectPath))
+    .filter((home) => isWithin(home, cwd))
+    // The innermost home is the folder's owner: an agent may keep another's
+    // home inside its own, and the one closer to `cwd` is the one standing there.
+    .sort((a, b) => b.length - a.length)[0];
+  return owner !== undefined && owner !== path.resolve(callerPath);
+}
+
+/**
+ * Remove what a launch that never started left under its id. The id was minted
+ * by this tool a moment ago, so nothing else can hold it; a failure to delete is
+ * logged, never thrown over the refusal the caller is about to get.
+ */
+async function discardUnstartedSession(sessionId: string): Promise<void> {
+  try {
+    await runtimeRegistry.discardSessionSettings(sessionId);
+  } catch (err) {
+    logger.warn('[session_start] could not remove the settings of a session that never started', {
+      sessionId,
+      ...logError(err),
+    });
+  }
 }
 
 /**
  * Handler factory for `session_start`.
  *
- * Every check runs before anything is written, in this order: the folder, the
- * agent, the runtime, the account (and its policy), the launch cap. Only then
- * does the new session's settings row take the model, effort and clamped mode,
- * and the launch service start the turn.
+ * Every check runs before anything is written, in this order: the caller, the
+ * folder, the agent, the runtime, the account (and its policy), the launch cap.
+ * Only then does the new session's settings row take the model, effort and
+ * clamped mode, and the launch service start the turn. A launch that is refused
+ * after that, throws, or is not accepted has its row removed again.
  *
  * @param deps - Shared MCP tool dependencies (Mesh, Activity).
- * @param resolveCaller - Who is calling; absent on the external `/mcp` server.
+ * @param resolveCaller - Who is calling.
  */
 export function createSessionStartHandler(
   deps: McpToolDeps,
   resolveCaller?: SessionStartCallerResolver
 ) {
   return async (args: SessionStartArgs) => {
+    const caller = callerOf(deps, resolveCaller);
+    if (!caller) return refuse(UNKNOWN_CALLER_MESSAGE, 'UNKNOWN_CALLER');
+
     if (!path.isAbsolute(args.cwd)) {
       return refuse(`The cwd must be an absolute path: ${args.cwd}`, 'INVALID_CWD');
     }
@@ -193,17 +260,27 @@ export function createSessionStartHandler(
     } catch (err) {
       return refuse(err instanceof Error ? err.message : String(err), 'OUTSIDE_BOUNDARY');
     }
+    // The launch service refuses this too, but only after the settings write
+    // below; asked here, a refused launch leaves nothing behind.
+    if (isInsideRoomsDir(cwd)) {
+      return refuse(
+        `This session would run inside a room's files ("${cwd}"), which is never where an ` +
+          `agent works. Start it in the agent's own folder instead.`,
+        'DESK_NOT_OWN'
+      );
+    }
 
-    if (
-      args.agentPath !== undefined &&
-      !deps.meshCore?.listWithPaths().some((agent) => agent.projectPath === args.agentPath)
-    ) {
-      return refuse('Choose a registered agent before starting this session', 'INVALID_AGENT_PATH');
+    if (args.agentPath !== undefined && path.resolve(args.agentPath) !== caller.agentPath) {
+      return refuse(NOT_THE_CALLER_MESSAGE, 'NOT_THE_CALLER');
+    }
+    const agentPath = caller.agentPath;
+    if (isOtherAgentsFolder(deps, cwd, agentPath)) {
+      return refuse(OTHER_AGENTS_HOME_MESSAGE, 'OTHER_AGENTS_FOLDER');
     }
 
     const runtimeType = await resolveRuntimeTypeForNewSession({
       runtimeHint: args.runtime,
-      agentPath: args.agentPath,
+      agentPath,
       cwd,
     });
     if (!runtimeRegistry.has(runtimeType)) {
@@ -244,49 +321,58 @@ export function createSessionStartHandler(
     if (isAgentLaunchCapFull()) return refuse(AGENT_LAUNCH_CAP_MESSAGE, 'LAUNCH_CAP_FULL');
 
     const sessionId = crypto.randomUUID();
+    // Already clamped by the schema on a real call; clamped again for a direct
+    // caller of this handler.
     const permissionMode = args.permissionMode
       ? clampSchedulePermissionMode(args.permissionMode).mode
       : undefined;
-    // What the pre-launch picker writes, written the same way: onto the new
-    // session's settings row before the first send, which the binding write
-    // then fills around without overwriting.
-    if (args.model !== undefined || args.effort !== undefined || permissionMode !== undefined) {
-      await runtime.updateSession(sessionId, {
-        ...(args.model !== undefined ? { model: args.model } : {}),
-        ...(args.effort !== undefined ? { effort: args.effort } : {}),
-        ...(permissionMode !== undefined ? { permissionMode } : {}),
-      });
-    }
-
-    const result = await dispatchSessionMessage({
-      origin: { kind: 'agent-launch' },
-      sessionId,
-      request: {
-        content: args.prompt,
-        cwd,
-        runtime: runtimeType,
-        ...(account ? { account: account.id } : {}),
-        ...(args.agentPath !== undefined ? { agentPath: args.agentPath } : {}),
-        ...(args.seedContext !== undefined ? { seedContext: args.seedContext } : {}),
-      },
-      clientId: SESSION_START_CLIENT_ID,
-      meshCore: deps.meshCore,
-      // A session minted here is in no room.
-      roomSessionPlace: undefined,
-      countsTowardLaunchCap: true,
+    // What the pre-launch picker saves, saved the same way: an unbound settings
+    // row the first send reads and the binding write fills around. Only the row:
+    // no runtime holds an in-memory session for this id until the send.
+    await runtimeRegistry.saveSessionSettings(sessionId, {
+      ...(args.model !== undefined ? { model: args.model } : {}),
+      ...(args.effort !== undefined ? { effort: args.effort } : {}),
+      ...(permissionMode !== undefined ? { permissionMode } : {}),
     });
-    if (isSessionLaunchRefusal(result)) return refuse(result.message, result.refused);
+
+    let result: Awaited<ReturnType<typeof dispatchSessionMessage>>;
+    try {
+      result = await dispatchSessionMessage({
+        origin: { kind: 'agent-launch' },
+        sessionId,
+        request: {
+          content: args.prompt,
+          cwd,
+          runtime: runtimeType,
+          ...(account ? { account: account.id } : {}),
+          agentPath,
+          ...(args.seedContext !== undefined ? { seedContext: args.seedContext } : {}),
+        },
+        clientId: SESSION_START_CLIENT_ID,
+        meshCore: deps.meshCore,
+        // A session minted here is in no room.
+        roomSessionPlace: undefined,
+        countsTowardLaunchCap: true,
+      });
+    } catch (err) {
+      await discardUnstartedSession(sessionId);
+      throw err;
+    }
+    if (isSessionLaunchRefusal(result)) {
+      await discardUnstartedSession(sessionId);
+      return refuse(result.message, result.refused);
+    }
     if (!result.accepted) {
+      await discardUnstartedSession(sessionId);
       return refuse('The session could not be started.', 'NOT_STARTED');
     }
 
     const canonicalId = result.canonicalId ?? sessionId;
-    const caller = callerOf(deps, resolveCaller);
     const accountName = account ? (account.label ?? account.id) : null;
     void deps.activityService?.emit({
       actorType: 'agent',
       actorLabel: caller.label,
-      ...(caller.agentPath ? { actorId: caller.agentPath } : {}),
+      actorId: caller.agentPath,
       category: 'agent',
       eventType: 'agent.session_started',
       resourceType: 'session',
@@ -312,14 +398,15 @@ export function createSessionStartHandler(
  * The session tool definitions.
  *
  * @param deps - Shared MCP tool dependencies.
- * @param resolveCaller - Who is calling; absent on the external `/mcp` server.
+ * @param resolveCaller - Who is calling. Without one, every call is refused:
+ *   a session always runs as the agent that asked for it.
  */
 export function getSessionTools(deps: McpToolDeps, resolveCaller?: SessionStartCallerResolver) {
   return [
     tool(
       'session_start',
-      'Start a new agent session with a first message, in a folder, and return its id at once ' +
-        '(the session then works on its own). Optionally on a named account (the account usage ' +
+      'Start a new session of your own (it runs as you) with a first message, in a folder, and ' +
+        'return its id at once (the session then works on its own). Optionally on a named account (the account usage ' +
         'tool lists them), which the account policy must allow; otherwise the usual account is ' +
         'used. The session gets no permission mode it was not given here, and ' +
         '`bypassPermissions` is lowered to `acceptEdits`. At most 8 sessions started this way ' +

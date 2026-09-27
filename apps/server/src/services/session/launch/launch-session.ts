@@ -497,3 +497,6 @@ async function launchSessionMessage(
 
   return result;
 }
+
+/** @internal Exported for testing only. */
+export { resolveRuntimeTypeForNewSession as _resolveRuntimeTypeForNewSession };

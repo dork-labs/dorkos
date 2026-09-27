@@ -61,7 +61,7 @@ import type { AgentSession } from '../runtimes/claude-code/agent-types.js';
 import { createGetAgentHandler } from '../runtimes/claude-code/mcp-tools/core-tools.js';
 import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
 import { resolveSubjectLabel } from '../relay/subject-resolver.js';
-import { resolveRuntimeTypeForNewSession } from '../session/launch/launch-session.js';
+import { _resolveRuntimeTypeForNewSession } from '../session/launch/launch-session.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 
 /** One side of the fixture: what `.dork/` says. */
@@ -188,7 +188,7 @@ describe('a worktree of a home repo reads the HOME identity', () => {
   it('row 6: a new session in the worktree runs on the home runtime', async () => {
     const has = vi.spyOn(runtimeRegistry, 'has').mockReturnValue(true);
     try {
-      expect(await resolveRuntimeTypeForNewSession({ cwd: tree })).toBe(HOME.runtime);
+      expect(await _resolveRuntimeTypeForNewSession({ cwd: tree })).toBe(HOME.runtime);
     } finally {
       has.mockRestore();
     }

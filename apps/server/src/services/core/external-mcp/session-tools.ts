@@ -4,12 +4,15 @@
  * The names, descriptions, and input schemas come from `getSessionTools`, the
  * same definitions the in-session server uses, via
  * {@link registerFromDefinitions}. Only the external-only additions live here.
- * The external server carries no session, so no caller resolver is passed and
- * the Activity entry names the caller as the external server.
+ * The external server carries no session, so the caller is the agent the
+ * request's `X-DorkOS-Agent` token names. With no such agent (a plain key, or a
+ * revoked or expired token) every call is refused: a session always runs as the
+ * agent that asked for it.
  *
  * @module services/core/external-mcp/session-tools
  */
 import type { ToolRegistrar } from '../mcp-tool-gate.js';
+import type { AgentIdentity } from '../agent-identity/index.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { getSessionTools } from '../../runtimes/claude-code/mcp-tools/session-tools.js';
 import { ToolAnnotationPresets } from '../mcp-tool-metadata.js';
@@ -28,7 +31,18 @@ const SESSION_EXTERNAL_CONFIGS: ExternalToolConfigs = {
  *
  * @param registrar - The gated tool registrar from `mcp-server.ts`.
  * @param deps - Shared MCP tool dependencies.
+ * @param identity - The calling agent the request's token resolved to, if any.
  */
-export function registerSessionTools(registrar: ToolRegistrar, deps: McpToolDeps): void {
-  registerFromDefinitions(registrar, getSessionTools(deps), SESSION_EXTERNAL_CONFIGS);
+export function registerSessionTools(
+  registrar: ToolRegistrar,
+  deps: McpToolDeps,
+  identity?: AgentIdentity
+): void {
+  // An inactive identity names who tried, never who may act.
+  const caller = identity && !identity.inactive ? { agentPath: identity.agentPath } : undefined;
+  registerFromDefinitions(
+    registrar,
+    getSessionTools(deps, () => caller),
+    SESSION_EXTERNAL_CONFIGS
+  );
 }

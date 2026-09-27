@@ -1,6 +1,7 @@
 /**
- * `session_start` (spec `claude-account-fleet` D5): an agent starts a session,
- * optionally on a named account. Every refusal starts and writes nothing; a
+ * `session_start` (spec `claude-account-fleet` D5): an agent starts a session
+ * of its own, optionally on a named account. The session always runs as the
+ * calling agent; every refusal starts nothing and leaves no settings row; a
  * named account needs the account policy; the mode is clamped; the launch cap
  * holds; and every started session leaves one Activity entry.
  *
@@ -8,6 +9,7 @@
  * turn (the account hint, the origin, the cap) is what production sends.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { z } from 'zod';
 import type { MeshCore } from '@dorkos/mesh';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { AccountAdvisor } from '@dorkos/extension-api/server';
@@ -23,6 +25,8 @@ vi.mock('../../../../core/runtime-registry.js', () => ({
     getDefaultType: vi.fn(() => 'claude-code'),
     persistSessionRuntime: vi.fn(async () => true),
     resolveForSession: vi.fn(async () => runtimes.get('claude-code')),
+    saveSessionSettings: vi.fn(async () => undefined),
+    discardSessionSettings: vi.fn(async () => undefined),
   },
 }));
 vi.mock('../../../../../lib/boundary.js', () => ({
@@ -77,27 +81,47 @@ import {
   AGENT_LAUNCH_CAP_MESSAGE,
   AGENT_LAUNCH_MAX_LIVE,
 } from '../../../../session/launch/launch-session.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { resolveLaunchAccountRoot } from '../../claude-config-dir.js';
 import { MCP_TOOL_TIERS } from '../../../../core/mcp-tool-tiers.js';
 import type { McpToolDeps } from '../types.js';
 import {
+  NOT_THE_CALLER_MESSAGE,
+  OTHER_AGENTS_HOME_MESSAGE,
+  SESSION_START_CLIENT_ID,
+  SessionStartInputShape,
+  UNKNOWN_CALLER_MESSAGE,
   createSessionStartHandler,
   getSessionTools,
-  SESSION_START_CLIENT_ID,
 } from '../session-tools.js';
 
 const AGENT_HOME = '/work/agents/scout';
+const OTHER_HOME = '/work/agents/dorkbot';
+const ROOMS_DIR = '/work/rooms';
 
-/** Mesh that knows one agent. */
+/** Mesh that knows the calling agent and one other. */
 const mesh = {
-  listWithPaths: () => [{ id: 'a1', name: 'scout', displayName: 'Scout', projectPath: AGENT_HOME }],
+  listWithPaths: () => [
+    { id: 'a1', name: 'scout', displayName: 'Scout', projectPath: AGENT_HOME },
+    { id: 'a2', name: 'dorkbot', displayName: 'DorkBot', projectPath: OTHER_HOME },
+  ],
 } as unknown as MeshCore;
 
-function makeDeps(): McpToolDeps & { activityService: { emit: ReturnType<typeof vi.fn> } } {
+type Deps = McpToolDeps & { activityService: { emit: ReturnType<typeof vi.fn> } };
+
+function makeDeps(): Deps {
   return {
     meshCore: mesh,
     activityService: { emit: vi.fn(async () => undefined) },
-  } as unknown as McpToolDeps & { activityService: { emit: ReturnType<typeof vi.fn> } };
+  } as unknown as Deps;
+}
+
+/** The handler, called by the registered agent at {@link AGENT_HOME}. */
+function asScout(deps: Deps = makeDeps()) {
+  return createSessionStartHandler(deps, () => ({ agentPath: AGENT_HOME }));
 }
 
 function account(id: string, label: string | null = id.toUpperCase()): RuntimeAccount {
@@ -142,11 +166,11 @@ function installStore(accounts: RuntimeAccount[]): void {
   } as unknown as AccountUsageStore);
 }
 
-/** Register an advisor that marks `eligible` ids eligible and the rest not. */
 function advise(rank: AccountAdvisor['rank']): void {
   registerAccountAdvisor('flow', { rank });
 }
 
+/** Register an advisor that marks `eligible` ids eligible and the rest not. */
 function allowOnly(...eligible: string[]): void {
   advise((candidates) => ({
     accounts: candidates.map((c) => ({
@@ -170,6 +194,7 @@ let codex: FakeAgentRuntime;
 beforeEach(() => {
   vi.clearAllMocks();
   __resetAccountAdvisorForTests();
+  registerTestHomes([AGENT_HOME, OTHER_HOME], { roomsDir: ROOMS_DIR });
   runtimes.clear();
   claude = new FakeAgentRuntime('claude-code');
   claude.getCapabilities.mockReturnValue({
@@ -186,13 +211,13 @@ afterEach(() => {
   // Free every launch slot a test took.
   for (const [opts] of vi.mocked(dispatchMessage).mock.calls) opts.onSettled?.('ok');
   setAccountUsageStore(undefined);
+  clearTestHomes();
   vi.useRealTimers();
 });
 
 describe('session_start', () => {
-  it('starts a session with the agent-launch origin and answers with its canonical id', async () => {
-    const deps = makeDeps();
-    const result = await createSessionStartHandler(deps)(BASE);
+  it('starts a session as the calling agent, with the agent-launch origin', async () => {
+    const result = await asScout()(BASE);
 
     expect(result.isError).toBeUndefined();
     const body = payloadOf(result);
@@ -203,7 +228,7 @@ describe('session_start', () => {
       expect.any(String),
       'claude-code',
       { kind: 'agent-launch' },
-      undefined
+      AGENT_HOME
     );
     const sent = vi.mocked(dispatchMessage).mock.calls[0]![0];
     expect(sent.content).toBe(BASE.prompt);
@@ -211,11 +236,12 @@ describe('session_start', () => {
     expect(sent.clientId).toBe(SESSION_START_CLIENT_ID);
     // Omitted, the ladder decides: no hint rides the send.
     expect(sent.accountHint).toBeUndefined();
+    expect(runtimeRegistry.discardSessionSettings).not.toHaveBeenCalled();
   });
 
   it("sends a named account's id as the launch hint, which the ladder resolves to its folder", async () => {
     allowOnly('work');
-    const result = await createSessionStartHandler(makeDeps())({ ...BASE, account: 'work' });
+    const result = await asScout()({ ...BASE, account: 'work' });
 
     expect(payloadOf(result)).toMatchObject({ account: { id: 'work', label: 'WORK' } });
     const sent = vi.mocked(dispatchMessage).mock.calls[0]![0];
@@ -241,16 +267,59 @@ describe('session_start', () => {
 
   describe('refuses, and starts and writes nothing', () => {
     async function expectRefused(
-      args: Parameters<ReturnType<typeof createSessionStartHandler>>[0]
+      args: Parameters<ReturnType<typeof createSessionStartHandler>>[0],
+      handler = asScout()
     ) {
-      const result = await createSessionStartHandler(makeDeps())(args);
+      const result = await handler(args);
       expect(result.isError).toBe(true);
       expect(dispatchMessage).not.toHaveBeenCalled();
       expect(runtimeRegistry.persistSessionRuntime).not.toHaveBeenCalled();
+      expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
       expect(claude.updateSession).not.toHaveBeenCalled();
-      expect(codex.updateSession).not.toHaveBeenCalled();
       return payloadOf(result);
     }
+
+    it('a caller with no agent identity', async () => {
+      const noCaller = createSessionStartHandler(makeDeps(), () => undefined);
+      expect(await expectRefused(BASE, noCaller)).toMatchObject({
+        error: UNKNOWN_CALLER_MESSAGE,
+        code: 'UNKNOWN_CALLER',
+      });
+      // The external server with no agent token passes a resolver that names nobody,
+      // and a handler built with none at all refuses the same way.
+      expect(await expectRefused(BASE, createSessionStartHandler(makeDeps()))).toMatchObject({
+        code: 'UNKNOWN_CALLER',
+      });
+    });
+
+    it('a caller Mesh has not registered', async () => {
+      const stranger = createSessionStartHandler(makeDeps(), () => ({
+        agentPath: '/work/agents/stranger',
+      }));
+      expect(await expectRefused(BASE, stranger)).toMatchObject({ code: 'UNKNOWN_CALLER' });
+    });
+
+    it('an agentPath that is another agent', async () => {
+      expect(await expectRefused({ ...BASE, agentPath: OTHER_HOME })).toMatchObject({
+        error: NOT_THE_CALLER_MESSAGE,
+        code: 'NOT_THE_CALLER',
+      });
+    });
+
+    it("another agent's home as the folder, or a folder inside it", async () => {
+      for (const cwd of [OTHER_HOME, `${OTHER_HOME}/notes`]) {
+        expect(await expectRefused({ ...BASE, cwd })).toMatchObject({
+          error: OTHER_AGENTS_HOME_MESSAGE,
+          code: 'OTHER_AGENTS_FOLDER',
+        });
+      }
+    });
+
+    it("a room's files as the folder, before any settings are saved", async () => {
+      expect(
+        await expectRefused({ ...BASE, cwd: `${ROOMS_DIR}/r1`, permissionMode: 'plan' })
+      ).toMatchObject({ code: 'DESK_NOT_OWN' });
+    });
 
     it('an account nobody registered', async () => {
       allowOnly('work', 'client');
@@ -275,12 +344,6 @@ describe('session_start', () => {
     it('a relative folder', async () => {
       expect(await expectRefused({ ...BASE, cwd: 'work/project' })).toMatchObject({
         code: 'INVALID_CWD',
-      });
-    });
-
-    it('an agent Mesh does not know', async () => {
-      expect(await expectRefused({ ...BASE, agentPath: '/work/agents/stranger' })).toMatchObject({
-        code: 'INVALID_AGENT_PATH',
       });
     });
 
@@ -309,7 +372,7 @@ describe('session_start', () => {
     it('an account, when the advisor takes too long', async () => {
       vi.useFakeTimers();
       advise(() => new Promise(() => {}));
-      const pending = createSessionStartHandler(makeDeps())({ ...BASE, account: 'work' });
+      const pending = asScout()({ ...BASE, account: 'work' });
       await vi.advanceTimersByTimeAsync(ADVISOR_TIMEOUT_MS);
       const result = await pending;
       expect(payloadOf(result)).toMatchObject({ error: ADVISOR_FAILED_REASON });
@@ -323,53 +386,112 @@ describe('session_start', () => {
     });
   });
 
+  it('starts in its own home, and accepts its own agentPath', async () => {
+    const result = await asScout()({ ...BASE, cwd: AGENT_HOME, agentPath: AGENT_HOME });
+    expect(result.isError).toBeUndefined();
+  });
+
   it('still starts a session with no account when no advisor is registered', async () => {
-    const result = await createSessionStartHandler(makeDeps())(BASE);
+    const result = await asScout()(BASE);
     expect(result.isError).toBeUndefined();
     expect(dispatchMessage).toHaveBeenCalledTimes(1);
   });
 
   it('accepts `default` on a runtime with no accounts, and sends no hint', async () => {
-    const result = await createSessionStartHandler(makeDeps())({
-      ...BASE,
-      runtime: 'codex',
-      account: 'default',
-    });
+    const result = await asScout()({ ...BASE, runtime: 'codex', account: 'default' });
     expect(payloadOf(result)).toMatchObject({ runtime: 'codex', account: null });
     expect(vi.mocked(dispatchMessage).mock.calls[0]![0].accountHint).toBeUndefined();
   });
 
   it('lowers bypassPermissions to acceptEdits on the settings row, before the send', async () => {
-    await createSessionStartHandler(makeDeps())({
+    await asScout()({
       ...BASE,
       permissionMode: 'bypassPermissions',
       model: 'claude-opus',
       effort: 'high',
     });
-    const [sessionId, settings] = claude.updateSession.mock.calls[0]!;
+    const save = vi.mocked(runtimeRegistry.saveSessionSettings);
+    const [sessionId, settings] = save.mock.calls[0]!;
     expect(settings).toEqual({
       permissionMode: 'acceptEdits',
       model: 'claude-opus',
       effort: 'high',
     });
     expect(vi.mocked(dispatchMessage).mock.calls[0]![0].sessionId).toBe(sessionId);
-    expect(claude.updateSession.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(save.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(dispatchMessage).mock.invocationCallOrder[0]!
     );
+    // Only the row: no runtime is handed an in-memory session for the new id.
+    expect(claude.updateSession).not.toHaveBeenCalled();
+  });
+
+  it('clamps in the input schema, so the approval card shows the mode it grants', () => {
+    const schema = z.object(SessionStartInputShape);
+    expect(schema.parse({ ...BASE, permissionMode: 'bypassPermissions' }).permissionMode).toBe(
+      'acceptEdits'
+    );
+    expect(schema.parse({ ...BASE, permissionMode: 'plan' }).permissionMode).toBe('plan');
   });
 
   it('writes no permission mode when none was asked for', async () => {
-    await createSessionStartHandler(makeDeps())(BASE);
-    expect(claude.updateSession).not.toHaveBeenCalled();
-    await createSessionStartHandler(makeDeps())({ ...BASE, model: 'claude-opus' });
-    expect(claude.updateSession.mock.calls[0]![1]).toEqual({ model: 'claude-opus' });
+    await asScout()({ ...BASE, model: 'claude-opus' });
+    expect(vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]![1]).toEqual({
+      model: 'claude-opus',
+    });
+  });
+
+  describe('removes the settings row of a launch that did not start', () => {
+    it('when the launch throws', async () => {
+      vi.mocked(dispatchMessage).mockRejectedValueOnce(new Error('spawn failed'));
+      await expect(asScout()({ ...BASE, model: 'claude-opus' })).rejects.toThrow('spawn failed');
+      const [sessionId] = vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]!;
+      expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledWith(sessionId);
+    });
+
+    it('when the launch is not accepted', async () => {
+      vi.mocked(dispatchMessage).mockResolvedValueOnce({
+        accepted: false,
+        outcome: { kind: 'started', messageId: 'm' },
+        queued: false,
+        queuePosition: 0,
+      } as never);
+      const result = await asScout()(BASE);
+      expect(payloadOf(result)).toMatchObject({ code: 'NOT_STARTED' });
+      const [sessionId] = vi.mocked(runtimeRegistry.saveSessionSettings).mock.calls[0]!;
+      expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledWith(sessionId);
+    });
+
+    it('when a launch loses the race for the last slot', async () => {
+      // All nine pass the early cap check together; the launch service then
+      // hands out eight slots and refuses the ninth after its row was saved.
+      const handler = asScout();
+      const results = await Promise.all(
+        Array.from({ length: AGENT_LAUNCH_MAX_LIVE + 1 }, () =>
+          handler({ ...BASE, model: 'claude-opus' })
+        )
+      );
+      const refused = results.filter((r) => r.isError);
+      expect(refused).toHaveLength(1);
+      expect(payloadOf(refused[0]!)).toMatchObject({ code: 'LAUNCH_CAP_FULL' });
+      expect(runtimeRegistry.saveSessionSettings).toHaveBeenCalledTimes(AGENT_LAUNCH_MAX_LIVE + 1);
+      const dispatched = new Set(
+        vi.mocked(dispatchMessage).mock.calls.map(([opts]) => opts.sessionId)
+      );
+      const lost = vi
+        .mocked(runtimeRegistry.saveSessionSettings)
+        .mock.calls.map(([id]) => id)
+        .find((id) => !dispatched.has(id));
+      expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledTimes(1);
+      expect(runtimeRegistry.discardSessionSettings).toHaveBeenCalledWith(lost);
+    });
   });
 
   it(`refuses the ${AGENT_LAUNCH_MAX_LIVE + 1}th live launch, and starts again once one settles`, async () => {
-    const handler = createSessionStartHandler(makeDeps());
+    const handler = asScout();
     for (let i = 0; i < AGENT_LAUNCH_MAX_LIVE; i++) {
       expect((await handler(BASE)).isError).toBeUndefined();
     }
+    vi.mocked(runtimeRegistry.saveSessionSettings).mockClear();
     const refused = await handler({ ...BASE, model: 'claude-opus' });
     expect(payloadOf(refused)).toMatchObject({
       error: AGENT_LAUNCH_CAP_MESSAGE,
@@ -377,7 +499,7 @@ describe('session_start', () => {
     });
     expect(dispatchMessage).toHaveBeenCalledTimes(AGENT_LAUNCH_MAX_LIVE);
     // Nothing is written for the refused launch either.
-    expect(claude.updateSession).not.toHaveBeenCalled();
+    expect(runtimeRegistry.saveSessionSettings).not.toHaveBeenCalled();
 
     vi.mocked(dispatchMessage).mock.calls[0]![0].onSettled?.('ok');
     expect((await handler(BASE)).isError).toBeUndefined();
@@ -387,10 +509,7 @@ describe('session_start', () => {
     it('names the calling agent, the account and the folder', async () => {
       allowOnly('work');
       const deps = makeDeps();
-      await createSessionStartHandler(deps, () => ({ agentPath: AGENT_HOME }))({
-        ...BASE,
-        account: 'work',
-      });
+      await asScout(deps)({ ...BASE, account: 'work' });
       expect(deps.activityService.emit).toHaveBeenCalledTimes(1);
       expect(deps.activityService.emit.mock.calls[0]![0]).toMatchObject({
         actorType: 'agent',
@@ -403,27 +522,19 @@ describe('session_start', () => {
       });
     });
 
-    it('names the external server when there is no calling session', async () => {
-      const deps = makeDeps();
-      await createSessionStartHandler(deps)(BASE);
-      expect(deps.activityService.emit.mock.calls[0]![0]).toMatchObject({
-        actorLabel: 'external MCP',
-        summary: 'Started a session in /work/project',
-      });
-    });
-
     it('is not written for a refused call', async () => {
       const deps = makeDeps();
-      await createSessionStartHandler(deps)({ ...BASE, cwd: '/etc' });
+      await asScout(deps)({ ...BASE, cwd: '/etc' });
       expect(deps.activityService.emit).not.toHaveBeenCalled();
     });
   });
 
-  it('is an act-tier tool in the agents area', () => {
+  it('is an act-tier tool in the agents area whose card shows what it grants', () => {
     expect(MCP_TOOL_TIERS.session_start).toMatchObject({
       tier: 'act',
       area: 'agents',
       title: 'Start a new agent session',
+      approvalDisplayFields: ['cwd', 'account', 'permissionMode', 'agentPath', 'prompt'],
     });
     expect(getSessionTools(makeDeps()).map((t) => t.name)).toEqual(['session_start']);
   });
