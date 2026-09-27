@@ -911,6 +911,7 @@ export { RoomService, type PostedEntry } from './room-service.js';
 export {
   RoomError,
   RoomRepoConfigUnsafeError,
+  roomRefusalFor,
   type RoomErrorCode,
   type RoomAgentLookup,
 } from './room-errors.js';

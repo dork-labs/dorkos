@@ -397,28 +397,47 @@ describe('RoomFilesSection', () => {
 });
 
 describe('RoomFilesSection, a room whose git settings name a program', () => {
-  it('says which settings and how to remove them, instead of “Couldn’t load files.”', async () => {
+  /** The refusal as the server words it, with an optional command beside the sentence. */
+  function refusal(error: string, command?: string) {
+    const body = { error, code: 'ROOM_REPO_CONFIG_UNSAFE', ...(command ? { command } : {}) };
+    return Object.assign(new Error(error), { code: 'ROOM_REPO_CONFIG_UNSAFE', body });
+  }
+
+  it('shows the person who runs DorkOS the settings and a command they can copy as it is', async () => {
+    // A key's name is whoever wrote the settings' choice — a backtick in it must
+    // reach the terminal as a backtick, not as the curly quote the sentence's
+    // markup would make of it.
+    const command =
+      "git config --file '/home/me/.dork/rooms/r/repo/.git/config' --unset-all 'filter.a`b`.smudge'";
     const transport = createMockTransport();
     transport.readRoomFiles = vi
       .fn()
       .mockRejectedValue(
-        Object.assign(
-          new Error(
-            'This room’s shared git settings contain entries that can make git run programs: ' +
-              'filter.x.smudge. Remove each one with `git config --unset-all <name>`.'
-          ),
-          { code: 'ROOM_REPO_CONFIG_UNSAFE' }
+        refusal(
+          'This room’s shared git settings contain entries that can make git run programs: filter.a`b`.smudge.',
+          command
         )
       );
     renderSection(transport);
 
-    // Every read of the room's files is refused until a person removes the
-    // settings, so the listing is where they meet it — and a generic line
-    // would leave them with nothing to do.
-    expect(
-      await screen.findByText(/filter\.x\.smudge\. Remove each one with “git config/)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/can make git run programs/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Command that removes the settings').textContent).toBe(command);
     expect(screen.queryByText('Couldn’t load files.')).not.toBeInTheDocument();
+  });
+
+  it('shows anybody else the plain line, and no command', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFiles = vi
+      .fn()
+      .mockRejectedValue(
+        refusal(
+          'This room’s files are paused until the person who runs this DorkOS fixes the room’s git settings.'
+        )
+      );
+    renderSection(transport);
+
+    expect(await screen.findByText(/files are paused until/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Command that removes the settings')).not.toBeInTheDocument();
   });
 });
 

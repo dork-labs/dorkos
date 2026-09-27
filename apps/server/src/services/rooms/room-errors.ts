@@ -708,16 +708,32 @@ function shellQuote(word: string): string {
  * `ROOM_REPO_CONFIG_UNSAFE`, carrying what it found (spec `agent-home-desk`
  * §5.2, DOR-2457).
  *
- * **Two sentences, because two audiences.** The operator needs the settings
- * file, the offending keys and a command to paste; that is {@link message}, and
- * it is also what the log records. Anybody else in the room is told only that
- * the files are paused and who fixes them ({@link forMember}): the file sits
- * under the operator's data folder, and a path on this machine is not something
- * a room member was ever shown. `sendRoomError` picks one per caller.
+ * **Two audiences, so two answers.** The operator needs the settings file, the
+ * offending keys and a command to paste. Anybody else in the room, agents
+ * included, is told only that the files are paused and who fixes them
+ * ({@link forMember}): the file sits under the operator's data folder, and a
+ * path on this machine is not something a room member was ever shown. Every
+ * surface that answers a caller picks one through {@link roomRefusalFor}.
+ *
+ * **The command travels apart from the sentence** ({@link command}). A key's
+ * subsection is whatever the author of the settings chose, backticks and quotes
+ * included, so a command set inside prose could be mangled by whatever renders
+ * the prose; a separate field is shown as-is. {@link message}, which is what
+ * the log records, carries both.
  */
 export class RoomRepoConfigUnsafeError extends RoomError {
   /**
-   * Build the refusal, with the operator's sentence as its message.
+   * One shell command that removes every offending key, each word quoted for a
+   * POSIX shell; `null` when the settings could not be read at all.
+   */
+  readonly command: string | null;
+
+  /** The operator's sentence without the command: the file and the keys. */
+  readonly forOwner: string;
+
+  /**
+   * Build the refusal. Its message is the operator's sentence followed by the
+   * command, for the log.
    *
    * @param configFile - The room's shared settings file, `<room>/repo/.git/config`.
    * @param keys - The offending keys as `git config --list` prints them; empty
@@ -727,8 +743,29 @@ export class RoomRepoConfigUnsafeError extends RoomError {
     readonly configFile: string,
     readonly keys: readonly string[]
   ) {
-    super('ROOM_REPO_CONFIG_UNSAFE', operatorSentence(configFile, keys));
+    const command =
+      keys.length === 0
+        ? null
+        : keys
+            .map(
+              (key) => `git config --file ${shellQuote(configFile)} --unset-all ${shellQuote(key)}`
+            )
+            .join(' && ');
+    const forOwner =
+      keys.length === 0
+        ? `This room’s git settings (${configFile}) could not be read, so DorkOS will not work on ` +
+          `its files until they can be.`
+        : `This room’s shared git settings (${configFile}) contain entries that can make git run ` +
+          `programs: ${keys.join(', ')}. DorkOS will not merge, save or read this room’s files ` +
+          `until they are removed. Something outside DorkOS added them, most likely a command an ` +
+          `agent ran. The room’s Files section shows the command that removes them.`;
+    super(
+      'ROOM_REPO_CONFIG_UNSAFE',
+      command === null ? forOwner : `${forOwner} The command: ${command}`
+    );
     this.name = 'RoomRepoConfigUnsafeError';
+    this.command = command;
+    this.forOwner = forOwner;
   }
 
   /** The sentence for anybody but the operator: no path, no keys, no command. */
@@ -737,23 +774,34 @@ export class RoomRepoConfigUnsafeError extends RoomError {
   }
 }
 
-/** The operator's sentence: the file, the keys, and one command that removes them all. */
-function operatorSentence(configFile: string, keys: readonly string[]): string {
-  if (keys.length === 0) {
-    return (
-      `This room’s git settings (${configFile}) could not be read, so DorkOS will not work on its ` +
-      `files until they can be.`
-    );
-  }
-  const command = keys
-    .map((key) => `git config --file ${shellQuote(configFile)} --unset-all ${shellQuote(key)}`)
-    .join(' && ');
-  return (
-    `This room’s shared git settings (${configFile}) contain entries that can make git run ` +
-    `programs: ${keys.join(', ')}. DorkOS will not merge, save or read this room’s files until ` +
-    `they are removed. Something outside DorkOS added them, most likely a command an agent ran. ` +
-    `Remove them with \`${command}\`.`
-  );
+/** What a caller is told about a refusal: the sentence, and the command when it is theirs to run. */
+export interface RoomRefusalBody {
+  /** The sentence. */
+  error: string;
+  /** The refusal's code. */
+  code: RoomErrorCode;
+  /** A command to paste; only ever the operator's (DOR-2457). */
+  command?: string;
+}
+
+/**
+ * The refusal as THIS caller may see it (DOR-2457).
+ *
+ * Every refusal reads the same to everyone except {@link RoomRepoConfigUnsafeError},
+ * whose file path, keys and command are the operator's alone. **Withheld unless
+ * the caller is known to be the operator**, so a surface that cannot say who is
+ * asking fails closed. Shared by `sendRoomError` (HTTP) and the room
+ * capabilities (MCP), the two places a refusal leaves the server.
+ *
+ * @param err - The refusal.
+ * @param ownerAsking - Whether the caller was resolved as the install's owner.
+ */
+export function roomRefusalFor(err: RoomError, ownerAsking: boolean): RoomRefusalBody {
+  if (!(err instanceof RoomRepoConfigUnsafeError)) return { error: err.message, code: err.code };
+  if (!ownerAsking) return { error: err.forMember, code: err.code };
+  return err.command === null
+    ? { error: err.forOwner, code: err.code }
+    : { error: err.forOwner, code: err.code, command: err.command };
 }
 
 /**

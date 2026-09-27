@@ -208,17 +208,24 @@ export function nameTakenMessage(name: string): string {
 }
 
 /**
- * The sentence to show when a room's files could not be listed at all, or
- * `undefined` to keep the pane's generic "Couldn’t load files."
+ * What to show when a room's files could not be listed at all, or `undefined`
+ * to keep the pane's generic "Couldn’t load files."
  *
  * Only a refusal a person can act on earns its own sentence here. Today that is
  * {@link ROOM_REPO_CONFIG_UNSAFE_CODE}: every read of the room's files is
  * refused until somebody removes the settings, so the listing is where a person
- * meets it first, and the server's sentence is the one that says how.
+ * meets it first. The server words it per caller (DOR-2457): the person who
+ * runs DorkOS gets the settings and a `command` to paste, carried apart from
+ * the sentence so nothing here rewrites it; anybody else gets a plain line and
+ * no command.
  *
  * @param err - Whatever the listing threw.
  */
-export function roomListRefusalMessage(err: unknown): string | undefined {
+export function roomListRefusal(
+  err: unknown
+): { message: string; command: string | null } | undefined {
   if (errorCodeOf(err) !== ROOM_REPO_CONFIG_UNSAFE_CODE) return undefined;
-  return serverSentenceFirst(err) ?? ROOM_REPO_CONFIG_UNSAFE_FALLBACK;
+  const body = (err as { body?: { command?: unknown } }).body;
+  const command = typeof body?.command === 'string' && body.command !== '' ? body.command : null;
+  return { message: serverSentenceFirst(err) ?? ROOM_REPO_CONFIG_UNSAFE_FALLBACK, command };
 }

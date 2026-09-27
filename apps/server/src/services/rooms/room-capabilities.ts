@@ -202,9 +202,9 @@ import {
 } from '../core/capabilities/index.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { configManager } from '../core/config-manager.js';
-import type { AuthorRecord } from './author-registry.js';
+import { isOwnerRecord, type AuthorRecord } from './author-registry.js';
 import { resolveOperatorAuthor } from './operator-author.js';
-import { RoomError } from './room-errors.js';
+import { RoomError, roomRefusalFor } from './room-errors.js';
 import {
   FIND_ROOMS_MAX,
   HISTORY_PAGE_MAX,
@@ -490,20 +490,6 @@ function projectDetail(detail: RoomDetail): Record<string, unknown> {
 }
 
 /**
- * Run a room verb, turning its typed refusal into the MCP `isError` payload
- * rather than a stack trace.
- *
- * A {@link RoomError} is the room saying no for a reason the caller can act on —
- * "you are not in that room", "that is a direct message", "you have used up your
- * reactions". The code travels with the message so an agent can branch on it
- * without parsing prose. Anything else propagates: an unexpected throw is a bug,
- * and swallowing it into a tidy payload is how a bug becomes a behaviour.
- *
- * @param body - The verb.
- * @returns Whatever the verb returned.
- * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
- */
-/**
  * The agent's own working directory, or a refusal it can act on.
  *
  * The one place a `post_to_room` attachment may point, and it is read off the
@@ -527,15 +513,46 @@ function requireAgentCwd(context: CapabilityHandlerContext): string {
   return context.cwd;
 }
 
-function answering<T>(body: () => T): T {
+/**
+ * Run a room verb, turning its typed refusal into the MCP `isError` payload
+ * rather than a stack trace.
+ *
+ * A {@link RoomError} is the room saying no for a reason the caller can act on —
+ * "you are not in that room", "that is a direct message", "you have used up your
+ * reactions". The code travels with the message so an agent can branch on it
+ * without parsing prose. Anything else propagates: an unexpected throw is a bug,
+ * and swallowing it into a tidy payload is how a bug becomes a behaviour.
+ *
+ * **What the refusal says depends on who asked** ({@link roomRefusalFor},
+ * DOR-2457): a room whose git settings name a program is explained in full,
+ * path and command, only to the install's owner. `ownerAsking` is read when a
+ * refusal happens, after the verb had its chance to resolve the caller, and
+ * defaults to "no" — an agent, another person, and a caller nobody resolved
+ * are all told only that the files are paused.
+ *
+ * @param body - The verb.
+ * @param ownerAsking - Whether the resolved caller is the install's owner.
+ * @returns Whatever the verb returned.
+ * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
+ */
+function answering<T>(body: () => T, ownerAsking: () => boolean = () => false): T {
   try {
     return body();
   } catch (err) {
     if (err instanceof RoomError) {
-      throw new CapabilityToolError({ error: err.message, code: err.code });
+      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking()));
     }
     throw err;
   }
+}
+
+/**
+ * Whether a resolved caller is the install's owner, for {@link answering}.
+ *
+ * @param caller - The caller, or `undefined` when it was never resolved.
+ */
+function isOwnerCaller(caller: AuthorRecord | undefined): boolean {
+  return caller !== undefined && isOwnerRecord(caller, readOwnerAccount()?.id ?? null);
 }
 
 /**
@@ -549,15 +566,19 @@ function answering<T>(body: () => T): T {
  * been affected.
  *
  * @param body - The verb.
+ * @param ownerAsking - As {@link answering}'s.
  * @returns Whatever the verb resolved to.
  * @throws {CapabilityToolError} Carrying `{ error, code }` for a typed refusal.
  */
-async function answeringAsync<T>(body: () => Promise<T>): Promise<T> {
+async function answeringAsync<T>(
+  body: () => Promise<T>,
+  ownerAsking: () => boolean = () => false
+): Promise<T> {
   try {
     return await body();
   } catch (err) {
     if (err instanceof RoomError) {
-      throw new CapabilityToolError({ error: err.message, code: err.code });
+      throw new CapabilityToolError(roomRefusalFor(err, ownerAsking()));
     }
     throw err;
   }
@@ -953,8 +974,13 @@ export const roomsDomain: CapabilityDomain = {
         // Inside `answeringAsync` with the merge itself, because resolving WHO
         // is calling can refuse too — and every refusal in this contract is one
         // an agent is meant to read and act on.
-        const result = await answeringAsync(() =>
-          merges.merge(input.roomId, callerAuthor(rooms, context).id, { summary: input.summary })
+        let caller: AuthorRecord | undefined;
+        const result = await answeringAsync(
+          () => {
+            caller = callerAuthor(rooms, context);
+            return merges.merge(input.roomId, caller.id, { summary: input.summary });
+          },
+          () => isOwnerCaller(caller)
         );
         return { merged: true, ...result };
       },
@@ -987,7 +1013,14 @@ export const roomsDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
         const merges = requireMergeDeps(deps);
-        return answeringAsync(() => merges.status(input.roomId, callerAuthor(rooms, context).id));
+        let caller: AuthorRecord | undefined;
+        return answeringAsync(
+          () => {
+            caller = callerAuthor(rooms, context);
+            return merges.status(input.roomId, caller.id);
+          },
+          () => isOwnerCaller(caller)
+        );
       },
     }),
     defineCapability({

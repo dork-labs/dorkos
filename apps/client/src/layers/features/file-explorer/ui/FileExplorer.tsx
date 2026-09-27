@@ -125,7 +125,7 @@ export function FileExplorer({
   const changes = explorer.changes;
   const queryClient = useQueryClient();
   const showHidden = useFileExplorerStore((s) => s.showHidden);
-  const { rows, rootLoading, rootError, rootErrorMessage, errorPaths } = explorer;
+  const { rows, rootLoading, rootError, rootErrorMessage, rootErrorCommand, errorPaths } = explorer;
   const setCommands = useFileExplorerStore((s) => s.setCommands);
   // Selection lives in the store (DOR-404 D1) so it survives an unmount and a
   // refresh; `renamingPath`/`draft` stay component-local (ephemeral, D7).
@@ -361,6 +361,17 @@ export function FileExplorer({
         ) : rootError && rows.length === 0 ? (
           <div className="text-muted-foreground flex min-h-20 flex-col items-center justify-center gap-2 px-4 py-3 text-center text-xs [overflow-wrap:anywhere]">
             <span>{rootErrorMessage ?? 'Couldn’t load files.'}</span>
+            {rootErrorCommand !== null && (
+              // Shown as it came, never through the sentence's markup, and
+              // selected whole on a click so what a person copies is exactly
+              // the command that runs.
+              <code
+                aria-label="Command that removes the settings"
+                className="bg-muted text-foreground block w-full rounded px-2 py-1.5 text-left font-mono select-all"
+              >
+                {rootErrorCommand}
+              </code>
+            )}
             <Button variant="outline" size="xs" onClick={explorer.reload}>
               <RotateCw />
               Retry

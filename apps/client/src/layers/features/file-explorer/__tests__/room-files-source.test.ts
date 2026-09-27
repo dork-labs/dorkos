@@ -305,11 +305,11 @@ describe('saving through the room files source', () => {
 
   it('shows the room’s own sentence when its git settings name a program', async () => {
     const { transport, source } = build();
-    // The server's sentence names each setting and the command that removes
-    // it: the one thing a person needs, and nothing generic could say it.
+    // The server's sentence names each setting and where to find the command
+    // that removes them: nothing generic could say it.
     const said =
       'This room’s shared git settings contain entries that can make git run programs: ' +
-      'filter.x.smudge. Remove each one with `git config --unset-all <name>`.';
+      'filter.x.smudge. The room’s Files section shows the command that removes them.';
     const refusal = () =>
       Object.assign(new Error(said), { code: 'ROOM_REPO_CONFIG_UNSAFE', status: 409 });
     transport.saveRoomFile = vi.fn().mockRejectedValue(refusal());
@@ -317,7 +317,9 @@ describe('saving through the room files source', () => {
       source.save!({ path: 'ROOM.md', baseCommit: null, text: 'x' })
     ).resolves.toMatchObject({
       status: 'refused',
-      reason: expect.stringContaining('filter.x.smudge. Remove each one with “git config'),
+      reason: expect.stringContaining(
+        'filter.x.smudge. The room’s Files section shows the command'
+      ),
     });
 
     transport.deleteRoomFile = vi.fn().mockRejectedValue(refusal());

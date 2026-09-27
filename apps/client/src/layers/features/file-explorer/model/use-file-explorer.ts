@@ -3,7 +3,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { executeUiCommand, type DispatcherContext } from '@/layers/shared/lib';
 import { pinnedFirst, withoutHidden } from '../lib/listing-shape';
-import { roomListRefusalMessage } from '../lib/crud-errors';
+import { roomListRefusal } from '../lib/crud-errors';
 import { flattenTree, ROOT_KEY, visibleExpandedDirs } from './tree';
 import type { DirState, FlatRow } from './types';
 import {
@@ -75,6 +75,8 @@ export interface FileExplorerApi extends FileCrudApi, FileActionsApi {
    * fixed); `null` means the pane's generic message.
    */
   rootErrorMessage: string | null;
+  /** A command that fixes {@link rootErrorMessage}'s cause, when the server offered one. */
+  rootErrorCommand: string | null;
   /** Visible expanded directories whose listing failed (for inline retry rows). */
   errorPaths: Set<string>;
   /** Expand or collapse a directory (its query mounts/unmounts declaratively). */
@@ -191,8 +193,9 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
   const rootLoading = Boolean(source) && Boolean(dirData[ROOT_KEY]?.loading);
   const rootError = Boolean(source) && Boolean(dirData[ROOT_KEY]?.error);
   const rootFailure = results[0]?.error;
-  const rootErrorMessage =
-    rootError && rootFailure ? (roomListRefusalMessage(rootFailure) ?? null) : null;
+  const rootRefusal = rootError && rootFailure ? roomListRefusal(rootFailure) : undefined;
+  const rootErrorMessage = rootRefusal?.message ?? null;
+  const rootErrorCommand = rootRefusal?.command ?? null;
   const errorPaths = useMemo(() => {
     const set = new Set<string>();
     for (const dirPath of dirPaths) {
@@ -288,6 +291,7 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
     rootLoading,
     rootError,
     rootErrorMessage,
+    rootErrorCommand,
     errorPaths,
     toggleExpand,
     ensureExpanded,

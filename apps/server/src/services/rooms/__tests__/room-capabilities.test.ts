@@ -26,6 +26,11 @@ import { MAX_CAPABILITY_LIMIT } from '@dorkos/shared/capabilities';
 import type { AgentIdentity } from '../../core/agent-identity/index.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import { roomsDomain } from '../room-capabilities.js';
+import {
+  ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+  RoomRepoConfigUnsafeError,
+} from '../room-errors.js';
+import type { RoomMergeService } from '../repo/room-merge-service.js';
 import { FIND_ROOMS_MAX, type RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import type { RoomTurnRequest } from '../room-trigger.js';
@@ -488,6 +493,81 @@ describe('the rooms capability domain', () => {
       )) as { entryId: string };
 
       expect(harness.store.getEntryById(channel.id, result.entryId)?.authorId).toBe(ana);
+    });
+  });
+
+  describe('a room whose git settings name a program (DOR-2457)', () => {
+    const CONFIG = '/home/operator/.dork/rooms/r1/repo/.git/config';
+
+    /** A registry whose merge service refuses every call the way a poisoned room does. */
+    function poisonedRegistry(): CapabilityRegistry {
+      const refuse = async () => {
+        throw new RoomRepoConfigUnsafeError(CONFIG, ['filter.x.smudge']);
+      };
+      return composeRegistry([roomsDomain], {
+        logger: { debug() {}, info() {}, warn() {}, error() {} },
+        roomDeps: {
+          rooms: service,
+          merges: { merge: refuse, status: refuse } as unknown as RoomMergeService,
+        },
+      });
+    }
+
+    /** Both repo verbs' refusal payloads for one caller. */
+    async function refusals(context: Parameters<CapabilityRegistry['invoke']>[2]) {
+      const poisoned = poisonedRegistry();
+      const payloads: unknown[] = [];
+      for (const id of ['rooms.merge', 'rooms.repo_status']) {
+        const input =
+          id === 'rooms.merge'
+            ? { roomId: channel.id, summary: 'Ship it' }
+            : { roomId: channel.id };
+        await poisoned.invoke(id, input, context).then(
+          () => payloads.push('no refusal'),
+          (err: { payload?: unknown }) => payloads.push(err.payload ?? String(err))
+        );
+      }
+      return payloads;
+    }
+
+    it('tells an agent only that the files are paused — never the path, keys or command', async () => {
+      for (const payload of await refusals({
+        identity: ANA_IDENTITY,
+        retryChannel: 'mcp-argument',
+      })) {
+        expect(payload).toEqual({
+          code: 'ROOM_REPO_CONFIG_UNSAFE',
+          error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+        });
+      }
+    });
+
+    it('tells another signed-in person the same plain line', async () => {
+      installState.loginEnabled = true;
+      installState.ownerId = 'owner-account';
+      const priya = authors.human('priya-account').id;
+      service.addMember(channel.id, human, { authorId: priya });
+
+      for (const payload of await refusals({
+        userId: 'priya-account',
+        retryChannel: 'http-header',
+      })) {
+        expect(payload).toEqual({
+          code: 'ROOM_REPO_CONFIG_UNSAFE',
+          error: ROOM_REPO_CONFIG_UNSAFE_MEMBER_MESSAGE,
+        });
+      }
+    });
+
+    it('tells the owner the file, the key, and the command to remove it', async () => {
+      for (const payload of await refusals({ retryChannel: 'http-header' })) {
+        expect(payload).toMatchObject({
+          code: 'ROOM_REPO_CONFIG_UNSAFE',
+          error: expect.stringContaining(CONFIG),
+          command: `git config --file '${CONFIG}' --unset-all 'filter.x.smudge'`,
+        });
+        expect((payload as { error: string }).error).toContain('filter.x.smudge');
+      }
     });
   });
 

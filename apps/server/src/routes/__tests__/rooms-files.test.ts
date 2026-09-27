@@ -925,7 +925,7 @@ describe('room files routes', () => {
 
     describe('a room whose git settings name a program (DOR-2457)', () => {
       /** The key an agent's plain `git config` could plant, with a quote in its subsection. */
-      const KEY = "filter.it's.smudge";
+      const KEY = "filter.it's`x`.smudge";
 
       /** Plant {@link KEY} in the room's shared settings, as an agent's shell could. */
       async function armed(): Promise<{ roomId: string; configFile: string }> {
@@ -943,12 +943,14 @@ describe('room files routes', () => {
         expect(res.status).toBe(409);
         expect(res.body.code).toBe('ROOM_REPO_CONFIG_UNSAFE');
         expect(res.body.error).toContain(KEY);
-        expect(res.body.error).not.toContain('<name>');
-        // The command is the real one, quoted for a shell: run it as the
+        expect(res.body.error).toContain(configFile);
+        // The command rides in its own field, so no renderer of the sentence
+        // can mangle it. It is the real one, quoted for a shell: run it as the
         // operator would paste it, and the room reads again.
-        const command = /`([^`]+)`/.exec(res.body.error as string)?.[1];
+        const command = res.body.command as string;
         expect(command).toContain(configFile);
-        await execFileAsync('sh', ['-c', command!]);
+        expect(command).not.toContain('<name>');
+        await execFileAsync('sh', ['-c', command]);
         expect((await request(testServer).get(`/api/rooms/${roomId}/files`)).status).toBe(200);
       });
 
