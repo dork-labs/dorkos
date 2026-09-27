@@ -28,13 +28,17 @@ queue build is only as fast as its last job. Runner wait for a browser shard
 was p50 0.03, p90 3.05 min over the 30 green queue runs of 2026-09-26/27.
 
 **The ceiling is today.** Target equals the baseline: `verified` means the
-queue build's p50 did not get worse. The verdict reads p50 (the SLO's first
+queue build's p50 is at or under 29.7. That is a fixed number, not the
+before-window's own reading, so a week that was already faster than 29.7 and
+slowed down could still read `verified`; with `gates: []` no other change
+counts as a confounder either. Compare the verdict's before and after
+readings by hand, not only its label. The verdict reads p50 (the SLO's first
 objective); read p90 beside it by hand, and treat anything over 58.6 as the
 same failure.
 
 **What is expected instead.** The browser shard is the queue's long pole (job
 p50 27.9 min, against 14.8 for the vitest `test-shard` jobs). At six it should
-be about 16, so the p50 queue build should fall by several minutes, not merely
+be about 17, so the p50 queue build should fall by several minutes, not merely
 hold.
 
 **No gates, on purpose.** The verdict's confounder check matches entries by

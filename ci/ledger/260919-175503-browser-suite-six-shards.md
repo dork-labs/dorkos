@@ -37,8 +37,9 @@ tests on 2026-09-23, 512 now) and all three rose together.
 The deadline had also gone stale on its own. `playwright.config.ts` derives
 `globalTimeout` from two facts measured on 2026-08-19, a 41-minute unsharded
 suite and 4 minutes of boot. Today they are 58 and 5. Re-derived honestly,
-three shards would get 40 minutes, not 30, so a healthy run sat 3% under a
-deadline built for a suite a third smaller.
+three shards would get 40 minutes, not 30, so healthy runs sat close to a deadline built for a suite a third smaller:
+the suite step's p95 was 27.4 of 30 on Playwright's own clock (0.91), and the
+job, which `headroom` reads, 30.0 (0.97).
 
 ## The change
 
@@ -73,7 +74,7 @@ its estimate (this reproduces the measured 30.0 at three shards).
 
 The deadline follows the count, so the ratio lands at 0.65-0.76 anywhere from
 five to eight and does not pick the count. Wall time does: at six the job is
-about 16 min p50 and 19 p95, level with the vitest `test-shard` jobs (p50 14.8,
+about 17 min p50 and 19 p95, close to with the vitest `test-shard` jobs (p50 14.8,
 p95 17.9) the queue also waits for. Past six the browser suite stops being the
 queue's long pole, so a seventh or eighth shard buys time the queue cannot use
 while every shard re-pays about 8 fixed minutes.

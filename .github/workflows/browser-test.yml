@@ -201,7 +201,7 @@ jobs:
     # re-measured (see there); with those, three shards would have derived 40.
     # Because the deadline follows the shard count, p95/deadline lands between
     # 0.65 and 0.76 anywhere from five to eight shards: the ratio does not pick
-    # the count. Wall time does. At six the job is ~16 min p50 / ~19 p95, level
+    # the count. Wall time does. At six the job is ~17 min p50 / ~19 p95, level
     # with the vitest `test-shard` jobs (p50 14.8, p95 17.9) that the queue
     # also waits on, so this stops being the queue's long pole; a seventh or
     # eighth shard buys under three minutes the queue cannot use, and every
