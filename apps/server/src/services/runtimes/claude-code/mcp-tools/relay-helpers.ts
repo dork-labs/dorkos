@@ -8,7 +8,11 @@ import path from 'node:path';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { isServerManagedSubject, parseAgentSubject } from '@dorkos/relay';
-import type { RelayBudget } from '@dorkos/shared/relay-schemas';
+import {
+  reachesServerDestination,
+  SERVER_DESTINATION_REFUSAL,
+  type RelayBudget,
+} from '@dorkos/shared/relay-schemas';
 import { logger } from '../../../../lib/logger.js';
 import {
   anchorPath,
@@ -217,6 +221,31 @@ export function ownsEndpoint(
 export function isReservedSubject(subject: string, identity: SenderIdentity): boolean {
   if (subject === identity.subject) return false;
   return isServerManagedSubject(subject);
+}
+
+/**
+ * The refusal for a send whose destination or reply address is server-owned, or
+ * `undefined` when every subject given is one an agent may send to (DOR-2432).
+ *
+ * Checked before a send touches the bus, so `relay_send_and_wait` and
+ * `relay_send_async` never mint an inbox for a message that cannot go out. The
+ * publish pipeline holds the same rule for agent principals; this is the
+ * answer the model reads, with the rule named in it.
+ *
+ * @param subjects - The destination, then any reply address, as the caller wrote them
+ */
+export function serverDestinationRefusal(...subjects: Array<string | undefined>) {
+  const refused = subjects.find(
+    (subject): subject is string => subject !== undefined && reachesServerDestination(subject)
+  );
+  if (refused === undefined) return undefined;
+  return jsonContent(
+    {
+      error: `Cannot send to "${refused}": ${SERVER_DESTINATION_REFUSAL}`,
+      code: 'RESERVED_SUBJECT',
+    },
+    true
+  );
 }
 
 /**

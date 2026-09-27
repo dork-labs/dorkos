@@ -53,6 +53,12 @@ export interface ExtensionCompilerLike {
 export interface ExtensionManagerLike {
   enable(id: string): Promise<unknown>;
   disable(id: string): Promise<unknown>;
+  /**
+   * Drop the person's approval to run this extension, because the copy it was
+   * given to is gone (DOR-516, DOR-2383). `installRoot` limits it to an approval
+   * recorded for a copy inside that package.
+   */
+  forgetRunApproval(id: string, installRoot?: string): Promise<void>;
 }
 
 /** Constructor dependencies for {@link PluginInstallFlow}. */
@@ -133,8 +139,8 @@ export class PluginInstallFlow {
   }
 
   /**
-   * Disable every extension the previous install bundled that the newly
-   * activated install no longer ships. Extensions that persist across the
+   * Disable, and forget the approval to run, every extension the previous
+   * install bundled that the newly activated install no longer ships. Extensions that persist across the
    * reinstall are left alone — {@link activate} has already re-enabled and
    * recompiled them against the new bundle. Each `disable` is best-effort:
    * a failure is logged but does not fail the completed install.
@@ -163,6 +169,9 @@ export class PluginInstallFlow {
       if (currentExtensionIds.has(id)) continue;
       try {
         await this.deps.extensionManager.disable(id);
+        // A dropped extension loses its approval too (DOR-2383): if a later
+        // version brings it back, that is new code, and it asks again.
+        await this.deps.extensionManager.forgetRunApproval(id, installRoot);
         this.deps.logger.info(`[install-plugin] Disabled dropped extension ${id}`);
       } catch (err) {
         this.deps.logger.warn(

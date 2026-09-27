@@ -14,6 +14,7 @@ import {
   publishErrorContent,
   ownsEndpoint,
   isReservedSubject,
+  serverDestinationRefusal,
   endpointAccessDeniedContent,
   canonicalizeAgentSubject,
   resolveOutboundBudget,
@@ -61,6 +62,8 @@ export function createRelaySendHandler(
     // A bare `relay.agent.<agentId>` becomes that agent's real address before
     // the ACL sees it; anything else is published exactly as written.
     const subject = canonicalizeAgentSubject(deps, args.subject);
+    const refusal = serverDestinationRefusal(subject, args.replyTo);
+    if (refusal) return refusal;
     try {
       const result = await deps.relayCore!.publish(subject, args.payload, {
         from: identity.subject,
@@ -256,6 +259,8 @@ export function createRelayQueryHandler(
     const relay = deps.relayCore!;
     // See `canonicalizeAgentSubject`: a bare agent id is routed, not refused.
     const toSubject = canonicalizeAgentSubject(deps, args.to_subject);
+    const refusal = serverDestinationRefusal(toSubject);
+    if (refusal) return refusal;
     const inboxSubject = `relay.inbox.query.${randomUUID()}`;
     let unsub: (() => void) | undefined;
 
@@ -440,6 +445,8 @@ export function createRelayDispatchHandler(
     const relay = deps.relayCore!;
     // See `canonicalizeAgentSubject`: a bare agent id is routed, not refused.
     const toSubject = canonicalizeAgentSubject(deps, args.to_subject);
+    const refusal = serverDestinationRefusal(toSubject);
+    if (refusal) return refusal;
     const inboxSubject = `relay.inbox.dispatch.${randomUUID()}`;
 
     try {

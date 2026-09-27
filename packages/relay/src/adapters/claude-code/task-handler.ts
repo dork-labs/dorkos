@@ -123,9 +123,11 @@ async function consumeRunStream(
  * Refuse a task dispatch the scheduler did not send (DOR-2416).
  *
  * A dispatch carries the whole run — prompt, folder, permission mode, account,
- * and whether anybody is watching — and an agent's `relay_send` can reach
- * `relay.system.tasks.*`, so trusting the payload from any sender handed every
- * agent an unattended `bypassPermissions` run of its own text. `from` is
+ * and whether anybody is watching. Before DOR-2432 an agent's `relay_send` could
+ * reach `relay.system.tasks.*`, and trusting the payload from any sender handed
+ * every agent an unattended `bypassPermissions` run of its own text. The bus now
+ * refuses that send; this check stays as the second layer, for any sender the
+ * bus lets through that is not the scheduler. `from` is
  * stamped by the publish pipeline and is not reachable from a model: the same
  * fact the stop path (`task-cancel-handler.ts`) trusts.
  *

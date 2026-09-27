@@ -1333,6 +1333,7 @@ describe('MarketplaceInstaller', () => {
         purge: false,
         projectPath: undefined,
         replacing: true,
+        retainedExtensionIds: [],
       });
 
       // Then install fresh with force: true (so any residual collision
@@ -1350,6 +1351,42 @@ describe('MarketplaceInstaller', () => {
       );
 
       expect(result.packageName).toBe('updateable-plugin');
+    });
+
+    it('tells the uninstall which extensions the new version still carries (DOR-2383)', async () => {
+      // An update from the same plugin keeps the approval of every extension the
+      // new version still carries; the uninstall half can only know which those
+      // are if the installer reads them off the staged new version.
+      const localPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-retain-'));
+      await mkdir(nodePath.join(localPath, '.dork', 'extensions', 'flow'), { recursive: true });
+      await mkdir(nodePath.join(localPath, '.dork', 'extensions', 'flow-extra'), {
+        recursive: true,
+      });
+      const { deps, resolver, pluginFlow, previewBuilder, uninstallFlow } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'flow' });
+      wireLocalResolution(resolver, 'flow', localPath);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+      pluginFlow.install.mockResolvedValue(buildInstallResult(manifest));
+      uninstallFlow.uninstall.mockResolvedValue({
+        ok: true,
+        packageName: 'flow',
+        removedFiles: 1,
+        preservedData: [],
+      });
+
+      try {
+        await new MarketplaceInstaller(deps).update({ name: 'flow' });
+
+        const call = uninstallFlow.uninstall.mock.calls[0]?.[0] as {
+          replacing?: boolean;
+          retainedExtensionIds?: string[];
+        };
+        expect(call.replacing).toBe(true);
+        expect([...(call.retainedExtensionIds ?? [])].sort()).toEqual(['flow', 'flow-extra']);
+      } finally {
+        await rm(localPath, { recursive: true, force: true });
+      }
     });
 
     it('forwards projectPath to both uninstall and install', async () => {

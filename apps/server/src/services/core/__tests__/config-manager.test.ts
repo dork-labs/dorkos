@@ -8,6 +8,7 @@ import {
   initConfigManager,
   backfillExtensionsDisabled,
   backfillExtensionsApprovedToRun,
+  seedExtensionsApprovedSources,
   backfillHarnessApprovedHooks,
   backfillHarnessDefaults,
   backfillSidebarDefaults,
@@ -448,6 +449,7 @@ describe('ConfigManager', () => {
       enabled: [],
       disabled: [],
       approvedToRun: [],
+      approvedSources: {},
     });
   });
 
@@ -3901,7 +3903,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // pass this having scanned nothing. The count is the knowable bound; the
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read.
-    expect(Object.keys(bodies)).toHaveLength(32);
+    expect(Object.keys(bodies)).toHaveLength(33);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
@@ -4051,6 +4053,60 @@ describe('backfillExtensionsApprovedToRun migration (DOR-516)', () => {
       enabled: ['my-ext'],
       disabled: [],
       approvedToRun: [],
+      approvedSources: {},
+    });
+  });
+});
+
+describe('seedExtensionsApprovedSources migration (DOR-2383)', () => {
+  it('seeds an EMPTY map and binds no existing approval to any copy', () => {
+    // Which copy an id-only approval was for is a question about the disk, and a
+    // migration runs before anything looked at it. The first discovery binds each
+    // one to its direct install (`ExtensionManager.reload`); guessing here could
+    // bind it to a copy the person never saw.
+    const store = createMockStore({
+      extensions: { enabled: ['flow'], disabled: [], approvedToRun: ['flow'] },
+    });
+    seedExtensionsApprovedSources(store);
+    expect(store.data.extensions).toEqual({
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: {},
+    });
+  });
+
+  it('is idempotent — leaves recorded copies untouched', () => {
+    const extensions = {
+      enabled: [],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: {
+        flow: { path: '/h/.dork/plugins/flow/.dork/extensions/flow', plugin: 'flow' },
+      },
+    };
+    const store = createMockStore({ extensions });
+    seedExtensionsApprovedSources(store);
+    seedExtensionsApprovedSources(store);
+    expect(store.data.extensions).toEqual(extensions);
+  });
+
+  it('skips when the extensions key is absent (no throw, no write)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    expect(() => seedExtensionsApprovedSources(store)).not.toThrow();
+    expect(store.data.extensions).toBeUndefined();
+  });
+
+  it('repairs a non-object approvedSources rather than trusting it', () => {
+    const store = createMockStore({
+      extensions: { enabled: [], disabled: [], approvedToRun: [], approvedSources: ['oops'] },
+    });
+    seedExtensionsApprovedSources(store);
+    expect(store.data.extensions).toEqual({
+      enabled: [],
+      disabled: [],
+      approvedToRun: [],
+      approvedSources: {},
     });
   });
 });

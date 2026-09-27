@@ -8,6 +8,7 @@ import {
   APPROVAL_SUBJECT_PATTERN,
   type ApprovalAuthorizer,
 } from '../approval-handler.js';
+import { approvalBridgePrincipal } from '../../../lib/approval-principal.js';
 
 // === Mock factories ===
 
@@ -46,13 +47,20 @@ function createMockLogger() {
   };
 }
 
+function createMockTraceStore() {
+  return { insertSpan: vi.fn() };
+}
+
+/** The principal the Slack adapter publishes a person's click as. */
+const SLACK_BRIDGE = approvalBridgePrincipal('slack', 'slack-main');
+
 function createApprovalEnvelope(
-  overrides?: Partial<{ payload: Record<string, unknown> }>
+  overrides?: Partial<{ payload: Record<string, unknown>; from: string }>
 ): RelayEnvelope {
   return {
     id: 'approval-msg-001',
     subject: 'relay.system.approval.slack',
-    from: 'adapter:slack',
+    from: SLACK_BRIDGE,
     replyTo: 'relay.human.slack.user-1',
     budget: {
       hopCount: 1,
@@ -86,6 +94,7 @@ describe('approval-handler', () => {
    * doing and not the fixture's.
    */
   let authorize: Mock<ApprovalAuthorizer>;
+  let traceStore: ReturnType<typeof createMockTraceStore>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -93,11 +102,152 @@ describe('approval-handler', () => {
     relay = createMockRelay();
     log = createMockLogger();
     authorize = vi.fn(() => true);
+    traceStore = createMockTraceStore();
+  });
+
+  describe('who may send an approval (DOR-2431)', () => {
+    // A forged approval names a real session and a real pending tool call: the
+    // agent that is waiting on the card knows both. What it cannot choose is
+    // the envelope's `from`, which the publish pipeline stamps.
+    const OWN_SESSION = 'session-abc';
+    const OWN_TOOL_CALL = 'tool-call-123';
+    const BOUND_SESSION = 'session-in-a-room';
+
+    /**
+     * The server's authorizer, shaped like `authorizeBridgedApproval`: a
+     * session no room owns is allowed outright, and a room-bound one needs the
+     * allowlisted Telegram user. Every forgery below would PASS it — so a
+     * refusal is the sender check's doing, not the authorizer's.
+     */
+    const serverShapedAuthorize: ApprovalAuthorizer = (d) =>
+      d.sessionId === BOUND_SESSION
+        ? d.platform === 'telegram' && d.respondedBy === '145223'
+        : true;
+
+    function forged(from: string, sessionId = OWN_SESSION, platform = 'telegram') {
+      return createApprovalEnvelope({
+        from,
+        payload: {
+          type: 'approval_response',
+          toolCallId: OWN_TOOL_CALL,
+          sessionId,
+          approved: true,
+          respondedBy: '145223',
+          platform,
+        },
+      });
+    }
+
+    it.each([
+      ['an agent', 'relay.agent.ns.agent-1'],
+      ['a session', `relay.session.${OWN_SESSION}`],
+      ['the external MCP surface', 'relay.external.mcp'],
+      ['the in-app console', 'relay.human.console'],
+      ['the old per-user adapter principal (any HTTP caller can assert it)', 'telegram:145223'],
+      ['a different system principal', 'relay.system.tasks.scheduler'],
+      ['an approval principal with no connection id', 'relay.system.approval-bridge.telegram'],
+    ])('keeps an approval from %s pending on a session no room owns', (_who, from) => {
+      const guard = vi.fn(serverShapedAuthorize);
+
+      handleApprovalResponse(forged(from), [agentManager], log, guard, traceStore);
+
+      expect(guard).not.toHaveBeenCalled();
+      expect(agentManager.approveTool).not.toHaveBeenCalled();
+    });
+
+    it('keeps an agent’s approval pending on a room-bound session, even with an allowlisted user id', () => {
+      const guard = vi.fn(serverShapedAuthorize);
+
+      handleApprovalResponse(
+        forged('relay.agent.ns.agent-1', BOUND_SESSION),
+        [agentManager],
+        log,
+        guard,
+        traceStore
+      );
+
+      expect(guard).not.toHaveBeenCalled();
+      expect(agentManager.approveTool).not.toHaveBeenCalled();
+    });
+
+    it('records the refusal: one warning naming the sender, and a failed span', () => {
+      handleApprovalResponse(
+        forged('relay.agent.ns.agent-1'),
+        [agentManager],
+        log,
+        authorize,
+        traceStore
+      );
+
+      expect(log.warn).toHaveBeenCalledTimes(1);
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('relay.agent.ns.agent-1'));
+      expect(traceStore.insertSpan).toHaveBeenCalledOnce();
+      expect(traceStore.insertSpan).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageId: 'approval-msg-001',
+          subject: 'relay.system.approval.slack',
+          fromEndpoint: 'relay.agent.ns.agent-1',
+          status: 'failed',
+          error: expect.stringContaining('relay.agent.ns.agent-1'),
+        })
+      );
+    });
+
+    it('refuses a bridge principal whose payload claims a different platform', () => {
+      // The allowlist the authorizer consults is per platform, so the platform
+      // it is handed must be the one the sender speaks for.
+      handleApprovalResponse(
+        forged(approvalBridgePrincipal('slack', 'slack-main'), BOUND_SESSION, 'telegram'),
+        [agentManager],
+        log,
+        authorize,
+        traceStore
+      );
+
+      expect(authorize).not.toHaveBeenCalled();
+      expect(agentManager.approveTool).not.toHaveBeenCalled();
+      expect(traceStore.insertSpan).toHaveBeenCalledOnce();
+    });
+
+    it('resolves a real Telegram click on a room-bound session', () => {
+      handleApprovalResponse(
+        forged(approvalBridgePrincipal('telegram', 'tg-main'), BOUND_SESSION),
+        [agentManager],
+        log,
+        serverShapedAuthorize,
+        traceStore
+      );
+
+      expect(agentManager.approveTool).toHaveBeenCalledWith(BOUND_SESSION, OWN_TOOL_CALL, true);
+      expect(traceStore.insertSpan).not.toHaveBeenCalled();
+    });
+
+    it('resolves a real Telegram click on a session no room owns', () => {
+      handleApprovalResponse(
+        forged(approvalBridgePrincipal('telegram', 'tg-main')),
+        [agentManager],
+        log,
+        serverShapedAuthorize,
+        traceStore
+      );
+
+      expect(agentManager.approveTool).toHaveBeenCalledWith(OWN_SESSION, OWN_TOOL_CALL, true);
+    });
+
+    it('still asks the authorizer after the sender passes, so the room entitlement holds', () => {
+      // A real bridge click from somebody off the room's allowlist.
+      const envelope = forged(approvalBridgePrincipal('telegram', 'tg-main'), BOUND_SESSION);
+      (envelope.payload as Record<string, unknown>).respondedBy = '999999';
+
+      handleApprovalResponse(envelope, [agentManager], log, serverShapedAuthorize, traceStore);
+
+      expect(agentManager.approveTool).not.toHaveBeenCalled();
+    });
   });
 
   describe('subscribeApprovalHandler', () => {
     it('subscribes to relay.system.approval.> pattern', () => {
-      subscribeApprovalHandler(relay, [agentManager], log, authorize);
+      subscribeApprovalHandler(relay, [agentManager], log, authorize, traceStore);
 
       expect(relay.subscribe).toHaveBeenCalledOnce();
       expect(relay.subscribe).toHaveBeenCalledWith(APPROVAL_SUBJECT_PATTERN, expect.any(Function));
@@ -107,12 +257,12 @@ describe('approval-handler', () => {
       const unsub = vi.fn();
       vi.mocked(relay.subscribe).mockReturnValue(unsub);
 
-      const result = subscribeApprovalHandler(relay, [agentManager], log, authorize);
+      const result = subscribeApprovalHandler(relay, [agentManager], log, authorize, traceStore);
       expect(result).toBe(unsub);
     });
 
     it('routes incoming envelopes to handleApprovalResponse via the callback', () => {
-      subscribeApprovalHandler(relay, [agentManager], log, authorize);
+      subscribeApprovalHandler(relay, [agentManager], log, authorize, traceStore);
 
       const envelope = createApprovalEnvelope();
       relay.capturedHandler!(envelope);
@@ -124,13 +274,14 @@ describe('approval-handler', () => {
   describe('handleApprovalResponse', () => {
     it('calls approveTool with correct args when approved', () => {
       const envelope = createApprovalEnvelope();
-      handleApprovalResponse(envelope, [agentManager], log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
       expect(agentManager.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
     });
 
     it('calls approveTool with approved=false for denial', () => {
       const envelope = createApprovalEnvelope({
+        from: approvalBridgePrincipal('telegram', 'tg-main'),
         payload: {
           type: 'approval_response',
           toolCallId: 'tool-deny-456',
@@ -141,14 +292,14 @@ describe('approval-handler', () => {
         },
       });
 
-      handleApprovalResponse(envelope, [agentManager], log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
       expect(agentManager.approveTool).toHaveBeenCalledWith('session-xyz', 'tool-deny-456', false);
     });
 
     it('logs debug message with approval details', () => {
       const envelope = createApprovalEnvelope();
-      handleApprovalResponse(envelope, [agentManager], log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
       expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('approve'));
       expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('tool-call-123'));
@@ -165,7 +316,7 @@ describe('approval-handler', () => {
         },
       });
 
-      handleApprovalResponse(envelope, [agentManager], log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
       expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('deny'));
     });
@@ -174,7 +325,7 @@ describe('approval-handler', () => {
       vi.mocked(agentManager.approveTool).mockReturnValue(false);
 
       const envelope = createApprovalEnvelope();
-      handleApprovalResponse(envelope, [agentManager], log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
       expect(log.warn).toHaveBeenCalledWith(
         expect.stringContaining('no runtime held this tool call')
@@ -188,7 +339,7 @@ describe('approval-handler', () => {
         });
 
         expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize)
+          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
         ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('malformed payload'));
@@ -200,7 +351,7 @@ describe('approval-handler', () => {
         });
 
         expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize)
+          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
         ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalled();
@@ -212,7 +363,7 @@ describe('approval-handler', () => {
         });
 
         expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize)
+          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
         ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
@@ -223,7 +374,7 @@ describe('approval-handler', () => {
         });
 
         expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize)
+          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
         ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
@@ -234,7 +385,7 @@ describe('approval-handler', () => {
         });
 
         expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize)
+          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
         ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
@@ -245,7 +396,7 @@ describe('approval-handler', () => {
         });
 
         expect(() =>
-          handleApprovalResponse(envelope, [agentManager], log, authorize)
+          handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore)
         ).not.toThrow();
         expect(agentManager.approveTool).not.toHaveBeenCalled();
       });
@@ -260,7 +411,7 @@ describe('approval-handler', () => {
         authorize.mockReturnValue(false);
         const envelope = createApprovalEnvelope();
 
-        handleApprovalResponse(envelope, [agentManager], log, authorize);
+        handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
         expect(agentManager.approveTool).not.toHaveBeenCalled();
         expect(log.warn).toHaveBeenCalledTimes(1);
@@ -270,13 +421,25 @@ describe('approval-handler', () => {
       });
 
       it('forwards the decision when the click is authorized', () => {
-        handleApprovalResponse(createApprovalEnvelope(), [agentManager], log, authorize);
+        handleApprovalResponse(
+          createApprovalEnvelope(),
+          [agentManager],
+          log,
+          authorize,
+          traceStore
+        );
 
         expect(agentManager.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
       });
 
       it('is handed the session, the platform and who clicked', () => {
-        handleApprovalResponse(createApprovalEnvelope(), [agentManager], log, authorize);
+        handleApprovalResponse(
+          createApprovalEnvelope(),
+          [agentManager],
+          log,
+          authorize,
+          traceStore
+        );
 
         expect(authorize).toHaveBeenCalledWith({
           sessionId: 'session-abc',
@@ -289,6 +452,7 @@ describe('approval-handler', () => {
         // `mayApprove` returns false for an unidentified caller, so the
         // authorizer has to be able to SEE that the platform named nobody.
         const envelope = createApprovalEnvelope({
+          from: approvalBridgePrincipal('telegram', 'tg-main'),
           payload: {
             type: 'approval_response',
             toolCallId: 'tc-1',
@@ -298,7 +462,7 @@ describe('approval-handler', () => {
           },
         });
 
-        handleApprovalResponse(envelope, [agentManager], log, authorize);
+        handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
         expect(authorize).toHaveBeenCalledWith({
           sessionId: 's-1',
@@ -308,7 +472,7 @@ describe('approval-handler', () => {
       });
 
       it('is asked on every envelope the subscription routes, not only direct calls', () => {
-        subscribeApprovalHandler(relay, [agentManager], log, authorize);
+        subscribeApprovalHandler(relay, [agentManager], log, authorize, traceStore);
         authorize.mockReturnValue(false);
 
         relay.capturedHandler!(createApprovalEnvelope());
@@ -322,13 +486,13 @@ describe('approval-handler', () => {
           payload: { type: 'something_else' },
         });
 
-        handleApprovalResponse(envelope, [agentManager], log, authorize);
+        handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
         expect(authorize).not.toHaveBeenCalled();
       });
     });
 
-    it('defaults platform to "unknown" when not provided', () => {
+    it('takes the platform from the sender when the payload names none', () => {
       const envelope = createApprovalEnvelope({
         payload: {
           type: 'approval_response',
@@ -338,9 +502,9 @@ describe('approval-handler', () => {
         },
       });
 
-      handleApprovalResponse(envelope, [agentManager], log, authorize);
+      handleApprovalResponse(envelope, [agentManager], log, authorize, traceStore);
 
-      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('platform=unknown'));
+      expect(log.debug).toHaveBeenCalledWith(expect.stringContaining('platform=slack'));
     });
   });
 
@@ -354,7 +518,7 @@ describe('approval-handler', () => {
       const second = createMockAgentManager();
       vi.mocked(second.approveTool).mockReturnValue(true);
 
-      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize, traceStore);
 
       expect(second.approveTool).toHaveBeenCalledWith('session-abc', 'tool-call-123', true);
       expect(log.warn).not.toHaveBeenCalled();
@@ -364,7 +528,7 @@ describe('approval-handler', () => {
       const first = createMockAgentManager();
       const second = createMockAgentManager();
 
-      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize, traceStore);
 
       expect(first.approveTool).toHaveBeenCalledOnce();
       expect(second.approveTool).not.toHaveBeenCalled();
@@ -376,7 +540,7 @@ describe('approval-handler', () => {
       const second = createMockAgentManager('codex');
       vi.mocked(second.approveTool).mockReturnValue(false);
 
-      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize, traceStore);
 
       expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('claude-code, codex'));
     });
@@ -386,7 +550,7 @@ describe('approval-handler', () => {
       const second = createMockAgentManager();
       authorize.mockReturnValue(false);
 
-      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize);
+      handleApprovalResponse(createApprovalEnvelope(), [first, second], log, authorize, traceStore);
 
       expect(first.approveTool).not.toHaveBeenCalled();
       expect(second.approveTool).not.toHaveBeenCalled();

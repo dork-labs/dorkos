@@ -13,6 +13,7 @@ import {
   Bell,
   MessagesSquare,
   KeyRound,
+  Cable,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
@@ -22,6 +23,7 @@ import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { NotificationsTab } from './tabs/NotificationsTab';
 import { RoomsTab } from './tabs/RoomsTab';
+import { ConnectionsTab } from './tabs/ConnectionsTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
 import { ServerTab } from './ServerTab';
@@ -96,6 +98,17 @@ const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
     label: 'Rooms',
     icon: MessagesSquare,
     component: RoomsTab,
+    group: 'Agents & sessions',
+  },
+  {
+    // The plumbing behind the Connections page: how DorkOS reaches your apps
+    // (the DorkOS account, your own Composio or Nango key) and how chat apps
+    // behave when a message arrives. The page is for apps; this is for how
+    // they are reached, which people set once and rarely revisit.
+    id: 'connections',
+    label: 'Connections',
+    icon: Cable,
+    component: ConnectionsTab,
     group: 'Agents & sessions',
   },
   {

@@ -10986,6 +10986,10 @@
             "type": "string",
             "description": "For a rename, the file or folder as it was named before."
           },
+          "target": {
+            "type": "string",
+            "description": "What the sentence names: the file edited or added; the folder an upload or a save from the chat went into (empty for the top folder); where a rename went; or the file or folder a delete removed. A folder ends in `/`. Absent on entries written before it existed."
+          },
           "commit": {
             "type": "string",
             "minLength": 1,
@@ -26510,6 +26514,10 @@
                           "type": {
                             "type": "string"
                           },
+                          "providerInstanceId": {
+                            "type": "string",
+                            "minLength": 1
+                          },
                           "configured": {
                             "type": "boolean"
                           },
@@ -26541,6 +26549,7 @@
                         },
                         "required": [
                           "type",
+                          "providerInstanceId",
                           "configured",
                           "registered",
                           "custody",
@@ -26742,6 +26751,10 @@
                     "type": {
                       "type": "string"
                     },
+                    "providerInstanceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
                     "configured": {
                       "type": "boolean"
                     },
@@ -26773,6 +26786,7 @@
                   },
                   "required": [
                     "type",
+                    "providerInstanceId",
                     "configured",
                     "registered",
                     "custody",
@@ -26821,6 +26835,10 @@
                     "type": {
                       "type": "string"
                     },
+                    "providerInstanceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
                     "configured": {
                       "type": "boolean"
                     },
@@ -26852,6 +26870,7 @@
                   },
                   "required": [
                     "type",
+                    "providerInstanceId",
                     "configured",
                     "registered",
                     "custody",

@@ -67,21 +67,19 @@ function formatBytes(bytes: number): string {
 /**
  * Whether this file, as it was answered, is one a person may change here.
  *
- * Three conditions and all of them are about honesty rather than capability:
- * the place has to accept writes at all, the bytes have to be here (a file too
- * large to show is a file too large to save back), and it has to be markdown —
- * which is where §3.10 starts, other text types later.
+ * Both conditions are about honesty rather than capability: the place has to
+ * accept writes at all, and the bytes have to be here AS TEXT — a file too
+ * large to show is a file too large to save back, and a binary file has no
+ * text to edit. Any text file qualifies, not only markdown (spec
+ * `agent-home-desk` §7.3): a room's `.ts`, `.json` or `.txt` is edited in the
+ * same plain editor, which saves exactly the bytes typed.
  *
  * @param source - Where the file came from.
  * @param file - The file as it was read.
  */
 function canEdit(source: FileExplorerSource, file: ExplorerFile | undefined): boolean {
   return (
-    source.editable &&
-    source.save !== undefined &&
-    file !== undefined &&
-    file.body.kind === 'text' &&
-    isMarkdownPath(file.path)
+    source.editable && source.save !== undefined && file !== undefined && file.body.kind === 'text'
   );
 }
 
@@ -91,6 +89,14 @@ export interface FilePreviewDialogProps {
   source: FileExplorerSource;
   /** The file to show, or `null` when nothing is open. */
   path: string | null;
+  /**
+   * Whether `path` is a file being written for the first time. It opens
+   * straight into the editor with nothing in it, reads nothing, and becomes an
+   * ordinary file — through {@link onCreated} — once it is saved.
+   */
+  isNew?: boolean;
+  /** Called once a new file's first save has landed. */
+  onCreated?: () => void;
   /** Called when the reader closes it. */
   onClose: () => void;
 }
@@ -101,17 +107,27 @@ export interface FilePreviewDialogProps {
  *
  * @param props - The source, the open path, and how to close.
  */
-export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogProps) {
+export function FilePreviewDialog({
+  source,
+  path,
+  isNew = false,
+  onCreated,
+  onClose,
+}: FilePreviewDialogProps) {
   const read = source.read;
   const queryClient = useQueryClient();
   const previewKey = ['file-explorer', 'preview', source.scopeKey, path] as const;
   const query = useQuery({
     queryKey: previewKey,
     queryFn: () => read!(path!),
-    enabled: path !== null && read !== undefined,
+    // A new file has nothing to read yet; asking would only answer "not found".
+    enabled: path !== null && read !== undefined && !isNew,
   });
 
-  const file = query.data;
+  const file: ExplorerFile | undefined =
+    isNew && path !== null
+      ? { path, size: 0, commit: null, lastCommit: null, body: { kind: 'text', text: '' } }
+      : query.data;
 
   /**
    * Putting this file where the whole room can see it: whether it is in flight,
@@ -147,7 +163,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
   );
 
   /** Whether the person is editing, and what they have typed so far. */
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(isNew);
   const [draft, setDraft] = useState('');
   /**
    * The version this draft is measured against — both "have you changed
@@ -187,6 +203,11 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
 
   const dirty = editing && draft !== base.text;
   /**
+   * Whether Save has something to do. A new file can be saved empty — naming a
+   * file is itself the change — so "nothing typed" does not dim it there.
+   */
+  const saveable = dirty || (editing && isNew);
+  /**
    * Whether the "you haven't saved" prompt is actually up.
    *
    * Derived from the ask AND the draft rather than stored alone: a save landing
@@ -214,10 +235,14 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
   // Adjusted during render rather than in an effect, which is what React asks
   // for when state has to follow a prop: the extra pass happens before anything
   // is committed, so no frame ever shows the wrong file's draft.
+  //
+  // A NEW file opens straight into the editor: there is nothing to read first,
+  // and the only reason to have opened it is to write it.
   const [openedPath, setOpenedPath] = useState<string | null>(path);
   if (openedPath !== path) {
     setOpenedPath(path);
     if (editing || draft !== '' || conflict !== null || refusal !== null || saved) resetEditing();
+    if (isNew) setEditing(true);
   }
 
   const save = useMutation({
@@ -232,6 +257,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
         setConflict(null);
         setRefusal(null);
         setSaved(true);
+        if (isNew) onCreated?.();
         // The listing this file sits in now has a different provenance line and
         // a different size, and the cached read is a version behind. Both are
         // the room's answer rather than ours to patch, so both are re-asked.
@@ -279,6 +305,12 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
 
   /** Leave edit mode, keeping nothing. */
   const leaveEdit = () => {
+    // A new file that was never saved has nothing to go back to reading.
+    if (isNew) {
+      resetEditing();
+      onClose();
+      return;
+    }
     setEditing(false);
     setDraft('');
     setConflict(null);
@@ -360,7 +392,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
             {path === null ? '' : baseName(path)}
           </ResponsiveDialogTitle>
           <ResponsiveDialogDescription className="truncate text-xs">
-            {describe(file, path)}
+            {isNew && path !== null ? `${path} · New file` : describe(file, path)}
           </ResponsiveDialogDescription>
         </ResponsiveDialogHeader>
 
@@ -427,11 +459,13 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
         )}
 
         <ResponsiveDialogBody className="min-h-0 flex-1 overflow-auto">
-          {query.isPending ? (
+          {/* A disabled query is `pending` forever, so a new file — which reads
+              nothing — must not wait on it. */}
+          {query.isPending && !isNew ? (
             <div className="flex h-32 items-center justify-center">
               <Spinner size="md" className="text-muted-foreground" label="Loading the file" />
             </div>
-          ) : query.isError || file === undefined ? (
+          ) : (query.isError && !isNew) || file === undefined ? (
             <PreviewNote>This file couldn’t be read.</PreviewNote>
           ) : editing ? (
             <textarea
@@ -498,7 +532,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
               ) : (
                 <>
                   <Button type="button" variant="ghost" size="sm" onClick={leaveEdit}>
-                    {dirty ? 'Discard' : 'Done'}
+                    {dirty ? 'Discard' : isNew ? 'Cancel' : 'Done'}
                   </Button>
                   {/* Dark while a conflict is on screen. The banner above
                       already offers the only save that can succeed — this one
@@ -509,7 +543,7 @@ export function FilePreviewDialog({ source, path, onClose }: FilePreviewDialogPr
                   <Button
                     type="button"
                     size="sm"
-                    disabled={!dirty || save.isPending || conflict !== null}
+                    disabled={!saveable || save.isPending || conflict !== null}
                     onClick={() => save.mutate({ text: draft, baseCommit: base.commit })}
                   >
                     Save
@@ -604,7 +638,9 @@ function PreviewBody({ file }: { file: ExplorerFile }) {
         </pre>
       );
     case 'binary':
-      return <PreviewNote>This isn’t text, so there’s nothing to show here.</PreviewNote>;
+      return (
+        <PreviewNote>This isn’t a text file, so it can’t be shown or edited here.</PreviewNote>
+      );
     case 'too-large':
       return (
         <PreviewNote>

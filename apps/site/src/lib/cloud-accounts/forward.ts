@@ -1,0 +1,240 @@
+/**
+ * Hand the site's account surface to a separate accounts service, behind one
+ * environment variable.
+ *
+ * DorkOS accounts (sign-in, the device link, the instance registry, the admin
+ * console) can be served by a separate service instead of by this site. When
+ * `DORKOS_CLOUD_ACCOUNTS_ORIGIN` names that service's origin, the site stops
+ * serving the account surface itself and sends every request for it there.
+ * **When the variable is unset, nothing here does anything and the site serves
+ * every path locally, exactly as before.** That is the default, and it is what
+ * every contributor, test and credential-free build runs.
+ *
+ * ## Two ways a request is sent on, chosen per request
+ *
+ * - **Redirect (307)** for a page, and for any `GET`/`HEAD` request that a
+ *   browser is navigating to (an email verification link, a password-reset
+ *   link). A session cookie is scoped to one host, and the accounts service
+ *   sets its own on its own origin. Proxying a page would leave the browser on
+ *   this host with a cookie the service never sees, and the service refuses
+ *   cookie requests from an origin it does not trust. A redirect puts the
+ *   browser where its cookie lives. It is temporary (307, not 308) so that
+ *   turning the variable off again is not undone by a browser's cached redirect.
+ * - **Proxy (rewrite)** for everything else: requests that carry a bearer
+ *   token, requests with a body, and background `fetch` calls. A browser drops
+ *   the `Authorization` header when it follows a redirect to another origin,
+ *   and not every shipped client follows a redirect on `POST`. A proxied
+ *   request keeps its method, body and headers, so a released `dorkos` binary
+ *   that still calls this site's paths keeps working unchanged.
+ *
+ * The query string always survives, so `/activate?user_code=…` (the URL a
+ * released CLI prints) lands on the same code.
+ *
+ * ## What is NOT sent on, and what switches off instead
+ *
+ * Managed connections (`/api/instances/connectors/**`, `/api/connectors/**`,
+ * `/connectors/**`) are not forwarded: the accounts service does not serve them
+ * yet, and they move separately, later. They cannot keep working here either,
+ * because they authenticate against the accounts this site no longer holds, so
+ * while forwarding is on they report themselves not enabled
+ * (`lib/connectors/managed/config.ts`) and their retention cron stands down.
+ *
+ * The site's session-to-analytics identity bridge is not mounted while
+ * forwarding is on (`app/layout.tsx`): the session lives on the service's host,
+ * so asking this host for it would always answer "signed out".
+ *
+ * @module lib/cloud-accounts/forward
+ */
+
+/** The environment variable that turns forwarding on. Unset means off. */
+export const CLOUD_ACCOUNTS_ORIGIN_VARIABLE = 'DORKOS_CLOUD_ACCOUNTS_ORIGIN';
+
+/**
+ * Account pages: always redirected. Each entry matches itself and anything
+ * below it on a segment boundary (`/account` matches `/account/instances`, not
+ * `/accounts`).
+ */
+export const CLOUD_ACCOUNT_PAGE_PREFIXES = [
+  '/signin',
+  '/signup',
+  '/reset-password',
+  '/verify-email',
+  '/activate',
+  '/account',
+  '/admin',
+] as const;
+
+/** Account API families matched on a segment boundary, like the pages. */
+export const CLOUD_ACCOUNT_API_PREFIXES = ['/api/auth', '/api/account'] as const;
+
+/**
+ * Instance registry paths, matched EXACTLY. `/api/instances/connectors/**`
+ * belongs to managed connections and stays on the site, so this family cannot
+ * be a prefix.
+ */
+export const CLOUD_ACCOUNT_API_EXACT = [
+  '/api/instances',
+  '/api/instances/heartbeat',
+  '/api/instances/pending',
+  '/api/instances/revoke',
+] as const;
+
+/** The query parameter Next.js adds to a client-side navigation fetch. */
+const NEXT_RSC_PARAM = '_rsc';
+
+/** What to do with a request that belongs to the account surface. */
+export type CloudAccountsForward =
+  { readonly kind: 'redirect'; readonly url: URL } | { readonly kind: 'proxy'; readonly url: URL };
+
+/** The parts of a request the decision reads. */
+export interface ForwardableRequest {
+  readonly method: string;
+  readonly url: string;
+  readonly headers: Headers;
+}
+
+/** The last value parsed, so a bad value is reported once rather than per request. */
+let lastParsed: { readonly raw: string | undefined; readonly origin: string | null } | null = null;
+
+/**
+ * Parse the variable into a bare origin, or `null` for "off".
+ *
+ * Unset or empty is off. A value that is not an absolute `https` origin is also
+ * off, and says so on the console once, rather than throwing: a typo must not
+ * take every page on the site down. The cut-over's smoke checks are what catch
+ * a variable that was meant to be on and is not. Plain `http` is accepted only
+ * for a loopback host, so a local run can point at a local service. A value
+ * with a path, a query or credentials is refused rather than trimmed: the
+ * variable names an origin, and a trimmed value would forward somewhere other
+ * than what was written.
+ *
+ * The value never appears in the console line.
+ *
+ * @param raw - The variable's value.
+ * @returns The origin (scheme, host and port, no path), or `null`.
+ */
+export function parseCloudAccountsOrigin(raw: string | undefined): string | null {
+  if (lastParsed && lastParsed.raw === raw) return lastParsed.origin;
+  const origin = parseOnce(raw);
+  lastParsed = { raw, origin };
+  return origin;
+}
+
+/** The parse itself; see {@link parseCloudAccountsOrigin}. */
+function parseOnce(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    console.error(`${CLOUD_ACCOUNTS_ORIGIN_VARIABLE} is not a URL; serving accounts locally.`);
+    return null;
+  }
+  const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+    console.error(`${CLOUD_ACCOUNTS_ORIGIN_VARIABLE} must be https; serving accounts locally.`);
+    return null;
+  }
+  if (
+    (url.pathname !== '/' && url.pathname !== '') ||
+    url.search !== '' ||
+    url.hash !== '' ||
+    url.username !== '' ||
+    url.password !== ''
+  ) {
+    console.error(
+      `${CLOUD_ACCOUNTS_ORIGIN_VARIABLE} must be an origin with no path; serving accounts locally.`
+    );
+    return null;
+  }
+  return url.origin;
+}
+
+/** Whether `pathname` is `prefix` itself or below it on a segment boundary. */
+function underPrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+/**
+ * Whether a path belongs to the account surface that forwarding sends on.
+ *
+ * @param pathname - The request path, without the query string.
+ */
+export function isCloudAccountPath(pathname: string): boolean {
+  return isCloudAccountPage(pathname) || isCloudAccountApi(pathname);
+}
+
+/** Whether a path is one of the account pages. */
+function isCloudAccountPage(pathname: string): boolean {
+  return CLOUD_ACCOUNT_PAGE_PREFIXES.some((prefix) => underPrefix(pathname, prefix));
+}
+
+/** Whether a path is one of the account API paths. */
+function isCloudAccountApi(pathname: string): boolean {
+  // The site does not redirect a trailing slash away (`skipTrailingSlashRedirect`
+  // in `next.config.ts`), and its router serves `/x/` as `/x`, so an exact path
+  // must match with one too, or it would be served here.
+  const exact = pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  return (
+    CLOUD_ACCOUNT_API_PREFIXES.some((prefix) => underPrefix(pathname, prefix)) ||
+    (CLOUD_ACCOUNT_API_EXACT as readonly string[]).includes(exact)
+  );
+}
+
+/**
+ * Whether a request is a browser navigation that should follow its cookie.
+ *
+ * A safe method with no bearer token, sent either as a navigation or by a
+ * client that does not say (`curl`, an older browser). A browser `fetch` says
+ * `sec-fetch-mode: cors` or `same-origin`, and a redirect to another origin
+ * would fail it, so those are proxied instead.
+ */
+function isNavigation(request: ForwardableRequest): boolean {
+  const method = request.method.toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') return false;
+  if (request.headers.has('authorization')) return false;
+  const mode = request.headers.get('sec-fetch-mode');
+  return mode === null || mode === 'navigate';
+}
+
+/**
+ * Decide whether and how to send a request to the accounts service.
+ *
+ * @param request - The incoming request.
+ * @param origin - The parsed origin from {@link parseCloudAccountsOrigin}, or
+ *   `null` when forwarding is off.
+ * @returns How to send it on, or `null` to serve it here.
+ */
+export function decideCloudAccountsForward(
+  request: ForwardableRequest,
+  origin: string | null
+): CloudAccountsForward | null {
+  if (!origin) return null;
+  const incoming = new URL(request.url);
+  if (!isCloudAccountPath(incoming.pathname)) return null;
+  // Never send a request to the origin it arrived on: a variable pointed at
+  // this site would otherwise redirect every account page to itself forever.
+  if (incoming.origin === origin) return null;
+
+  const target = new URL(`${incoming.pathname}${incoming.search}`, origin);
+  if (isCloudAccountPage(incoming.pathname)) {
+    // A client-side navigation's cache-busting parameter means nothing to the
+    // other service; the browser falls back to a full navigation either way.
+    target.searchParams.delete(NEXT_RSC_PARAM);
+    return { kind: 'redirect', url: target };
+  }
+  return isNavigation(request) ? { kind: 'redirect', url: target } : { kind: 'proxy', url: target };
+}
+
+/**
+ * Whether this deployment has handed accounts to the accounts service.
+ *
+ * The site's two scheduled jobs read this: once accounts are served elsewhere,
+ * so is the data those jobs sweep, and the service that owns it runs them.
+ *
+ * @param raw - The variable's value.
+ */
+export function cloudAccountsForwarding(raw: string | undefined): boolean {
+  return parseCloudAccountsOrigin(raw) !== null;
+}

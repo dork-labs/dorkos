@@ -535,6 +535,9 @@ export class ConnectorProviderBootstrapper {
     const keyKind = live !== undefined && reportsKeyKind(live) ? live.keyKind() : undefined;
     return {
       type: spec.type,
+      // The live instance when registered; otherwise the deterministic id the
+      // spec registers as, which is also what its existing connections carry.
+      providerInstanceId: liveInstanceId ?? spec.defaultInstanceId,
       configured: await spec.configured(),
       registered: live !== undefined,
       custody: spec.custody,

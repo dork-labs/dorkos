@@ -165,8 +165,8 @@ Subject hierarchy:
   relay.inbox.dispatch.{UUID}          — ephemeral inbox for ${T}relay_send_async (auto-expires after ~35 min)
   relay.inbox.{agentId}                — persistent agent reply inbox
   relay.human.console.{clientId}       — reach a human in the DorkOS UI
-  relay.system.console                 — system broadcast channel
-  relay.system.tasks.{scheduleId}      — Tasks scheduler events
+  relay.system.*, relay.control.*      — DorkOS's own addresses; a send there fails
+                                         with RESERVED_SUBJECT
 
 Every workflow below starts the same way: ${T}mesh_list() lists the agents on this
 machine, and each entry's relaySubject IS the address you send to. Copy that string
@@ -242,7 +242,7 @@ server restarts. A subject differing from an existing endpoint only by letter ca
 (the two would share one mailbox on macOS and Windows).
 
 Error codes: RELAY_DISABLED, ACCESS_DENIED, ENDPOINT_ACCESS_DENIED (not your endpoint),
-             RESERVED_SUBJECT, INVALID_SUBJECT, ENDPOINT_NOT_FOUND (no such endpoint —
+             RESERVED_SUBJECT (a DorkOS address), INVALID_SUBJECT, ENDPOINT_NOT_FOUND (no such endpoint —
              cleanup is idempotent, do not retry), TIMEOUT, AGENT_ERROR (their turn
              failed — partialText is what they got through, not an answer),
              QUERY_FAILED, REJECTED, DISPATCH_FAILED, UNREGISTER_FAILED

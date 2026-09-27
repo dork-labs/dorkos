@@ -8,6 +8,26 @@ import { HttpsUrlSchema, IdSchema, TimestampSchema } from './primitives.js';
  * These are mechanism, not catalog: they name what went wrong with a request,
  * which is a property of the protocol and is published on purpose. Nothing here
  * names a plan, a model, a supplier or an amount.
+ *
+ * Two request-shape codes answer two different facts, so a client can tell
+ * whether the thing a request was about exists without parsing the path:
+ *
+ *   - `malformed_identifier`: **the address named nothing.** An identifier in
+ *     the path is not one the service could ever have issued
+ *     (`GET /v1/seats/not-an-id`). There is no such thing to talk about, so the
+ *     honest sentence is that it does not exist.
+ *   - `malformed_request`: **the address resolves, and the request to it could
+ *     not be read.** A bad cursor, limit, window, period or body, including an
+ *     identifier carried in the query or the body (`GET /v1/usage?from=nonsense`,
+ *     `GET /v1/seats/{seatId}/inbox?cursor=stale`). A corrected request can
+ *     succeed.
+ *
+ * `not_found` is the third answer beside them: a well-formed identifier that
+ * names nothing the caller can see.
+ *
+ * `malformed_identifier` arrived after `malformed_request`. A service that
+ * predates it sends `malformed_request` for both facts, so a client that meets
+ * `malformed_request` from an older service cannot rule out the first fact.
  */
 export const ProblemCodeSchema = z
   .enum([
@@ -17,8 +37,10 @@ export const ProblemCodeSchema = z
     'expired_token',
     'forbidden',
     'scope_required',
-    // Request shape.
+    // Request shape. `malformed_request`: the request about a real thing could
+    // not be read. `malformed_identifier`: the address named nothing at all.
     'malformed_request',
+    'malformed_identifier',
     'unsupported_wire_version',
     'not_found',
     'conflict',
@@ -54,7 +76,7 @@ export const ProblemCodeSchema = z
     'temporarily_unavailable',
   ])
   .describe(
-    'The machine-readable failure code. Codes describe the mechanism of a refusal and never identify a plan, a model or a supplier.'
+    'The machine-readable failure code. Codes describe the mechanism of a refusal and never identify a plan, a model or a supplier. `malformed_identifier` means the address named nothing: an identifier in the path is not one the service could have issued. `malformed_request` means the address resolves and the request to it (a cursor, limit, window, period or body, including an identifier in the query or body) could not be read. A service older than `malformed_identifier` sends `malformed_request` for both.'
   );
 
 /** A machine-readable failure code from {@link ProblemCodeSchema}. */

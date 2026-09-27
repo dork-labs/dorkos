@@ -549,6 +549,52 @@ describe('RoomFileEditor — upload, move, delete, from the chat', () => {
     });
   });
 
+  describe('what the entry names', () => {
+    // The app builds its line from `target`, because `paths` alone cannot say
+    // where a folder went or which folder was deleted once depths differ.
+    it('names where a folder went, at any depth, and where it came back to', async () => {
+      await editor.move(ROOM_ID, OPERATOR, {
+        from: 'bin',
+        to: 'x/y/bin',
+        baseCommit: await head(),
+      });
+      expect(announced.at(-1)?.fileChange).toMatchObject({
+        kind: 'rename',
+        from: 'bin/',
+        target: 'x/y/bin/',
+        paths: ['x/y/bin/run.sh'],
+      });
+      await editor.move(ROOM_ID, OPERATOR, {
+        from: 'x/y/bin',
+        to: 'bin',
+        baseCommit: await head(),
+      });
+      expect(announced.at(-1)?.fileChange).toMatchObject({ from: 'x/y/bin/', target: 'bin/' });
+    });
+
+    it('names the folder a delete removed, not the folder its files sat in', async () => {
+      await put('old/sub/a.md', 'a\n');
+      await put('old/sub/b.md', 'b\n');
+      await commit('Old things');
+      await editor.remove(ROOM_ID, OPERATOR, { path: 'old', baseCommit: await head() });
+      expect(announced.at(-1)?.fileChange).toMatchObject({
+        kind: 'delete',
+        target: 'old/',
+        paths: ['old/sub/a.md', 'old/sub/b.md'],
+      });
+    });
+
+    it('names the folder an upload went into, empty for the top', async () => {
+      await editor.upload(ROOM_ID, OPERATOR, {
+        dir: '',
+        baseCommit: null,
+        replace: [],
+        files: [await staged('top.txt', 'x')],
+      });
+      expect(announced.at(-1)?.fileChange).toMatchObject({ kind: 'upload', target: '' });
+    });
+  });
+
   describe('from the chat', () => {
     it('saves bytes under the given name, with the pinned subject, refusing a name that exists', async () => {
       const base = await head();

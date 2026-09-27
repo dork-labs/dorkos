@@ -28,6 +28,13 @@ import {
 } from '@/layers/shared/ui';
 import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import {
+  appCount,
+  ConnectionImpactList,
+  dorkosAccountApps,
+  splitByImpact,
+  useConnectorConnections,
+} from '@/layers/entities/connectors';
+import {
   cn,
   formatRelativeTime,
   openLink,
@@ -310,22 +317,52 @@ function LinkedState({
               {unlinking ? 'Unlinking…' : 'Unlink'}
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Unlink this instance?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This instance will stop reporting to your DorkOS account. You can link it again at
-                any time.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={() => void unlink()}>Unlink</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
+          <UnlinkConfirm unlink={unlink} />
         </AlertDialog>
       </div>
     </div>
+  );
+}
+
+/**
+ * The unlink confirmation. Unlinking also stops every app connected through
+ * the DorkOS account, so it lists them and the button says how many, the same
+ * way removing a key does in Settings › Connections.
+ */
+function UnlinkConfirm({ unlink }: { unlink: () => Promise<void> }) {
+  const connections = useConnectorConnections();
+  const apps = connections.data ? dorkosAccountApps(connections.data.connections) : [];
+  const { stopping, idle } = splitByImpact(apps, true);
+  return (
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Unlink this instance?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This instance will stop reporting to your DorkOS account. You can link it again at any
+          time.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      {connections.isPending ? (
+        <p className="text-muted-foreground text-sm">Checking which apps use this account…</p>
+      ) : connections.isError ? (
+        <p className="text-muted-foreground text-sm">
+          Couldn’t check which apps use this account. Any app connected through it will stop
+          working.
+        </p>
+      ) : (
+        <ConnectionImpactList
+          stopping={stopping}
+          idle={idle}
+          stopLine={`${stopping.length === 1 ? 'This app' : `These ${stopping.length} apps`} will stop working for every agent:`}
+        />
+      )}
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction onClick={() => void unlink()}>
+          {stopping.length > 0 ? `Unlink and stop ${appCount(stopping.length)}` : 'Unlink'}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
   );
 }
 

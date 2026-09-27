@@ -49,11 +49,16 @@ import type {
   RoomCanvasDiffReview,
   RoomCanvasDiffWriteRequest,
   RoomCanvasDiffWriteResult,
+  RoomFileChangeResponse,
   RoomFileContentResponse,
+  RoomFileDeleteRequest,
+  RoomFileFromAttachmentRequest,
   RoomFileListResponse,
+  RoomFileMoveRequest,
   RoomFileSaveRequest,
   RoomFileSaveResponse,
 } from '@dorkos/shared/room-files';
+import { ROOM_UPLOAD_FILES_FIELD } from '@dorkos/shared/room-files';
 import type {
   RoomMainRepairRequest,
   RoomMainRepairResult,
@@ -62,10 +67,20 @@ import type {
 } from '@dorkos/shared/room-repo';
 import type { UiCanvasContent, UploadProgress } from '@dorkos/shared/types';
 import type { UploadFile } from '@dorkos/shared/transport';
+import type { RoomFileUploadInput } from '@dorkos/shared/transport-rooms';
 import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { streamSocketFrames, type StreamSocketClosed } from './stream-socket-iterator';
 import { uploadRoomAttachmentsOverHttp } from './upload-methods';
+
+/**
+ * How long a room-files upload may take before it is given up on.
+ *
+ * Longer than a JSON call's 30 seconds because an upload is up to twenty files
+ * at the room's per-file cap, and a slow link moving that much is working, not
+ * stuck.
+ */
+const ROOM_FILE_UPLOAD_TIMEOUT_MS = 5 * 60_000;
 
 /**
  * The one part of a cold connect's snapshot this adapter consumes.
@@ -229,6 +244,66 @@ export function createRoomMethods(baseUrl: string) {
         baseUrl,
         `/rooms/${encodeURIComponent(id)}/files/content`,
         { method: 'PUT', body: JSON.stringify(req) }
+      );
+    },
+
+    /**
+     * Upload files into one folder of a room's files, as one commit.
+     *
+     * Through `fetchJSON` rather than the attachment uploader's XHR, on
+     * purpose: every refusal here is one the person ANSWERS — a name that is
+     * already taken, a file somebody changed — and those arrive as the server's
+     * `code` and parsed `body` on the thrown error, which only this path keeps.
+     * The text fields go in before the files so the server has them whatever
+     * order it reads the body in. The clock is longer than a JSON call's,
+     * because twenty files is a real amount of bytes on a slow link.
+     */
+    async uploadRoomFiles(id: string, input: RoomFileUploadInput): Promise<RoomFileChangeResponse> {
+      const form = new FormData();
+      form.append('dir', input.dir);
+      form.append('baseCommit', input.baseCommit ?? '');
+      form.append('replace', JSON.stringify(input.replace));
+      for (const file of input.files) {
+        const bytes = await file.arrayBuffer();
+        form.append(ROOM_UPLOAD_FILES_FIELD, new Blob([bytes], { type: file.type }), file.name);
+      }
+      return fetchJSON<RoomFileChangeResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/files/upload`,
+        { method: 'POST', body: form, timeout: ROOM_FILE_UPLOAD_TIMEOUT_MS }
+      );
+    },
+
+    /** Rename or move one file or folder, as one commit. */
+    moveRoomFile(id: string, req: RoomFileMoveRequest): Promise<RoomFileChangeResponse> {
+      return fetchJSON<RoomFileChangeResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/files/move`,
+        { method: 'POST', body: JSON.stringify(req) }
+      );
+    },
+
+    /**
+     * Delete one file or folder, as one commit. A POST, because the request
+     * carries its lock in a body and a DELETE body is one proxies may drop.
+     */
+    deleteRoomFile(id: string, req: RoomFileDeleteRequest): Promise<RoomFileChangeResponse> {
+      return fetchJSON<RoomFileChangeResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/files/delete`,
+        { method: 'POST', body: JSON.stringify(req) }
+      );
+    },
+
+    /** Keep a file from a message in this room as one of its files. */
+    saveAttachmentToRoomFiles(
+      id: string,
+      req: RoomFileFromAttachmentRequest
+    ): Promise<RoomFileChangeResponse> {
+      return fetchJSON<RoomFileChangeResponse>(
+        baseUrl,
+        `/rooms/${encodeURIComponent(id)}/files/from-attachment`,
+        { method: 'POST', body: JSON.stringify(req) }
       );
     },
 

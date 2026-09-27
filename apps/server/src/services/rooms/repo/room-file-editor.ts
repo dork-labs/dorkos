@@ -707,6 +707,9 @@ export class RoomFileEditor {
       pathCount: change.paths.length,
       commit: change.commit,
       ...(change.from !== undefined ? { from: change.from } : {}),
+      // The one thing `paths` cannot say: which folder a rename landed in, or
+      // which folder a delete removed, whatever depth its files sat at.
+      target,
     };
     // Past this line the change IS on main. If the entry cannot be written —
     // the room was archived in the window since the gate — it propagates, as a

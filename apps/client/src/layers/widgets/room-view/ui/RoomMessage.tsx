@@ -40,7 +40,8 @@
  *
  * @module widgets/room-view/ui/RoomMessage
  */
-import { useCallback, useId, useMemo, useRef } from 'react';
+import { lazy, Suspense, useCallback, useId, useMemo, useRef } from 'react';
+import type { RoomAttachment } from '@dorkos/shared/room-schemas';
 import {
   useProfileDeepLink,
   type FeedPosition,
@@ -68,6 +69,16 @@ import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { useNoticeSessionLink } from '../model/use-notice-session-link';
 import { makeRoomBodyRenderer } from './render-room-body';
+import { fileChangeLine } from '../lib/file-change-line';
+
+/**
+ * "Save to room files" beside a chat attachment. Lazy, for the reason the room
+ * panel's Files section is: the file explorer is its own chunk, and a room
+ * whose messages carry no files never needs it.
+ */
+const SaveToRoomFilesButton = lazy(() =>
+  import('@/layers/features/file-explorer').then((m) => ({ default: m.SaveToRoomFilesButton }))
+);
 
 interface RoomMessageProps {
   /** The room this entry belongs to, which its actions act on. */
@@ -244,6 +255,14 @@ export function RoomMessage({
   });
   const focusRow = useCallback(() => rowRef.current?.focus(), []);
   const renderBody = useMemo(() => makeRoomBodyRenderer(authors), [authors]);
+  const renderSaveToFiles = useCallback(
+    (attachment: RoomAttachment) => (
+      <Suspense fallback={null}>
+        <SaveToRoomFilesButton roomId={roomId} attachment={attachment} />
+      </Suspense>
+    ),
+    [roomId]
+  );
   // Who a MOMENT is about, resolved here because only the host can reach both
   // the room's roster and the fleet — see `MomentRow`, which takes the answer as
   // a prop for that reason. Computed for every row rather than inside the moment
@@ -386,7 +405,18 @@ export function RoomMessage({
           // says.
           className="[&_:not(pre)>code]:wrap-anywhere [&_pre]:overflow-x-auto"
         >
-          {renderBody(entry, { rowId: entry.id, isStreaming: false })}
+          {entry.body.fileChange ? (
+            // A person's change to the room's files, drawn as plain text from
+            // its structured half — never the markdown `text` beside it. A file
+            // name and a display name are both anybody's text; as a string
+            // child here they cannot become a link, a heading or anything else
+            // in the room's own voice. See `fileChangeLine`.
+            <p data-testid="room-entry-file-change" className="wrap-anywhere">
+              {fileChangeLine(entry.body.fileChange, subjectRef?.displayName ?? 'Somebody')}
+            </p>
+          ) : (
+            renderBody(entry, { rowId: entry.id, isStreaming: false })
+          )}
         </Message.Content>
         {summary !== null && (
           /*
@@ -406,7 +436,12 @@ export function RoomMessage({
         {/* The files that came with the message, under the words and above
             the pills. An entry with none — including every entry written
             before rooms carried files at all — renders nothing here. */}
-        <Message.Attachments items={entry.attachments ?? []} />
+        <Message.Attachments
+          items={entry.attachments ?? []}
+          // A member can keep a file from the chat in the room's own files. The
+          // button draws itself only in a room that has files of its own.
+          renderAction={isMember ? renderSaveToFiles : undefined}
+        />
         {/* The pills, under the words they are about. A message with no
             reactions renders nothing here at all — no rail, no ghost — which
             is what keeps a quiet room quiet (design record §2, behaviour 4). */}

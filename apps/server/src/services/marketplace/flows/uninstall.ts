@@ -110,6 +110,17 @@ export interface UninstallRequest {
    */
   replacing?: boolean;
   /**
+   * Internal (installer-only), read only with `replacing`: the bundled extension
+   * ids the incoming version still carries. An update from the same plugin
+   * keeps those extensions on and keeps the person's approval to run them, since
+   * the same copy lands back at the same path; every other bundled extension
+   * (one the new version drops) is turned off and its approval forgotten, so it
+   * asks again if it ever returns. Absent means none is kept: a replace that
+   * does not say what the new version carries forgets everything, as a plain
+   * uninstall does.
+   */
+  retainedExtensionIds?: readonly string[];
+  /**
    * Internal (installer-only): the exact install root to remove, when the
    * caller already resolved which installation it means — the installer's
    * `update()` replacing the installation an update check found. See
@@ -163,12 +174,21 @@ export interface UninstallAgentRegistry {
  * Avoids importing the concrete class so tests can mock with `vi.fn()`.
  */
 export interface UninstallExtensionManager {
+  /**
+   * The copy of this extension id discovery currently resolved, if any. Read so
+   * that removing a package never touches a copy of the same id that lives
+   * somewhere else (DOR-2383: another plugin, or a direct install).
+   */
+  get(id: string): { path: string } | undefined;
   disable(id: string): Promise<unknown>;
   /**
    * Drop the person's standing approval for this extension to run code inside
    * DorkOS (DOR-516), because the code it was given to is going away.
+   *
+   * `installRoot` is the package being removed: an approval recorded for a copy
+   * outside it belongs to another package carrying the same id, and is kept.
    */
-  forgetRunApproval(id: string): Promise<void>;
+  forgetRunApproval(id: string, installRoot?: string): Promise<void>;
 }
 
 /**
@@ -691,23 +711,25 @@ export class UninstallFlow {
     journaled?: { root: string; sibling: string; journal: UninstallJournal }
   ): Promise<AgentRemovedSummary | undefined> {
     const type = located.inferredType;
-    // Only these two types walk `.dork/extensions/`. `shape` and `adapter` packages
-    // may carry that directory too, and the asymmetry looks like an oversight, so:
-    // a bundled extension under either of those types never becomes a discovery
-    // record today, and therefore has nothing to turn off and no approval to forget
-    // (DOR-516). `ExtensionDiscovery` scans exactly two roots, one level deep —
-    // `{dorkHome}/extensions` and `{cwd}/.dork/extensions` — and neither
-    // `{dorkHome}/shapes/**` nor an adapter's install root is among them.
-    // `applyShape` does not close the gap either: it iterates `manifest.activates`,
-    // a list of ids, and skips any id `extensionManager.get()` does not already
-    // know, so a Shape's own bundled tree is never registered.
-    //
-    // Two changes would make this live, and whoever makes one has to add the walk
-    // here as part of it: discovery gaining a third root, or `applyShape` learning
-    // to read `manifest.extensions` instead of only `activates`. Adding the call
-    // now would be dead code that reads like coverage.
-    if (type === 'plugin' || type === 'skill-pack') {
-      await this.disableBundledExtensions(inputs.extensionIds);
+    // Every package type that installs under `plugins/` walks `.dork/extensions/`,
+    // because discovery reads the extensions of everything installed there
+    // (`{dorkHome}/plugins/*/.dork/extensions` and its project twin, DOR-2383):
+    // whatever it found is turned off and its approval forgotten here. A `shape`
+    // is the exception and keeps its own teardown below. Its bundled tree lives
+    // under `shapes/`, which discovery does not scan, and `applyShape` iterates
+    // `manifest.activates`, a list of ids, skipping any id
+    // `extensionManager.get()` does not already know — so a Shape's own bundled
+    // extensions never become a record, and have nothing to turn off and no
+    // approval to forget (DOR-516). Whoever teaches discovery or `applyShape` to
+    // read a Shape's own tree has to add the walk here as part of it.
+    if (type === 'plugin' || type === 'skill-pack' || type === 'adapter') {
+      // An update from the same package keeps what it still carries (see
+      // `UninstallRequest.retainedExtensionIds`); a plain uninstall keeps nothing.
+      const retained = new Set(req.replacing ? (req.retainedExtensionIds ?? []) : []);
+      await this.disableBundledExtensions(
+        inputs.extensionIds.filter((id) => !retained.has(id)),
+        located.installRoot
+      );
     }
     if (type === 'adapter') {
       await this.deps.adapterManager.removeAdapter(
@@ -884,17 +906,42 @@ export class UninstallFlow {
    * and nothing shown. `marketplace_install` is tier `act`, so an agent reaches
    * that path unaided.
    *
-   * A person who updates an extension they had approved is asked once more. That
-   * is the intended cost: new code, new decision. Editing an installed
+   * An update from the same package is the exception (DOR-2383): the
+   * installer passes `retainedExtensionIds`, the extensions the new version
+   * still carries, and those keep their approval, since the same copy lands back
+   * at the same path — the trade editing an approved extension already makes.
+   * Only the ones the new version drops reach this walk. Editing an installed
    * extension's files never comes through here, so the edit → test → reload loop
    * stays free.
    *
+   * An approval recorded for a copy of the same id that lives OUTSIDE this
+   * package (DOR-2383: another plugin can carry the id) is about that copy, and
+   * removing this package leaves it alone.
+   *
    * @internal
    */
-  private async disableBundledExtensions(ids: readonly string[]): Promise<void> {
+  private async disableBundledExtensions(
+    ids: readonly string[],
+    installRoot: string
+  ): Promise<void> {
     for (const id of ids) {
-      await this.deps.extensionManager.disable(id);
-      await this.deps.extensionManager.forgetRunApproval(id);
+      // The id is live from another copy (another plugin carries it, or it is
+      // installed directly), and that copy is what discovery resolved: turning
+      // the id off would stop it. This package's copy was never the one
+      // running, so there is nothing of it to stop (DOR-2383).
+      const live = this.deps.extensionManager.get(id);
+      if (live && !isPathWithin(live.path, installRoot)) {
+        this.deps.logger.info(
+          `[marketplace/uninstall] Left '${id}' running: the live copy is ${live.path}, ` +
+            `not the one in ${installRoot}`
+        );
+      } else {
+        await this.deps.extensionManager.disable(id);
+      }
+      // Always asked, whichever copy is live: an approval recorded for THIS
+      // package's copy must not survive it (a reinstall would run unasked), and
+      // the manager keeps any approval recorded for a copy outside `installRoot`.
+      await this.deps.extensionManager.forgetRunApproval(id, installRoot);
     }
   }
 }
@@ -970,4 +1017,15 @@ async function keptEntries(root: string): Promise<string[]> {
   };
   await walk(root);
   return kept.sort();
+}
+
+/**
+ * Whether `target` is `root` or lies inside it, compared lexically.
+ *
+ * @param target - Path to test.
+ * @param root - Directory that may contain it.
+ */
+function isPathWithin(target: string, root: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(target));
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }

@@ -288,6 +288,10 @@ export function createPlaygroundTransport(): Transport {
         prop === 'readRoomFileContent' ||
         prop === 'readRoomRepoStatus' ||
         prop === 'saveRoomFile' ||
+        prop === 'uploadRoomFiles' ||
+        prop === 'moveRoomFile' ||
+        prop === 'deleteRoomFile' ||
+        prop === 'saveAttachmentToRoomFiles' ||
         prop === 'repairRoomMain' ||
         prop === 'mergeRoomMain' ||
         prop === 'readRoomCanvasDiff' ||
