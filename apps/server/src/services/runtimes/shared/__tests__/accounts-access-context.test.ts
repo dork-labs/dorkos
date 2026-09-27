@@ -71,10 +71,9 @@ describe('Accounts turn awareness', () => {
       // The owner answers in the conversation; off the app, the agent hands
       // them the link back to it rather than a relative page path.
       expect(text).toContain('a card in this conversation');
-      expect(text).toContain("the result's openUrl");
-      // A link goes only to the owner directly; a shared chat gets none.
-      expect(text).toContain('in a group or shared chat, only say a request is waiting');
-      expect(text).toContain('open DorkOS on their computer');
+      // The link rule is the server's: share openUrl only when it is present.
+      expect(text).toContain('if the result has an openUrl');
+      expect(text).toContain('if it has none, only say a request is waiting in DorkOS');
     }
   );
 

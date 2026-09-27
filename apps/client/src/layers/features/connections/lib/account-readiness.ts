@@ -1,9 +1,15 @@
 /**
  * Whether a connected account can be given to an agent right now, and when it
  * cannot, the one thing standing in the way. The server refuses to answer an
- * agent's request with an account that is paused, signed out or still being
- * set up, so the chat card asks for the fix first rather than offering an
- * Allow that cannot land.
+ * agent's request with an account that is paused, signed out or waiting on a
+ * review of its actions, so the chat card asks for the fix first rather than
+ * offering an Allow that cannot land.
+ *
+ * Deliberately NOT read here: the summary's `authoritySync`. It spans every
+ * agent's access on the account, so another agent's pending or failed change
+ * would block an account that is perfectly usable for this one. Whether THIS
+ * agent's access has finished applying is the shared card's own "Check sync
+ * status", and the server checks it per agent when the request is answered.
  *
  * @module features/connections/lib/account-readiness
  */
@@ -11,7 +17,7 @@ import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resour
 
 /** What an account needs before an agent can use it. */
 export type AccountAttention =
-  { kind: 'paused' } | { kind: 'signed_out' } | { kind: 'setting_up' } | { kind: 'needs_review' };
+  { kind: 'paused' } | { kind: 'signed_out' } | { kind: 'needs_review' };
 
 /**
  * `null` when the account is usable now; otherwise what it needs.
@@ -21,9 +27,7 @@ export type AccountAttention =
 export function accountAttention(connection: ConnectorConnectionSummary): AccountAttention | null {
   if (connection.lifecycle === 'paused') return { kind: 'paused' };
   if (connection.authenticationStatus !== 'active') return { kind: 'signed_out' };
-  if (connection.authoritySync.status === 'failed') return { kind: 'needs_review' };
   if (connection.reconciliationStatus !== 'ready') return { kind: 'needs_review' };
-  if (connection.authoritySync.status === 'pending') return { kind: 'setting_up' };
   return null;
 }
 

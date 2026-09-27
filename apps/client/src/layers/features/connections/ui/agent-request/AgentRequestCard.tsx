@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, Check } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import type { ConnectionId, ConnectorAgentRequestItem } from '@dorkos/shared/connector-schemas';
@@ -88,6 +88,11 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   // The account whose access Allow saved. Set before the answer is sent, so a
   // failed answer is reported as "saved, not answered", never "nothing changed".
   const [allowedId, setAllowedId] = useState<string | null>(null);
+  // Once the access question is on screen it stays: the readiness gate below
+  // only decides what shows BEFORE it. A save changes the account list, and
+  // swapping the question out then would unmount the save that answers the
+  // request.
+  const [accessShown, setAccessShown] = useState(false);
 
   const decline = useCallback(() => {
     setAllowedId(null);
@@ -177,8 +182,9 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
       connection.toolkit === request.serviceSlug && connection.lifecycle !== 'disconnected'
   );
   const usable = usableAccounts(all, request.serviceSlug);
+  const showAccess = accessShown || Boolean(signedInId) || usable.length > 0;
 
-  if (connected.length === 0 && !signedInId) {
+  if (!showAccess && connected.length === 0) {
     return (
       <div className={cn('space-y-2', frameClass)}>
         <RequestConnectStep
@@ -195,18 +201,17 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   }
 
   // Connected, but nothing an agent could use right now: fix that first.
-  if (usable.length === 0 && !signedInId) {
+  if (!showAccess) {
     const account = connected[0]!;
     return (
       <div className={cn('space-y-2', frameClass)}>
         <AccountAttentionStep
           account={account}
-          attention={accountAttention(account) ?? { kind: 'setting_up' }}
+          attention={accountAttention(account) ?? { kind: 'needs_review' }}
           serviceName={serviceName}
           agentName={agentName}
           onDecline={decline}
           deciding={resolve.isPending}
-          onRecheck={() => void connections.refetch()}
         />
         {declineFailure}
       </div>
@@ -214,20 +219,34 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
   }
 
   return (
-    <div className={cn('space-y-2', frameClass)} data-testid="agent-request-access">
-      <ConnectionAccessCard
-        mode="agent"
-        agentId={request.agent.id}
-        toolkit={request.serviceSlug}
-        serviceName={serviceName}
-        {...(signedInId ? { connectionId: signedInId } : {})}
-        request={{ reason: request.reason, operations: request.requestedOperations }}
-        onSkip={decline}
-        onAllowed={answer}
-      />
-      {declineFailure}
-    </div>
+    <AccessStepMount onShown={setAccessShown}>
+      <div className={cn('space-y-2', frameClass)} data-testid="agent-request-access">
+        <ConnectionAccessCard
+          mode="agent"
+          agentId={request.agent.id}
+          toolkit={request.serviceSlug}
+          serviceName={serviceName}
+          {...(signedInId ? { connectionId: signedInId } : {})}
+          request={{ reason: request.reason, operations: request.requestedOperations }}
+          onSkip={decline}
+          onAllowed={answer}
+        />
+        {declineFailure}
+      </div>
+    </AccessStepMount>
   );
+}
+
+/** Marks the access question as shown the first time it mounts, so it stays. */
+function AccessStepMount({
+  onShown,
+  children,
+}: {
+  onShown: (shown: true) => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => onShown(true), [onShown]);
+  return <>{children}</>;
 }
 
 function EventRequestCard({

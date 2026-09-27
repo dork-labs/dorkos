@@ -649,11 +649,12 @@ const ConnectorAgentRequestBaseSchema = z
     requestId: z.string().min(1),
     reviewUrl: z.string().startsWith('/connections?request='),
     /**
-     * An absolute link that opens where this request's card is drawn in the
-     * DorkOS app (the room for a room's turn, otherwise the conversation), over
-     * the remote-access address. Absent when remote access is off, since a link
-     * to this computer would not open on a phone. For an agent answering in a
-     * direct chat where the card cannot draw (Telegram, Slack).
+     * An absolute link that opens the conversation holding this request's card
+     * in the DorkOS app, over the remote-access address. Only for a direct
+     * conversation: absent for a room's turn (the room shows its owner the card
+     * and may be shared) and when remote access is off (a link to this computer
+     * would not open on a phone). For an agent answering somewhere the card
+     * cannot draw (Telegram, Slack).
      */
     openUrl: z.string().url().optional(),
     serviceSlug: z.string().min(1),

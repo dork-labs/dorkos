@@ -24,8 +24,6 @@ interface AccountAttentionStepProps {
   onDecline: () => void;
   /** An answer is being saved. */
   deciding: boolean;
-  /** Read the account's state again. */
-  onRecheck: () => void;
 }
 
 /** The plain sentence for what stands in the way. */
@@ -40,8 +38,6 @@ function attentionLine(
       return `Your ${serviceName} account (${label}) is paused. Resume it so ${agentName} can use it.`;
     case 'signed_out':
       return `You’re signed out of ${serviceName} (${label}). Sign in again so ${agentName} can use it.`;
-    case 'setting_up':
-      return `${serviceName} (${label}) is still being set up. This card moves on by itself when it’s ready.`;
     case 'needs_review':
       return `${serviceName} (${label}) needs a look on Connections before ${agentName} can use it.`;
   }
@@ -49,7 +45,7 @@ function attentionLine(
 
 /**
  * The card's step when the app is connected but not usable right now: paused,
- * signed out, or not finished setting up. It asks for that one fix before any
+ * signed out, or waiting on a review of its actions. It asks for that one fix before any
  * Allow, because the server will not answer a request with an account an agent
  * could not use.
  */
@@ -60,7 +56,6 @@ export function AccountAttentionStep({
   agentName,
   onDecline,
   deciding,
-  onRecheck,
 }: AccountAttentionStepProps) {
   const titleId = useId();
   const resume = useResumeConnectorConnection();
@@ -123,11 +118,6 @@ export function AccountAttentionStep({
             disabled={reconnect.isPending}
           >
             Sign in again
-          </Button>
-        )}
-        {attention.kind === 'setting_up' && (
-          <Button variant="secondary" onClick={onRecheck}>
-            Check again
           </Button>
         )}
         {attention.kind === 'needs_review' && (

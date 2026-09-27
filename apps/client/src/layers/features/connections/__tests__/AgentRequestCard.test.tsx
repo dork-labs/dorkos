@@ -482,3 +482,116 @@ describe('AgentRequestCard — an account that needs attention first', () => {
     expect(screen.queryByRole('heading', { name: 'Which Gmail account?' })).not.toBeInTheDocument();
   });
 });
+
+describe('AgentRequestCard — a managed save that applies later (round 2)', () => {
+  it('keeps the question on screen through a pending save and answers once, after sync, with one Allow', async () => {
+    const user = userEvent.setup();
+    const ready = { ...account('connection-1'), mode: 'managed' as const };
+    // After the save, the summary reads pending for the whole account: another
+    // agent's change, or this one still applying. Neither may swap the card out.
+    const pending = { ...ready, authoritySync: { status: 'pending' as const } };
+    const transport = transportWith([ready]);
+    vi.mocked(transport.getConnectorConnections)
+      .mockResolvedValueOnce({ connections: [ready] })
+      .mockResolvedValue({ connections: [pending] });
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'pending' },
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      connection: {
+        connectionId: 'connection-1',
+        reconciliationStatus: 'ready',
+        authoritySync: { status: 'ready' },
+      },
+      agents: [
+        {
+          agentId: 'agent-bo',
+          operationRevisionIds: ['read-v1'],
+          reconciliationStatus: 'ready',
+          authoritySync: { status: 'ready' },
+        },
+      ],
+    } as never);
+    vi.mocked(transport.resolveConnectorAgentRequest).mockResolvedValue({
+      ...REQUEST,
+      status: 'granted',
+    } as never);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText('Access update pending')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThanOrEqual(
+        2
+      )
+    );
+    expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
+    expect(transport.resolveConnectorAgentRequest).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Check sync status' }));
+    await waitFor(() =>
+      expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledWith('request-1', {
+        decision: 'current_access',
+        connectionId: 'connection-1',
+      })
+    );
+    expect(transport.resolveConnectorAgentRequest).toHaveBeenCalledTimes(1);
+    expect(transport.applyConnectorReconciliation).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the question once shown even when the account then needs a review', async () => {
+    const user = userEvent.setup();
+    const ready = account('connection-1');
+    const moved = { ...ready, reconciliationStatus: 'migration_needs_reconcile' as const };
+    const transport = transportWith([ready]);
+    vi.mocked(transport.getConnectorConnections)
+      .mockResolvedValueOnce({ connections: [ready] })
+      .mockResolvedValue({ connections: [moved] });
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'migration_needs_reconcile',
+      authoritySync: { status: 'ready' },
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await waitFor(() =>
+      expect(vi.mocked(transport.getConnectorConnections).mock.calls.length).toBeGreaterThanOrEqual(
+        2
+      )
+    );
+    // The shared card reports its own outcome; the readiness gate stays out of it.
+    expect(await screen.findByText('Access needs review')).toBeInTheDocument();
+    expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
+  });
+
+  it("does not block an account whose only pending sync is another agent's", async () => {
+    const transport = transportWith([
+      { ...account('connection-1'), authoritySync: { status: 'failed', reason: 'Other agent.' } },
+    ]);
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+    expect(await screen.findByRole('heading', { name: 'Let Bo use Gmail?' })).toBeInTheDocument();
+    expect(screen.queryByTestId('account-attention')).not.toBeInTheDocument();
+  });
+
+  it('never starts below the level the agent already holds', async () => {
+    const transport = transportWith([account('connection-1')]);
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1', 'send-v1'] }])
+    );
+    renderWith(
+      transport,
+      <AgentRequestCard request={{ ...REQUEST, requestedOperations: ['GMAIL_FETCH_EMAILS'] }} />
+    );
+    await screen.findByTestId('requested-actions');
+    // It asked only to read, but already reads and writes: the card says so and
+    // offers nothing lower.
+    expect(screen.getByText('Bo can already do this.')).toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: 'Read' })).not.toBeInTheDocument();
+    expect(screen.getByText('Read and write')).toBeInTheDocument();
+  });
+});

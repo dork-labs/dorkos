@@ -1326,19 +1326,21 @@ export class ConnectorAgentRequestService {
   }
 
   /**
-   * The absolute link to wherever a request's card is drawn: the room, for a
-   * room's turn (its session is hidden), otherwise the conversation. Left out
-   * when the app has no address the owner can reach from elsewhere.
+   * The absolute link to the conversation holding a request's card, for an
+   * agent answering the owner directly somewhere the card cannot draw.
+   *
+   * Left out for a room's turn: the room already shows the owner the card, and
+   * a room can be shared (a bridged Telegram or Slack group among them), so a
+   * link there would go to everyone in it. Enforced here rather than left to
+   * the prompt. Also left out when the app has no address the owner can reach
+   * from elsewhere.
    */
   private openUrl(sessionId: string): { openUrl?: string } {
+    if (this.options.roomForSession?.(sessionId)) return {};
     const origin = this.options.appOrigin?.();
     if (!origin) return {};
-    const roomId = this.options.roomForSession?.(sessionId);
-    const target = roomId
-      ? `/channels?${new URLSearchParams({ id: roomId }).toString()}`
-      : sessionPath({ session: sessionId });
     try {
-      return { openUrl: new URL(target, origin).toString() };
+      return { openUrl: new URL(sessionPath({ session: sessionId }), origin).toString() };
     } catch {
       return {};
     }

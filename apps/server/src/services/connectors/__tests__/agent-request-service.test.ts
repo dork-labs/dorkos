@@ -1052,20 +1052,19 @@ describe('ConnectorAgentRequestService', () => {
     expect(onChanged).toHaveBeenCalledTimes(2);
   });
 
-  it("names the room a request's turn belongs to and links the owner to its conversation", async () => {
+  it("names the room a request's turn belongs to and gives that turn no link", async () => {
     const requests = service({
       roomForSession: (sessionId) => (sessionId === 'session-1' ? 'room-1' : undefined),
       appOrigin: () => 'https://tunnel.example',
     });
     const created = await requests.create(principal(), INPUT);
 
-    // A room's turn runs in a hidden session: the link opens the room, where
-    // the card is drawn.
-    expect(created.openUrl).toBe('https://tunnel.example/channels?id=room-1');
-    expect(requests.getForOwner(OWNER, created.requestId)).toMatchObject({
-      roomId: 'room-1',
-      openUrl: 'https://tunnel.example/channels?id=room-1',
-    });
+    // The room shows its owner the card, and a room can be shared, so a room
+    // turn gets no link to pass around.
+    expect(created).not.toHaveProperty('openUrl');
+    const owned = requests.getForOwner(OWNER, created.requestId);
+    expect(owned).toMatchObject({ roomId: 'room-1' });
+    expect(owned).not.toHaveProperty('openUrl');
     // The room is an owner-side fact; the agent's own status never carries it.
     expect(created).not.toHaveProperty('roomId');
   });

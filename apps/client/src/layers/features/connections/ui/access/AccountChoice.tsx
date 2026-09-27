@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useConnectorConnections } from '@/layers/entities/connectors';
 import {
   Button,
@@ -29,12 +29,18 @@ export function AccountChoice({
   // can't be given to one, so offering it would be an Allow that cannot land.
   const accounts = usableAccounts(query.data?.connections ?? [], props.toolkit);
   const [picked, setPicked] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<string | null>(null);
 
+  // The account the question is about, once there is one. It is held, not
+  // re-derived: a save changes the account list (a moved catalog, a pending
+  // sync), and re-deciding then would unmount the question mid-answer.
+  const [settled, setSettled] = useState<{ id: string; picked: boolean } | null>(null);
   const only = accounts.length === 1 ? accounts[0].connectionId : null;
-  const connectionId = only ?? chosen;
-  if (connectionId) {
-    return renderAccess(connectionId, only ? undefined : () => setChosen(null));
+  const current = settled ?? (only ? { id: only, picked: false } : null);
+  useEffect(() => {
+    if (!settled && only) setSettled({ id: only, picked: false });
+  }, [settled, only]);
+  if (current) {
+    return renderAccess(current.id, current.picked ? () => setSettled(null) : undefined);
   }
 
   const title = `Which ${props.serviceName} account?`;
@@ -98,7 +104,10 @@ export function AccountChoice({
           </Button>
         )}
         {accounts.length > 1 && (
-          <Button disabled={!picked} onClick={() => setChosen(picked)}>
+          <Button
+            disabled={!picked}
+            onClick={() => picked && setSettled({ id: picked, picked: true })}
+          >
             Continue
           </Button>
         )}
