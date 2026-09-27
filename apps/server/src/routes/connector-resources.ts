@@ -161,7 +161,7 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
         'Content-Length': String(logo.bytes.byteLength),
         'X-Content-Type-Options': 'nosniff',
         'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
-        'Cache-Control': 'private, max-age=604800',
+        'Cache-Control': 'private, max-age=86400',
       });
       res.end(logo.bytes);
     } catch (error) {

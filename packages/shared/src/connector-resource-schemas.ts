@@ -169,6 +169,27 @@ export type ConnectorCatalogIntent = z.infer<typeof ConnectorCatalogIntentSchema
 export const CONNECTOR_CATALOG_LOGO_PATH_PREFIX = '/api/connectors/catalog/logos/';
 
 /**
+ * The service ids a logo can be kept and served for: lower-case letters,
+ * digits, `_` and `-`, at most 100 characters. Such an id is a safe file name
+ * on every platform and a single URL path segment; every Composio slug and
+ * Nango template key fits.
+ */
+export const CONNECTOR_LOGO_SERVICE_ID = /^[a-z0-9][a-z0-9_-]{0,99}$/;
+
+/**
+ * The same-origin path an app's logo is served from, or `undefined` for an id
+ * no logo can be kept for. The client can name it for any app without a
+ * catalog entry; the server answers 404 when it has no logo.
+ *
+ * @param serviceSlug - The catalog's service id.
+ */
+export function connectorCatalogLogoPath(serviceSlug: string): string | undefined {
+  return CONNECTOR_LOGO_SERVICE_ID.test(serviceSlug)
+    ? `${CONNECTOR_CATALOG_LOGO_PATH_PREFIX}${serviceSlug}`
+    : undefined;
+}
+
+/**
  * A catalog logo reference: this server's own logo route for one app, with the
  * service id as one lower-case path segment. The pattern refuses any other
  * origin, scheme, query or extra path segment.
@@ -176,7 +197,7 @@ export const CONNECTOR_CATALOG_LOGO_PATH_PREFIX = '/api/connectors/catalog/logos
 export const ConnectorCatalogLogoPathSchema = z
   .string()
   .max(300)
-  .regex(/^\/api\/connectors\/catalog\/logos\/[a-z0-9][a-z0-9_-]*$/);
+  .regex(/^\/api\/connectors\/catalog\/logos\/[a-z0-9][a-z0-9_-]{0,99}$/);
 
 /** One account-free service in the unified catalog. */
 export const ConnectorCatalogServiceSchema = z

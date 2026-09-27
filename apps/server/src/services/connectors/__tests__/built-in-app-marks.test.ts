@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -16,8 +16,10 @@ describe('built-in app marks', () => {
   it.each(branded.map((app) => [app.serviceSlug]))(
     '%s ships its mark in @dorkos/icons, recorded in the sources README',
     (slug) => {
-      const file = `${slug}.svg`;
-      expect(existsSync(path.join(ICONS_SRC, 'app-logos', file))).toBe(true);
+      const file = ['svg', 'png']
+        .map((extension) => `${slug}.${extension}`)
+        .find((name) => existsSync(path.join(ICONS_SRC, 'app-logos', name)));
+      expect(file, `no mark file for ${slug}`).toBeDefined();
       expect(readFileSync(path.join(ICONS_SRC, 'app-logos.ts'), 'utf8')).toContain(
         `'./app-logos/${file}?url'`
       );
@@ -26,4 +28,14 @@ describe('built-in app marks', () => {
       );
     }
   );
+});
+
+describe('bundled mark files', () => {
+  it('carry no script, event handler or outside reference', () => {
+    const dir = path.join(ICONS_SRC, 'app-logos');
+    for (const name of readdirSync(dir).filter((entry) => entry.endsWith('.svg'))) {
+      const svg = readFileSync(path.join(dir, name), 'utf8');
+      expect(svg, name).not.toMatch(/<script|\bon[a-z]+=|href="(?!#)|url\((?!#)/i);
+    }
+  });
 });

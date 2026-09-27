@@ -6,3 +6,9 @@ declare module '*.svg?url' {
   const src: string;
   export default src;
 }
+
+/** See the `*.svg?url` declaration above. */
+declare module '*.png?url' {
+  const src: string;
+  export default src;
+}

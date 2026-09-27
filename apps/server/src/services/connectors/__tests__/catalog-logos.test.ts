@@ -1,9 +1,9 @@
-import { mkdtemp, readdir, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, utimes, writeFile, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { logger } from '../../../lib/logger.js';
-import { CatalogLogoService, MAX_LOGO_BYTES, catalogLogoPath } from '../resources/catalog-logos.js';
+import { CatalogLogoService, LOGO_REFRESH_MS, MAX_LOGO_BYTES } from '../resources/catalog-logos.js';
 
 vi.mock('../../../lib/logger.js', () => ({
   logger: { warn: vi.fn() },
@@ -135,6 +135,31 @@ describe('CatalogLogoService', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it('fetches a kept logo again once it is 30 days old, keeping the old one if that fails', async () => {
+    const logos = service();
+    await logos.get('gmail');
+    const file = path.join(logosDir(), 'logo-gmail.svg');
+    const old = new Date(Date.now() - LOGO_REFRESH_MS - 60_000);
+    await utimes(file, old, old);
+    now = Date.now();
+
+    // The refresh fails: the old logo is still served, and not refetched per request.
+    fetchImpl.mockRejectedValue(new TypeError('fetch failed'));
+    await expect(logos.get('gmail')).resolves.toMatchObject({ contentType: 'image/svg+xml' });
+    await expect(logos.get('gmail')).resolves.toMatchObject({ contentType: 'image/svg+xml' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    // Later it succeeds, as a new type: only the new file is kept.
+    now += 10 * 60_000 + 1;
+    fetchImpl.mockResolvedValue(
+      new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), {
+        headers: { 'content-type': 'image/png' },
+      })
+    );
+    await expect(logos.get('gmail')).resolves.toMatchObject({ contentType: 'image/png' });
+    expect(await readdir(logosDir())).toEqual(['logo-gmail.png']);
+  });
+
   it('keeps a raster logo under its own type, ignoring content-type parameters', async () => {
     const logos = service();
     fetchImpl.mockResolvedValue(
@@ -163,15 +188,5 @@ describe('CatalogLogoService', () => {
       expect(await readdir(logosDir())).toEqual(['logo-gmail.svg']);
     });
     expect(await readFile(path.join(logosDir(), 'logo-gmail.svg'), 'utf8')).toBe(SVG);
-  });
-});
-
-describe('catalogLogoPath', () => {
-  it('is the server’s own route for a safe id, and nothing for any other', () => {
-    expect(catalogLogoPath('googlecalendar')).toBe('/api/connectors/catalog/logos/googlecalendar');
-    expect(catalogLogoPath('google-mail_2')).toBe('/api/connectors/catalog/logos/google-mail_2');
-    expect(catalogLogoPath('Odd.Slug')).toBeUndefined();
-    expect(catalogLogoPath('a/b')).toBeUndefined();
-    expect(catalogLogoPath('')).toBeUndefined();
   });
 });

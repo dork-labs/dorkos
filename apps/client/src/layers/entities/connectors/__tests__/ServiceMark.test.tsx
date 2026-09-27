@@ -47,12 +47,28 @@ describe('ServiceMark', () => {
     expect(letter).not.toHaveClass('bg-white');
   });
 
-  it('keeps today’s letter tile for an app with no logo', () => {
+  it('asks the server by service id when the caller has no catalog entry for the app', () => {
+    const mark = renderMark({ iconKey: 'zendesk', displayName: 'Zendesk' });
+
+    expect(mark.querySelector('img')).toHaveAttribute('src', SERVER_LOGO);
+  });
+
+  it('keeps the letter tile when the server has no logo for the app', () => {
     const mark = renderMark({ iconKey: 'bare', displayName: '  bare app' });
 
+    fireEvent.error(mark.querySelector('img')!);
+
+    const letter = document.body.firstElementChild!.firstElementChild as HTMLElement;
+    expect(letter.querySelector('img')).toBeNull();
+    expect(letter).toHaveTextContent('B');
+    expect(letter).toHaveClass('bg-muted');
+  });
+
+  it('never asks the server for an id no logo can be kept for', () => {
+    const mark = renderMark({ iconKey: 'Odd.Slug', displayName: 'Odd' });
+
     expect(mark.querySelector('img')).toBeNull();
-    expect(mark).toHaveTextContent('B');
-    expect(mark).toHaveClass('bg-muted');
+    expect(mark).toHaveTextContent('O');
   });
 
   it('draws the webhook glyph, which is not a brand, on the plain tile', () => {

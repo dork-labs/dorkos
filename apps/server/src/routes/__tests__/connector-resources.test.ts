@@ -66,7 +66,7 @@ describe('connector resource routes', () => {
     expect(response.headers['content-security-policy']).toBe(
       "default-src 'none'; style-src 'unsafe-inline'; sandbox"
     );
-    expect(response.headers['cache-control']).toBe('private, max-age=604800');
+    expect(response.headers['cache-control']).toBe('private, max-age=86400');
     expect(Buffer.from(response.body as Buffer).equals(svg)).toBe(true);
   });
 

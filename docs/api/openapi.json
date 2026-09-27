@@ -27427,7 +27427,7 @@
                           "logo": {
                             "type": "string",
                             "maxLength": 300,
-                            "pattern": "^\\/api\\/connectors\\/catalog\\/logos\\/[a-z0-9][a-z0-9_-]*$"
+                            "pattern": "^\\/api\\/connectors\\/catalog\\/logos\\/[a-z0-9][a-z0-9_-]{0,99}$"
                           },
                           "category": {
                             "type": "string",

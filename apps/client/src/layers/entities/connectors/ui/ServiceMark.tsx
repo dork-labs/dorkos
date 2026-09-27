@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
 import { APP_LOGO_MAP } from '@dorkos/icons/app-logos';
+import { connectorCatalogLogoPath } from '@dorkos/shared/connector-resource-schemas';
 import { cn } from '@/layers/shared/lib';
 
 interface ServiceMarkProps {
@@ -9,8 +10,10 @@ interface ServiceMarkProps {
   /** The app's name; its first letter is the fallback mark. */
   displayName: string;
   /**
-   * The catalog's same-origin logo path for the app, when a connection service
-   * sent one. Never a third-party URL: the server fetches and serves it.
+   * The catalog's same-origin logo path for the app, when the caller has its
+   * catalog entry. Without it the mark asks the same server route by service
+   * id, so an app off the loaded catalog pages still gets its logo. Never a
+   * third-party URL: the server fetches and serves it.
    */
   logo?: string;
   className?: string;
@@ -18,8 +21,9 @@ interface ServiceMarkProps {
 
 /**
  * The small square that identifies an app. In order: the app's own mark as it
- * ships with DorkOS, then the logo the server kept from the app's connection
- * service, then the chat-app glyph, then the first letter of its name.
+ * ships with DorkOS, then the catalog's logo, then the chat-app glyph, then the
+ * server's logo route asked by service id (it answers 404 for an app with no
+ * logo), then the first letter of its name.
  *
  * A real logo sits on a white tile in light and dark mode alike, so a black
  * mark (GitHub, Notion) never disappears. A logo that fails to load falls back
@@ -27,7 +31,8 @@ interface ServiceMarkProps {
  */
 export function ServiceMark({ iconKey, displayName, logo, className }: ServiceMarkProps) {
   const key = iconKey.toLowerCase();
-  const src = APP_LOGO_MAP[key] ?? logo;
+  const Glyph = ADAPTER_LOGO_MAP[key];
+  const src = APP_LOGO_MAP[key] ?? logo ?? (Glyph ? undefined : connectorCatalogLogoPath(iconKey));
   // The source that failed to load; a new source gets its own try.
   const [failed, setFailed] = useState<string | null>(null);
   const tile = 'flex size-8 shrink-0 items-center justify-center rounded-md';
@@ -50,7 +55,6 @@ export function ServiceMark({ iconKey, displayName, logo, className }: ServiceMa
     );
   }
 
-  const Glyph = ADAPTER_LOGO_MAP[key];
   return (
     <span
       aria-hidden

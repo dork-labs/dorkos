@@ -17,13 +17,16 @@
  *   logo is fetched again on the next request.
  * - **A failure is remembered briefly**, so a broken logo is not fetched again
  *   on every page view.
+ * - **A kept logo is fetched again after {@link LOGO_REFRESH_MS}**, so a
+ *   brand's new logo arrives in time. Until the new one arrives, and whenever
+ *   fetching it fails, the kept one keeps being served.
  *
  * @module services/connectors/resources/catalog-logos
  */
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { CONNECTOR_CATALOG_LOGO_PATH_PREFIX } from '@dorkos/shared/connector-resource-schemas';
+import { CONNECTOR_LOGO_SERVICE_ID } from '@dorkos/shared/connector-resource-schemas';
 import { logError, logger } from '../../../lib/logger.js';
 
 /** The image types a logo may be, and the file suffix each is kept under. */
@@ -60,27 +63,11 @@ const FAILURE_TTL_MS = 10 * 60_000;
 /** At most this many failures are remembered; the oldest is forgotten first. */
 const MAX_REMEMBERED_FAILURES = 2_000;
 
-/**
- * The service ids a logo may be kept for. Lower-case letters, digits, `_` and
- * `-` only, so the id is a safe file name on every platform and a single URL
- * path segment; every Composio slug and Nango template key fits.
- */
-const SAFE_SERVICE_ID = /^[a-z0-9][a-z0-9_-]{0,99}$/;
+/** How old a kept logo gets before it is fetched again. */
+export const LOGO_REFRESH_MS = 30 * 24 * 60 * 60_000;
 
 /** Files are `logo-<id>.<ext>`; the prefix keeps ids like `con` off Windows' reserved names. */
 const FILE_PREFIX = 'logo-';
-
-/**
- * The same-origin path the browser loads an app's logo from, or `undefined`
- * when the id cannot be kept as a logo.
- *
- * @param serviceSlug - The catalog's service id.
- */
-export function catalogLogoPath(serviceSlug: string): string | undefined {
-  return SAFE_SERVICE_ID.test(serviceSlug)
-    ? `${CONNECTOR_CATALOG_LOGO_PATH_PREFIX}${serviceSlug}`
-    : undefined;
-}
 
 /** One kept logo, ready to serve. */
 export interface CatalogLogo {
@@ -141,18 +128,20 @@ export class CatalogLogoService {
    * @param serviceSlug - The catalog's service id, as the route received it.
    */
   async get(serviceSlug: string): Promise<CatalogLogo | undefined> {
-    if (!SAFE_SERVICE_ID.test(serviceSlug)) return undefined;
+    if (!CONNECTOR_LOGO_SERVICE_ID.test(serviceSlug)) return undefined;
     const kept = await this.readKept(serviceSlug);
-    if (kept) return kept;
+    if (kept && !kept.stale) return kept.logo;
     const retryAt = this.failures.get(serviceSlug);
-    if (retryAt !== undefined && retryAt > this.now()) return undefined;
-    const pending = this.inFlight.get(serviceSlug);
-    if (pending) return pending;
-    const download = this.download(serviceSlug).finally(() => {
-      this.inFlight.delete(serviceSlug);
-    });
-    this.inFlight.set(serviceSlug, download);
-    return download;
+    if (retryAt !== undefined && retryAt > this.now()) return kept?.logo;
+    let pending = this.inFlight.get(serviceSlug);
+    if (!pending) {
+      pending = this.download(serviceSlug).finally(() => {
+        this.inFlight.delete(serviceSlug);
+      });
+      this.inFlight.set(serviceSlug, pending);
+    }
+    // An old logo is still better than none while its refresh fails.
+    return (await pending) ?? kept?.logo;
   }
 
   private loadIndex(): Promise<Map<string, string>> {
@@ -177,14 +166,18 @@ export class CatalogLogoService {
     return this.index;
   }
 
-  private async readKept(serviceSlug: string): Promise<CatalogLogo | undefined> {
+  private async readKept(
+    serviceSlug: string
+  ): Promise<{ logo: CatalogLogo; stale: boolean } | undefined> {
     const index = await this.loadIndex();
     const extension = index.get(serviceSlug);
     if (!extension) return undefined;
+    const file = this.fileFor(serviceSlug, extension);
     try {
+      const [bytes, info] = await Promise.all([readFile(file), stat(file)]);
       return {
-        bytes: await readFile(this.fileFor(serviceSlug, extension)),
-        contentType: CONTENT_TYPE_BY_EXTENSION.get(extension)!,
+        logo: { bytes, contentType: CONTENT_TYPE_BY_EXTENSION.get(extension)! },
+        stale: this.now() - info.mtimeMs > LOGO_REFRESH_MS,
       };
     } catch {
       // Deleted from under us (the cache is safe to clear): fetch it again.
@@ -260,7 +253,12 @@ export class CatalogLogoService {
       await rm(staged, { force: true });
       throw error;
     }
+    const previous = index.get(serviceSlug);
     index.set(serviceSlug, extension);
+    // A refreshed logo can change type: keep only the new file.
+    if (previous && previous !== extension) {
+      await rm(this.fileFor(serviceSlug, previous), { force: true });
+    }
   }
 
   private fail(serviceSlug: string): undefined {

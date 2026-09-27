@@ -40,6 +40,24 @@ describe('oneSentence', () => {
     );
   });
 
+  it('does not end a sentence at a common abbreviation', () => {
+    expect(oneSentence('Acme Inc. makes invoices for small shops. It also does taxes.')).toBe(
+      'Acme Inc. makes invoices for small shops.'
+    );
+    expect(
+      oneSentence('Connect chat tools, e.g. Slack and Teams, to one inbox. Then reply fast.')
+    ).toBe('Connect chat tools, e.g. Slack and Teams, to one inbox.');
+    expect(oneSentence('Book time with Dr. Smith and St. Mary clinics online. More.')).toBe(
+      'Book time with Dr. Smith and St. Mary clinics online.'
+    );
+  });
+
+  it('does not stop at a sentence too short to stand alone', () => {
+    expect(oneSentence('Meet Zeta. Zeta tracks every package you ship. Learn more.')).toBe(
+      'Meet Zeta. Zeta tracks every package you ship.'
+    );
+  });
+
   it('keeps a description with no full stop whole', () => {
     expect(oneSentence('Gmail is Google’s email service')).toBe('Gmail is Google’s email service');
   });

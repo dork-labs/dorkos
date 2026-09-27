@@ -21,6 +21,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import {
+  connectorCatalogLogoPath,
   ConnectorCatalogResourcePageSchema,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionSummarySchema,
@@ -59,7 +60,6 @@ import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import type { RelayAdapterCatalog } from '../routing.js';
 import { BUILT_IN_APPS, type BuiltInApp } from './built-in-apps.js';
-import { catalogLogoPath } from './catalog-logos.js';
 
 const CATALOG_PROVIDER_PAGE_SIZE = 100;
 const CATALOG_PROVIDER_PAGE_LIMIT = 100;
@@ -446,7 +446,7 @@ export class ConnectorOperatorQueryService {
         if (logoUrl) logoSources.set(service.serviceSlug, logoUrl);
         const logo =
           logoUrl || kept?.has(service.serviceSlug)
-            ? catalogLogoPath(service.serviceSlug)
+            ? connectorCatalogLogoPath(service.serviceSlug)
             : undefined;
         const intents: ConnectorCatalogResourcePage['services'][number]['intents'] = [];
         if (builtIn?.chat || this.relay?.getManifest(service.serviceSlug)) {

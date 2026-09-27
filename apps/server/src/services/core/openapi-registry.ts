@@ -238,6 +238,7 @@ import {
   ConnectorAuthenticationFlowStateSchema,
   ConnectorProvidersResourceSchema,
   ConnectorCatalogResourcePageSchema,
+  CONNECTOR_LOGO_SERVICE_ID,
   ConnectorConnectionDetailSchema,
   ConnectorConnectionListResourceSchema,
   ConnectorConnectionPatchSchema,
@@ -3651,7 +3652,7 @@ registry.registerPath({
     'host, keeps it under the DorkOS data directory, and serves it with `nosniff` and a ' +
     'sandboxing Content-Security-Policy. The browser never loads a third-party URL.',
   request: {
-    params: z.object({ serviceSlug: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,99}$/) }),
+    params: z.object({ serviceSlug: z.string().regex(CONNECTOR_LOGO_SERVICE_ID) }),
   },
   responses: {
     200: {
