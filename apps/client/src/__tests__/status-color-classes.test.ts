@@ -16,9 +16,16 @@
  * already does, in its own `globals.css`, which is why it is not one of the
  * consumers below), this test stops flagging it there without an edit.
  *
- * Comments are stripped before matching (a TSDoc block or `//` note is
+ * Comments are stripped before matching, using the real TypeScript scanner
+ * rather than a `/\/\/.../` regex — a regex cannot tell a `//` that starts a
+ * line comment from a `//` inside `https://example.com`, and cannot tell a
+ * `/*` that starts a block comment from one inside a string like
+ * `'rm build/*.js'` (which opens a fake block comment that swallows
+ * everything up to the next real `*\/` anywhere later in the file). The
+ * scanner tokenizes the real language, so a TSDoc block or `//` note is
  * allowed to name `text-warning` in prose, the way this file's own header
- * just did, without tripping the guard).
+ * just did, without tripping the guard — and a URL or glob pattern in a
+ * string never gets mistaken for a comment.
  *
  * Lives beside `status-warning-contrast.test.ts` in `apps/client`, not under
  * `scripts/`: `scripts/__tests__/*` only runs from the scoped `harness` job
@@ -31,6 +38,7 @@
 import { readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -88,13 +96,34 @@ function definedColorNames(cssPath: string): Set<string> {
 }
 
 /**
- * Blank out `/* ... *\/` and `// ...` comments, preserving every newline and
- * the length of every other line, so a class name mentioned only in prose
- * cannot match and line numbers in a reported finding stay accurate.
+ * Blank out `/* ... *\/` and `// ...` comment TRIVIA — as the real TypeScript
+ * scanner sees them, not as a regex guesses them — leaving every newline and
+ * the length of every other character in place, so a class name mentioned
+ * only in prose cannot match and line numbers in a reported finding stay
+ * accurate. A regex over the raw text cannot distinguish a `//` that starts a
+ * line comment from one inside a URL, or a `/*` that starts a block comment
+ * from one inside a string; the scanner tokenizes the language and only ever
+ * reports real comment trivia, so string and template contents (a URL, a
+ * glob pattern, a shell command) pass through untouched.
  */
 function stripComments(source: string): string {
-  const noBlocks = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
-  return noBlocks.replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, false, ts.LanguageVariant.JSX, source);
+  const chars = Array.from(source);
+  let token = scanner.scan();
+  while (token !== ts.SyntaxKind.EndOfFileToken) {
+    if (
+      token === ts.SyntaxKind.SingleLineCommentTrivia ||
+      token === ts.SyntaxKind.MultiLineCommentTrivia
+    ) {
+      const start = scanner.getTokenPos();
+      const end = scanner.getTextPos();
+      for (let i = start; i < end; i++) {
+        if (chars[i] !== '\n') chars[i] = ' ';
+      }
+    }
+    token = scanner.scan();
+  }
+  return chars.join('');
 }
 
 /** Every `.ts`/`.tsx` file under `dir`, recursively. */
@@ -175,5 +204,43 @@ describe('status-shaped Tailwind color classes', () => {
     expect(stripped).not.toContain(bannedText);
     expect(stripped).not.toContain(bannedBg);
     expect(stripped).toContain("'text-status-warning-fg'");
+  });
+
+  it('does not swallow a real class that follows a `//` inside a URL', () => {
+    // Regression for the false-negative a `/\/\/.../` regex produces: it
+    // cannot tell a `//` that opens a line comment from one inside
+    // `https://example.com`, so it blanked the rest of the line — hiding any
+    // real class that came after the URL on the same line. Built from parts
+    // (see the comment-mention test above) so this suite's own file doesn't
+    // hand the guard a literal match on itself.
+    const cls = ['text', 'warning'].join('-');
+    const source = `const url = 'https://example.com/page'; className='${cls}'`;
+    const stripped = stripComments(source);
+    expect(stripped).toContain("'https://example.com/page'");
+    expect(stripped).toContain(cls);
+  });
+
+  it('does not swallow real classes that follow a `/*`-shaped string, even across lines', () => {
+    // Regression for the false-negative a `/\*[\s\S]*?\*\//` regex produces:
+    // it cannot tell a `/*` that opens a block comment from one inside
+    // `'rm build/*.js'`, so it opened a FAKE block comment that swallowed
+    // every line up to the next literal `*/` anywhere later in the file —
+    // which hid every real class usage in between, not just one line's worth
+    // (this is what made 54 real lines of TouchChipStrip.test.tsx invisible
+    // to the old stripper).
+    const clsWarning = ['text', 'warning'].join('-');
+    const clsDanger = ['bg', 'danger'].join('-');
+    const source = [
+      "const cmd = 'rm build/*.js';",
+      `className='${clsWarning}'`,
+      "const other = 'src/**/*.ts';",
+      `className='${clsDanger}'`,
+      '/* a real comment several lines below both fake openers */',
+    ].join('\n');
+    const stripped = stripComments(source);
+    expect(stripped).toContain("'rm build/*.js'");
+    expect(stripped).toContain(clsWarning);
+    expect(stripped).toContain("'src/**/*.ts'");
+    expect(stripped).toContain(clsDanger);
   });
 });

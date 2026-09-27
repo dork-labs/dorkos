@@ -126,7 +126,11 @@ const EXPLANATION_TONE = {
   warning: {
     box: 'bg-status-warning-bg border-status-warning-border',
     heading: 'text-status-warning-fg',
-    body: 'text-status-warning-fg/80',
+    // Full opacity, not `/80`: the 80%-opacity mix measured 3.6:1 on the
+    // warning box, under WCAG AA (DOR-2444) — `-fg` is already tuned to
+    // clear 4.5:1 at full strength, so any opacity below 100% risks pulling
+    // it back under the bar.
+    body: 'text-status-warning-fg',
   },
   neutral: {
     box: 'bg-muted border-border',
