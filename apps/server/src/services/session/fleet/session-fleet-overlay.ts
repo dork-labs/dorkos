@@ -3,6 +3,9 @@
  * which account each session runs on, its live status, the work item it
  * serves, and the usage of every account the page names.
  *
+ * `status` is MERGED onto whatever the session already carries, never
+ * replaced, so another overlay's fields on it survive in either order.
+ *
  * ## One pass, no extra I/O
  *
  * A list page is overlaid in one pass. The account id comes from the usage
@@ -14,8 +17,10 @@
  *
  * ## Which account a session runs on
  *
- * - **Claude Code:** the registered account whose folder is the session's
- *   `account` folder, compared in the contract's canonical form. The machine's
+ * - **Claude Code:** the registered account whose folder is the one the
+ *   session runs on, compared in the contract's canonical form. That folder is
+ *   the runtime's in-memory answer when it has one (so a new session with no
+ *   transcript yet is named too), else the session's transcript `account`. The machine's
  *   own folder is `default`, or the id of the row `default` aliases. A folder
  *   that is neither gets no `accountId`.
  * - **Codex and OpenCode** (no accounts of their own in DorkOS): `default`,
@@ -35,6 +40,7 @@ import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
 
 import { logger } from '../../../lib/logger.js';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { projectorFor } from '../session-key-registry.js';
 import { applyTrackerItems } from './flow-run-link.js';
@@ -73,6 +79,14 @@ export interface SessionFleetOverlayDeps {
     sessionId: string
   ) => { getStatus(): Pick<SessionStatus, 'lifecycle' | 'limit'> } | undefined;
   /**
+   * The account folder the session's runtime holds in memory for it
+   * (`AgentRuntime.getSessionAccount`), or `undefined` when it names none.
+   * Synchronous and never throws.
+   *
+   * @param session - A session on the page.
+   */
+  sessionAccountOf: (session: Session) => string | undefined;
+  /**
    * The stored limits of the named sessions, keyed by session id, in one query.
    *
    * @param sessionIds - Sessions with no live projector.
@@ -91,6 +105,14 @@ export function sessionFleetOverlayDeps(): SessionFleetOverlayDeps {
   return {
     store: getAccountUsageStore(),
     projectorFor,
+    sessionAccountOf: (session) => {
+      if (!session.runtime || !runtimeRegistry.has(session.runtime)) return undefined;
+      try {
+        return runtimeRegistry.get(session.runtime).getSessionAccount?.(session.id);
+      } catch {
+        return undefined;
+      }
+    },
     limitsFor: (ids) =>
       withSessionLimitStore('list page limits', (store) => store.getMany(ids)) ?? new Map(),
     applyTrackerItems,
@@ -139,11 +161,12 @@ export async function applySessionFleetOverlay(
       let accountId: string | undefined;
       if (session.runtime !== 'claude-code') {
         accountId = IMPLICIT_ACCOUNT_ID;
-      } else if (session.account) {
-        if (!idByRoot.has(session.account)) {
-          idByRoot.set(session.account, accountIdAtRoot(store, session.account));
+      } else {
+        const root = deps.sessionAccountOf(session) ?? session.account;
+        if (root) {
+          if (!idByRoot.has(root)) idByRoot.set(root, accountIdAtRoot(store, root));
+          accountId = idByRoot.get(root);
         }
-        accountId = idByRoot.get(session.account);
       }
       if (accountId !== undefined) {
         session.accountId = accountId;
@@ -156,7 +179,7 @@ export async function applySessionFleetOverlay(
     const projector = deps.projectorFor(session.id);
     if (projector) {
       const { lifecycle, limit } = projector.getStatus();
-      session.status = { lifecycle, limit };
+      session.status = { ...session.status, lifecycle, limit };
     } else {
       withoutProjector.push(session);
     }
@@ -167,7 +190,7 @@ export async function applySessionFleetOverlay(
     for (const session of withoutProjector) {
       const stored = limits.get(session.id);
       // Not live in this process, so idle; the limit it last hit still stands.
-      if (stored) session.status = { lifecycle: 'idle', limit: stored.limit };
+      if (stored) session.status = { ...session.status, lifecycle: 'idle', limit: stored.limit };
     }
   }
 

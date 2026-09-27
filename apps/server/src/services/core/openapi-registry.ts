@@ -611,7 +611,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'List all sessions',
   description:
-    'Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live, read as idle) and its flow `trackerItem`; the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.',
+    'Aggregates sessions across every registered runtime (ADR-0310). Runtimes that fail or time out degrade to `warnings[]` entries with partial results. Each session carries its `accountId`, its live `status` (lifecycle and any usage limit; absent when the session is not live and has no stored limit, read as idle) and its flow `trackerItem`; the envelope carries `accountUsage` for the distinct accounts on the page, omitted when there are none.',
   request: {
     query: ListSessionsQuerySchema,
   },

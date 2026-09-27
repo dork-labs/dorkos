@@ -65,6 +65,7 @@ function deps(overrides: Partial<SessionFleetOverlayDeps> = {}): SessionFleetOve
   return {
     store,
     projectorFor: () => undefined,
+    sessionAccountOf: () => undefined,
     limitsFor: () => new Map(),
     applyTrackerItems: async () => {},
     ...overrides,
@@ -159,6 +160,22 @@ describe('applySessionFleetOverlay: accountId', () => {
     expect(realpathCalls.filter((dir) => dir === claude3()).length).toBeLessThanOrEqual(2);
   });
 
+  it("names a new session with no transcript yet from the runtime's in-memory account, preferring it to the transcript's", async () => {
+    const page = [
+      session({ id: 'new' }),
+      session({ id: 'moved', account: path.join(home, '.claude9') }),
+    ];
+    const usage = await applySessionFleetOverlay(
+      page,
+      deps({
+        sessionAccountOf: (s) => (s.id === 'new' || s.id === 'moved' ? claude3() : undefined),
+      })
+    );
+
+    expect(page.map((s) => s.accountId)).toEqual(['claude3', 'claude3']);
+    expect(usage?.map((u) => u.accountId)).toEqual(['claude3']);
+  });
+
   it('sets no accountId and reports no usage when no store is wired', async () => {
     const page = [session({ id: 'registered', account: claude3() })];
     const usage = await applySessionFleetOverlay(page, deps({ store: undefined }));
@@ -206,6 +223,33 @@ describe('applySessionFleetOverlay: status', () => {
       { lifecycle: 'idle', limit: LIMIT },
       undefined,
     ]);
+  });
+
+  it('merges onto a status another overlay already set, from a projector or a stored limit', async () => {
+    const extra = { accountUsage: { accountId: 'claude3' } };
+    const page = [
+      session({
+        id: 'live',
+        status: { lifecycle: 'idle', limit: null, ...extra } as Session['status'],
+      }),
+      session({
+        id: 'limited',
+        status: { lifecycle: 'idle', limit: null, ...extra } as Session['status'],
+      }),
+    ];
+    await applySessionFleetOverlay(
+      page,
+      deps({
+        projectorFor: (id) =>
+          id === 'live'
+            ? { getStatus: () => ({ lifecycle: 'streaming', limit: null }) }
+            : undefined,
+        limitsFor: () => new Map([['limited', { limit: LIMIT }]]),
+      })
+    );
+
+    expect(page[0]!.status).toEqual({ lifecycle: 'streaming', limit: null, ...extra });
+    expect(page[1]!.status).toEqual({ lifecycle: 'idle', limit: LIMIT, ...extra });
   });
 
   it('asks for no stored limits when every session is live', async () => {

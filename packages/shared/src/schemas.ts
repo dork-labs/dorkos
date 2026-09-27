@@ -595,8 +595,8 @@ export const SessionSchema = z
     accountId: z.string().optional(),
     /**
      * The session's live status in this server process: its lifecycle and any
-     * usage limit it hit. ABSENT means the session is not live in this process;
-     * read it as idle.
+     * usage limit it hit. ABSENT when the session is not live in this process
+     * and has no stored limit; read it as idle.
      */
     status: z
       .object({
