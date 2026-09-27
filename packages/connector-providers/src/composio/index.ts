@@ -2,6 +2,7 @@
 export {
   ComposioCatalogError,
   ComposioSdkClient,
+  type ComposioCatalogPageRequest,
   type ComposioOperationClient,
   type ComposioSdkClientOpts,
   type ComposioSdkExecuteInput,
