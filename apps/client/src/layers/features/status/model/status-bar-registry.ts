@@ -381,7 +381,10 @@ export const STATUS_BAR_REGISTRY: readonly StatusBarItemConfig[] = [
     label: 'Account',
     description: 'Which Claude account this session spends, and how much is left.',
     cluster: 'right',
-    group: 'session',
+    // No popover row, so it cannot be pinned: a new pin value would make an
+    // older build discard the whole config file (`widened-leaves.ts`), and the
+    // chip has nothing to show outside the identity gate anyway.
+    group: null,
     icon: CircleUserRound,
     // `account` is non-null only while the identity gate is open (two or more
     // accounts on a runtime that tells them apart), so the gate IS the rule.

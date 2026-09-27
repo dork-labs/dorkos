@@ -65,12 +65,15 @@ describe('STATUS_BAR_REGISTRY — quiet by default', () => {
 });
 
 describe('STATUS_BAR_REGISTRY — the account chip', () => {
-  it('sits directly after runtime, in the same cluster and group', () => {
+  it('sits directly after runtime, in the same cluster, and cannot be pinned', () => {
     const keys = STATUS_BAR_REGISTRY.map((item) => item.key);
     expect(keys[keys.indexOf('runtime') + 1]).toBe('account');
     const runtime = getStatusBarItem('runtime')!;
     const account = getStatusBarItem('account')!;
-    expect([account.cluster, account.group]).toEqual([runtime.cluster, runtime.group]);
+    expect(account.cluster).toBe(runtime.cluster);
+    // Visibility follows the identity gate alone; no pin can force it.
+    expect(account.group).toBeNull();
+    expect(isPinnable(account)).toBe(false);
     expect(account.label).toBe('Account');
     expect(account.description).toBe(
       'Which Claude account this session spends, and how much is left.'
@@ -326,7 +329,6 @@ describe('isPinnable', () => {
       'cwd',
       'git',
       'runtime',
-      'account',
       'model',
       'context',
       'usage',
