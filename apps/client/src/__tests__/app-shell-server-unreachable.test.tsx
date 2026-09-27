@@ -177,6 +177,13 @@ vi.mock('@/layers/entities/mesh', async (importOriginal) => ({
   useAgentsSync: () => {},
 }));
 
+// The live agent-request subscriber reads the event stream this suite does not
+// provide; nothing here is about agent requests.
+vi.mock('@/layers/entities/connectors', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/connectors')>()),
+  useConnectorAgentRequestsSync: () => {},
+}));
+
 // `@/layers/entities/config` stays REAL apart from this ONE export — the config
 // query is the thing this suite is about, and a partial mock leaves `useConfig`,
 // `configKeys` and everything else exactly as they are. Only the stream
