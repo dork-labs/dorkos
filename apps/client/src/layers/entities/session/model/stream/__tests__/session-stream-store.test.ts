@@ -669,6 +669,8 @@ describe('useSessionStreamStore', () => {
         resetsAt: null,
         since: '2026-09-26T10:00:00.000Z',
         plan: { mode: 'ask' as const },
+        scope: 'account' as const,
+        state: 'limited' as const,
       };
       const store = useSessionStreamStore.getState();
       store.applySnapshot(SID, snapshot({ cursor: 0 }));
