@@ -42,6 +42,12 @@ vi.mock('../runtimes/claude-code/claude-config-dir.js', async (importOriginal) =
 }));
 
 import { writeManifest } from '@dorkos/shared/manifest';
+import type { PermissionAreaId } from '@dorkos/shared/permissions';
+import { renderBlockedAreaLines } from '../runtimes/shared/permission-tool-filter.js';
+import {
+  initPermissionGate,
+  readAgentPermissionsFromManifest,
+} from '../core/capabilities/permission-enforcement.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { homeOf, readHomeManifest, resolveAgentHome } from '../core/agent-identity/index.js';
 import {
@@ -63,6 +69,8 @@ interface Identity {
   name: string;
   runtime: AgentManifest['runtime'];
   account: string;
+  /** Permission areas this side's manifest blocks. */
+  blocked: readonly PermissionAreaId[];
   soul: string;
   nope: string;
 }
@@ -71,6 +79,7 @@ const BRANCH: Identity = {
   name: 'ana-branch-copy',
   runtime: 'opencode',
   account: 'acct-branch',
+  blocked: [],
   soul: 'BRANCH-SOUL-MARKER',
   nope: 'BRANCH-NOPE-MARKER',
 };
@@ -78,6 +87,7 @@ const HOME: Identity = {
   name: 'ana',
   runtime: 'codex',
   account: 'acct-home',
+  blocked: ['tasks'],
   soul: 'HOME-SOUL-MARKER',
   nope: 'HOME-NOPE-MARKER',
 };
@@ -106,10 +116,19 @@ afterAll(() => {
 
 beforeEach(() => {
   registerTestHomes([home]);
+  // One Tasks action on the gate's list, so a Blocked Tasks area has something
+  // to hide, and the real reader of an agent's overrides off its manifest.
+  initPermissionGate({
+    readAgentPermissions: readAgentPermissionsFromManifest,
+    listActions: () => [
+      { id: 'tasks.create', tier: 'act', area: 'tasks', toolName: 'tasks_create' },
+    ],
+  });
 });
 
 afterEach(() => {
   clearTestHomes();
+  initPermissionGate({});
 });
 
 describe('a worktree of a home repo reads the HOME identity', () => {
@@ -133,7 +152,7 @@ describe('a worktree of a home repo reads the HOME identity', () => {
     expect(opencode).not.toContain(BRANCH.soul);
   });
 
-  it('rows 1 and 3: a claude-code launch takes its account and persona from home', async () => {
+  it('rows 1 and 3: a claude-code launch takes its account, persona and blocked areas from home', async () => {
     const session: AgentSession = {
       sdkSessionId: 'sdk-1',
       lastActivity: Date.now(),
@@ -159,6 +178,11 @@ describe('a worktree of a home repo reads the HOME identity', () => {
     const append = (resolved.sdkOptions.systemPrompt as { append: string }).append;
     expect(append).toContain(HOME.soul);
     expect(append).not.toContain(BRANCH.soul);
+    // What the agent's permissions hide follows the HOME too: the home blocks
+    // Tasks, the worktree's committed copy blocks nothing. The blocked-area
+    // line and the tool-doc gate both come from the home's manifest.
+    expect(append).toContain(renderBlockedAreaLines(HOME.blocked));
+    expect(renderBlockedAreaLines(HOME.blocked)).not.toBe('');
   });
 
   it('row 6: a new session in the worktree runs on the home runtime', async () => {
@@ -246,6 +270,9 @@ async function writeIdentity(dir: string, identity: Identity): Promise<void> {
     registeredBy: 'test',
     personaEnabled: true,
     account: identity.account,
+    ...(identity.blocked.length > 0
+      ? { permissions: { areas: Object.fromEntries(identity.blocked.map((a) => [a, 'blocked'])) } }
+      : {}),
   } as unknown as AgentManifest;
   await writeManifest(dir, manifest);
   fs.writeFileSync(path.join(dir, '.dork', 'SOUL.md'), `${identity.soul}\n`);
