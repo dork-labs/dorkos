@@ -1428,7 +1428,9 @@ function withTreeRelativeSource(command: UiCommand, tree: CanvasTreePlacement): 
   const relative = (source: string): string | null => {
     if (!path.isAbsolute(source)) return null;
     const rel = path.relative(root, canonicalPath(source));
-    return rel === '' || rel.startsWith('..') || path.isAbsolute(rel) ? null : rel;
+    // Only a first SEGMENT of exactly `..` leaves the tree; `..notes.md` is a
+    // file inside it (the same rule `canvas-diff-review.ts` applies).
+    return rel === '' || rel.split(/[\\/]/)[0] === '..' || path.isAbsolute(rel) ? null : rel;
   };
   if ('sourcePath' in command && typeof command.sourcePath === 'string') {
     const rel = relative(command.sourcePath);

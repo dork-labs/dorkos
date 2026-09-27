@@ -399,6 +399,35 @@ describe('a room turn’s canvas commands', () => {
       }
     });
 
+    it('stores a file whose name starts with two dots relative to the copy too', async () => {
+      // `..notes.md` is a file INSIDE the copy; only a first segment of exactly
+      // `..` leaves it. Seeded: rejecting any relative path starting with `..`
+      // stores it absolute, which the review refuses.
+      const copy = '/rooms/backend/worktrees/ana-1a2b3c4d';
+      turnBehaviour = (opts) => {
+        openTurn(opts);
+        opts.projector.ingest({
+          type: 'ui_command',
+          command: { action: 'open_diff', sourcePath: `${copy}/..notes.md` },
+        });
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+      await createSessionRoomTurnRunner().run(
+        turnRequest({
+          worktreePath: copy,
+          branch: 'room/ana',
+          repoPath: '/rooms/backend/repo',
+          ahead: 1,
+          behind: 0,
+        })
+      );
+
+      const [document] = harness.service.canvas.list(room.id);
+      expect(document?.treeKind).toBe('worktree');
+      expect((document?.content as { sourcePath?: string }).sourcePath).toBe('..notes.md');
+    });
+
     it('records “not measured” when the dispatcher measured nothing', async () => {
       turnBehaviour = (opts) => {
         openTurn(opts);
