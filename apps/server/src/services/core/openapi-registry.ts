@@ -251,6 +251,9 @@ import {
   PatchPermissionDefaultsBodySchema,
   PermissionHistoryQuerySchema,
   PermissionHistoryResponseSchema,
+  UndoConflictResponseSchema,
+  UndoPermissionChangeBodySchema,
+  UndoPermissionChangeResponseSchema,
   PermissionsResponseSchema,
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
@@ -4355,6 +4358,46 @@ registry.registerPath({
   },
 });
 
+registry.registerPath({
+  method: 'post',
+  path: '/api/approvals/{id}/dismiss-suggestion',
+  tags: ['Approvals'],
+  summary: 'Stop suggesting Always allow',
+  description:
+    '"Not now" on a card that suggests Always allow: the suggestion never comes back for this ' +
+    'agent and action. Recorded as a `permission.suggestion_dismissed` Activity event. Who may ' +
+    'call it is exactly as for grant.',
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: 'The suggestion is off for this agent and action',
+      content: {
+        'application/json': {
+          schema: z.object({ ok: z.literal(true), approvalId: z.string() }),
+        },
+      },
+    },
+    401: {
+      description: 'Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description:
+        'Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller ' +
+        'holding the approval token (`REQUESTER_CANNOT_DECIDE`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such approval',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description: 'This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
 // === Permissions (spec `agent-permissions` D10) ===
 
 /** What every permission write answers with: the changes and the fresh view. */
@@ -4538,6 +4581,48 @@ registry.registerPath({
     409: {
       description:
         '`template_needs_review` (with `template`), `disclosure_changed`, or a collision',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/permissions/history/{eventId}/undo',
+  tags: ['Permissions'],
+  summary: 'Undo one permission change',
+  description:
+    'Sets every key a recorded `permission.changed` event moved back to its value before, as ' +
+    "one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed " +
+    'since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each ' +
+    'conflict) and writes nothing, while a change that reached several targets sets back the ' +
+    'ones that still match and reports the rest in `skipped`. `force` sets every key back. A ' +
+    'preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and ' +
+    'moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a ' +
+    '"Not now" on the Always allow suggestion lets the suggestion come back ' +
+    '(`suggestionRestored`). A key already back where the change found it is nothing to do.',
+  request: {
+    params: z.object({ eventId: z.string() }),
+    body: { content: { 'application/json': { schema: UndoPermissionChangeBodySchema } } },
+  },
+  responses: {
+    200: {
+      description: 'What the Undo changed, and what it left alone',
+      content: { 'application/json': { schema: UndoPermissionChangeResponseSchema } },
+    },
+    ...PERMISSION_WRITE_REFUSALS,
+    404: {
+      description: 'No such permission change (`UNKNOWN_EVENT`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a ' +
+        'change, such as an answer on a request card (`NOT_UNDOABLE`)',
+      content: { 'application/json': { schema: UndoConflictResponseSchema } },
+    },
+    428: {
+      description: 'The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

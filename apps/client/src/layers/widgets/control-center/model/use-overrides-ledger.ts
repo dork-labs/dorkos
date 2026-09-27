@@ -25,6 +25,7 @@
  * @module widgets/control-center/model/use-overrides-ledger
  */
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
+import type { PermissionLastChange } from '@dorkos/shared/permissions';
 import { createModalHandoff, permissionModeLabel, toSession } from '@/layers/shared/lib';
 import { stopLabel } from '@/layers/shared/ui';
 import {
@@ -40,7 +41,7 @@ import { useSessions } from '@/layers/entities/session';
 import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import { useBindings } from '@/layers/entities/binding';
 import { usePermissions, useResetAgentPermission } from '@/layers/entities/permissions';
-import { STATE_LABEL } from '@/layers/features/permissions';
+import { STATE_LABEL, filesWhy, stateWhy } from '@/layers/features/permissions';
 
 /** The runtime a task's or a binding's turns actually run on today. */
 const UNATTENDED_RUNTIME = 'claude-code';
@@ -68,6 +69,11 @@ export interface OverrideRow {
   onReset?: () => void;
   /** Whether a reset is in flight. */
   resetting?: boolean;
+  /**
+   * An agent's own permission explains itself: the question, where the state
+   * comes from, and who last changed it (spec `agent-permissions`, task 4.2).
+   */
+  why?: { question: string; sentence: string; lastChange?: PermissionLastChange };
 }
 
 /** What {@link useOverridesLedger} hands back. */
@@ -224,11 +230,22 @@ export function useOverridesLedger(): OverridesLedger {
     const openAgent = (agentId: string) => openAndClose(() => openProfile(agentId, 'permissions'));
     for (const e of permissions.exceptions) {
       const what = e.action ? (actionTitle.get(e.action) ?? e.action) : areaLabel.get(e.area);
+      const state = STATE_LABEL[e.state];
       rows.push({
         key: `agent-permission:${e.agentId}:${e.action ?? e.area}`,
         kind: 'agent-permission',
         name: e.agentName,
-        detail: `${what ?? e.area} ${STATE_LABEL[e.state]}`,
+        detail: `${what ?? e.area} ${state}`,
+        why: {
+          question: `Why is ${what ?? e.area} set to ${state} for ${e.agentName}?`,
+          sentence: stateWhy({
+            state: e.state,
+            source: e.action ? 'agent-action' : 'agent-area',
+            preset: permissions.preset,
+            agentName: e.agentName,
+          }),
+          ...(e.lastChange ? { lastChange: e.lastChange } : {}),
+        },
         onOpen: openAgent(e.agentId),
         onReset: () =>
           resetPermission.mutate({
@@ -245,6 +262,11 @@ export function useOverridesLedger(): OverridesLedger {
         kind: 'agent-permission',
         name: e.agentName,
         detail: `Files & commands ${stopLabel(e.stop)}`,
+        why: {
+          question: `Why is Files & commands set to ${stopLabel(e.stop)} for ${e.agentName}?`,
+          sentence: filesWhy(e.stop, 'agent', e.agentName),
+          ...(e.lastChange ? { lastChange: e.lastChange } : {}),
+        },
         onOpen: openAgent(e.agentId),
         onReset: () =>
           resetPermission.mutate({

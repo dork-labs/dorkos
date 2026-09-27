@@ -1,11 +1,16 @@
 import { ChevronRight, RotateCcw } from 'lucide-react';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
-import type {
-  AgentPermissionsResponse,
-  PermissionPreset,
-  PermissionsResponse,
+import {
+  describeAffectedAgents,
+  type AgentPermissionsResponse,
+  type PermissionPreset,
+  type PermissionsResponse,
 } from '@dorkos/shared/permissions';
-import { isAutonomyAckRefusal, useSetPermission } from '@/layers/entities/permissions';
+import {
+  isAutonomyAckRefusal,
+  useAffectedAgentCount,
+  useSetPermission,
+} from '@/layers/entities/permissions';
 import {
   Button,
   CANONICAL_TRUST_STOPS,
@@ -21,6 +26,8 @@ import {
 } from '@/layers/shared/ui';
 import { AutonomyConfirmDialog } from '@/layers/features/status';
 import { PRESET_LABEL, filesSourceText } from '../lib/permission-copy';
+import { filesWhy, lastChangeWhy } from '../lib/permission-why';
+import { PermissionWhy } from './PermissionWhy';
 import { reportPermissionFailure } from '../lib/report-failure';
 import { useAutonomyConsent } from '../model/use-autonomy-consent';
 
@@ -28,6 +35,8 @@ import { useAutonomyConsent } from '../model/use-autonomy-consent';
 export interface AgentFilesAndCommandsRowProps {
   /** The agent. */
   agentId: string;
+  /** Its name, for the "why?" question. */
+  agentName: string;
   /** Its resolved Files & commands stop, and what it would inherit. */
   files: AgentPermissionsResponse['filesAndCommands'];
 }
@@ -42,7 +51,11 @@ export interface AgentFilesAndCommandsRowProps {
  *
  * @param props - See {@link AgentFilesAndCommandsRowProps}.
  */
-export function AgentFilesAndCommandsRow({ agentId, files }: AgentFilesAndCommandsRowProps) {
+export function AgentFilesAndCommandsRow({
+  agentId,
+  agentName,
+  files,
+}: AgentFilesAndCommandsRowProps) {
   const write = useSetPermission({ kind: 'agent', agentId });
   const consent = useAutonomyConsent();
   const own = files.source === 'agent';
@@ -93,7 +106,14 @@ export function AgentFilesAndCommandsRow({ agentId, files }: AgentFilesAndComman
           <p className="text-muted-foreground text-sm">
             Editing files and running commands in this agent’s sessions
           </p>
-          <p className="text-muted-foreground text-xs">{inheritedText}</p>
+          <p className="text-muted-foreground text-xs">
+            <span>{inheritedText}</span> ·{' '}
+            <PermissionWhy
+              question={`Why is Files & commands ${shown ? `set to ${stopLabel(shown)}` : 'not set'} for ${agentName}?`}
+              sentence={filesWhy(shown, files.source)}
+              {...(files.lastChange ? { lastChange: files.lastChange } : {})}
+            />
+          </p>
         </div>
         <div className="flex shrink-0 flex-col gap-2 @lg:items-end">
           <SegmentedControl
@@ -174,6 +194,7 @@ export function DefaultFilesAndCommandsRow({
   disabled = false,
   runtimeLabel = (runtime) => runtime,
 }: DefaultFilesAndCommandsRowProps) {
+  const affected = useAffectedAgentCount({ kind: 'files' });
   const source =
     files.stop === null
       ? filesSourceText('runtime-own')
@@ -193,7 +214,19 @@ export function DefaultFilesAndCommandsRow({
           <p className="text-muted-foreground text-sm">
             Editing files and running commands in a session
           </p>
-          {source ? <p className="text-muted-foreground text-xs">{source}</p> : null}
+          <p className="text-muted-foreground text-xs">
+            <span>
+              {[source, affected !== undefined ? describeAffectedAgents(affected) : '']
+                .filter(Boolean)
+                .join(' · ')}
+            </span>{' '}
+            ·{' '}
+            <PermissionWhy
+              question={`Why is Files & commands ${files.stop ? `set to ${stopLabel(files.stop)}` : 'not set'}?`}
+              sentence={filesWhy(files.stop, files.stop === null ? 'runtime-own' : 'default')}
+              {...(files.lastChange ? { lastChange: files.lastChange } : {})}
+            />
+          </p>
           {files.runtimes.map((entry) => (
             <p key={entry.runtime} className="text-muted-foreground text-xs">
               {runtimeLabel(entry.runtime)} starts at {stopLabel(entry.stop)} (Settings → Runtimes)
@@ -235,10 +268,15 @@ function FilesExceptionRow({
   agent: PermissionsResponse['filesAndCommands']['exceptions'][number];
 }) {
   const write = useSetPermission({ kind: 'agent', agentId: agent.agentId });
+  const changed = lastChangeWhy(agent.lastChange);
   return (
     <li className="flex items-center justify-between gap-3">
-      <span className="min-w-0 truncate text-sm">
-        {agent.agentName}: {stopLabel(agent.stop)}
+      <span className="min-w-0 text-sm">
+        <span className="block break-words">
+          {agent.agentName}: {stopLabel(agent.stop)}
+        </span>
+        {/* Why it differs: who set it, when and where. */}
+        {changed ? <span className="text-muted-foreground block text-xs">{changed}</span> : null}
       </span>
       <Button
         variant="ghost"

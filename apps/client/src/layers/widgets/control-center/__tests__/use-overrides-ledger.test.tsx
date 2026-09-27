@@ -46,6 +46,10 @@ vi.mock('@/layers/entities/permissions', () => ({
 }));
 vi.mock('@/layers/features/permissions', () => ({
   STATE_LABEL: { blocked: 'Blocked', ask: 'Ask', allowed: 'Allowed' },
+  stateWhy: (input: { state: string; source: string; agentName?: string }) =>
+    `${input.state} from ${input.source} for ${input.agentName}`,
+  filesWhy: (stop: string, source: string, agentName?: string) =>
+    `${stop} from ${source} for ${agentName}`,
 }));
 vi.mock('@/layers/shared/model', () => ({
   useSafeNavigate: () => navigate,
@@ -206,6 +210,13 @@ describe('useOverridesLedger', () => {
   });
 
   it("lists each agent's own permission, opens its page, and resets it in one tap", () => {
+    const CHANGE = {
+      eventId: 'evt-1',
+      occurredAt: '2026-09-23T10:00:00.000Z',
+      actorLabel: 'Someone on this computer',
+      attribution: 'local-trust',
+      surface: 'settings',
+    };
     usePermissions.mockReturnValue({
       data: {
         areas: [
@@ -216,7 +227,13 @@ describe('useOverridesLedger', () => {
           },
         ],
         exceptions: [
-          { agentId: 'a1', agentName: 'security-auditor', area: 'rooms', state: 'blocked' },
+          {
+            agentId: 'a1',
+            agentName: 'security-auditor',
+            area: 'rooms',
+            state: 'blocked',
+            lastChange: CHANGE,
+          },
           {
             agentId: 'a2',
             agentName: 'DorkBot',
@@ -238,6 +255,19 @@ describe('useOverridesLedger', () => {
       'DorkBot: create rooms Allowed',
       'security-auditor: Files & commands Ask first',
     ]);
+
+    // Each explains itself: where it comes from, and the last change behind it.
+    expect(rows.map((r) => r.why?.question)).toEqual([
+      'Why is Rooms set to Blocked for security-auditor?',
+      'Why is create rooms set to Allowed for DorkBot?',
+      'Why is Files & commands set to Ask first for security-auditor?',
+    ]);
+    expect(rows[0]!.why).toMatchObject({
+      sentence: 'blocked from agent-area for security-auditor',
+      lastChange: CHANGE,
+    });
+    expect(rows[1]!.why?.sentence).toBe('allowed from agent-action for DorkBot');
+    expect(rows[1]!.why?.lastChange).toBeUndefined();
 
     rows[0]!.onOpen?.();
     expect(openProfile).toHaveBeenCalledWith('a1', 'permissions');

@@ -1077,12 +1077,21 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
       .mockImplementation((approvalId: string) =>
         Promise.resolve({ ok: true, approvalId, outcome: 'denied' })
       ),
+    dismissAlwaysSuggestion: vi
+      .fn()
+      .mockImplementation((approvalId: string) => Promise.resolve({ ok: true, approvalId })),
     // Permissions (spec `agent-permissions`)
     getPermissions: vi.fn().mockResolvedValue({
       preset: null,
       defaults: { areas: {}, actions: {} },
       changeCount: 0,
-      filesAndCommands: { stop: null, presetStop: null, runtimes: [], exceptions: [] },
+      filesAndCommands: {
+        stop: null,
+        presetStop: null,
+        runtimes: [],
+        exceptions: [],
+        followingAgentIds: [],
+      },
       areas: [],
       exceptions: [],
       agentCount: 0,
@@ -1104,6 +1113,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     patchPermissionDefaults: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     patchAgentPermissions: vi.fn().mockResolvedValue({ changes: [], permissions: undefined }),
     getPermissionHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    undoPermissionChange: vi.fn().mockResolvedValue({ changes: [], skipped: [] }),
     // Team roster (spec `identity-consistency` §W2.2). Honest-empty by default:
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
     // not opt into degradation never renders the banner by accident.

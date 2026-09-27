@@ -102,6 +102,8 @@ After a yes, the agent carries on by itself. If it was waiting in the conversati
 
 Safety limits, permissions, and reach and secrets never offer **Always allow**. Their cards show Allow and Deny, and one line: "Always allow isn't offered here. Changing this needs your yes every time."
 
+If you keep saying **Allow** to the same thing, the card offers to remember it. After you allow the same action for the same agent three times in a week, the next card for it shows **Always allow** a little more clearly, with one line: "You've allowed this 3 times this week." It stays highlighted until you answer **Always allow** or tap **Not now**, which turns it off for that agent and that action. **Not now** shows in the history, and its **Undo** turns the suggestion back on. Allow stays the first answer, and the card never offers this where Always allow isn't offered at all.
+
 When an agent asks for something that is Blocked, the card says so and quotes the reason the agent gave. An agent can only ask about one thing per area at a time, cannot ask for the same thing again for a day after you say no, and can ask at most five times an hour. [Action Approvals](/docs/guides/action-approvals#when-something-is-blocked) has the details.
 
 ## Change what everyone may do
@@ -109,9 +111,17 @@ When an agent asks for something that is Blocked, the card says so and quotes th
 1. Open **Settings → Permissions**.
 2. Find the area and pick **Blocked**, **Ask**, or **Allowed**. For Files & commands, pick **Ask first**, **Act**, or **Full autonomy**.
 
+Before you change anything, each row says how many agents it reaches, for example **"affects 33 agents"**: every agent that follows that setting instead of having its own. The preset, each single action, and Files & commands say the same, and the count is the same one the question below and the `dorkos` command use.
+
 If some agents are set differently, DorkOS asks before it changes anything. Nothing is checked for you: tick the agents you want to follow the new setting, then choose **Update selected**, or choose **Keep their settings** to leave them as they are.
 
 A **"2 agents differ"** link under a row lists who is set differently. Each has its own **Reset**, which puts that agent back on the setting everyone else has. The Control Center lists every agent set differently too, each with a one-tap **Reset**.
+
+## Why is it set this way?
+
+Next to every state there is a **Why?** link. Click or tap it to see where the state comes from, for example **"Allowed, from the default (Full power)."**, and who last changed it, when, and where: **"Changed by someone on this computer on Sep 23 from a request card."** A locked area says it can never be Allowed. An action that deletes or removes something says it always asks unless you set it on its own. On a phone, the answer opens from the bottom of the screen.
+
+The Control Center's list of agents set differently has the same link on each row, and the **"2 agents differ"** list shows who set each one and when.
 
 ## Set one agent differently
 
@@ -135,7 +145,8 @@ dorkos permissions set --preset balanced        # choose a preset
 dorkos permissions set tasks ask                # one area, for everyone
 dorkos permissions set tasks_delete blocked     # one action, for everyone
 dorkos permissions reset tasks                  # back to the preset
-dorkos permissions history --agent dorkbot      # recent changes
+dorkos permissions history --agent dorkbot      # recent changes, each with its id
+dorkos permissions undo <id>                    # undo one of them
 
 dorkos agent permissions dorkbot                # what one agent may do, and why
 dorkos agent permissions dorkbot set rooms ask  # give it its own setting
@@ -162,6 +173,19 @@ If an agent should never be able to do something, don't rely on its settings alo
 ## The history
 
 Every change DorkOS makes or notices is recorded, and the history is kept for good rather than for 30 days. So is every answer you give on a request card. Settings → Permissions shows all of them; an agent's Permissions page shows the ones that touched it. Each line says what changed, who changed it, and when.
+
+### Undo
+
+Every change in the history has an **Undo**. It puts things back the way they were before that change, and it is recorded as a change of its own, so you can undo an Undo too. A line you undid says **Undone**; if you later undo that Undo, the line is in effect again and offers its Undo again. If something is already back the way it was, Undo says so and changes nothing.
+
+- **If something changed since**, Undo asks before it overwrites it, with the value it would put back: "This has changed since. Set it back to Ask anyway?" Choose **Set it back** to go ahead, or **Cancel** to leave it.
+- **A change that reached several agents** at once (a new default, with the agents you chose to bring along) puts back everything that still matches and tells you what it left alone: "Undid 3 changes. 1 had changed since and was left alone."
+- **Undoing a preset switch** puts back the old preset, the changes you had on top of it, and its Files & commands position, together.
+- **Undo never makes a locked area Allowed**, or anything that always asks. If putting something back would do that, Undo leaves it alone and says so.
+- **The line saying DorkOS didn't apply a new agent's own settings has no Undo.** Those settings were never chosen in DorkOS; set any you want on the agent's page.
+- Undo that would put Files & commands back on **Full autonomy** asks you to confirm what that means first, like every other way to choose it.
+
+An answer on a request card has no Undo, because the action already happened. An **Always allow** answer also records the setting it created, and that line does have an Undo.
 
 With login off, DorkOS cannot tell you apart from any other program running on your computer, so it records a change as made by **"Someone on this computer"** and says why. With login on, it names your account. Changes made when DorkOS upgraded itself are labelled **"Upgrade"**, and edits to an agent's settings file are labelled **"Changed outside DorkOS"**.
 

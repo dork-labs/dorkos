@@ -2347,6 +2347,16 @@
           "alwaysOffered": {
             "type": "boolean"
           },
+          "suggestAlways": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "allowedThisWeek": {
+            "type": "integer",
+            "minimum": 0
+          },
           "blockedRequest": {
             "type": "boolean",
             "enum": [
@@ -8586,6 +8596,9 @@
           "preset": {
             "$ref": "#/components/schemas/PermissionPreset"
           },
+          "presetLastChange": {
+            "$ref": "#/components/schemas/PermissionLastChange"
+          },
           "defaults": {
             "$ref": "#/components/schemas/PermissionOverrides"
           },
@@ -8639,6 +8652,59 @@
           "balanced",
           "full",
           null
+        ]
+      },
+      "PermissionLastChange": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "actorLabel": {
+            "type": "string"
+          },
+          "attribution": {
+            "$ref": "#/components/schemas/PermissionAttribution"
+          },
+          "surface": {
+            "$ref": "#/components/schemas/PermissionSurface"
+          }
+        },
+        "required": [
+          "eventId",
+          "occurredAt",
+          "actorLabel",
+          "attribution",
+          "surface"
+        ]
+      },
+      "PermissionAttribution": {
+        "type": "string",
+        "enum": [
+          "signed-in",
+          "local-trust",
+          "agent-request-approved",
+          "upgrade",
+          "outside"
+        ]
+      },
+      "PermissionSurface": {
+        "type": "string",
+        "enum": [
+          "settings",
+          "agent-page",
+          "control-center",
+          "request-card",
+          "first-run",
+          "agent-request",
+          "api",
+          "cli",
+          "upgrade",
+          "undo",
+          "file-edit"
         ]
       },
       "PermissionOverrides": {
@@ -8720,6 +8786,9 @@
                 },
                 "stop": {
                   "$ref": "#/components/schemas/PermissionStop"
+                },
+                "lastChange": {
+                  "$ref": "#/components/schemas/PermissionLastChange"
                 }
               },
               "required": [
@@ -8728,13 +8797,23 @@
                 "stop"
               ]
             }
+          },
+          "followingAgentIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lastChange": {
+            "$ref": "#/components/schemas/PermissionLastChange"
           }
         },
         "required": [
           "stop",
           "presetStop",
           "runtimes",
-          "exceptions"
+          "exceptions",
+          "followingAgentIds"
         ]
       },
       "PermissionAreaEntry": {
@@ -8788,6 +8867,9 @@
               "source",
               "layer"
             ]
+          },
+          "lastChange": {
+            "$ref": "#/components/schemas/PermissionLastChange"
           }
         },
         "required": [
@@ -8840,6 +8922,9 @@
           },
           "resolved": {
             "$ref": "#/components/schemas/ResolvedPermission"
+          },
+          "lastChange": {
+            "$ref": "#/components/schemas/PermissionLastChange"
           }
         },
         "required": [
@@ -8914,6 +8999,9 @@
           },
           "state": {
             "$ref": "#/components/schemas/PermissionState"
+          },
+          "lastChange": {
+            "$ref": "#/components/schemas/PermissionLastChange"
           }
         },
         "required": [
@@ -8950,22 +9038,6 @@
         "required": [
           "preset",
           "surface"
-        ]
-      },
-      "PermissionSurface": {
-        "type": "string",
-        "enum": [
-          "settings",
-          "agent-page",
-          "control-center",
-          "request-card",
-          "first-run",
-          "agent-request",
-          "api",
-          "cli",
-          "upgrade",
-          "undo",
-          "file-edit"
         ]
       },
       "PatchPermissionDefaultsBody": {
@@ -9221,6 +9293,12 @@
               "undoOf": {
                 "type": "string"
               },
+              "origin": {
+                "type": "string",
+                "enum": [
+                  "arrival-screen"
+                ]
+              },
               "note": {
                 "type": "string",
                 "maxLength": 500
@@ -9256,6 +9334,12 @@
               "surface",
               "attribution"
             ]
+          },
+          "undoable": {
+            "type": "boolean"
+          },
+          "undone": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -9264,18 +9348,384 @@
           "actorLabel",
           "actorDetail",
           "summary",
-          "metadata"
+          "metadata",
+          "undoable",
+          "undone"
         ]
       },
-      "PermissionAttribution": {
+      "UndoPermissionChangeResponse": {
+        "type": "object",
+        "properties": {
+          "changes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "target": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "default"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "agent"
+                          ]
+                        },
+                        "agentId": {
+                          "type": "string"
+                        },
+                        "agentPath": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "agentId",
+                        "agentPath",
+                        "agentName"
+                      ]
+                    }
+                  ]
+                },
+                "key": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "preset"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "area"
+                          ]
+                        },
+                        "area": {
+                          "$ref": "#/components/schemas/PermissionAreaId"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "area"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "action"
+                          ]
+                        },
+                        "action": {
+                          "type": "string"
+                        },
+                        "area": {
+                          "$ref": "#/components/schemas/PermissionAreaId"
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "action",
+                        "area"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "files"
+                          ]
+                        },
+                        "runtime": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "kind"
+                      ]
+                    }
+                  ]
+                },
+                "before": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "after": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "target",
+                "key",
+                "before",
+                "after"
+              ]
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionUndoSkip"
+            }
+          },
+          "suggestionRestored": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "changes",
+          "skipped"
+        ]
+      },
+      "PermissionUndoSkip": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "object",
+            "properties": {
+              "target": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "default"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "agent"
+                        ]
+                      },
+                      "agentId": {
+                        "type": "string"
+                      },
+                      "agentPath": {
+                        "type": "string"
+                      },
+                      "agentName": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "agentId",
+                      "agentPath",
+                      "agentName"
+                    ]
+                  }
+                ]
+              },
+              "key": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "preset"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "area"
+                        ]
+                      },
+                      "area": {
+                        "$ref": "#/components/schemas/PermissionAreaId"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "area"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "action"
+                        ]
+                      },
+                      "action": {
+                        "type": "string"
+                      },
+                      "area": {
+                        "$ref": "#/components/schemas/PermissionAreaId"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "action",
+                      "area"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "files"
+                        ]
+                      },
+                      "runtime": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  }
+                ]
+              },
+              "before": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "after": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "target",
+              "key",
+              "before",
+              "after"
+            ]
+          },
+          "current": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "$ref": "#/components/schemas/PermissionUndoSkipReason"
+          }
+        },
+        "required": [
+          "change",
+          "current",
+          "reason"
+        ]
+      },
+      "PermissionUndoSkipReason": {
         "type": "string",
         "enum": [
-          "signed-in",
-          "local-trust",
-          "agent-request-approved",
-          "upgrade",
-          "outside"
+          "changed-since",
+          "floor",
+          "gone"
         ]
+      },
+      "UndoConflictResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "UNDO_CONFLICT"
+            ]
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionUndoSkip"
+            }
+          }
+        },
+        "required": [
+          "error",
+          "code",
+          "conflicts"
+        ]
+      },
+      "UndoPermissionChangeBody": {
+        "type": "object",
+        "properties": {
+          "force": {
+            "type": "boolean"
+          },
+          "acknowledgeAutonomy": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        }
       },
       "AgentPermissionsResponse": {
         "type": "object",
@@ -9392,6 +9842,9 @@
           },
           "source": {
             "$ref": "#/components/schemas/FilesAndCommandsSource"
+          },
+          "lastChange": {
+            "$ref": "#/components/schemas/PermissionLastChange"
           }
         },
         "required": [
@@ -55503,6 +55956,92 @@
         }
       }
     },
+    "/api/approvals/{id}/dismiss-suggestion": {
+      "post": {
+        "tags": [
+          "Approvals"
+        ],
+        "summary": "Stop suggesting Always allow",
+        "description": "\"Not now\" on a card that suggests Always allow: the suggestion never comes back for this agent and action. Recorded as a `permission.suggestion_dismissed` Activity event. Who may call it is exactly as for grant.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The suggestion is off for this agent and action",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "approvalId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "approvalId"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: an agent cannot decide (`AGENT_CANNOT_DECIDE`), and neither can the caller holding the approval token (`REQUESTER_CANNOT_DECIDE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such approval",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This request never suggests Always allow (`SUGGESTION_NOT_OFFERED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/permissions": {
       "get": {
         "tags": [
@@ -56443,6 +56982,106 @@
           },
           "409": {
             "description": "`template_needs_review` (with `template`), `disclosure_changed`, or a collision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/permissions/history/{eventId}/undo": {
+      "post": {
+        "tags": [
+          "Permissions"
+        ],
+        "summary": "Undo one permission change",
+        "description": "Sets every key a recorded `permission.changed` event moved back to its value before, as one new change recorded with `surface: 'undo'` and `undoOf`. A key whose value changed since is a conflict: a change to one target is refused (409 `UNDO_CONFLICT`, listing each conflict) and writes nothing, while a change that reached several targets sets back the ones that still match and reports the rest in `skipped`. `force` sets every key back. A preset switch goes back as one unit. An Undo never writes Allowed in a locked area, and moving Files & commands to Full autonomy needs the acknowledgement (428). Undoing a \"Not now\" on the Always allow suggestion lets the suggestion come back (`suggestionRestored`). A key already back where the change found it is nothing to do.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "eventId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UndoPermissionChangeBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the Undo changed, and what it left alone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoPermissionChangeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused: an unknown area or action (`UNKNOWN_AREA`, `UNKNOWN_ACTION`), an action with no area (`ACTION_HAS_NO_AREA`), or Allowed on a floor area (`FLOOR_NEVER_ALLOWED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in (`AUTH_REQUIRED`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can change permissions. A caller presenting an agent identity (`AGENT_CANNOT_DECIDE`) or an approval token (`REQUESTER_CANNOT_DECIDE`) is refused in every posture, and with login on a per-user API key is refused (`operator_cookie_required`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such permission change (`UNKNOWN_EVENT`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A key changed since (`UNDO_CONFLICT`, with `conflicts`), or the history line is not a change, such as an answer on a request card (`NOT_UNDOABLE`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoConflictResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "The Undo moves Files & commands to Full autonomy (`AUTONOMY_ACK_REQUIRED`)",
             "content": {
               "application/json": {
                 "schema": {

@@ -665,12 +665,49 @@ testControlRouter.get('/connect-approved', (_req, res) => {
 
 const seedAgentSchema = z
   .object({
-    slot: z.enum(['shared', 'denied-access', 'permission-requester']).default('shared'),
+    slot: z
+      .enum(['shared', 'denied-access', 'permission-requester', 'suggestion-requester'])
+      .default('shared'),
+    /**
+     * A fresh agent in the same slot: a spec whose checks read history that
+     * outlives an attempt (the Always allow suggestion counts a week of
+     * answers, and "Not now" is kept) seeds a new instance per attempt, so a
+     * retry or a rerun on the same server starts clean. Bounded, so the
+     * directory stays inside the slot's own by construction.
+     */
+    instance: z
+      .string()
+      .regex(/^[a-z0-9-]{1,40}$/)
+      .optional(),
   })
   .default({ slot: 'shared' });
 
 /** A fixed, enum-bounded test identity slot. */
 type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
+
+/**
+ * Each slot's name and description. The requesters are agents of their own so
+ * the permission specs' changes, their per-agent request limits and the
+ * Always allow suggestion's count never touch DorkBot or each other.
+ */
+const SEED_AGENT_COPY: Record<SeedAgentSlot, { name: string; description: string }> = {
+  shared: {
+    name: 'E2E Test Agent',
+    description: 'Seeded by test setup — runs on the server default runtime',
+  },
+  'denied-access': {
+    name: 'E2E Denied Agent',
+    description: 'Requests access that the owner denies.',
+  },
+  'permission-requester': {
+    name: 'E2E Permission Requester',
+    description: 'Asks for permissions a person answers on the request card.',
+  },
+  'suggestion-requester': {
+    name: 'E2E Suggestion Requester',
+    description: 'Asks for the same thing until the card suggests Always allow.',
+  },
+};
 
 /**
  * Fixture directory for a seeded test agent, derived from the RESOLVED
@@ -692,8 +729,8 @@ type SeedAgentSlot = z.infer<typeof seedAgentSchema>['slot'];
  * Resolved per request rather than at module load: `app.ts` imports this router
  * statically, which runs before `initBoundary()` does at startup.
  */
-function e2eAgentDir(slot: SeedAgentSlot = 'shared'): string {
-  const suffix = slot === 'shared' ? '' : `-${slot}`;
+function e2eAgentDir(slot: SeedAgentSlot = 'shared', instance?: string): string {
+  const suffix = `${slot === 'shared' ? '' : `-${slot}`}${instance ? `-${instance}` : ''}`;
   return path.join(getBoundary(), 'tmp', `dorkos-e2e-agent${suffix}`);
 }
 
@@ -765,7 +802,7 @@ function fixtureAgentId(agentDir: string): string {
 const FIXTURE_AGENT_RUNTIME = 'codex';
 
 /**
- * Seed a test agent in one of three fixed slots inside the directory boundary —
+ * Seed a test agent in one of four fixed slots inside the directory boundary —
  * on disk AND in the mesh registry.
  *
  * Overwrites any existing manifest so tests always start with a clean agent.
@@ -792,8 +829,9 @@ const FIXTURE_AGENT_RUNTIME = 'codex';
  * uses for a manifest already written by hand: it adopts the id on disk, adds
  * exactly one registry row, and announces nothing.
  *
- * **No cleanup is owed, because none accumulates.** Each of the three slots maps
- * to one fixed directory and stable id. Re-seeding replaces that slot's row
+ * **No cleanup is owed, because little accumulates.** Each of the four slots maps
+ * to one fixed directory and stable id; an `instance` adds one agent per
+ * attempt, inside the leg's throwaway data directory. Re-seeding replaces that slot's row
  * rather than stacking rows. `POST /api/test/reset` does not touch mesh, and
  * does not need to.
  *
@@ -815,25 +853,12 @@ testControlRouter.post('/seed-agent', async (req, res) => {
         `this server does not register.`,
     });
   }
-  const { slot } = input.data;
-  const agentDir = e2eAgentDir(slot);
+  const { slot, instance } = input.data;
+  const agentDir = e2eAgentDir(slot, instance);
   const fixtureId = fixtureAgentId(agentDir);
-  const deniedAccess = slot === 'denied-access';
-  // Its own agent, so the request-card spec's permission changes and its
-  // per-agent request limits never touch DorkBot, which other specs drive.
-  const requester = slot === 'permission-requester';
   const manifest: AgentManifest = {
     id: fixtureId,
-    name: deniedAccess
-      ? 'E2E Denied Agent'
-      : requester
-        ? 'E2E Permission Requester'
-        : 'E2E Test Agent',
-    description: deniedAccess
-      ? 'Requests access that the owner denies.'
-      : requester
-        ? 'Asks for permissions a person answers on the request card.'
-        : 'Seeded by test setup — runs on the server default runtime',
+    ...SEED_AGENT_COPY[slot],
     runtime: FIXTURE_AGENT_RUNTIME,
     capabilities: [],
     // A fixture agent wears a face for the same reason a real one does: no

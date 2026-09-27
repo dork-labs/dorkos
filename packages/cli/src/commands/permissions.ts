@@ -9,6 +9,7 @@
  * - `permissions set --preset <p>`     → `PUT /api/permissions/preset`
  * - `permissions set|reset <target>`   → `PATCH /api/permissions/defaults`
  * - `permissions history`              → `GET /api/permissions/history`
+ * - `permissions undo <id> [--force]`  → `POST /api/permissions/history/:id/undo`
  * - `agent permissions <agent> …`      → `GET|PATCH /api/agents/:id/permissions`
  *
  * Nothing here writes config or an agent's manifest itself: every write carries
@@ -28,8 +29,14 @@ import {
   PERMISSION_PRESETS,
   PERMISSION_STATES,
   PermissionStopSchema,
+  countAgentsFollowing,
+  describeAffectedAgents,
   type AgentPermissionsResponse,
+  type PermissionAreaId,
+  type PermissionDefaultKey,
   type PermissionHistoryResponse,
+  type PermissionUndoSkip,
+  type UndoPermissionChangeResponse,
   type PermissionPreset,
   type PermissionSource,
   type PermissionsResponse,
@@ -50,13 +57,15 @@ Subcommands:
   set --preset <preset>             Choose a preset: careful, balanced or full
   set <area|action> <state>         Change one area or action for every agent
   reset <area|action>               Put an area or action back to the preset
-  history [--agent <agent>]         Show recent permission changes
+  history [--agent <agent>]         Show recent permission changes, with their ids
+  undo <id> [--force]               Undo one change from the history
 
 States: blocked, ask, allowed. Safety limits, Permissions and Reach & secrets
 are never allowed: they can only be blocked or ask.
 
 Options:
       --limit <n>   How many history rows to show (default 50, max 100)
+      --force       Undo even what changed since the recorded change
       --json        Print raw JSON instead of a table
 
 Examples:
@@ -66,6 +75,7 @@ Examples:
   dorkos permissions set tasks_delete blocked
   dorkos permissions reset rooms
   dorkos permissions history --agent dorkbot --limit 20
+  dorkos permissions undo 01K5ABCDEF0123456789ABCDEF
 
 One agent's own settings: dorkos agent permissions <agent> --help`;
 
@@ -330,9 +340,17 @@ async function runPermissionsList(json: boolean): Promise<number> {
   }
 }
 
-/** Report a default-layer write, and who kept their own setting. */
-function reportDefaultWrite(what: string, overview: PermissionsResponse): void {
+/** Report a default-layer write, what it reaches, and who kept their own setting. */
+function reportDefaultWrite(
+  what: string,
+  overview: PermissionsResponse,
+  key: PermissionDefaultKey | undefined
+): void {
   console.log(what);
+  if (key) {
+    const reach = describeAffectedAgents(countAgentsFollowing(overview, key));
+    console.log(`${reach.charAt(0).toUpperCase()}${reach.slice(1)}.`);
+  }
   const differing = agentsDiffering(overview);
   if (differing > 0) {
     console.log(
@@ -378,7 +396,8 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
       else
         reportDefaultWrite(
           `Preset is now ${PRESET_LABEL[preset as PermissionPreset]}.`,
-          result.permissions
+          result.permissions,
+          { kind: 'preset' }
         );
       return 0;
     } catch (err) {
@@ -408,7 +427,8 @@ async function runPermissionsWrite(rawArgs: string[], reset: boolean): Promise<n
         state === null
           ? `${target.id} is back to the preset.`
           : `${target.id} is now ${STATE_LABEL[state]} for every agent.`,
-        result.permissions
+        result.permissions,
+        defaultKeyOf(target, result.permissions)
       );
     return 0;
   } catch (err) {
@@ -460,14 +480,117 @@ async function runPermissionsHistory(rawArgs: string[]): Promise<number> {
       return 0;
     }
     const rows = history.items.map((item) => [
+      item.id,
       item.occurredAt,
       item.actorDetail ? `${item.actorLabel} (${item.actorDetail})` : item.actorLabel,
       item.summary,
     ]);
-    console.log(renderTable(['WHEN', 'WHO', 'WHAT'], rows));
+    console.log(renderTable(['ID', 'WHEN', 'WHO', 'WHAT'], rows));
+    console.log('');
+    console.log('Undo a change with `dorkos permissions undo <id>`.');
     return 0;
   } catch (err) {
     explain(err);
+    return 1;
+  }
+}
+
+/**
+ * The default a set or reset changed, for the "Affects N agents." line, or
+ * `undefined` for an action the server no longer lists.
+ */
+function defaultKeyOf(
+  target: Target,
+  overview: PermissionsResponse
+): PermissionDefaultKey | undefined {
+  if (target.kind === 'area') return { kind: 'area', area: target.id as PermissionAreaId };
+  if (target.kind !== 'action') return undefined;
+  const area = overview.areas.find((a) => a.actions.some((action) => action.id === target.id));
+  return area ? { kind: 'action', action: target.id, area: area.id } : undefined;
+}
+
+/**
+ * A recorded value as the undo report says it, read by what the key is: `ask`
+ * is the state Ask for an area and the stop Ask first for Files & commands.
+ */
+function valueText(value: string | null, key: PermissionUndoSkip['change']['key']): string {
+  if (value === null) return 'not set';
+  const labels: Record<string, string> =
+    key.kind === 'files' ? STOP_LABEL : key.kind === 'preset' ? PRESET_LABEL : STATE_LABEL;
+  return labels[value] ?? value;
+}
+
+/** One skipped or conflicting change, as a table row. */
+function skipRow(skip: PermissionUndoSkip): string[] {
+  const { change } = skip;
+  const who = change.target.kind === 'agent' ? change.target.agentName : 'Everyone';
+  const what =
+    change.key.kind === 'area'
+      ? change.key.area
+      : change.key.kind === 'action'
+        ? change.key.action
+        : change.key.kind === 'files'
+          ? `files${change.key.runtime ? ` (${change.key.runtime})` : ''}`
+          : 'preset';
+  const why =
+    skip.reason === 'changed-since'
+      ? `changed since: now ${valueText(skip.current, change.key)}`
+      : skip.reason === 'floor'
+        ? 'would set something that always asks to Allowed'
+        : 'no longer exists';
+  return [who, what, valueText(change.before, change.key), why];
+}
+
+/**
+ * Implements `dorkos permissions undo <id> [--force]`.
+ *
+ * @param rawArgs - Argv after `undo`.
+ * @returns The intended process exit code.
+ */
+async function runPermissionsUndo(rawArgs: string[]): Promise<number> {
+  const { values, positionals } = parseArgs({
+    args: rawArgs,
+    options: {
+      force: { type: 'boolean', default: false },
+      json: { type: 'boolean', default: false },
+    },
+    allowPositionals: true,
+    strict: true,
+  });
+  const eventId = positionals[0];
+  if (!eventId) {
+    throw new Error(
+      'Usage: dorkos permissions undo <id> [--force]. Find the id with `dorkos permissions history`.'
+    );
+  }
+  try {
+    const result = await apiCall<UndoPermissionChangeResponse>(
+      'POST',
+      `/api/permissions/history/${encodeURIComponent(eventId)}/undo`,
+      values.force ? { force: true } : {}
+    );
+    if (values.json) {
+      printJson(result);
+      return 0;
+    }
+    const done = result.changes.length;
+    console.log(
+      done === 0 ? 'Nothing needed to change.' : `Undid ${done} change${done === 1 ? '' : 's'}.`
+    );
+    if (result.skipped.length > 0) {
+      console.log('Left alone:');
+      console.log(renderTable(['FOR', 'SETTING', 'WOULD SET', 'WHY'], result.skipped.map(skipRow)));
+    }
+    return 0;
+  } catch (err) {
+    explain(err);
+    if (err instanceof ApiError && err.body.code === 'UNDO_CONFLICT') {
+      const conflicts = (err.body as { conflicts?: PermissionUndoSkip[] }).conflicts ?? [];
+      if (conflicts.length > 0) {
+        console.error(renderTable(['FOR', 'SETTING', 'WOULD SET', 'WHY'], conflicts.map(skipRow)));
+      }
+      console.error(`Run \`dorkos permissions undo ${eventId} --force\` to set it back anyway.`);
+    }
     return 1;
   }
 }
@@ -492,6 +615,7 @@ export async function runPermissionsDispatcher(rawArgs: string[]): Promise<numbe
     if (subcommand === 'set') return await runPermissionsWrite(rawArgs.slice(1), false);
     if (subcommand === 'reset') return await runPermissionsWrite(rawArgs.slice(1), true);
     if (subcommand === 'history') return await runPermissionsHistory(rawArgs.slice(1));
+    if (subcommand === 'undo') return await runPermissionsUndo(rawArgs.slice(1));
   } catch (err) {
     printError(err);
     return 1;
