@@ -14,6 +14,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { Session } from '@dorkos/shared/types';
+import { seedAccountUsage } from '@/layers/shared/model';
 // Same-slice imports via sibling modules (not the entities/session barrel) to
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from './query-keys';
@@ -47,12 +48,16 @@ export function sessionListQueryOptions(deps: SessionListQueryDeps, cwd: string 
       // detail-cache sync needs that lower bound to tell an answer that predates
       // a settings PATCH from one that supersedes it (DOR-496).
       const observedAt = Date.now();
-      const { sessions } = await deps.transport.listSessions(cwd ?? undefined);
+      const { sessions, accountUsage } = await deps.transport.listSessions(cwd ?? undefined);
       // These rows are the same answer the detail endpoint gives, so any detail
       // entry they cover is refreshed too. A refetch triggered from elsewhere —
       // a Claude account switch, a rename from a profile — would otherwise leave a
       // frozen detail entry outranking a list row that had just been corrected.
       syncSessionDetailCache(deps.queryClient, sessions, observedAt);
+      // The envelope also carries the usage of every account these sessions run
+      // on. It is already here, so it seeds the per-runtime usage cache and no
+      // row has to ask for its own account's usage (spec `claude-account-ui` §6.0).
+      if (accountUsage) seedAccountUsage(deps.queryClient, accountUsage);
       return sessions;
     },
     // **Dropped wifi is not a reason to stop asking localhost.** TanStack's

@@ -297,6 +297,13 @@ vi.mock('@/layers/entities/community', async (importOriginal) => ({
   useCommunityConnectionsSync: () => {},
 }));
 
+// Account usage updates ride the same stream too; the rest of the shared model
+// stays real.
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useAccountUsageSync: () => {},
+}));
+
 vi.mock('react-resizable-panels', () => ({
   Panel: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   PanelGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,

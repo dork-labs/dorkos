@@ -179,6 +179,7 @@ import type {
   HarnessStatusResponse,
   HarnessSyncResponse,
 } from './harness-schemas.js';
+import type { AccountUsage, ContinueOptionsResponse, LimitHistoryEntry } from './account-usage.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
@@ -3307,4 +3308,67 @@ export interface Transport
    *   source to look in.
    */
   search(query: SearchQuery): Promise<SearchResponse>;
+
+  // --- Account usage and carrying a limited session over (spec `claude-account-ui` §6.0) ---
+
+  /**
+   * Read how much of each of a runtime's accounts is used
+   * (`GET /api/runtimes/:runtime/accounts/usage`). Claude Code answers one row
+   * per account; Codex and OpenCode answer their implicit `default` row. Each
+   * row carries its `runtime`.
+   *
+   * @param runtime - The runtime slug: `claude-code`, `codex` or `opencode`.
+   */
+  getAccountUsage(runtime: string): Promise<{ accounts: AccountUsage[] }>;
+
+  /**
+   * Read where a session whose account ran out can carry over to
+   * (`GET /api/sessions/:id/continue-options`): the limit's plan and the
+   * server's ranking of the other accounts. The client displays the ranking
+   * and decides nothing from it.
+   *
+   * @param sessionId - The limited session.
+   */
+  getContinueOptions(sessionId: string): Promise<ContinueOptionsResponse>;
+
+  /**
+   * Carry a limited session over to another account (`POST
+   * /api/sessions/:id/continue`, answered `202`). The server names the new
+   * session when it already exists. A refusal (such as a `409` while a turn is
+   * running) rejects with the server's `message` and the HTTP `status`, which
+   * the picker shows as is.
+   *
+   * @param sessionId - The limited session.
+   * @param body - The account to move to, and optionally a model or another runtime.
+   */
+  continueSession(
+    sessionId: string,
+    body: { account?: string; model?: string; runtime?: string }
+  ): Promise<{ sessionId?: string }>;
+
+  /**
+   * Choose to wait for a limited session's account to reset (`POST
+   * /api/sessions/:id/wait`). Rejects with the server's `message` and `status`.
+   *
+   * @param sessionId - The limited session.
+   * @param body - Whether to resume on its own once the account resets.
+   */
+  waitForReset(sessionId: string, body: { autoResume?: boolean }): Promise<void>;
+
+  /**
+   * Stop a scheduled automatic carry-over (`POST
+   * /api/sessions/:id/continue/cancel`). Rejects with the server's `message`
+   * and `status`.
+   *
+   * @param sessionId - The limited session.
+   */
+  cancelAutoContinue(sessionId: string): Promise<void>;
+
+  /**
+   * Read a session's resolved usage-limit episodes, oldest first (`GET
+   * /api/sessions/:id/limit-history`), for the transcript marker.
+   *
+   * @param sessionId - The session.
+   */
+  getLimitHistory(sessionId: string): Promise<{ entries: LimitHistoryEntry[] }>;
 }

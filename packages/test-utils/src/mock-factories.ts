@@ -1219,6 +1219,18 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // default that omitted it would let a component read `undefined` in every
     // test and crash only in production.
     search: vi.fn().mockResolvedValue({ results: [], warnings: [] }),
+    // Account usage and carrying a limited session over (spec `claude-account-ui`
+    // §6.0). Empty answers, so a component under test shows no account data
+    // unless a test supplies some, and the writes succeed without effect.
+    getAccountUsage: vi.fn().mockResolvedValue({ accounts: [] }),
+    getContinueOptions: vi.fn().mockResolvedValue({
+      plan: { mode: 'ask' },
+      ranking: { accounts: [], recommendedId: null },
+    }),
+    continueSession: vi.fn().mockResolvedValue({ sessionId: 'session-continued' }),
+    waitForReset: vi.fn().mockResolvedValue(undefined),
+    cancelAutoContinue: vi.fn().mockResolvedValue(undefined),
+    getLimitHistory: vi.fn().mockResolvedValue({ entries: [] }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.

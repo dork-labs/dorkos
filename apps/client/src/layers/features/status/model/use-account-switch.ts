@@ -17,7 +17,7 @@
  */
 import { useEffect } from 'react';
 import { claudeAccountName, type ClaudeAccountRef } from '@/layers/shared/lib';
-import { useAppStore, useClaudeAccounts } from '@/layers/shared/model';
+import { useAppStore, useClaudeAccounts, type ClaudeAccountEntry } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
 
 /**
@@ -28,7 +28,7 @@ import { useCurrentAgent } from '@/layers/entities/agent';
 export const DEFAULT_ACCOUNT_VALUE = '__default__';
 
 /** One account the picker can offer: a registered row, keyed by its registry id. */
-export interface SelectableAccount extends ClaudeAccountRef {
+export interface SelectableAccount extends ClaudeAccountEntry {
   /** The registry id the launch hint carries. Never null — see {@link AccountSwitch.accounts}. */
   id: string;
 }

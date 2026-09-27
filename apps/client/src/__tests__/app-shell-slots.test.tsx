@@ -259,6 +259,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     // rows. Same reason, same stub: this suite is about where the marker is
     // mounted, not about what arrives over the wire.
     useEventSubscription: () => {},
+    // Reads the stream through its own module, which this stub does not reach.
+    useAccountUsageSync: () => {},
     useIsMobile: () => mockIsMobile,
   };
 });
