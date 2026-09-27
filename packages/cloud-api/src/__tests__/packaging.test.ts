@@ -43,6 +43,7 @@ const manifest = JSON.parse(readFileSync(path.join(packageRoot, 'package.json'),
   peerDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
 };
 
 /** Every `.ts` file under `src/`, excluding tests. */
@@ -112,6 +113,19 @@ describe('packaging', () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it('publishes from an empty dist, but never empties dist on an ordinary build', () => {
+    // Publish: tsc never removes an output whose source is gone and `files`
+    // ships all of dist/, so a stale file would ride along (it did, in 0.87.0).
+    expect(manifest.scripts?.prepublishOnly).toBe('pnpm run clean && pnpm run build');
+    // Build: several turbo processes build this package at once (every e2e leg
+    // runs its own `turbo run build`) while a Vite dev server is already
+    // resolving imports from dist/. A build that deletes dist/ first leaves the
+    // package unresolvable for a moment; Vite's dependency scan fails on it,
+    // discovers dependencies late and re-optimizes under a loaded page, which
+    // ends with two copies of React and stalled the merge queue's browser suite.
+    expect(manifest.scripts?.build).toBe('tsc -p tsconfig.build.json');
   });
 
   it('resolves to no workspace link in the lockfile', () => {
