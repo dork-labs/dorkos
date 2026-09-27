@@ -2,7 +2,7 @@
  * Schedules move with a Claude account the '0.87.0' migration renamed, and
  * keep their approval (spec `claude-account-fleet` §6 R).
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -203,5 +203,46 @@ describe('renameScheduleAccount', () => {
     expect((await fs.readdir(path.dirname(filePath))).filter((n) => n.endsWith('.tmp'))).toEqual(
       []
     );
+  });
+
+  it('a disk that fills mid-write leaves the file untouched and no temp file behind', async () => {
+    await writeSchedule('default');
+    const id = store.fileSync.upsertFromFile(definition('default')).id;
+    const before = await fs.readFile(filePath, 'utf8');
+    const diskFull = () => Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' });
+
+    // Every way of writing gets half its bytes down, then the disk is full.
+    const realOpen = fs.open.bind(fs);
+    vi.spyOn(fs, 'open').mockImplementation(async (...args: Parameters<typeof fs.open>) => {
+      const handle = await realOpen(...args);
+      const realWrite = handle.writeFile.bind(handle);
+      handle.writeFile = (async (data: string) => {
+        await realWrite(data.slice(0, Math.floor(data.length / 2)));
+        throw diskFull();
+      }) as typeof handle.writeFile;
+      return handle;
+    });
+    const realWriteFile = fs.writeFile.bind(fs);
+    vi.spyOn(fs, 'writeFile').mockImplementation((async (file: string, data: string) => {
+      await realWriteFile(file, String(data).slice(0, Math.floor(String(data).length / 2)));
+      throw diskFull();
+    }) as typeof fs.writeFile);
+
+    await expect(renameScheduleAccount(db, 'default', 'default-2', notOwned)).rejects.toThrow(
+      /ENOSPC/
+    );
+    vi.restoreAllMocks();
+
+    expect(await fs.readFile(filePath, 'utf8')).toBe(before);
+    expect((await fs.readdir(path.dirname(filePath))).filter((n) => n.endsWith('.tmp'))).toEqual(
+      []
+    );
+    // The row moved; the file is finished by the next run.
+    expect(row(id).account).toBe('default-2');
+    expect(await renameScheduleAccount(db, 'default', 'default-2', notOwned)).toEqual({
+      rows: 0,
+      files: 1,
+    });
+    expect(await fileAccount()).toBe('default-2');
   });
 });

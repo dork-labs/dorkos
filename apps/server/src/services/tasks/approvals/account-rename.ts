@@ -135,15 +135,17 @@ async function replaceFileAtomically(filePath: string, content: string): Promise
   );
   const handle = await fs.open(tmp, 'wx', mode & 0o7777);
   try {
-    await handle.writeFile(content);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  try {
+    try {
+      await handle.writeFile(content);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await fs.chmod(tmp, mode & 0o7777);
     await fs.rename(tmp, target);
   } catch (err) {
+    // Any failure (a full disk mid-write included) leaves the person's file as
+    // it was and no temp file behind.
     await fs.rm(tmp, { force: true });
     throw err;
   }
