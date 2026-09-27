@@ -1,7 +1,7 @@
 ---
 id: 260926-172251
 title: An agent's identity comes from its home, and its desk is its home or a private copy of it
-status: proposed
+status: accepted
 created: 2026-09-26
 spec: agent-home-desk
 superseded-by: null
@@ -12,7 +12,7 @@ amends: [260726-022251, 260829-115621]
 
 ## Status
 
-Proposed (spec `agent-home-desk`, DOR-2355). It amends two accepted records, which stay `accepted`:
+Accepted (spec `agent-home-desk`, DOR-2355; shipped by DOR-2410, #2197). It amends two accepted records, which stay `accepted`:
 
 - **260726-022251** — "identity comes from the session's working directory" is narrowed. The working
   directory stays the lookup key, but it is resolved to a registered home before anything is read.

@@ -1,0 +1,75 @@
+---
+title: DorkOS 0.88.0
+description: Connections becomes one simple list of apps, and you can connect an app right in the chat when an agent asks for it.
+date: 2026-09-27
+author: DorkOS Team
+category: release
+tags: [release, connections, rooms, usage]
+---
+
+DorkOS 0.88.0 turns the Connections page into one simple list of apps, and lets you connect an app right in the chat when an agent asks for it. Agents in rooms now work from their own folder, and a session tells you when a Claude account runs out of usage.
+
+## Highlights
+
+### Connect an app from the chat
+
+When an agent needs an app you have not connected, a card appears right where it asked. Connect it, let that agent use it, and the agent carries on with your request.
+
+### Connections is one list
+
+Every app you connected sits in one list, with the one thing to do next. Click an app to see who can use it and what agents did with it lately.
+
+### Agents in rooms keep their own home
+
+In a room with its own files, an agent now works from its own folder, with its own personality, safety rules and memory. It still reaches the room's files, and it can no longer run inside another agent's folder.
+
+### Know when a Claude account runs out
+
+When an account hits its usage limit, the session shows Claude's own message instead of stopping silently. You get one notification that says when the account comes back.
+
+## All Changes
+
+> DorkOS 0.88.0 turns the Connections page into one simple list of apps, and lets you connect an app right in the chat when an agent asks for it. Agents in rooms now work from their own folder, a session tells you when a Claude account runs out of usage, and linking to a DorkOS account shows how long the code has left.
+
+### Added
+
+- When an agent asks for an app you have not connected, a card now shows up right in the chat where it asked. Connect the app and let that one agent use it, without leaving the chat. The agent then picks up your original request by itself (DOR-2415)
+- The card shows why the agent asked and what it wants to do, and starts on the access that covers it. If you give it less, the card says what it will not be able to do, and so does the agent's answer (DOR-2415)
+- If the app is already connected, the card only asks whether this agent may use it, and says so when every agent already can. With two accounts, it asks which one first. A paused or signed-out account can be fixed right from the card. Choosing "Not now" tells the agent no (DOR-2415)
+- The same card appears in a room when one of its agents asks, and only you see it. If you're talking to an agent over Telegram or Slack, the request waits for you in DorkOS: in the chat where it asked, or under Needs you on Connections. DorkOS never sends a link into those chats. If a chat has the app turned off, the card says so. A request that also asks to hear about new activity opens the full review on Connections (DOR-2415)
+- Answering a request in one window now updates every other open window, including the Needs you list on Connections (DOR-2415)
+- You get one notification when a Claude account runs out of usage, however many sessions were using that account. It says when the account comes back, if Claude said (DOR-2382)
+- The pricing page now shows the DorkOS Cloud plans side by side, with what each one costs and includes, and the price of every model is one click away. DorkOS itself stays free and open source (DOR-2028)
+- **Every agent** now works for apps you connect through your DorkOS account, not only apps you connect with your own key. Choose it in the app's **Who can use it?** card and every agent you have, including agents you add later, can use exactly the actions you picked. New or changed actions stay off until you review them, and **Stop sharing with every agent** takes access away on the next call, even while DorkOS Cloud can't be reached (DOR-2439)
+- `@dork-labs/cloud-api`, the open contract for talking to DorkOS Cloud, gets a new version for developers who build on it. It now says how a machine names each batch of activity it reports: an `Idempotency-Key` header, one per batch, so sending the same batch again is counted only once. It also says who a hosted connection grant covers: one agent, or every agent of the connection's owner (DOR-2452, DOR-2439)
+
+### Changed
+
+- The Connections page is now one simple list of apps. **Yours** shows everything you connected, one row each, with what state it is in and the one thing to do next: an app that signed out turns amber and moves to the top with **Sign in again**, a paused one is greyed with **Resume**. **All apps** shows everything else you can connect, sorted by kind, with the popular apps always there. Chat apps such as Telegram and Slack sit in the same list with a small **Chat** tag (DOR-2418)
+- Click a connected app to open its side panel: who can use it, what agents did with it lately, and a few one-click prompts that open a chat with the message already typed. Its name, notifications, exact actions, pause and disconnect are under **More**. A chat app's panel shows who answers it and anyone waiting for an answer (DOR-2418)
+- When an agent asks to use an app, or a program asks to change one, it shows in a small **Needs you** strip at the top of the page, and only then (DOR-2418)
+- Settings › Connections marks **Used for new apps** on the way DorkOS connects new apps through, when you have more than one, and keeps the chat app message history under a fold (DOR-2418)
+- In a room that has files of its own, an agent now works from its own folder instead of from its copy of the room's files. It keeps its own personality, safety rules and memory in that room, the same as everywhere else, and it reaches the room's files by their full paths (DOR-2410)
+- An agent in a room about its own project can now change its own code in the same conversation where it works on the room's files. Its instructions tell it to do that in a private copy of its own project, so it doesn't edit the folder other conversations with it may be using at the same time (DOR-2410)
+- Picking up a room conversation in the app puts the agent in its own folder too, with the same access to the room's files it has in the room (DOR-2410)
+- Conversations agents had in rooms with files before this update stay in their lists. Claude Code and Codex pick them up where they left off. An OpenCode agent can't move an old conversation to its own folder, so its next turn in that room starts a fresh conversation there. The old one stays in its list to read, and picking it up in the app says so and points you back to the room (DOR-2410)
+- Cloud usage in Settings › Access now shows in whole credits. Included credits and credits you bought show their money value beside them, what you have left is never rounded up, and anything under one credit shows as `<1` instead of zero. The upgrade suggestion shows your last 30 days in credits with their money value, and the plan price and the difference in money, so the sum adds up (DOR-2425)
+- If your DorkOS account doesn't say what unit its figures are in, the panel says it couldn't read them rather than showing a number that might be wrong (DOR-2425)
+- While you link this instance to a DorkOS account, Settings › Access now shows how long the code has left, counting down beside the waiting line and switching to "less than a minute" near the end. Screen readers hear the time when the code appears and again at five minutes and at one, not every second (DOR-2188)
+- The button that opens the approval page now says **Open the approval page** (DOR-2188)
+
+### Fixed
+
+- An app you connected can be given to an agent straight away, including when an agent asks for it; it no longer waits on a review nobody could do. Apps you connected earlier and never shared are settled the same way when you update. After you change how DorkOS reaches your apps, only apps someone already shares ask for a review (DOR-2418)
+- When a Claude account runs out of usage, the session no longer stops without a word. It now shows Claude's own message, such as "You've hit your weekly limit", and it remembers that the account is out until the limit resets, even after DorkOS restarts. The limit clears when you send the session its next message (DOR-2382)
+- If the approval page cannot be opened from the app, the panel now says so and tells you to copy the code and open the page in your browser, instead of the button doing nothing (DOR-2188)
+
+### Security
+
+- An agent can only change the parts of a room's shared history that saving its own work needs. Settings and scripts that run for everyone in the room stay out of its reach, and DorkOS no longer follows a pointer an agent could rewrite when it checks an agent's copy (DOR-2410)
+- A task, a chat connection, a message from another agent or a room turn for one agent can no longer run inside another agent's folder or inside a room's files. It stops with a message saying why instead (DOR-2410)
+- A message from another agent can no longer choose the folder a turn runs in, which agent it runs as, or how much it may do without asking. The receiving agent answers from its own folder with its own settings. Only people, through a chat connection, the app or the API, and DorkOS itself set those (DOR-2446)
+
+### Note for people upgrading
+
+- If an agent is set to use no folder of its own, its tasks and chat messages run in your default folder. In a DorkOS development checkout that folder is the `dorkos` agent's own folder, so those tasks now stop with a message. Set a default folder that belongs to no agent, or give the agent a folder of its own (DOR-2410)

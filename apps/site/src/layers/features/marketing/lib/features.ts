@@ -1164,8 +1164,8 @@ export const features: Feature[] = [
     status: 'beta',
     benefits: [
       'Connect Gmail, Slack, or another service with one sign-in',
+      'Connect an app right in the chat, the moment an agent asks for it',
       'See where your sign-in lives before you connect',
-      'Add a second account for the same service, each with its own label',
       'Choose the exact actions each agent may use, account by account',
       'Pause or disconnect an account any time, from one screen',
     ],

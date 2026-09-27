@@ -917,10 +917,9 @@ A room-triggered reply runs through the same turn machinery a normal session use
 keeps one session per room it's in, bound the first time it replies there, which is what lets its
 context carry across messages in that room instead of starting fresh each time.
 
-Where that turn runs is decided once, at dispatch, on a fixed order of preference: an explicit
-`cwd` on the request wins; then the agent's own worktree in this room, if the room has files; then
-the agent's own project directory. A room without files never moves an agent out of its own
-project.
+Where that turn runs is fixed: it always stands in the agent's own project — its home. When the
+room has files, DorkOS also grants the turn read access to the room's shared copy and write access
+to its own copy inside it, so the agent never has to leave home to work with them.
 
 ### Giving a room files
 
