@@ -7,10 +7,13 @@
  * `--status-warning-fg` used to equal `--status-warning-dot` (`38 92% 40%`).
  * `-dot` is deliberately tuned for the *non-text* 1.4.11 bar (3:1) a 6px mark
  * needs, not the 4.5:1 bar running text needs — so reusing it as `-fg` left
- * warning text under AA wherever it painted `--muted` (4.46:1) or the amber
- * `-bg` wash (4.35:1). The light token was darkened to `38 92% 31%`; this
- * guard is what keeps it there. `-dot` itself is unchanged and is checked
- * only against the 3:1 non-text bar it was designed for.
+ * warning text under AA everywhere it painted: 3.29:1 on white, 3.10:1 on the
+ * amber `-bg` wash, and as low as 2.75:1 on `--secondary`. The light token
+ * was darkened to `38 92% 30%` — `--secondary` (92% lightness) is the
+ * darkest common ground it is actually painted on, so the tightest ratio
+ * (4.51:1); every lighter ground clears with more room. This guard is what
+ * keeps it there. `-dot` itself is unchanged and is checked only against the
+ * 3:1 non-text bar it was designed for.
  *
  * Same method as `status-success-contrast.test.ts`: contrast needs layout,
  * and jsdom has none, so this owns the token math — read the shipped value,
@@ -135,19 +138,19 @@ describe('status-warning contrast', () => {
     expect(hslToRgb(0, 0, 100)).toEqual([255, 255, 255]);
     expect(hslToRgb(0, 0, 0)).toEqual([0, 0, 0]);
     // An amber whose R channel dominates — proves hue is honoured, not ignored.
-    const [r, g, b] = hslToRgb(38, 92, 32);
+    const [r, g, b] = hslToRgb(38, 92, 30);
     expect(r).toBeGreaterThan(g);
     expect(g).toBeGreaterThan(b);
   });
 
-  it('discriminates: the OLD 40% amber FAILS as text on --muted, the shipped 31% PASSES', () => {
-    const muted = hslToRgb(0, 0, 96); // --muted (light) — the tightest ground in practice
-    // The bug this change fixes: reusing `-dot`'s 40% as `-fg` measured 4.46:1
-    // on --muted — under AA. If the math cannot see that, no pass below is
-    // trustworthy.
-    expect(contrast(hslToRgb(38, 92, 40), muted)).toBeLessThan(AA);
+  it('discriminates: the OLD 40% amber FAILS as text on --secondary, the shipped 30% PASSES', () => {
+    const secondary = hslToRgb(0, 0, 92); // --secondary (light) — the darkest common ground in practice
+    // The bug this change fixes: reusing `-dot`'s 40% as `-fg` measured 2.75:1
+    // on --secondary — well under AA. If the math cannot see that, no pass
+    // below is trustworthy.
+    expect(contrast(hslToRgb(38, 92, 40), secondary)).toBeLessThan(AA);
     // And the shipped value must clear it — read from the file, not hard-coded.
-    expect(contrast(lightHsl('--status-warning-fg'), muted)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(lightHsl('--status-warning-fg'), secondary)).toBeGreaterThanOrEqual(AA);
   });
 
   // --- The assertions those checks earn, against the real shipped tokens ---
@@ -158,6 +161,8 @@ describe('status-warning contrast', () => {
       'app (--background)': lightHsl('--background'),
       'card (--card)': lightHsl('--card'),
       'muted (--muted)': lightHsl('--muted'),
+      'accent (--accent)': lightHsl('--accent'),
+      'secondary (--secondary)': lightHsl('--secondary'),
       "warning's own wash (--status-warning-bg)": lightHsl('--status-warning-bg'),
     };
     for (const [name, ground] of Object.entries(grounds)) {

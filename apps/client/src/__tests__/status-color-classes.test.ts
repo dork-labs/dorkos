@@ -15,14 +15,25 @@
  * day a consumer legitimately defines `--color-success` (as `apps/site`
  * already does, in its own `globals.css`, which is why it is not one of the
  * consumers below), this test stops flagging it there without an edit.
+ *
+ * Comments are stripped before matching (a TSDoc block or `//` note is
+ * allowed to name `text-warning` in prose, the way this file's own header
+ * just did, without tripping the guard).
+ *
+ * Lives beside `status-warning-contrast.test.ts` in `apps/client`, not under
+ * `scripts/`: `scripts/__tests__/*` only runs from the scoped `harness` job
+ * in `scripts-test.yml`, which a client-only PR never triggers and the merge
+ * queue never runs — a guard that lives there never actually gates anything.
+ * `apps/client`'s own `test` task runs on every PR and in the merge queue, so
+ * this file scans `packages/ui/src` and `apps/design-system/src` by relative
+ * path from here rather than living in either of them.
  */
 import { readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url)).replace(/\/__tests__$/, '');
-const REPO_ROOT = join(SCRIPTS_DIR, '..');
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
 /** Status/severity color names that must always ride a `status-` prefixed token. */
 const BARE_STATUS_NAMES = ['warning', 'success', 'danger', 'error', 'info'] as const;
@@ -76,6 +87,16 @@ function definedColorNames(cssPath: string): Set<string> {
   return names;
 }
 
+/**
+ * Blank out `/* ... *\/` and `// ...` comments, preserving every newline and
+ * the length of every other line, so a class name mentioned only in prose
+ * cannot match and line numbers in a reported finding stay accurate.
+ */
+function stripComments(source: string): string {
+  const noBlocks = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+  return noBlocks.replace(/\/\/[^\n]*/g, (m) => ' '.repeat(m.length));
+}
+
 /** Every `.ts`/`.tsx` file under `dir`, recursively. */
 function collectSourceFiles(dir: string): string[] {
   const files: string[] = [];
@@ -119,7 +140,7 @@ function findUndefinedStatusClasses(consumer: Consumer): Finding[] {
 
   const findings: Finding[] = [];
   for (const file of collectSourceFiles(join(REPO_ROOT, consumer.srcDir))) {
-    const contents = readFileSync(file, 'utf8');
+    const contents = stripComments(readFileSync(file, 'utf8'));
     contents.split('\n').forEach((line, index) => {
       const matches = line.match(pattern);
       if (!matches) return;
@@ -137,4 +158,22 @@ describe('status-shaped Tailwind color classes', () => {
       expect(findUndefinedStatusClasses(consumer)).toEqual([]);
     });
   }
+
+  it('does not flag a mention inside a comment', () => {
+    // Regression check for the false-positive this guard must not produce:
+    // naming the bug's own class shape in prose must never be mistaken for
+    // the class itself. Built from parts rather than written verbatim, so
+    // this suite's own file doesn't hand the guard a literal match on itself.
+    const bannedText = ['text', 'warning'].join('-');
+    const bannedBg = ['bg', 'warning'].join('-');
+    const source = [
+      `/** This component used to render with ${bannedText}, which was a bug. */`,
+      `// ${bannedBg} was undefined too — see DOR-2444.`,
+      "const real = 'text-status-warning-fg';",
+    ].join('\n');
+    const stripped = stripComments(source);
+    expect(stripped).not.toContain(bannedText);
+    expect(stripped).not.toContain(bannedBg);
+    expect(stripped).toContain("'text-status-warning-fg'");
+  });
 });
