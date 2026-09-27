@@ -5,6 +5,8 @@ created: 2026-07-29
 status: specified
 ---
 
+> **Superseded (2026-09-27)** by [`specs/connections-one-list`](../connections-one-list/design-decisions.md), which shipped the one-list Connections page, the chat front door and try-it prompts. Read that spec, not this one, for how Connections works now.
+
 # Connections redesign — the catalog becomes the page
 
 **Status:** Draft (frozen for DECOMPOSE)
