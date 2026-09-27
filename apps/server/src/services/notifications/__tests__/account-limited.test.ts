@@ -4,7 +4,8 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { notifications, type Db } from '@dorkos/db';
+import { notifications, sessionMetadata, type Db } from '@dorkos/db';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { SessionLimit } from '@dorkos/shared/schemas';
 import { SessionStateProjector } from '../../session/session-state-projector.js';
 import { setAgentPathLookup, resetAgentPathLookup } from '../../mesh/agent-path-lookup.js';
@@ -79,8 +80,14 @@ beforeEach(() => {
   vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
   setAgentPathLookup({ getByPath: () => undefined });
   setAccountUsageStore({
-    peek: (_runtime: string, ids: readonly string[]) =>
-      ids.includes('work') ? [{ accountId: 'work', label: 'Work' }] : [],
+    peek: (runtime: string, ids: readonly string[]) =>
+      runtime === 'claude-code' && ids.includes('work')
+        ? [{ accountId: 'work', label: 'Work' }]
+        : runtime === 'claude-code' && ids.includes('default')
+          ? [{ accountId: 'default', label: null }]
+          : runtime === 'codex' && ids.includes('default')
+            ? [{ accountId: 'default', label: "Main (this computer's sign-in)" }]
+            : [],
     usageAtPath: () => null,
   } as unknown as AccountUsageStore);
   armEscalation.mockClear();
@@ -145,6 +152,31 @@ describe('account.limited', () => {
     const stored = db.select().from(notifications).all();
     expect(stored.map((n) => n.dataJson).join('\n')).not.toContain('.claude-side');
     expect(JSON.parse(stored[0]!.dataJson!)).toMatchObject({ accountRef: expect.any(String) });
+  });
+
+  it('names a Codex or OpenCode limit by its own runtime’s account, and keeps its episode apart from Claude’s', async () => {
+    runtimeRegistry.setDb(db);
+    const bind = (sessionId: string, runtime: string) =>
+      db
+        .insert(sessionMetadata)
+        .values({ sessionId, runtime, createdAt: new Date().toISOString() })
+        .run();
+    bind('s-codex', 'codex');
+    bind('s-opencode', 'opencode');
+    const defaultLimit = { ...LIMIT, accountId: 'default' };
+
+    failTurn('s-claude', defaultLimit);
+    failTurn('s-codex', defaultLimit);
+    failTurn('s-opencode', { ...defaultLimit, window: 'unknown', resetsAt: null });
+    await flush();
+
+    const limited = rows().filter((r) => r.kind === 'account.limited');
+    const titleOf = (id: string) => limited.find((r) => r.subject?.id === id)?.title;
+    // Same id, same window and reset on two runtimes: two accounts, two notifications.
+    expect(limited).toHaveLength(3);
+    expect(titleOf('s-claude')).toMatch(/^Your Claude account is out until /);
+    expect(titleOf('s-codex')).toMatch(/^Main \(this computer's sign-in\) is out until /);
+    expect(titleOf('s-opencode')).toBe('Your OpenCode account hit its usage limit');
   });
 
   it('names an unknown reset by the window, and keys an unregistered account by its folder hash', () => {

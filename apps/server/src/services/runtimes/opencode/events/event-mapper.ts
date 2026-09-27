@@ -78,6 +78,12 @@ import {
   type OpenCodePermissionState,
 } from './session-event-mapper.js';
 import {
+  openCodeLimitSignal,
+  recordOpenCodeSpend,
+  reportOpenCodeLimit,
+  type OpenCodeUsageTurnState,
+} from './account-usage.js';
+import {
   closeOpenSubagents,
   isSubagentRunning,
   mapSubagentChildToolPart,
@@ -105,7 +111,8 @@ export type OpenCodeWireEvent =
  * per-shape bookkeeping (delta baselines, tool guards, subagent runs) is
  * declared by the sibling modules that own it.
  */
-export interface OpenCodeEventContext extends OpenCodePartState, OpenCodePermissionState {
+export interface OpenCodeEventContext
+  extends OpenCodePartState, OpenCodePermissionState, OpenCodeUsageTurnState {
   /**
    * DORKOS session id stamped onto done/session_status events. NOT the
    * OpenCode `ses_*` id — the demux filter matches on that one; the caller
@@ -127,10 +134,17 @@ export interface OpenCodeEventContext extends OpenCodePartState, OpenCodePermiss
  *
  * @param sessionId - DORKOS session identifier stamped onto emitted events
  *   (not the OpenCode `ses_*` id — see {@link OpenCodeEventContext.sessionId})
+ * @param clock - The clock (epoch ms) usage readings are stamped with; a test seam.
  */
-export function createOpenCodeEventContext(sessionId: string): OpenCodeEventContext {
+export function createOpenCodeEventContext(
+  sessionId: string,
+  clock: () => number = Date.now
+): OpenCodeEventContext {
   return {
     sessionId,
+    clock,
+    turnStartedAtMs: clock(),
+    spentByMessageId: new Map(),
     lastTextByPartId: new Map(),
     partKindById: new Map(),
     startedToolCallIds: new Set(),
@@ -253,7 +267,11 @@ export function mapOpenCodeEvent(
   // admitted message announces itself this way — the parent's and the child's
   // alike — and message ids are unique across sessions, so one map serves both.
   if (event.type === 'message.updated') {
-    ctx.roleByMessageId.set(event.properties.info.id, event.properties.info.role);
+    const info = event.properties.info;
+    ctx.roleByMessageId.set(info.id, info.role);
+    // What the turn cost, the parent's messages and a subagent's alike: both
+    // are billed (spec claude-account-fleet §6 R). Once per message.
+    if (info.role === 'assistant') recordOpenCodeSpend(ctx, info, new Date(ctx.clock()));
   }
 
   // A subagent's child session speaks only through its parent's task card:
@@ -270,6 +288,10 @@ export function mapOpenCodeEvent(
       if (!isAssistantMessage(event.properties.messageID, ctx)) return [];
       return mapPartDelta(event.properties, ctx);
     case 'message.updated':
+      // The provider a limit error is charged to (a session error names none).
+      if (event.properties.info.role === 'assistant') {
+        ctx.providerId = event.properties.info.providerID;
+      }
       return mapMessageUpdated(event.properties.info, ctx.sessionId);
     case 'permission.asked':
       return mapPermissionAsked(event.properties, ctx);
@@ -294,8 +316,15 @@ export function mapOpenCodeEvent(
         },
         { type: 'compact_boundary', data: {} },
       ];
-    case 'session.error':
-      return mapSessionError(event.properties.error);
+    case 'session.error': {
+      const mapped = mapSessionError(event.properties.error);
+      // A provider rate limit or credit error is the account's limit, not
+      // breakage: announce it so the session settles carrying it (D4).
+      const now = new Date(ctx.clock());
+      const signal = openCodeLimitSignal(event.properties.error, now);
+      const limitStatus = signal ? reportOpenCodeLimit(ctx, signal, now) : null;
+      return limitStatus ? [...mapped, limitStatus] : mapped;
+    }
     case 'todo.updated':
       return mapTodos(event.properties.todos);
     default:
