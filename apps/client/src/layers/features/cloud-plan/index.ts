@@ -40,4 +40,4 @@ export {
 } from './model/use-cloud-plan';
 export { useLocalSpend } from './model/use-local-spend';
 export type { LocalSpend } from './model/use-local-spend';
-export { formatMicro, remainingFraction } from './lib/micro';
+export { remainingFraction } from './lib/remaining-fraction';

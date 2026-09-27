@@ -13,7 +13,9 @@
  * Amounts stay strings end to end. The contract carries micro-units as decimal
  * strings precisely so nobody rounds them through a float on the way to a
  * screen; this module passes them through untouched and the client formats them
- * once.
+ * once. Each response's `denomination` (the unit its amounts are in) rides
+ * along unchanged, because the client renders nothing it cannot name the unit
+ * of.
  *
  * @module services/core/cloud/plan
  */
