@@ -59,8 +59,9 @@ describe('writeLedger (contract §1.2 "Writing")', () => {
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'work.json.lock'), '1:held');
     const sleep = vi.fn<(ms: number) => void>();
+    // Long enough that even a loaded machine gets past the first attempt and sleeps.
     const result = await writeLedger(dir, 'work', [obs('five_hour', 1)], NOW, {
-      giveUpMs: 30,
+      giveUpMs: 300,
       sleep: async (ms) => {
         sleep(ms);
         await new Promise((r) => setTimeout(r, 5));
