@@ -155,8 +155,6 @@ interface Watch {
 
 let deps: ResumeServiceDeps | undefined;
 const watches = new Map<string, Watch>();
-/** Account resets already told, so a second waiting session does not tell again. */
-const toldResets = new Set<string>();
 
 function clearWatch(sessionId: string): void {
   const watch = watches.get(sessionId);
@@ -234,6 +232,7 @@ function logCheckFailure(sessionId: string, err: unknown): void {
  */
 function syncWatch(stored: StoredSessionLimit): void {
   const plan = stored.limit.plan;
+  // `claimedBy` here is a backup: the fire-time recheck (`currentWait`) also refuses a claimed row.
   if (plan.mode !== 'waiting' || stored.claimedBy || plan.resumeAt === null) {
     clearWatch(stored.sessionId);
     return;
@@ -347,12 +346,6 @@ function sameAccount(a: StoredSessionLimit, b: StoredSessionLimit): boolean {
   return a.accountPath !== null && a.accountPath === b.accountPath;
 }
 
-/** The key one account's reset is told under, so it is told once. */
-function resetKeyOf(stored: StoredSessionLimit, resetConfirmedAt: string): string {
-  const account = stored.limit.accountId ?? stored.accountPath ?? 'unregistered';
-  return `${account}:${stored.limit.resetsAt ?? resetConfirmedAt.slice(0, 13)}`;
-}
-
 /** How many of the account's sessions are waiting right now. */
 function pausedOn(stored: StoredSessionLimit): number {
   return (getSessionLimitStore()?.list() ?? []).filter(
@@ -373,18 +366,16 @@ async function confirm(stored: StoredSessionLimit, watch: Watch): Promise<void> 
     sessionId: stored.sessionId,
     accountId: stored.limit.accountId,
   });
-  // Once per account and reset, however many sessions were waiting on it.
-  const key = resetKeyOf(stored, resetConfirmedAt);
-  if (!toldResets.has(key)) {
-    toldResets.add(key);
-    notifyAccountReset(stored.sessionId, cwdOf(stored), {
-      accountId: stored.limit.accountId,
-      accountPath: stored.accountPath,
-      resetsAt: stored.limit.resetsAt,
-      resetConfirmedAt,
-      pausedCount: Math.max(pausedCount, 1),
-    });
-  }
+  // Once per account and reset, however many sessions were waiting on it:
+  // the kind's dedupe key, checked against the notifications table, keeps it
+  // to one across sessions and restarts.
+  notifyAccountReset(stored.sessionId, cwdOf(stored), {
+    accountId: stored.limit.accountId,
+    accountPath: stored.accountPath,
+    resetsAt: stored.limit.resetsAt,
+    resetConfirmedAt,
+    pausedCount: Math.max(pausedCount, 1),
+  });
   await resume(confirmed, watch);
 }
 
@@ -537,7 +528,8 @@ export function installResumeService(opts: ResumeServiceDeps): () => void {
   deps = opts;
   const stops: (() => void)[] = [];
   stops.push(onLimitPlanWritten(syncWatch));
-  // The session's next turn deletes its row: nothing is left to resume.
+  // The session's next turn deletes its row: nothing is left to resume. A
+  // backup for that turn_start delete, which the fire-time recheck already sees.
   stops.push(
     onProjectorStatusChange(({ sessionId, status }) => {
       if (status.lifecycle === 'streaming') clearWatch(sessionId);
@@ -549,7 +541,6 @@ export function installResumeService(opts: ResumeServiceDeps): () => void {
   return () => {
     for (const stop of stops) stop();
     for (const id of [...watches.keys()]) clearWatch(id);
-    toldResets.clear();
     deps = undefined;
   };
 }

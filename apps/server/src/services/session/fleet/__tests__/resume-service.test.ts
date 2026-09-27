@@ -24,14 +24,22 @@ vi.mock('../../launch/launch-session.js', () => ({
   isSessionLaunchRefusal: (r: object) => 'refused' in r,
   isAgentLaunchCapFull: vi.fn(() => false),
 }));
-vi.mock('../../../notifications/emitters/session-lifecycle.js', () => ({
+vi.mock('../../../notifications/emitters/session-lifecycle.js', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../../notifications/emitters/session-lifecycle.js')
+  >()),
   notifyAutoMoveFailed: vi.fn(),
-  notifyAccountReset: vi.fn(),
 }));
 
 import { dispatchSessionMessage, isAgentLaunchCapFull } from '../../launch/launch-session.js';
-import { notifyAccountReset } from '../../../notifications/emitters/session-lifecycle.js';
 import { notificationEntry } from '../../../notifications/notification-registry.js';
+import { NotificationStore } from '../../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../../notifications/notification-service.js';
+import { eventFanOut } from '../../../core/event-fan-out.js';
+import { resetAgentPathLookup, setAgentPathLookup } from '../../../mesh/agent-path-lookup.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import {
   __resetAccountAdvisorForTests,
@@ -64,6 +72,7 @@ const TO_RESET = Date.parse(RESETS) - NOW.getTime();
 type Window = AccountUsage['windows'][number];
 
 let db: Db;
+let notifications: NotificationService;
 let store: SessionLimitStore;
 let stopPlanning: () => void;
 let uninstallContinue: () => void;
@@ -205,6 +214,13 @@ function resumes(): { sessionId: string; origin: unknown }[] {
     .mock.calls.map(([opts]) => ({ sessionId: opts.sessionId, origin: opts.origin }));
 }
 
+/** The `account.reset` rows the notifications table holds. */
+function resetNotices() {
+  return notifications
+    .list({ limit: 50, unread: false })
+    .notifications.filter((r) => r.kind === 'account.reset');
+}
+
 function startResume(withProbe = true): void {
   uninstallResume = installResumeService({
     launchDeps: () => ({ meshCore: undefined, roomSessionPlace: undefined }),
@@ -227,6 +243,10 @@ beforeEach(() => {
   db = createTestDb();
   store = new SessionLimitStore(db, () => new Date());
   setSessionLimitStore(store);
+  notifications = new NotificationService(new NotificationStore(db));
+  setNotificationService(notifications);
+  vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
+  setAgentPathLookup({ getByPath: () => undefined });
   runtimeRegistry.setDb(db);
   runtimeRegistry.register(new FakeAgentRuntime('claude-code') as never);
   __resetAccountAdvisorForTests();
@@ -236,7 +256,6 @@ beforeEach(() => {
   installUsageStore();
   probe = vi.fn<ResetProbe>(async () => undefined);
   vi.mocked(isAgentLaunchCapFull).mockReturnValue(false);
-  vi.mocked(notifyAccountReset).mockReset();
   vi.mocked(dispatchSessionMessage).mockReset();
   vi.mocked(dispatchSessionMessage).mockImplementation(
     async (opts) =>
@@ -263,6 +282,9 @@ afterEach(() => {
   usageListeners.clear();
   setSessionLimitStore(undefined);
   setAccountUsageStore(undefined);
+  setNotificationService(null);
+  resetAgentPathLookup();
+  vi.restoreAllMocks();
   __resetAccountAdvisorForTests();
   vi.useRealTimers();
 });
@@ -381,7 +403,7 @@ describe('waiting for the reset', () => {
     await vi.advanceTimersByTimeAsync(RESET_RECHECK_MS * 5);
     expect(probe).toHaveBeenCalledTimes(1 + RESET_MAX_RECHECKS);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(notifyAccountReset).not.toHaveBeenCalled();
+    expect(resetNotices()).toHaveLength(0);
   });
 
   it('confirms on a re-check when a newer reading arrives in between', async () => {
@@ -467,7 +489,7 @@ describe('resuming', () => {
     await vi.advanceTimersByTimeAsync(TO_RESET);
     expect(store.get('s-1')?.limit.state).toBe('reset-ready');
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(notifyAccountReset).toHaveBeenCalledTimes(1);
+    expect(resetNotices()).toHaveLength(1);
   });
 
   it('never resumes a session whose launch origin may only wait', async () => {
@@ -544,23 +566,66 @@ describe('resuming', () => {
     expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBe(RESETS);
   });
 
-  it('tells once per account reset, naming every waiting session', async () => {
+  it('forgets the record when the resume is not accepted, and resumes once after a restart', async () => {
+    await waitingSession('s-1');
+    readings.set('main', MOVED_ON);
+    vi.mocked(dispatchSessionMessage).mockResolvedValueOnce({ accepted: false } as never);
+    await vi.advanceTimersByTimeAsync(TO_RESET);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+    expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBeNull();
+    restart();
+    await vi.advanceTimersByTimeAsync(RESUME_CAP_RETRY_MS);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
+    expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBe(RESETS);
+    restart();
+    await vi.advanceTimersByTimeAsync(RESUME_CAP_RETRY_MS);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('forgets the record when the resume throws, and resumes once after a restart', async () => {
+    await waitingSession('s-1');
+    readings.set('main', MOVED_ON);
+    vi.mocked(dispatchSessionMessage).mockRejectedValueOnce(new Error('boom'));
+    await vi.advanceTimersByTimeAsync(TO_RESET);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+    expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBeNull();
+    restart();
+    await vi.advanceTimersByTimeAsync(RESUME_CAP_RETRY_MS);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
+    expect(runtimeRegistry.getLastAutoResumeFor('s-1')).toBe(RESETS);
+    restart();
+    await vi.advanceTimersByTimeAsync(RESUME_CAP_RETRY_MS);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('tells once per account reset, naming every waiting session, across a restart', async () => {
     await waitingSession('s-1');
     await waitingSession('s-2');
     await waitingSession('s-3');
     readings.set('main', MOVED_ON);
     await vi.advanceTimersByTimeAsync(TO_RESET);
-    expect(notifyAccountReset).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(notifyAccountReset).mock.calls[0][2]).toMatchObject({
-      accountId: 'main',
-      pausedCount: 3,
-      resetsAt: RESETS,
-    });
     expect(
       resumes()
         .map((r) => r.sessionId)
         .sort()
     ).toEqual(['s-1', 's-2', 's-3']);
+    expect(resetNotices()).toHaveLength(1);
+    expect(resetNotices()[0]).toMatchObject({
+      title: 'MAIN is back: 3 paused sessions can continue',
+      subject: { type: 'session' },
+    });
+    // After a restart, a fourth session waiting on the same reset confirms it
+    // too: the table's dedupe key keeps it to the one notice.
+    vi.setSystemTime(NOW);
+    readings.set('main', reading());
+    await waitingSession('s-4');
+    restart();
+    vi.setSystemTime(Date.parse(RESETS) + 60_000);
+    readings.set('main', MOVED_ON);
+    restart();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(resumes().map((r) => r.sessionId)).toContain('s-4');
+    expect(resetNotices()).toHaveLength(1);
   });
 
   it('titles the notice for one session and for many', () => {
@@ -624,7 +689,7 @@ describe('clearing the timer', () => {
     readings.set('main', MOVED_ON);
     await vi.advanceTimersByTimeAsync(TO_RESET);
     expect(dispatchSessionMessage).not.toHaveBeenCalled();
-    expect(notifyAccountReset).not.toHaveBeenCalled();
+    expect(resetNotices()).toHaveLength(0);
   });
 
   it('a new turn clears it', async () => {
