@@ -244,6 +244,28 @@ describe('ClaudeCodeRuntime', () => {
   });
 
   describe('sendMessage()', () => {
+    it('holds a turn unattended only while that turn runs', async () => {
+      // An automatic carry-over's first turn has nobody to ask; a person's next
+      // message in the same session must be able to ask them again.
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      const seen: (boolean | undefined)[] = [];
+      agentManager.setMcpServerFactory((session) => {
+        seen.push((session as { unattendedTurn?: boolean }).unattendedTurn);
+        return {};
+      });
+      (mockedQuery as ReturnType<typeof vi.fn>)
+        .mockReturnValueOnce(wrapSdkQuery(sdkSimpleText('first')))
+        .mockReturnValueOnce(wrapSdkQuery(sdkSimpleText('second')));
+
+      agentManager.ensureSession('carried', { permissionMode: 'default' });
+      for await (const event of agentManager.sendMessage('carried', 'go on', { unattended: true }))
+        void event;
+      for await (const event of agentManager.sendMessage('carried', 'thanks, one more thing'))
+        void event;
+
+      expect(seen).toEqual([true, false]);
+    });
+
     it.each(['hello', '  /help'])(
       'opens lazily and keeps slash commands free of Accounts context: %s',
       async (content) => {

@@ -15,7 +15,6 @@ vi.mock('../../../core/runtime-registry.js', () => ({
     getDefaultType: vi.fn(() => 'claude-code'),
     persistSessionRuntime: vi.fn(async () => true),
     resolveForSession: vi.fn(async () => fakeRuntime),
-    getSessionSettings: vi.fn(async () => null),
   },
 }));
 vi.mock('../../../core/usage-reporter.js', () => ({ reportUsageEvent: vi.fn() }));
@@ -306,11 +305,7 @@ describe('dispatchSessionMessage', () => {
   });
 
   describe('an unattended launch', () => {
-    it('creates the new session unattended from its stored row, and sends without holding for approvals', async () => {
-      vi.mocked(runtimeRegistry.getSessionSettings).mockResolvedValueOnce({
-        permissionMode: 'acceptEdits',
-        model: 'opus',
-      });
+    it('marks only this turn unattended, never the session a person opens next', async () => {
       await dispatchSessionMessage({
         sessionId: SESSION,
         request: { content: 'hi', cwd: '/work/project' },
@@ -321,16 +316,10 @@ describe('dispatchSessionMessage', () => {
         unattended: true,
       });
 
-      expect(fakeRuntime.ensureSession).toHaveBeenCalledWith(
-        SESSION,
-        expect.objectContaining({
-          permissionMode: 'acceptEdits',
-          model: 'opus',
-          hasStarted: false,
-          unattended: true,
-        })
-      );
-      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattendedApprovals).toBe(true);
+      // A session created unattended would refuse every ask a person later
+      // raises in it: the flag rides the turn instead.
+      expect(fakeRuntime.ensureSession).not.toHaveBeenCalled();
+      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattended).toBe(true);
     });
 
     it('leaves an attended launch as it was', async () => {
@@ -343,7 +332,7 @@ describe('dispatchSessionMessage', () => {
         origin: { kind: 'interactive' },
       });
       expect(fakeRuntime.ensureSession).not.toHaveBeenCalled();
-      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattendedApprovals).toBeUndefined();
+      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattended).toBeUndefined();
     });
   });
 });

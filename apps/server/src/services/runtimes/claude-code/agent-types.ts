@@ -119,6 +119,12 @@ export interface AgentSession {
    * `InteractiveSession` in `messaging/interaction-wait.ts` for the full rule.
    */
   unattended?: boolean;
+  /**
+   * True while THIS turn has nobody to ask (`MessageOpts.unattended`): the
+   * same refusal as {@link unattended}, assigned on every send so it never
+   * outlives the turn that asked for it.
+   */
+  unattendedTurn?: boolean;
   /** True when auto-created by updateSession — sendMessage should check transcript before first query. */
   needsTranscriptCheck?: boolean;
   /**

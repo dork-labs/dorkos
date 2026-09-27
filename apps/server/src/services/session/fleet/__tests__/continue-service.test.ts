@@ -1048,19 +1048,19 @@ describe('core’s automatic handoff', () => {
     });
   }
 
-  /** A launch that stays open until `release` is called. */
-  function heldLaunch(): { release: () => void } {
+  /** A launch that stays open until `release` is called, then answers `result`. */
+  function heldLaunch(result?: object): { release: () => void } {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => (release = resolve));
     vi.mocked(dispatchSessionMessage).mockImplementationOnce(async () => {
       await gate;
-      return {
+      return (result ?? {
         accepted: true,
         canonicalId: 'new-held',
         outcome: { kind: 'started', messageId: 'm' },
         queued: false,
         queuePosition: 0,
-      } as never;
+      }) as never;
     });
     return { release: () => release() };
   }
@@ -1200,6 +1200,59 @@ describe('core’s automatic handoff', () => {
     await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
     expect((await refusal(waitForReset('src-1', {}))).code).toBe('MOVING');
     expect((await refusal(cancelAutoContinue('src-1'))).code).toBe('MOVING');
+    held.release();
+    await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
+  });
+
+  it('fires after all when a person’s continue it waited behind fails', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    const held = heldLaunch({ refused: 'DESK_NOT_OWN', message: 'Not here.' });
+    const person = continueSession('src-1', { account: 'busy' }, deps);
+    await vi.advanceTimersByTimeAsync(60_000);
+    held.release();
+    expect((await refusal(person)).code).toBe('DESK_NOT_OWN');
+    // The timer's fire waited for the person's move, and runs now it failed.
+    await vi.waitFor(() =>
+      expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' })
+    );
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses a cancel whose write would land after the automatic move started', async () => {
+    // The cancel read `auto` and is deriving the state (the advisor's ranking)
+    // when the timer fires: its write must not land under the move.
+    let gate: (() => void) | undefined;
+    let blockNextRank = false;
+    adviseAuto(
+      {
+        rank: async () => {
+          if (blockNextRank) {
+            blockNextRank = false;
+            await new Promise<void>((resolve) => (gate = resolve));
+          }
+          return {
+            accounts: ofRuntime('claude-code')
+              .filter((a) => a.id !== 'main')
+              .map((a) => ({ id: a.id, eligible: a.state !== 'limited', reason: 'fine' })),
+            recommendedId: null,
+          };
+        },
+      },
+      1
+    );
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    blockNextRank = true;
+    const cancel = refusal(cancelAutoContinue('src-1'));
+    await vi.waitFor(() => expect(gate).toBeDefined());
+    const held = heldLaunch();
+    // Fires in 1 s, inside the advisor's 2 s bound the cancel is waiting on.
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
+    gate!();
+    expect((await cancel).code).toBe('MOVING');
     held.release();
     await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
   });

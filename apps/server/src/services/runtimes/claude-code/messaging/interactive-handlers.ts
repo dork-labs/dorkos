@@ -23,6 +23,7 @@ import {
   clearInteractionTimer,
   elicitationParkedNotice,
   elicitationTimeoutNotice,
+  nobodyToAsk,
   notifyInteractionCancelled,
   questionParkedNotice,
   questionTimeoutNotice,
@@ -702,7 +703,7 @@ export function handleAskUserQuestion(
     });
   }
   const questions = parsed.success ? parsed.data : (input.questions as QuestionItem[]);
-  if (session.unattended === true) {
+  if (nobodyToAsk(session)) {
     refuseWithNobodyToAsk(session, {
       interactionId: toolUseId,
       kind: 'question',
@@ -799,7 +800,7 @@ export function handleElicitation(
   signal: AbortSignal
 ): Promise<ElicitationResult> {
   const interactionId = request.elicitationId ?? randomUUID();
-  if (session.unattended === true) {
+  if (nobodyToAsk(session)) {
     // The MCP server is named where a tool name would go: it is what the person
     // reading the run has to recognise, and this record's whole job is to say
     // WHAT could not be answered.
@@ -1122,7 +1123,7 @@ export function handleToolApproval(
   input: Record<string, unknown>,
   context: ToolApprovalContext
 ): Promise<PermissionResult> {
-  if (session.unattended === true) {
+  if (nobodyToAsk(session)) {
     refuseWithNobodyToAsk(session, { interactionId: toolUseId, kind: 'approval', toolName });
     return Promise.resolve({ behavior: 'deny', message: NO_APPROVAL_SURFACE_DENIAL });
   }

@@ -74,10 +74,10 @@ export interface DispatchSessionMessageOpts {
    */
   countsTowardLaunchCap?: boolean;
   /**
-   * Nobody is watching this turn (an automatic carry-over), so it runs like a
-   * timer-fired schedule: an approval card does not hold the turn
-   * (`unattendedApprovals`), and a new session's prompts are refused rather
-   * than waited on (`SessionOpts.unattended`).
+   * Nobody is watching THIS turn (an automatic carry-over), so it runs like a
+   * timer-fired schedule: an approval card does not hold it, and an ask raised
+   * in it is refused rather than waited on. Per turn, never stored on the
+   * session: a person's next message there asks and holds as usual.
    */
   unattended?: boolean;
 }
@@ -417,25 +417,6 @@ async function launchSessionMessage(
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
 
-  // An unattended NEW session is created here, before the send, because only
-  // `ensureSession` can mark it unattended, and the send's own create would
-  // not. Its settings are the row the bind just seeded, exactly what the
-  // send's create would have read.
-  if (unattended && isNewSession) {
-    const stored = await runtimeRegistry.getSessionSettings(sessionId).catch(() => null);
-    if (stored?.permissionMode) {
-      runtime.ensureSession(sessionId, {
-        permissionMode: stored.permissionMode,
-        ...(stored.model !== undefined ? { model: stored.model } : {}),
-        ...(stored.effort !== undefined ? { effort: stored.effort } : {}),
-        ...(stored.fastMode !== undefined ? { fastMode: stored.fastMode } : {}),
-        ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
-        hasStarted: false,
-        unattended: true,
-      });
-    }
-  }
-
   // One id for this whole dispatch, minted BEFORE the trigger so the line that
   // announces it already carries it and a reader can start there.
   const dispatchId = newDispatchId();
@@ -494,7 +475,7 @@ async function launchSessionMessage(
       // Absent means `queue`, which is also what every disposition resolves to
       // until the native rungs land (P4). The receipt says which it was.
       ...(disposition ? { disposition } : {}),
-      ...(unattended ? { unattendedApprovals: true } : {}),
+      ...(unattended ? { unattended: true } : {}),
       projector,
       runtime,
       onError: (err) => {

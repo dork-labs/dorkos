@@ -191,6 +191,24 @@ export interface InteractiveSession {
    * the two shapes that takes).
    */
   unattended?: boolean;
+  /**
+   * True while the CURRENT turn has nobody to ask (`MessageOpts.unattended`,
+   * an automatic carry-over's first turn). Refused like {@link unattended},
+   * but reassigned on every send, so a person's next turn asks as usual.
+   */
+  unattendedTurn?: boolean;
+}
+
+/**
+ * Whether an ask raised now has nobody to answer it: the session is
+ * unattended, or the turn running in it is.
+ *
+ * @param session - The session the ask was raised in.
+ */
+export function nobodyToAsk(
+  session: Pick<InteractiveSession, 'unattended' | 'unattendedTurn'>
+): boolean {
+  return session.unattended === true || session.unattendedTurn === true;
 }
 
 /**

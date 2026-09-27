@@ -583,6 +583,9 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Unconditionally, `false` included: a warm session a person later talks
     // to must hold for their answer again (spec `agent-permissions` D6).
     session.unattendedApprovals = opts?.unattendedApprovals === true;
+    // Per turn too, for the same reason: an automatic carry-over's first turn
+    // has nobody to ask, and the person who opens it next does.
+    session.unattendedTurn = opts?.unattended === true;
     const accessContext =
       connectorTurn &&
       this.connectorRuntimeTools &&

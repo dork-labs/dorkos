@@ -272,6 +272,12 @@ interface PlanWriteExtras {
   modelFallback?: string | undefined;
   /** The advisor that claimed the session (planning only). */
   claimedBy?: string | null;
+  /**
+   * Called after the state is derived and right before the write, with no
+   * await in between: throwing refuses the write. For a decision that must not
+   * land once something else started (a person's wait while a move runs).
+   */
+  beforeCommit?: () => void;
 }
 
 /**
@@ -301,6 +307,7 @@ export async function writePlan(
     ...(extras.claimedBy !== undefined ? { claimedBy: extras.claimedBy } : {}),
   };
   const derived = await deriveFor(next, modelFallback);
+  extras.beforeCommit?.();
   const written = commit(store, stored, next, derived, modelFallback, extras.claimedBy, true);
   if (written) return written;
   const now = store.get(stored.sessionId);

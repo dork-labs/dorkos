@@ -65,9 +65,6 @@ let deps: AutoHandoffDeps | undefined;
 /** One timer per session row, with the plan it was armed for. */
 const autoTimers = new Map<string, { timer: NodeJS.Timeout; since: string; fireAt: string }>();
 
-/** Episodes core already fired a handoff for: at most one per limit episode. */
-const firedEpisodes = new Set<string>();
-
 function clearAutoTimer(sessionId: string): void {
   const armed = autoTimers.get(sessionId);
   if (armed) clearTimeout(armed.timer);
@@ -88,7 +85,6 @@ function syncAutoTimer(stored: StoredSessionLimit): void {
   const armed = autoTimers.get(stored.sessionId);
   if (armed && armed.since === stored.limit.since && armed.fireAt === plan.fireAt) return;
   clearAutoTimer(stored.sessionId);
-  if (firedEpisodes.has(episodeKey(stored))) return;
   const delay = Math.max(0, Date.parse(plan.fireAt) - limitClock().getTime());
   const since = stored.limit.since;
   const timer = setTimeout(() => {
@@ -189,10 +185,19 @@ export function fireAutoHandoff(
   ) {
     return Promise.resolve(undefined);
   }
+  // At most one automatic carry-over per episode: it fires only while the plan
+  // is still this very `auto` (same episode, same `fireAt`), and every way a
+  // fire ends rewrites that plan (`continued`, or `ask`).
   const key = episodeKey(stored);
-  // A person's continue is already moving it, or core already fired once.
-  if (continueInFlight(key) || firedEpisodes.has(key)) return Promise.resolve(undefined);
-  firedEpisodes.add(key);
+  // A person's continue is already moving it: that one wins. If it fails, the
+  // plan is still this `auto` with its time past, so fire then (re-checked).
+  const pending = continueInFlight(key);
+  if (pending) {
+    return pending.then(
+      () => undefined,
+      () => fireAutoHandoff(sessionId, since, fireAt)
+    );
+  }
   const { activity, launchDeps } = deps;
   const target = plan.target;
   // Marked in flight in this same synchronous step, like a person's continue.
@@ -233,7 +238,6 @@ export function installAutoHandoff(opts: AutoHandoffDeps): () => void {
   return () => {
     stopListening();
     for (const id of [...autoTimers.keys()]) clearAutoTimer(id);
-    firedEpisodes.clear();
     deps = undefined;
   };
 }

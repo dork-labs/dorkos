@@ -486,7 +486,10 @@ function alreadyMoved(): ContinueError {
 /**
  * Write the plan `next` decides from the latest read, re-reading after a
  * compare-and-set miss (up to 3 tries). Nothing outside this process is
- * called again. `next` answering `null` keeps the current plan.
+ * called again. `next` answering `null` keeps the current plan. A move that
+ * started while the state was being derived refuses the write (409 `MOVING`),
+ * checked in the same synchronous step as the write, so a wait or cancel never
+ * lands under a carry-over that then points the plan elsewhere.
  */
 async function writeAfterDeciding(
   read: StoredSessionLimit,
@@ -498,7 +501,11 @@ async function writeAfterDeciding(
     const plan = next(latest);
     if (plan === null) return latest.limit.plan;
     try {
-      const written = await writePlan(latest, plan);
+      const written = await writePlan(latest, plan, {
+        beforeCommit: () => {
+          if (continueInFlight(episodeKey(read))) throw moving();
+        },
+      });
       return written?.limit.plan ?? plan;
     } catch (err) {
       if (!(err instanceof PlanChangedError) || attempt >= 3) throw err;

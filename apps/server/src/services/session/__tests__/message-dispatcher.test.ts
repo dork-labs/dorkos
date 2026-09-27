@@ -284,18 +284,19 @@ describe('dispatchMessage — a busy session queues the message', () => {
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
 
     await send('long turn');
-    await send('carried over', { unattendedApprovals: true });
+    await send('carried over', { unattended: true });
     first.open();
     await settle();
 
     expect(runtime.sendMessage).toHaveBeenLastCalledWith(
       session,
       'carried over',
-      expect.objectContaining({ unattendedApprovals: true })
+      expect.objectContaining({ unattendedApprovals: true, unattended: true })
     );
     expect(vi.mocked(runtime.sendMessage).mock.calls[0]![2]).not.toHaveProperty(
       'unattendedApprovals'
     );
+    expect(vi.mocked(runtime.sendMessage).mock.calls[0]![2]).not.toHaveProperty('unattended');
   });
 
   it('dispatches queued messages in queue order, one at a time', async () => {

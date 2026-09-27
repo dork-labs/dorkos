@@ -939,6 +939,18 @@ export interface MessageOpts extends SessionSettings {
    * no in-session hold simply ignores it.
    */
   unattendedApprovals?: boolean;
+  /**
+   * True when nobody can answer an ask raised in THIS turn: a question, a tool
+   * approval or an MCP elicitation is refused the moment it is raised, as in a
+   * session created with `SessionOpts.unattended` (an automatic carry-over to
+   * another account sends it on its first turn).
+   *
+   * Per TURN, unlike `SessionOpts.unattended`: a runtime that honours it
+   * assigns it on every send, so a person's next message in the same session
+   * asks and waits as usual. Advisory: a runtime with no approval channel of
+   * its own ignores it.
+   */
+  unattended?: boolean;
 }
 
 /**
