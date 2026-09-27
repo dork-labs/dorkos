@@ -380,7 +380,7 @@ export function ConnectDialog({
             ) : activeFlow.state === 'connected' && !agentRequestId ? (
               <div className="space-y-4">
                 <p className="flex items-center gap-2 text-sm font-medium">
-                  <CheckCircle2 className="text-success size-4" aria-hidden />
+                  <CheckCircle2 className="text-status-success size-4" aria-hidden />
                   <span>{serviceName} is connected</span>
                 </p>
                 <ConnectionAccessCard
@@ -403,8 +403,8 @@ export function ConnectDialog({
               </div>
             ) : activeFlow.state === 'connected' ? (
               <div className="space-y-4">
-                <div className="bg-success/5 flex items-start gap-3 rounded-lg p-4">
-                  <CheckCircle2 className="text-success mt-0.5 size-5" aria-hidden />
+                <div className="bg-status-success/5 flex items-start gap-3 rounded-lg p-4">
+                  <CheckCircle2 className="text-status-success mt-0.5 size-5" aria-hidden />
                   <div>
                     <p className="text-sm font-medium">{serviceName} is connected</p>
                     <p className="text-muted-foreground mt-1 text-xs">

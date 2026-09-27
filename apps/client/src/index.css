@@ -259,7 +259,14 @@
   --status-warning-dot: 38 92% 40%;
   --status-warning-bg: 38 92% 96%;
   --status-warning-border: 38 92% 80%;
-  --status-warning-fg: 38 92% 40%;
+  /* DOR-2444: this used to equal `--status-warning-dot` (40%), which is only
+     tuned for the 3:1 non-text bar above — as TEXT it read 4.35:1 on the
+     `-bg` wash and 4.46:1 on `--muted`, both under WCAG AA's 4.5:1. The
+     binding case is `--muted` (its luminance sits closest to this token's,
+     which is what makes the ratio tightest): 31% clears it at 4.69:1, the
+     `-bg` wash at 4.82:1, and plain white at 5.13:1. Dark mode's `-fg` (50%)
+     already clears every ground by a wide margin and is unchanged. */
+  --status-warning-fg: 38 92% 31%;
 
   --status-info: 217 91% 60%;
   --status-info-bg: 217 91% 96%;
