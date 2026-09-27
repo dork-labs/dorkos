@@ -53,6 +53,7 @@ function deps(dorkHome: string, extra: Partial<Omit<UninstallFlowDeps, 'extensio
   return {
     dorkHome,
     extensionManager: {
+      get: vi.fn().mockReturnValue(undefined),
       disable: vi.fn().mockResolvedValue(undefined),
       forgetRunApproval: vi.fn().mockResolvedValue(undefined),
     },
@@ -322,7 +323,7 @@ describe('in-place uninstall (DOR-2245)', () => {
     const d = deps(dorkHome);
     await new UninstallFlow(d).uninstall({ name: 'pkg' });
     expect(d.extensionManager.disable).toHaveBeenCalledWith('ext');
-    expect(d.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext');
+    expect(d.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext', root);
   });
 
   // Purpose (round-3 N9): a file written into a unit-moved folder while it sat

@@ -35,6 +35,7 @@ function runtimeEntry(type: string, supportsEffort: boolean): RuntimeCapabilitie
     supportsManagedMcpServers: true,
     supportsQuestionPrompt: true,
     supportsPlugins: false,
+    supportsAccounts: false,
     supportsPersistentSession: false,
     supportsSteer: false,
     supportsContextStaging: false,

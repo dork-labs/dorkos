@@ -812,6 +812,38 @@ export function backfillExtensionsApprovedToRun(store: {
 }
 
 /**
+ * Migration body: seed `extensions.approvedSources: {}` for configs persisted
+ * before an extension approval recorded WHICH copy of the extension it was for
+ * (DOR-2383).
+ *
+ * Seeds the map EMPTY and binds nothing, on purpose. Which copy an existing
+ * id-only approval was about is a question about the disk, and this runs before
+ * anything has looked at the disk. `ExtensionManager.reload` answers it on the
+ * first discovery instead, binding each such approval to the extension installed
+ * directly under `{dorkHome}/extensions/<id>` — the only copy an id-only approval
+ * ever let run. An approved id found only inside a plugin stays unbound, which
+ * counts as not approved, so a plugin that carries an old approved id is asked
+ * about first rather than inheriting the decision.
+ *
+ * Additive and idempotent: writes only when `approvedSources` is not already an
+ * object, and never touches the other `extensions` members. A config with no
+ * `extensions` key is skipped (the schema default supplies the object on read).
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedExtensionsApprovedSources(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ext = store.get('extensions');
+  if (!ext || typeof ext !== 'object' || Array.isArray(ext)) return;
+  const sources = (ext as { approvedSources?: unknown }).approvedSources;
+  if (sources && typeof sources === 'object' && !Array.isArray(sources)) return;
+  store.set('extensions', { ...(ext as Record<string, unknown>), approvedSources: {} });
+}
+
+/**
  * Migration body: backfill the `workspace` section (WorkspaceManager, DOR-84)
  * for configs persisted before it existed. Additive + idempotent — only writes
  * when the key is absent; the schema default also yields this object on read, so
@@ -2683,6 +2715,69 @@ export function migrateClaudeAccountRegistry(store: {
 }
 
 /**
+ * Migration body: rename a Claude account row whose id is `default` to the
+ * next free `default-N` (spec `claude-account-fleet` D1, contract
+ * `flow-cli-core` §1.1a revision 6d).
+ *
+ * `default` now names the runtime's default account everywhere, so a
+ * REGISTERED row called `default` would be a second account answering to it.
+ * Before this rule an account labelled "Default", or kept in a folder called
+ * `default`, minted exactly that id. `claudeAccountId` no longer can, and this
+ * is what moves a row an earlier build already minted.
+ *
+ * **Not additive, and deliberately so.** An id is a reference, so a rename has
+ * followers: an agent manifest's `account`, a schedule's `account` and its
+ * approval key, and a schedule `SKILL.md` saying `account: default`. None of
+ * those live in this file, and a migration runs before the agent registry and
+ * the task store exist, so this body cannot move them. It leaves a marker
+ * instead: the renamed row carries `renamedFrom: 'default'`, a field rows keep
+ * across every write (a registry row is a loose object), so the account
+ * reconcile can move each reference to the new id and then drop the marker.
+ * Until that runs, a reference that still says `default` resolves to the
+ * default account, which is what the contract says `default` means.
+ *
+ * Idempotent: a second run finds no row called `default`. Every id already
+ * present is reserved before any is chosen, so a rename never collides with a
+ * row that already owns `default-2`.
+ *
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function renameReservedClaudeAccountIds(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  const accounts = (block as Record<string, unknown>).accounts;
+  if (!Array.isArray(accounts)) return;
+
+  const taken = new Set<string>();
+  for (const entry of accounts) {
+    const id = (entry as { id?: unknown } | null)?.id;
+    if (typeof id === 'string') taken.add(id);
+  }
+  let changed = false;
+  const next = accounts.map((entry) => {
+    if (!entry || typeof entry !== 'object' || (entry as { id?: unknown }).id !== 'default') {
+      return entry;
+    }
+    let n = 2;
+    while (taken.has(`default-${n}`)) n++;
+    const id = `default-${n}`;
+    taken.add(id);
+    changed = true;
+    return { ...(entry as Record<string, unknown>), id, renamedFrom: 'default' };
+  });
+  if (!changed) return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), accounts: next },
+  });
+}
+
+/**
  * Migration body: reserve both halves of the power-door answer on an existing
  * `ui` block (spec `full-power-defaults`, D2).
  *
@@ -4323,6 +4418,38 @@ export const CONFIG_MIGRATIONS = {
     // question was put (DOR-677). See `seedIdentityPromptDismissedDefault`.
     seedIdentityPromptDismissedDefault(store);
   },
+  // 0.85.0 has merged (the name-and-handle question), so 0.86.0 is the next key.
+  // Frozen from merge, not from the release bump, for the reason `'0.60.0'` above
+  // states; anything further opens `'0.87.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `extensions`, beside `disabled` and `approvedToRun`, which the keys that
+  // backfilled those write and this body preserves.
+  '0.86.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `extensions.approvedSources` — which copy each extension approval is for
+    // (DOR-2383). See `seedExtensionsApprovedSources`.
+    seedExtensionsApprovedSources(store);
+  },
+  // 0.86.0 has merged (DOR-2383, which extension copy an approval is for), so
+  // 0.87.0 is the next key. Frozen from merge, not from the release bump, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.88.0'`.
+  //
+  // Disjoint from every other key here except `'0.65.0'`, which mints the ids
+  // this renames and always runs first: it only rewrites the `id` of a
+  // `runtimes.claudeCode.accounts[]` row that is exactly `default`, and keeps
+  // every other field and row.
+  '0.87.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `default` names the default account now (contract `flow-cli-core`
+    // §1.1a, revision 6d), so a registered row may not keep it. See
+    // `renameReservedClaudeAccountIds`.
+    renameReservedClaudeAccountIds(store);
+  },
 } as const;
 
 /**
@@ -4446,10 +4573,15 @@ function tolerateRetiredSidebarKeys(ctx: {
  *
  * ## Removing it
  *
- * Back-compat for one release, exactly like its sibling: delete this once the
- * `'0.65.0'` migration has shipped in a tagged release that every supported
- * install has passed through. The tests in `'a Claude account registry written
- * before ids'` fail if it is removed early.
+ * The `activeAccount` declaration is back-compat for one release, exactly like
+ * its sibling: delete it once the `'0.65.0'` migration has shipped in a tagged
+ * release that every supported install has passed through. The tests in `'a
+ * Claude account registry written before ids'` fail if it is removed early.
+ *
+ * The row tolerance is NOT back-compat and stays (spec `claude-account-fleet`
+ * D1): the registry is a contract flow writes too, and its read rules skip a
+ * bad row rather than refuse the file, so Ajv accepts any value as an account
+ * row.
  *
  * @param ctx - The `z.toJSONSchema` override context for one schema node.
  */
@@ -4479,10 +4611,19 @@ function tolerateLegacyClaudeAccountEncoding(ctx: {
     return;
   }
   if (ctx.zodSchema !== ClaudeCodeAccountSchema) return;
-  const required = ctx.jsonSchema.required;
-  if (Array.isArray(required)) {
-    ctx.jsonSchema.required = required.filter((key) => key !== 'id');
-  }
+  // The registry is shared with flow and hand-editable (marketplace
+  // `specs/flow-cli-core` §1.1a), and its readers SKIP a bad row with a warning
+  // rather than fail: a row that is not an object, has no absolute path, an
+  // empty or non-string id, a non-string label, or a color that is not
+  // lowercase `#rrggbb`. Ajv refusing any of those would condemn the whole file
+  // instead, so an account row accepts ANY value here: no type, no required
+  // list, no per-field shape. `readClaudeAccountSettings` applies the read
+  // rules; the write path (`applyConfigPatch`) carries such a row across
+  // untouched. Emptied in place because the override is handed the node to
+  // edit. No `default` survives either: conf builds Ajv with `useDefaults`,
+  // so a declared default would write `color: null` into every row it
+  // validates, including rows this build never listed.
+  for (const key of Object.keys(ctx.jsonSchema)) delete ctx.jsonSchema[key];
 }
 
 /**

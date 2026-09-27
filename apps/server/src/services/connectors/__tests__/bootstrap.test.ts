@@ -13,6 +13,7 @@ import {
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type { CredentialProvider, CredentialResolution } from '../../core/credential-provider.js';
 import { ConnectorRegistry } from '../registry.js';
+import { legacyDefaultProviderInstanceId } from '../legacy-connection-migration.js';
 import {
   ConnectorProviderBootstrapper,
   TEST_CONNECTOR_API_KEY_REF,
@@ -687,6 +688,14 @@ describe('ConnectorProviderBootstrapper', () => {
       const composio = statuses.find((s) => s.type === 'composio')!;
       expect(composio.custody).toBe('managed');
       expect(composio.disclosure).toBe(MANAGED_CUSTODY_CANONICAL_SENTENCE);
+
+      // Each status names the provider instance its connections carry — the
+      // live one when registered, the deterministic one it registers as when
+      // not — so a client can group connections by key exactly.
+      expect(composio.providerInstanceId).toBe(registry.resolveProvider('composio')!.instanceId);
+      expect(statuses.find((s) => s.type === 'nango')!.providerInstanceId).toBe(
+        legacyDefaultProviderInstanceId('nango')
+      );
 
       // No status may carry a secret or a reference value.
       const serialized = JSON.stringify(statuses);

@@ -1102,6 +1102,52 @@ describe('AdapterManager', () => {
       expect(writeFile).not.toHaveBeenCalled();
     });
 
+    // DOR-2432: a webhook publishes whatever a signed request carries to its
+    // inbound subject, and receives everything sent under it. An agent with a
+    // shell could otherwise create one aimed at the scheduler's address.
+    it.each(['relay.system.tasks.task-1', 'relay.control.task-cancel.run-1', 'relay.*.approval.a'])(
+      'refuses a webhook whose inbound subject is the DorkOS address %s, naming the rule',
+      async (subject) => {
+        vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+        await initAndStart(manager);
+        vi.clearAllMocks();
+
+        const attempt = manager.addAdapter('webhook', 'wh-forge', {
+          inbound: { subject, secret: 'secret-16-chars!!' },
+          outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+        });
+        await expect(attempt).rejects.toThrow(AdapterError);
+        await expect(attempt).rejects.toThrow(
+          'relay.system.* and relay.control.* belong to DorkOS'
+        );
+        expect(writeFile).not.toHaveBeenCalled();
+        expect(registry.register).not.toHaveBeenCalled();
+      }
+    );
+
+    it('refuses an edit that points an existing webhook at a DorkOS address', async () => {
+      vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
+      await initAndStart(manager);
+      await manager.addAdapter(
+        'webhook',
+        'wh-edit',
+        {
+          inbound: { subject: 'relay.webhook.test', secret: 'secret-16-chars!!' },
+          outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+        },
+        false
+      );
+      vi.clearAllMocks();
+
+      await expect(
+        manager.updateConfig('wh-edit', {
+          inbound: { subject: 'relay.system.approval.agent-1', secret: 'secret-16-chars!!' },
+          outbound: { url: 'https://example.com', secret: 'secret-16-chars!!' },
+        })
+      ).rejects.toThrow('relay.system.* and relay.control.* belong to DorkOS');
+      expect(writeFile).not.toHaveBeenCalled();
+    });
+
     it('starts the adapter if enabled', async () => {
       vi.mocked(readFile).mockResolvedValue(JSON.stringify({ adapters: [] }));
       await initAndStart(manager);

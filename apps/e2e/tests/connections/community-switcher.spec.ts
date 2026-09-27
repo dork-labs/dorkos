@@ -427,7 +427,7 @@ test('Joining with an invitation opens the link on the Community’s site, not a
   await page.keyboard.press('ArrowDown');
   await expect(add).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('menuitem', { name: 'Connect a community' })).toBeFocused();
+  await expect(page.getByRole('menuitem', { name: 'Connect a community…' })).toBeFocused();
   // Alpha's host has not said this person runs it, so there is no way to create one.
   await expect(page.locator('[data-menu-item-id^="add-community-create"]')).toHaveCount(0);
   await page.keyboard.press('ArrowDown');
@@ -465,7 +465,7 @@ test('A host operator can create a community on their own host, by keyboard and 
   await page.keyboard.press('ArrowDown');
   await expect(add).toBeFocused();
   await page.keyboard.press('ArrowRight');
-  await expect(page.getByRole('menuitem', { name: 'Connect a community' })).toBeFocused();
+  await expect(page.getByRole('menuitem', { name: 'Connect a community…' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(page.getByRole('menuitem', { name: 'Join with an invitation…' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -517,7 +517,7 @@ test('Community actions fit the 390px phone sheet', async ({ page }, testInfo) =
     has: page.locator('[data-menu-group-id="add-community"]'),
   });
   await add.scrollIntoViewIfNeeded();
-  for (const name of ['Connect a community', 'Join with an invitation…', 'Run your own community'])
+  for (const name of ['Connect a community…', 'Join with an invitation…', 'Run your own community'])
     await expect(add.getByRole('menuitem', { name })).toBeVisible();
   await expect
     .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))

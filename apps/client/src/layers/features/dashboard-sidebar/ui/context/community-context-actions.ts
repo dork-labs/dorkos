@@ -124,7 +124,7 @@ export interface CommunityContextActionsModel {
   onLeave: () => void;
   /** Ask to disconnect this installation from the selected Community. */
   onDisconnect: () => void;
-  /** Go to Connections, where this installation pairs with a Community. */
+  /** Ask for a Community's address, to pair this installation with it. */
   onConnect: () => void;
   /** Ask for an invitation link to open. */
   onJoin: () => void;
@@ -283,6 +283,7 @@ export function buildCommunityContextNodes(model: CommunityContextActionsModel):
         id: 'add-community-connect',
         label: 'Connect a community',
         icon: Link2,
+        opensInput: true,
         run: model.onConnect,
       },
       {

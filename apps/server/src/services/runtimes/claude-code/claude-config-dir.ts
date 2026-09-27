@@ -36,8 +36,13 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import type { ClaudeCodeAccount, UserConfig } from '@dorkos/shared/config-schema';
+import type {
+  ClaudeAccountReadWarning,
+  ReadClaudeAccount,
+  UserConfig,
+} from '@dorkos/shared/config-schema';
 import { readClaudeAccountSettings } from '@dorkos/shared/config-schema';
+import { IMPLICIT_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import { configManager } from '../../core/config-manager.js';
@@ -71,6 +76,25 @@ export function inheritedClaudeRoot(): string {
 }
 
 /**
+ * Registry warnings already logged by this process, by message.
+ *
+ * The registry is read on every transcript lookup and every config read, so a
+ * hand-edited row would otherwise repeat its warning on every request. Each
+ * distinct message is logged once per process; a fixed row simply stops
+ * producing it.
+ */
+const loggedAccountWarnings = new Set<string>();
+
+/** Log each registry warning the first time this process sees it. */
+function warnOnce(warnings: readonly ClaudeAccountReadWarning[]): void {
+  for (const warning of warnings) {
+    if (loggedAccountWarnings.has(warning.message)) continue;
+    loggedAccountWarnings.add(warning.message);
+    logger.warn(`[claude-accounts] ${warning.message}`, { code: warning.code });
+  }
+}
+
+/**
  * Read `runtimes.claudeCode` without ever throwing.
  *
  * Config resolution is on the transcript read path, and the singleton is
@@ -87,7 +111,7 @@ export function inheritedClaudeRoot(): string {
  */
 function readClaudeCodeConfig(config: ConfigReader): {
   defaultAccount: string | null;
-  accounts: readonly ClaudeCodeAccount[];
+  accounts: readonly ReadClaudeAccount[];
   /** True when `accounts` is empty because the read failed, not because it is. */
   unavailable: boolean;
 } {
@@ -103,7 +127,9 @@ function readClaudeCodeConfig(config: ConfigReader): {
     // top two rungs are inert — a hint matched by an id no stored row carries.
     // Neither is a schema concern: `UserConfigSchema` is right either way, and
     // nothing on this path consults it.
-    return { ...readClaudeAccountSettings(config.get('runtimes')?.claudeCode), unavailable: false };
+    const { warnings, ...settings } = readClaudeAccountSettings(config.get('runtimes')?.claudeCode);
+    warnOnce(warnings);
+    return { ...settings, unavailable: false };
   } catch (err) {
     logger.debug('[claude-config-dir] Claude account config unavailable', { err: String(err) });
     return { defaultAccount: null, accounts: [], unavailable: true };
@@ -198,7 +224,7 @@ export function resolveLaunchAccountRoot(
     // id, so `find(a => a.id === id)` with an absent `id` on both sides would
     // return the first row and bill an account nobody named.
     if (!id) continue;
-    const match = accounts.find((account) => account.id === id);
+    const match = findRegisteredAccount(accounts, id);
     if (match) return match.path;
     logger.warn('[claude-config-dir] account id is not registered; falling through', {
       source,
@@ -207,6 +233,38 @@ export function resolveLaunchAccountRoot(
   }
 
   return resolveActiveClaudeRoot(config);
+}
+
+/**
+ * The registered row a reference names: the row with that id, else a row the
+ * `'0.87.0'` migration renamed FROM that id.
+ *
+ * A row whose id is still `default` is never matched. `default` names the
+ * default account (contract `flow-cli-core` §1.1a, revision 6d), and the reader
+ * lists such a row with an `id-reserved` warning as not routable, for example
+ * one an older flow wrote after `'0.87.0'` ran. A reference to `default`
+ * therefore falls through to the next rung of the ladder.
+ *
+ * **The `renamedFrom` half is temporary**, until task 2.1's account reconcile
+ * (spec `claude-account-fleet` §6 R) moves every reference to the new id and
+ * removes both this fallback and the marker. `'0.87.0'` renames a row called
+ * `default` to `default-N` and marks it `renamedFrom: 'default'`, but the
+ * references to it (agent manifests, schedules) live outside the config file.
+ * Until they move, a reference that says `default` keeps billing the account it
+ * named the day before the upgrade, and so does a new one.
+ *
+ * @param accounts - The listed registry rows.
+ * @param id - The id a hint, manifest or schedule names.
+ */
+function findRegisteredAccount(
+  accounts: readonly ReadClaudeAccount[],
+  id: string
+): ReadClaudeAccount | undefined {
+  const routable = accounts.filter((account) => account.id !== IMPLICIT_ACCOUNT_ID);
+  return (
+    routable.find((account) => account.id === id) ??
+    routable.find((account) => account.renamedFrom === id)
+  );
 }
 
 /**
@@ -228,7 +286,7 @@ export function isRegisteredClaudeAccount(
 ): boolean | undefined {
   const { accounts, unavailable } = readClaudeCodeConfig(config);
   if (unavailable) return undefined;
-  return accounts.some((account) => account.id === id);
+  return findRegisteredAccount(accounts, id) !== undefined;
 }
 
 /**
@@ -367,6 +425,11 @@ export function describeClaudeCodeAccounts(
       id: account.id,
       path: account.path,
       label: account.label,
+      // Resolved by position when the operator stored none; `colorIsDefault`
+      // lets the settings screen write `null` back for such a row, so it keeps
+      // following the palette instead of freezing today's default into the file.
+      color: account.color,
+      colorIsDefault: account.colorIsDefault,
       // NOT `exists`: this is D4's structural check, so a directory that is
       // really there but holds no `projects/` reports false. Naming it `exists`
       // would read as `fs.existsSync` to any UI and mislabel that case.

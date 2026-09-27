@@ -536,6 +536,12 @@ DorkOS records only your **deviations** from each extension's default state, acr
       type: 'string[]',
       default: '[]',
     },
+    'extensions.approvedSources': {
+      description:
+        'Which copy of each allowed extension you said yes to: its folder, and the plugin it came in, if any. Only you can change it.',
+      type: 'object',
+      default: '{}',
+    },
   }}
 />
 
@@ -547,11 +553,13 @@ An extension is code, in two places: some of it runs on your computer with the s
 
 You will see it the first time: the extension shows up in Settings → Extensions with a note that it is waiting for you, and an **Allow it to run** button. Click it once and you are done. Editing that extension, testing it, and reloading it all work from then on with nothing further to click, and turning the extension off and on again does not ask you again. If you change your mind, **Stop it** on the same card takes the permission back and stops the extension straight away.
 
-Two things do ask again, because in both the code has changed hands rather than been edited by you: installing an update to an extension, and reinstalling one you removed. Editing an extension you already allowed never re-asks.
+Some extensions come inside a plugin you install from the marketplace. Those show up in Settings → Extensions too, and ask the same way.
+
+Your yes is for one copy of an extension: the one in that folder, from that plugin. Two things ask again, because in both the code has changed hands rather than been edited by you: reinstalling an extension you removed, and a different plugin bringing an extension with the same name. Updating a plugin keeps your yes for the extensions it still brings. Editing an extension you already allowed never re-asks.
 
 Extensions that ship with DorkOS never ask. You already installed DorkOS. DorkOS tells its own extensions apart by where their files sit, not by the name inside them, so a folder in your project cannot claim to be one.
 
-Your answer lives in `extensions.approvedToRun`. Your agents can read it but cannot write it, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
+Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add its own extension to that list would be approving its own code. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
 
 <Callout type="warn">
   Adding a ships-on extension's id to `enabled` does nothing, since it's already on. To disable it,
@@ -602,9 +610,15 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.claudeCode.accounts': {
       description:
-        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. DorkOS never goes looking for accounts on its own.',
-      type: 'Array<{ id: string; path: string; label: string | null }>',
+        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. It uses lowercase letters, digits and single hyphens, and `default` is kept for your main account, so DorkOS will not save an account under that name. DorkOS never goes looking for accounts on its own.',
+      type: 'Array<{ id: string; path: string; label: string | null; color: string | null }>',
       default: '[]',
+    },
+    'runtimes.claudeCode.accounts[].color': {
+      description:
+        "The color DorkOS uses for this account's dot and badge. Leave it empty to use the default for its position.",
+      type: 'string | null',
+      default: 'null',
     },
     'runtimes.claudeCode.defaultModel': {
       description:

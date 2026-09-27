@@ -47,6 +47,20 @@ vi.mock('../../core/config-manager.js', () => ({
 
 // --- Helpers ---
 
+/**
+ * Approvals of the given ids, each bound to the copy `makeRecord` builds for it
+ * (DOR-2383: an approval names the copy it was given to, not just the id).
+ */
+function approved(ids: string[]): {
+  approvedToRun: string[];
+  approvedSources: Record<string, { path: string }>;
+} {
+  return {
+    approvedToRun: ids,
+    approvedSources: Object.fromEntries(ids.map((id) => [id, { path: `/fake/extensions/${id}` }])),
+  };
+}
+
 function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
   return {
     id,
@@ -189,14 +203,14 @@ describe('ExtensionManager.testExtension', () => {
     mockConfigGet.mockReturnValue({
       enabled: [],
       disabled: [],
-      approvedToRun: [
+      ...approved([
         'broken-ext',
         'cache-miss',
         'throw-ext',
         'no-activate',
         'good-ext',
         'empty-ext',
-      ],
+      ]),
     });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');

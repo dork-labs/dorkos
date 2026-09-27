@@ -129,6 +129,7 @@ export function buildInstallerForTests(dorkHome: string): InstallerTestHarness {
   const extensionDisable = vi.fn().mockResolvedValue(undefined);
   const extensionCompiler = { compile: extensionCompile };
   const extensionManager = {
+    get: vi.fn().mockReturnValue(undefined),
     enable: extensionEnable,
     disable: extensionDisable,
     forgetRunApproval: vi.fn().mockResolvedValue(undefined),

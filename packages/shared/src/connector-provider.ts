@@ -297,6 +297,12 @@ export type ConnectorKeyKind = z.infer<typeof ConnectorKeyKindSchema>;
 export const ConnectorProviderStatusSchema = z.object({
   /** Backend type identifier, e.g. `'composio' | 'nango'`. */
   type: z.string(),
+  /**
+   * The provider instance this key runs (or would run) as — the same id every
+   * connection made through it carries as `providerInstanceId`, so a client can
+   * tell exactly which connections a key serves.
+   */
+  providerInstanceId: ConnectorProviderInstanceIdSchema,
   /** Whether the provider's credential (and any required env) is present. */
   configured: z.boolean(),
   /** Whether the provider is currently registered and serving. */

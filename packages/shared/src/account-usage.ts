@@ -14,6 +14,7 @@
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ledgerSlug } from './ledger-slug.js';
+import { ACCOUNT_ID_PATTERN } from './account-identity.js';
 
 export { ledgerSlug } from './ledger-slug.js';
 export { codexObservations } from './account-usage-codex.js';
@@ -22,72 +23,16 @@ extendZodWithOpenApiOnce();
 
 // === Account identity and color ===
 
-/**
- * The pattern every account registry id must match (contract §1.1a). It is
- * also the ledger's file name, so anything else is refused: no path traversal.
- */
-export const ACCOUNT_ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-
-/**
- * The id of a runtime's one implicit account: the ambient environment (Claude
- * Code's inherited root, Codex's `CODEX_HOME`, OpenCode's configured provider)
- * when that runtime has no registered accounts. It matches
- * {@link ACCOUNT_ID_PATTERN}, so it names a ledger file like any other id.
- */
-export const IMPLICIT_ACCOUNT_ID = 'default';
-
-/** A stored account color: lowercase `#rrggbb` (contract §1.1a). */
-const ACCOUNT_COLOR_PATTERN = /^#[0-9a-f]{6}$/;
-
-/**
- * The positional default colors for accounts with no stored color.
- *
- * Provisional: the UI track owns these values, and nothing persists them (a
- * stored `color: null` means "the default for this position", resolved at read
- * time), so they may change freely.
- */
-export const DEFAULT_ACCOUNT_COLORS: readonly string[] = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#8b5cf6',
-  '#ef4444',
-  '#06b6d4',
-  '#ec4899',
-  '#84cc16',
-];
-
-/** Wrap any integer position into the default palette, negatives included. */
-function paletteColorAt(index: number): string {
-  const n = DEFAULT_ACCOUNT_COLORS.length;
-  const i = Number.isFinite(index) ? Math.trunc(index) : 0;
-  return DEFAULT_ACCOUNT_COLORS[((i % n) + n) % n]!;
-}
-
-/**
- * The color an account is drawn in: its stored color when that is a valid
- * lowercase `#rrggbb`, else the default for its position in the registry.
- *
- * @param stored - The row's stored `color`, possibly `null` or a hand-edited bad value.
- * @param index - The row's position in the registry; wraps around the palette.
- */
-export function resolveAccountColor(stored: string | null | undefined, index: number): string {
-  if (typeof stored === 'string' && ACCOUNT_COLOR_PATTERN.test(stored)) return stored;
-  return paletteColorAt(index);
-}
-
-/**
- * The color to give a newly registered account: the first palette value no
- * existing row uses, else the positional default when every value is taken.
- *
- * @param taken - The colors registered rows already resolve to.
- * @param index - The new row's position in the registry.
- */
-export function nextAccountColor(taken: Iterable<string>, index: number): string {
-  const used = new Set<string>();
-  for (const color of taken) used.add(color.toLowerCase());
-  return DEFAULT_ACCOUNT_COLORS.find((color) => !used.has(color)) ?? paletteColorAt(index);
-}
+// Defined in the dependency-light `account-identity` module so the config
+// schema can apply the same rules without pulling OpenAPI into its imports.
+export {
+  ACCOUNT_COLOR_PATTERN,
+  ACCOUNT_ID_PATTERN,
+  DEFAULT_ACCOUNT_COLORS,
+  IMPLICIT_ACCOUNT_ID,
+  nextAccountColor,
+  resolveAccountColor,
+} from './account-identity.js';
 
 /**
  * The id of the Flow extension's fleet settings tab, so core surfaces can link

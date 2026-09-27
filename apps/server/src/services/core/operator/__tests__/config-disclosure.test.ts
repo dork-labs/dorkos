@@ -208,8 +208,8 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       claudeCode: {
         defaultAccount: '/Users/me/.claude2',
         accounts: [
-          { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp' },
-          { id: 'claude2', path: '/Users/me/.claude2', label: null },
+          { id: 'acme-corp', path: '/Users/me/.claude', label: 'Acme Corp', color: '#12ab9f' },
+          { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
         ],
         defaultModel: 'opus',
         defaultEffort: 'high',
@@ -284,6 +284,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'cloud.instanceToken',
       'cloud.linkedAccountLabel',
       'connectors.rawMcpServers[].url',
+      // Not a secret: absolute paths on this machine that no agent needs (DOR-2383).
+      'extensions.approvedSources',
       'mcp.apiKey',
       'providers',
       'runtimes.codex.credentialRef',

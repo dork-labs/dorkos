@@ -17,6 +17,10 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import type { RelayEnvelope, AdapterManifest } from '@dorkos/shared/relay-schemas';
+import {
+  reachesServerDestination,
+  WEBHOOK_SERVER_SUBJECT_REFUSAL,
+} from '@dorkos/shared/relay-schemas';
 import type {
   AdapterContext,
   DeliveryResult,
@@ -182,6 +186,14 @@ export class WebhookAdapter extends BaseRelayAdapter {
   private nonceInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
+   * Whether the inbound subject is a DorkOS address (DOR-2432). The config
+   * schema refuses one at create and edit; this catches a config written before
+   * that rule, which still loads, so the adapter refuses to start, publish or
+   * deliver instead of trusting it.
+   */
+  private readonly serverOwnedSubject: boolean;
+
+  /**
    * Create a new WebhookAdapter instance.
    *
    * @param id - Unique adapter identifier (e.g., 'github', 'stripe')
@@ -192,6 +204,7 @@ export class WebhookAdapter extends BaseRelayAdapter {
     // subjectPrefix is derived from the inbound subject so RelayCore can route to this adapter
     super(id, config.inbound.subject, displayName ?? `Webhook (${id})`);
     this.config = config;
+    this.serverOwnedSubject = reachesServerDestination(config.inbound.subject);
   }
 
   /**
@@ -205,6 +218,7 @@ export class WebhookAdapter extends BaseRelayAdapter {
    * @param _relay - The RelayPublisher (stored by base class; unused here)
    */
   protected async _start(_relay: RelayPublisher): Promise<void> {
+    if (this.serverOwnedSubject) throw new Error(WEBHOOK_SERVER_SUBJECT_REFUSAL);
     this.logger.info('webhook adapter ready', { subject: this.config.inbound.subject });
 
     // Prune expired nonces on a fixed interval to prevent memory growth
@@ -245,6 +259,9 @@ export class WebhookAdapter extends BaseRelayAdapter {
     rawBody: Buffer,
     headers: Record<string, string | string[] | undefined>
   ): Promise<{ ok: boolean; error?: string; status?: number }> {
+    if (this.serverOwnedSubject) {
+      return { ok: false, error: WEBHOOK_SERVER_SUBJECT_REFUSAL, status: 403 };
+    }
     if (!this.relay) return { ok: false, error: 'Adapter not started' };
 
     const signature = normalizeHeader(headers['x-signature']);
@@ -332,6 +349,11 @@ export class WebhookAdapter extends BaseRelayAdapter {
     _context?: AdapterContext
   ): Promise<DeliveryResult> {
     const startTime = Date.now();
+    // Never forward the server's own traffic (a task dispatch, an approval) to
+    // an outbound URL — see `serverOwnedSubject`.
+    if (this.serverOwnedSubject) {
+      return { success: false, error: WEBHOOK_SERVER_SUBJECT_REFUSAL, durationMs: 0 };
+    }
     const body = JSON.stringify(envelope.payload);
     const timestamp = String(Math.floor(Date.now() / 1000));
     const nonce = crypto.randomUUID();

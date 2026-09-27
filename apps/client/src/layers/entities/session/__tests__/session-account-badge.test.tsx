@@ -66,6 +66,8 @@ function configWithAccounts(
       accounts: accounts.map((account, index) => ({
         ...account,
         id: `account-${index}`,
+        color: '#3b82f6',
+        colorIsDefault: true,
         isAccountRoot: true,
       })),
     },

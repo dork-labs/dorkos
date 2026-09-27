@@ -587,6 +587,10 @@ export const CONFIG_WRITE_POLICY = {
   // security control", and the reason the whole gate hangs off a config field
   // instead of anything under the project tree an agent edits freely.
   'extensions.approvedToRun': 'operator-only',
+  // Which copy of each extension that consent was given to (DOR-2383). Half of
+  // the same record: a caller that could point an approved id at another copy
+  // would move a person's decision onto code they never saw.
+  'extensions.approvedSources': 'operator-only',
 
   // Whether the external tool endpoint answers, the bearer that gates it, and the
   // rate limits that bound abuse of it.
@@ -694,6 +698,10 @@ export const CONFIG_WRITE_POLICY = {
   'runtimes.claudeCode.accounts[].id': 'operator-only',
   'runtimes.claudeCode.accounts[].path': 'operator-only',
   'runtimes.claudeCode.accounts[].label': 'operator-only',
+  // Cosmetic on its own, but it sits on the same rows: `accounts` is written as a
+  // whole array, so a write that could set a color could also add or repoint an
+  // account. The row stays operator-only as a unit.
+  'runtimes.claudeCode.accounts[].color': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
   // operator was asked directly: a model and an effort level are a preference
   // about how work runs, on the same footing as `runtimes.default` right above,
@@ -930,6 +938,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].id',
       'runtimes.claudeCode.accounts[].path',
       'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].color',
     ],
   },
   {
@@ -944,6 +953,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'extensions.enabled',
       'extensions.disabled',
       'extensions.approvedToRun',
+      'extensions.approvedSources',
       'harness.approvedHooks',
       'harness.refusedHooks',
       'runtimes.opencode.binaryPath',

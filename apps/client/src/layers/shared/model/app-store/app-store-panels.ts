@@ -24,6 +24,7 @@ export type SettingsTab =
   | 'remote-access'
   | 'runtimes'
   | 'rooms'
+  | 'connections'
   | 'permissions'
   | 'privacy'
   | 'danger'

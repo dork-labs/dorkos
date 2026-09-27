@@ -583,6 +583,19 @@ export interface RuntimeCapabilities {
   supportsPlugins: boolean;
 
   /**
+   * Whether this runtime can run sessions on more than one registered billing
+   * account (spec `claude-account-fleet` §6 R). Required, so a new runtime has
+   * to decide rather than inherit an answer.
+   *
+   * The UI shows the account chip, dots and badge only for a session whose
+   * runtime declares this AND has two or more registered accounts. Usage bars
+   * and the out-of-usage banner do not depend on it: every runtime records
+   * usage for its one ambient `default` account. Only Claude Code has an
+   * account registry today, so it is the only runtime that declares `true`.
+   */
+  supportsAccounts: boolean;
+
+  /**
    * Structured permission-mode capability. `supported: false, values: []`
    * means the runtime does not expose a permission-mode picker at all.
    */

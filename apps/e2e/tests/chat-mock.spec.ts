@@ -61,6 +61,13 @@ test.describe.configure({ mode: 'default' });
 // Seeded by POST /api/test/seed-agent in beforeEach.
 let agentDir: string;
 
+// And after each: the reset above only protects THIS file's tests, and the
+// scenario a test selected would otherwise still be the default for whatever
+// runs next on this shared server.
+test.afterEach(async ({ request }) => {
+  await request.post(`${API_URL}/api/test/reset`);
+});
+
 test.beforeEach(async ({ request }) => {
   // Reset to default scenario (simple-text) before each test
   await request.post(`${API_URL}/api/test/reset`);

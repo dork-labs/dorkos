@@ -57,6 +57,14 @@ const EXPECTED_KINDS: Record<string, 'money' | 'credit'> = {
   'NudgeSchema.suggestedPlanPriceMicro': 'money',
   'NudgeSchema.savingMicro': 'money',
   'TopupRequestSchema.amountMicro': 'money',
+  'OfferSchema.amountMicro': 'money',
+  'OfferSchema.limits.includedCreditsMicro': 'credit',
+  'OffersResponseSchema.offers.amountMicro': 'money',
+  'OffersResponseSchema.offers.limits.includedCreditsMicro': 'credit',
+  'StatementResponseSchema.lines.listPriceMicro': 'money',
+  'StatementResponseSchema.lines.dorkosPriceMicro': 'credit',
+  'StatementResponseSchema.totals.listPriceMicro': 'money',
+  'StatementResponseSchema.totals.dorkosPriceMicro': 'credit',
   'RefundResponseSchema.refundedMicro': 'money',
 };
 
@@ -67,6 +75,8 @@ const DENOMINATED = [
   'UsageResponseSchema',
   'PriceListResponseSchema',
   'NudgeSchema',
+  'OffersResponseSchema',
+  'StatementResponseSchema',
 ] as const;
 
 /** Reads the `amountKind` mark on a field, looking through its wrappers. */

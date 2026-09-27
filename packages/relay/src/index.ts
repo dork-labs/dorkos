@@ -50,7 +50,10 @@ export {
   CONTROL_SUBJECT_PREFIX,
   isServerManagedSubject,
   isControlSubject,
+  SERVER_DESTINATION_SENDERS,
+  mayReachServerDestination,
 } from './lib/reserved-subjects.js';
+export type { ServerDestinationSender } from './lib/reserved-subjects.js';
 export type { SubjectValidationResult, SubjectValidationError } from './subject-matcher.js';
 export { enforceBudget, createDefaultBudget } from './budget-enforcer.js';
 

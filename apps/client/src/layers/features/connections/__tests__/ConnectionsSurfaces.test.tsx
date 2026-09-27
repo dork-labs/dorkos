@@ -15,6 +15,11 @@ import { ConnectionDetailSheet } from '../ui/ConnectionDetailSheet';
 import { ServiceGrid } from '../ui/ServiceGrid';
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn(), useRouter: () => ({}) }));
+const openSettings = vi.hoisted(() => vi.fn());
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useSettingsDeepLink: () => ({ open: openSettings }),
+}));
 afterEach(() => {
   cleanup();
 });
@@ -183,6 +188,8 @@ describe('ServiceGrid', () => {
     expect(
       screen.getByText(/Only popular apps are listed until you connect your first one/)
     ).toBeInTheDocument();
+    // Nothing set up is answered by connecting, not by a trip to Settings.
+    expect(screen.queryByRole('button', { name: 'Open Settings › Connections' })).toBeNull();
   });
 
   it('does not promise the first connect fixes search when a saved key stopped working', async () => {
@@ -206,6 +213,11 @@ describe('ServiceGrid', () => {
       await screen.findByText('Only popular apps are listed while your saved key isn’t working.')
     ).toBeInTheDocument();
     expect(screen.queryByText(/until you connect your first one/)).not.toBeInTheDocument();
+    // The fix for a key that stopped working lives in Settings › Connections.
+    await user.click(screen.getByRole('button', { name: 'Open Settings › Connections' }));
+    // The catalog steps aside for Settings rather than stacking a modal on it.
+    expect(screen.queryByRole('dialog', { name: 'Connect a service' })).not.toBeInTheDocument();
+    expect(openSettings).toHaveBeenCalledWith('connections', 'ways');
   });
 
   it('keeps an empty search plain once a way to reach apps works', async () => {

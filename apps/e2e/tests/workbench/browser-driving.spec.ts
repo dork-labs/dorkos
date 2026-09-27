@@ -41,6 +41,15 @@ test.describe('Browser — an agent uses the page @smoke', () => {
     await new Promise<void>((resolve) => fixture.close(() => resolve()));
   });
 
+  // The driving scenario is selected as the server-wide DEFAULT (see below), so
+  // it has to be put back after every test. Left on, every later turn on this
+  // leg drives a browser instead of answering: #team's fallback seat then never
+  // replies to a post, and whichever spec runs next on the same test-mode
+  // server fails for a reason that is nowhere in its own file.
+  test.afterEach(async ({ request }) => {
+    await request.post('/api/test/reset');
+  });
+
   /**
    * Put the test-mode runtime back to a known state, and refuse to run anywhere
    * but the leg that has one.

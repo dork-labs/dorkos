@@ -30,6 +30,16 @@
  * The query string always survives, so `/activate?user_code=…` (the URL a
  * released CLI prints) lands on the same code.
  *
+ * ## Who the caller is, on a proxied request
+ *
+ * A proxied request reaches the accounts service from this site's own address,
+ * so a per-address rate limit there would count every caller together. When
+ * `DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET` is also set, the site adds the caller's
+ * address, as Vercel reported it, and the shared secret, and the service
+ * trusts the address only beside the secret (see
+ * {@link proxiedRequestHeaders}). A caller's own copy of either header is
+ * always removed. Redirects never carry either.
+ *
  * ## What is NOT sent on, and what switches off instead
  *
  * Managed connections (`/api/instances/connectors/**`, `/api/connectors/**`,
@@ -46,8 +56,19 @@
  * @module lib/cloud-accounts/forward
  */
 
+import { clientIpFromHeaders, UNKNOWN_CLIENT_IP } from '@/lib/rate-limit/client-ip';
+
 /** The environment variable that turns forwarding on. Unset means off. */
 export const CLOUD_ACCOUNTS_ORIGIN_VARIABLE = 'DORKOS_CLOUD_ACCOUNTS_ORIGIN';
+
+/** The header a proxied request reports its caller's address in. */
+export const PROXIED_ADDRESS_HEADER = 'x-dorkos-client-address';
+
+/** The header that proves to the service that this site sent the address. */
+export const PROXY_SECRET_HEADER = 'x-dorkos-proxy-secret';
+
+/** The shortest shared secret that counts as set; the service applies the same floor. */
+export const PROXY_SECRET_MIN_LENGTH = 32;
 
 /**
  * Account pages: always redirected. Each entry matches itself and anything
@@ -237,4 +258,89 @@ export function decideCloudAccountsForward(
  */
 export function cloudAccountsForwarding(raw: string | undefined): boolean {
   return parseCloudAccountsOrigin(raw) !== null;
+}
+
+/** The last secret checked, so a bad value is reported once rather than per request. */
+let lastSecret: { readonly raw: string | undefined; readonly secret: string | null } | null = null;
+
+/**
+ * The shared secret as it will be sent, or `null` for "unset".
+ *
+ * Surrounding whitespace is trimmed, because a pasted value often ends in a
+ * newline and a header value loses it on the wire anyway. Set the same value,
+ * with no surrounding whitespace, on the site and the service. What is left must be at least {@link PROXY_SECRET_MIN_LENGTH}
+ * printable ASCII characters: anything else could not be sent as a header
+ * value, and would make every proxied request fail, so it counts as unset and
+ * says so on the console once. The value never appears in that line.
+ *
+ * @param raw - The variable's value.
+ */
+export function usableProxySecret(raw: string | undefined): string | null {
+  if (lastSecret && lastSecret.raw === raw) return lastSecret.secret;
+  const value = raw?.trim() ?? '';
+  let secret: string | null = null;
+  if (value && !/^[\x21-\x7e]+$/.test(value)) {
+    console.error(
+      'DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET has characters a header cannot carry; not sending it.'
+    );
+  } else if (value && value.length < PROXY_SECRET_MIN_LENGTH) {
+    console.error(
+      `DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET is shorter than ${PROXY_SECRET_MIN_LENGTH} characters; not sending it.`
+    );
+  } else if (value) {
+    secret = value;
+  }
+  lastSecret = { raw, secret };
+  return secret;
+}
+
+/** What {@link proxiedRequestHeaders} needs besides the request's headers. */
+export interface ProxiedHeaderOptions {
+  /** `DORKOS_CLOUD_ACCOUNTS_PROXY_SECRET`, shared with the accounts service. */
+  readonly secret: string | undefined;
+  /**
+   * Whether this deployment runs on Vercel (`VERCEL` is `1` and `VERCEL_ENV`
+   * is `production` or `preview`), whose edge sets the caller's
+   * address itself and replaces any value the caller sent. Anywhere else the
+   * address header is the caller's own, and the site vouches for nothing.
+   */
+  readonly onVercel: boolean;
+}
+
+/**
+ * The request headers to send with a proxied request, or `null` to send the
+ * request's own headers unchanged.
+ *
+ * Any copy of {@link PROXIED_ADDRESS_HEADER} or {@link PROXY_SECRET_HEADER}
+ * the caller sent is always removed, so a caller can never pass its own
+ * through. The two are then added together, and only when the secret is set
+ * (see {@link usableProxySecret}), the site is on Vercel,
+ * and Vercel's header names one address. With the secret unset and neither
+ * header sent, the answer is `null`: the proxied request is exactly what it was
+ * before this existed.
+ *
+ * The secret is never logged, and never added to a redirect.
+ *
+ * @param headers - The incoming request's headers. Not modified.
+ * @param options - The shared secret, and whether the site is on Vercel.
+ * @returns The headers to proxy with, or `null` for no change.
+ */
+export function proxiedRequestHeaders(
+  headers: Headers,
+  options: ProxiedHeaderOptions
+): Headers | null {
+  const secret = usableProxySecret(options.secret);
+  const address = options.onVercel ? clientIpFromHeaders(headers) : UNKNOWN_CLIENT_IP;
+  const vouch = secret !== null && address !== UNKNOWN_CLIENT_IP;
+  const carried = headers.has(PROXIED_ADDRESS_HEADER) || headers.has(PROXY_SECRET_HEADER);
+  if (!vouch && !carried) return null;
+
+  const out = new Headers(headers);
+  out.delete(PROXIED_ADDRESS_HEADER);
+  out.delete(PROXY_SECRET_HEADER);
+  if (vouch) {
+    out.set(PROXIED_ADDRESS_HEADER, address);
+    out.set(PROXY_SECRET_HEADER, secret);
+  }
+  return out;
 }

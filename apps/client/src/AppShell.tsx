@@ -12,7 +12,7 @@ import { useElectronCloseTab } from './app/use-electron-close-tab';
 import { useElectronFullscreen } from './app/use-electron-fullscreen';
 import { useWindowFocusDimming } from './app/use-window-focus-dimming';
 import { useRoomDocumentTitle } from './app/use-room-document-title';
-import { useCommunityRevocationCleanup } from './app/use-community-revocation-cleanup';
+import { useCommunityWatchers } from './app/use-community-watchers';
 import { TitlebarDragStrip } from './app/TitlebarDragStrip';
 import { SidebarBodyErrorBoundary } from './app/SidebarBodyErrorBoundary';
 import { ServerUnreachableScreen } from './app/ServerUnreachableScreen';
@@ -43,7 +43,6 @@ import { useBindingsSync } from '@/layers/entities/binding';
 import { useRelayAdaptersSync } from '@/layers/entities/relay';
 import { useUnattendedAutonomySync } from '@/layers/entities/unattended-autonomy';
 import { useTasksSync } from '@/layers/entities/tasks';
-import { useCommunityConnectionsSync } from '@/layers/entities/community';
 import { useTunnelSync, useRemoteAccessAnnouncer } from '@/layers/entities/tunnel';
 import { motion, AnimatePresence, MotionConfig, useReducedMotion } from 'motion/react';
 import { shouldFadeRoute } from './app/route-fade';
@@ -258,12 +257,9 @@ export function AppShell() {
   // The tab names the room you are reading when there is one, and counts the
   // rooms waiting on you whichever route you are on (spec `rooms` §13.1/§13.3).
   const { room: openRoom, roomTitle, unreadRoomCount } = useRoomDocumentTitle();
-  // One watcher for the whole app: a Community that stops being connected is
-  // erased and routed away from, whichever surface is showing it. The sync
-  // hook re-reads the list the moment the server says a connection changed,
-  // so the watcher runs within seconds instead of on the next poll.
-  useCommunityRevocationCleanup();
-  useCommunityConnectionsSync();
+  // One set of Community watchers for the whole app (revocation cleanup, list
+  // sync, and the approval checks that finish a pairing).
+  useCommunityWatchers();
   useFavicon({
     cwd: selectedCwd,
     isStreaming,

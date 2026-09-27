@@ -2,6 +2,9 @@
  * The contract-level invariants: the wire version, the shape of the route
  * table, the money rule, and the additive-within-a-major discipline.
  */
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -118,6 +121,67 @@ describe('the Problem envelope', () => {
   it('carries no amount, ever', () => {
     const fields = Object.keys(contract.ProblemSchema.shape);
     expect(fields.filter((field) => /micro|amount|price|cost/i.test(field))).toEqual([]);
+  });
+});
+
+describe('the two request-shape codes', () => {
+  // Purpose: a client must be able to tell "the address named nothing" from
+  // "the request about a real thing could not be read" by the code alone,
+  // without parsing the path. One code for both facts made that impossible.
+  const codes = contract.ProblemCodeSchema.options;
+
+  it('publishes a distinct code for an identifier that is not one', () => {
+    expect(codes).toContain('malformed_identifier');
+    expect(codes).toContain('malformed_request');
+    expect(
+      contract.isProblem({ code: 'malformed_identifier', status: 400, title: 'No such seat.' })
+    ).toBe(true);
+  });
+
+  it('keeps every code it published before, which is what additive means', () => {
+    // A member removed or renamed narrows a published type: a `/v2` change.
+    for (const code of [
+      'unauthenticated',
+      'invalid_token',
+      'expired_token',
+      'forbidden',
+      'scope_required',
+      'malformed_request',
+      'unsupported_wire_version',
+      'not_found',
+      'conflict',
+      'precondition_failed',
+      'rate_limited',
+      'person_seat_required',
+      'seat_unavailable',
+      'handle_taken',
+      'handle_reserved',
+      'handle_tombstoned',
+      'claim_not_approved',
+      'inbox_full',
+      'entitlement_required',
+      'balance_exhausted',
+      'quota_exceeded',
+      'topup_below_minimum',
+      'first_purchase_cap',
+      'refund_window_closed',
+      'enrolment_required',
+      'remote_disabled',
+      'address_unavailable',
+      'community_name_taken',
+      'community_name_reserved',
+      'import_too_large',
+      'internal_error',
+      'temporarily_unavailable',
+    ]) {
+      expect(codes, code).toContain(code);
+    }
+  });
+
+  it('says in the schema which fact each code answers', () => {
+    const doc = contract.ProblemCodeSchema.description ?? '';
+    expect(doc).toContain('malformed_identifier');
+    expect(doc).toContain('malformed_request');
   });
 });
 
@@ -273,6 +337,135 @@ describe('the withdrawn refunds route', () => {
 
   it('keeps the route`s refusal code, because removing a member narrows a published type', () => {
     expect(contract.ProblemCodeSchema.safeParse('refund_window_closed').success).toBe(true);
+  });
+});
+
+describe('the offers read', () => {
+  const limits = {
+    personSeatsIncluded: 1,
+    agentSeatsIncluded: 0,
+    includedCreditsMicro: '0',
+    cloudHours: 0,
+    storageGb: 0,
+    remoteAccess: 'byo',
+    alwaysAvailableInstances: 0,
+    customAddress: 'none',
+    managedConnectionActions: null,
+    support: 'community',
+    emailAddressPerSeat: false,
+  };
+  const offer = {
+    skuId: 'sku_x',
+    planId: 'pl_x',
+    displayName: 'x',
+    interval: 'month',
+    amountMicro: '1',
+    limits,
+  };
+
+  it('is published as a route, so a conforming client can get a skuId to check out with', () => {
+    expect(V1_ROUTES.offers).toBe('/v1/offers');
+  });
+
+  it('parses an empty list, because nothing on sale is a normal answer and never a 404', () => {
+    expect(contract.OffersResponseSchema.safeParse({ offers: [] }).success).toBe(true);
+  });
+
+  it('reuses the published limits shape by reference rather than a twin', () => {
+    expect(contract.OfferSchema.shape.limits).toBe(contract.EntitlementLimitsSchema);
+    expect(contract.OffersResponseSchema.safeParse({ offers: [offer] }).success).toBe(true);
+  });
+
+  it('carries only the ids, name, interval, amount and limits: no order hint, flag or supplier id', () => {
+    // A client that renders a "recommended" badge is a client that nudges, and
+    // a "current" flag is a second place to compute what the entitlement says.
+    expect(Object.keys(contract.OfferSchema.shape).sort()).toEqual([
+      'amountMicro',
+      'displayName',
+      'interval',
+      'limits',
+      'planId',
+      'skuId',
+    ]);
+    const parsed = contract.OfferSchema.parse({ ...offer, current: true, recommended: true });
+    expect(parsed).not.toHaveProperty('current');
+    expect(parsed).not.toHaveProperty('recommended');
+  });
+
+  it('reads an interval added later as unrecognised, so one offer cannot fail the list', () => {
+    expect(contract.OfferSchema.parse({ ...offer, interval: 'year' }).interval).toBe('year');
+    const page = contract.OffersResponseSchema.parse({
+      offers: [{ ...offer, interval: 'week' }, offer],
+    });
+    expect(page.offers.map((item) => item.interval)).toEqual([contract.UNRECOGNISED, 'month']);
+    expect(contract.OfferSchema.safeParse({ ...offer, interval: 12 }).success).toBe(false);
+    expect(contract.OfferIntervalSchema.options).toEqual(['month', 'year']);
+  });
+});
+
+describe('the statement lines', () => {
+  const link = {
+    period: '2026-08',
+    downloadUrl: 'https://example.invalid/s',
+    expiresAt: '2026-09-15T12:00:00.000Z',
+  };
+
+  it('leaves a link-only statement valid, which is what an older service sends', () => {
+    expect(contract.StatementResponseSchema.safeParse(link).success).toBe(true);
+  });
+
+  it('keeps every itemised fixture`s totals equal to the exact sum of its lines', () => {
+    for (const rel of ['billing/statement-itemised.json']) {
+      const body = contract.StatementResponseSchema.parse(
+        JSON.parse(
+          readFileSync(path.resolve(import.meta.dirname, '..', '..', 'fixtures', 'v1', rel), 'utf8')
+        )
+      );
+      const sum = (key: 'listPriceMicro' | 'dorkosPriceMicro') =>
+        (body.lines ?? []).reduce((total, line) => total + BigInt(line[key]), 0n).toString();
+      expect(body.totals?.listPriceMicro, rel).toBe(sum('listPriceMicro'));
+      expect(body.totals?.dorkosPriceMicro, rel).toBe(sum('dorkosPriceMicro'));
+    }
+  });
+
+  it('names its window, so a client never derives one from the period label', () => {
+    expect(
+      contract.StatementResponseSchema.safeParse({
+        ...link,
+        from: '2026-08-20T00:00:00.000Z',
+        to: '2026-09-20T00:00:00.000Z',
+      }).success
+    ).toBe(true);
+    expect(contract.StatementResponseSchema.safeParse({ ...link, from: '2026-08' }).success).toBe(
+      false
+    );
+  });
+
+  it('uses the usage row shape for its lines, so a statement adds no new vocabulary', () => {
+    const lines = contract.StatementResponseSchema.shape.lines.unwrap();
+    expect(lines.element).toBe(contract.UsageRowSchema);
+    const withLines = {
+      ...link,
+      lines: [
+        {
+          key: 'md_x',
+          displayName: 'x',
+          units: 1,
+          unit: 'tokens',
+          listPriceMicro: '1',
+          dorkosPriceMicro: '2',
+          costBasis: 'published_price',
+        },
+      ],
+      totals: { listPriceMicro: '1', dorkosPriceMicro: '2' },
+    };
+    expect(contract.StatementResponseSchema.safeParse(withLines).success).toBe(true);
+    expect(
+      contract.StatementResponseSchema.safeParse({
+        ...withLines,
+        totals: { listPriceMicro: 1, dorkosPriceMicro: '2' },
+      }).success
+    ).toBe(false);
   });
 });
 
@@ -633,5 +826,160 @@ describe('the remote-access additions', () => {
         ],
       }).success
     ).toBe(true);
+  });
+});
+
+describe('the remote meter read', () => {
+  const ceiling = {
+    ceiling: 'example_hours',
+    limit: 10,
+    used: 2,
+    unit: 'hours',
+    fraction: 0.2,
+    alertFraction: 0.5,
+    state: 'clear',
+    enforceable: true,
+    provenance: { source: 'x', measuredAt: null },
+  };
+
+  it('is published as a route beside the rest of /v1/remote', () => {
+    expect(V1_ROUTES.remoteUsage).toBe('/v1/remote/usage');
+  });
+
+  it('carries exactly the fields a person needs to see how close they are, and no money', () => {
+    expect(Object.keys(contract.RemoteCeilingSchema.shape).sort()).toEqual([
+      'alertFraction',
+      'ceiling',
+      'enforceable',
+      'fraction',
+      'limit',
+      'provenance',
+      'state',
+      'unit',
+      'used',
+    ]);
+    const all = [
+      ...Object.keys(contract.RemoteUsageResponseSchema.shape),
+      ...Object.keys(contract.RemoteCeilingSchema.shape),
+    ];
+    expect(all.filter((field) => /micro|amount|price|cost|currency/i.test(field))).toEqual([]);
+  });
+
+  it('parses an account that used nothing, because zeroes are an answer and never a 404', () => {
+    const fresh = {
+      orgId: 'org_x',
+      period: '2026-09',
+      ceilings: [{ ...ceiling, used: 0, fraction: 0 }],
+    };
+    expect(contract.RemoteUsageResponseSchema.safeParse(fresh).success).toBe(true);
+  });
+
+  it('lets the fraction pass 1, and takes a month key and nothing else', () => {
+    const over = { orgId: 'org_x', period: '2026-09', ceilings: [{ ...ceiling, fraction: 1.4 }] };
+    expect(contract.RemoteUsageResponseSchema.safeParse(over).success).toBe(true);
+    for (const period of ['2026-9', '2026-00', '2026-13', '2026-09-01', 'September']) {
+      expect(
+        contract.RemoteUsageResponseSchema.safeParse({ ...over, period }).success,
+        period
+      ).toBe(false);
+    }
+  });
+
+  it('reads a unit or state added later as unrecognised, so one entry cannot fail the report', () => {
+    const later = {
+      orgId: 'org_x',
+      period: '2026-09',
+      ceilings: [{ ...ceiling, unit: 'minutes', state: 'throttled' }, ceiling],
+    };
+    const parsed = contract.RemoteUsageResponseSchema.parse(later);
+    expect(parsed.ceilings[0]?.unit).toBe(contract.UNRECOGNISED);
+    expect(parsed.ceilings[0]?.state).toBe(contract.UNRECOGNISED);
+    expect(parsed.ceilings[1]?.unit).toBe('hours');
+    expect(contract.RemoteCeilingSchema.safeParse({ ...ceiling, unit: 3 }).success).toBe(false);
+  });
+
+  it('reads an unknown limit name as a valid entry, because the name is not an enum', () => {
+    expect(
+      contract.RemoteCeilingSchema.safeParse({ ...ceiling, ceiling: 'a_limit_added_later' }).success
+    ).toBe(true);
+  });
+});
+
+describe('the designation read', () => {
+  it('parses "nobody holds it" as a state rather than an error', () => {
+    expect(
+      contract.RemoteDesignationStatusSchema.safeParse({
+        instanceId: null,
+        effectiveAt: null,
+        cooldownUntil: null,
+      }).success
+    ).toBe(true);
+  });
+
+  it('reads the same answer the POST gives', () => {
+    const answer = {
+      instanceId: 'inst_x',
+      effectiveAt: '2026-09-15T12:00:00.000Z',
+      cooldownUntil: '2026-10-15T12:00:00.000Z',
+    };
+    expect(contract.RemoteDesignationSchema.safeParse(answer).success).toBe(true);
+    expect(contract.RemoteDesignationStatusSchema.safeParse(answer).success).toBe(true);
+  });
+
+  it('adds no way to withdraw a designation', () => {
+    // Withdrawal is a product question, not a contract one. The request stays
+    // one instance, never a null.
+    expect(contract.RemoteDesignationRequestSchema.safeParse({ instanceId: null }).success).toBe(
+      false
+    );
+  });
+});
+
+describe('the status echo', () => {
+  it('accepts the instance identifier, and a status without one', () => {
+    const status = {
+      mode: 'managed',
+      state: 'open',
+      address: 'example-instance.remote.invalid',
+      alwaysAvailable: false,
+    };
+    expect(contract.RemoteStatusSchema.safeParse(status).success).toBe(true);
+    expect(contract.RemoteStatusSchema.parse({ ...status, instanceId: 'inst_x' }).instanceId).toBe(
+      'inst_x'
+    );
+  });
+});
+
+describe('the remote event batch spans', () => {
+  const today = {
+    instanceId: 'inst_x',
+    activity: [{ at: '2026-09-15T12:05:00.000Z', requests: 3 }],
+    closeReports: [{ at: '2026-09-15T12:20:00.000Z', reason: 'idle', wakeId: null }],
+  };
+
+  it('still accepts a batch shaped like today`s, with none of the new fields', () => {
+    expect(contract.RemoteEventBatchSchema.safeParse(today).success).toBe(true);
+  });
+
+  it('accepts a close report that names its span, its requests and its bytes', () => {
+    const report = {
+      ...today.closeReports[0],
+      openedAt: '2026-09-15T12:00:00.000Z',
+      requests: 7,
+      bytesIn: '18446744073709551617',
+      bytesOut: '0',
+    };
+    const parsed = contract.RemoteEventBatchSchema.parse({ ...today, closeReports: [report] });
+    // Past 2^64, and exactly the digits sent: a string loses nothing.
+    expect(parsed.closeReports[0]?.bytesIn).toBe('18446744073709551617');
+  });
+
+  it('carries byte counts as base-10 strings, never numbers', () => {
+    for (const bad of [1024, '-1', '01', '1.5', '1e6', '']) {
+      expect(contract.ByteCountSchema.safeParse(bad).success, String(bad)).toBe(false);
+    }
+    expect(contract.ByteCountSchema.safeParse('0').success).toBe(true);
+    expect(contract.ByteCountSchema.safeParse('9'.repeat(30)).success).toBe(true);
+    expect(contract.ByteCountSchema.safeParse('9'.repeat(31)).success).toBe(false);
   });
 });

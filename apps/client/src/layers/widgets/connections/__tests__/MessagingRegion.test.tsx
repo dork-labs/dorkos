@@ -24,7 +24,6 @@ vi.mock('@/layers/features/relay', () => ({
 
 vi.mock('@/layers/features/connections', () => ({
   ClaimFeed: () => null,
-  MessagePolicyCard: () => null,
 }));
 
 import { MessagingRegion } from '../ui/MessagingRegion';
@@ -95,8 +94,6 @@ describe('MessagingRegion runtime state', () => {
     await user.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(await screen.findByText('Chat app messaging is off')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Communities' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Connect community' })).toBeInTheDocument();
     await waitFor(() => expect(getConfig).toHaveBeenCalledTimes(2));
   });
 

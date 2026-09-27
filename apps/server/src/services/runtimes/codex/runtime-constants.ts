@@ -45,6 +45,7 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsAccounts: false,
   // Every turn is a fresh subprocess (ADR-0309), and the only interrupt
   // primitive is an `AbortSignal` — there is no live session to steer into or
   // stage onto. The SDK has no mid-turn input at 0.154.0, so `false` stays the

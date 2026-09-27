@@ -316,6 +316,10 @@ export const CONFIG_DISCLOSURE = {
   // retrying a load that will keep being refused. It names extension ids the
   // caller can already see in `list_extensions`, so it discloses nothing new.
   'extensions.approvedToRun': 'expose',
+  // Which copy each approval is for (DOR-2383): absolute paths on this machine,
+  // including the home directory. An agent needs none of it — the refusal it
+  // reads already names the id to ask the person about — so it stays in.
+  'extensions.approvedSources': 'withhold',
 
   'mcp.enabled': 'expose',
   'mcp.apiKey': 'withhold',
@@ -388,6 +392,7 @@ export const CONFIG_DISCLOSURE = {
   'runtimes.claudeCode.accounts[].id': 'expose',
   'runtimes.claudeCode.accounts[].path': 'expose',
   'runtimes.claudeCode.accounts[].label': 'expose',
+  'runtimes.claudeCode.accounts[].color': 'expose',
   // The execution defaults a new session on each runtime starts with. A model id
   // and an effort rung are the same class of thing as `runtimes.default`: they
   // describe HOW work runs here, name no credential and no person, and an agent

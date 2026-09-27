@@ -88,3 +88,8 @@ export type {
 } from '@dorkos/shared/connector-resource-schemas';
 
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
+
+// --- What removing a way to reach apps would stop (shared by every confirm) ---
+export { appCount, dorkosAccountApps, splitByImpact, toImpactApp } from './lib/connection-impact';
+export type { ImpactApp } from './lib/connection-impact';
+export { ConnectionImpactList } from './ui/ConnectionImpactList';

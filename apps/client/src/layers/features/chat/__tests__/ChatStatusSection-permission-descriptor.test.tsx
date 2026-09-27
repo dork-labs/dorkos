@@ -29,6 +29,7 @@ const EXOTIC_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsAccounts: false,
   supportsPersistentSession: false,
   supportsSteer: false,
   supportsContextStaging: false,

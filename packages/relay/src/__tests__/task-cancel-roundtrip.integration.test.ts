@@ -197,13 +197,27 @@ describe('stopping a relay-dispatched run, end to end', () => {
     });
     await turn.parked;
 
-    // Any agent can publish, and a run id is guessable. Stopping other
-    // people's work is the server's business, not an agent's.
+    // A run id is guessable, and stopping other people's work is the
+    // scheduler's business. Every sender off the bus's server allowlist is
+    // refused there (DOR-2432): an agent,
+    // and a webhook whose inbound subject was aimed at the stop namespace ...
+    for (const from of ['relay.agent.some-other-agent', 'relay.webhook.hook-1']) {
+      await expect(
+        relay.publish(
+          `${TASK_CANCEL_SUBJECT_PREFIX}run-1`,
+          { type: 'task_cancel', runId: 'run-1' },
+          { from, budget: { maxHops: 1, ttl: Date.now() + 30_000, callBudgetRemaining: 1 } }
+        )
+      ).rejects.toThrow('agents cannot send to them');
+    }
+
+    // ... and a server principal that is not the scheduler still meets the
+    // handler's own check, the second layer.
     const stop = await relay.publish(
       `${TASK_CANCEL_SUBJECT_PREFIX}run-1`,
       { type: 'task_cancel', runId: 'run-1' },
       {
-        from: 'relay.agent.some-other-agent',
+        from: 'relay.system.chat.notice',
         budget: { maxHops: 1, ttl: Date.now() + 30_000, callBudgetRemaining: 1 },
       }
     );
