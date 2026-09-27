@@ -51,7 +51,11 @@ import {
   initCredentialProvider,
 } from './services/core/credential-provider.js';
 import { initBoundary } from './lib/boundary.js';
-import { getLocalCockpitPort } from './lib/trusted-origins.js';
+import {
+  getLocalCockpitOrigin,
+  getLocalCockpitPort,
+  getTunnelOrigin,
+} from './lib/trusted-origins.js';
 import { warnAboutGitProtection, installedGitProtection } from './lib/git-safety.js';
 import { initLogger, logger, logError } from './lib/logger.js';
 import { createDorkOsToolServer } from './services/runtimes/claude-code/mcp-tools/index.js';
@@ -59,7 +63,10 @@ import { TaskStore } from './services/tasks/task-store.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
-import { wireLiveChangeBroadcasts } from './services/core/streams/live-change-broadcasts.js';
+import {
+  connectorAgentRequestsChangedAnnouncer,
+  wireLiveChangeBroadcasts,
+} from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
 import { WebPushChannel } from './services/notifications/channels/web-push.js';
@@ -3186,6 +3193,13 @@ async function start() {
         },
         nudge: nudgePrivateSession,
       },
+      // A request a room's own turn raised is answered in that room; the
+      // binding follows a session's rekey, so it is read when a card is read.
+      roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
+      // The link an agent hands an owner who is not in the app (Telegram,
+      // Slack): the tunnel when one is up, this computer otherwise.
+      appOrigin: () => getTunnelOrigin() ?? getLocalCockpitOrigin(),
+      onChanged: connectorAgentRequestsChangedAnnouncer(eventFanOut),
     });
     void connectorAgentRequests.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Could not recover agent service requests', logError(error));

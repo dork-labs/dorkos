@@ -24,6 +24,7 @@ import { roomsStructuralCases } from './rooms.js';
 import { roomsCredentialedCases } from './rooms-recall.js';
 import { memoryCases } from './memory.js';
 import { chatCases } from './chat.js';
+import { connectionRequestCases } from './connection-request.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -44,6 +45,7 @@ export const ALL_CASES: EvalCase[] = [
   ...roomsCredentialedCases,
   ...memoryCases,
   ...chatCases,
+  ...connectionRequestCases,
 ];
 
 /** The tag values a `--suite` name may select. */
@@ -78,6 +80,7 @@ export { selfTestCase } from './selftest.js';
 export { widgetRoundTripCase } from './ui.js';
 export { designYourOwnInterviewCase } from './agents.js';
 export { connectorGmailCase, connectorSlackCase } from './connectors.js';
+export { connectionRequestCases, connectionRequestFromChatCase } from './connection-request.js';
 export {
   agentSelfEditCase,
   activityReadCase,

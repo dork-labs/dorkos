@@ -6,6 +6,8 @@ import {
   asc,
   connectionOperationGrants,
   connectorAgentRequests,
+  connectorManagedAuthorityOutbox,
+  connectorManagedAuthorityScopes,
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorReviewRequests,
@@ -57,6 +59,7 @@ import type {
 import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
+import { sessionPath } from '@dorkos/shared/session-link';
 import type {
   PreparedPrivateSessionMessage,
   PrivateSessionMessageSourceAdapter,
@@ -127,6 +130,24 @@ export interface ConnectorAgentRequestServiceOptions {
   readonly liveHoldMs?: number;
   /** Override the catalog read's ceiling (default 30s) in focused tests. */
   readonly serviceDirectoryTimeoutMs?: number;
+  /**
+   * The room whose turn a session belongs to, when one does. Read when a
+   * request is read, so it follows a session's rekey; the room shows the
+   * request's card to its owner.
+   */
+  readonly roomForSession?: (sessionId: string) => string | undefined;
+  /**
+   * The absolute origin the owner reaches the DorkOS app at right now (the
+   * tunnel when one is up), used to build a request's `openUrl`. Omitted or
+   * `undefined` leaves the link out.
+   */
+  readonly appOrigin?: () => string | undefined;
+  /**
+   * Told whenever a request appears or changes state, so open windows can
+   * re-read their owner-scoped request lists. Carries nothing: the listener
+   * decides what, if anything, goes on a wire.
+   */
+  readonly onChanged?: () => void;
 }
 
 function authenticationIdempotencyKey(requestId: string): string {
@@ -530,6 +551,7 @@ export class ConnectorAgentRequestService {
         })
         .run();
     });
+    this.options.onChanged?.();
     return this.getForRuntime(principal, requestId);
   }
 
@@ -579,7 +601,8 @@ export class ConnectorAgentRequestService {
   /** List owner-visible requests without making the list available to an agent. */
   listForOwner(
     owner: ConnectorOwnerAuthority,
-    state?: 'pending' | 'resolved'
+    state?: 'pending' | 'resolved',
+    sessionId?: string
   ): ConnectorAgentRequestItem[] {
     this.materializeAuthenticationFailures();
     this.materializeExpiry();
@@ -595,6 +618,7 @@ export class ConnectorAgentRequestService {
         and(
           eq(connectorReviewRequests.ownerKind, expected.ownerKind),
           eq(connectorReviewRequests.ownerId, expected.ownerId),
+          ...(sessionId === undefined ? [] : [eq(connectorAgentRequests.sessionId, sessionId)]),
           ...(state === 'pending'
             ? [
                 or(
@@ -793,6 +817,15 @@ export class ConnectorAgentRequestService {
     if (row.review.state !== 'pending') {
       const resolved = parseResolutionClaim(row.review.resolutionJson);
       if (
+        decision.decision === 'current_access' &&
+        row.review.state === 'approved' &&
+        row.request.outcome === 'granted' &&
+        row.request.resolvedConnectionId === decision.connectionId &&
+        !resolved
+      ) {
+        return this.getForOwner(owner, requestId);
+      }
+      if (
         decision.decision === 'denied' &&
         row.review.state === 'denied' &&
         row.request.outcome === 'denied'
@@ -837,6 +870,7 @@ export class ConnectorAgentRequestService {
           'This service request changed while its target was being checked.'
         );
       }
+      this.notifyResolved(requestId);
       throw new ConnectorAgentRequestError(
         'request_not_found',
         'This service request is no longer available.'
@@ -852,6 +886,11 @@ export class ConnectorAgentRequestService {
           'Access is already being applied for this service request.'
         );
       }
+      this.notifyResolved(requestId);
+      return this.getForOwner(owner, requestId);
+    }
+    if (decision.decision === 'current_access') {
+      this.resolveWithCurrentAccess(owner, row.request, row.review, decision.connectionId);
       this.notifyResolved(requestId);
       return this.getForOwner(owner, requestId);
     }
@@ -950,6 +989,7 @@ export class ConnectorAgentRequestService {
       );
     }
     if (authorityReady) this.notifyResolved(requestId);
+    else this.options.onChanged?.();
     return this.getForOwner(owner, requestId);
   }
 
@@ -1115,6 +1155,7 @@ export class ConnectorAgentRequestService {
           )
           .run();
         row.request.resumeState = 'ready';
+        this.options.onChanged?.();
       }
       if (row.request.resumeState !== 'ready') continue;
       const origin = this.originFor(row.request, row.review);
@@ -1237,6 +1278,7 @@ export class ConnectorAgentRequestService {
       requestId: request.id,
       reviewUrl:
         `/connections?request=${encodeURIComponent(request.id)}` as `/connections?request=${string}`,
+      ...this.openUrl(request.sessionId),
       serviceSlug: request.serviceSlug,
       reason: request.reason,
       requestedOperations: parseStringArray(request.requestedOperationsJson),
@@ -1273,11 +1315,128 @@ export class ConnectorAgentRequestService {
     review: typeof connectorReviewRequests.$inferSelect
   ): ConnectorAgentRequestItem {
     const agent = this.options.authority.resolveAgent(owner, request.agentId);
+    const roomId = this.options.roomForSession?.(request.sessionId);
     return {
       ...this.toStatus(request, review),
       sessionId: request.sessionId,
       agent: agent ?? { id: request.agentId, displayName: 'Removed agent' },
+      ...(roomId ? { roomId } : {}),
     };
+  }
+
+  /** The absolute link to the conversation holding a request's card, when the app has an address. */
+  private openUrl(sessionId: string): { openUrl?: string } {
+    const origin = this.options.appOrigin?.();
+    if (!origin) return {};
+    try {
+      return { openUrl: new URL(sessionPath({ session: sessionId }), origin).toString() };
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Answer a pending request with the access the agent already holds on one
+   * account, writing no grant. The owner gave that access a moment ago through
+   * the shared access card, so the request records exactly what is live and
+   * the held turn resumes on it. Refused when the account is not this
+   * request's, the agent holds nothing live there, or a managed account has
+   * not finished applying the agent's access.
+   */
+  private resolveWithCurrentAccess(
+    owner: ConnectorOwnerAuthority,
+    request: ConnectorAgentRequest,
+    review: typeof connectorReviewRequests.$inferSelect,
+    connectionId: ConnectionId
+  ): void {
+    const connection = this.requireRequestConnection(owner, request, connectionId);
+    const now = this.now().toISOString();
+    const finalized = this.options.db.transaction((tx) => {
+      const live = tx
+        .select({ id: connectionOperationGrants.operationRevisionId })
+        .from(connectionOperationGrants)
+        .where(
+          and(
+            eq(connectionOperationGrants.subjectType, 'agent'),
+            eq(connectionOperationGrants.subjectId, request.agentId),
+            eq(connectionOperationGrants.connectionId, connection.id),
+            isNull(connectionOperationGrants.revokedAt)
+          )
+        )
+        .all()
+        .map((grant) => grant.id)
+        .sort();
+      if (live.length === 0) {
+        throw new ConnectorAgentRequestError(
+          'selection_invalid',
+          'This agent cannot use that account yet. Allow it first.'
+        );
+      }
+      if (connection.mode === 'managed') {
+        const applied = tx
+          .select({ state: connectorManagedAuthorityOutbox.state })
+          .from(connectorManagedAuthorityScopes)
+          .innerJoin(
+            connectorManagedAuthorityOutbox,
+            eq(
+              connectorManagedAuthorityOutbox.commandId,
+              connectorManagedAuthorityScopes.lastCommandId
+            )
+          )
+          .where(
+            and(
+              eq(
+                connectorManagedAuthorityScopes.managedConnectionId,
+                connection.externalAccountRef
+              ),
+              eq(connectorManagedAuthorityScopes.scopeKind, 'agent_grants'),
+              eq(connectorManagedAuthorityScopes.subjectId, request.agentId)
+            )
+          )
+          .get();
+        if (applied?.state !== 'applied') {
+          throw new ConnectorAgentRequestError(
+            'authority_sync_failed',
+            'This agent’s access is still being applied. Try again in a moment.'
+          );
+        }
+      }
+      const claimed = tx
+        .update(connectorReviewRequests)
+        .set({
+          state: 'approved',
+          resolvedAt: now,
+          resolvedBy: `${owner.kind}:${ownerColumns(owner).ownerId}`,
+          resolutionSummary: 'Access ready',
+        })
+        .where(
+          and(
+            eq(connectorReviewRequests.id, review.id),
+            eq(connectorReviewRequests.state, 'pending'),
+            isNull(connectorReviewRequests.resolutionJson)
+          )
+        )
+        .run().changes;
+      if (claimed !== 1) return false;
+      tx.update(connectorAgentRequests)
+        .set({
+          outcome: 'granted',
+          resumeState: 'ready',
+          resolvedConnectionId: connection.id,
+          resolvedOperationRevisionIdsJson: canonicalJson(live),
+          resolvedEventsJson: canonicalJson(emptyEventSelection()),
+          resolvedAt: now,
+        })
+        .where(eq(connectorAgentRequests.id, request.id))
+        .run();
+      return true;
+    });
+    if (!finalized) {
+      throw new ConnectorAgentRequestError(
+        'request_already_resolved',
+        'This service request has already been resolved.'
+      );
+    }
   }
 
   private originFor(
@@ -1306,10 +1465,11 @@ export class ConnectorAgentRequestService {
     };
   }
 
-  private validateSelection(
+  /** One live, connected account of this request's service that the owner holds, or a refusal. */
+  private requireRequestConnection(
     owner: ConnectorOwnerAuthority,
     request: ConnectorAgentRequest,
-    decision: Extract<ConnectorAgentRequestDecision, { decision: 'approved' }>
+    connectionId: ConnectionId
   ) {
     const expectedOwner = ownerColumns(owner);
     const connection = this.options.db
@@ -1332,7 +1492,7 @@ export class ConnectorAgentRequestService {
         connectorProviderInstances,
         eq(connections.providerInstanceId, connectorProviderInstances.id)
       )
-      .where(eq(connections.id, decision.connectionId))
+      .where(eq(connections.id, connectionId))
       .get();
     if (
       !connection ||
@@ -1349,6 +1509,15 @@ export class ConnectorAgentRequestService {
         'That account is no longer available for this request.'
       );
     }
+    return connection;
+  }
+
+  private validateSelection(
+    owner: ConnectorOwnerAuthority,
+    request: ConnectorAgentRequest,
+    decision: Extract<ConnectorAgentRequestDecision, { decision: 'approved' }>
+  ) {
+    const connection = this.requireRequestConnection(owner, request, decision.connectionId);
     const revisionIds = [...new Set(decision.operationRevisionIds)];
     if (revisionIds.length !== decision.operationRevisionIds.length) {
       throw new ConnectorAgentRequestError('selection_invalid', 'Choose each service action once.');
@@ -1771,6 +1940,7 @@ export class ConnectorAgentRequestService {
   private notifyResolved(requestId: string): void {
     for (const resolve of this.waiters.get(requestId) ?? []) resolve();
     this.waiters.delete(requestId);
+    this.options.onChanged?.();
   }
 
   private waitForSignal(requestId: string, timeoutMs: number, signal?: AbortSignal): Promise<void> {

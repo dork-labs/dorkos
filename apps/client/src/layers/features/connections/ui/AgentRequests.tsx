@@ -31,6 +31,7 @@ import {
   SelectValue,
   Skeleton,
 } from '@/layers/shared/ui';
+import { serviceNameFromSlug } from '../lib/presentation';
 import { AgentRequestEventScopes } from './AgentRequestEventScopes';
 
 interface AgentRequestsProps {
@@ -44,14 +45,6 @@ interface AgentRequestsProps {
   onCloseRequest?: () => void;
   /** Open the existing owner authentication flow for this exact service. */
   onConnectService?: (service: ConnectorCatalogService) => void;
-}
-
-function serviceName(slug: string): string {
-  return slug
-    .split(/[._-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
 }
 
 function operationName(slug: string): string {
@@ -145,7 +138,7 @@ export function AgentRequests({
                 <span className="min-w-0 flex-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-medium">
-                      {request.agent.displayName} · {serviceName(request.serviceSlug)}
+                      {request.agent.displayName} · {serviceNameFromSlug(request.serviceSlug)}
                     </span>
                     <Badge size="xs" variant="outline">
                       {requestStateLabel(request.status)}
@@ -324,7 +317,7 @@ function AgentRequestDialog({
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-semibold">{request.data.agent.displayName}</p>
                   <Badge size="xs" variant="outline">
-                    {serviceName(request.data.serviceSlug)}
+                    {serviceNameFromSlug(request.data.serviceSlug)}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-2 text-sm">{request.data.reason}</p>

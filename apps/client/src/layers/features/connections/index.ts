@@ -3,7 +3,8 @@
  * service grid and connect flow, the shared "who can use it" access card
  * (page and chat), the accounts list, standing per-agent
  * accounts, the claim feed for chats nobody answers, and the rules that apply
- * when a message arrives. Also the session view's quiet accounts group.
+ * when a message arrives. Also the session view's quiet accounts group, and
+ * the card an agent's request for an app draws in a chat or a room.
  *
  * @module features/connections
  */
@@ -26,3 +27,8 @@ export type {
 } from './ui/access/ConnectionAccessCard';
 export { ManagementReviews } from './ui/ManagementReviews';
 export { AgentRequests } from './ui/AgentRequests';
+export { AgentRequestCard } from './ui/agent-request/AgentRequestCard';
+export type { AgentRequestCardProps } from './ui/agent-request/AgentRequestCard';
+export { ChatAgentRequest } from './ui/agent-request/ChatAgentRequest';
+export type { ChatAgentRequestProps } from './ui/agent-request/ChatAgentRequest';
+export { isConnectionRequestTool } from './lib/agent-request-call';

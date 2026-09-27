@@ -68,6 +68,10 @@ describe('Accounts turn awareness', () => {
           : 'mcp__dorkos__connector_list_toolkits'
       );
       expect(text).toContain('A command-line login in a shell');
+      // The owner answers in the conversation; off the app, the agent hands
+      // them the link back to it rather than a relative page path.
+      expect(text).toContain('a card in this conversation');
+      expect(text).toContain("the result's openUrl");
     }
   );
 

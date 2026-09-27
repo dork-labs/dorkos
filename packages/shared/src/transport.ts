@@ -3181,8 +3181,14 @@ export interface Transport
     input: ConnectorManagementReviewDecision
   ): Promise<ConnectorManagementReviewDecisionResult>;
 
-  /** List owner-visible service requests raised by runtime agents. */
-  getConnectorAgentRequests(state?: 'pending' | 'resolved'): Promise<ConnectorAgentRequestItem[]>;
+  /**
+   * List owner-visible service requests raised by runtime agents, by lifecycle
+   * group, and only one conversation's when `sessionId` is given (its chat cards).
+   */
+  getConnectorAgentRequests(
+    state?: 'pending' | 'resolved',
+    sessionId?: string
+  ): Promise<ConnectorAgentRequestItem[]>;
 
   /** Read one exact owner-visible agent service request. */
   getConnectorAgentRequest(requestId: string): Promise<ConnectorAgentRequestItem>;

@@ -366,9 +366,10 @@ export function createConnectorMethods(baseUrl: string) {
     },
 
     getConnectorAgentRequests(
-      state?: 'pending' | 'resolved'
+      state?: 'pending' | 'resolved',
+      sessionId?: string
     ): Promise<ConnectorAgentRequestItem[]> {
-      const qs = buildQueryString({ state });
+      const qs = buildQueryString({ state, sessionId });
       return fetchJSON<{ requests: ConnectorAgentRequestItem[] }>(
         baseUrl,
         `/connectors/agent-requests${qs}`

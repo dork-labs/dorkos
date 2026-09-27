@@ -11,6 +11,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ConnectionAccessCardShowcase } from './ConnectionAccessCardShowcase';
+import { AgentRequestCardShowcase } from './AgentRequestCardShowcase';
 
 function mockAccount(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
   return {
@@ -102,6 +103,7 @@ export function ConnectionsShowcases() {
       </PlaygroundSection>
 
       <ConnectionAccessCardShowcase />
+      <AgentRequestCardShowcase />
       <AccountsRegionShowcase />
       <MessagingRegionShowcase />
     </>

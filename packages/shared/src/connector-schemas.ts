@@ -648,6 +648,13 @@ const ConnectorAgentRequestBaseSchema = z
   .object({
     requestId: z.string().min(1),
     reviewUrl: z.string().startsWith('/connections?request='),
+    /**
+     * An absolute link that opens the conversation holding this request's card
+     * in the DorkOS app: the tunnel address when one is up, this computer's
+     * address otherwise. For an agent answering somewhere the card cannot draw
+     * (Telegram, Slack), so it can hand the owner a way back to it.
+     */
+    openUrl: z.string().url().optional(),
     serviceSlug: z.string().min(1),
     reason: z.string().min(1),
     requestedOperations: z.array(z.string().min(1)),
@@ -681,6 +688,12 @@ export const ConnectorAgentRequestItemSchema = ConnectorAgentRequestStatusSchema
     .object({
       agent: z.object({ id: z.string().min(1), displayName: z.string().min(1) }).strict(),
       sessionId: z.string().min(1),
+      /**
+       * The room whose turn raised the request, when a room's agent asked. Read
+       * through the room-session binding when the request is read, so it
+       * follows a session's rekey. The room shows the card to its owner.
+       */
+      roomId: z.string().min(1).optional(),
     })
     .strict()
 );

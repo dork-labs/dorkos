@@ -57,6 +57,20 @@ export function providerName(type: string): string {
 }
 
 /**
+ * A readable name for a service slug when the catalog's display name is not
+ * at hand: `google_calendar` reads "Google Calendar".
+ *
+ * @param slug - The service slug an agent asked for.
+ */
+export function serviceNameFromSlug(slug: string): string {
+  return slug
+    .split(/[._-]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+/**
  * The one way an account is named everywhere on this surface: the service's
  * display name with the label in parentheses — "Gmail (work)".
  *

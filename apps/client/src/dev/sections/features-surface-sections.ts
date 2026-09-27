@@ -221,6 +221,22 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'agentrequestcard',
+    title: 'AgentRequestCard',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: [
+      'agent request',
+      'chat card',
+      'connect',
+      'sign in',
+      'allow',
+      'not now',
+      'room',
+      'receipt',
+    ],
+  },
+  {
     id: 'accountsregion',
     title: 'AccountsRegion',
     page: 'home-inbox',

@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { RefreshCw } from 'lucide-react';
 import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -66,6 +66,14 @@ export interface AgentAccessCardProps extends SharedCardProps {
   toolkit: string;
   /** A known account; skips the account question. */
   connectionId?: string;
+  /**
+   * Called once this agent's access is live on an account: after a save the
+   * server confirmed and finished applying, or straight away when the agent
+   * already holds what is picked. The chat card answers the agent's request
+   * with it. When set, "Allow" stays pressable for an agent that can already
+   * do this, since the question still needs an answer.
+   */
+  onAllowed?: (connectionId: string) => void;
 }
 
 /** Props for {@link ConnectionAccessCard}. */
@@ -187,6 +195,27 @@ function AccessStep(
     [preview, picked, level, levelTouched, fixedAgentId]
   );
 
+  const heldNow =
+    preview && fixedAgentId
+      ? heldAccess(preview.candidates, selectionsFromPreview(preview)[fixedAgentId] ?? [])
+      : 'none';
+  const onAllowed = props.mode === 'agent' ? props.onAllowed : undefined;
+  // Nothing to write, but the agent already holds access here: Allow answers
+  // with it rather than sitting disabled over a question that needs an answer.
+  const allowAsHeld =
+    onAllowed !== undefined &&
+    preview !== undefined &&
+    decision.changes.length === 0 &&
+    !decision.needsLevel &&
+    heldNow !== 'none' &&
+    preview.agents.some((agent) => agent.agentId === fixedAgentId);
+  const allowedReported = useRef(false);
+  useEffect(() => {
+    if (!access.saved || !onAllowed || allowedReported.current) return;
+    allowedReported.current = true;
+    onAllowed(props.connectionId);
+  }, [access.saved, onAllowed, props.connectionId]);
+
   const agentName =
     props.mode === 'agent'
       ? preview?.agents.find((agent) => agent.agentId === props.agentId)?.displayName
@@ -292,8 +321,13 @@ function AccessStep(
                 </Button>
               )}
               <Button
-                onClick={() => access.apply(decision.changes)}
-                disabled={decision.changes.length === 0 || decision.needsLevel || access.isSaving}
+                onClick={() =>
+                  allowAsHeld ? onAllowed?.(props.connectionId) : access.apply(decision.changes)
+                }
+                disabled={
+                  !allowAsHeld &&
+                  (decision.changes.length === 0 || decision.needsLevel || access.isSaving)
+                }
               >
                 {access.isSaving ? 'Saving…' : props.mode === 'page' ? 'Save' : 'Allow'}
               </Button>

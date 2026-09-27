@@ -767,6 +767,208 @@ describe('ConnectorAgentRequestService', () => {
     ]);
   });
 
+  describe('answering with the access the agent already holds', () => {
+    /** Give the agent live grants the way the shared access card's save would. */
+    function grantLive(revisionIds: string[], connectionId = 'connection-1'): void {
+      for (const operationRevisionId of revisionIds) {
+        db.insert(connectionOperationGrants)
+          .values({
+            id: `grant-${operationRevisionId}`,
+            subjectType: 'agent',
+            subjectId: 'agent-1',
+            agentId: 'agent-1',
+            connectionId,
+            operationRevisionId,
+            createdBy: 'local_install:install-1',
+            createdAt: NOW.toISOString(),
+          })
+          .run();
+      }
+    }
+
+    it('resolves with exactly the live grants and writes none, even beyond what was asked', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      // Read and write from the card: more than the two operations requested.
+      grantLive(['revision-read', 'revision-draft', 'revision-delete']);
+      const before = db.select().from(connectionOperationGrants).all();
+
+      const resolved = await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      expect(resolved).toMatchObject({
+        status: 'granted',
+        connectionId: CONNECTION_ID,
+        grantedOperationRevisionIds: ['revision-delete', 'revision-draft', 'revision-read'],
+      });
+      expect(db.select().from(connectionOperationGrants).all()).toEqual(before);
+      expect(
+        db
+          .select()
+          .from(connectorReviewRequests)
+          .where(eq(connectorReviewRequests.state, 'approved'))
+          .all()
+      ).toHaveLength(1);
+    });
+
+    it('refuses when the agent holds nothing on that account, and leaves the request pending', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+      expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+    });
+
+    it("does not count another agent's access as this agent's", async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      db.insert(connectionOperationGrants)
+        .values({
+          id: 'grant-other',
+          subjectType: 'agent',
+          subjectId: 'agent-2',
+          agentId: 'agent-2',
+          connectionId: 'connection-1',
+          operationRevisionId: 'revision-read',
+          createdBy: 'local_install:install-1',
+          createdAt: NOW.toISOString(),
+        })
+        .run();
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    it('refuses a foreign owner and an account of another service', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+      db.update(connections)
+        .set({ toolkit: 'slack' })
+        .where(eq(connections.id, 'connection-1'))
+        .run();
+
+      await expect(
+        requests.resolve({ kind: 'local_install', installationId: 'foreign' }, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'request_not_found' });
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'selection_invalid' });
+    });
+
+    it('waits for a managed account to finish applying the agent’s access', async () => {
+      db.update(connectorProviderInstances)
+        .set({ mode: 'managed', custody: 'managed' })
+        .where(eq(connectorProviderInstances.id, 'provider-1'))
+        .run();
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).rejects.toMatchObject({ code: 'authority_sync_failed' });
+      expect(requests.getForOwner(OWNER, created.requestId).status).toBe('awaiting_owner');
+    });
+
+    it('resumes the live held call with the granted result', async () => {
+      const requests = service({ liveHoldMs: 5_000 });
+      const created = await requests.create(principal(), INPUT);
+      const held = requests.waitForResolution(principal(), created.requestId);
+      await Promise.resolve();
+      grantLive(['revision-read']);
+
+      await requests.resolve(OWNER, created.requestId, {
+        decision: 'current_access',
+        connectionId: CONNECTION_ID,
+      });
+
+      await expect(held).resolves.toMatchObject({
+        status: 'granted',
+        grantedOperationRevisionIds: ['revision-read'],
+      });
+    });
+
+    it('answers the same decision twice idempotently and refuses a different later one', async () => {
+      const requests = service();
+      const created = await requests.create(principal(), INPUT);
+      grantLive(['revision-read']);
+      const decision = { decision: 'current_access', connectionId: CONNECTION_ID } as const;
+
+      await requests.resolve(OWNER, created.requestId, decision);
+      await expect(requests.resolve(OWNER, created.requestId, decision)).resolves.toMatchObject({
+        status: 'granted',
+      });
+      await expect(
+        requests.resolve(OWNER, created.requestId, { decision: 'denied' })
+      ).rejects.toMatchObject({ code: 'request_already_resolved' });
+    });
+  });
+
+  it('announces every change so open windows re-read their request lists', async () => {
+    const onChanged = vi.fn();
+    const requests = service({ onChanged });
+
+    const created = await requests.create(principal(), INPUT);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    // Reusing the same unresolved intent is not a change.
+    await requests.create(principal(), INPUT);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+
+    await requests.resolve(OWNER, created.requestId, { decision: 'denied' });
+    expect(onChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it("names the room a request's turn belongs to and links the owner to its conversation", async () => {
+    const requests = service({
+      roomForSession: (sessionId) => (sessionId === 'session-1' ? 'room-1' : undefined),
+      appOrigin: () => 'https://tunnel.example',
+    });
+    const created = await requests.create(principal(), INPUT);
+
+    expect(created.openUrl).toBe('https://tunnel.example/session?session=session-1');
+    expect(requests.getForOwner(OWNER, created.requestId)).toMatchObject({
+      roomId: 'room-1',
+      openUrl: 'https://tunnel.example/session?session=session-1',
+    });
+    // The room is an owner-side fact; the agent's own status never carries it.
+    expect(created).not.toHaveProperty('roomId');
+  });
+
+  it("lists only one conversation's requests when asked for its session", async () => {
+    const requests = service();
+    await requests.create(principal(), INPUT);
+    await requests.create(principal({ canonicalSessionId: 'session-2' }), {
+      ...INPUT,
+      reason: 'Something else',
+    });
+
+    expect(requests.listForOwner(OWNER, undefined, 'session-2')).toMatchObject([
+      { sessionId: 'session-2', reason: 'Something else' },
+    ]);
+    expect(requests.listForOwner(OWNER)).toHaveLength(2);
+  });
+
   it('resumes a live held request with the real result and leaves no fallback claim', async () => {
     const requests = service({ liveHoldMs: 5_000 });
     const created = await requests.create(principal(), INPUT);
