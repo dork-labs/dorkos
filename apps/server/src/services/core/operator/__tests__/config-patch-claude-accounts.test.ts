@@ -196,6 +196,29 @@ describe('applyConfigPatch on the Claude account registry', () => {
     expect(accountsOnDisk().map((r) => r.id)).toEqual(['a']);
   });
 
+  it('keeps the dismissed folders when the screen adds a found folder (claude-account-ui §7.4)', () => {
+    // The screen never sees `dismissedFolders`, so its accounts save must not
+    // be what clears it: a dismissed folder would come back after every Add.
+    writeAccountsExternally([{ id: 'a', path: '/a', label: null }]);
+    configManager.setDot('runtimes.claudeCode.dismissedFolders', ['/old', '/older']);
+
+    const result = applyConfigPatch({
+      runtimes: {
+        claudeCode: {
+          accounts: [...clientRows(), { id: 'claude2', path: '/c2', label: null, color: null }],
+          accountsSeen: ['a'],
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    const file = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      runtimes: { claudeCode: { dismissedFolders: string[] } };
+    };
+    expect(file.runtimes.claudeCode.dismissedFolders).toEqual(['/old', '/older']);
+    expect(accountsOnDisk().map((r) => r.id)).toEqual(['a', 'claude2']);
+  });
+
   it('treats every listed row as seen when the writer sends no list (the CLI, config_patch)', () => {
     writeAccountsExternally([
       { id: 'a', path: '/a', label: null },

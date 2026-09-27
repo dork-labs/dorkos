@@ -1802,8 +1802,10 @@ export const ClaudeCodeSettingsSchema = z.object({
   /**
    * The Claude accounts DorkOS knows about — what lets it show which
    * client a session belongs to. The operator registers these: DorkOS
-   * never globs `~/.claude*`, because that guess sweeps up directories
-   * that are not accounts at all (D4).
+   * never registers a `~/.claude*` folder on its own, because that guess
+   * sweeps up directories that are not accounts at all (D4). Settings may
+   * OFFER the folders it finds (spec `claude-account-ui` §6.9), and nothing
+   * lands here until a person clicks Add.
    */
   accounts: ClaudeCodeAccountsSchema.default(() => []),
   /**
@@ -1812,6 +1814,15 @@ export const ClaudeCodeSettingsSchema = z.object({
    * folder: that row's own color wins. See {@link DefaultAccountColorSchema}.
    */
   defaultAccountColor: DefaultAccountColorSchema.default(null).catch(null),
+  /**
+   * Account folders a person dismissed from Settings' "Found on this
+   * computer" list, so they stay hidden across restarts (spec
+   * `claude-account-ui` §7.4). Stored in comparable form (the real path).
+   * Written only by `POST /api/runtimes/claude-code/accounts/found/dismiss`,
+   * which appends in one read-modify-write; a `PATCH /api/config` would
+   * replace the array, and the screen never sees it.
+   */
+  dismissedFolders: z.array(z.string()).max(200).default([]),
   /** Model a new claude-code session starts on. See {@link DefaultModelSchema}. */
   defaultModel: DefaultModelSchema,
   /** Effort a new claude-code session starts at. See {@link DefaultEffortSchema}. */
@@ -2983,6 +2994,7 @@ export const UserConfigSchema = z.object({
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
@@ -3070,6 +3082,7 @@ export const UserConfigSchema = z.object({
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,

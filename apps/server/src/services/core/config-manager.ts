@@ -2811,6 +2811,36 @@ export function seedDefaultAccountColor(store: {
 }
 
 /**
+ * Migration body: seed `runtimes.claudeCode.dismissedFolders` as an empty list
+ * (spec `claude-account-ui` §7.4): the account folders a person dismissed from
+ * Settings' "Found on this computer" list.
+ *
+ * A nested leaf inside a section every stored config already has, so conf's
+ * shallow defaults-merge never adds it and this body is what writes it.
+ * Empty on purpose: nothing was dismissed before the list existed.
+ *
+ * Additive and idempotent: writes only when the leaf is not already an array,
+ * and keeps every other `claudeCode` member. A config with no `runtimes` or no
+ * `claudeCode` block is skipped (the schema default supplies it on read).
+ *
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function seedClaudeDismissedFolders(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (!runtimes || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  const block = (runtimes as Record<string, unknown>).claudeCode;
+  if (!block || typeof block !== 'object' || Array.isArray(block)) return;
+  if (Array.isArray((block as Record<string, unknown>).dismissedFolders)) return;
+  store.set('runtimes', {
+    ...(runtimes as Record<string, unknown>),
+    claudeCode: { ...(block as Record<string, unknown>), dismissedFolders: [] },
+  });
+}
+
+/**
  * Migration body: reserve both halves of the power-door answer on an existing
  * `ui` block (spec `full-power-defaults`, D2).
  *
@@ -4496,6 +4526,23 @@ export const CONFIG_MIGRATIONS = {
     // `runtimes.claudeCode.defaultAccountColor` — the color the standalone
     // default account is drawn in (DOR-2492). See `seedDefaultAccountColor`.
     seedDefaultAccountColor(store);
+  },
+  // 0.90.0 has merged (the standalone default account's color, DOR-2492) and
+  // v0.88.0 is the newest tag, so 0.91.0 is the next key: keys must rise in
+  // merge order, because an install that already ran 0.90.0 would never run a
+  // lower key added after it. Frozen from merge, not from the release bump, for
+  // the reason `'0.60.0'` above states; anything further opens `'0.92.0'`.
+  //
+  // Disjoint from every other key here: it adds one nested leaf under
+  // `runtimes.claudeCode`, beside `accounts`, which `'0.65.0'` and `'0.87.0'`
+  // write and this body preserves.
+  '0.91.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `runtimes.claudeCode.dismissedFolders` — the found account folders a
+    // person dismissed in Settings. See `seedClaudeDismissedFolders`.
+    seedClaudeDismissedFolders(store);
   },
 } as const;
 

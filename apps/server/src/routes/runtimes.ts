@@ -49,13 +49,26 @@ import {
   assessOllamaModels,
   DEFAULT_OLLAMA_MODEL_ID,
 } from '../services/runtimes/opencode/providers/ollama-catalog.js';
-import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
+import {
+  DismissFoundFolderRequestSchema,
+  LEDGER_RUNTIMES,
+  type LedgerRuntime,
+} from '@dorkos/shared/account-usage';
 import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import {
   AccountUsageUnavailableError,
   probeAccount,
   UnknownAccountError,
 } from '../services/runtimes/claude-code/accounts/account-probe.js';
+import {
+  findUnregisteredClaudeFolders,
+  planDismissFoundFolder,
+} from '../services/runtimes/claude-code/accounts/found-claude-folders.js';
+import { configManager } from '../services/core/config-manager.js';
+import {
+  OPERATOR_ONLY_CONFIG_CODE,
+  OPERATOR_ONLY_CONFIG_ERROR,
+} from '../services/core/operator/config-write-policy.js';
 import { logger } from '../lib/logger.js';
 import {
   isLocalCaller,
@@ -529,6 +542,71 @@ router.post('/claude-code/accounts/:id/probe', async (req, res) => {
       return res.status(503).json({ error: err.message });
     }
     throw err;
+  }
+});
+
+/**
+ * GET /api/runtimes/claude-code/accounts/found — the Claude account folders on
+ * this computer that are not registered, not the machine default and not
+ * dismissed (spec `claude-account-ui` §7.4). Read-only: it stats folders and
+ * never opens a file.
+ */
+router.get('/claude-code/accounts/found', (_req, res) => {
+  try {
+    const folders = findUnregisteredClaudeFolders({ runtimes: configManager.get('runtimes') });
+    res.json({ folders });
+  } catch (err) {
+    logger.error('[Runtimes] Could not look for Claude account folders', { err: String(err) });
+    res.status(500).json({ error: 'Could not look for Claude account folders.' });
+  }
+});
+
+/**
+ * POST /api/runtimes/claude-code/accounts/found/dismiss — stop offering one
+ * found folder, across restarts (spec `claude-account-ui` §7.4). Appends the
+ * folder, in comparable form, to `runtimes.claudeCode.dismissedFolders` in one
+ * synchronous read-modify-write, so two dismissals in a row both stick. A
+ * folder that is already registered or dismissed answers 204 too (another tab
+ * got there first); any other folder the list does not offer is a 400.
+ *
+ * `dismissedFolders` is operator-only, and this route is its only writer, so
+ * it holds the same two bars `PATCH /api/config` holds for such a leaf: with
+ * login on, a signed-in person; and never a caller that names itself an agent.
+ */
+router.post('/claude-code/accounts/found/dismiss', (req, res) => {
+  const cookieRefusal = requireOperatorCookieUnderLogin(res, 'which account folders are hidden');
+  if (cookieRefusal) {
+    return res
+      .status(cookieRefusal.status)
+      .json({ error: cookieRefusal.error, code: cookieRefusal.code });
+  }
+  if (!trustedCaller(readCallerAuthority(req, res))) {
+    return res.status(403).json({
+      error: OPERATOR_ONLY_CONFIG_ERROR,
+      code: OPERATOR_ONLY_CONFIG_CODE,
+      message: 'Only a person can hide an account folder.',
+    });
+  }
+  const parsed = DismissFoundFolderRequestSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Send the folder to hide as `path`.' });
+  }
+  try {
+    const plan = planDismissFoundFolder(parsed.data.path, {
+      runtimes: configManager.get('runtimes'),
+    });
+    if (plan.outcome === 'not-a-candidate') {
+      return res
+        .status(400)
+        .json({ error: 'That folder is not one of the account folders found on this computer.' });
+    }
+    if (plan.outcome === 'save') {
+      configManager.setDot('runtimes.claudeCode.dismissedFolders', plan.dismissed);
+    }
+    return res.status(204).end();
+  } catch (err) {
+    logger.error('[Runtimes] Could not hide a Claude account folder', { err: String(err) });
+    return res.status(500).json({ error: 'Could not hide that folder. Try again.' });
   }
 });
 

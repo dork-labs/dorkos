@@ -707,6 +707,11 @@ export const CONFIG_WRITE_POLICY = {
   // that has no row, so an agent that may not recolor a registered account may
   // not recolor this one either.
   'runtimes.claudeCode.defaultAccountColor': 'operator-only',
+  // Which found account folders Settings stops offering (spec claude-account-ui
+  // §7.4). Hiding a suggestion widens nothing, but the list decides which
+  // accounts a person is shown as addable, so it stays with the roster it
+  // curates: only a person curates it, through the dismiss route.
+  'runtimes.claudeCode.dismissedFolders': 'operator-only',
   // The execution defaults for new sessions on each runtime. Writable, and the
   // operator was asked directly: a model and an effort level are a preference
   // about how work runs, on the same footing as `runtimes.default` right above,
@@ -945,6 +950,7 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.accounts[].label',
       'runtimes.claudeCode.accounts[].color',
       'runtimes.claudeCode.defaultAccountColor',
+      'runtimes.claudeCode.dismissedFolders',
     ],
   },
   {

@@ -263,7 +263,12 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
-import { AccountUsageSchema, LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
+import {
+  AccountUsageSchema,
+  DismissFoundFolderRequestSchema,
+  FoundClaudeFolderSchema,
+  LEDGER_RUNTIMES,
+} from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
 
 /**
@@ -1378,6 +1383,45 @@ registry.registerPath({
     },
     404: { description: 'No Claude Code account has that id (`code: "UNKNOWN_ACCOUNT"`)' },
     503: { description: 'The usage store is not running yet' },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/runtimes/claude-code/accounts/found',
+  tags: ['Runtimes'],
+  summary: 'List the Claude account folders found on this computer',
+  description:
+    'Every `.claude*` folder in the home folder that holds a `projects/` folder and is not a ' +
+    'registered account, the machine default or a dismissed folder, sorted by name. Read-only: ' +
+    'folders are listed and statted, and no file is ever opened. Settings offers each one with ' +
+    'an Add button; nothing is registered until a person clicks it.',
+  responses: {
+    200: {
+      description: 'The folders to offer, possibly none',
+      content: {
+        'application/json': { schema: z.object({ folders: z.array(FoundClaudeFolderSchema) }) },
+      },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/runtimes/claude-code/accounts/found/dismiss',
+  tags: ['Runtimes'],
+  summary: 'Stop offering one found Claude account folder',
+  description:
+    'Adds the folder, in comparable form, to `runtimes.claudeCode.dismissedFolders` in one ' +
+    'read-modify-write, so it stays hidden across restarts. A folder that is already registered ' +
+    'or dismissed answers 204 as well.',
+  request: {
+    body: { content: { 'application/json': { schema: DismissFoundFolderRequestSchema } } },
+  },
+  responses: {
+    204: { description: 'The folder is hidden' },
+    400: { description: 'No path, or a folder the found list does not offer' },
+    403: { description: 'An agent, or (with login on) a caller that is not signed in' },
   },
 });
 

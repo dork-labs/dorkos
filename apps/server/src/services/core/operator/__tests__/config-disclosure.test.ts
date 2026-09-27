@@ -212,6 +212,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
           { id: 'claude2', path: '/Users/me/.claude2', label: null, color: null },
         ],
         defaultAccountColor: '#0d9488',
+        dismissedFolders: ['/Users/me/.claude-old'],
         defaultModel: 'opus',
         defaultEffort: 'high',
         defaultTrustStop: null,

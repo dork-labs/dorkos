@@ -237,6 +237,10 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // The standalone default account's color, `null` meaning the default for its
   // position (DOR-2492). Display only, like a row's color.
   'runtimes.claudeCode.defaultAccountColor',
+  // Found account folders a person hid from Settings (spec claude-account-ui
+  // §7.4). Ships EMPTY, so every found folder is offered; a hidden one only
+  // stops being suggested. Nothing is registered, sent or granted either way.
+  'runtimes.claudeCode.dismissedFolders',
   // The per-runtime execution defaults all ship `null`, which means "let the
   // runtime choose" — byte-for-byte the behavior before the fields existed. No
   // safety axis: a model id and an effort rung send nothing off the machine,

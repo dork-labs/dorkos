@@ -396,6 +396,10 @@ export const CONFIG_DISCLOSURE = {
   // The standalone default account's color (DOR-2492): a display hex, the same
   // class as a row's `color` right above.
   'runtimes.claudeCode.defaultAccountColor': 'expose',
+  // Account folders a person hid from Settings' "Found on this computer" list
+  // (spec claude-account-ui §7.4). Folder paths, the same class as
+  // `accounts[].path` above: exposed on purpose, and naming no secret.
+  'runtimes.claudeCode.dismissedFolders': 'expose',
   // The execution defaults a new session on each runtime starts with. A model id
   // and an effort rung are the same class of thing as `runtimes.default`: they
   // describe HOW work runs here, name no credential and no person, and an agent

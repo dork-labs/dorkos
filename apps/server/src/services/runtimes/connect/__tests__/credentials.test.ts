@@ -44,6 +44,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
         defaultAccount: null,
         accounts: [],
         defaultAccountColor: null,
+        dismissedFolders: [],
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,

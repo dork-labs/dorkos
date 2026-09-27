@@ -1695,6 +1695,7 @@ describe('GET /api/config', () => {
             { id: 'gone', path: missing, label: null, color: null },
           ],
           defaultAccountColor: null,
+          dismissedFolders: [],
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,

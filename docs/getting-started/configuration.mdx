@@ -610,7 +610,7 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
     },
     'runtimes.claudeCode.accounts': {
       description:
-        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. It uses lowercase letters, digits and single hyphens, and `default` is kept for your main account, so DorkOS will not save an account under that name. DorkOS never goes looking for accounts on its own.',
+        'The Claude accounts you have told DorkOS about, each with a short id, a path, and a name you choose (or `null` for no name). The id is how an agent or a single chat says which account to bill. It uses lowercase letters, digits and single hyphens, and `default` is kept for your main account, so DorkOS will not save an account under that name. DorkOS never adds an account on its own: Settings may show Claude folders it finds on your computer, and one is added only when you click Add.',
       type: 'Array<{ id: string; path: string; label: string | null; color: string | null }>',
       default: '[]',
     },
@@ -625,6 +625,12 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
         "The color DorkOS uses for this computer's own Claude sign-in when you haven't added its folder as an account, written like `#0d9488`. Leave it empty to use the default for its position. If you have added that folder as an account, the account's own color is used instead.",
       type: 'string | null',
       default: 'null',
+    },
+    'runtimes.claudeCode.dismissedFolders': {
+      description:
+        'Claude folders you dismissed from the "Found on this computer" list in Settings, so DorkOS stops offering them. Set by the Dismiss button; you do not need to edit it.',
+      type: 'string[]',
+      default: '[]',
     },
     'runtimes.claudeCode.defaultModel': {
       description:

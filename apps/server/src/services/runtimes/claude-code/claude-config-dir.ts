@@ -58,6 +58,23 @@ import {
 type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
 
 /**
+ * The OS home folder Claude Code keeps its account folders in (`~/.claude`,
+ * `~/.claude2`, …), the same `homedir()` the SDK subprocess resolves its own
+ * default from.
+ *
+ * Exported for `found-claude-folders.ts`, which looks for unregistered account
+ * folders there (spec `claude-account-ui` §7.4). It lives here because this
+ * file is the Hard Rule 3 carve-out and the carve-out is BY FILENAME: no
+ * sibling module may ask the OS for the home folder itself. Never use it for a
+ * DorkOS path; that is `lib/dork-home.ts`.
+ *
+ * @returns The absolute OS home folder.
+ */
+export function claudeAccountsHome(): string {
+  return os.homedir();
+}
+
+/**
  * The Claude root the SDK subprocess would pick on its own, with no DorkOS
  * config in the picture: `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
  *
