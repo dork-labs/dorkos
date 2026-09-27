@@ -100,14 +100,6 @@ describe('SessionLimitStore', () => {
     expect(store.get('new')?.limit.since).toBe('2026-09-26T11:00:00.000Z');
   });
 
-  it('points limits on a renamed account at its new id', () => {
-    write('a');
-    write('b', { ...LIMIT, accountId: 'default' });
-    expect(store.renameAccount('default', 'default-2')).toBe(1);
-    expect(store.get('b')?.limit.accountId).toBe('default-2');
-    expect(store.get('a')?.limit.accountId).toBe('work');
-  });
-
   it('scopes per-model windows to the model and the rest to the account', () => {
     expect(limitScopeOf('seven_day_opus')).toBe('model');
     expect(limitScopeOf('model:claude-opus-5')).toBe('model');

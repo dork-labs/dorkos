@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { notifications, type Db } from '@dorkos/db';
 import type { SessionLimit } from '@dorkos/shared/schemas';
 import { SessionStateProjector } from '../../session/session-state-projector.js';
 import { setAgentPathLookup, resetAgentPathLookup } from '../../mesh/agent-path-lookup.js';
@@ -33,6 +34,7 @@ const LIMIT: SessionLimit = {
   plan: { mode: 'ask' },
 };
 
+let db: Db;
 let service: NotificationService;
 let limits: SessionLimitStore;
 let unsubscribe: () => void;
@@ -42,7 +44,11 @@ async function flush(): Promise<void> {
 }
 
 /** One session's turn that stops on an error, carrying `limit` when given. */
-function failTurn(sessionId: string, limit: SessionLimit | null): SessionStateProjector {
+function failTurn(
+  sessionId: string,
+  limit: SessionLimit | null,
+  accountPath: string | null = null
+): SessionStateProjector {
   const projector = new SessionStateProjector(sessionId);
   projector.cwd = `/Users/dev/${sessionId}`;
   projector.ingest({ type: 'turn_start' } as never);
@@ -51,7 +57,11 @@ function failTurn(sessionId: string, limit: SessionLimit | null): SessionStatePr
     message: limit ? "You've hit your weekly limit" : 'boom',
     code: limit ? 'rate_limit' : 'server_error',
   } as never);
-  if (limit) projector.ingest({ type: 'status_change', status: { limit } } as never);
+  if (limit) {
+    // The runtime keeps the row mid-turn, after the turn_start that clears it.
+    limits.upsert({ sessionId, limit, scope: 'account', accountPath });
+    projector.ingest({ type: 'status_change', status: { limit } } as never);
+  }
   projector.ingest({ type: 'turn_end' } as never);
   return projector;
 }
@@ -61,7 +71,7 @@ function rows() {
 }
 
 beforeEach(() => {
-  const db = createTestDb();
+  db = createTestDb();
   service = new NotificationService(new NotificationStore(db));
   setNotificationService(service);
   limits = new SessionLimitStore(db);
@@ -118,22 +128,32 @@ describe('account.limited', () => {
     expect(rows().filter((r) => r.kind === 'account.limited')).toHaveLength(0);
   });
 
-  it('names an unknown reset by the window, and keys an unregistered account by its folder', () => {
+  it('keeps an unregistered account’s folder out of the stored notification', async () => {
+    failTurn('s-side', { ...LIMIT, accountId: null }, '/Users/dev/.claude-side');
+    await flush();
+    const [row] = rows().filter((r) => r.kind === 'account.limited');
+    expect(row!.title).toMatch(/^Your Claude account is out until /);
+    expect(JSON.stringify(row)).not.toContain('.claude-side');
+    // The stored payload, which rebuilds the row on read, carries a hash of it.
+    const stored = db.select().from(notifications).all();
+    expect(stored.map((n) => n.dataJson).join('\n')).not.toContain('.claude-side');
+    expect(JSON.parse(stored[0]!.dataJson!)).toMatchObject({ accountRef: expect.any(String) });
+  });
+
+  it('names an unknown reset by the window, and keys an unregistered account by its folder hash', () => {
     const entry = notificationEntry('account.limited');
     const payload = {
       sessionId: 's-1',
       sessionLabel: 'acme',
       accountId: null,
-      accountPath: '/Users/dev/.claude-side',
+      accountRef: '3f2a9c01b7de',
       accountLabel: 'Your Claude account',
       window: 'seven_day',
       resetsAt: null,
       since: '2026-09-26T10:42:00.000Z',
     };
     expect(entry.title(payload)).toBe('Your Claude account hit its weekly limit');
-    expect(entry.dedupeKey(payload)).toBe(
-      'account-limited:/Users/dev/.claude-side:seven_day:2026-09-26T10'
-    );
+    expect(entry.dedupeKey(payload)).toBe('account-limited:3f2a9c01b7de:seven_day:2026-09-26T10');
     expect(entry.relay).toBe('never');
   });
 });

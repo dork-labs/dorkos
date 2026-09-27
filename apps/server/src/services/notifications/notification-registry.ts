@@ -286,10 +286,11 @@ export interface NotificationPayloads {
     /** The account's registry id, or `null` when its folder is not registered. */
     accountId: string | null;
     /**
-     * The account's Claude config folder, the identity of an unregistered
-     * account (`accountId` null) in the dedupe key. Never shown.
+     * A short hash of an unregistered account's folder (`accountId` null): its
+     * identity in the dedupe key. A hash, not the path, because this payload
+     * is stored and served by `/api/notifications`. Never shown.
      */
-    accountPath?: string;
+    accountRef?: string;
     /** What the operator calls the account. */
     accountLabel: string;
     /** The ledger window key that ran out, such as `seven_day`, or `unknown`. */
@@ -879,7 +880,7 @@ const ENTRIES: NotificationRegistryMap = {
     // are one thing to be told. The reset time names the episode; when it is
     // unknown, the hour the limit was hit stands in for it.
     dedupeKey: (p) =>
-      `account-limited:${p.accountId ?? p.accountPath ?? 'unregistered'}:${p.window}:${
+      `account-limited:${p.accountId ?? p.accountRef ?? 'unregistered'}:${p.window}:${
         p.resetsAt ?? p.since.slice(0, 13)
       }`,
     dedupeWindowMs: ACCOUNT_LIMITED_DEDUPE_WINDOW_MS,

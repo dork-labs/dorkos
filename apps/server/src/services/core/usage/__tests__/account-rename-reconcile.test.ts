@@ -76,7 +76,6 @@ function sites(overrides: Partial<AccountReferenceSites> = {}): AccountReference
       },
     },
     renameScheduleAccount: (from, to) => renameScheduleAccount(db, from, to, async () => false),
-    renameSessionLimitAccount: (from, to) => new SessionLimitStore(db).renameAccount(from, to),
     ...overrides,
   };
 }
@@ -181,13 +180,15 @@ describe('carrying a renamed `default` row through to its references', () => {
         accountPath: null,
       });
     limitOn('limited-on-default', 'default');
-    limitOn('limited-on-work', 'work');
     const store = makeStore();
     await store.reconcileAccounts();
 
-    // A limited session's stored limit follows the account it named.
-    expect(limits.get('limited-on-default')?.limit.accountId).toBe('default-2');
-    expect(limits.get('limited-on-work')?.limit.accountId).toBe('work');
+    // A stored limit is not a reference to move (spec claude-account-fleet D4):
+    // its row was written after the rename, from the folder the session ran
+    // in, so `default` there is this computer's own sign-in. The renamed row's
+    // folder is a different one, so moving it would mislabel the limit.
+    expect(renamedRow().path).not.toBe(path.join(os.homedir(), '.claude'));
+    expect(limits.get('limited-on-default')?.limit.accountId).toBe('default');
 
     expect(agents.map((a) => [a.id, a.account])).toEqual([
       ['agent-a', 'default-2'],

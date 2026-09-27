@@ -776,6 +776,13 @@ export class RuntimeRegistry {
     const db = this.requireDb('rekeySessionSettings');
     // A usage limit the session hit under its old id moves with it (spec
     // claude-account-fleet D4), whether or not it has a settings row.
+    // `rekeyProjector` moves the same table, and both are needed: the row is
+    // keyed by the SDK id the runtime knew when the limit was hit, and this is
+    // the only rekey keyed by that id (previous SDK id -> next). The projector
+    // rekey moves the id a turn was ASKED with to the canonical one, which is
+    // a different id after a resume, and it moves nothing when no projector is
+    // live under the old id. `rekeySession` is idempotent, so the second call
+    // on the same move finds no source row and does nothing.
     withSessionLimitStore('rekey', (store) => store.rekeySession(fromId, toId));
     const source = db
       .select()

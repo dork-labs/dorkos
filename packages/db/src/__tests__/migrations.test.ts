@@ -272,7 +272,7 @@ describe('Database Migrations', () => {
       // (DOR-189, migration 0026).
       'session_events',
       // A session's hard usage limit, kept across a restart until its next
-      // turn starts (spec claude-account-fleet D4, migration 0116).
+      // turn starts (spec claude-account-fleet D4, migration 0117).
       'session_limits',
       // Stable proof that a protected source was accepted for one session.
       'session_message_acceptance_receipts',

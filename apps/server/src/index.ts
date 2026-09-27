@@ -1041,8 +1041,7 @@ async function start() {
   // A session's usage limit, kept so a restart or an idle eviction does not
   // turn a limited session back into a merely failed one (spec
   // claude-account-fleet D4).
-  const sessionLimitStore = new SessionLimitStore(db);
-  setSessionLimitStore(sessionLimitStore);
+  setSessionLimitStore(new SessionLimitStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
@@ -2409,7 +2408,6 @@ async function start() {
                 )
               )
             ),
-          renameSessionLimitAccount: (from, to) => sessionLimitStore.renameAccount(from, to),
         }),
       dropMarkers: async (ids) => {
         dropClaudeAccountRenameMarkers(configManager, ids);

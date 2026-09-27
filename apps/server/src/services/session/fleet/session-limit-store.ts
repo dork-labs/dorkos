@@ -228,24 +228,6 @@ export class SessionLimitStore {
         .run();
     });
   }
-
-  /**
-   * Point every stored limit on one account id at another: the reference move
-   * for a Claude account the `'0.87.0'` config migration renamed (`default` to
-   * `default-N`, `services/core/usage/account-reference-move.ts`). Idempotent.
-   *
-   * @param from - The old account id.
-   * @param to - The new one.
-   * @returns How many rows moved.
-   */
-  renameAccount(from: string, to: string): number {
-    if (from === to) return 0;
-    return this.db
-      .update(sessionLimits)
-      .set({ accountId: to })
-      .where(eq(sessionLimits.accountId, from))
-      .run().changes;
-  }
 }
 
 let sharedStore: SessionLimitStore | undefined;

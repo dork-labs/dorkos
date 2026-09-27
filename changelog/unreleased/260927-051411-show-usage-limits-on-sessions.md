@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): show a hard usage limit on the session and notify once per limit (DOR-2382)'
+  - 'fix(server): renumber session_limits to 0117 and leave limits out of the account rename (DOR-2382)'
 ---
 
 ### Fixed
@@ -9,4 +10,4 @@ covers:
 
 ### Added
 
-- You get one notification when a Claude account runs out of usage, saying when it comes back, however many sessions were using that account (DOR-2382)
+- You get one notification when a Claude account runs out of usage, however many sessions were using that account. It says when the account comes back, if Claude said (DOR-2382)
