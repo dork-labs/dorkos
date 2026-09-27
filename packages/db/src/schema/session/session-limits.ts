@@ -30,8 +30,21 @@ export const sessionLimits = sqliteTable('session_limits', {
   accountPath: text('account_path'),
   /** What happens next, as `LimitPlan` JSON. */
   plan: text('plan').notNull(),
-  /** Where the limit stands; `limited` until the out-of-usage flow computes more. */
+  /** Where the limit stands (`LimitState`); `limited` until the out-of-usage flow computes more. */
   state: text('state').notNull(),
+  /** The session's working directory when the limit was hit, or NULL when unknown. */
+  cwd: text('cwd'),
+  /** The model the same account can keep going on when only one model ran out, or NULL. */
+  modelFallback: text('model_fallback'),
+  /** With `all-accounts-out`: the JSON of `{ accountId, resetsAt }` for the earliest reset, or NULL. */
+  allOut: text('all_out'),
+  /**
+   * The extension id of the account advisor that claimed this session (spec
+   * `claude-account-fleet` X, "One writer for a flow run"), or NULL when none
+   * did. Stored rather than asked live, so a claim survives the advisor's
+   * extension reloading.
+   */
+  claimedBy: text('claimed_by'),
   /** The row's last write. */
   updatedAt: text('updated_at').notNull(),
 });

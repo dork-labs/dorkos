@@ -511,6 +511,38 @@ describe('RuntimeRegistry', () => {
     });
 
     describe('persistSessionRuntime', () => {
+      it.each<TurnOrigin>([
+        { kind: 'interactive' },
+        { kind: 'room', externalAuthor: false },
+        { kind: 'schedule' },
+        { kind: 'relay-binding' },
+        { kind: 'agent-dm' },
+        { kind: 'connector-event' },
+        { kind: 'agent-launch' },
+        { kind: 'account-handoff' },
+        { kind: 'test-harness' },
+      ])('records what started the session: $kind', async (origin) => {
+        await registry.persistSessionRuntime('s-origin', 'claude-code', origin);
+        expect(registry.getSessionLaunchOrigin('s-origin')).toBe(origin.kind);
+      });
+
+      it('names the launch origin when it claims a row a settings change created', async () => {
+        await registry.saveSessionSettings('s-claim', { model: 'opus' });
+        expect(registry.getSessionLaunchOrigin('s-claim')).toBeNull();
+        await registry.persistSessionRuntime('s-claim', 'claude-code', { kind: 'account-handoff' });
+        expect(registry.getSessionLaunchOrigin('s-claim')).toBe('account-handoff');
+      });
+
+      it('never overwrites the launch origin of a bound session', async () => {
+        await registry.persistSessionRuntime('s-bound', 'claude-code', { kind: 'schedule' });
+        await registry.persistSessionRuntime('s-bound', 'claude-code', A_PERSON);
+        expect(registry.getSessionLaunchOrigin('s-bound')).toBe('schedule');
+      });
+
+      it('reads no launch origin for a session with no row', () => {
+        expect(registry.getSessionLaunchOrigin('s-none')).toBeNull();
+      });
+
       it('inserts a new row for a new session', async () => {
         await registry.persistSessionRuntime('session-1', 'claude-code', A_PERSON);
         const row = db
@@ -1474,6 +1506,18 @@ describe('RuntimeRegistry', () => {
       return db.select().from(sessionMetadata).all();
     }
 
+    it('moves the launch origin with the row, and keeps a destination’s own', async () => {
+      await registry.persistSessionRuntime('old', 'claude-code', { kind: 'agent-launch' });
+      await registry.rekeySessionSettings('old', 'new');
+      expect(registry.getSessionLaunchOrigin('new')).toBe('agent-launch');
+      expect(registry.getSessionLaunchOrigin('old')).toBeNull();
+
+      await registry.persistSessionRuntime('old-2', 'claude-code', { kind: 'schedule' });
+      await registry.saveSessionSettings('new-2', { model: 'opus' });
+      await registry.rekeySessionSettings('old-2', 'new-2');
+      expect(registry.getSessionLaunchOrigin('new-2')).toBe('schedule');
+    });
+
     it('moves a stored usage limit, even for a session with no settings row (D4)', async () => {
       const limits = new SessionLimitStore(db);
       setSessionLimitStore(limits);
@@ -1486,6 +1530,8 @@ describe('RuntimeRegistry', () => {
             resetsAt: null,
             since: '2026-09-26T10:00:00.000Z',
             plan: { mode: 'ask' },
+            scope: 'account',
+            state: 'limited',
           },
           scope: 'account',
           accountPath: '/accounts/work',

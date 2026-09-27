@@ -52,6 +52,7 @@ import {
   MessageDeliveryOutcomeSchema,
   SessionLifecycleSchema,
   SessionLimitSchema,
+  type LimitState,
   type SessionLifecycle,
   type ToolApprovalOutcome,
   type QuestionOutcome,
@@ -138,9 +139,11 @@ export {
   SessionLifecycleSchema,
   SessionLimitSchema,
   LimitPlanSchema,
+  LimitStateSchema,
   type SessionLifecycle,
   type SessionLimit,
   type LimitPlan,
+  type LimitState,
 } from './schemas.js';
 
 /**
@@ -300,6 +303,24 @@ export function sessionDisplayState(
   status: Pick<SessionStatus, 'lifecycle' | 'limit'>
 ): SessionLifecycle | 'limited' {
   return status.limit ? 'limited' : status.lifecycle;
+}
+
+/**
+ * The account state to show for a session (spec `claude-account-fleet` D9):
+ * the server-set `limit.state` while a limit holds it; with no limit,
+ * `near-limit` when the account it bills reads `warning`; else `null`.
+ * `near-limit` is the one state with no limit to hang on, so it is derived here
+ * rather than set by the server.
+ *
+ * @param status - The session's limit.
+ * @param accountUsage - The usage of the account the session bills, when known.
+ */
+export function sessionAccountState(
+  status: Pick<SessionStatus, 'limit'>,
+  accountUsage: { state: string } | null | undefined
+): LimitState | 'near-limit' | null {
+  if (status.limit) return status.limit.state;
+  return accountUsage?.state === 'warning' ? 'near-limit' : null;
 }
 
 // === Session Event Stream ===

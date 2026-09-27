@@ -242,6 +242,8 @@ export function reportOpenCodeLimit(
     resetsAt: signal.resetsAt,
     since,
     plan: { mode: 'ask' },
+    scope: 'account',
+    state: 'limited',
   };
   withSessionLimitStore('upsert', (limits) =>
     limits.upsert({ sessionId: state.sessionId, limit, scope: 'account', accountPath: null })

@@ -364,6 +364,10 @@ export class RuntimeRegistry {
         sessionId,
         runtime,
         agentPath: agentPath ?? null,
+        // What started it, server-held and never overwritten: the fact that
+        // decides whether a limited session may carry its work to another
+        // account (spec `claude-account-fleet` D9).
+        launchOrigin: origin.kind,
         createdAt: new Date().toISOString(),
         ...seed,
       })
@@ -376,6 +380,8 @@ export class RuntimeRegistry {
           // with no agent never erases a path some other write knew.
           ...(agentPath !== undefined ? { agentPath } : {}),
           ...fillNullsWith(seed),
+          // The claim names what started the session only when nothing has yet.
+          launchOrigin: sql`coalesce(${sessionMetadata.launchOrigin}, ${origin.kind})`,
           // **The UPDATE branch is a CLAIM, and not every origin may seed one.**
           // This row already exists: something created it before the session
           // started, which for a person is their own pre-launch settings change
@@ -574,6 +580,24 @@ export class RuntimeRegistry {
       .where(eq(sessionMetadata.sessionId, sessionId))
       .get();
     return row?.agentPath ?? null;
+  }
+
+  /**
+   * What started a session (`TurnOrigin.kind`), as the binding write recorded
+   * it, or null when the session has no row or was bound before the column
+   * existed. Server-held, unlike `Session.origin`, so it can decide what a
+   * session may do (spec `claude-account-fleet` D9).
+   *
+   * @param sessionId - Session identifier
+   */
+  getSessionLaunchOrigin(sessionId: string): string | null {
+    const db = this.requireDb('getSessionLaunchOrigin');
+    const row = db
+      .select({ launchOrigin: sessionMetadata.launchOrigin })
+      .from(sessionMetadata)
+      .where(eq(sessionMetadata.sessionId, sessionId))
+      .get();
+    return row?.launchOrigin ?? null;
   }
 
   /**
@@ -902,6 +926,7 @@ export class RuntimeRegistry {
           effort: destination.effort ?? source.effort,
           fastMode: destination.fastMode ?? source.fastMode,
           agentPath: destination.agentPath ?? source.agentPath,
+          launchOrigin: destination.launchOrigin ?? source.launchOrigin,
         })
         .where(eq(sessionMetadata.sessionId, toId))
         .run();

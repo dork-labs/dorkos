@@ -125,6 +125,14 @@ export function createMockAccountUsage(overrides: Partial<AccountUsage> = {}): A
   };
 }
 
+/** The state each plan mode puts a limit in when nothing else applies. */
+const STATE_BY_MODE: Record<LimitPlan['mode'], SessionLimit['state']> = {
+  ask: 'limited',
+  auto: 'handing-off',
+  waiting: 'waiting-reset',
+  continued: 'moved',
+};
+
 /**
  * Create a mock {@link SessionLimit} with the given plan: account `acct-4` out
  * of its weekly window since a fixed time, resetting Tuesday 3pm UTC.
@@ -145,7 +153,7 @@ export function createMockSessionLimit(
   const plans: Record<LimitPlan['mode'], LimitPlan> = {
     ask: { mode: 'ask' },
     auto: { mode: 'auto', target: 'acct-2', fireAt: '2026-09-27T16:00:10.000Z' },
-    waiting: { mode: 'waiting' },
+    waiting: { mode: 'waiting', resumeAt: '2026-09-29T15:00:00.000Z', autoResume: false },
     continued: { mode: 'continued', sessionId: 'session-moved', accountId: 'acct-2' },
   };
   return {
@@ -154,6 +162,8 @@ export function createMockSessionLimit(
     resetsAt: '2026-09-29T15:00:00.000Z',
     since,
     plan: plans[mode],
+    scope: 'account',
+    state: STATE_BY_MODE[mode],
     ...overrides,
   };
 }

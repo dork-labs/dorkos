@@ -14,8 +14,14 @@
  *
  * @module services/session/fleet/session-limit-store
  */
-import { sessionLimits, eq, inArray, type Db, type SessionLimitRow } from '@dorkos/db';
-import { LimitPlanSchema, type LimitPlan, type SessionLimit } from '@dorkos/shared/schemas';
+import { sessionLimits, and, eq, inArray, type Db, type SessionLimitRow } from '@dorkos/db';
+import {
+  LimitPlanSchema,
+  LimitStateSchema,
+  type LimitPlan,
+  type LimitState,
+  type SessionLimit,
+} from '@dorkos/shared/schemas';
 
 import { logger } from '../../../lib/logger.js';
 
@@ -32,10 +38,28 @@ export interface StoredSessionLimit {
   scope: SessionLimitScope;
   /** The Claude config folder the session ran in, or `null` when unknown. */
   accountPath: string | null;
-  /** Where the limit stands: `limited` until the out-of-usage flow (D9) computes more. */
-  state: string;
+  /** Where the limit stands; the same value as `limit.state`. */
+  state: LimitState;
+  /** The session's working directory when the limit was hit, or `null` when unknown. */
+  cwd: string | null;
+  /** The extension id of the advisor that claimed the session, or `null` when none did. */
+  claimedBy: string | null;
   /** The row's last write, ISO 8601. */
   updatedAt: string;
+}
+
+/** What {@link SessionLimitStore.update} may change on a stored limit. */
+export interface SessionLimitPatch {
+  /** The new plan. */
+  plan?: LimitPlan;
+  /** The new state. */
+  state?: LimitState;
+  /** The model offered in place of the one that ran out; `null` clears it. */
+  modelFallback?: string | null;
+  /** The earliest reset when every account is out; `null` clears it. */
+  allOut?: { accountId: string; resetsAt: string | null } | null;
+  /** The advisor that claimed the session. */
+  claimedBy?: string | null;
 }
 
 /** What {@link SessionLimitStore.upsert} writes. */
@@ -49,7 +73,9 @@ export interface SessionLimitWrite {
   /** The Claude config folder the session ran in, or `null` when unknown. */
   accountPath: string | null;
   /** Where the limit stands; `limited` when omitted. */
-  state?: string;
+  state?: LimitState;
+  /** The session's working directory, when the runtime knew it. */
+  cwd?: string | null;
 }
 
 /** SQLite binds at most 999 variables in older builds; stay well under. */
@@ -79,7 +105,30 @@ function parsePlan(json: string): LimitPlan {
   return { mode: 'ask' };
 }
 
+/** A stored state, or `limited` for a value this build does not know. */
+function parseState(value: string): LimitState {
+  const parsed = LimitStateSchema.safeParse(value);
+  return parsed.success ? parsed.data : 'limited';
+}
+
+/** A stored `all_out`, or `undefined` when absent or unreadable. */
+function parseAllOut(json: string | null): SessionLimit['allOut'] {
+  if (!json) return undefined;
+  try {
+    const value = JSON.parse(json) as { accountId?: unknown; resetsAt?: unknown };
+    if (typeof value.accountId !== 'string') return undefined;
+    return {
+      accountId: value.accountId,
+      resetsAt: typeof value.resetsAt === 'string' ? value.resetsAt : null,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 function toStored(row: SessionLimitRow): StoredSessionLimit {
+  const state = parseState(row.state);
+  const allOut = parseAllOut(row.allOut);
   return {
     sessionId: row.sessionId,
     limit: {
@@ -88,10 +137,16 @@ function toStored(row: SessionLimitRow): StoredSessionLimit {
       resetsAt: row.resetsAt,
       since: row.since,
       plan: parsePlan(row.plan),
+      scope: row.scope,
+      state,
+      ...(row.modelFallback ? { modelFallback: row.modelFallback } : {}),
+      ...(allOut ? { allOut } : {}),
     },
     scope: row.scope,
     accountPath: row.accountPath,
-    state: row.state,
+    state,
+    cwd: row.cwd,
+    claimedBy: row.claimedBy,
     updatedAt: row.updatedAt,
   };
 }
@@ -125,6 +180,12 @@ export class SessionLimitStore {
       accountPath: write.accountPath,
       plan: JSON.stringify(write.limit.plan ?? { mode: 'ask' }),
       state: write.state ?? 'limited',
+      cwd: write.cwd ?? null,
+      // A new episode starts unplanned: the fallback, the earliest reset and
+      // the claim are the out-of-usage flow's to work out again (D9).
+      modelFallback: null,
+      allOut: null,
+      claimedBy: null,
       updatedAt: this.now().toISOString(),
     };
     const { sessionId: _key, ...update } = values;
@@ -133,6 +194,41 @@ export class SessionLimitStore {
       .values(values)
       .onConflictDoUpdate({ target: sessionLimits.sessionId, set: update })
       .run();
+  }
+
+  /**
+   * Change a stored limit, but only while it is still the episode the caller
+   * read: a row whose `since` moved on (a newer limit) or that is gone (the
+   * session's next turn started) is left alone.
+   *
+   * @param sessionId - The canonical session id.
+   * @param since - The episode the caller planned for (`limit.since`).
+   * @param patch - What to change.
+   * @returns Whether a row was changed.
+   */
+  update(sessionId: string, since: string, patch: SessionLimitPatch): boolean {
+    const set: Partial<typeof sessionLimits.$inferInsert> = {
+      updatedAt: this.now().toISOString(),
+    };
+    if (patch.plan !== undefined) set.plan = JSON.stringify(patch.plan);
+    if (patch.state !== undefined) set.state = patch.state;
+    if (patch.modelFallback !== undefined) set.modelFallback = patch.modelFallback;
+    if (patch.allOut !== undefined) {
+      set.allOut = patch.allOut === null ? null : JSON.stringify(patch.allOut);
+    }
+    if (patch.claimedBy !== undefined) set.claimedBy = patch.claimedBy;
+    return (
+      this.db
+        .update(sessionLimits)
+        .set(set)
+        .where(and(eq(sessionLimits.sessionId, sessionId), eq(sessionLimits.since, since)))
+        .run().changes > 0
+    );
+  }
+
+  /** Every stored limit, for a sweep over all limited sessions. */
+  list(): StoredSessionLimit[] {
+    return this.db.select().from(sessionLimits).all().map(toStored);
   }
 
   /**

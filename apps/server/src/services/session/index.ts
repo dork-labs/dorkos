@@ -197,6 +197,8 @@ export {
   getSessionLimitStore,
   setSessionLimitStore,
 } from './fleet/session-limit-store.js';
+export { startLimitPlanning, onLimitPlanWritten } from './fleet/limit-plans.js';
+export { installContinueService } from './fleet/continue-service.js';
 export type {
   TriggerCommandIntentDeps,
   TriggerCommandIntentOpts,

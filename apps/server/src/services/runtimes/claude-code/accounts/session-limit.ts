@@ -36,6 +36,7 @@ export type LimitSession = Pick<
   | 'accountRoot'
   | 'limitReportedThisTurn'
   | 'rejectedLimitThisTurn'
+  | 'cwd'
 >;
 
 /**
@@ -77,12 +78,17 @@ export function reportSessionLimit(
   const window = fromEvent?.window ?? usage?.limit?.window ?? UNKNOWN_LIMIT_WINDOW;
   const resetsAt = fromEvent ? fromEvent.resetsAt : (usage?.limit?.resetsAt ?? null);
   const since = now.toISOString();
+  const scope = limitScopeOf(window);
+  // `ask` and `limited` until the out-of-usage flow (spec D9) works out the
+  // plan and the state, which it does as soon as the session holds this limit.
   const limit: SessionLimit = {
     accountId: usage?.accountId ?? null,
     window,
     resetsAt,
     since,
     plan: { mode: 'ask' },
+    scope,
+    state: 'limited',
   };
 
   // Only the error came: the ledger never heard this window say `rejected`
@@ -105,7 +111,7 @@ export function reportSessionLimit(
   // session's first rename.
   const key = session.sdkSessionId || sessionId;
   withSessionLimitStore('upsert', (store) =>
-    store.upsert({ sessionId: key, limit, scope: limitScopeOf(window), accountPath: root })
+    store.upsert({ sessionId: key, limit, scope, accountPath: root, cwd: session.cwd ?? null })
   );
 
   return { type: 'session_status', data: { sessionId, limit } };

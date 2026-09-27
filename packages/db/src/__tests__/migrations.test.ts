@@ -299,6 +299,18 @@ describe('Database Migrations', () => {
     ]);
   });
 
+  it('adds what the out-of-usage flow keeps (spec claude-account-fleet D9, migration 0119)', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const columnsOf = (table: string) =>
+      (db.$client.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name);
+
+    expect(columnsOf('session_metadata')).toContain('launch_origin');
+    expect(columnsOf('session_limits')).toEqual(
+      expect.arrayContaining(['cwd', 'model_fallback', 'all_out', 'claimed_by'])
+    );
+  });
+
   it('foreign key constraint is enforced on pulse_runs.schedule_id', () => {
     const db = createDb(':memory:');
     runMigrations(db);

@@ -11,6 +11,7 @@ import { SessionLimitStore, limitScopeOf, setSessionLimitStore } from '../sessio
 import {
   disposeProjector,
   getOrCreateProjector,
+  onProjectorLimitSet,
   rekeyProjector,
   type RawSessionEvent,
 } from '../../session-state-projector.js';
@@ -25,6 +26,8 @@ const LIMIT: SessionLimit = {
   resetsAt: '2026-09-28T20:00:00.000Z',
   since: '2026-09-26T10:00:00.000Z',
   plan: { mode: 'ask' },
+  scope: 'account',
+  state: 'limited',
 };
 
 let db: Db;
@@ -61,6 +64,8 @@ describe('SessionLimitStore', () => {
       scope: 'account',
       accountPath: '/accounts/work',
       state: 'limited',
+      cwd: null,
+      claimedBy: null,
       updatedAt: '2026-09-26T10:00:05.000Z',
     });
   });
@@ -73,9 +78,42 @@ describe('SessionLimitStore', () => {
     );
   });
 
+  it('updates the plan, state, fallback, earliest reset and claim of the episode it read', () => {
+    write('s-1');
+    const changed = store.update('s-1', LIMIT.since, {
+      plan: { mode: 'ask', carryOver: false },
+      state: 'all-accounts-out',
+      modelFallback: 'sonnet',
+      allOut: { accountId: 'home', resetsAt: '2026-09-27T00:00:00.000Z' },
+      claimedBy: 'flow',
+    });
+    expect(changed).toBe(true);
+    expect(store.get('s-1')).toMatchObject({
+      state: 'all-accounts-out',
+      claimedBy: 'flow',
+      limit: {
+        plan: { mode: 'ask', carryOver: false },
+        state: 'all-accounts-out',
+        modelFallback: 'sonnet',
+        allOut: { accountId: 'home', resetsAt: '2026-09-27T00:00:00.000Z' },
+      },
+    });
+    expect(store.list().map((s) => s.sessionId)).toEqual(['s-1']);
+  });
+
+  it('leaves a newer episode alone, and a new episode starts unclaimed', () => {
+    write('s-1');
+    store.update('s-1', LIMIT.since, { claimedBy: 'flow', modelFallback: 'sonnet' });
+    expect(store.update('s-1', '2026-01-01T00:00:00.000Z', { state: 'moved' })).toBe(false);
+    expect(store.get('s-1')?.state).toBe('limited');
+    write('s-1', { ...LIMIT, since: '2026-09-26T11:00:00.000Z' });
+    expect(store.get('s-1')).toMatchObject({ claimedBy: null });
+    expect(store.get('s-1')?.limit.modelFallback).toBeUndefined();
+  });
+
   it('lists only the limits still waiting on something', () => {
     write('ask');
-    write('waiting', { ...LIMIT, plan: { mode: 'waiting' } });
+    write('waiting', { ...LIMIT, plan: { mode: 'waiting', resumeAt: null, autoResume: false } });
     write('auto', {
       ...LIMIT,
       plan: { mode: 'auto', target: 'home', fireAt: '2026-09-28T20:01:00.000Z' },
@@ -130,6 +168,36 @@ describe('the projector holds a limit like lastError', () => {
     // A new store over the same database and a new projector: the process restarted.
     setSessionLimitStore(new SessionLimitStore(db));
     expect(projectorFor('p-2').getStatus().limit).toEqual(LIMIT);
+  });
+
+  it('announces a new limit once, never an update of it or one restored from the table', () => {
+    const seen: string[] = [];
+    const stop = onProjectorLimitSet(({ sessionId, limit }) =>
+      seen.push(`${sessionId}@${limit.since}`)
+    );
+    try {
+      const projector = projectorFor('p-3');
+      projector.ingest(statusChange(LIMIT));
+      // The planner's own update of the same episode is not a new limit.
+      projector.ingest(statusChange({ ...LIMIT, state: 'wait-only' }));
+      expect(seen).toEqual([`p-3@${LIMIT.since}`]);
+
+      // A limit restored from the table is an old episode.
+      write('p-4');
+      projectorFor('p-4').ingest(turnStart());
+      write('p-4');
+      setSessionLimitStore(new SessionLimitStore(db));
+      disposeProjector('p-4');
+      projectorFor('p-4').ingest(statusChange({ ...LIMIT, state: 'limited' }));
+      expect(seen).toEqual([`p-3@${LIMIT.since}`]);
+
+      // The next episode is.
+      const next = { ...LIMIT, since: '2026-09-26T12:00:00.000Z' };
+      projector.ingest(statusChange(next));
+      expect(seen).toEqual([`p-3@${LIMIT.since}`, `p-3@${next.since}`]);
+    } finally {
+      stop();
+    }
   });
 
   it('follows a projector rekey', () => {

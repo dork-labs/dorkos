@@ -151,6 +151,8 @@ describe('noteCodexTurnUsage', () => {
       resetsAt: new Date(1789560000 * 1000).toISOString(),
       since: NOW.toISOString(),
       plan: { mode: 'ask' },
+      scope: 'account',
+      state: 'limited',
     };
     expect(status).toEqual({ type: 'session_status', data: { sessionId: 's-1', limit: expected } });
     expect(limits.get('s-1')).toMatchObject({

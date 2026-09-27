@@ -626,291 +626,41 @@
           "pendingApproval"
         ]
       },
-      "HealthResponse": {
+      "ContinueOptionsResponse": {
         "type": "object",
         "properties": {
-          "status": {
-            "type": "string"
-          },
-          "version": {
-            "type": "string"
-          },
-          "uptime": {
-            "type": "number"
-          },
-          "tunnel": {
-            "$ref": "#/components/schemas/TunnelStatus"
-          }
-        },
-        "required": [
-          "status",
-          "version",
-          "uptime"
-        ]
-      },
-      "TunnelStatus": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "connected": {
-            "type": "boolean"
-          },
-          "isRunning": {
-            "type": "boolean"
-          },
-          "url": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "port": {
-            "type": [
-              "integer",
-              "null"
-            ]
-          },
-          "startedAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "authEnabled": {
-            "type": "boolean"
-          },
-          "tokenConfigured": {
-            "type": "boolean"
-          },
-          "domain": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "enabled",
-          "connected",
-          "isRunning",
-          "url",
-          "port",
-          "startedAt",
-          "authEnabled",
-          "tokenConfigured",
-          "domain"
-        ]
-      },
-      "SessionListResponse": {
-        "type": "object",
-        "properties": {
-          "sessions": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Session"
-            }
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/SessionListWarning"
-            }
-          },
-          "accountUsage": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AccountUsage"
-            }
-          }
-        },
-        "required": [
-          "sessions"
-        ]
-      },
-      "Session": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "title": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lastMessagePreview": {
-            "type": "string"
-          },
-          "permissionMode": {
-            "$ref": "#/components/schemas/PermissionModeId"
-          },
-          "runtime": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "effort": {
-            "$ref": "#/components/schemas/EffortLevel"
-          },
-          "fastMode": {
-            "type": "boolean"
-          },
-          "contextTokens": {
-            "type": "integer"
-          },
-          "lastAutoCompactAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "origin": {
-            "$ref": "#/components/schemas/SessionOrigin"
-          },
-          "originLabel": {
-            "type": "string"
-          },
-          "originRoomId": {
-            "type": "string"
-          },
-          "account": {
-            "type": "string"
-          },
-          "accountId": {
-            "type": "string"
-          },
-          "status": {
-            "type": "object",
-            "properties": {
-              "lifecycle": {
-                "$ref": "#/components/schemas/SessionLifecycle"
-              },
-              "limit": {
-                "$ref": "#/components/schemas/SessionLimit"
-              },
-              "accountUsage": {
-                "$ref": "#/components/schemas/AccountUsage"
-              }
-            },
-            "required": [
-              "lifecycle",
-              "limit"
-            ]
-          },
-          "trackerItem": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string"
-              },
-              "stage": {
-                "type": "string"
-              },
-              "runStatus": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id"
-            ]
-          },
-          "userLastMessageAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "cwd": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "title",
-          "createdAt",
-          "updatedAt",
-          "permissionMode",
-          "runtime"
-        ]
-      },
-      "PermissionModeId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 64,
-        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
-      },
-      "EffortLevel": {
-        "type": "string",
-        "enum": [
-          "none",
-          "minimal",
-          "low",
-          "medium",
-          "high",
-          "max",
-          "xhigh"
-        ]
-      },
-      "SessionOrigin": {
-        "type": "string",
-        "enum": [
-          "user",
-          "agent",
-          "channel",
-          "room",
-          "task",
-          "external"
-        ]
-      },
-      "SessionLifecycle": {
-        "type": "string",
-        "enum": [
-          "idle",
-          "streaming",
-          "blocked",
-          "error",
-          "interrupted"
-        ]
-      },
-      "SessionLimit": {
-        "type": [
-          "object",
-          "null"
-        ],
-        "properties": {
-          "accountId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "window": {
-            "type": "string"
-          },
-          "resetsAt": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "since": {
-            "type": "string"
-          },
           "plan": {
             "$ref": "#/components/schemas/LimitPlan"
+          },
+          "ranking": {
+            "type": "object",
+            "properties": {
+              "accounts": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ContinueAccountOption"
+                }
+              },
+              "recommendedId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "accounts",
+              "recommendedId"
+            ]
+          },
+          "advised": {
+            "type": "boolean"
           }
         },
         "required": [
-          "accountId",
-          "window",
-          "resetsAt",
-          "since"
+          "plan",
+          "ranking",
+          "advised"
         ]
       },
       "LimitPlan": {
@@ -922,6 +672,12 @@
                 "type": "string",
                 "enum": [
                   "ask"
+                ]
+              },
+              "carryOver": {
+                "type": "boolean",
+                "enum": [
+                  false
                 ]
               }
             },
@@ -960,6 +716,32 @@
                 "enum": [
                   "waiting"
                 ]
+              },
+              "resumeAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "default": null
+              },
+              "autoResume": {
+                "type": "boolean",
+                "default": false
+              },
+              "resetConfirmedAt": {
+                "type": "string"
+              },
+              "unconfirmed": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              },
+              "carryOver": {
+                "type": "boolean",
+                "enum": [
+                  false
+                ]
               }
             },
             "required": [
@@ -988,16 +770,55 @@
               "accountId"
             ]
           }
-        ],
-        "default": {
-          "mode": "ask"
-        }
+        ]
+      },
+      "ContinueAccountOption": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "color": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AccountUsage"
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "badge": {
+            "type": "string",
+            "enum": [
+              "recommended",
+              "reserved"
+            ]
+          }
+        },
+        "required": [
+          "runtime",
+          "id",
+          "label",
+          "color",
+          "usage",
+          "eligible",
+          "reason"
+        ]
       },
       "AccountUsage": {
-        "type": [
-          "object",
-          "null"
-        ],
+        "type": "object",
         "properties": {
           "runtime": {
             "type": "string",
@@ -1288,6 +1109,405 @@
           null
         ]
       },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "details": {}
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ContinueSessionResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        }
+      },
+      "ContinueSessionRequest": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "LimitPlanResponse": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/LimitPlan"
+          }
+        },
+        "required": [
+          "plan"
+        ]
+      },
+      "WaitForResetRequest": {
+        "type": "object",
+        "properties": {
+          "autoResume": {
+            "type": "boolean"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "uptime": {
+            "type": "number"
+          },
+          "tunnel": {
+            "$ref": "#/components/schemas/TunnelStatus"
+          }
+        },
+        "required": [
+          "status",
+          "version",
+          "uptime"
+        ]
+      },
+      "TunnelStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "connected": {
+            "type": "boolean"
+          },
+          "isRunning": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "authEnabled": {
+            "type": "boolean"
+          },
+          "tokenConfigured": {
+            "type": "boolean"
+          },
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "connected",
+          "isRunning",
+          "url",
+          "port",
+          "startedAt",
+          "authEnabled",
+          "tokenConfigured",
+          "domain"
+        ]
+      },
+      "SessionListResponse": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionListWarning"
+            }
+          },
+          "accountUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountUsage"
+            }
+          }
+        },
+        "required": [
+          "sessions"
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastMessagePreview": {
+            "type": "string"
+          },
+          "permissionMode": {
+            "$ref": "#/components/schemas/PermissionModeId"
+          },
+          "runtime": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "effort": {
+            "$ref": "#/components/schemas/EffortLevel"
+          },
+          "fastMode": {
+            "type": "boolean"
+          },
+          "contextTokens": {
+            "type": "integer"
+          },
+          "lastAutoCompactAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/SessionOrigin"
+          },
+          "originLabel": {
+            "type": "string"
+          },
+          "originRoomId": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          },
+          "accountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "object",
+            "properties": {
+              "lifecycle": {
+                "$ref": "#/components/schemas/SessionLifecycle"
+              },
+              "limit": {
+                "$ref": "#/components/schemas/SessionLimit"
+              },
+              "accountUsage": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AccountUsage"
+                  },
+                  {
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  }
+                ]
+              }
+            },
+            "required": [
+              "lifecycle",
+              "limit"
+            ]
+          },
+          "trackerItem": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string"
+              },
+              "runStatus": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "userLastMessageAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "createdAt",
+          "updatedAt",
+          "permissionMode",
+          "runtime"
+        ]
+      },
+      "PermissionModeId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
+      },
+      "EffortLevel": {
+        "type": "string",
+        "enum": [
+          "none",
+          "minimal",
+          "low",
+          "medium",
+          "high",
+          "max",
+          "xhigh"
+        ]
+      },
+      "SessionOrigin": {
+        "type": "string",
+        "enum": [
+          "user",
+          "agent",
+          "channel",
+          "room",
+          "task",
+          "external"
+        ]
+      },
+      "SessionLifecycle": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "streaming",
+          "blocked",
+          "error",
+          "interrupted"
+        ]
+      },
+      "SessionLimit": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "accountId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "window": {
+            "type": "string"
+          },
+          "resetsAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/LimitPlan"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "account",
+              "model"
+            ],
+            "default": "account"
+          },
+          "state": {
+            "$ref": "#/components/schemas/LimitState"
+          },
+          "modelFallback": {
+            "type": "string"
+          },
+          "allOut": {
+            "type": "object",
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "resetsAt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "accountId",
+              "resetsAt"
+            ]
+          }
+        },
+        "required": [
+          "accountId",
+          "window",
+          "resetsAt",
+          "since"
+        ]
+      },
+      "LimitState": {
+        "type": "string",
+        "enum": [
+          "limited",
+          "wait-only",
+          "model-limited",
+          "all-accounts-out",
+          "handing-off",
+          "moved",
+          "waiting-reset",
+          "reset-ready"
+        ],
+        "default": "limited"
+      },
       "SessionListWarning": {
         "type": "object",
         "properties": {
@@ -1304,18 +1524,6 @@
         "required": [
           "runtime",
           "message"
-        ]
-      },
-      "ErrorResponse": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string"
-          },
-          "details": {}
-        },
-        "required": [
-          "error"
         ]
       },
       "PendingInteractionsResponse": {
@@ -5417,7 +5625,17 @@
             "$ref": "#/components/schemas/UsageStatus"
           },
           "accountUsage": {
-            "$ref": "#/components/schemas/AccountUsage"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccountUsage"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           },
           "cacheStats": {
             "$ref": "#/components/schemas/SessionCacheStats"
@@ -14486,6 +14704,292 @@
           },
           "503": {
             "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/continue-options": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "List the accounts a session that ran out of usage could continue on",
+        "description": "The session's current plan, and the accounts to offer in order, each with its usage and a plain-words reason. The account that ran out is left out. `advised` says whether the account advisor's ranking was used. A person may pick any listed account, including one marked not eligible.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plan and the ranked accounts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinueOptionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The session id is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can move or hold a session; an agent identity is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has not run out of usage, so there is nothing to change.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/continue": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Continue a session that ran out of usage, on another account or model",
+        "description": "With `account`: the work carries over to a new session on that account, in the same folder, seeded with where the old one stopped; the answer names the new session, and a second call for the same limit answers with the same one. With only `model`: the same session switches to that model and continues. A session the account advisor claimed (a Flow run) is handed to the advisor, and the answer has no `sessionId` until the advisor reports the new session; the session's plan shows the handoff meanwhile. A session that did not start here (a room, a schedule, a chat binding) can only wait (409).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContinueSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContinueSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Neither an account nor a model, an unknown account, or a model the runtime does not offer.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can move or hold a session; an agent identity is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has no limit, is working, or did not start here and can only wait for the reset.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/wait": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Wait for the account to reset",
+        "description": "The plan becomes `waiting` until the account's usage resets. `autoResume` (allowed only for a session that started here) continues it by itself once the reset is confirmed; it defaults to the advisor's own choice, else off.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaitForResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitPlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`autoResume` was asked for a session that can only wait.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can move or hold a session; an agent identity is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has no limit, or its work already moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/continue/cancel": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Cancel a pending handoff to another account",
+        "description": "An `auto` plan goes back to asking the person.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitPlanResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can move or hold a session; an agent identity is refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The session has no limit, or no handoff is pending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The session is held by the account advisor (a Flow run), and it could not be reached, so nothing changed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

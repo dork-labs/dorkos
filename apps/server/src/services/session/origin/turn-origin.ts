@@ -102,6 +102,13 @@ export type TurnOrigin =
    */
   | { readonly kind: 'agent-launch' }
   /**
+   * A limited session's work carried over to a new session on another account
+   * (spec `claude-account-fleet` D9), by a person or by the account advisor.
+   * The new session's settings row is copied from the source session before
+   * the send, and that copy is the power: this origin adds none.
+   */
+  | { readonly kind: 'account-handoff' }
+  /**
    * The in-process end-to-end harness, reachable only on a server started with
    * `DORKOS_TEST_RUNTIME`. It drives a runtime tool against a session it binds
    * itself.
@@ -195,12 +202,17 @@ export function permissionSeedForOrigin(origin: TurnOrigin): OriginPermissionSee
     // An agent launching a session does not hand it the operator's trust stop;
     // whatever power it gets is the tool's clamped mode, set on its own.
     //
+    // A carry-over's row already holds the source session's model, effort and
+    // mode, copied before the send; the origin must not add the operator's stop
+    // on top of what the session already had.
+    //
     // The harness is not a surface anybody ships to.
     case 'schedule':
     case 'relay-binding':
     case 'agent-dm':
     case 'connector-event':
     case 'agent-launch':
+    case 'account-handoff':
     case 'test-harness':
       return 'none';
     default: {

@@ -28,6 +28,7 @@ import { CreateAgentOptionsSchema } from '@dorkos/shared/mesh-schemas';
 import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-openapi';
 import { env } from '../../env.js';
 import { registerConnectorEventOpenApi } from '../connectors/events/openapi.js';
+import { registerSessionContinueOpenApi } from '../session/fleet/continue-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -557,6 +558,7 @@ const LocalUninstallResultSchema = z.object({
 
 const registry = new OpenAPIRegistry();
 registerConnectorEventOpenApi(registry);
+registerSessionContinueOpenApi(registry);
 
 // `relay_flow` is broadcast on the unified `/api/events` WebSocket stream, which
 // (like its `relay_bindings_changed`/`relay_adapters_changed` siblings) has

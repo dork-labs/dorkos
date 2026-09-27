@@ -55,6 +55,9 @@ const TABLE: ReadonlyArray<readonly [TurnOrigin, OriginPermissionSeed]> = [
   // the operator's stop was set for, so power comes only from the tool's own
   // clamped mode.
   [{ kind: 'agent-launch' }, 'none'],
+  // A limited session's work carried over to another account: the settings
+  // row copied from the source session is its power, and the origin adds none.
+  [{ kind: 'account-handoff' }, 'none'],
   // Not a surface anybody ships to.
   [{ kind: 'test-harness' }, 'none'],
 ];

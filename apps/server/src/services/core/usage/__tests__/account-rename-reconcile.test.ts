@@ -175,6 +175,8 @@ describe('carrying a renamed `default` row through to its references', () => {
           resetsAt: null,
           since: '2026-09-26T10:00:00.000Z',
           plan: { mode: 'ask' },
+          scope: 'account',
+          state: 'limited',
         },
         scope: 'account',
         accountPath: null,

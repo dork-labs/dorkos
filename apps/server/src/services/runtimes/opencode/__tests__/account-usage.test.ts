@@ -234,6 +234,8 @@ describe('OpenCode limits', () => {
       resetsAt,
       since: new Date(clock).toISOString(),
       plan: { mode: 'ask' },
+      scope: 'account',
+      state: 'limited',
     });
     // The turn's own error still shows, and the limit comes after it.
     expect(events.map((e) => e.type)).toEqual(['error', 'session_status']);

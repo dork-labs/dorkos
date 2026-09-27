@@ -299,26 +299,72 @@ export type SessionLifecycle = z.infer<typeof SessionLifecycleSchema>;
  * What happens next for a session whose account ran out of usage (spec
  * `claude-account-fleet` D9):
  *
- * - `ask`: nothing until the operator picks (the default).
+ * - `ask`: nothing until the operator picks (the default). `carryOver: false`
+ *   says the session did not start here (a room, a schedule, a binding), so it
+ *   can only wait for the reset.
  * - `auto`: the work carries over to account `target` at `fireAt` (ISO-8601).
- * - `waiting`: the operator chose to wait for the reset.
+ * - `waiting`: the operator (or the advisor) chose to wait for the reset.
+ *   `resumeAt` is when to look again; `autoResume` whether the session then
+ *   continues by itself; `resetConfirmedAt` when a reading proved the reset;
+ *   `unconfirmed` when none could; `carryOver: false` is kept from the `ask`
+ *   plan it replaced.
  * - `continued`: the work carried over to session `sessionId` on account `accountId`.
  */
 export const LimitPlanSchema = z
   .discriminatedUnion('mode', [
-    z.object({ mode: z.literal('ask') }),
+    z.object({ mode: z.literal('ask'), carryOver: z.literal(false).optional() }),
     z.object({
       mode: z.literal('auto'),
       target: z.string(),
       fireAt: z.string().datetime({ offset: true }),
     }),
-    z.object({ mode: z.literal('waiting') }),
+    z.object({
+      mode: z.literal('waiting'),
+      resumeAt: z.string().nullable().default(null),
+      autoResume: z.boolean().default(false),
+      resetConfirmedAt: z.string().optional(),
+      unconfirmed: z.literal(true).optional(),
+      carryOver: z.literal(false).optional(),
+    }),
     z.object({ mode: z.literal('continued'), sessionId: z.string(), accountId: z.string() }),
   ])
   .openapi('LimitPlan');
 
 /** Inferred type for {@link LimitPlanSchema}. */
 export type LimitPlan = z.infer<typeof LimitPlanSchema>;
+
+/**
+ * Where a limited session stands, set by the server whenever its limit or plan
+ * changes (spec `claude-account-fleet` D9, "The states core emits"):
+ *
+ * - `limited`: plan `ask`; another account exists and at least one could take the work.
+ * - `wait-only`: plan `ask`, and the session can only wait (it did not start
+ *   here, or there is no other account).
+ * - `model-limited`: only one model's window ran out, the account still has
+ *   room, and another model is offered ({@link SessionLimitSchema} `modelFallback`).
+ * - `all-accounts-out`: plan `ask`; other accounts exist and none has room
+ *   (`allOut` names the earliest reset).
+ * - `handing-off`: plan `auto`, counting down to `fireAt`.
+ * - `moved`: plan `continued`; the work is in another session.
+ * - `waiting-reset`: plan `waiting`, the reset not confirmed yet.
+ * - `reset-ready`: plan `waiting`, and the reset is confirmed (or could not be)
+ *   with no automatic resume.
+ */
+export const LimitStateSchema = z
+  .enum([
+    'limited',
+    'wait-only',
+    'model-limited',
+    'all-accounts-out',
+    'handing-off',
+    'moved',
+    'waiting-reset',
+    'reset-ready',
+  ])
+  .openapi('LimitState');
+
+/** Inferred type for {@link LimitStateSchema}. */
+export type LimitState = z.infer<typeof LimitStateSchema>;
 
 /**
  * A hard usage limit the session's account reported during its last turn
@@ -341,11 +387,117 @@ export const SessionLimitSchema = z
     since: z.string(),
     /** What happens next ({@link LimitPlanSchema}); `ask` when absent. */
     plan: LimitPlanSchema.default({ mode: 'ask' }),
+    /**
+     * `model` when only one model's window ran out (`seven_day_opus`,
+     * `seven_day_sonnet`, a `model:*` bucket), else `account`.
+     */
+    scope: z.enum(['account', 'model']).default('account'),
+    /** Where the limit stands ({@link LimitStateSchema}); `limited` in an older snapshot. */
+    state: LimitStateSchema.default('limited'),
+    /** The model the same account can keep going on, when only one model ran out. */
+    modelFallback: z.string().optional(),
+    /** With `all-accounts-out`: the account that comes back first, and when. */
+    allOut: z.object({ accountId: z.string(), resetsAt: z.string().nullable() }).optional(),
   })
   .openapi('SessionLimit');
 
 /** Inferred type for {@link SessionLimitSchema}. */
 export type SessionLimit = z.infer<typeof SessionLimitSchema>;
+
+/**
+ * One account a limited session may continue on, as `GET
+ * /api/sessions/:id/continue-options` serves it (spec D9 "Ranking").
+ */
+export const ContinueAccountOptionSchema = z
+  .object({
+    /** The runtime the account belongs to. */
+    runtime: z.string(),
+    /** The registry id. */
+    id: z.string(),
+    /** What the operator calls the account, or `null` when unnamed. */
+    label: z.string().nullable(),
+    /** The resolved display color. */
+    color: z.string(),
+    /** The account's current usage. */
+    usage: AccountUsageSchema,
+    /** Whether work may go to it now. A person may still pick one that is not. */
+    eligible: z.boolean(),
+    /** Why, in plain words. */
+    reason: z.string(),
+    /** The advisor's badge, when it gave one. */
+    badge: z.enum(['recommended', 'reserved']).optional(),
+  })
+  .openapi('ContinueAccountOption');
+
+/** Inferred type for {@link ContinueAccountOptionSchema}. */
+export type ContinueAccountOption = z.infer<typeof ContinueAccountOptionSchema>;
+
+/** The answer to `GET /api/sessions/:id/continue-options`. */
+export const ContinueOptionsResponseSchema = z
+  .object({
+    /** The session's current plan. */
+    plan: LimitPlanSchema,
+    /** The accounts to offer, in order; the account that ran out is not among them. */
+    ranking: z.object({
+      accounts: z.array(ContinueAccountOptionSchema),
+      /** The account to suggest first, or `null` when none has room. */
+      recommendedId: z.string().nullable(),
+    }),
+    /** True when the account advisor's ranking was used, false for DorkOS's own. */
+    advised: z.boolean(),
+  })
+  .openapi('ContinueOptionsResponse');
+
+/** Inferred type for {@link ContinueOptionsResponseSchema}. */
+export type ContinueOptionsResponse = z.infer<typeof ContinueOptionsResponseSchema>;
+
+/**
+ * The body of `POST /api/sessions/:id/continue`: `account` carries the work
+ * over to a new session on that account (with `model` as the new session's
+ * model); `model` alone switches the same session's model and continues it.
+ */
+export const ContinueSessionRequestSchema = z
+  .object({
+    account: z.string().min(1).optional(),
+    runtime: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+  })
+  .openapi('ContinueSessionRequest');
+
+/** Inferred type for {@link ContinueSessionRequestSchema}. */
+export type ContinueSessionRequest = z.infer<typeof ContinueSessionRequestSchema>;
+
+/**
+ * The answer to `POST /api/sessions/:id/continue`: the session the work
+ * continues in (a new one for a carry-over, the same one for a model switch).
+ * ABSENT when the Flow extension accepted the move and will report the new
+ * session itself; the session's plan shows the handoff meanwhile.
+ */
+export const ContinueSessionResponseSchema = z
+  .object({ sessionId: z.string().optional() })
+  .openapi('ContinueSessionResponse');
+
+/** Inferred type for {@link ContinueSessionResponseSchema}. */
+export type ContinueSessionResponse = z.infer<typeof ContinueSessionResponseSchema>;
+
+/** The body of `POST /api/sessions/:id/wait`. */
+export const WaitForResetRequestSchema = z
+  .object({
+    /** Whether the session continues by itself once the reset is confirmed. */
+    autoResume: z.boolean().optional(),
+  })
+  .openapi('WaitForResetRequest');
+
+/** Inferred type for {@link WaitForResetRequestSchema}. */
+export type WaitForResetRequest = z.infer<typeof WaitForResetRequestSchema>;
+
+/** The answer to `POST /api/sessions/:id/wait` and `POST /api/sessions/:id/continue/cancel`. */
+export const LimitPlanResponseSchema = z
+  .object({ plan: LimitPlanSchema })
+  .openapi('LimitPlanResponse');
+
+/** Inferred type for {@link LimitPlanResponseSchema}. */
+export type LimitPlanResponse = z.infer<typeof LimitPlanResponseSchema>;
 
 export const SessionSchema = z
   .object({

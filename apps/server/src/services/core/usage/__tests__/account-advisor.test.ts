@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach, vi } from 'vitest';
 import type { AccountAdvisor } from '@dorkos/extension-api/server';
 import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import {
@@ -9,7 +9,10 @@ import {
   callAdvisor,
   hasAccountAdvisor,
   invokeAdvisor,
+  onAccountAdvisorRegistered,
   registerAccountAdvisor,
+  type AnsweringAdvisorMethod,
+  type VoidAdvisorMethod,
   validateAdvisorRanking,
   validateCarryOverSeed,
   validateLimitedPlan,
@@ -68,6 +71,35 @@ describe('registerAccountAdvisor: one advisor at a time', () => {
   it('refuses an advisor with no rank function', () => {
     expect(() => registerAccountAdvisor('flow', {} as AccountAdvisor)).toThrow(TypeError);
     expect(hasAccountAdvisor()).toBe(false);
+  });
+});
+
+describe('the advisor method sets', () => {
+  it('reads the void methods off the interface: move, cancelAuto and wait', () => {
+    expectTypeOf<VoidAdvisorMethod>().toEqualTypeOf<'move' | 'cancelAuto' | 'wait'>();
+    expectTypeOf<AnsweringAdvisorMethod>().toEqualTypeOf<
+      'rank' | 'onLimited' | 'modelFallback' | 'carryOver' | 'claims'
+    >();
+  });
+});
+
+describe('onAccountAdvisorRegistered', () => {
+  it('tells each listener the owner of every registration, and stops when asked', () => {
+    const seen: string[] = [];
+    const stop = onAccountAdvisorRegistered((owner) => seen.push(owner));
+    registerAccountAdvisor('flow', advisor());
+    registerAccountAdvisor('other', advisor());
+    stop();
+    registerAccountAdvisor('third', advisor());
+    expect(seen).toEqual(['flow', 'other']);
+  });
+
+  it('keeps registering when a listener throws', () => {
+    onAccountAdvisorRegistered(() => {
+      throw new Error('boom');
+    });
+    registerAccountAdvisor('flow', advisor());
+    expect(accountAdvisorOwner()).toBe('flow');
   });
 });
 

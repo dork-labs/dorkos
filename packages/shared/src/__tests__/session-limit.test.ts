@@ -3,6 +3,7 @@ import {
   LimitPlanSchema,
   SessionLimitSchema,
   SessionStatusSchema,
+  sessionAccountState,
   sessionDisplayState,
   type SessionLifecycle,
   type SessionLimit,
@@ -28,6 +29,8 @@ const limit: SessionLimit = {
   resetsAt: '2026-09-26T19:00:00.000Z',
   since: '2026-09-26T16:04:10.000Z',
   plan: { mode: 'ask' },
+  scope: 'account',
+  state: 'limited',
 };
 
 const session = {
@@ -53,11 +56,47 @@ describe('SessionStatusSchema limit', () => {
     expect(SessionLimitSchema.parse(noPlan).plan).toEqual({ mode: 'ask' });
   });
 
+  it('reads an older limit with no scope or state as an account limit that is limited', () => {
+    const { scope: _scope, state: _state, ...older } = limit;
+    const parsed = SessionLimitSchema.parse(older);
+    expect(parsed.scope).toBe('account');
+    expect(parsed.state).toBe('limited');
+  });
+
+  it('carries the model fallback and the earliest reset when set', () => {
+    const full = {
+      ...limit,
+      scope: 'model' as const,
+      state: 'model-limited' as const,
+      modelFallback: 'sonnet',
+      allOut: { accountId: 'claude4', resetsAt: '2026-09-27T01:00:00.000Z' },
+    };
+    expect(SessionLimitSchema.parse(full)).toEqual(full);
+    expect(SessionLimitSchema.safeParse({ ...limit, state: 'near-limit' }).success).toBe(false);
+  });
+
+  it('fills an older waiting plan with no reset time and no automatic resume', () => {
+    expect(LimitPlanSchema.parse({ mode: 'waiting' })).toEqual({
+      mode: 'waiting',
+      resumeAt: null,
+      autoResume: false,
+    });
+  });
+
   it('accepts every plan mode and refuses an incomplete one', () => {
     for (const plan of [
       { mode: 'ask' },
+      { mode: 'ask', carryOver: false },
       { mode: 'auto', target: 'claude4', fireAt: '2026-09-26T16:05:00.000Z' },
-      { mode: 'waiting' },
+      { mode: 'waiting', resumeAt: '2026-09-26T19:00:00.000Z', autoResume: true },
+      {
+        mode: 'waiting',
+        resumeAt: null,
+        autoResume: false,
+        resetConfirmedAt: '2026-09-26T19:01:00.000Z',
+        unconfirmed: true,
+        carryOver: false,
+      },
       { mode: 'continued', sessionId: 'abc', accountId: 'claude4' },
     ]) {
       expect(LimitPlanSchema.parse(plan)).toEqual(plan);
@@ -67,6 +106,7 @@ describe('SessionStatusSchema limit', () => {
       LimitPlanSchema.safeParse({ mode: 'auto', target: 'claude4', fireAt: 'soon' }).success
     ).toBe(false);
     expect(LimitPlanSchema.safeParse({ mode: 'later' }).success).toBe(false);
+    expect(LimitPlanSchema.safeParse({ mode: 'ask', carryOver: true }).success).toBe(false);
   });
 
   it('lets a status event set, clear or say nothing about a limit', () => {
@@ -85,6 +125,24 @@ describe('sessionDisplayState', () => {
 
   it.each(lifecycles)('is limited over the lifecycle %s when a limit is set', (lifecycle) => {
     expect(sessionDisplayState({ lifecycle, limit })).toBe('limited');
+  });
+});
+
+describe('sessionAccountState', () => {
+  it('is the limit state while a limit holds the session', () => {
+    expect(sessionAccountState({ limit: { ...limit, state: 'moved' } }, { state: 'warning' })).toBe(
+      'moved'
+    );
+  });
+
+  it('is near-limit with no limit when the account reads warning', () => {
+    expect(sessionAccountState({ limit: null }, { state: 'warning' })).toBe('near-limit');
+  });
+
+  it('is null with no limit and an account that is fine, unknown or not known', () => {
+    expect(sessionAccountState({ limit: null }, { state: 'ok' })).toBeNull();
+    expect(sessionAccountState({ limit: null }, { state: 'unknown' })).toBeNull();
+    expect(sessionAccountState({ limit: null }, null)).toBeNull();
   });
 });
 

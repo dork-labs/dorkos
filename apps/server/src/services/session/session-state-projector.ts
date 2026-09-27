@@ -701,6 +701,7 @@ export class SessionStateProjector {
     // Capture before project(): applyStatusChange replaces the status object.
     const lifecycleBefore = this.status.lifecycle;
     const activityBefore = this.status.activity;
+    const limitSinceBefore = this.status.limit?.since;
     // Capture the completing turn BEFORE project() clears inProgressTurn, so a
     // persistence-enabled projector can flush the whole turn (turn_start … the
     // captured deltas … this turn_end) after the event has streamed. A turn_end
@@ -745,6 +746,12 @@ export class SessionStateProjector {
     if (event.type === 'turn_end' || event.type === 'interaction_resolved') {
       notifyTurnBoundary(this._sessionId, event.type);
     }
+    // A NEW usage limit, one this session was not already holding: the moment
+    // the out-of-usage flow works out what happens next (spec
+    // claude-account-fleet D9). After the projection, so the planner's own
+    // update of the same episode lands on top of it, never under it.
+    const limitAfter = this.status.limit;
+    if (limitAfter && limitAfter.since !== limitSinceBefore) notifyLimitSet(this, limitAfter);
     return event;
   }
 
@@ -2755,6 +2762,47 @@ function notifyTurnBoundary(sessionId: string, kind: TurnBoundaryKind): void {
     } catch (err) {
       logger.warn('[SessionStateProjector] a turn-boundary observer threw', {
         sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+/** A subscriber notified when a session starts holding a new usage limit. */
+type LimitSetListener = (update: { sessionId: string; cwd?: string; limit: SessionLimit }) => void;
+
+/** Observers of new usage limits; see {@link onProjectorLimitSet}. */
+const limitSetListeners = new Set<LimitSetListener>();
+
+/**
+ * Subscribe to the moment a session starts holding a usage limit it did not
+ * hold before (a new `limit.since`), as reported by its runtime during a turn.
+ * A limit restored from the `session_limits` table ({@link
+ * SessionStateProjector.hydrateLimit}) is an old episode and is not announced,
+ * and an update of the held episode (its plan or state) is not a new one.
+ *
+ * @param listener - Invoked with the session's current id, cwd and new limit.
+ * @returns An unsubscribe function.
+ */
+export function onProjectorLimitSet(listener: LimitSetListener): () => void {
+  limitSetListeners.add(listener);
+  return () => {
+    limitSetListeners.delete(listener);
+  };
+}
+
+/** Tell every limit observer, without letting one of them break an ingest. */
+function notifyLimitSet(projector: SessionStateProjector, limit: SessionLimit): void {
+  for (const listener of limitSetListeners) {
+    try {
+      listener({
+        sessionId: projector.sessionId,
+        ...(projector.cwd !== undefined ? { cwd: projector.cwd } : {}),
+        limit,
+      });
+    } catch (err) {
+      logger.warn('[SessionStateProjector] a limit observer threw', {
+        sessionId: projector.sessionId,
         error: err instanceof Error ? err.message : String(err),
       });
     }

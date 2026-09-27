@@ -42,8 +42,18 @@ export const MAX_AUTO_DELAY_SECONDS = 3_600;
 /** The advisor methods core may call. */
 export type AdvisorMethod = keyof AccountAdvisor;
 
-/** Methods that resolve to nothing; their only answer is whether they succeeded ({@link invokeAdvisor}). */
-export type VoidAdvisorMethod = 'move' | 'cancelAuto' | 'wait';
+/**
+ * Methods that resolve to nothing; their only answer is whether they succeeded
+ * ({@link invokeAdvisor}). Read off {@link AccountAdvisor} itself, so a new
+ * method that returns `void | Promise<void>` joins this set without an edit.
+ */
+export type VoidAdvisorMethod = {
+  [M in AdvisorMethod]-?: NonNullable<AccountAdvisor[M]> extends (...args: never[]) => infer R
+    ? [Awaited<R>] extends [void]
+      ? M
+      : never
+    : never;
+}[AdvisorMethod];
 
 /** Methods that answer something core then validates ({@link callAdvisor}). */
 export type AnsweringAdvisorMethod = Exclude<AdvisorMethod, VoidAdvisorMethod>;
@@ -54,6 +64,27 @@ interface Registration {
 }
 
 let current: Registration | undefined;
+
+/** Called with the owner's id whenever an advisor is registered. */
+type RegistrationListener = (ownerId: string) => void;
+
+const registrationListeners = new Set<RegistrationListener>();
+
+/**
+ * Be told whenever an advisor is registered (a first one, or one replacing
+ * another), for work that must be asked of each new advisor once, such as the
+ * out-of-usage flow's claims (spec `claude-account-fleet` X). The listener runs
+ * after the registration took effect; a throw is logged and ignored.
+ *
+ * @param listener - Receives the new advisor's owner id.
+ * @returns A function that stops listening.
+ */
+export function onAccountAdvisorRegistered(listener: RegistrationListener): () => void {
+  registrationListeners.add(listener);
+  return () => {
+    registrationListeners.delete(listener);
+  };
+}
 
 /**
  * Register the account advisor on behalf of `ownerId` (an extension id).
@@ -75,6 +106,13 @@ export function registerAccountAdvisor(ownerId: string, advisor: AccountAdvisor)
   const registration: Registration = { ownerId, advisor };
   current = registration;
   logger.info(`[account-advisor] ${ownerId} registered the account advisor`);
+  for (const listener of registrationListeners) {
+    try {
+      listener(ownerId);
+    } catch (err) {
+      logger.warn('[account-advisor] a registration listener failed', { err: String(err) });
+    }
+  }
   return () => {
     if (current !== registration) return;
     current = undefined;
@@ -307,4 +345,5 @@ export function validateCarryOverSeed(seed: unknown): CarryOverSeed | null {
  */
 export function __resetAccountAdvisorForTests(): void {
   current = undefined;
+  registrationListeners.clear();
 }

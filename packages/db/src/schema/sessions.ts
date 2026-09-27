@@ -22,6 +22,12 @@ export const sessionMetadata = sqliteTable('session_metadata', {
   // inference, unpersisted — so nothing is blocked in the meantime.
   runtime: text('runtime'),
   agentPath: text('agent_path'),
+  // What started the session (`TurnOrigin.kind`), written by the same
+  // first-write-wins statement that binds the runtime and never overwritten.
+  // Server-held, unlike the best-effort `Session.origin`, so it is what decides
+  // whether a limited session may carry its work to another account (spec
+  // `claude-account-fleet` D9). NULL = bound before this column existed.
+  launchOrigin: text('launch_origin'),
   createdAt: text('created_at').notNull(),
   // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
   // NULL = "no explicit preference; use the runtime's default."

@@ -33,6 +33,8 @@ const LIMIT: SessionLimit = {
   resetsAt: '2026-09-28T20:00:00.000Z',
   since: '2026-09-26T10:00:00.000Z',
   plan: { mode: 'ask' },
+  scope: 'account',
+  state: 'limited',
 };
 
 let db: Db;

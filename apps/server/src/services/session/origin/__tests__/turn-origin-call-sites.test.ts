@@ -46,6 +46,11 @@ const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   'services/connectors/events/session-target.ts': ['connector-event'],
   // An agent started a session through the `session_start` tool.
   'services/runtimes/claude-code/mcp-tools/session-tools.ts': ['agent-launch'],
+  // A limited session's work carried over to a new session on another account.
+  'services/session/fleet/carry-over.ts': ['account-handoff'],
+  // A person chose another model for their limited session and continued it:
+  // their own message, in their own session.
+  'services/session/fleet/continue-service.ts': ['interactive'],
   // The in-process end-to-end harness, behind `DORKOS_TEST_RUNTIME`.
   'index.ts': ['test-harness'],
 };

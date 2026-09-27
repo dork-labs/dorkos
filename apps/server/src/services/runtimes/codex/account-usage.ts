@@ -158,6 +158,8 @@ export function noteCodexTurnUsage(
     resetsAt: found.resetsAt,
     since: observedAt,
     plan: { mode: 'ask' },
+    scope: limitScopeOf(found.window),
+    state: 'limited',
   };
   withSessionLimitStore('upsert', (store) =>
     store.upsert({
