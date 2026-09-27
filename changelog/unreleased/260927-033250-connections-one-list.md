@@ -7,6 +7,7 @@ covers:
   - 'docs(decisions): the Connections page is one list of apps (DOR-2418)'
   - 'docs(api): regenerate the providers response schema (DOR-2418)'
   - 'fix(connections): hand focus back when the panel closes (DOR-2418)'
+  - 'fix(connections): the playground panel reads a real access snapshot (DOR-2418)'
 ---
 
 ### Changed

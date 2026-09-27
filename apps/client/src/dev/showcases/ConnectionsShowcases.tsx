@@ -31,6 +31,7 @@ import {
   MOCK_CHAT_BINDINGS,
   MOCK_CONNECTIONS,
   MOCK_GMAIL_USAGE,
+  mockAccessPreview,
   mockConnection,
   mockConnectionDetail,
 } from '../mock-samples';
@@ -109,6 +110,8 @@ function panelTransport(connection: ConnectorConnectionSummary): Transport {
   const overrides: Partial<Record<keyof Transport, unknown>> = {
     getConnectorConnection: async () => mockConnectionDetail(connection),
     getOperatorConnectorUsage: async () => ({ items: MOCK_GMAIL_USAGE }),
+    previewConnectorReconciliation: async ({ connectionId }: { connectionId: string }) =>
+      mockAccessPreview(connectionId),
     getConnectorCatalog: async () => ({ services: MOCK_CATALOG_SERVICES, warnings: [] }),
     listMeshAgents: async () => ({
       agents: [

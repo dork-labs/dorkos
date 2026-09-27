@@ -8,7 +8,10 @@ import type {
   ConnectorConnectionDetail,
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
-import type { ConnectorUsageItem } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectorReconciliationPreview,
+  ConnectorUsageItem,
+} from '@dorkos/shared/connector-schemas';
 import type { AdapterBinding, CatalogEntry } from '@dorkos/shared/relay-schemas';
 
 /** One connected account, healthy unless overridden. */
@@ -290,3 +293,41 @@ export const MOCK_GMAIL_USAGE: ConnectorUsageItem[] = [
   usage(3, 'dorkbot', 'GMAIL_SEND_EMAIL', 70),
   usage(4, 'dorkbot', 'GMAIL_CREATE_EMAIL_DRAFT', 90),
 ];
+
+/** What the "Who can use it?" card reads for the Gmail account: DorkBot and mailroom. */
+export function mockAccessPreview(connectionId: string): ConnectorReconciliationPreview {
+  const candidate = (id: string, classification: 'read' | 'write') => ({
+    operationRevisionId: id,
+    toolkit: 'gmail',
+    operationSlug: `gmail.${id}`,
+    toolkitVersion: '2026-09-01',
+    capabilityClassification: classification,
+    retryPolicy: 'never' as const,
+    inputSchema: {},
+    supported: true,
+  });
+  return {
+    previewId: `preview-${connectionId}`,
+    connection: {
+      connectionId: connectionId as never,
+      toolkit: 'gmail',
+      label: 'personal',
+      status: 'active',
+      custody: 'managed',
+      reconciliationStatus: 'ready',
+    },
+    candidates: [candidate('list-v1', 'read'), candidate('send-v1', 'write')],
+    agents: [
+      { agentId: 'dorkbot', displayName: 'DorkBot' },
+      { agentId: 'mailroom', displayName: 'mailroom' },
+    ],
+    currentGrants: [
+      { agentId: 'dorkbot', operationRevisionIds: ['list-v1', 'send-v1'] },
+      { agentId: 'mailroom', operationRevisionIds: ['list-v1'] },
+    ],
+    everyAgent: { available: true, operationRevisionIds: [] },
+    catalogComplete: true,
+    createdAt: '2026-09-26T00:00:00.000Z',
+    expiresAt: '2099-09-26T00:00:00.000Z',
+  };
+}

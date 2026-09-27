@@ -41,6 +41,7 @@ export {
   MOCK_CHAT_BINDINGS,
   MOCK_CONNECTIONS,
   MOCK_GMAIL_USAGE,
+  mockAccessPreview,
   mockConnection,
   mockConnectionDetail,
 } from './connections';
