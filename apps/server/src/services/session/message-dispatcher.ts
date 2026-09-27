@@ -1154,7 +1154,13 @@ function returnToQueue(plan: DispatchPlan): void {
     return;
   }
   const store = getMessageQueueStore();
-  if (store && !store.get(plan.messageId)) return;
+  if (store && !store.get(plan.messageId)) {
+    // No row to put back (it was removed, or never written): no turn will
+    // start for this message, so its caller hears that now, or never (a
+    // launch-cap slot is released on it).
+    plan.turn.onSettled?.('failed');
+    return;
+  }
   parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true });
 }
 

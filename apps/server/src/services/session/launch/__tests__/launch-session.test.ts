@@ -41,7 +41,13 @@ import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { dispatchMessage } from '../../message-dispatcher.js';
 import { recordDispatchEnd } from '../../../observability/dispatch-buffers.js';
 import { resolveSessionCwdWithRoom } from '../../../workspace/room-session-place.js';
-import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch-session.js';
+import {
+  AGENT_LAUNCH_CAP_MESSAGE,
+  AGENT_LAUNCH_MAX_LIVE,
+  dispatchSessionMessage,
+  isAgentLaunchCapFull,
+  isSessionLaunchRefusal,
+} from '../launch-session.js';
 import {
   clearTestHomes,
   registerTestHomes,
@@ -219,6 +225,80 @@ describe('dispatchSessionMessage', () => {
 
       expect(isSessionLaunchRefusal(result)).toBe(false);
       expect(dispatchMessage).toHaveBeenCalled();
+    });
+  });
+
+  describe('the cap on sessions nobody typed into', () => {
+    /** Launch one capped session, answering `accepted` as given. */
+    function cappedLaunch(accepted = true, onSettled?: (o: 'ok' | 'failed') => void) {
+      vi.mocked(dispatchMessage).mockResolvedValueOnce({
+        accepted,
+        canonicalId: 'canon',
+        outcome: { kind: 'started', messageId: 'm' },
+        queued: false,
+        queuePosition: 0,
+      } as never);
+      return dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi' },
+        clientId: 'c',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+        origin: { kind: 'agent-launch' },
+        countsTowardLaunchCap: true,
+        ...(onSettled ? { onSettled } : {}),
+      });
+    }
+
+    /** Settle every capped turn still live, freeing the slots. */
+    function settleAll(): void {
+      for (const [opts] of vi.mocked(dispatchMessage).mock.calls) opts.onSettled?.('ok');
+    }
+
+    afterEach(() => settleAll());
+
+    it(`refuses the ${AGENT_LAUNCH_MAX_LIVE + 1}th live capped launch, and starts nothing for it`, async () => {
+      for (let i = 0; i < AGENT_LAUNCH_MAX_LIVE; i++) {
+        expect(isSessionLaunchRefusal(await cappedLaunch())).toBe(false);
+      }
+      expect(isAgentLaunchCapFull()).toBe(true);
+      const calls = vi.mocked(dispatchMessage).mock.calls.length;
+
+      expect(await cappedLaunch()).toEqual({
+        refused: 'LAUNCH_CAP_FULL',
+        message: AGENT_LAUNCH_CAP_MESSAGE,
+      });
+      expect(vi.mocked(dispatchMessage).mock.calls.length).toBe(calls);
+    });
+
+    it('frees a slot when a turn settles, and still tells the caller', async () => {
+      const onSettled = vi.fn();
+      await cappedLaunch(true, onSettled);
+      for (let i = 1; i < AGENT_LAUNCH_MAX_LIVE; i++) await cappedLaunch();
+      expect(isAgentLaunchCapFull()).toBe(true);
+
+      vi.mocked(dispatchMessage).mock.calls[0]![0].onSettled?.('ok');
+
+      expect(onSettled).toHaveBeenCalledWith('ok');
+      expect(isAgentLaunchCapFull()).toBe(false);
+    });
+
+    it('frees the slot of a launch that was not accepted', async () => {
+      for (let i = 0; i < AGENT_LAUNCH_MAX_LIVE; i++) await cappedLaunch(false);
+      expect(isAgentLaunchCapFull()).toBe(false);
+    });
+
+    it('never counts or refuses a launch a person typed', async () => {
+      for (let i = 0; i < AGENT_LAUNCH_MAX_LIVE; i++) await cappedLaunch();
+      const result = await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi' },
+        clientId: 'c',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+        origin: { kind: 'interactive' },
+      });
+      expect(isSessionLaunchRefusal(result)).toBe(false);
     });
   });
 });
