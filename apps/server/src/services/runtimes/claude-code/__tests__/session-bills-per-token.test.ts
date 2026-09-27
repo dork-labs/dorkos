@@ -23,7 +23,9 @@ vi.mock('../../../core/credential-provider.js', async (importOriginal) => ({
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 import type { AgentSession } from '../agent-types.js';
 import { mapSystemEvent } from '../sdk/event-mappers/system-event-mapper.js';
+import { ANTHROPIC_PROVIDER_ID } from '../../../core/credential-env.js';
 import {
+  ANTHROPIC_PROVIDER,
   envBillsPerToken,
   keySourceBillsPerToken,
   predictLaunchBillsPerToken,
@@ -57,7 +59,7 @@ describe('ClaudeCodeRuntime.sessionBillsPerToken', () => {
 
   it('never launched, with a stored key reference: per token, and the key is never resolved', async () => {
     stubSession(runtime, undefined);
-    config.providers = { anthropic: 'keychain:dorkos-anthropic' };
+    config.providers = { [ANTHROPIC_PROVIDER_ID]: 'keychain:dorkos-anthropic' };
     await expect(runtime.sessionBillsPerToken('s1')).resolves.toBe(true);
     expect(resolve).not.toHaveBeenCalled();
   });
@@ -104,6 +106,10 @@ describe('per-token billing signals', () => {
     for (const source of ['ANTHROPIC_API_KEY', 'apiKeyHelper', '/login managed key', 'org']) {
       expect(keySourceBillsPerToken(source)).toBe(true);
     }
+  });
+
+  it('reads the same provider key the launch resolves a stored key from', () => {
+    expect(ANTHROPIC_PROVIDER).toBe(ANTHROPIC_PROVIDER_ID);
   });
 
   it('predicts from presence alone, and per token on any signal', () => {

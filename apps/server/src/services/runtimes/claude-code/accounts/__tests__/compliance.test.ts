@@ -115,10 +115,8 @@ describe('account usage compliance guard (invariant 3)', () => {
 describe('per-token billing compliance guard (invariant 3)', () => {
   const FILE = path.resolve(HERE, '../../messaging/per-token-billing.ts');
   const ALLOWED = new Set([['ANTHROPIC_', 'AUTH_TOKEN'].join('')]);
-  const FORBIDDEN_IMPORTS = [
-    /from\s+'[^']*credential-env(\.js)?'/,
-    /from\s+'[^']*credential-provider(\.js)?'/,
-  ];
+  // Anywhere in the text, so a dynamic `import()` or a re-export is caught too.
+  const FORBIDDEN_IMPORTS = [/credential-(env|provider)/];
 
   it('names no credential store or usage endpoint, and imports nothing that resolves a secret', async () => {
     const text = await readFile(FILE, 'utf8');

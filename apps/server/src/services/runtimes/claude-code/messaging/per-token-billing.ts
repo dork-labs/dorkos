@@ -24,11 +24,12 @@ const PER_TOKEN_ENV_VARS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] as cons
 const SUBSCRIPTION_KEY_SOURCES: ReadonlySet<string> = new Set(['none', 'oauth']);
 
 /**
- * The provider id whose stored reference becomes Claude's key at launch
- * (`ANTHROPIC_PROVIDER_ID` in `core/credential-env.ts`, which this module must
- * not import because it resolves the reference's value).
+ * The provider id whose stored reference becomes Claude's key at launch. It
+ * mirrors `ANTHROPIC_PROVIDER_ID` in the credential environment module, which
+ * this module must not import because that module resolves the reference's
+ * value; a test pins the two equal.
  */
-const ANTHROPIC_PROVIDER = 'anthropic';
+export const ANTHROPIC_PROVIDER = 'anthropic';
 
 /**
  * Whether a launch environment bills per token.
