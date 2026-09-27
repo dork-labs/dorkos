@@ -16,10 +16,11 @@
  * schema. A worktree is removed only when FOUR independent things agree:
  *
  * 1. Its agent is not mid-turn ({@link RoomWorktreeManagerDeps.busyAgentPaths}).
- *    Since the cwd rung landed (DOR-1597) a room turn RUNS in this directory, and
- *    a turn that is only reading — think, then write — leaves no mark any date
- *    source below can see. Deleting the cwd out from under a live turn is the
- *    one way this sweep could break something that was not even idle.
+ *    A room turn stands in its agent's home but is granted this directory and
+ *    works on it by path (spec `agent-home-desk` §5.1), and a turn that is only
+ *    reading — think, then write — leaves no mark any date source below can
+ *    see. Deleting the copy out from under a live turn is the one way this
+ *    sweep could break something that was not even idle.
  * 2. It is not in {@link RoomWorktreeManagerDeps.listStrandedWorktrees}, which
  *    is the delete guard's own list: anything dirty, anything holding commits
  *    `main` has never seen, and anything git cannot read at all.
@@ -79,113 +80,30 @@
  * reached through a symlink gets a second worktree and keeps both — visible,
  * and fixable by them rather than by us.
  *
- * ## The agent's own skills, and the room's, in the tree the turn runs in
+ * ## What DorkOS used to write in here, and how it leaves
  *
- * A room repo may carry `.agents/skills/` like any project (§3.8), and Claude
- * Code — the default runtime — only reads skills from `.claude/skills/`. So
- * every fresh worktree gets the same projection an agent workspace gets
- * ({@link projectAgentWorkspace}: claude-code only, no dork home, no plugin
- * hooks, never throws).
+ * From DOR-1597 until spec `agent-home-desk`, a room turn STOOD in this tree,
+ * so DorkOS wrote into it what a turn's directory needs: the Operating DorkOS
+ * skill pack (`.agents/skills/<name>/SKILL.md`, DOR-1640), harness projection
+ * links (`.claude/skills/*`, `.agents/harness.manifest.json`, a scaffolded
+ * `.claude/CLAUDE.md`, installed-package links `.agents/skills/<pkg>__<name>`)
+ * and projected attachments (`.dork/.temp/room-attachments/`). All of it was
+ * hidden from `git status` by a marker block in the repo's shared
+ * `info/exclude`, so the tree read clean.
  *
- * **The Operating DorkOS pack is seeded here too, and it has to be** (DOR-1640).
- * The pack is written into an agent's HOME (`<agentDir>/.agents/skills/`) and
- * projected into `<agentDir>/.claude/skills/`, but since the cwd rung landed a
- * room turn runs in this worktree, and every harness resolves its project-scoped
- * skills against the cwd. So the agent's own pack — including
- * `working-in-room-repos`, whose entire subject is this directory — was reachable
- * everywhere EXCEPT where it applies. Widening the harness's setting-source chain
- * instead is not available: `settingSources` is a closed three-value enum and its
- * `user` slot is already spoken for by account pinning
- * (`claude-code/messaging/launch-resolver.ts`). So the pack comes to the tree.
- * {@link seedAgentWorkspace} writes it before the projection runs, which is what
- * makes it reach codex and opencode (they read `.agents/skills/` natively) as
- * well as claude-code (which reads the projected links).
- *
- * Seeding never clobbers a room's own work: a same-named skill the room authored
- * is `preserved` by the seeder, which only writes an absent file or its OWN
- * unmodified older copy (`@dorkos/operating-skills`, `seed.ts`).
- *
- * Only worktrees are seeded. The room's integration tree — `repo/`, on `main` —
- * is the one directory no turn ever runs in, and its contents are the room's
- * committed files; putting DorkOS's pack there would offer it to a `git add -A`.
- *
- * That projection WRITES into the agent's tree, and everything above depends on
- * `git status` in that tree meaning "the agent's unsaved work". Left alone, a
- * room repo carrying one skill would produce a `.claude/skills/` symlink that
- * makes every worktree permanently dirty: never reaped, and — once §3.6 lands —
- * never mergeable either. So the generated paths are excluded in the repo's
- * shared `info/exclude` before the first worktree is added.
- *
- * **Harness projection is no longer the only thing DorkOS writes in here.**
- * Since the cwd rung landed (DOR-1597) a room turn RUNS in this tree, so the
- * room's attachments are projected into it too. So DorkOS's whole scratch area
- * inside the tree is in the same block, derived from the projector's own
- * constant rather than spelled again. It is `.dork/.temp/` and nothing a member
- * would author, which is what makes it safe to hide by the same rule the other
- * two entries pass — and excluding the directory rather than each projection
- * inside it means the next thing brought to an agent cannot silently make every
- * worktree dirty.
- *
- * The list holds only what DorkOS generates in THIS configuration, and nothing
- * a person might write. Two paths were considered and left out, for the same
- * reason: `.claude/commands/` (members author commands there for claude-code)
- * and `.claude/settings.local.json` — which the harness engine treats as the
- * person's own file, and which this projection never generates anyway, because
- * it runs claude-code-only with plugin hooks denied. Excluding a file DorkOS
- * does not write would hide somebody's settings from `git status` and then let
- * the reap delete them without a word. Anything generated that is left visible
- * makes its worktree read dirty, which is the conservative direction: spared,
- * never deleted.
- *
- * **The seeded pack is in the block by the same rule, and it is DERIVED from the
- * pack** ({@link SEEDED_PACK_EXCLUDES}). A hand-written list would be one skill
- * behind the next time somebody adds one, and the failure mode of being behind
- * is not a missing line — it is every room worktree in existence reading dirty
- * forever, hence never reaped and never mergeable. It names each seeded
- * `SKILL.md` rather than `.agents/skills/`, because that directory is where the
- * ROOM authors its own skills and hiding it would hide their work.
- *
- * **Seeding widened what the projection writes, and the block had to widen with
- * it.** The projection used to return early unless `.agents/skills/` existed, so
- * in a room that authored no skills it did nothing at all. Seeding creates that
- * directory in every worktree, so the projection now runs in every worktree —
- * and it makes more than skill symlinks. `planInstruction` scaffolds
- * `.claude/CLAUDE.md` whenever the tree root has an `AGENTS.md`, which is a room
- * shape spec `project-rooms` D14 plans for; that is
- * {@link SCAFFOLDED_INSTRUCTION_EXCLUDES}, asked of the planner rather than
- * spelled here.
- *
- * **One more thing the projection writes here now, and it is not fixed text.**
- * Since DOR-1847 every installed plugin skill is linked into `.agents/skills`
- * whatever harnesses are enabled, so a room whose repo carries a project-scoped
- * package gets links there too. Those are covered by
- * {@link installedSkillLinkExcludes}, which asks the planner for its own targets
- * and lists them one by one — never a `*__*` glob, which would also hide an
- * authored `my__helper` and hand it to the reap (DOR-1880). Because the list
- * depends on what a repo has installed, the block is built per repo
- * ({@link excludeBlockFor}) rather than being a module constant.
- *
- * The list is complete for the harnesses DorkOS scaffolds
- * ({@link AGENT_WORKSPACE_HARNESSES} — claude-code alone), and that completeness
- * is pinned by a test that runs the REAL planner over a created worktree —
- * installed package included — and asks `git check-ignore` about every target it
- * plans. A new engine target reddens it; nobody has to remember this paragraph.
- *
- * **A room that commits its own `.agents/harness.manifest.json` enabling other
- * harnesses is outside that guarantee, deliberately.** The projection respects a
- * hand-authored manifest, so such a room can draw `GEMINI.md`,
- * `.github/copilot-instructions.md` or a generated hooks file into its
- * worktrees. Those are not added here: each is a path a PERSON may author, and
- * the module's rule is that excluding a file DorkOS might not have written would
- * hide somebody's work and then let the reap delete it. So they stay visible,
- * the worktree reads dirty, and it is spared rather than removed — the
- * conservative direction, and a visible one. Widening this block is the wrong
- * repair if that ever needs fixing; narrowing what the projection does in a room
- * worktree is the right one.
- *
- * **An exclude cannot hide a TRACKED file**, which is what makes these entries
- * safe: a room that commits its own harness manifest keeps working on it
- * normally.
+ * A turn now stands in its agent's home, where the pack and the projection
+ * already are, and attachments land there too. Nothing is written into a new
+ * worktree any more. What older ones hold is retired by
+ * {@link RoomWorktreeManager.retireLegacyPlumbing}, once per worktree per
+ * process, at the worktree's next turn launch and never while a turn on that
+ * (room, agent) is running. It deletes only what DorkOS provably wrote — an
+ * unmodified seeded skill, a link into the pack or the agent's home, the
+ * scaffolds byte for byte, and the attachment folder, which is DorkOS's and
+ * rebuildable — and leaves anything else at those paths alone, because it is
+ * somebody's own file. The marker block is removed only when no worktree of
+ * the repo still holds an untracked file it hides; until then it stays, frozen
+ * at its last contents, because removing it would make every such worktree
+ * read dirty — never reaped, and every merge refused `UNCOMMITTED_WORK`.
  *
  * @module server/services/rooms/repo/room-worktree-manager
  */
@@ -194,24 +112,12 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import { slugifyAgentName } from '@dorkos/shared/validation';
-import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
-import {
-  buildPlan,
-  parseHarnessManifest,
-  planInstruction,
-  scanInstalledPlugins,
-  AGENTS_SKILLS_DIR,
-} from '@dorkos/harness';
+import { isUnmodifiedSeededSkill, OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
+import { CLAUDE_INSTRUCTION_CONTENT } from '@dorkos/harness';
 import { logger } from '../../../lib/logger.js';
 import { RoomError } from '../room-errors.js';
 import { PROJECTED_ATTACHMENTS_ROOT } from '../attachments/attachment-paths.js';
-import {
-  projectAgentWorkspace,
-  seedAgentWorkspace,
-  AGENT_WORKSPACE_HARNESSES,
-  type AgentWorkspaceProjection,
-} from '../../harness/project-agent-workspace.js';
-import { adoptInOwnedWorkspace } from '../../harness/adopt-owned-workspace.js';
+import { AGENT_WORKSPACE_HARNESSES } from '../../harness/project-agent-workspace.js';
 import type { RoomRepoStore } from './room-repo-store.js';
 import {
   addWorktree,
@@ -224,6 +130,7 @@ import {
   headCommittedAt,
   pruneWorktrees,
   removeWorktree,
+  runGit,
 } from './room-repo-git.js';
 
 /**
@@ -258,199 +165,28 @@ export function roomWorktreeBranch(slug: string): string {
 }
 
 /**
- * DorkOS's own scratch area inside a turn's directory — the parent of every
- * projection it makes there, derived from the projector's constant rather than
- * spelled a second time.
- *
- * Excluded whole rather than per-projection. It passes the same test the other
- * entries do — DorkOS writes it, nobody authors in it — and the alternative is a
- * list that has to be extended every time something new is brought to an agent,
- * with a permanently-dirty worktree as the failure mode each time somebody
- * forgets.
+ * Where DorkOS used to project a room's attachments inside a worktree, when a
+ * room turn stood in it — derived from the projector's constant rather than
+ * spelled a second time. Always DorkOS's, always rebuildable, so
+ * {@link RoomWorktreeManager.retireLegacyPlumbing} removes it outright.
  */
-const DORKOS_TEMP_DIR = path.posix.dirname(PROJECTED_ATTACHMENTS_ROOT);
+const LEGACY_ATTACHMENTS_DIR = PROJECTED_ATTACHMENTS_ROOT;
 
 /**
- * The `info/exclude` lines that hide the seeded Operating DorkOS pack — one per
- * pack skill, DERIVED from the pack itself.
- *
- * Never hand-listed. The pack gains skills (seven at the time of writing, one
- * of them added by the change this list exists for), and a list that has to be
- * extended by hand is a list that will be one behind — leaving every room
- * worktree permanently dirty, therefore never reaped and never mergeable, for
- * whichever release forgot.
- *
- * Each entry names the ONE file the seeder writes for that skill
- * (`@dorkos/operating-skills`, `seed.ts` → `writeSkillFile`), never the skill's
- * directory and certainly never `.agents/skills/` — that directory is where a
- * room authors skills of its own (§3.8), and hiding it would hide a member's
- * work from `git status` and then let the reap delete it.
- *
- * **These seven names are RESERVED inside a room worktree, and the cost is real
- * rather than theoretical.** The usual escape — an exclude cannot hide a TRACKED
- * file — covers a room that COMMITTED a skill at one of these paths: the seeder
- * preserves the content, git keeps reporting it, everything works. It does not
- * cover an UNCOMMITTED one. An agent that writes `.agents/skills/reading-
- * activity/SKILL.md` in its worktree and does not commit it has written a file
- * this block hides: `git status` reports nothing, the tree reads idle and clean,
- * and the reap removes the working copy with that file in it. Nothing warns.
- *
- * That is accepted rather than overlooked, because every alternative is worse:
- * excluding nothing makes EVERY worktree permanently dirty, and excluding the
- * directory hides strictly more of the room's work. The narrowest possible list
- * is what keeps the exposure to seven known names — which is also why it must
- * never be widened to the directory as a convenience.
- */
-export const SEEDED_PACK_EXCLUDES: readonly string[] = OPERATING_SKILLS_PACK.map(
-  (skill) => `/.agents/skills/${skill.name}/SKILL.md`
-);
-
-/**
- * The `info/exclude` lines that hide the instruction pointer the projection
- * scaffolds — asked of the PLANNER, never spelled here.
- *
- * `planInstruction` writes `.claude/CLAUDE.md` whenever the tree root carries an
- * `AGENTS.md`, which spec `project-rooms` D14 plans for. That scaffold used to be
- * unreachable: the projection returned early unless `.agents/skills/` existed, so
- * only a room that authored skills of its own ever got that far. Seeding creates
- * that directory in EVERY worktree, so the projection now always runs — and the
- * path it writes was hidden by nothing, leaving `?? .claude/` on every tree in
- * such a room. Never reaped, never mergeable.
- *
- * Derived by running the planner and reading the target back, rather than
- * repeating the literal: the engine owns where a harness's pointer goes, and a
- * second copy of that decision here would be silently wrong the day it moved.
- * {@link AGENT_WORKSPACE_HARNESSES} is the same list the projection scaffolds
- * for, so the question asked here is exactly the question answered there.
- */
-const SCAFFOLDED_INSTRUCTION_EXCLUDES: readonly string[] = AGENT_WORKSPACE_HARNESSES.map(
-  (harness) => planInstruction(harness, true).target
-)
-  .filter((target): target is string => target !== undefined)
-  .map((target) => `/${target}`);
-
-/**
- * The `info/exclude` block that keeps what DorkOS writes out of `git status`.
- *
- * Marker-delimited so the block can be recognized and REPLACED on the next call
- * rather than appended twice, and so a person reading the file knows what wrote
- * it and why. See the module doc for the paths deliberately NOT in it, and why
- * excluding a file DorkOS does not generate would be worse than leaving a
- * generated one visible.
- *
- * {@link DORKOS_TEMP_DIR} is derived, never spelled twice: the projector decides
- * where a room's files land in a turn's directory, and a second copy of that
- * path here would go stale the moment it moved — leaving every worktree that
- * ever received an attachment permanently dirty, and therefore never reaped and
- * never mergeable.
- */
-/**
- * The `info/exclude` lines that hide the `.agents/skills` links an installed
- * package's skills project into — asked of the PLANNER, never globbed.
- *
- * Since DOR-1847 every installed plugin skill is linked into `.agents/skills`
- * whatever harnesses are enabled, because that is the one directory five of the
- * six read and the only skills root the scheduler watches. In a room worktree
- * those links are ours and nobody else's, and nothing hid them: a room whose
- * repo carries a project-scoped package read `?? .agents/skills/acme__alpha`
- * forever, so it was never reaped and never mergeable (DOR-1880).
- *
- * **A `*__*` glob would have been the easy fix and the wrong one.** The engine's
- * ownership predicate is the PAIR — the name carries `__` and the entry is a
- * symlink — precisely because a person may author a directory called
- * `my__helper`, and a glob cannot tell the two apart. Hiding one would put a
- * room member's own skill behind `git status` and then let the reap delete it,
- * which is the exact failure the module doc forbids. So the lines are the
- * planner's own targets, one per link, exactly like
- * {@link SCAFFOLDED_INSTRUCTION_EXCLUDES}.
- *
- * The plan is built against {@link AGENT_WORKSPACE_HARNESSES} rather than read
- * from a manifest FILE, because there need not be one: `info/exclude` lives in
- * the common git directory and is written from the room's main checkout, which
- * the projection never scaffolds a manifest into — only worktrees get one. It
- * costs nothing in accuracy for this one artifact: the `.agents/skills` link is
- * planned whatever harnesses are enabled, so a room that commits its own
- * manifest gets the identical set of link paths.
- *
- * Best-effort: an unreadable `.dork/plugins` yields no lines rather than
- * refusing a worktree. That self-heals — {@link withExcludeBlock} REPLACES a
- * block whose content has moved, and this runs again at the next worktree
- * creation and on the pack refresh.
- *
- * @param repoDir - The room's main checkout, whose `.dork/plugins` decides the list.
- * @returns One `/`-anchored exclude line per planned link, sorted.
- */
-function installedSkillLinkExcludes(repoDir: string): string[] {
-  try {
-    const plan = buildPlan({
-      repoRoot: repoDir,
-      manifest: parseHarnessManifest({
-        version: 1,
-        harnesses: [...AGENT_WORKSPACE_HARNESSES],
-      }),
-      agentsMdExists: false,
-      installedPlugins: scanInstalledPlugins({ projectRoot: repoDir }),
-      // The same gate the agent-workspace projection passes: this is an
-      // unattended read, and a package's hooks are nobody's business here.
-      allowPluginHooks: () => false,
-    });
-    return plan.actions
-      .filter((a) => a.kind === 'symlink' && a.target?.startsWith(`${AGENTS_SKILLS_DIR}/`))
-      .map((a) => `/${a.target as string}`)
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Build the block for one repository.
- *
- * Everything in it is fixed except the installed-package links, which depend on
- * what that repo has installed — so this is a function of the repo rather than a
- * module constant, and {@link withExcludeBlock} rewrites a stale block in place.
- *
- * @param installedLinks - The lines from {@link installedSkillLinkExcludes}.
- * @returns The marker-delimited block, without a trailing newline.
- */
-function excludeBlockFor(installedLinks: readonly string[]): string {
-  return [
-    '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
-    '/.claude/skills/',
-    '/.agents/harness.manifest.json',
-    `/${DORKOS_TEMP_DIR}/`,
-    ...SCAFFOLDED_INSTRUCTION_EXCLUDES,
-    ...SEEDED_PACK_EXCLUDES,
-    ...installedLinks,
-    '# --- end DorkOS ---',
-  ].join('\n');
-}
-
-/** The block with no installed packages — the shape every repo shares. */
-const EXCLUDE_BLOCK = excludeBlockFor([]);
-
-/**
- * How an EXISTING block is recognized — a version-free sentinel, never the
- * marker line itself.
- *
- * The opening line carries prose, and prose gets edited: it already has been
- * once, when the block stopped being only about harness projection. Searching
- * for the CURRENT first line means a block written by any earlier version is
- * not found at all, so the writer appends a second one and the file ends up
- * with an orphaned old block that nothing will ever update or remove — the
- * duplicate this constant exists to prevent. Only the stable prefix is matched;
- * everything after it is free to be reworded.
+ * How the marker block in `info/exclude` is recognized — a version-free
+ * sentinel, never the marker line itself, because the opening line's prose was
+ * edited across releases and a block written by any of them must be found.
  */
 const EXCLUDE_SENTINEL = '# --- DorkOS:';
 
-/** The last line of {@link EXCLUDE_BLOCK}, which closes it — derived, never respelled. */
-const EXCLUDE_END = EXCLUDE_BLOCK.split('\n').at(-1) ?? '';
+/** The line that closes the block. */
+const EXCLUDE_END = '# --- end DorkOS ---';
 
 /** One agent's standing working copy in one room. */
 export interface RoomWorktreeHandle {
   /** The directory name under `worktrees/`, and the tail of the branch name. */
   slug: string;
-  /** Absolute path to the working copy — the cwd a room turn runs in. */
+  /** Absolute path to the working copy — granted to its agent's room turns. */
   path: string;
   /** The branch checked out in it. */
   branch: string;
@@ -463,18 +199,8 @@ export interface RoomWorktreeHandle {
    * mine the winning call".
    */
   created: boolean;
-  /**
-   * What harness projection did, when this resolution ran one.
-   *
-   * `null` on the ordinary reuse path — projection runs at create (spec §5 Q5),
-   * and re-running it every turn would make the server a writer in a tree the
-   * agent owns. The one exception is a pack upgrade: the first resolution of a
-   * standing worktree after a server restart that carries a newer
-   * `OPERATING_SKILLS_VERSION` re-seeds and re-projects, and reports what that
-   * did here (DOR-1640). A worktree already on the current pack still reports
-   * `null`, so a non-null value means files actually moved.
-   */
-  projection: AgentWorkspaceProjection | null;
+  /** The room's shared checkout, `<room>/repo`, whose `.git` this copy commits into. */
+  repo: string;
 }
 
 /** What one worktree holds, for the reap and for `room_repo_status` (§3.6). */
@@ -604,44 +330,12 @@ export class RoomWorktreeManager {
   private readonly creating = new Map<string, Promise<RoomWorktreeHandle>>();
 
   /**
-   * Standing worktrees this process has already checked the skill pack in.
-   *
-   * **Once per worktree per process, and that is exactly the right cadence.**
-   * `OPERATING_SKILLS_VERSION` is a compiled-in constant, so the only thing that
-   * can raise it is a new server — which is a restart, which empties this set.
-   * Checking again inside one process could therefore never find anything to do,
-   * and the check is not free: it reads every pack file and spawns one `git` to
-   * find the common git directory, on the turn path.
-   *
-   * Keyed by worktree directory, so it is bounded by the worktrees this install
-   * actually hands out and a removed-then-recreated tree gets the create path's
-   * seeding anyway.
+   * Worktrees whose legacy plumbing this process has already retired, keyed by
+   * directory — once per worktree per process (spec `agent-home-desk` §5.9).
+   * Nothing re-creates what was retired, so asking again could only find a
+   * person's own files, which are left alone anyway.
    */
-  private readonly packChecked = new Set<string>();
-
-  /**
-   * Which agent each working copy this process handed out belongs to, keyed by
-   * its resolved directory (DOR-2091).
-   *
-   * **The record that lets a session standing in a worktree act as its agent.**
-   * A worktree's name ends in a 32-bit digest of its agent's path, and a digest
-   * is not a thing to authenticate by — there is, by design, no way back from a
-   * directory to its owner (see {@link RoomWorktreeManagerDeps.busyAgentPaths}).
-   * So the answer is recorded at the one moment it is a fact: when
-   * {@link ensureWorktree} hands the directory to an agent. A restart empties
-   * this map, and three paths refill it before a turn launches: every room turn
-   * (the dispatcher resolves its cwd through this method), an app-resumed room
-   * session that names no directory (the room rung), and one that names THIS
-   * agent's worktree explicitly — which the client does, since it resends the
-   * directory it last showed (`resolveSessionCwdWithRoom`). A session reaching a
-   * worktree any other way — no room binding, or another agent's worktree — has
-   * no record and is refused, which is the safe direction.
-   *
-   * `null` is a POISONED entry: two different agents were handed one directory,
-   * which only a digest-and-name collision can cause. Neither may act as the
-   * other, so the directory vouches for nobody until the reap removes it.
-   */
-  private readonly owners = new Map<string, string | null>();
+  private readonly retired = new Set<string>();
 
   /**
    * Bind the manager to one install's store and settings.
@@ -694,14 +388,14 @@ export class RoomWorktreeManager {
    *
    * Idempotent: a second call for the same agent returns the same directory,
    * and refreshes its idle clock. The first call branches `room/<slug>` off
-   * `main`, checks it out, and runs harness projection in it.
+   * `main` and checks it out; nothing else is written into it.
    *
    * **Every resolution stamps the directory** (`utimes`), including the ones
    * that create nothing. That is not bookkeeping, it is the reap's first line
-   * of defence: since the cwd rung landed, this method IS how a room turn learns
-   * where to run, so a turn that only reads its worktree would otherwise leave
-   * no trace on any date source and the sweep would delete the directory it is
-   * standing in. Handing out a path is itself evidence of use, so it is
+   * of defence: every room turn in a room with files is placed through this
+   * method (`room-turn-place.ts`), so a turn that only reads its worktree would
+   * otherwise leave no trace on any date source and the sweep would delete the
+   * copy it is working on. Handing out a path is itself evidence of use, so it is
    * recorded as such.
    *
    * **The in-flight map is consulted before anything touches the disk**, so two
@@ -759,12 +453,7 @@ export class RoomWorktreeManager {
       });
       this.creating.set(key, resolution);
     }
-    const handle = await resolution;
-    // Recorded by EVERY caller, the one that shared an in-flight resolution
-    // included: that caller is exactly the one a slug collision would put here
-    // on behalf of a different agent, and the collision has to be seen.
-    this.recordOwner(handle.path, agentPath);
-    return handle;
+    return resolution;
   }
 
   /**
@@ -780,58 +469,6 @@ export class RoomWorktreeManager {
       this.deps.store.worktreesPath(roomId),
       RoomWorktreeManager.slugFor(agentName, agentPath)
     );
-  }
-
-  /**
-   * Whether `dir` is one of this install's room working copies, and whose.
-   *
-   * The rooms domain's half of `resolveAgentHome`
-   * (`core/agent-identity/agent-home.ts`, DOR-2091). A working copy is
-   * recognized by WHERE it is — a direct child of some room's `worktrees/`
-   * directory, as the store lays them out — and that recognition only ever
-   * narrows: it decides that a directory is some agent's, never which. Which
-   * agent is read off the record {@link ensureWorktree} wrote, and a working
-   * copy with no record answers `owner: null`, which the anchor refuses.
-   *
-   * @param dir - An absolute directory.
-   * @returns `null` when `dir` is not a room working-copy location; otherwise
-   *   the agent path it was handed to, or `null` when nothing vouches for one.
-   */
-  ownerOf(dir: string): { owner: string | null } | null {
-    const resolved = path.resolve(dir);
-    const parent = path.dirname(resolved);
-    if (path.basename(parent) !== 'worktrees') return null;
-    let worktreesRoot: string;
-    try {
-      worktreesRoot = path.resolve(
-        this.deps.store.worktreesPath(path.basename(path.dirname(parent)))
-      );
-    } catch {
-      // Not a room id the store would ever have made, so not a room's tree.
-      return null;
-    }
-    if (worktreesRoot !== parent) return null;
-    return { owner: this.owners.get(resolved) ?? null };
-  }
-
-  /**
-   * Remember that `dir` was handed to `agentPath`, poisoning it on a conflict.
-   *
-   * @param dir - The working copy handed out.
-   * @param agentPath - The agent it was handed to.
-   */
-  private recordOwner(dir: string, agentPath: string): void {
-    const key = path.resolve(dir);
-    const existing = this.owners.get(key);
-    if (existing === undefined) {
-      this.owners.set(key, agentPath);
-      return;
-    }
-    if (existing === null || path.resolve(existing) === path.resolve(agentPath)) return;
-    this.owners.set(key, null);
-    logger.warn('[rooms] two agents were handed one room worktree; it now acts as neither', {
-      worktree: path.basename(key),
-    });
   }
 
   /**
@@ -853,74 +490,10 @@ export class RoomWorktreeManager {
       // from the same clock the reap's cutoff reads, so the two never disagree
       // about what "now" is.
       await stampDirectory(dir, this.nowMs());
-      const projection = await this.refreshPack(roomId, dir, slug);
-      return { slug, path: dir, branch, created: false, projection };
+      return { slug, path: dir, branch, created: false, repo: this.deps.store.repoPath(roomId) };
     }
     if (await directoryExists(dir)) await this.setCorpseAside(roomId, dir, slug);
     return this.createWorktree(roomId, dir, slug, branch);
-  }
-
-  /**
-   * Bring a STANDING worktree's copy of the Operating DorkOS pack up to the
-   * version this server ships, once per worktree per process.
-   *
-   * The gap this closes: seeding and projection run at create (§5 Q5), so a
-   * worktree made months ago keeps the pack it was born with, exactly the way
-   * agent HOMES did before `backfillAgentWorkspaceSkills` existed (DOR-671). A
-   * pack bump is how a correction reaches an agent — v4 retracted the claim that
-   * `dorkos uninstall` was ungated, v6 that `tasks_delete` carried no gate — and
-   * a standing room worktree is precisely where an agent works for a long time.
-   *
-   * **The exclude block is refreshed here at all** because this worktree's repo
-   * may carry a block from a release that predates
-   * {@link SEEDED_PACK_EXCLUDES}: `ensureProjectionExcluded` otherwise runs only
-   * at create, so seeding into a tree made by an older release would leave every
-   * worktree in that room permanently dirty — never reaped, never mergeable.
-   * That refresh is load-bearing.
-   *
-   * Its ORDER relative to the seeding is only tidy, and is deliberately not
-   * claimed as more. Both writes complete before this method returns, and
-   * nothing reads `git status` in between — the reap takes its own pass, and a
-   * turn has not started yet. Swapping them would leave a window where the tree
-   * reads dirty rather than clean, and a reap landing in that window SPARES the
-   * tree, which is the safe direction anyway. Stating it as load-bearing when it
-   * is not would teach the next reader to discount every other claim in this
-   * file that IS.
-   *
-   * Re-projection is conditional on the seeder having actually written, so a
-   * worktree already on the current pack costs one `git rev-parse` and seven
-   * file reads on the first turn after a restart, and nothing at all after that.
-   * Best-effort throughout: both halves swallow their own failures, because a
-   * turn must not be refused its working directory over a skill file.
-   *
-   * @param roomId - The room, for the exclude write and the log line.
-   * @param dir - The standing worktree.
-   * @param slug - Its directory name, for the log line.
-   * @returns What the re-projection did, or `null` when nothing needed doing.
-   */
-  private async refreshPack(
-    roomId: string,
-    dir: string,
-    slug: string
-  ): Promise<AgentWorkspaceProjection | null> {
-    if (this.packChecked.has(dir)) return null;
-    this.packChecked.add(dir);
-
-    await this.ensureProjectionExcluded(
-      this.deps.store.repoPath(roomId),
-      this.deps.store.homeDir(roomId)
-    );
-    if ((await seedAgentWorkspace(dir)) !== 'wrote') return null;
-
-    const projection = projectAgentWorkspace(dir);
-    logger.info('[rooms] room worktree re-seeded with the current operating skills', {
-      roomId,
-      worktree: slug,
-      projection: projection.status,
-      projected: projection.applied,
-    });
-    this.reportAdoptable(roomId, dir, slug);
-    return projection;
   }
 
   /**
@@ -990,7 +563,7 @@ export class RoomWorktreeManager {
    * turn in a project room, ahead of a person waiting for an answer, so it asks
    * the one question the agent has to act on — how far its branch and the room
    * have drifted — and nothing else. `dirty` is deliberately absent: the agent
-   * is standing in that working copy and can see its own uncommitted changes,
+   * works in that copy and can see its own uncommitted changes,
    * where it cannot see what somebody else merged into `main` while it was away.
    *
    * **Asked in the ROOM's own checkout**, never in the worktree, for the reason
@@ -1000,7 +573,7 @@ export class RoomWorktreeManager {
    * **Never a reason for a turn to fail, and it DEGRADES rather than
    * disappearing.** Git missing, no `main` yet, a branch that does not exist
    * because this agent has never worked here: none of those is a reason to stop
-   * telling an agent which tree it is standing in and that the room's own copy
+   * telling an agent where its copy is and that the room's own copy
    * is not its to write in. Those three facts need no git at all — the paths are
    * derived and the branch name is a pure function of the agent's identity — so
    * only the counts go `null`, and the rendered block simply says nothing about
@@ -1014,9 +587,9 @@ export class RoomWorktreeManager {
    * @param roomId - The room being answered.
    * @param agentPath - The agent's workspace path, its identity anchor.
    * @param agentName - The agent's display name, the readable half of the slug.
-   * @param worktreePath - The directory the turn resolved to, which the caller
-   *   already holds. Passed in rather than rebuilt so the section describes the
-   *   tree the turn actually stands in, and cannot drift from the resolver.
+   * @param worktreePath - The agent's copy, which the caller already holds.
+   *   Passed in rather than rebuilt so the section names exactly the folder the
+   *   turn is granted.
    * @returns What to tell the agent, with `null` counts when git could not be
    *   asked, or `null` when there is nothing to tell at all.
    */
@@ -1119,8 +692,8 @@ export class RoomWorktreeManager {
     // `worktreeReapDays`. Removing this line is what the module's red-before
     // tests re-introduce.
     const stranded = new Set(await this.deps.listStrandedWorktrees(roomId));
-    // Agents that are mid-turn. Their worktree is a live cwd since the cwd rung
-    // landed, and a turn that only reads leaves no mark on any date above.
+    // Agents that are mid-turn. A live turn is granted its worktree and works on
+    // it by path, and a turn that only reads leaves no mark on any date above.
     const busy = new Set(
       this.deps.busyAgentPaths().map((agentPath) => RoomWorktreeManager.digestFor(agentPath))
     );
@@ -1163,10 +736,8 @@ export class RoomWorktreeManager {
       // `git status` per candidate, a stranded-list walk, a `git log` per tree.
       // A turn that claims anywhere inside that window was not in `busy` and its
       // fresh `utimes` stamp was not in `dated`, so the sweep would remove the
-      // directory that turn is standing in — and the attachment projector, which
-      // runs next, would `mkdir` it straight back as something that is not a
-      // checkout. Re-asking narrows the window from the whole sweep to the one
-      // syscall below.
+      // copy that turn was just granted. Re-asking narrows the window from the
+      // whole sweep to the one syscall below.
       if (await this.claimedSince(slug, idleCutoff, dir)) {
         result.spared.push(slug);
         continue;
@@ -1176,8 +747,6 @@ export class RoomWorktreeManager {
         // A DIFFERENT half of the question from `branch -d` below — see the
         // module doc on why the gates are not interchangeable.
         await removeWorktree(repoDir, dir, ceiling);
-        // Gone, so it vouches for nobody. A tree made here later records afresh.
-        this.owners.delete(path.resolve(dir));
       } catch (err) {
         logger.warn('[rooms] git would not remove an idle room worktree; keeping it', {
           roomId,
@@ -1297,7 +866,6 @@ export class RoomWorktreeManager {
     const repoDir = this.deps.store.repoPath(roomId);
     const ceiling = this.deps.store.homeDir(roomId);
     await fs.mkdir(this.deps.store.worktreesPath(roomId), { recursive: true });
-    await this.ensureProjectionExcluded(repoDir, ceiling);
 
     // The branch may outlive its directory: the reap removes the working copy
     // and `git branch -d` can refuse (or never run, if the process died in
@@ -1314,134 +882,145 @@ export class RoomWorktreeManager {
       // gives the caller the real error either way.
     }
     await addWorktree(repoDir, dir, branch, branchExists ? null : 'main', ceiling);
-
-    // Seed before project, always — the projection returns early when
-    // `.agents/skills/` does not exist, so the reverse order would link the
-    // room's own skills and none of the agent's until the NEXT resolution.
-    // Seeding here also spares this tree the re-seed pass: it is current.
-    const seeded = await seedAgentWorkspace(dir);
-    this.packChecked.add(dir);
-
-    const projection = projectAgentWorkspace(dir);
-    logger.info('[rooms] room worktree created', {
-      roomId,
-      worktree: slug,
-      branch,
-      seeded,
-      projection: projection.status,
-      projected: projection.applied,
-    });
-    this.reportAdoptable(roomId, dir, slug);
-    return { slug, path: dir, branch, created: true, projection };
+    // Nothing is written into it: the agent's turns stand at home, where its
+    // skills and instructions already are (spec `agent-home-desk` §5.8). A new
+    // tree is exactly the room's files on the agent's branch.
+    this.retired.add(dir);
+    logger.info('[rooms] room worktree created', { roomId, worktree: slug, branch });
+    return { slug, path: dir, branch, created: true, repo: repoDir };
   }
 
   /**
-   * The second of the two sites that consult `harness.autoAdopt`, beside
-   * `backfillAgentWorkspaceSkills` — and, like it, one that has already
-   * established DorkOS owns the directory: every path here comes from
-   * `store.worktreesPath(roomId)` and was created by this manager, which is
-   * stronger evidence than any path check could give.
+   * Remove what DorkOS wrote into one worktree while room turns stood in it,
+   * and the `info/exclude` block that hid it once no worktree of the repo needs
+   * it (spec `agent-home-desk` §5.9).
    *
-   * So the ownership is passed as a literal rather than resolved. That the
-   * RESOLVER agrees — that `resolveDirectoryOwnership` answers `room-worktree`
-   * for exactly the shape `RoomRepoStore` lays down — is asserted in
-   * `services/harness/__tests__/auto-adopt.test.ts`, asked of the store rather
-   * than spelled twice, so moving the layout reds there instead of silently
-   * making the terminal read a room worktree as somebody's own project.
+   * Called at the worktree's next room-turn LAUNCH, and only when no turn on
+   * that (room, agent) is running — the caller's check, because only the
+   * dispatcher can answer it. Once per worktree per process.
    *
-   * It runs after the seed-and-project pairing in both of its callers, for the
-   * reason the flag's own docs give: a skill DorkOS seeded is not a candidate,
-   * and asking before the projection would offer to move a folder the next line
-   * is about to link.
+   * Only untracked files the block hides are candidates (`git ls-files -o -i`
+   * with the block's own lines), and of those only what DorkOS provably wrote
+   * is deleted:
    *
-   * With the flag off — the default — it reads the candidates and moves nothing,
-   * which is what puts the report in the room log. With it on, only allowlisted
-   * skills move, and every refusal is logged with the sentence that says why:
-   * one of the reserved pack names gets S4, whose way out is a rename.
+   * - a seeded skill whose body still matches the stamp the seeder wrote
+   *   (`isUnmodifiedSeededSkill`) — edited, it is somebody's;
+   * - a `.claude/skills/*` link, or an installed-package link
+   *   `.agents/skills/<pkg>__<name>`, that is a symlink resolving into this
+   *   worktree's own `.agents/skills/` or into the agent's home;
+   * - `.agents/harness.manifest.json` naming exactly the harnesses DorkOS
+   *   scaffolded, and `.claude/CLAUDE.md` holding exactly the pointer DorkOS
+   *   scaffolded;
+   * - anything under the old attachment folder, always: DorkOS's and
+   *   rebuildable.
    *
-   * Best-effort, like everything else on this path: a turn must not be refused
-   * its working directory over a skill folder.
+   * Anything else at those paths is left alone. Never throws: every failure is
+   * a log line and the next process tries again.
    *
-   * @param roomId - The room, for the log line.
-   * @param dir - The worktree.
-   * @param slug - Its directory name, for the log line.
+   * @param roomId - The room.
+   * @param worktree - The worktree to tidy, as {@link ensureWorktree} returned it.
+   * @param agentPath - Its agent's home, for the link check.
+   * @returns How many files were removed, and whether the block was removed.
    */
-  private reportAdoptable(roomId: string, dir: string, slug: string): void {
-    const adopt = adoptInOwnedWorkspace(dir, 'room-worktree');
-    if (adopt.adoptable === 0) return;
-    logger.info('[rooms] skills in this room worktree live in one agent tool only', {
-      roomId,
-      worktree: slug,
-      adoptable: adopt.adoptable,
-      adopted: adopt.adopted,
-      skills: adopt.skills,
-      // The absolute `--project` form, because the reader of a server log is not
-      // standing in that directory (S1d/S1e).
-      adoptable_lines: adopt.lines,
-    });
-    if (adopt.blocked !== undefined) {
-      logger.info('[rooms] this room worktree cannot take a moved skill', {
+  async retireLegacyPlumbing(
+    roomId: string,
+    worktree: string,
+    agentPath: string
+  ): Promise<{ removed: number; blockRemoved: boolean }> {
+    const outcome = { removed: 0, blockRemoved: false };
+    if (this.retired.has(worktree)) return outcome;
+    let ceiling: string;
+    let repoDir: string;
+    try {
+      ceiling = this.deps.store.homeDir(roomId);
+      repoDir = this.deps.store.repoPath(roomId);
+    } catch {
+      return outcome;
+    }
+    try {
+      const excludeFile = path.join(await commonGitDir(repoDir, ceiling), 'info', 'exclude');
+      const patterns = blockPatterns(await readIfPresent(excludeFile));
+      if (patterns.length === 0) {
+        this.retired.add(worktree);
+        return outcome;
+      }
+      for (const rel of await hiddenUntracked(worktree, ceiling, patterns)) {
+        if (await isLegacyPlumbing(worktree, rel, agentPath)) {
+          await fs.rm(path.join(worktree, rel), { force: true, recursive: true });
+          outcome.removed++;
+        }
+      }
+      await pruneEmptyTree(path.join(worktree, LEGACY_ATTACHMENTS_DIR));
+      await pruneEmptyDirs(worktree, LEGACY_PARENT_DIRS);
+      this.retired.add(worktree);
+      if (await this.noWorktreeNeedsBlock(roomId, ceiling, patterns)) {
+        const current = await readIfPresent(excludeFile);
+        const next = withoutExcludeBlock(current);
+        if (next !== current) {
+          await fs.writeFile(excludeFile, next, 'utf-8');
+          outcome.blockRemoved = true;
+        }
+      }
+      if (outcome.removed > 0 || outcome.blockRemoved) {
+        logger.info('[rooms] retired what DorkOS used to write into a room worktree', {
+          roomId,
+          worktree: path.basename(worktree),
+          ...outcome,
+        });
+      }
+    } catch (err) {
+      logger.warn('[rooms] could not tidy what DorkOS used to write into a room worktree', {
         roomId,
-        worktree: slug,
-        reason: adopt.blocked,
+        worktree: path.basename(worktree),
+        error: err instanceof Error ? err.message : String(err),
       });
     }
-    for (const refusal of adopt.refusals) {
-      logger.info('[rooms] a skill in this room worktree was not moved', {
-        roomId,
-        worktree: slug,
-        skill: refusal.name,
-        reason: refusal.reason,
-      });
-    }
+    return outcome;
   }
 
   /**
-   * Every directory this agent works in across every room with files of its own.
+   * Whether the room's main checkout and every worktree of this room are free
+   * of untracked files the block hides — the only condition under which
+   * removing it cannot make a tree read dirty. An unreadable tree answers
+   * "needs it", the safe direction.
    *
-   * **The session list needs this, and the reason is worth stating.** Session
-   * storage is derived per working directory (ADR-0310): claude-code files a
-   * transcript under a slug of the cwd it ran in. Since the cwd rung landed, a
-   * room turn's cwd is a worktree — so its conversation is filed under the
-   * WORKTREE's slug, and an agent's session list, which scans that agent's own
-   * folder, cannot see it at all. It is not a filtering problem; the session is
-   * never found. So the fan-out scans these directories too and attributes what
-   * it finds back to the agent that owns them.
-   *
-   * Matched on the digest half of the directory name, which is the only join
-   * available: a worktree name is `<slug>-<digest of the agent path>` and the
-   * digest is one-way, so the question is asked in the direction that can be
-   * answered. That also means a directory left behind by a RENAMED agent still
-   * matches — correctly: the conversations in it are that agent's.
-   *
-   * Best-effort per room. A room whose worktrees directory cannot be read
-   * contributes nothing rather than failing a session list.
-   *
-   * @param agentPath - The agent's workspace path — its identity anchor.
-   * @returns Absolute worktree directories, in no particular order.
+   * @param roomId - The room.
+   * @param ceiling - The room home directory git's search may not climb past.
+   * @param patterns - The block's lines.
    */
-  async listWorktreesForAgent(agentPath: string): Promise<string[]> {
-    const digest = RoomWorktreeManager.digestFor(agentPath);
-    const found: string[] = [];
-    for (const row of this.deps.store.listRows()) {
-      let root: string;
+  private async noWorktreeNeedsBlock(
+    roomId: string,
+    ceiling: string,
+    patterns: readonly string[]
+  ): Promise<boolean> {
+    // `repo/` reads the same `info/exclude`, and a room's main checkout found
+    // dirty stops every write to the room (`MAIN_CHECKOUT_DIRTY`) — so anything
+    // the block hides there keeps it too.
+    try {
+      const repoDir = this.deps.store.repoPath(roomId);
+      if ((await hiddenUntracked(repoDir, ceiling, patterns)).length > 0) return false;
+    } catch {
+      return false;
+    }
+    const root = this.deps.store.worktreesPath(roomId);
+    let names: string[];
+    try {
+      names = (await fs.readdir(root, { withFileTypes: true }))
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+    } catch {
+      return true;
+    }
+    for (const name of names) {
+      const dir = path.join(root, name);
+      if (!(await isCheckout(dir))) continue;
       try {
-        root = this.deps.store.worktreesPath(row.roomId);
+        if ((await hiddenUntracked(dir, ceiling, patterns)).length > 0) return false;
       } catch {
-        continue;
-      }
-      let entries: string[];
-      try {
-        entries = await fs.readdir(root);
-      } catch {
-        // No worktrees in this room yet, or a room home that cannot be read.
-        continue;
-      }
-      for (const name of entries) {
-        if (name.endsWith(`-${digest}`)) found.push(path.join(root, name));
+        return false;
       }
     }
-    return found;
+    return true;
   }
 
   /**
@@ -1485,76 +1064,200 @@ export class RoomWorktreeManager {
       return true;
     }
   }
+}
 
-  /**
-   * Put the generated paths in the repo's shared `info/exclude`, keeping the
-   * block current.
-   *
-   * Written to the COMMON git directory, so one write covers `repo/` and every
-   * worktree — git resolves `info/` to the common directory even from a linked
-   * worktree. Best-effort: a repo whose git directory cannot be written is a
-   * repo whose worktrees read dirty, which is the conservative failure (spared,
-   * never deleted) rather than a reason to refuse an agent its working copy.
-   *
-   * **A block that is already there is REPLACED when its content has moved, not
-   * left alone.** Recognizing the marker and returning was enough while the list
-   * never changed; it stopped being enough the moment a path was added to it,
-   * because a repo whose first worktree predates the addition would keep the old
-   * block forever — and the thing the new line hides is written on the hot path
-   * of every room turn that carries a file. A stale block is exactly the
-   * permanently-dirty worktree this whole mechanism exists to prevent.
-   * Everything outside the two markers is another writer's and is preserved.
-   *
-   * @param repoDir - The room's main checkout.
-   * @param ceiling - The room home directory git's search may not climb past.
-   */
-  private async ensureProjectionExcluded(repoDir: string, ceiling: string): Promise<void> {
+/** The folders the legacy plumbing lived under, deepest first, removed when left empty. */
+const LEGACY_PARENT_DIRS = [
+  ...OPERATING_SKILLS_PACK.map((skill) => path.join('.agents', 'skills', skill.name)),
+  path.join('.agents', 'skills'),
+  '.agents',
+  path.join('.claude', 'skills'),
+  '.claude',
+  LEGACY_ATTACHMENTS_DIR,
+  path.dirname(LEGACY_ATTACHMENTS_DIR),
+  path.dirname(path.dirname(LEGACY_ATTACHMENTS_DIR)),
+];
+
+/** A file's text, or `''` when it does not exist. */
+async function readIfPresent(file: string): Promise<string> {
+  try {
+    return await fs.readFile(file, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return '';
+    throw err;
+  }
+}
+
+/**
+ * The pattern lines of DorkOS's marker block in an `info/exclude` file, or none
+ * when there is no block.
+ *
+ * @param exclude - The file's text.
+ */
+function blockPatterns(exclude: string): string[] {
+  const start = exclude.indexOf(EXCLUDE_SENTINEL);
+  if (start === -1) return [];
+  const endAt = exclude.indexOf(EXCLUDE_END, start);
+  const body = exclude.slice(start, endAt === -1 ? undefined : endAt);
+  return body
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && !line.startsWith('#'));
+}
+
+/**
+ * The `info/exclude` file with DorkOS's block removed, and everything outside
+ * it — another writer's lines — kept.
+ *
+ * @param current - What the file holds now.
+ */
+function withoutExcludeBlock(current: string): string {
+  const start = current.indexOf(EXCLUDE_SENTINEL);
+  if (start === -1) return current;
+  const endAt = current.indexOf(EXCLUDE_END, start);
+  const after = endAt === -1 ? '' : current.slice(endAt + EXCLUDE_END.length).replace(/^\n/, '');
+  return `${current.slice(0, start)}${after}`;
+}
+
+/**
+ * Untracked files in `worktree` that the block's `patterns` hide, as paths
+ * relative to it. One `git ls-files`, file by file (a symlink to a folder is
+ * one entry).
+ *
+ * @param worktree - The worktree.
+ * @param ceiling - The room home directory git's search may not climb past.
+ * @param patterns - The block's lines.
+ */
+async function hiddenUntracked(
+  worktree: string,
+  ceiling: string,
+  patterns: readonly string[]
+): Promise<string[]> {
+  const out = await runGit(
+    ['ls-files', '-z', '--others', '--ignored', ...patterns.flatMap((p) => ['-x', p])],
+    worktree,
+    ceiling
+  );
+  return out.split('\0').filter((rel) => rel !== '');
+}
+
+/**
+ * Whether one untracked, block-hidden file is something DorkOS wrote while a
+ * room turn stood in this worktree — see
+ * {@link RoomWorktreeManager.retireLegacyPlumbing} for the rules.
+ *
+ * @param worktree - The worktree.
+ * @param rel - The file, relative to it.
+ * @param agentPath - The worktree's agent's home.
+ */
+async function isLegacyPlumbing(
+  worktree: string,
+  rel: string,
+  agentPath: string
+): Promise<boolean> {
+  const posix = rel.split(path.sep).join('/');
+  const abs = path.join(worktree, rel);
+  if (posix.startsWith(`${LEGACY_ATTACHMENTS_DIR}/`)) return true;
+  const stat = await fs.lstat(abs).catch(() => null);
+  if (!stat) return false;
+  if (stat.isSymbolicLink()) {
+    const linkIsOurs =
+      posix.startsWith('.claude/skills/') ||
+      (posix.startsWith('.agents/skills/') && path.basename(posix).includes('__'));
+    if (!linkIsOurs) return false;
+    const target = await fs.realpath(abs).catch(() => null);
+    if (target === null) {
+      // A dangling link into where the pack or the home was is still ours if
+      // its written target says so.
+      const written = path.resolve(path.dirname(abs), await fs.readlink(abs));
+      return insideAny(written, [path.join(worktree, '.agents', 'skills'), agentPath]);
+    }
+    return insideAny(target, [
+      await realOr(path.join(worktree, '.agents', 'skills')),
+      await realOr(agentPath),
+    ]);
+  }
+  if (!stat.isFile()) return false;
+  const seeded = OPERATING_SKILLS_PACK.find(
+    (skill) => posix === `.agents/skills/${skill.name}/SKILL.md`
+  );
+  if (seeded) return isUnmodifiedSeededSkill(abs, await fs.readFile(abs, 'utf-8'));
+  if (posix === '.agents/harness.manifest.json') {
     try {
-      const infoDir = path.join(await commonGitDir(repoDir, ceiling), 'info');
-      const file = path.join(infoDir, 'exclude');
-      let current = '';
-      try {
-        current = await fs.readFile(file, 'utf-8');
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err;
-      }
-      const next = withExcludeBlock(current, excludeBlockFor(installedSkillLinkExcludes(repoDir)));
-      if (next === current) return;
-      await fs.mkdir(infoDir, { recursive: true });
-      await fs.writeFile(file, next, 'utf-8');
-    } catch (err) {
-      logger.warn('[rooms] could not hide harness projection from a room repo’s git status', {
-        repoDir,
-        err,
-      });
+      const parsed = JSON.parse(await fs.readFile(abs, 'utf-8')) as { harnesses?: unknown };
+      return (
+        Array.isArray(parsed.harnesses) &&
+        parsed.harnesses.length === AGENT_WORKSPACE_HARNESSES.length &&
+        AGENT_WORKSPACE_HARNESSES.every((h, i) => (parsed.harnesses as unknown[])[i] === h)
+      );
+    } catch {
+      return false;
+    }
+  }
+  if (posix === '.claude/CLAUDE.md') {
+    return (await fs.readFile(abs, 'utf-8')) === CLAUDE_INSTRUCTION_CONTENT;
+  }
+  return false;
+}
+
+/** Whether `target` is one of `roots` or inside one. */
+function insideAny(target: string, roots: readonly string[]): boolean {
+  return roots.some((root) => {
+    const rel = path.relative(root, target);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  });
+}
+
+/** A folder's real path, or its resolved spelling when it does not exist. */
+async function realOr(dir: string): Promise<string> {
+  try {
+    return await fs.realpath(dir);
+  } catch {
+    return path.resolve(dir);
+  }
+}
+
+/**
+ * Remove each of `rels` under `root` that is an empty directory, in order —
+ * so a list given deepest first clears a chain of emptied parents.
+ *
+ * @param root - The worktree.
+ * @param rels - Folders relative to it.
+ */
+async function pruneEmptyDirs(root: string, rels: readonly string[]): Promise<void> {
+  for (const rel of rels) {
+    const dir = path.join(root, rel);
+    try {
+      const stat = await fs.lstat(dir);
+      if (stat.isDirectory() && (await fs.readdir(dir)).length === 0) await fs.rmdir(dir);
+    } catch {
+      // Gone, or not ours to remove.
     }
   }
 }
 
 /**
- * The `info/exclude` file with DorkOS's block present and current.
+ * Remove every empty directory at or under `dir`, deepest first — the entry
+ * folders the attachment projector made, once their files are gone. A folder
+ * that still holds anything is kept.
  *
- * Returns the input unchanged when the block is already exactly right, so the
- * caller can skip the write entirely — this runs at every worktree creation.
- *
- * @param current - What the file holds now, or `''` when it does not exist.
- * @param block - The block to install; defaults to the package-free shape.
- * @returns What it should hold, ending in a newline.
+ * @param dir - The folder to tidy.
  */
-function withExcludeBlock(current: string, block: string = EXCLUDE_BLOCK): string {
-  const start = current.indexOf(EXCLUDE_SENTINEL);
-  if (start === -1) {
-    const separator = current === '' || current.endsWith('\n') ? '' : '\n';
-    return `${current}${separator}${block}\n`;
+async function pruneEmptyTree(dir: string): Promise<void> {
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
   }
-
-  // An unterminated block — hand-edited, or a write that died mid-file — takes
-  // everything from the marker on. There is nothing after it that can be
-  // attributed to anybody else.
-  const endAt = current.indexOf(EXCLUDE_END, start);
-  const after = endAt === -1 ? '' : current.slice(endAt + EXCLUDE_END.length).replace(/^\n/, '');
-  const before = current.slice(0, start);
-  return `${before}${block}\n${after}`;
+  for (const entry of entries) {
+    if (entry.isDirectory()) await pruneEmptyTree(path.join(dir, entry.name));
+  }
+  try {
+    if ((await fs.readdir(dir)).length === 0) await fs.rmdir(dir);
+  } catch {
+    // Not empty, or already gone.
+  }
 }
 
 /** Whether a path is a directory that exists. */

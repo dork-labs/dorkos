@@ -2,7 +2,7 @@
  * One standing working copy per (room, agent), and the reap that must never
  * take one that holds work (spec `project-rooms` §3.4).
  *
- * Real git, real harness projection, on a real temporary DorkOS home that sits
+ * Real git on a real temporary DorkOS home that sits
  * INSIDE another git repository — the dev layout, which is also the trap
  * layout: without a discovery ceiling every question asked in a room worktree
  * is answered by the enclosing checkout instead.
@@ -14,24 +14,6 @@
  *   tests `config.rooms.repo.worktreeReapDays`'s no-risk verdict rests on.
  *   Measured: the dirty tree is deleted along with its file, and the unmerged
  *   one is deleted along with its commit.
- * - Dropping the `info/exclude` write reddens "a projected worktree still reads
- *   clean": the generated `.claude/skills/` link and harness manifest make
- *   every worktree permanently dirty, hence permanently un-reapable.
- * - Returning early on sight of the block's marker — what the write did before
- *   its list could change — reddens "brings a stale exclude block up to date":
- *   a repo whose first worktree predates an addition keeps the old block, and
- *   whatever the new line hides makes every worktree dirty again.
- * - Matching the block on its current FIRST LINE rather than on the version-free
- *   sentinel reddens the same test the other way: the previous release's block
- *   is not found, a second one is appended, and the file carries two.
- * - Dropping the pack lines from `EXCLUDE_BLOCK` — or hand-listing them and
- *   missing one — reddens 19 tests, most of the reap suite among them. Measured:
- *   the tree is dirty from birth, so it can never be reaped or merged. That is
- *   the DOR-1640 invariant, and it is why the list is derived.
- * - Dropping `SCAFFOLDED_INSTRUCTION_EXCLUDES` reddens "stays clean when the
- *   room's files carry an AGENTS.md". Seeding made the projection run in EVERY
- *   worktree (it used to return early with no `.agents/skills/`), which reached
- *   a `.claude/CLAUDE.md` scaffold nothing was hiding.
  * - Dropping the digest from `slugFor` reddens "two agents with one name get
  *   two worktrees".
  * - Branching unconditionally (`-b` always) reddens "re-attaches a branch the
@@ -39,14 +21,9 @@
  * - Dropping the directory stamp reddens "refreshes the idle clock".
  * - Dropping the busy gate reddens "SPARES AN ANCIENT WORKTREE ITS AGENT IS
  *   WORKING IN".
- *
- * **One test in here is written not to name a path at all.** "hides EVERY path
- * the real projection plan targets" runs the production planner over the tree
- * production made and asks `git check-ignore` about every target it plans. The
- * two exclude tests above each pin one KNOWN target, and the defect they were
- * written for was a target nobody had thought of — so the guard against the next
- * one cannot be another literal. Add a scaffold or a generated file to the
- * harness engine and it reddens, naming the uncovered path.
+ * - Deleting a legacy file without the seeder's unmodified-stamp check reddens
+ *   "keeps a modified skill"; removing the block without asking every worktree
+ *   reddens "keeps the block while ANOTHER worktree still holds what it hides".
  *
  * **Idle is driven by an injected clock, never by aged mtimes.** An earlier
  * version of this suite made a worktree "ancient" by writing its file mtimes
@@ -64,8 +41,8 @@ import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { OPERATING_SKILLS_PACK } from '@dorkos/operating-skills';
-import { project } from '@dorkos/harness';
+import { OPERATING_SKILLS_PACK, seedOperatingSkills } from '@dorkos/operating-skills';
+import { projectAgentWorkspace } from '../../../harness/project-agent-workspace.js';
 import { rooms, type Db } from '@dorkos/db';
 import type { Room } from '@dorkos/shared/room-schemas';
 import { ROOM_REPO_CAP_DEFAULTS } from '@dorkos/shared/room-repo';
@@ -362,9 +339,11 @@ describe('RoomWorktreeManager', () => {
       expect(await git(['rev-parse', '--abbrev-ref', 'HEAD'], again.path)).toBe(first.branch);
     });
 
-    it('projects the room’s own skills where Claude Code reads them, without dirtying the tree', async () => {
-      // Spec §3.8: a room repo carries `.agents/skills/` like any project, and
-      // claude-code — the default runtime — only sees `.claude/skills/`.
+    it('writes nothing into a new worktree: no pack, no projection, no exclude block', async () => {
+      // Spec `agent-home-desk` §5.8: a room turn stands in its agent's home,
+      // where its skills and instructions already are, so a worktree is exactly
+      // the room's files on the agent's branch. A room whose files carry skills
+      // and an AGENTS.md is the shape that used to draw projection into it.
       await service.enable(ROOM_ID, OPERATOR);
       const repoDir = store.repoPath(ROOM_ID);
       await mkdir(path.join(repoDir, '.agents', 'skills', 'house-style'), { recursive: true });
@@ -373,337 +352,24 @@ describe('RoomWorktreeManager', () => {
         '# house style\n',
         'utf-8'
       );
-      await commitAll(repoDir, 'add a skill', { name: 'D', email: 'd@dorkos.local' }, scratch);
+      await writeFile(path.join(repoDir, 'AGENTS.md'), '# Room rules\n', 'utf-8');
+      await commitAll(repoDir, 'skills and rules', { name: 'D', email: 'd@dorkos.local' }, scratch);
 
       const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
 
-      expect(handle.projection?.status).toBe('projected');
-      expect(
-        existsSync(path.join(handle.path, '.claude', 'skills', 'house-style', 'SKILL.md'))
-      ).toBe(true);
-      // And the tree the agent works in still reads clean, so the reap can tell
-      // "nothing here" from "somebody's unsaved work" and §3.6's merge gate is
-      // not blocked by DorkOS's own output.
-      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
-    });
-
-    it('seeds the agent’s own operating skills into the tree the turn runs in, and the tree still reads clean', async () => {
-      // DOR-1640. A room turn's cwd is this worktree, and every harness resolves
-      // project-scoped skills against the cwd — so the pack seeded into the
-      // agent's HOME was reachable everywhere except the one directory
-      // `working-in-room-repos` is about.
-      await service.enable(ROOM_ID, OPERATOR);
-
-      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      // Every pack skill, in the layout codex and opencode read natively…
+      expect(handle.repo).toBe(repoDir);
+      expect(existsSync(path.join(handle.path, '.claude'))).toBe(false);
       for (const skill of OPERATING_SKILLS_PACK) {
-        expect(
-          existsSync(path.join(handle.path, '.agents', 'skills', skill.name, 'SKILL.md'))
-        ).toBe(true);
+        expect(existsSync(path.join(handle.path, '.agents', 'skills', skill.name))).toBe(false);
       }
-      // …and projected where claude-code, the default runtime, reads them.
-      expect(handle.projection?.status).toBe('projected');
-      expect(
-        existsSync(path.join(handle.path, '.claude', 'skills', 'working-in-room-repos', 'SKILL.md'))
-      ).toBe(true);
-
-      // THE invariant. A clean status is what gates the reap AND §3.6's merge,
-      // so a pack that arrives by dirtying the tree costs the agent its work
-      // instead of teaching it anything.
-      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
-    });
-
-    it('stays clean when the room’s files carry an AGENTS.md', async () => {
-      // The projection writes more than skill symlinks. `planInstruction`
-      // scaffolds `.claude/CLAUDE.md` whenever the tree root has an AGENTS.md,
-      // and spec `project-rooms` D14 plans for exactly that room shape.
-      //
-      // Before seeding, `projectAgentWorkspace` returned early on a missing
-      // `.agents/skills/`, so a room with no skills of its own never reached the
-      // scaffold. Seeding creates that directory unconditionally, so the
-      // projection now runs in EVERY worktree — which turns a path that used to
-      // be unreachable into `?? .claude/` on every tree in the install.
-      await service.enable(ROOM_ID, OPERATOR);
-      const repoDir = store.repoPath(ROOM_ID);
-      await writeFile(path.join(repoDir, 'AGENTS.md'), '# How we work in this room\n', 'utf-8');
-      await commitAll(repoDir, 'add AGENTS.md', { name: 'D', email: 'd@dorkos.local' }, scratch);
-
-      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      // The scaffold landed — this is not a test that suppressed it…
-      expect(existsSync(path.join(handle.path, '.claude', 'CLAUDE.md'))).toBe(true);
-      // …and it is hidden, so the reap and the §3.6 merge still work.
-      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
-    });
-
-    it('hides EVERY path the real projection plan targets, whatever the plan grows', async () => {
-      // The guard the two tests above cannot be: they each pin one known target,
-      // and the defect they were written for was a target nobody had thought of.
-      // So this one does not name paths at all. It runs the SAME planner
-      // production runs, over the tree production made, and asks git — not a
-      // reimplementation of gitignore semantics — whether each planned target is
-      // hidden. A new scaffold or generated file in the harness engine reddens
-      // this without anybody remembering the exclude block exists.
-      //
-      // The fixture turns on everything the plan branches on: authored skills,
-      // an AGENTS.md to point at, a `.claude/settings.json` for the hooks path to
-      // read, and — since DOR-1847 — a project-scoped installed package, whose
-      // skills are linked into `.agents/skills` whatever harnesses are enabled.
-      // Without the package this test's own comment was not true of it: the
-      // plan it ran had no `.agents/skills` link in it to check (DOR-1880).
-      await service.enable(ROOM_ID, OPERATOR);
-      const repoDir = store.repoPath(ROOM_ID);
-      await mkdir(path.join(repoDir, '.agents', 'skills', 'house-style'), { recursive: true });
-      await writeFile(
-        path.join(repoDir, '.agents', 'skills', 'house-style', 'SKILL.md'),
-        '# house style\n',
-        'utf-8'
-      );
-      await writeFile(path.join(repoDir, 'AGENTS.md'), '# how we work\n', 'utf-8');
-      await mkdir(path.join(repoDir, '.claude'), { recursive: true });
-      await writeFile(
-        path.join(repoDir, '.claude', 'settings.json'),
-        JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
-        'utf-8'
-      );
-      const plugin = path.join(repoDir, '.dork', 'plugins', 'acme');
-      await mkdir(path.join(plugin, '.dork'), { recursive: true });
-      await writeFile(
-        path.join(plugin, '.dork', 'manifest.json'),
-        JSON.stringify({
-          schemaVersion: 1,
-          name: 'acme',
-          version: '1.0.0',
-          type: 'plugin',
-          description: 'A fixture plugin',
-          layers: ['skills'],
-        }),
-        'utf-8'
-      );
-      await mkdir(path.join(plugin, 'skills', 'greet'), { recursive: true });
-      await writeFile(path.join(plugin, 'skills', 'greet', 'SKILL.md'), '# greet\n', 'utf-8');
-      await commitAll(
-        repoDir,
-        'a room with everything',
-        { name: 'D', email: 'd@d.local' },
-        scratch
-      );
-
-      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      const plan = project(handle.path, { allowPluginHooks: () => false });
-      const targets = [
-        ...new Set(plan.actions.map((a) => a.target).filter((t) => t !== undefined)),
-      ];
-      // A plan with nothing in it would pass this test vacuously.
-      expect(targets.length).toBeGreaterThan(0);
-      // …and the branch DOR-1880 is about has to be IN it, or the fixture has
-      // quietly stopped exercising what its comment claims.
-      expect(targets).toContain('.agents/skills/acme__greet');
-
-      const visible: string[] = [];
-      for (const target of targets) {
-        // Tracked files are the room's own and are SUPPOSED to be visible; an
-        // exclude cannot hide one anyway. Everything else DorkOS wrote, so it
-        // must be ignored.
-        const tracked = (await git(['ls-files', '--', target], handle.path)) !== '';
-        if (tracked) continue;
-        const ignored = await git(['check-ignore', '--', target], handle.path).then(
-          () => true,
-          () => false
-        );
-        if (!ignored) visible.push(target);
-      }
-      expect(visible).toEqual([]);
-      // …and the whole point of all of it, asked the way the reap asks it.
-      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
-    });
-
-    it('leaves the room’s integration tree unseeded', async () => {
-      // `repo/` is on main, written only by the server, and no turn ever runs in
-      // it — so the pack would buy nothing there and would sit in the one tree
-      // whose contents are the room's committed files, waiting for a `git add -A`.
-      await service.enable(ROOM_ID, OPERATOR);
-
-      await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      const repoDir = store.repoPath(ROOM_ID);
-      expect(existsSync(path.join(repoDir, '.agents', 'skills'))).toBe(false);
-      expect(existsSync(path.join(repoDir, '.claude'))).toBe(false);
-      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
-    });
-
-    it('never clobbers a skill the room authored under a pack name', async () => {
-      // The room owns `.agents/skills/` (§3.8) and may put anything in it,
-      // including a name the pack also uses. The seeder writes an absent file or
-      // its OWN unmodified copy and nothing else, so the room's version stands.
-      await service.enable(ROOM_ID, OPERATOR);
-      const repoDir = store.repoPath(ROOM_ID);
-      const authored = '# our own take on working in room repos\n';
-      await mkdir(path.join(repoDir, '.agents', 'skills', 'working-in-room-repos'), {
-        recursive: true,
-      });
-      await writeFile(
-        path.join(repoDir, '.agents', 'skills', 'working-in-room-repos', 'SKILL.md'),
-        authored,
-        'utf-8'
-      );
-      await commitAll(repoDir, 'our own skill', { name: 'D', email: 'd@dorkos.local' }, scratch);
-
-      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      expect(
-        await readFile(
-          path.join(handle.path, '.agents', 'skills', 'working-in-room-repos', 'SKILL.md'),
-          'utf-8'
-        )
-      ).toBe(authored);
-      // And an exclude cannot hide a TRACKED file, so the room's own skill is
-      // still somebody's work as far as git is concerned — nothing was hidden
-      // and nothing was overwritten.
-      expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
-      expect(await git(['ls-files', '.agents/skills'], handle.path)).toBe(
-        '.agents/skills/working-in-room-repos/SKILL.md'
-      );
-    });
-
-    it('brings a long-lived worktree up to the current pack after a restart', async () => {
-      // Seeding runs at CREATE (§5 Q5), so without this a worktree made months
-      // ago keeps the pack it was born with forever — the same hole agent homes
-      // had before DOR-671, and pack bumps are how safety corrections travel.
-      //
-      // The fixture reconstructs what a pre-DOR-1640 release leaves on disk:
-      // no pack in the tree, and an exclude block with no pack lines in it.
-      await service.enable(ROOM_ID, OPERATOR);
-      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      for (const skill of OPERATING_SKILLS_PACK) {
-        await rm(path.join(handle.path, '.agents', 'skills', skill.name), {
-          recursive: true,
-          force: true,
-        });
-      }
+      expect(existsSync(path.join(handle.path, '.agents', 'harness.manifest.json'))).toBe(false);
       const excludeFile = path.join(
-        await commonGitDir(store.repoPath(ROOM_ID), store.homeDir(ROOM_ID)),
+        await commonGitDir(repoDir, store.homeDir(ROOM_ID)),
         'info',
         'exclude'
       );
-      await writeFile(
-        excludeFile,
-        [
-          '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
-          '/.claude/skills/',
-          '/.agents/harness.manifest.json',
-          `/${path.posix.dirname(PROJECTED_ATTACHMENTS_ROOT)}/`,
-          '# --- end DorkOS ---',
-          '',
-        ].join('\n'),
-        'utf-8'
-      );
-
-      // A fresh manager over the same disk: a restarted server.
-      const restarted = makeManager();
-      const again = await restarted.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      expect(again.created).toBe(false);
-      // It re-seeded, and said so — a non-null projection on the reuse path
-      // means files actually moved.
-      expect(again.projection?.status).toBe('projected');
-      for (const skill of OPERATING_SKILLS_PACK) {
-        expect(existsSync(path.join(again.path, '.agents', 'skills', skill.name, 'SKILL.md'))).toBe(
-          true
-        );
-      }
-      // And the block was refreshed BEFORE the write, so the tree the agent has
-      // been working in for months does not go permanently dirty on upgrade.
-      expect(await git(['status', '--porcelain=v1'], again.path)).toBe('');
-    });
-
-    it('checks the pack once per worktree per process, not on every turn', async () => {
-      // `OPERATING_SKILLS_VERSION` is compiled in, so nothing inside one process
-      // can raise it — and the check is not free: it reads every pack file and
-      // spawns a `git`, on the turn path.
-      //
-      // The observable the guard is pinned by is its own accepted COST, stated
-      // out loud: delete a seeded skill and this process will not put it back.
-      // Nothing but a person deletes those files, and the sibling test above
-      // shows a restart repairs it — but a future change that moves the guard
-      // should be a decision somebody made, not one this test slept through.
-      await service.enable(ROOM_ID, OPERATOR);
-      const first = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      const seeded = path.join(first.path, '.agents', 'skills', 'working-in-room-repos');
-      await rm(seeded, { recursive: true, force: true });
-
-      const second = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      expect(second.created).toBe(false);
-      expect(second.projection).toBeNull();
-      expect(existsSync(path.join(seeded, 'SKILL.md'))).toBe(false);
-      // …and the restart that DOES repair it, so this test cannot be read as
-      // saying the file is gone for good.
-      const restarted = await makeManager().ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      expect(existsSync(path.join(seeded, 'SKILL.md'))).toBe(true);
-      expect(restarted.projection?.status).toBe('projected');
-    });
-
-    it('brings a stale exclude block up to date, found by its version-free sentinel', async () => {
-      // Two bugs in one fixture, and the fixture is the point: this writes the
-      // block EXACTLY as the shipped version before DOR-1597 wrote it, prose and
-      // all. An earlier version of this test invented a marker line that no
-      // release ever produced, so it pinned a state nothing could reach and
-      // stayed green through the very defect it was written for.
-      //
-      // Matching on the current first line cannot find that block, so the writer
-      // appends a second one and the file is left with an orphaned old block
-      // nothing will ever update or remove — while `/.dork/.temp/` sits only in
-      // the new one and the old one goes on hiding nothing. Hence a sentinel
-      // that survives the prose being reworded.
-      await service.enable(ROOM_ID, OPERATOR);
-      const repoDir = store.repoPath(ROOM_ID);
-      const infoDir = path.join(await commonGitDir(repoDir, store.homeDir(ROOM_ID)), 'info');
-      await mkdir(infoDir, { recursive: true });
-      await writeFile(
-        path.join(infoDir, 'exclude'),
-        [
-          '# somebody’s own line, above',
-          '/scratch/',
-          // The REAL marker the previous release shipped — verbatim.
-          '# --- DorkOS: harness projection output, not anybody’s work (room-worktree-manager.ts) ---',
-          '/.claude/skills/',
-          '/.agents/harness.manifest.json',
-          '# --- end DorkOS ---',
-          '# somebody’s own line, below',
-          '/notes.local.md',
-          '',
-        ].join('\n'),
-        'utf-8'
-      );
-
-      const handle = await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-
-      const exclude = await readFile(path.join(infoDir, 'exclude'), 'utf-8');
-      // Exactly ONE block — the old one was replaced, not orphaned beside a new
-      // one. This is the assertion the invented-marker fixture could not make.
-      expect(exclude.match(/--- DorkOS:/g)).toHaveLength(1);
-      // …it is the current one…
-      expect(exclude).toContain('/.dork/.temp/');
-      expect(exclude).not.toContain('harness projection output');
-      // …and everything that was not ours survives, on both sides.
-      expect(exclude).toContain('# somebody’s own line, above');
-      expect(exclude).toContain('/scratch/');
-      expect(exclude).toContain('# somebody’s own line, below');
-      expect(exclude).toContain('/notes.local.md');
-
-      // The point of all of it: an attachment projected into the tree leaves it
-      // reading clean.
-      await mkdir(path.join(handle.path, PROJECTED_ATTACHMENTS_ROOT, 'entry-1'), {
-        recursive: true,
-      });
-      await writeFile(
-        path.join(handle.path, PROJECTED_ATTACHMENTS_ROOT, 'entry-1', 'notes.txt'),
-        'the notes',
-        'utf-8'
-      );
+      const exclude = existsSync(excludeFile) ? await readFile(excludeFile, 'utf-8') : '';
+      expect(exclude).not.toContain('DorkOS');
       expect(await git(['status', '--porcelain=v1'], handle.path)).toBe('');
     });
 
@@ -780,83 +446,169 @@ describe('RoomWorktreeManager', () => {
     });
   });
 
-  describe('whose working copy it is (DOR-2091)', () => {
-    // The record a session standing in a worktree acts as its agent from. The
-    // name ends in a 32-bit digest, which is not a thing to authenticate by, so
-    // the owner is recorded when the tree is HANDED OUT and read back from
-    // nowhere else. Seeded defects, each red before the code stood:
-    //
-    // - Recording only in the caller that started the resolution (the shared
-    //   in-flight promise) reddens "poisons a directory two agents were handed".
-    // - Answering "not a working copy" for a tree with no record — failing OPEN,
-    //   so the anchor looks the directory up as itself — reddens "vouches for
-    //   nobody in a working copy it did not hand out", "after a restart" and
-    //   "forgets a tree the reap removed".
-    // - Dropping the forget from the reap reddens "forgets a tree the reap
-    //   removed", alone.
+  describe('legacy plumbing (spec `agent-home-desk` §5.9)', () => {
+    /**
+     * Every retirement below is asked of a FRESH manager — a restarted server —
+     * because a worktree this process made holds nothing to retire and is
+     * marked done at creation.
+     *
+     * What a release that stood room turns in the worktree left on disk: the
+     * seeded pack and its projection (the same two production calls that wrote
+     * them), an attachment projection, and the marker block in `info/exclude`
+     * exactly as the last such release built it.
+     */
+    async function legacyWorktree(name: string): Promise<string> {
+      const dir = await worktreeFor(name);
+      await seedOperatingSkills(dir);
+      projectAgentWorkspace(dir);
+      await mkdir(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'entry-1'), { recursive: true });
+      await writeFile(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'entry-1', 'a.txt'), 'x', 'utf-8');
+      await mkdir(path.dirname(excludeFile()), { recursive: true });
+      await writeFile(excludeFile(), LEGACY_BLOCK, 'utf-8');
+      return dir;
+    }
 
-    it('answers the agent the tree was handed to, and only for that exact directory', async () => {
+    function excludeFile(): string {
+      return path.join(store.repoPath(ROOM_ID), '.git', 'info', 'exclude');
+    }
+
+    const LEGACY_BLOCK = [
+      '# somebody’s own line',
+      '/scratch/',
+      '# --- DorkOS: generated for the agent, not anybody’s work (room-worktree-manager.ts) ---',
+      '/.claude/skills/',
+      '/.agents/harness.manifest.json',
+      `/${path.posix.dirname(PROJECTED_ATTACHMENTS_ROOT)}/`,
+      '/.claude/CLAUDE.md',
+      ...OPERATING_SKILLS_PACK.map((skill) => `/.agents/skills/${skill.name}/SKILL.md`),
+      '# --- end DorkOS ---',
+      '',
+    ].join('\n');
+
+    it('removes what DorkOS wrote, leaves the tree clean, and drops the block when it was the last', async () => {
       await service.enable(ROOM_ID, OPERATOR);
-      const dir = await worktreeFor('ana');
+      const dir = await legacyWorktree('ana');
+      // The fixture is real: the tree holds the pack, a link and the projection,
+      // and reads clean only because the block hides them.
+      expect(
+        existsSync(path.join(dir, '.agents', 'skills', 'working-in-room-repos', 'SKILL.md'))
+      ).toBe(true);
+      expect(
+        (
+          await nodeFsPromises.lstat(path.join(dir, '.claude', 'skills', 'working-in-room-repos'))
+        ).isSymbolicLink()
+      ).toBe(true);
+      expect(await git(['status', '--porcelain=v1'], dir)).toBe('');
 
-      expect(manager.ownerOf(dir)).toEqual({ owner: agentPath('ana') });
-      expect(manager.ownerOf(`${dir}/`)).toEqual({ owner: agentPath('ana') });
-      // And `pathFor` names that same tree without making or recording anything.
-      expect(manager.pathFor(ROOM_ID, agentPath('ana'), 'ana')).toBe(dir);
-      // Beneath it, beside it, and the agent's own folder are NOT working
-      // copies: a prefix is never an identity.
-      expect(manager.ownerOf(path.join(dir, 'src'))).toBeNull();
-      expect(manager.ownerOf(store.repoPath(ROOM_ID))).toBeNull();
-      expect(manager.ownerOf(agentPath('ana'))).toBeNull();
+      const outcome = await makeManager().retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'));
+
+      expect(outcome.blockRemoved).toBe(true);
+      expect(outcome.removed).toBeGreaterThan(OPERATING_SKILLS_PACK.length);
+      expect(existsSync(path.join(dir, '.agents'))).toBe(false);
+      expect(existsSync(path.join(dir, '.claude'))).toBe(false);
+      expect(existsSync(path.join(dir, '.dork'))).toBe(false);
+      const exclude = await readFile(excludeFile(), 'utf-8');
+      expect(exclude).not.toContain('DorkOS');
+      // Somebody else's lines survive.
+      expect(exclude).toContain('# somebody’s own line');
+      expect(exclude).toContain('/scratch/');
+      // And with the block gone the tree still reads clean — nothing was left
+      // that the block had been hiding.
+      expect(await git(['status', '--porcelain=v1'], dir)).toBe('');
     });
 
-    it('vouches for nobody in a working copy it did not hand out', async () => {
+    it('keeps a modified skill and a real file at a projection path, and keeps the block for them', async () => {
       await service.enable(ROOM_ID, OPERATOR);
-      const stray = path.join(store.worktreesPath(ROOM_ID), 'ana-00000000');
-      await mkdir(stray, { recursive: true });
+      const dir = await legacyWorktree('ana');
+      const edited = path.join(dir, '.agents', 'skills', 'working-in-room-repos', 'SKILL.md');
+      await writeFile(edited, `${await readFile(edited, 'utf-8')}\nMy own note.\n`, 'utf-8');
+      const realLink = path.join(dir, '.claude', 'skills', 'reading-activity');
+      await rm(realLink, { force: true });
+      await mkdir(realLink, { recursive: true });
+      await writeFile(path.join(realLink, 'SKILL.md'), '# mine\n', 'utf-8');
 
-      // A working copy by location, so it is some agent's; nothing says whose.
-      expect(manager.ownerOf(stray)).toEqual({ owner: null });
+      const outcome = await makeManager().retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'));
+
+      expect(existsSync(edited)).toBe(true);
+      expect(await readFile(path.join(realLink, 'SKILL.md'), 'utf-8')).toBe('# mine\n');
+      // The unmodified ones and the attachments still went.
+      expect(existsSync(path.join(dir, '.agents', 'skills', 'reading-activity'))).toBe(false);
+      expect(existsSync(path.join(dir, PROJECTED_ATTACHMENTS_ROOT))).toBe(false);
+      expect(outcome.blockRemoved).toBe(false);
+      expect(await readFile(excludeFile(), 'utf-8')).toContain('# --- DorkOS:');
+      // Removing it now would make the tree read dirty.
+      expect(await git(['status', '--porcelain=v1'], dir)).toBe('');
     });
 
-    it('vouches for nobody after a restart until the tree is asked for again', async () => {
+    it('keeps the block while ANOTHER worktree of the room still holds what it hides', async () => {
       await service.enable(ROOM_ID, OPERATOR);
-      const dir = await worktreeFor('ana');
+      const ana = await legacyWorktree('ana');
+      const bo = await legacyWorktree('bo');
 
-      // A fresh instance over the same disk is a restarted server.
-      manager = makeManager();
-      expect(manager.ownerOf(dir)).toEqual({ owner: null });
+      expect(
+        (await makeManager().retireLegacyPlumbing(ROOM_ID, ana, agentPath('ana'))).blockRemoved
+      ).toBe(false);
+      expect(await git(['status', '--porcelain=v1'], bo)).toBe('');
 
-      await worktreeFor('ana');
-      expect(manager.ownerOf(dir)).toEqual({ owner: agentPath('ana') });
+      expect(
+        (await makeManager().retireLegacyPlumbing(ROOM_ID, bo, agentPath('bo'))).blockRemoved
+      ).toBe(true);
+      expect(await git(['status', '--porcelain=v1'], ana)).toBe('');
     });
 
-    it('poisons a directory two agents were handed, so it acts as neither', async () => {
+    it('keeps the block while the room`s MAIN checkout still holds something it hides', async () => {
+      // `repo/` reads the same `info/exclude`, and `repo/` found dirty stops
+      // every write to the room — so the block is not the worktrees' alone.
       await service.enable(ROOM_ID, OPERATOR);
-      // Force the collision a digest-and-name clash would cause.
-      vi.spyOn(RoomWorktreeManager, 'slugFor').mockReturnValue('ana-deadbeef');
+      const dir = await legacyWorktree('ana');
+      const repoDir = store.repoPath(ROOM_ID);
+      await mkdir(path.join(repoDir, PROJECTED_ATTACHMENTS_ROOT), { recursive: true });
+      await writeFile(path.join(repoDir, PROJECTED_ATTACHMENTS_ROOT, 'stray.txt'), 's', 'utf-8');
+      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
 
-      const [first, second] = await Promise.all([
-        manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana'),
-        manager.ensureWorktree(ROOM_ID, agentPath('ana-two'), 'Ana'),
-      ]);
+      const outcome = await makeManager().retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'));
 
-      expect(first.path).toBe(second.path);
-      expect(manager.ownerOf(first.path)).toEqual({ owner: null });
-      // And asking again as the first agent does not un-poison it.
-      await manager.ensureWorktree(ROOM_ID, agentPath('ana'), 'Ana');
-      expect(manager.ownerOf(first.path)).toEqual({ owner: null });
+      expect(outcome.blockRemoved).toBe(false);
+      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
     });
 
-    it('forgets a tree the reap removed', async () => {
+    it('never deletes a tracked file at a legacy path', async () => {
+      // An exclude cannot hide a TRACKED file, so a room that committed its own
+      // copy of a pack skill is somebody's work, even when it is byte for byte
+      // what the seeder writes.
       await service.enable(ROOM_ID, OPERATOR);
-      const dir = await ancientWorktree('ana');
-      expect(manager.ownerOf(dir)).toEqual({ owner: agentPath('ana') });
+      const repoDir = store.repoPath(ROOM_ID);
+      await seedOperatingSkills(repoDir);
+      await commitAll(
+        repoDir,
+        'commit a pack copy',
+        { name: 'D', email: 'd@dorkos.local' },
+        scratch
+      );
+      const dir = await legacyWorktree('ana');
 
-      const swept = await manager.reapRoom(ROOM_ID);
+      await makeManager().retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'));
 
-      expect(swept.reaped).toEqual([path.basename(dir)]);
-      expect(manager.ownerOf(dir)).toEqual({ owner: null });
+      expect(
+        existsSync(path.join(dir, '.agents', 'skills', 'working-in-room-repos', 'SKILL.md'))
+      ).toBe(true);
+      expect(await git(['status', '--porcelain=v1'], dir)).toBe('');
+    });
+
+    it('runs once per worktree per process', async () => {
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await legacyWorktree('ana');
+      const restarted = makeManager();
+      await restarted.retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'));
+      // Something the old code would have written reappears (a person put it
+      // back): this process does not look again.
+      await mkdir(path.join(dir, PROJECTED_ATTACHMENTS_ROOT), { recursive: true });
+      await writeFile(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'b.txt'), 'y', 'utf-8');
+
+      expect((await restarted.retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'))).removed).toBe(
+        0
+      );
+      expect(existsSync(path.join(dir, PROJECTED_ATTACHMENTS_ROOT, 'b.txt'))).toBe(true);
     });
   });
 

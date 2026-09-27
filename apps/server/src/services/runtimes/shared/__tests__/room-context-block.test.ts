@@ -1801,36 +1801,30 @@ describe("the room's own files, and how work gets out of a tree (spec §3.7)", (
     expect(block).not.toContain('merge_to_room_main');
   });
 
-  it('names the tree the agent works in, and the branch it is on', () => {
+  it('pins the files section word for word: the turn runs at home, the copy is reached by path', () => {
+    // Spec `agent-home-desk` §5.3, the pinned copy. The turn stands in the
+    // agent's own folder, so an agent that believes it stands in its copy
+    // edits relative paths into its own home — the one mistake this section
+    // exists to prevent.
     const block = formatRoomContext(context({ files: FILES }), { nonce: NONCE });
+    const w = FILES.worktreePath;
     expect(block).toContain(
-      'This room has files of its own. You are working in your own copy of them at ' +
-        `${FILES.worktreePath}, on branch ${FILES.branch}.`
+      `This room has files of its own. Your own copy of them is at ${w}, on branch ` +
+        `${FILES.branch}. Your turn runs in your own folder, not in that copy, so work on the ` +
+        `room's files by their full paths, and run git there as \`git -C "${w}" …\` ` +
+        `(or \`cd "${w}"\` first). The room's shared copy is at ${FILES.repoPath}: read it if ` +
+        'you need to, and never write in it.'
     );
-  });
-
-  it("names the room's own copy and forbids writing in it", () => {
-    // One writer per tree (spec §3.4). The path is discoverable from inside the
-    // worktree anyway, so hiding it buys nothing and the prohibition buys
-    // everything: the server is the only writer on `main`.
-    const block = formatRoomContext(context({ files: FILES }), { nonce: NONCE });
     expect(block).toContain(
-      `The room's own copy is at ${FILES.repoPath}: read it if you need to, and never write in it.`
+      `Sync before you edit: \`git -C "${w}" merge main\`. When a change is ready, commit it in ` +
+        'your copy, then use the tool whose name ends in `merge_to_room_main` — whatever you ' +
+        'have not committed is left behind.'
     );
-  });
-
-  it('teaches sync-before-edit as plain git, and merging as a tool', () => {
-    const block = formatRoomContext(context({ files: FILES }), { nonce: NONCE });
-    // Syncing is deliberately not a tool (spec §3.7): the agent does it in its
-    // own tree, so the server never writes in a working copy it does not own.
-    expect(block).toContain('Sync before you edit: run `git merge main` in your own copy');
+    // The retired claim, which would now be a lie about where the agent stands.
+    expect(block).not.toContain('You are working in your own copy');
+    expect(block).not.toContain('run `git merge main` in your own copy');
     // The tool is named as an ENDING, the one form true on all three runtimes.
-    // Naming it bare would be uncallable everywhere (the DOR-1292 defect); the
-    // prefix would be a claim about one runtime's configuration.
-    expect(block).toContain('the tool whose name ends in `merge_to_room_main`');
     expect(block).not.toContain('mcp__dorkos__');
-    // The most common merge refusal, said before it happens.
-    expect(block).toContain('whatever you have not committed is left behind');
   });
 
   it('says nothing about the counts when the branch is level with the room', () => {

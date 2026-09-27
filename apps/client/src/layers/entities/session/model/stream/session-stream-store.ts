@@ -885,6 +885,8 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
         session.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface (server-projector parity).
         session.status.lastError = null;
+        // …and the usage limit the last turn hit, as the projector does.
+        session.status.limit = null;
       }
       // The triggered turn materialized — the trigger window is over.
       session.triggerPending = false;

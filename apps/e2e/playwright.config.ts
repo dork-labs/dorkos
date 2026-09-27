@@ -83,8 +83,8 @@ const SHARD_TOTAL = shardTotal();
 // The two measured numbers `globalTimeout` is derived from, and its multiplier.
 // The full argument — what was measured, on which runs, and why the deadline is
 // computed instead of typed in — is on `globalTimeout` below.
-const UNSHARDED_SUITE_MINUTES = 41;
-const LEG_BOOT_MINUTES = 4;
+const UNSHARDED_SUITE_MINUTES = 58;
+const LEG_BOOT_MINUTES = 5;
 const GLOBAL_TIMEOUT_HEADROOM = 1.75;
 
 /** A healthy shard's derived wall time: fixed boot cost plus its share of the tests. */
@@ -335,12 +335,12 @@ export default defineConfig({
   // was before this line, which is why it can be raised in CI without a
   // corresponding local change.
   //
-  // PER SHARD, now that CI cuts the suite three ways (DOR-1363) — so a
-  // catastrophic break can burn 3 × 5 failures instead of 5. That is the right
-  // trade rather than a regression: the three shards spend it CONCURRENTLY, so
+  // PER SHARD, now that CI cuts the suite six ways (DOR-1363, then ledger
+  // 260919-175503) — so a catastrophic break can burn 6 × 5 failures instead
+  // of 5. That is the right trade rather than a regression: the shards spend it CONCURRENTLY, so
   // the wall-clock cost is the same ~5 minutes it always was, and each shard
   // names five of its own specs instead of the run naming five out of one
-  // arbitrary third. Fifteen red spec names across three logs is still one
+  // arbitrary sixth. Thirty red spec names across six logs is still one
   // diagnosis; what it buys is that a break confined to one shard's projects
   // cannot hide behind five failures in another's.
   //
@@ -386,9 +386,24 @@ export default defineConfig({
   //     the derived deadline lands on the same 30 minutes either way, so
   //     nothing about the ladder moved.)
   //
-  // So a healthy shard is `boot + (suite − boot) / shards` — about 16m20s at
-  // three shards — and the deadline is 1.75× that, rounded up to the next five
-  // minutes: 30 minutes. The 1.75 is deliberately looser than the 1.5 the flat
+  // RE-MEASURED 2026-09-27, when the matrix went from three shards to six
+  // (ledger ci/ledger/260919-175503-browser-suite-six-shards.md). The suite
+  // had grown from 328 tests to 512 and the 2026-08-19 facts had gone stale,
+  // which is how a derived 30 minutes came to sit 3% above healthy shards:
+  //
+  //   * LEG_BOOT_MINUTES 5: suite start to first test in the JSON reports of
+  //     four green queue runs (36300571563, 36311158195, 36314514672,
+  //     36332070042), twelve shards, 2.97 to 5.10 minutes
+  //   * UNSHARDED_SUITE_MINUTES 58: that boot plus 52.7 minutes of tests, the
+  //     sum of `reporters/shard-timings.json`'s per-spec medians over the
+  //     seven latest green queue runs (the four runs above summed 47 to 61)
+  //
+  // Re-measure both whenever the shard count changes: the deadline follows
+  // the count, but only from inputs that are still true.
+  //
+  // So a healthy shard is `boot + (suite − boot) / shards` — about 13m50s at
+  // six shards — and the deadline is 1.75× that, rounded up to the next five
+  // minutes: 25 minutes. The 1.75 is deliberately looser than the 1.5 the flat
   // number was originally set at, because `--shard` then divided by TEST COUNT
   // and not by duration. That turned out to matter: the count cut put every
   // test-mode project on shard 3, which ran at 92% of this deadline in
@@ -397,7 +412,7 @@ export default defineConfig({
   // whether it can come down is a separate experiment.
   //
   // The ladder this sits in is on the job in .github/workflows/browser-test.yml:
-  // shard ~16m (healthy) → Playwright gives up at 30m → the step is killed at
+  // shard ~14m (healthy) → Playwright gives up at 25m → the step is killed at
   // 35m → the job at 45m. Each rung above the one below it, and the FIRST rung
   // to fire is the one that leaves output behind — when this one fires,
   // Playwright stops the run itself, gracefully, through its own shutdown path,

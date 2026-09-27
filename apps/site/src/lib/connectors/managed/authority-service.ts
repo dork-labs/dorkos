@@ -90,6 +90,43 @@ export async function lockLiveAuthorityPrincipal(
   if (!live) throw new ManagedAuthorityUnauthorizedError();
 }
 
+/**
+ * The grant-row agent id that stands for every agent of the connection's owner
+ * (ADR 260926-192625, DOR-2439).
+ *
+ * Only a `replace_every_agent_grants` command writes it and only an execution
+ * that says `grantSubject: 'every_agent'` matches it. A named-agent command or
+ * execution that presents it as an agent id is refused, so no agent can reach
+ * the owner-wide rows by choosing its own name.
+ */
+export const EVERY_AGENT_GRANT_ROW = '*';
+
+/**
+ * The grant-row agent id one execution must match, or null when the request
+ * cannot be authorized at all.
+ *
+ * @param request - The execution's claimed agent and grant subject.
+ */
+export function grantRowAgentId(request: {
+  agentId: string;
+  grantSubject?: 'agent' | 'every_agent';
+}): string | null {
+  if (request.grantSubject === 'every_agent') return EVERY_AGENT_GRANT_ROW;
+  return request.agentId === EVERY_AGENT_GRANT_ROW ? null : request.agentId;
+}
+
+/** The authority scope one command advances. */
+function authorityScopeKey(
+  command: Exclude<
+    ReturnType<typeof ManagedConnectorAuthorityCommandSchema.parse>,
+    { kind: 'set_event_subscription' }
+  >
+): string {
+  if (command.kind === 'replace_agent_grants') return `agent:${command.agentId}`;
+  if (command.kind === 'replace_every_agent_grants') return 'every_agent';
+  return 'lifecycle';
+}
+
 /** Hash a strict wire request without retaining its contents in an idempotency key. */
 export function managedRequestHash(value: unknown): string {
   return createHash('sha256').update(stableStringify(value)).digest('hex');
@@ -406,8 +443,15 @@ export async function applyManagedAuthorityCommand(
         )
       )
       .limit(1);
-    const scopeKey =
-      command.kind === 'replace_agent_grants' ? `agent:${command.agentId}` : 'lifecycle';
+    const scopeKey = authorityScopeKey(command);
+    const isGrantCommand =
+      command.kind === 'replace_agent_grants' || command.kind === 'replace_every_agent_grants';
+    const grantsAgentId =
+      command.kind === 'replace_agent_grants'
+        ? command.agentId
+        : command.kind === 'replace_every_agent_grants'
+          ? EVERY_AGENT_GRANT_ROW
+          : null;
     const [latest] = await tx
       .select()
       .from(schema.managedConnectorAuthorityCommand)
@@ -438,12 +482,19 @@ export async function applyManagedAuthorityCommand(
     ) {
       state = 'rejected';
       rejectionCode = 'connection_unavailable';
+    } else if (
+      command.kind === 'replace_agent_grants' &&
+      command.agentId === EVERY_AGENT_GRANT_ROW
+    ) {
+      // A named agent can never stand for every agent.
+      state = 'rejected';
+      rejectionCode = 'scope_conflict';
     } else if (latest && latest.scopeVersion >= command.scopeVersion) {
       state = 'superseded';
     }
 
     let revisionRows: Array<typeof schema.managedConnectorOperationRevision.$inferSelect> = [];
-    if ((state === 'applied' || state === 'pending') && command.kind === 'replace_agent_grants') {
+    if ((state === 'applied' || state === 'pending') && isGrantCommand && grantsAgentId !== null) {
       for (const revision of command.revisions) {
         const rows = await tx
           .select()
@@ -484,7 +535,7 @@ export async function applyManagedAuthorityCommand(
     }
 
     const now = new Date();
-    if (state === 'applied' && command.kind === 'replace_agent_grants') {
+    if (state === 'applied' && isGrantCommand && grantsAgentId !== null) {
       await tx
         .update(schema.managedConnectorGrant)
         .set({ active: false, revokedAt: now })
@@ -493,7 +544,7 @@ export async function applyManagedAuthorityCommand(
             eq(schema.managedConnectorGrant.tenantId, principal.tenantId),
             eq(schema.managedConnectorGrant.instanceId, principal.instanceId),
             eq(schema.managedConnectorGrant.connectionId, command.managedConnectionId),
-            eq(schema.managedConnectorGrant.agentId, command.agentId)
+            eq(schema.managedConnectorGrant.agentId, grantsAgentId)
           )
         );
       if (revisionRows.length > 0) {
@@ -504,7 +555,7 @@ export async function applyManagedAuthorityCommand(
               tenantId: principal.tenantId,
               instanceId: principal.instanceId,
               connectionId: command.managedConnectionId,
-              agentId: command.agentId,
+              agentId: grantsAgentId,
               operationRevisionId: revision.id,
               scopeVersion: command.scopeVersion,
               active: true,

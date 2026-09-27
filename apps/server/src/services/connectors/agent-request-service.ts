@@ -13,6 +13,7 @@ import {
   connectorReviewRequests,
   connections,
   eq,
+  EVERY_AGENT_GRANT_SUBJECT_ID,
   gt,
   inArray,
   isNull,
@@ -1340,7 +1341,6 @@ export class ConnectorAgentRequestService {
         agentId: request.agentId,
         sessionId: request.sessionId,
         connectionId: connection.id,
-        mode: connection.mode,
       });
       if ('denied' in access) {
         throw new ConnectorAgentRequestError(
@@ -1358,6 +1358,8 @@ export class ConnectorAgentRequestService {
         );
       }
       if (connection.mode === 'managed') {
+        // Live access comes from the agent's own grant or from "Every agent"
+        // (DOR-2439); either scope's applied command is what made it live.
         const applied = tx
           .select({ state: connectorManagedAuthorityOutbox.state })
           .from(connectorManagedAuthorityScopes)
@@ -1374,12 +1376,20 @@ export class ConnectorAgentRequestService {
                 connectorManagedAuthorityScopes.managedConnectionId,
                 connection.externalAccountRef
               ),
-              eq(connectorManagedAuthorityScopes.scopeKind, 'agent_grants'),
-              eq(connectorManagedAuthorityScopes.subjectId, request.agentId)
+              or(
+                and(
+                  eq(connectorManagedAuthorityScopes.scopeKind, 'agent_grants'),
+                  eq(connectorManagedAuthorityScopes.subjectId, request.agentId)
+                ),
+                and(
+                  eq(connectorManagedAuthorityScopes.scopeKind, 'every_agent_grants'),
+                  eq(connectorManagedAuthorityScopes.subjectId, EVERY_AGENT_GRANT_SUBJECT_ID)
+                )
+              )
             )
           )
-          .get();
-        if (applied?.state !== 'applied') {
+          .all();
+        if (!applied.some((scope) => scope.state === 'applied')) {
           throw new ConnectorAgentRequestError(
             'authority_sync_failed',
             'This agent’s access is still being applied. Try again in a moment.'
@@ -2219,11 +2229,6 @@ function hasExactLiveGrants(tx: DbTransaction, request: ConnectorAgentRequest): 
   ) {
     return false;
   }
-  const mode = tx
-    .select({ mode: connectorProviderInstances.mode })
-    .from(connectorProviderInstances)
-    .where(eq(connectorProviderInstances.id, connection.providerInstanceId))
-    .get()?.mode;
   // Every granted revision must still be live for this agent. Access added
   // since (another grant, "Every agent") changes nothing the follow-up relies
   // on; a revision taken away does, and refuses it.
@@ -2231,7 +2236,6 @@ function hasExactLiveGrants(tx: DbTransaction, request: ConnectorAgentRequest): 
     agentId: request.agentId,
     sessionId: request.sessionId,
     connectionId: request.resolvedConnectionId,
-    mode: mode ?? 'managed',
   });
   // A session override that now shuts the agent out refuses the follow-up.
   if ('denied' in access) return false;
@@ -2247,13 +2251,12 @@ function hasExactLiveGrants(tx: DbTransaction, request: ConnectorAgentRequest): 
  */
 function liveAgentRevisionIds(
   tx: Db | DbTransaction,
-  input: { agentId: string; sessionId: string; connectionId: string; mode: 'managed' | 'byo' }
+  input: { agentId: string; sessionId: string; connectionId: string }
 ): { denied: AgentGrantDenial } | { ids: Set<string> } {
   const scope = agentGrantScope(tx, {
     agentId: input.agentId,
     sessionId: input.sessionId,
     connectionId: input.connectionId,
-    providerMode: input.mode,
   });
   if (scope.kind === 'denied') return { denied: scope.reason };
   return {

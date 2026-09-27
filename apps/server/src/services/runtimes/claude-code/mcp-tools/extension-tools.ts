@@ -224,6 +224,9 @@ interface DataProviderContext {
   emit(event: string, data: unknown): void;
   readonly extensionId: string;
   readonly extensionDir: string;
+  readonly dorkHome: string; // the DorkOS data directory
+  // Agent accounts, usage, and the account advisor; types in @dorkos/extension-api/server
+  readonly accounts: AccountsApi;
 }
 \`\`\`
 

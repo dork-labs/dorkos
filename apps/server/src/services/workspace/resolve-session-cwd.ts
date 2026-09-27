@@ -15,16 +15,15 @@
  *    the path is passed through untouched. This rung is what keeps every
  *    cockpit turn, every already-resolved task and every relay dispatch
  *    byte-for-byte what it was.
- * 2. **`room-worktree`** — a room turn in a repo-enabled room, resolving to that
- *    agent's standing worktree in the room's repo (spec `project-rooms` §3.5).
- *    Reached when the caller names a {@link ResolveSessionCwdRequest.room}, and
- *    the END of the chain when it does: a room turn resolves here or on the
- *    agent's own directory, never on rungs 3 or 4. See that field for why.
- * 3. **`agent-home` / `agent-managed`** — an agent was named, and its manifest
+ * 2. **`agent-home` / `agent-managed`** — an agent was named, and its manifest
  *    says where it works ({@link AgentWorkspaceBindingSchema}).
- * 4. **`default`** — nobody had a better answer, so `DEFAULT_CWD`. Not a lazy
+ * 3. **`default`** — nobody had a better answer, so `DEFAULT_CWD`. Not a lazy
  *    fallback: it is the honest answer for an external MCP caller with no
  *    meaningful path, and it stays the machine-level default it always was.
+ *
+ * A room turn does not come through here: it always stands in the agent's home
+ * and reaches the room's files through folder grants (spec `agent-home-desk`
+ * §5.1, `services/rooms/repo/room-turn-place.ts`).
  *
  * ## Two invariants
  *
@@ -72,34 +71,6 @@ export interface ResolveSessionCwdRequest {
   agentPath?: string;
   /** Falls back to this session's persisted `agent_path` when `agentPath` is absent. */
   sessionId?: string;
-  /**
-   * The room this turn answers, when it is a room turn — what enables rung 2.
-   *
-   * **Present means the chain ENDS at rung 2**, either in the room's worktree or
-   * on the agent's own directory; rungs 3 and 4 are never consulted. That is not
-   * an oversight, it is the scope of DOR-1597: a room turn has never been
-   * boundary-validated and has never followed a `managed` or `none` binding, so
-   * letting it fall through would relocate every repo-less room turn for agents
-   * that opted into either — the `managed` case into a checkout nothing asked
-   * for, the `none` case into `DEFAULT_CWD`, which is the shared tree every
-   * other agent also writes in and therefore the DOR-500 interleaving this whole
-   * chain exists to prevent. Wiring those two rungs for rooms is a separate
-   * change with its own argument to make.
-   *
-   * **Two callers name it, and they are the same conversation.** The room
-   * dispatcher does, when a message in a room starts a turn; the session route
-   * does, when a person picks that conversation up in the app (DOR-1624,
-   * `room-session-cwd.ts` fills it in from the session's binding). They must
-   * agree, so everything above applies to both — including the ending: an agent
-   * resumed from the app in a repo-less room stays in its own folder rather than
-   * taking rungs 3 or 4, exactly as its room turns do.
-   */
-  room?: {
-    /** The room being answered. */
-    roomId: string;
-    /** The agent's display name — the readable half of its worktree directory. */
-    agentName: string;
-  };
 }
 
 /**
@@ -119,22 +90,6 @@ export interface ResolveSessionCwdDeps {
   validateManagedCheckout(candidate: string): Promise<string>;
   /** Canonical form of an agent directory — see {@link canonicalAgentPath}. */
   canonicalize(agentPath: string): Promise<string>;
-  /**
-   * Give an agent its standing working copy of a room's repo, making it if it is
-   * not there yet — or answer `null` when that room has no files of its own.
-   *
-   * The seam that keeps this module ignorant of the rooms domain: it is a plain
-   * function, so nothing here imports a room service, a git helper or a
-   * `RoomError`, and the "this room has no repo" refusal is translated to `null`
-   * by whoever supplies it. `services/rooms/room-trigger.ts` supplies the real
-   * one; the default refuses everything, which is the honest answer for an
-   * install whose room-repo machinery was never bootstrapped.
-   *
-   * @param roomId - The room being answered.
-   * @param agentPath - The agent's own directory — its identity anchor.
-   * @param agentName - The agent's display name, for the directory's readable half.
-   */
-  ensureRoomWorktree(roomId: string, agentPath: string, agentName: string): Promise<string | null>;
   /** The server's default working directory. */
   defaultCwd: string;
 }
@@ -167,13 +122,9 @@ async function canonicalAgentPath(agentPath: string): Promise<string> {
 /**
  * The production collaborators, with anything a caller knows better replaced.
  *
- * Resolved lazily so imports stay side-effect-free. Exported because one caller
- * legitimately owns one seam and none of the others: the room dispatcher is the
- * only thing on this machine that can make a room worktree, so it supplies
- * {@link ResolveSessionCwdDeps.ensureRoomWorktree} and takes the production
- * answer for everything else. Overriding by hand rather than through a
- * module-level registry keeps the injection visible at the call site and keeps
- * this module free of any import of the rooms domain.
+ * Resolved lazily so imports stay side-effect-free. Exported so a test (or a
+ * caller that owns one seam) overrides by hand at the call site rather than
+ * through a module-level registry.
  *
  * @param overrides - Collaborators the caller supplies itself.
  */
@@ -187,10 +138,6 @@ export function sessionCwdDeps(
     validateAgentHome: (candidate) => validateBoundaryOrDorkHome(candidate),
     validateManagedCheckout: (candidate) => validateBoundary(candidate),
     canonicalize: canonicalAgentPath,
-    // Refuses everything by default: an install whose room-repo machinery was
-    // never bootstrapped has no worktrees to give, and a room turn there runs in
-    // the agent's own directory exactly as it did before this rung existed.
-    ensureRoomWorktree: () => Promise.resolve(null),
     defaultCwd: DEFAULT_CWD,
     ...overrides,
   };
@@ -241,12 +188,9 @@ export async function resolveSessionCwd(
 ): Promise<ResolvedCwd> {
   const resolved = await resolve(req, deps);
   // One line per turn naming the rung, the directory and any degradation —
-  // written through the shared reporter so a room turn's decision and a session
-  // turn's are one greppable event rather than two.
-  logResolvedCwd(resolved, {
-    sessionId: req.sessionId ?? null,
-    ...(req.room ? { roomId: req.room.roomId } : {}),
-  });
+  // written through the shared reporter so every turn's decision is one
+  // greppable event.
+  logResolvedCwd(resolved, { sessionId: req.sessionId ?? null });
   return resolved;
 }
 
@@ -264,11 +208,6 @@ async function resolve(
   if (req.cwd) return { cwd: req.cwd, rung: 'explicit' };
 
   const agentPath = req.agentPath ?? (req.sessionId ? await agentPathOf(req, deps) : null);
-
-  // Rung 2, and the END of the chain when it applies — see
-  // {@link ResolveSessionCwdRequest.room} for why a room turn stops here rather
-  // than falling through to the agent's binding.
-  if (req.room && agentPath) return await roomWorktree(req.room, agentPath, deps);
 
   if (agentPath) {
     const binding = await resolveAgentBinding(agentPath, deps);
@@ -298,43 +237,7 @@ async function agentPathOf(
 }
 
 /**
- * Rung 2: the agent's standing working copy of this room's repo, or its own
- * directory.
- *
- * **Failure never fails the turn, and this rung's floor is one rung down rather
- * than all the way out** — the same rule {@link resolveAgentBinding} follows,
- * for the same reason. A room with no files of its own is the ordinary case and
- * is NOT a degradation: `null` comes back, the agent works where it always has,
- * and no `degraded` reason is recorded, exactly as a `mode: 'none'` binding
- * records none. Anything that actually goes wrong — no git, a worktree that
- * cannot be created, a disk error — lands on the same floor CARRYING a reason,
- * because a room that stopped answering is far worse than an agent answering
- * from its own folder.
- *
- * @param room - The room being answered, and the agent's display name.
- * @param agentPath - The agent's own directory: its identity, and the floor.
- * @param deps - Injected collaborators.
- */
-async function roomWorktree(
-  room: NonNullable<ResolveSessionCwdRequest['room']>,
-  agentPath: string,
-  deps: ResolveSessionCwdDeps
-): Promise<ResolvedCwd> {
-  try {
-    const worktree = await deps.ensureRoomWorktree(room.roomId, agentPath, room.agentName);
-    if (worktree === null) return { cwd: agentPath, rung: 'agent-home' };
-    return { cwd: worktree, rung: 'room-worktree' };
-  } catch (err) {
-    return {
-      cwd: agentPath,
-      rung: 'agent-home',
-      degraded: `could not open the room worktree: ${message(err)}`,
-    };
-  }
-}
-
-/**
- * Rungs 3a/3b: what the agent's manifest says, honored or degraded.
+ * Rungs 2a/2b: what the agent's manifest says, honored or degraded.
  *
  * Returns `null` when the chain must fall through to `DEFAULT_CWD` for a reason
  * that is not a degradation — which is exactly one case, `mode: 'none'`, where

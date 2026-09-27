@@ -424,15 +424,37 @@ describe('working-in-room-repos', () => {
     // Spec §3.4 is the whole design in one rule, and the failure it prevents is
     // an agent editing the room's integration checkout: two writers on one tree,
     // which is the DOR-500 interleaving rooms are built to avoid.
-    expect(rooms).toContain('Your working copy is yours');
+    expect(rooms).toContain('Your copy is yours');
     expect(rooms).toMatch(/The room's own copy is the room's[\s\S]{0,60}never write in it/);
+  });
+
+  it('says the turn runs in the agent’s own folder and the copy is reached by path', () => {
+    // Spec `agent-home-desk` §5.5: a room turn stands at home, so an agent that
+    // still believes it stands in its copy edits relative paths into its OWN
+    // folder. The page must say where the turn runs and how to reach the copy.
+    expect(rooms).toContain('Your turn runs in your own folder');
+    expect(rooms).toContain('**full paths**');
+    expect(rooms).toContain('`git -C <your copy> …`');
+    expect(rooms).toContain('`git -C <your copy> merge main`');
+    // The retired claim, which would now be a lie about where the agent stands.
+    expect(rooms).not.toMatch(/your turn runs in (?:\*\*)?your own working copy/i);
+    expect(rooms).not.toContain('rather than in your usual directory');
+  });
+
+  it('states the own-code rule: a private worktree, never the home checkout', () => {
+    // §5.5 and §13: every room turn of an agent now stands in its home, beside a
+    // person's direct session, so two turns editing one checkout is the DOR-500
+    // interleaving. The rule is the mitigation, and it has to be a rule.
+    expect(rooms).toContain(
+      'when you change your own code, do it in a private worktree of\nyour own repository, never in your own folder itself.'
+    );
   });
 
   it('teaches syncing as plain git, never as a tool', () => {
     // Deliberately not a tool (spec §3.7): the server must never write into a
     // working copy an agent owns. An agent that goes looking for a sync tool
     // finds nothing and has no fallback unless the page says this.
-    expect(rooms).toContain('`git merge main`');
+    expect(rooms).toContain('merge main`');
     expect(rooms).toContain('This is plain git, not a tool');
   });
 

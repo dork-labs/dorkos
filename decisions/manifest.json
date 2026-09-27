@@ -6584,9 +6584,12 @@
       "extractedFrom": "claude-account-ui",
       "specSlug": "claude-account-ui",
       "supersedes": null,
+      "lastVerified": "2026-09-27",
       "affects": [
         "apps/server/src/services/extensions/extension-discovery.ts",
-        "apps/server/src/services/marketplace/flows/uninstall.ts"
+        "apps/server/src/services/marketplace/flows/uninstall.ts",
+        "apps/server/src/services/marketplace/flows/install-plugin.ts",
+        "apps/server/src/services/marketplace/marketplace-installer.ts"
       ]
     },
     {

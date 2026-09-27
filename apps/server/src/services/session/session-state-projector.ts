@@ -43,7 +43,7 @@ import type {
   PermissionMode,
   TaskItem,
 } from '@dorkos/shared/types';
-import type { QueuedMessage } from '@dorkos/shared/schemas';
+import type { QueuedMessage, SessionLimit } from '@dorkos/shared/schemas';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
   isAbsolvingTerminalReason,
@@ -61,6 +61,7 @@ import { uiTurnFacts } from './browser-seat/ui-turn-facts.js';
 import type { SessionEventStore } from './session-event-store.js';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import { getStagedContextStore } from './staged-context-store.js';
+import { getSessionLimitStore, withSessionLimitStore } from './fleet/session-limit-store.js';
 import {
   EAGERLY_RECORDED_EVENT_TYPES,
   RECORDED_EVENT_TYPES,
@@ -605,6 +606,17 @@ export class SessionStateProjector {
     this._sessionId = sessionId;
   }
 
+  /**
+   * Restore a usage limit kept in the `session_limits` table, for a projector
+   * created after the turn that hit it (a restart, an idle eviction). Cleared
+   * like any held limit, at the next `turn_start`.
+   *
+   * @param limit - The stored limit.
+   */
+  hydrateLimit(limit: SessionLimit): void {
+    this.status.limit = limit;
+  }
+
   /** The id this projector is currently registered under (canonical post-rekey). */
   get sessionId(): string {
     return this._sessionId;
@@ -876,6 +888,12 @@ export class SessionStateProjector {
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
         this.status.lastError = null;
+        // …and the usage limit the last turn hit (spec claude-account-fleet
+        // D4), in memory and in the table that kept it across a restart. The
+        // table is cleared even when this projector holds no limit: a row can
+        // outlive the projector that would have hydrated it.
+        this.status.limit = null;
+        withSessionLimitStore('delete', (store) => store.delete(this.sessionId));
         // …and the previous turn's tool. The new turn has not reached one yet,
         // and carrying the old one over would name the last thing the session
         // did as the thing it is doing.
@@ -2247,6 +2265,11 @@ export function getOrCreateProjector(
   if (!projector) {
     projector = new SessionStateProjector(key);
     projectors.set(key, projector);
+    // A usage limit outlives the process that saw it (spec
+    // claude-account-fleet D4): Claude Code's projector never hydrates status
+    // from its event rows, so the limit comes back from its own table.
+    const stored = withSessionLimitStore('get', (store) => store.get(key));
+    if (stored) projector.hydrateLimit(stored.limit);
   }
   if (cwd !== undefined && projector.cwd === undefined) projector.cwd = cwd;
   if (opts?.persist !== undefined && sessionEventStore !== undefined) {
@@ -2529,6 +2552,9 @@ export function rekeyProjector(oldId: string, newId: string): void {
     // the person has already been told their words will ride the next reply, and
     // a hold left at the pre-rename id is invisible to every dispatch after it.
     getStagedContextStore()?.rekeySession(fromId, newId);
+    // And the usage limit a turn under the old id hit (spec
+    // claude-account-fleet D4), or the session's next projector cannot find it.
+    getSessionLimitStore()?.rekeySession(fromId, newId);
   } catch (err) {
     logger.warn('[SessionStateProjector] durable rows not carried across rekey', {
       oldId: fromId,

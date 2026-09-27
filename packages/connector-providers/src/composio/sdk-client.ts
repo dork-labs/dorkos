@@ -239,7 +239,6 @@ export class ComposioSdkClient implements ComposioOperationClient {
           include_deprecated: false,
           sort_by: 'alphabetically',
           ...(request.cursor !== undefined && { cursor: request.cursor }),
-          ...(request.query !== undefined && { search: request.query }),
         },
         { signal: request.signal }
       );

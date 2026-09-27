@@ -1283,19 +1283,40 @@ describe('sdk-event-mapper assistant error (SDK 0.3.144)', () => {
     expect(data.message).toMatch(/model is unavailable/i);
   });
 
-  // Purpose: transient errors owned by the retry/rate-limit channels are NOT double-reported here
-  it('does not emit an error for rate_limit (handled by api_retry / rate_limit_event)', async () => {
+  // Purpose: transient errors owned by the retry channel are NOT double-reported here
+  it('does not emit an error for overloaded (handled by api_retry)', async () => {
     const session = makeSession();
     const toolState = makeToolState();
     const msg = {
       type: 'assistant',
-      error: 'rate_limit',
+      error: 'overloaded',
       message: { content: [] },
     } as unknown as Parameters<typeof mapSdkMessage>[0];
 
     const events = await collectEvents(msg, session, sessionId, toolState);
 
     expect(events).toHaveLength(0);
+  });
+
+  // Purpose: a hard usage limit used to be dropped here, so the session just
+  // stopped. It now surfaces, in the CLI's words and uncategorised (no Retry on
+  // a limit that holds until its reset), with the session's limit beside it
+  // (spec claude-account-fleet D4).
+  it('surfaces a rate_limit error in the CLI’s words, uncategorised, with the session limit', async () => {
+    const session = makeSession();
+    const toolState = makeToolState();
+    const notice = "You've hit your weekly limit · resets Sep 28 at 8pm";
+    const msg = {
+      type: 'assistant',
+      error: 'rate_limit',
+      message: { content: [{ type: 'text', text: notice }] },
+    } as unknown as Parameters<typeof mapSdkMessage>[0];
+
+    const events = await collectEvents(msg, session, sessionId, toolState);
+
+    expect(events.map((e) => e.type)).toEqual(['error', 'session_status']);
+    expect(events[0]!.data).toEqual({ message: notice, code: 'rate_limit' });
+    expect((events[1]!.data as { limit?: { window: string } }).limit?.window).toBe('unknown');
   });
 });
 

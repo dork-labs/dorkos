@@ -194,7 +194,6 @@ describe('ComposioSdkClient', () => {
     });
 
     const page = await client(local.baseUrl).listToolkitPage({
-      query: 'git',
       limit: 1,
       signal: new AbortController().signal,
     });
@@ -216,8 +215,8 @@ describe('ComposioSdkClient', () => {
       nextCursor: 'toolkit-page-2',
       truncated: true,
     });
+    expect(local.requests[0]?.query).not.toHaveProperty('search');
     expect(local.requests[0]?.query).toMatchObject({
-      search: 'git',
       limit: '1',
       include_deprecated: 'false',
       sort_by: 'alphabetically',

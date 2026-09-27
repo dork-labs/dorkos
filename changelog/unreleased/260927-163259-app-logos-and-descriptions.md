@@ -3,6 +3,7 @@ covers:
   - 'feat(connections): show each app’s real logo and one line about it (DOR-2464)'
   - 'feat(connections): find an app by its one line when searching (DOR-2464)'
   - 'fix(connections): brands’ own logos, logos for every connected app, and a monthly refresh (DOR-2464)'
+  - 'fix(connections): no logo request for apps the catalog says have none, background refresh (DOR-2464)'
 ---
 
 ### Added

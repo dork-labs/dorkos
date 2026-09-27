@@ -234,6 +234,42 @@ async function listRoomWorktrees(dorkHome: string, failures: string[]): Promise<
 }
 
 /**
+ * The frozen list of room worktree folders: the marker's `worktrees[]` once the
+ * move has completed, and until then the folders on disk now. Read once at
+ * startup and kept for the process, so it never grows — the reader it exists
+ * for (a runtime whose session listing is scoped by folder, codex and opencode,
+ * spec §8.1) only needs the folders room turns stood in before they moved home.
+ *
+ * @param dorkHome - The DorkOS data directory.
+ * @returns Absolute worktree folders; empty when there are none or none can be read.
+ */
+export async function frozenRoomWorktrees(dorkHome: string): Promise<string[]> {
+  try {
+    const raw = await fs.readFile(path.join(dorkHome, ROOM_TRANSCRIPT_MIGRATION_MARKER), 'utf-8');
+    const marker = JSON.parse(raw) as Partial<RoomTranscriptMigrationMarker>;
+    if (Array.isArray(marker.worktrees)) {
+      return marker.worktrees.map((w) => w?.path).filter((p): p is string => typeof p === 'string');
+    }
+  } catch {
+    // No marker yet, or one that cannot be read: the folders on disk answer.
+  }
+  return listRoomWorktrees(dorkHome, []);
+}
+
+/**
+ * The folders in a frozen list that belong to one agent, matched on the digest
+ * half of the folder name — the scheme `RoomWorktreeManager.slugFor` names them
+ * by, so a folder left by a renamed agent still matches.
+ *
+ * @param frozen - From {@link frozenRoomWorktrees}.
+ * @param agentPath - The agent's home.
+ */
+export function roomWorktreesOfAgent(frozen: readonly string[], agentPath: string): string[] {
+  const suffix = `-${RoomWorktreeManager.digestFor(agentPath)}`;
+  return frozen.filter((folder) => path.basename(folder).endsWith(suffix));
+}
+
+/**
  * The registered agent a digest belongs to.
  *
  * `null` for no match, and for two registered paths sharing one digest, which

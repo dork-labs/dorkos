@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   connectionOperationGrants,
   connectorAgentRequests,
+  connectorManagedAuthorityOutbox,
+  connectorManagedAuthorityScopes,
   connectorOperationRevisions,
   connectorProviderInstances,
   connectorReviewRequests,
@@ -485,19 +487,23 @@ describe('ConnectorAgentRequestService', () => {
       return { calls, aborted, queries };
     }
 
-    it('costs one upstream catalog listing per request, not one per catalog page', async () => {
+    it('lists the catalog upstream once and answers later requests from the kept copy', async () => {
       const { calls, queries } = composioFetch();
 
       await expect(
         service({ services: queries }).create(principal(), INPUT)
       ).resolves.toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' });
-
       // 850 services at 100 a page is 9 upstream pages, read once.
+      expect(calls).toHaveLength(9);
+
+      await expect(
+        service({ services: queries }).create(principal(), INPUT)
+      ).resolves.toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' });
       expect(calls).toHaveLength(9);
     });
 
-    it('holds its deadline even while an upstream page is still in flight', async () => {
-      const { calls, aborted, queries } = composioFetch({ delayMs: 5_000 });
+    it('holds its deadline while the shared listing finishes for the next request', async () => {
+      const { calls, aborted, queries } = composioFetch({ delayMs: 200 });
       const started = Date.now();
 
       const message = await refusal(
@@ -506,10 +512,19 @@ describe('ConnectorAgentRequestService', () => {
       );
 
       expect(message).toContain('Try again');
-      expect(Date.now() - started).toBeLessThan(2_000);
-      expect(calls).toHaveLength(1);
-      // The deadline reached the request on the wire, so nothing keeps running.
-      await vi.waitFor(() => expect(aborted).toHaveLength(1));
+      expect(Date.now() - started).toBeLessThan(1_000);
+      // One agent giving up does not cancel the listing every reader shares:
+      // it runs to the end under its own deadline and is kept, and the retries
+      // meanwhile wait on that same listing instead of starting another.
+      await vi.waitFor(
+        () =>
+          expect(
+            service({ services: queries, serviceDirectoryTimeoutMs: 50 }).create(principal(), INPUT)
+          ).resolves.toMatchObject({ status: 'awaiting_owner', serviceSlug: 'gmail' }),
+        { timeout: 5_000, interval: 100 }
+      );
+      expect(aborted).toEqual([]);
+      expect(calls).toHaveLength(9);
     });
 
     it('answers "try again" on time even when a route ignores the signal', async () => {
@@ -948,7 +963,7 @@ describe('ConnectorAgentRequestService', () => {
       expect(db.select().from(connectionOperationGrants).all()).toEqual(before);
     });
 
-    it('does not count "Every agent" on a managed account, which the server never honours', async () => {
+    it('counts "Every agent" on a managed account once hosted authority has applied it', async () => {
       db.update(connectorProviderInstances)
         .set({ mode: 'managed', custody: 'managed' })
         .where(eq(connectorProviderInstances.id, 'provider-1'))
@@ -957,12 +972,55 @@ describe('ConnectorAgentRequestService', () => {
       const created = await requests.create(principal(), INPUT);
       shareWithEveryAgent(['revision-read']);
 
+      // Nothing hosted has applied yet: the answer waits (DOR-2439).
       await expect(
         requests.resolve(OWNER, created.requestId, {
           decision: 'current_access',
           connectionId: CONNECTION_ID,
         })
-      ).rejects.toMatchObject({ code: 'selection_invalid' });
+      ).rejects.toMatchObject({ code: 'authority_sync_failed' });
+
+      const stamp = NOW.toISOString();
+      db.insert(connectorManagedAuthorityOutbox)
+        .values({
+          commandId: 'every-agent-v1',
+          connectionId: 'connection-1',
+          providerInstanceId: 'provider-1',
+          executionConfigGeneration: 1,
+          ownerKind: 'local_install',
+          ownerId: 'install-1',
+          managedConnectionId: 'private-account-ref',
+          scopeKind: 'every_agent_grants',
+          subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+          scopeVersion: 1,
+          requestHash: 'hash',
+          requestJson: '{}',
+          state: 'applied',
+          createdAt: stamp,
+          updatedAt: stamp,
+        })
+        .run();
+      db.insert(connectorManagedAuthorityScopes)
+        .values({
+          managedConnectionId: 'private-account-ref',
+          scopeKind: 'every_agent_grants',
+          subjectId: EVERY_AGENT_GRANT_SUBJECT_ID,
+          scopeVersion: 1,
+          lastCommandId: 'every-agent-v1',
+          lastCommandHash: 'hash',
+          updatedAt: stamp,
+        })
+        .run();
+
+      await expect(
+        requests.resolve(OWNER, created.requestId, {
+          decision: 'current_access',
+          connectionId: CONNECTION_ID,
+        })
+      ).resolves.toMatchObject({
+        status: 'granted',
+        grantedOperationRevisionIds: ['revision-read'],
+      });
     });
 
     /** Scope this session's use of the account by hand, as Connections does. */

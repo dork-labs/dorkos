@@ -5,8 +5,8 @@
  * The rules, each enforced here or at the one place that feeds this module:
  *
  * - **Only a URL the server's own app list recorded.** The route names a
- *   service id, never a URL. The URL comes from {@link CatalogLogoServiceOptions.sources},
- *   the same catalog read the list itself uses, and a provider client only
+ *   service id, never a URL. The URL comes from {@link CatalogLogoServiceOptions.logoUrlFor},
+ *   a lookup in the server's kept app lists (it never lists a service), and a provider client only
  *   records a logo that is https and on that service's own logo host
  *   (`providers/app-presentation.ts`). An app the list does not carry has no
  *   logo to fetch.
@@ -54,9 +54,6 @@ export const MAX_LOGO_BYTES = 256 * 1024;
 /** How long one logo download may take. */
 const FETCH_TIMEOUT_MS = 5_000;
 
-/** How long the shared app-list read behind a logo miss may take. */
-const SOURCES_TIMEOUT_MS = 30_000;
-
 /** How long a failed logo is left alone before it is tried again. */
 const FAILURE_TTL_MS = 10 * 60_000;
 
@@ -82,10 +79,11 @@ export interface CatalogLogoServiceOptions {
   /** The resolved DorkOS data directory (`lib/dork-home.ts`). */
   readonly dorkHome: string;
   /**
-   * Every listed app a live service sent a logo for: service id to logo URL.
-   * The catalog's own read (`ConnectorOperatorQueryService.logoSources`).
+   * The logo URL the server's kept app lists recorded for one app, or
+   * `undefined` (`ConnectorRegistry.keptLogoUrl`). It only looks in kept
+   * copies, so a logo miss never costs a catalog listing.
    */
-  readonly sources: (signal: AbortSignal) => Promise<ReadonlyMap<string, string>>;
+  readonly logoUrlFor: (serviceSlug: string) => Promise<string | undefined>;
   /** Injected for tests; defaults to the global `fetch`. */
   readonly fetchImpl?: typeof fetch;
   /** Injected for tests; defaults to `Date.now`. */
@@ -95,7 +93,7 @@ export interface CatalogLogoServiceOptions {
 /** Fetches, keeps and serves app logos from `<dorkHome>/cache/connectors/logos/`. */
 export class CatalogLogoService {
   private readonly dir: string;
-  private readonly sources: CatalogLogoServiceOptions['sources'];
+  private readonly logoUrlFor: CatalogLogoServiceOptions['logoUrlFor'];
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
   /** Service id to the suffix of its kept file, read from disk once. */
@@ -104,13 +102,11 @@ export class CatalogLogoService {
   private readonly failures = new Map<string, number>();
   /** Downloads in flight, so two requests for one logo fetch it once. */
   private readonly inFlight = new Map<string, Promise<CatalogLogo | undefined>>();
-  /** The app-list read in flight, shared by every logo miss that arrives meanwhile. */
-  private sourcesRead: Promise<ReadonlyMap<string, string>> | undefined;
 
   /** Bind the service to one install's data directory and its catalog. */
   constructor(options: CatalogLogoServiceOptions) {
     this.dir = path.join(options.dorkHome, 'cache', 'connectors', 'logos');
-    this.sources = options.sources;
+    this.logoUrlFor = options.logoUrlFor;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.now = options.now ?? Date.now;
   }
@@ -199,7 +195,7 @@ export class CatalogLogoService {
 
   private async download(serviceSlug: string): Promise<CatalogLogo | undefined> {
     try {
-      const url = (await this.sharedSources()).get(serviceSlug);
+      const url = await this.logoUrlFor(serviceSlug);
       if (!url) return this.fail(serviceSlug);
       const logo = await this.fetchLogo(url);
       if (!logo) return this.fail(serviceSlug);
@@ -213,15 +209,6 @@ export class CatalogLogoService {
       );
       return this.fail(serviceSlug);
     }
-  }
-
-  private sharedSources(): Promise<ReadonlyMap<string, string>> {
-    // Not the request's signal: one closed tab must not fail every other
-    // request that is waiting on the same read.
-    this.sourcesRead ??= this.sources(AbortSignal.timeout(SOURCES_TIMEOUT_MS)).finally(() => {
-      this.sourcesRead = undefined;
-    });
-    return this.sourcesRead;
   }
 
   private async fetchLogo(url: string): Promise<CatalogLogo | undefined> {

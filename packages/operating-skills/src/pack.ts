@@ -307,8 +307,14 @@ export interface OperatingSkill {
  *   `operating-dorkos` page named its two retired regions, Accounts and
  *   Messaging, so an agent seeded at 32 would send a person to a section that
  *   no longer exists.
+ * - 34: a room turn runs in the agent's own folder, not in its copy of the
+ *   room's files (spec `agent-home-desk`, DOR-2410). `working-in-room-repos`
+ *   teaches working on that copy by full path and `git -C`, and the rule that an
+ *   agent changes its own code in a private worktree of its own repo, never in
+ *   its home checkout. An agent seeded at 33 would edit relative paths believing
+ *   it stands in the copy, and write into its own folder instead.
  */
-export const OPERATING_SKILLS_VERSION = 33;
+export const OPERATING_SKILLS_VERSION = 34;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

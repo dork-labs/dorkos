@@ -20,13 +20,13 @@ function svgResponse(body: BodyInit = SVG, headers: Record<string, string> = {})
 describe('CatalogLogoService', () => {
   let dorkHome: string;
   let now: number;
-  let sources: ReturnType<typeof vi.fn<(signal: AbortSignal) => Promise<Map<string, string>>>>;
+  let logoUrlFor: ReturnType<typeof vi.fn<(serviceSlug: string) => Promise<string | undefined>>>;
   let fetchImpl: ReturnType<typeof vi.fn<typeof fetch>>;
 
   function service() {
     return new CatalogLogoService({
       dorkHome,
-      sources,
+      logoUrlFor,
       fetchImpl: fetchImpl as unknown as typeof fetch,
       now: () => now,
     });
@@ -38,7 +38,9 @@ describe('CatalogLogoService', () => {
     dorkHome = await mkdtemp(path.join(os.tmpdir(), 'dork-logos-'));
     now = 1_000;
     vi.mocked(logger.warn).mockClear();
-    sources = vi.fn(() => Promise.resolve(new Map([['gmail', GMAIL]])));
+    logoUrlFor = vi.fn((serviceSlug: string) =>
+      Promise.resolve(serviceSlug === 'gmail' ? GMAIL : undefined)
+    );
     fetchImpl = vi.fn(() => Promise.resolve(svgResponse()));
   });
 
@@ -64,7 +66,7 @@ describe('CatalogLogoService', () => {
     await expect(restarted.get('gmail')).resolves.toMatchObject({ contentType: 'image/svg+xml' });
     await expect(restarted.keptServiceIds()).resolves.toEqual(new Set(['gmail']));
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    expect(sources).toHaveBeenCalledTimes(1);
+    expect(logoUrlFor).toHaveBeenCalledTimes(1);
   });
 
   it('never fetches for an app the list does not carry, and never for an unsafe id', async () => {
@@ -75,7 +77,8 @@ describe('CatalogLogoService', () => {
     await expect(logos.get('GMAIL')).resolves.toBeUndefined();
 
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(sources).toHaveBeenCalledTimes(1);
+    expect(logoUrlFor).toHaveBeenCalledTimes(1);
+    expect(logoUrlFor).toHaveBeenCalledWith('notion');
   });
 
   it('fetches a logo once when many requests for it arrive together', async () => {
@@ -113,7 +116,7 @@ describe('CatalogLogoService', () => {
   });
 
   it('refuses a recorded URL that is not https', async () => {
-    sources.mockResolvedValue(new Map([['gmail', 'http://logos.composio.dev/api/gmail']]));
+    logoUrlFor.mockResolvedValue('http://logos.composio.dev/api/gmail');
 
     await expect(service().get('gmail')).resolves.toBeUndefined();
 

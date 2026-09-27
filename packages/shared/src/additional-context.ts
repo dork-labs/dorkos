@@ -347,20 +347,21 @@ export interface RoomContextAcknowledgment extends RoomContextAuthor {
  * so nothing is spent saying an absence out loud on every message.
  *
  * **The counts are a fact about the DISPATCH, resolved once before the turn is
- * described.** They are read at the moment the turn's directory is decided, so
- * the section describes the tree the turn actually stands in rather than
- * whatever `main` did while the model was thinking. A merge landing mid-turn
+ * described.** They are read when the turn is placed, so the section describes
+ * the agent's copy as the turn found it rather than whatever `main` did while
+ * the model was thinking. A merge landing mid-turn
  * changes the next turn's numbers, never this one's — the same per-turn pin
  * `ROOM.md` delivery uses (spec §3.3).
  */
 export interface RoomContextFiles {
   /**
-   * The agent's own working copy of the room's files — the directory this turn
-   * runs in, absolute.
+   * The agent's own working copy of the room's files, absolute.
    *
-   * The same string the turn's `cwd` is, said out loud: an agent that is told
-   * "this room has files" and not where they are has to guess, and a guess here
-   * is a write into somebody else's tree.
+   * The turn does NOT stand in it — a room turn runs in the agent's home and
+   * reaches this folder through a write grant (spec `agent-home-desk` §5.1) —
+   * so it is said out loud: an agent told "this room has files" and not where
+   * they are has to guess, and a guess here is a write into its own home or
+   * somebody else's tree.
    */
   worktreePath: string;
   /** The branch checked out in that working copy. */

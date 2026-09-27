@@ -416,12 +416,22 @@ The "Calm Tech" design language specifications:
 
 ## Adding a New Theme Token
 
+A status/severity color (success, warning, error, info, pending) almost certainly already
+exists — use the `status-*` tokens (`bg-status-warning-bg`, `text-status-warning-fg`,
+`text-status-warning-dot` for icons, and their `success`/`error`/`info`/`pending` siblings) rather
+than adding a new one. A bare `bg-warning`/`text-warning`-shaped class is never valid here — it
+silently compiles to nothing, because Tailwind drops an unrecognized utility rather than erroring
+(DOR-2444) — so always reach for the `status-` prefixed name. `apps/client/src/__tests__/status-color-classes.test.ts`
+guards against that class shape reappearing.
+
+The steps below are for a genuinely new, non-status token (a one-off brand accent, say):
+
 1. **Add to `@theme inline`** in `apps/client/src/index.css`:
 
    ```css
    @theme inline {
-     --color-warning: hsl(var(--warning));
-     --color-warning-foreground: hsl(var(--warning-foreground));
+     --color-highlight: hsl(var(--highlight));
+     --color-highlight-foreground: hsl(var(--highlight-foreground));
    }
    ```
 
@@ -429,23 +439,25 @@ The "Calm Tech" design language specifications:
 
    ```css
    :root {
-     --warning: 38 92% 50%; /* amber-500 equivalent */
-     --warning-foreground: 0 0% 9%;
+     --highlight: 38 92% 50%; /* amber-500 equivalent */
+     --highlight-foreground: 0 0% 9%;
    }
 
    .dark {
-     --warning: 38 92% 60%; /* slightly lighter in dark mode */
-     --warning-foreground: 0 0% 9%;
+     --highlight: 38 92% 60%; /* slightly lighter in dark mode */
+     --highlight-foreground: 0 0% 9%;
    }
    ```
 
 3. **Use in components**:
 
    ```tsx
-   <div className="bg-warning text-warning-foreground">Warning</div>
+   <div className="bg-highlight text-highlight-foreground">Highlighted</div>
    ```
 
-4. **Verify**: Check both light and dark modes in browser.
+4. **Verify**: Check both light and dark modes in browser, and confirm text contrast clears
+   4.5:1 on every surface it's painted on — see `apps/client/src/__tests__/status-warning-contrast.test.ts`
+   for the pattern.
 
 ## Troubleshooting
 

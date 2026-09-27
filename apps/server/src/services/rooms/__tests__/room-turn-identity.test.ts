@@ -1,49 +1,30 @@
 /**
  * @vitest-environment node
  *
- * A room turn in a room WITH FILES acts as its agent — and as nobody else
- * (DOR-2091).
+ * A room turn acts as its agent — and as nobody else (DOR-2091, spec
+ * `agent-home-desk` §3, §5.1).
  *
- * Since DOR-1597 such a turn runs in the agent's worktree,
- * `<dorkHome>/rooms/<roomId>/worktrees/<slug>`, which hosts no registered agent.
- * Every runtime answered "who is this?" with an exact lookup of that directory,
- * so the launch minted no identity token, the in-session tools resolved nobody,
- * and with login on every room verb refused as `UNIDENTIFIED_CALLER`. The agent
- * read the message, did the work, and could not say a word: on 2026-09-16 two
- * agents asked a question in one room both went silent this way. With login OFF
- * the same calls fell through to the OPERATOR.
+ * A room turn stands in its agent's HOME (invariant I4), and a room with files
+ * of its own is reached through folder grants rather than by standing in it.
+ * DOR-2091 was a room turn standing in its worktree, a directory that hosts no
+ * registered agent, and minting no identity: with login on every room verb
+ * refused as `UNIDENTIFIED_CALLER`, with login off the calls fell through to
+ * the OPERATOR. At home, identity comes from the registry's exact answer.
  *
  * Driven through the real claude-code launch (`resolveLaunch`), the real
  * in-session tool server (`createDorkOsToolServer`) over an in-memory MCP client,
- * the real identity service and the real rooms capabilities — the path the
- * defect lived on. The working-copy port is a map with the manager's semantics;
- * the manager's own record is pinned against real git in
- * `repo/__tests__/room-worktree-manager.test.ts`.
+ * the real identity service and the real rooms capabilities.
  *
- * Seeded defects, each run red before the fix and after it:
+ * Seeded defects, each run red:
  *
- * - Minting from `getByPath(effectiveCwd)` again (the line the issue named)
- *   reddens "mints the agent's token" and "posts as the agent" in both login
- *   postures — the in-session identity reads the token store, so no mint means
- *   no identity.
- * - Building the tool server's identity from the raw `session.cwd`, as it did
- *   before, reddens "posts as the agent" and both refusal rows in both
- *   postures: login on answers `UNIDENTIFIED_CALLER` (the field report,
- *   exactly), login off posts as the operator.
- * - Dropping the cross-check against the turn's agent reddens "a turn for Ben
- *   in Ana's worktree" in both postures, which then posts as Ana.
- * - Anchoring a working copy nobody vouches for to itself reddens the
- *   unknown-worktree row in both postures.
+ * - Minting from `getByPath(effectiveCwd)` without the turn's agent reddens
+ *   "a turn for Ben that stands in Ana's home" — it posts as Ana.
  * - Anchoring the tools on a bare `session.cwd` again — no `?? effectiveCwd` —
- *   reddens the "re-created with no directory" row in both postures (login on
- *   refuses Ana `UNIDENTIFIED_CALLER`, login off posts as the operator).
- * - Removing that fallback AND answering `none` for a missing directory when
- *   the turn names its agent also reddens the Ben row: his turn posts as the
- *   operator with the cross-check never run. Either layer alone holds it; the
- *   second is pinned on its own in `agent-home.test.ts`.
+ *   reddens the "re-created with no directory" row in both postures.
+ * - Reading identity off a room's copy of its files (the retired room-worktree
+ *   owner source) reddens "a session standing in a room's copy is nobody's".
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
@@ -88,8 +69,8 @@ import {
   getAgentIdentityService,
   initAgentIdentityService,
   resetAgentIdentityService,
+  resolveAgentHome,
   setAgentHomeRegistry,
-  setWorkingCopyOwnerPort,
 } from '../../core/agent-identity/index.js';
 import { resolveLaunch } from '../../runtimes/claude-code/messaging/launch-resolver.js';
 import type { McpServerLaunch } from '../../runtimes/claude-code/messaging/message-sender-shared.js';
@@ -108,10 +89,9 @@ import { clearTestHomes } from '../../core/agent-identity/__tests__/agent-home-f
 
 const ANA = '/agents/ana';
 const BEN = '/agents/ben';
-const WORKTREES = '/dork/rooms/01ROOMWITHFILES/worktrees';
-const ANA_WORKTREE = `${WORKTREES}/ana-1a2b3c4d`;
-/** A working copy by location that the manager never handed to anyone. */
-const STRAY_WORKTREE = `${WORKTREES}/ana-00000000`;
+const ROOMS_DIR = '/dork/rooms';
+/** Ana's copy of a room's files — never where a room turn stands. */
+const ANA_WORKTREE = `${ROOMS_DIR}/01ROOMWITHFILES/worktrees/ana-1a2b3c4d`;
 /** A cockpit session in a plain directory: the control for the refusals. */
 const PLAIN_DIR = '/projects/scratch';
 
@@ -148,7 +128,7 @@ function toolDeps(): McpToolDeps {
   };
 }
 
-describe('a room turn in a room with files', () => {
+describe('a room turn, standing at home', () => {
   let harness: RoomHarness;
   let registry: CapabilityRegistry;
   let roomId: string;
@@ -168,24 +148,16 @@ describe('a room turn in a room with files', () => {
       { kind: 'channel', title: 'Structure', members: [], agentPaths: [ANA, BEN] },
       harness.human
     ).id;
-    // The manager's record: Ana was handed her worktree, and nobody the stray.
     // The registry, read live, so a test that unregisters an agent is seen at once.
     setAgentHomeRegistry({
       isRegisteredHome: (p) => registered.has(p),
       listRegisteredHomes: () => [...registered],
       managedWorkspaceOwner: () => null,
-      roomsDir: null,
-    });
-    setWorkingCopyOwnerPort({
-      ownerOf: (dir) =>
-        path.dirname(path.resolve(dir)) === WORKTREES
-          ? { owner: path.resolve(dir) === ANA_WORKTREE ? ANA : null }
-          : null,
+      roomsDir: ROOMS_DIR,
     });
   });
 
   afterEach(() => {
-    setWorkingCopyOwnerPort(undefined);
     clearTestHomes();
     resetAgentIdentityService();
   });
@@ -204,8 +176,8 @@ describe('a room turn in a room with files', () => {
     options: { sessionHasNoCwd?: boolean } = {}
   ): Promise<{ token: string | undefined; toolLaunch: McpServerLaunch; session: AgentSession }> {
     let toolLaunch: McpServerLaunch | undefined;
-    // A room session created on the worktree rung: its own cwd IS the worktree.
-    // Or, with `sessionHasNoCwd`, the session the store re-creates after a
+    // A room session: its own cwd is where it stands. Or, with
+    // `sessionHasNoCwd`, the session the store re-creates after a
     // restart when a settings PATCH reaches it first (`session-store.ts`
     // `updateSession`), which carries no directory at all.
     const session: AgentSession = {
@@ -290,17 +262,17 @@ describe('a room turn in a room with files', () => {
       installState.loginEnabled = loginEnabled;
     });
 
-    it("mints the agent's token for a turn standing in its worktree", async () => {
-      const { token, toolLaunch } = await launch(ANA_WORKTREE, ANA);
+    it("mints the agent's token for a turn standing in its home", async () => {
+      const { token, toolLaunch } = await launch(ANA, ANA);
 
-      expect(token, 'the worktree hosts no agent; the anchor must find Ana anyway').toBeDefined();
+      expect(token).toBeDefined();
       const identity = await getAgentIdentityService()!.resolve(token!);
       expect(identity?.agentPath).toBe(ANA);
-      expect(toolLaunch.identity).toEqual({ kind: 'home', home: ANA, via: 'room-worktree' });
+      expect(toolLaunch.identity).toEqual({ kind: 'home', home: ANA, via: 'exact' });
     });
 
     it('posts as the agent, not as nobody and not as the operator', async () => {
-      const { session, toolLaunch } = await launch(ANA_WORKTREE, ANA);
+      const { session, toolLaunch } = await launch(ANA, ANA);
 
       const reply = await postFrom(session, toolLaunch, 'here is the plan');
 
@@ -310,9 +282,9 @@ describe('a room turn in a room with files', () => {
       expect(lastAuthor()).not.toBe(harness.human);
     });
 
-    it("refuses a turn for Ben that stands in Ana's worktree: no token, and no post as anyone", async () => {
+    it("refuses a turn for Ben that stands in Ana's home: no token, and no post as anyone", async () => {
       const before = lastAuthor();
-      const { token, session, toolLaunch } = await launch(ANA_WORKTREE, BEN);
+      const { token, session, toolLaunch } = await launch(ANA, BEN);
 
       expect(token).toBeUndefined();
       expect(toolLaunch.identity).toMatchObject({ kind: 'refused' });
@@ -324,7 +296,7 @@ describe('a room turn in a room with files', () => {
     });
 
     it('posts as the agent when the session was re-created with no directory', async () => {
-      const { session, toolLaunch } = await launch(ANA_WORKTREE, ANA, { sessionHasNoCwd: true });
+      const { session, toolLaunch } = await launch(ANA, ANA, { sessionHasNoCwd: true });
 
       const reply = await postFrom(session, toolLaunch, 'still me after a restart');
 
@@ -333,31 +305,11 @@ describe('a room turn in a room with files', () => {
       expect(lastAuthor()).toBe(anaAuthor());
     });
 
-    it("refuses a turn for Ben in Ana's worktree when the session has no directory", async () => {
-      const before = lastAuthor();
-      const { token, session, toolLaunch } = await launch(ANA_WORKTREE, BEN, {
-        sessionHasNoCwd: true,
-      });
-
-      expect(token).toBeUndefined();
-      const reply = await postFrom(session, toolLaunch, 'posting as whoever');
-
-      expect(reply.posted).toBeUndefined();
-      expect(reply.code).toBe('AGENT_IDENTITY_UNVERIFIED');
-      expect(lastAuthor()).toBe(before);
-    });
-
-    it('refuses a worktree whose owner was unregistered — never the operator', async () => {
-      // The owner record outlives registration (DOR-2095 adds a cascade; this
-      // must not depend on it). Seeded: dropping the registry check from the
-      // anchor reddens this row in both postures — login off posts as the
-      // operator, login on refuses `UNIDENTIFIED_CALLER`.
-      // Unregistered before this tree ever launched her, so no token row names
-      // her either — the state where "nobody" used to mean the operator.
+    it('refuses a turn whose agent was unregistered — never the operator', async () => {
       registered.delete(ANA);
       const before = lastAuthor();
 
-      const { token, session, toolLaunch } = await launch(ANA_WORKTREE, ANA);
+      const { token, session, toolLaunch } = await launch(ANA, ANA);
 
       expect(token).toBeUndefined();
       const reply = await postFrom(session, toolLaunch, 'whose am I now?');
@@ -367,18 +319,18 @@ describe('a room turn in a room with files', () => {
       expect(reply.posted).toBeUndefined();
       expect(toolLaunch.identity).toEqual({ kind: 'refused', reason: 'unregistered-owner' });
     });
+  });
 
-    it('refuses a worktree nobody vouches for — never the operator', async () => {
-      const before = lastAuthor();
-      const { token, session, toolLaunch } = await launch(STRAY_WORKTREE, ANA);
+  it('treats a session standing in a room’s copy of its files as nobody’s (I2, after T4)', async () => {
+    // A room's copy is never a desk: a person who opens a session there is in a
+    // folder, not in an agent. The old room-worktree owner source would have
+    // answered Ana here.
+    expect(resolveAgentHome(ANA_WORKTREE)).toEqual({ kind: 'none' });
+    installState.loginEnabled = true;
+    const { token, toolLaunch } = await launch(ANA_WORKTREE, undefined);
 
-      expect(token).toBeUndefined();
-      const reply = await postFrom(session, toolLaunch, 'whose am I?');
-
-      expect(reply.posted).toBeUndefined();
-      expect(reply.code).toBe('AGENT_IDENTITY_UNVERIFIED');
-      expect(lastAuthor()).toBe(before);
-    });
+    expect(token).toBeUndefined();
+    expect(toolLaunch.identity).toEqual({ kind: 'none' });
   });
 
   it('still posts as the operator from a plain cockpit session with login off, which is the control', async () => {

@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as siteSchema from '@/db/schema';
 import {
   applyManagedAuthorityCommand,
+  EVERY_AGENT_GRANT_ROW,
   getManagedAuthorityCommandStatus,
   type ManagedConnectorDatabase,
   registerManagedProvider,
@@ -2609,5 +2610,226 @@ describe('hosted managed authority service', () => {
       })
     ).rejects.toMatchObject({ code: 'forbidden' });
     expect(providerCalls).toBe(0);
+  });
+
+  describe('every-agent grants (DOR-2439)', () => {
+    function succeedingOperations(counter: { dispatches: number }): ComposioOperationClient {
+      return {
+        execute: async (input: Parameters<ComposioOperationClient['execute']>[0]) => {
+          if (!(await input.authorizeDispatch())) {
+            return { status: 'error', code: 'DENIED', message: 'denied', retryable: false };
+          }
+          counter.dispatches += 1;
+          return { status: 'success', data: null };
+        },
+      } as ComposioOperationClient;
+    }
+
+    async function shareWithEveryAgent(
+      seeded: Awaited<ReturnType<typeof seedAuthority>>,
+      scopeVersion: number,
+      revisions: Array<typeof siteSchema.managedConnectorOperationRevision.$inferSelect>,
+      principal = seeded.principal
+    ) {
+      return applyManagedAuthorityCommand(db, principal, {
+        version: 1,
+        kind: 'replace_every_agent_grants',
+        commandId: `every-agent-v${scopeVersion}-${principal.instanceId}`,
+        managedConnectionId: 'gmail-personal',
+        scopeVersion,
+        revisions: revisions.map(revisionSelector),
+      });
+    }
+
+    function everyAgentRequest(
+      seeded: Awaited<ReturnType<typeof seedAuthority>>,
+      overrides: Record<string, unknown> = {}
+    ) {
+      return {
+        version: 1,
+        logicalOperationId: `logical-${String(overrides.agentId ?? 'agent-later')}`,
+        attemptId: `attempt-${String(overrides.agentId ?? 'agent-later')}-${String(overrides.grantScopeVersion ?? 1)}`,
+        attemptIndex: 1,
+        managedConnectionId: 'gmail-personal',
+        agentId: 'agent-later',
+        grantSubject: 'every_agent',
+        grantScopeVersion: 1,
+        attribution: {
+          ...EXECUTION_ATTRIBUTION,
+          actorId: String(overrides.agentId ?? 'agent-later'),
+        },
+        revision: revisionSelector(seeded.revision),
+        arguments: {},
+        ...overrides,
+      };
+    }
+
+    function run(
+      seeded: Awaited<ReturnType<typeof seedAuthority>>,
+      rawRequest: Record<string, unknown>,
+      counter: { dispatches: number },
+      principal = seeded.principal
+    ) {
+      return executeManagedConnectorOperation({
+        db,
+        principal,
+        rawRequest,
+        accounts: seeded.executionAccounts,
+        operations: succeedingOperations(counter),
+        verifyLiveInstance: async () => true,
+        signal: new AbortController().signal,
+      });
+    }
+
+    it('covers an agent the hosted side has never seen, only for the exact shared revision', async () => {
+      const seeded = await seedAuthority();
+      const applied = await shareWithEveryAgent(seeded, 1, [seeded.revision]);
+      expect(applied.status).toMatchObject({ state: 'applied', scopeVersion: 1 });
+      const [row] = await db.select().from(siteSchema.managedConnectorGrant);
+      expect(row).toMatchObject({ agentId: EVERY_AGENT_GRANT_ROW, active: true, scopeVersion: 1 });
+
+      const counter = { dispatches: 0 };
+      // An agent created after the grant was given: no row names it.
+      await expect(run(seeded, everyAgentRequest(seeded), counter)).resolves.toMatchObject({
+        state: 'completed',
+      });
+      expect(counter.dispatches).toBe(1);
+
+      // The same agent without the owner-wide subject has no grant of its own.
+      await expect(
+        run(
+          seeded,
+          everyAgentRequest(seeded, { grantSubject: undefined, attemptId: 'attempt-named' }),
+          counter
+        )
+      ).rejects.toBeInstanceOf(ManagedExecutionUnauthorizedError);
+      // A revision the owner did not share stays off.
+      const newer = await reclassify(seeded.revision);
+      await expect(
+        run(
+          seeded,
+          everyAgentRequest(seeded, {
+            attemptId: 'attempt-reclassified',
+            revision: { ...revisionSelector(seeded.revision), hostedRevisionId: newer },
+          }),
+          counter
+        )
+      ).rejects.toBeInstanceOf(ManagedExecutionUnauthorizedError);
+      expect(counter.dispatches).toBe(1);
+    });
+
+    it('ends at once when the owner stops sharing, for every version of the grant', async () => {
+      const seeded = await seedAuthority();
+      await shareWithEveryAgent(seeded, 1, [seeded.revision]);
+      const stopped = await shareWithEveryAgent(seeded, 3, []);
+      expect(stopped.status).toMatchObject({ state: 'applied', scopeVersion: 3 });
+      const counter = { dispatches: 0 };
+      for (const grantScopeVersion of [1, 3]) {
+        await expect(
+          run(seeded, everyAgentRequest(seeded, { grantScopeVersion }), counter)
+        ).rejects.toBeInstanceOf(ManagedExecutionUnauthorizedError);
+      }
+      // An older command replayed out of order cannot bring it back.
+      const stale = await applyManagedAuthorityCommand(db, seeded.principal, {
+        version: 1,
+        kind: 'replace_every_agent_grants',
+        commandId: 'every-agent-stale',
+        managedConnectionId: 'gmail-personal',
+        scopeVersion: 2,
+        revisions: [revisionSelector(seeded.revision)],
+      });
+      expect(stale.status.state).toBe('superseded');
+      const live = await db
+        .select()
+        .from(siteSchema.managedConnectorGrant)
+        .where(eq(siteSchema.managedConnectorGrant.active, true));
+      expect(live).toHaveLength(0);
+      expect(counter.dispatches).toBe(0);
+    });
+
+    it('ends when the connection is disconnected', async () => {
+      const seeded = await seedAuthority();
+      await shareWithEveryAgent(seeded, 1, [seeded.revision]);
+      // Authority closes in the command's own transaction; the provider
+      // cleanup that follows has no provider here and stays pending.
+      await applyManagedAuthorityCommand(db, seeded.principal, {
+        version: 1,
+        kind: 'set_connection_lifecycle',
+        commandId: 'disconnect',
+        managedConnectionId: 'gmail-personal',
+        scopeVersion: 1,
+        lifecycle: 'disconnected',
+      }).catch(() => undefined);
+      const [row] = await db.select().from(siteSchema.managedConnectorGrant);
+      expect(row).toMatchObject({ agentId: EVERY_AGENT_GRANT_ROW, active: false });
+    });
+
+    it('never lets a named agent stand for every agent', async () => {
+      const seeded = await seedAuthority();
+      const named = await applyManagedAuthorityCommand(db, seeded.principal, {
+        version: 1,
+        kind: 'replace_agent_grants',
+        commandId: 'named-wildcard',
+        managedConnectionId: 'gmail-personal',
+        agentId: EVERY_AGENT_GRANT_ROW,
+        scopeVersion: 1,
+        revisions: [revisionSelector(seeded.revision)],
+      });
+      expect(named.status).toMatchObject({ state: 'rejected', rejectionCode: 'scope_conflict' });
+      expect(await db.select().from(siteSchema.managedConnectorGrant)).toHaveLength(0);
+
+      // With the owner-wide grant live, presenting its row id as an agent id
+      // without the subject is still refused.
+      await shareWithEveryAgent(seeded, 1, [seeded.revision]);
+      const counter = { dispatches: 0 };
+      await expect(
+        run(
+          seeded,
+          everyAgentRequest(seeded, {
+            agentId: EVERY_AGENT_GRANT_ROW,
+            grantSubject: undefined,
+            attemptId: 'attempt-wildcard',
+          }),
+          counter
+        )
+      ).rejects.toBeInstanceOf(ManagedExecutionUnauthorizedError);
+      expect(counter.dispatches).toBe(0);
+    });
+
+    it('never crosses owners or linked instances', async () => {
+      const ownerA = await seedAuthority();
+      const ownerB = await seedAuthority('owner-b', 'instance-b');
+      await shareWithEveryAgent(ownerA, 1, [ownerA.revision]);
+
+      // Owner B's key cannot share owner A's connection, nor use A's sharing.
+      await db
+        .update(siteSchema.managedConnectorConnection)
+        .set({ lifecycle: 'disconnected' })
+        .where(eq(siteSchema.managedConnectorConnection.tenantId, ownerB.tenant.id));
+      const foreign = await shareWithEveryAgent(ownerB, 5, [ownerA.revision], {
+        ...ownerB.principal,
+      });
+      expect(foreign.status.state).not.toBe('applied');
+      const counter = { dispatches: 0 };
+      await expect(
+        run(ownerA, everyAgentRequest(ownerA), counter, ownerB.principal)
+      ).rejects.toBeInstanceOf(ManagedExecutionUnauthorizedError);
+
+      // Another linked instance of the SAME owner cannot use or widen it either:
+      // the grant belongs to the instance the connection was made on.
+      const otherInstance = { ...ownerA.principal, instanceId: 'instance-c', keyId: 'key-c' };
+      const widened = await shareWithEveryAgent(ownerA, 9, [ownerA.revision], otherInstance);
+      expect(widened.status).toMatchObject({
+        state: 'rejected',
+        rejectionCode: 'connection_unavailable',
+      });
+      await expect(
+        run(ownerA, everyAgentRequest(ownerA, { attemptId: 'attempt-c' }), counter, otherInstance)
+      ).rejects.toBeInstanceOf(ManagedExecutionUnauthorizedError);
+      expect(counter.dispatches).toBe(0);
+      const rows = await db.select().from(siteSchema.managedConnectorGrant);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ instanceId: 'instance-a', scopeVersion: 1, active: true });
+    });
   });
 });
