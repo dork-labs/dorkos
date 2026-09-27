@@ -10,7 +10,7 @@ import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-run
 import type { SessionSettings } from '@dorkos/shared/types';
 import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionContext, sessionMetadata, eq, type Db } from '@dorkos/db';
+import { sessionContext, sessionMetadata, eq, sql, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 import {
   SessionLimitStore,
@@ -1488,6 +1488,23 @@ describe('RuntimeRegistry', () => {
         },
       ]);
       expect(allRows()).toEqual([]);
+    });
+
+    it('a context-table failure never stops the settings row (the runtime binding) from moving', async () => {
+      await registry.persistSessionRuntime('old', 'test-mode', A_PERSON);
+      db.run(sql`DROP TABLE session_context`);
+      const warn = vi.spyOn(logger, 'warn');
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(allRows()).toEqual([
+        expect.objectContaining({ sessionId: 'new', runtime: 'test-mode' }),
+      ]);
+      expect(warn).toHaveBeenCalledWith(
+        '[RuntimeRegistry] could not move a session context reading',
+        expect.objectContaining({ fromId: 'old', toId: 'new' })
+      );
+      warn.mockRestore();
     });
 
     it('keeps the newer context reading when both ids hold one', async () => {

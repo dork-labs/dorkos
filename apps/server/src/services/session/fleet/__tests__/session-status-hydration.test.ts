@@ -58,8 +58,20 @@ const opened: string[] = [];
 
 const work = () => path.join(home, '.claude3');
 
+/**
+ * Readings a millisecond apart and strictly increasing: the ledger keeps the
+ * NEWER of two readings of one window, so two taken in the same millisecond
+ * would leave the second one unrecorded.
+ */
+let lastObservedMs = 0;
 function obs(key: string, usedPct: number): LedgerObservation {
-  return { key, usedPct, observedAt: new Date().toISOString(), source: 'sdk_event' };
+  lastObservedMs = Math.max(Date.now(), lastObservedMs + 1);
+  return {
+    key,
+    usedPct,
+    observedAt: new Date(lastObservedMs).toISOString(),
+    source: 'sdk_event',
+  };
 }
 
 /** Open a session the way a subscribe or snapshot does, and read its snapshot status. */
@@ -75,8 +87,15 @@ async function bind(sessionId: string, runtime: string): Promise<void> {
     .run();
 }
 
-async function settleBroadcast(count: number): Promise<void> {
-  await vi.waitFor(() => expect(broadcasts.length).toBeGreaterThanOrEqual(count));
+/**
+ * Wait until an `account_usage` broadcast carries this reading. Waiting on the
+ * VALUE rather than a count, because an earlier reading's throttled broadcast
+ * may land first and satisfy any count.
+ */
+async function settleTo(windowKey: string, usedPct: number): Promise<void> {
+  const carries = (u: AccountUsage): boolean =>
+    u.windows.some(({ key: k, usedPct: pct }) => k === windowKey && pct === usedPct);
+  await vi.waitFor(() => expect(broadcasts.some(carries)).toBe(true));
 }
 
 beforeEach(async () => {
@@ -174,7 +193,7 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
     expect(status.usage).toEqual({ kind: 'pay-as-you-go', costUsd: 0.4 });
 
     store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 60)]);
-    await settleBroadcast(1);
+    await settleTo('five_hour', 60);
     expect(projector.getStatus().usage).toEqual({ kind: 'pay-as-you-go', costUsd: 0.4 });
   });
 
@@ -198,7 +217,7 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
       expect(opened1.usage).toBeNull();
 
       store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 60)]);
-      await settleBroadcast(1);
+      await settleTo('five_hour', 60);
       const after = await open('s-inherit');
       expect(after.accountUsage!.windows[0]).toMatchObject({ usedPct: 60 });
       expect(after.usage).toBeNull();
@@ -241,7 +260,7 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
     expect(other.accountUsage?.accountId).toBe('default');
 
     store.record('claude-code', { path: work() }, [obs('five_hour', 66)]);
-    await settleBroadcast(1);
+    await settleTo('five_hour', 66);
     expect(broadcasts.filter((u) => u.accountId === 'work')).toHaveLength(1);
 
     for (const id of ['s-a', 's-b']) {
@@ -263,7 +282,7 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
       new Date()
     );
     await store.scan();
-    await settleBroadcast(1);
+    await settleTo('seven_day', 81);
     const status = await open('s-cli');
     expect(status.accountUsage!.windows).toEqual([
       expect.objectContaining({ key: 'seven_day', usedPct: 81 }),
@@ -277,9 +296,9 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
     await open('s-idle', 'history');
     const before = events.readAll('s-idle').length;
     store.record('codex', { accountId: 'default' }, [obs('five_hour', 50)]);
-    await settleBroadcast(1);
+    await settleTo('five_hour', 50);
     store.record('codex', { accountId: 'default' }, [obs('five_hour', 51)]);
-    await settleBroadcast(2);
+    await settleTo('five_hour', 51);
     const status = await open('s-idle', 'history');
     expect(status.accountUsage!.windows[0]).toMatchObject({ usedPct: 51 });
     expect(events.readAll('s-idle')).toHaveLength(before);
@@ -288,7 +307,7 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
 
   it('the first send re-stamps the session with the account its launch settled on', async () => {
     store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 20)]);
-    await settleBroadcast(1);
+    await settleTo('five_hour', 20);
     const first = await open('s-hint');
     expect(first.accountUsage?.accountId).toBe('default');
     // The per-send hint named `work`; the launch settles on its folder.
@@ -297,7 +316,7 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
     expect(next.accountUsage?.accountId).toBe('work');
     // And later readings for `work` now reach it.
     store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 21)]);
-    await settleBroadcast(2);
+    await settleTo('five_hour', 21);
     expect((await open('s-hint')).accountUsage!.windows[0]).toMatchObject({ usedPct: 21 });
   });
 

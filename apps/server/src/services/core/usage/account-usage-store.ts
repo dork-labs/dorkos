@@ -551,24 +551,26 @@ export class AccountUsageStore {
    * `accountId: null`, its `path` set), so a client can match the first
    * `account_usage` event for it by (`runtime`, `path`).
    *
+   * Expressed through {@link usageAtPath}, so the two lookups cannot drift:
+   * only the empty memory-only answer is added here.
+   *
    * @param runtime - The session's runtime.
    * @param root - The folder the session runs in.
    */
   peekByRoot(runtime: LedgerRuntime, root: string): AccountUsage {
-    const account = accountForPath(this.accounts, runtime, root, undefined, this.realpath);
-    if (account) return this.usageOfAccount(account);
-    const canonical = canonicalAccountPath(root, undefined, this.realpath);
-    const record: UsageRecord = this.records.get(`${runtime}@${canonical}`) ?? {
+    const found = this.usageAtPath(runtime, root);
+    if (found) return found;
+    const empty: UsageRecord = {
       runtime,
       ledgerId: null,
-      path: canonical,
+      path: canonicalAccountPath(root, undefined, this.realpath),
       ledger: null,
       pending: [],
       subscriptionType: null,
       failures: 0,
     };
     // A memory record always resolves (it is never file-backed).
-    return this.usageOfRecord(record)!;
+    return this.usageOfRecord(empty)!;
   }
 
   /**

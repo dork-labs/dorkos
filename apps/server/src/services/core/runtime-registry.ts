@@ -830,7 +830,17 @@ export class RuntimeRegistry {
     // The context reading moves with the session whether or not it has a
     // settings row (a session can be opened, and so hold a reading, before any
     // setting is chosen).
-    moveSessionContext(db, fromId, toId);
+    // A failure here costs the reading, never the settings row below, which
+    // carries the session's runtime binding.
+    try {
+      moveSessionContext(db, fromId, toId);
+    } catch (err) {
+      logger.warn('[RuntimeRegistry] could not move a session context reading', {
+        fromId,
+        toId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
     const source = db
       .select()
       .from(sessionMetadata)
