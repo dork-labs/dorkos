@@ -493,6 +493,12 @@ already true. The protection is unchanged and server-side: `repo/` found dirty o
 every write path with `MAIN_CHECKOUT_DIRTY` and the operator's repair (ADR 260829-115626); merging is
 still the only sanctioned write path.
 
+The git grants are folders, and two are shared (amended in T4, DOR-2410): write access to
+`repo/.git/objects/` lets an agent overwrite a loose object — git does not re-hash on read, so
+`main`'s content can change without a commit — and `refs/heads/room/` plus its reflog folder let one
+agent move or erase another agent's `room/<slug>` branch. Neither executes code; closing them needs a
+per-agent object store and per-agent refs, which is follow-up work.
+
 ### 5.3 The room context block
 
 `apps/server/src/services/runtimes/shared/room-context-block.ts` `filesLines` (`:561-591`) is rewritten.

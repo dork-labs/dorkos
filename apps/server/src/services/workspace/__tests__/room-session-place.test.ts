@@ -109,6 +109,32 @@ describe('resolveSessionCwdWithRoom', () => {
       });
     });
 
+    it('replaces a folder INSIDE the copy with the home too', async () => {
+      const resolved = await resolveSessionCwdWithRoom(
+        { cwd: `${WORKTREE}/docs`, sessionId: 's1' },
+        place()
+      );
+
+      expect(resolved).toMatchObject({ cwd: AGENT, rung: 'agent-home' });
+    });
+
+    it('keeps an OpenCode session that stands in the copy where it is, with no grants', async () => {
+      // OpenCode cannot move a session to a new folder (spec §8.1).
+      const placeTurn = vi.fn(() =>
+        Promise.resolve({
+          cwd: WORKTREE,
+          additionalDirectories: [],
+          worktree: WORKTREE,
+          standsInCopy: true,
+        })
+      );
+
+      const resolved = await resolveSessionCwdWithRoom({ sessionId: 's1' }, place({ placeTurn }));
+
+      expect(placeTurn).toHaveBeenCalledWith('room-1', AGENT, 'API Bot', 's1');
+      expect(resolved).toEqual({ cwd: WORKTREE, rung: 'explicit', forAgent: AGENT });
+    });
+
     it('keeps the grants for a turn that names the home itself', async () => {
       const resolved = await resolveSessionCwdWithRoom({ cwd: AGENT, sessionId: 's1' }, place());
 
@@ -137,7 +163,7 @@ describe('resolveSessionCwdWithRoom', () => {
         place({ placeTurn })
       );
 
-      expect(placeTurn).toHaveBeenCalledWith('room-1', AGENT, 'API Bot');
+      expect(placeTurn).toHaveBeenCalledWith('room-1', AGENT, 'API Bot', 's1');
       expect(placeTurn).not.toHaveBeenCalledWith('room-1', OTHER, expect.anything());
       expect(resolved).toMatchObject({ cwd: AGENT, forAgent: AGENT });
     });

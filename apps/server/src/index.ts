@@ -3906,6 +3906,7 @@ async function start() {
     bindings: roomStore.sessionLedger,
     authors: roomAuthors,
     worktrees: () => roomWorktrees,
+    sessionRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
   });
 
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).

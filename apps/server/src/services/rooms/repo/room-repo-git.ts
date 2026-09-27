@@ -61,10 +61,26 @@
  *   filter driver, say). So `GIT_DIR`, `GIT_COMMON_DIR` and `GIT_WORK_TREE` are
  *   set from the room's layout, and the only config git reads is `repo/.git`'s,
  *   which no agent is granted.
+ * - **`-c diff.ignoreSubmodules=all` (with `status.submoduleSummary=false` and
+ *   `submodule.recurse=false`).** A submodule is a folder with its OWN git
+ *   config, and an agent can commit a gitlink into its copy beside a `sub/`
+ *   whose `.git/config` names a filter program; `git status` in the copy
+ *   recursed into it and ran that program as the server (measured, with or
+ *   without the pin above). Ignoring submodules stops the recursion; merges
+ *   refuse submodules anyway.
+ * - **Drivers named by committed `.gitattributes` run nothing.** An agent
+ *   writes `.gitattributes`, and a `filter`, `diff` or `merge` attribute names a
+ *   driver — but a driver is only a program when a config git reads defines it.
+ *   The configs the server's git reads are `repo/.git/config` (granted to no
+ *   agent) and nothing else: global and system config are `/dev/null`, and a
+ *   copy's `config.worktree` is read only when `repo/.git/config` turns worktree
+ *   config on, which it never does. Pinned against real git in
+ *   `__tests__/room-turn-place.test.ts`, merge included.
  *
  * **What none of this claims:** a repo-local `.git/hooks/` directory that some
  * other program populated is neutralised by `core.hooksPath`, but nothing here
- * inspects a checkout for hostile content. What this module contributes to a
+ * inspects a checkout for hostile content, and a shell that is NOT sandboxed can
+ * still write `repo/.git/config` itself, as it can any folder. What this module contributes to a
  * SAFE merge is the four reads the policy is made of — {@link aheadBehind},
  * {@link listTree}, {@link readBlob} and {@link shortstat} — plus
  * {@link mergeNoFf}, which is the one command in the domain that can leave a
@@ -120,7 +136,22 @@ const LARGE_OUTPUT_MAX_BUFFER = 64 * 1024 * 1024;
  * refuses a bare repository git merely finds. See the module doc for what
  * the hook and fsmonitor settings were measured to stop.
  */
-const SHARED_CONFIG_ARGS = internalGitArgs();
+const SHARED_CONFIG_ARGS = [
+  ...internalGitArgs(),
+  // **Never look inside a submodule.** An agent can commit a gitlink into its
+  // copy beside a `sub/` holding its own `.git/config` — a folder the agent
+  // wrote, whose filter, textconv or fsmonitor program a status read would run
+  // as the server when git recursed into it. `diff.ignoreSubmodules=all` is what
+  // stops that recursion for `status` and `diff` (measured: `submodule.recurse`
+  // alone does not). Submodules are refused at merge anyway
+  // (`SUBMODULE_NOT_ALLOWED`), so nothing a room keeps depends on them.
+  '-c',
+  'diff.ignoreSubmodules=all',
+  '-c',
+  'status.submoduleSummary=false',
+  '-c',
+  'submodule.recurse=false',
+];
 
 /**
  * Environment variables that point a git command at a DIFFERENT repository's

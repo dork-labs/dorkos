@@ -53,6 +53,7 @@ import type { UiCommand } from '@dorkos/shared/schemas';
 import { getRoomAttachmentStore, getRoomService, tryGetRoomRepoService } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import { assertOwnDesk } from '../core/agent-identity/index.js';
+import { sessionStandsInRoomCopy } from './repo/room-turn-place.js';
 // The one VALUE this module takes from the port, so it comes straight from the
 // port rather than through `room-trigger.js`'s type re-export below: a value
 // import there would load the dispatcher to raise a refusal it hands back to it.
@@ -203,39 +204,6 @@ export async function warnIfTurnCannotPost(opts: {
       cwd: opts.cwd,
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-}
-
-/**
- * Whether a bound session was created standing in the agent's copy of a room's
- * files — which every room turn did before spec `agent-home-desk` — as its
- * runtime reports the session's directory.
- *
- * Asked only of a runtime that cannot move a session to a new folder (OpenCode,
- * §8.1). Never throws: a session its runtime cannot describe is carried on, as
- * before.
- *
- * @param runtime - The runtime the session is bound to.
- * @param sessionId - The bound session.
- * @param request - The turn: its agent's home and its copy of the room's files.
- */
-export async function sessionStandsInRoomCopy(
-  runtime: Pick<AgentRuntime, 'getSession' | 'getSessionCwd'>,
-  sessionId: string,
-  request: Pick<RoomTurnRequest, 'agentPath' | 'worktree'>
-): Promise<boolean> {
-  try {
-    const cwd =
-      runtime.getSessionCwd?.(sessionId) ??
-      (await runtime.getSession(request.agentPath, sessionId))?.cwd;
-    if (typeof cwd !== 'string' || cwd === '') return false;
-    const where = path.resolve(cwd);
-    if (request.worktree !== null && where === path.resolve(request.worktree)) return true;
-    // A copy under an older folder name (the agent was renamed since) is still
-    // a room's copy: `<dorkHome>/rooms/<room>/worktrees/<name>`.
-    return /[\\/]rooms[\\/][^\\/]+[\\/]worktrees[\\/][^\\/]+$/.test(where);
-  } catch {
-    return false;
   }
 }
 

@@ -556,6 +556,22 @@ describe('RoomWorktreeManager', () => {
       expect(await git(['status', '--porcelain=v1'], ana)).toBe('');
     });
 
+    it('keeps the block while the room`s MAIN checkout still holds something it hides', async () => {
+      // `repo/` reads the same `info/exclude`, and `repo/` found dirty stops
+      // every write to the room — so the block is not the worktrees' alone.
+      await service.enable(ROOM_ID, OPERATOR);
+      const dir = await legacyWorktree('ana');
+      const repoDir = store.repoPath(ROOM_ID);
+      await mkdir(path.join(repoDir, PROJECTED_ATTACHMENTS_ROOT), { recursive: true });
+      await writeFile(path.join(repoDir, PROJECTED_ATTACHMENTS_ROOT, 'stray.txt'), 's', 'utf-8');
+      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
+
+      const outcome = await makeManager().retireLegacyPlumbing(ROOM_ID, dir, agentPath('ana'));
+
+      expect(outcome.blockRemoved).toBe(false);
+      expect(await git(['status', '--porcelain=v1'], repoDir)).toBe('');
+    });
+
     it('never deletes a tracked file at a legacy path', async () => {
       // An exclude cannot hide a TRACKED file, so a room that committed its own
       // copy of a pack skill is somebody's work, even when it is byte for byte

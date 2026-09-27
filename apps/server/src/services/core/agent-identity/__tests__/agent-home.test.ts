@@ -477,6 +477,28 @@ describe('assertOwnDesk — the desk guard (spec §3.4, DOR-2356)', () => {
     expect((caught as Error).message).toContain('Set a default folder that belongs to no agent');
   });
 
+  it('refuses a `none` agent whose default folder is a SUBFOLDER of another agent`s home', () => {
+    // The CLI sets the default folder from wherever `dorkos` started, which is
+    // often somewhere inside an agent's project. The resolver never walks up, so
+    // step 2 alone would let it pass.
+    registerTestHomes([ana, ben], { roomsDir });
+    const inside = path.join(ben, 'src');
+    fs.mkdirSync(inside, { recursive: true });
+    let caught: unknown;
+    try {
+      assertOwnDesk(ana, inside, 'none', inside);
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(DeskNotOwnError);
+    expect((caught as Error).message).toContain('inside another agent');
+    // Inside the agent's OWN home is its own business, and still passes.
+    const ownInside = path.join(ana, 'shared');
+    fs.mkdirSync(ownInside, { recursive: true });
+    expect(verdict(ana, ownInside, 'none', ownInside)).toBeNull();
+  });
+
   it('maps the session-cwd rung to a desk binding, telling the two `default`s apart', () => {
     expect(deskBindingFor({ rung: 'agent-home' })).toBe('home');
     expect(deskBindingFor({ rung: 'agent-home', degraded: 'no manifest' })).toBe('home');

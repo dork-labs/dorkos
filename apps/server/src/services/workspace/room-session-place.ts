@@ -22,6 +22,7 @@
  */
 import path from 'node:path';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import { isSameOrInside } from '@dorkos/shared/directory-grants';
 import { logger } from '../../lib/logger.js';
 import { resolveSessionCwd, type ResolveSessionCwdRequest } from './resolve-session-cwd.js';
 import { logResolvedCwd, type ResolvedCwd } from './session-cwd-rung.js';
@@ -34,6 +35,13 @@ export interface RoomSessionTurnPlace {
   additionalDirectories: DirectoryGrant[];
   /** The agent's copy of the room's files, or `null` when the room has none. */
   worktree: string | null;
+  /**
+   * True when this session was created standing in the agent's copy and its
+   * runtime cannot move it (an OpenCode session from before room turns moved
+   * home, spec §8.1). Such a session keeps running in its copy, with no grants.
+   * The room's own next turn starts the room a fresh session at home.
+   */
+  standsInCopy?: boolean;
 }
 
 /** What a session id is worth to a room, as the composition root wires it. */
@@ -56,7 +64,12 @@ export interface RoomSessionPlacePort {
    * Never throws: a room whose files cannot be opened answers the home with no
    * grants.
    */
-  placeTurn(roomId: string, agentPath: string, agentName: string): Promise<RoomSessionTurnPlace>;
+  placeTurn(
+    roomId: string,
+    agentPath: string,
+    agentName: string,
+    sessionId?: string
+  ): Promise<RoomSessionTurnPlace>;
 }
 
 /** What {@link resolveSessionCwdWithRoom} answers: a directory, and for a room session its grants. */
@@ -76,9 +89,11 @@ export type ResolvedSessionPlace = ResolvedCwd & {
  * For a room-bound session:
  *
  * - no `cwd` named → the agent's home, with the room's grants;
- * - a `cwd` naming the agent's copy of the room's files → replaced by the home
- *   (the client resends the directory it last showed, and before this change
- *   that was the copy). Logged at debug;
+ * - a `cwd` naming the agent's copy of the room's files, or a folder inside it →
+ *   replaced by the home (the client resends the directory it last showed, and
+ *   before this change that was the copy). Logged at debug;
+ * - an OpenCode session created in the copy (it cannot move) → kept in its copy,
+ *   with no grants; the room's next turn starts the room a fresh one at home;
  * - a `cwd` naming the home → the home, with the grants;
  * - any other `cwd` → that directory, explicitly, with no grants: the grants
  *   are computed for a turn standing at home.
@@ -106,9 +121,22 @@ export async function resolveSessionCwdWithRoom(
       roomId,
     });
   }
-  const placed = await place.placeTurn(roomId, agentPath, agentName);
+  const placed = await place.placeTurn(roomId, agentPath, agentName, req.sessionId);
+  if (placed.standsInCopy) {
+    const resolved: ResolvedSessionPlace = {
+      cwd: placed.cwd,
+      rung: 'explicit',
+      forAgent: agentPath,
+    };
+    logResolvedCwd(resolved, { sessionId: req.sessionId, roomId });
+    return resolved;
+  }
   let named = req.cwd;
-  if (named !== undefined && placed.worktree !== null && samePath(named, placed.worktree)) {
+  if (
+    named !== undefined &&
+    placed.worktree !== null &&
+    isSameOrInside(path.resolve(named), path.resolve(placed.worktree))
+  ) {
     logger.debug('[cwd] a room session named its copy of the room’s files; it runs at home', {
       sessionId: req.sessionId,
       roomId,

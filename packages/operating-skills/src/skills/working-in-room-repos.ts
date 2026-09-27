@@ -60,9 +60,10 @@ different folder, so:
   file.
 - You never touch another agent's copy, and you never rewrite shared history:
   there is no force-push and no reset anywhere in this design.
-- You can read the room's copy, but your file tools cannot change it. A shell
-  command can write almost anywhere, so the rule is yours to keep: if the room's
-  copy is changed by hand, every merge stops until a person repairs it.
+- Reading the room's copy is always fine. Whether your tools can also change it
+  depends on how you are set up, and a shell command usually can, so the rule is
+  yours to keep: if the room's copy is changed by hand, every merge stops until a
+  person repairs it.
 
 ## Sync before you edit
 

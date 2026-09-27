@@ -58,6 +58,13 @@ each backend was handed exactly each turn's set.
   storage, as it can any folder; agents' own sessions keep a person's hooks on purpose
   (`SESSION_GIT_CONFIG`), so such a write can run in another agent's commit. That is the same
   exposure as that shell writing anywhere else, and is stated, not solved, here.
+- The `objects/` and `refs/heads/room/` grants are shared folders. An agent can overwrite a loose
+  object (git does not re-hash on read, so `main`'s content can change without a commit) and can
+  move or erase another agent's `room/<slug>` branch and reflog. No code runs; closing both needs a
+  per-agent object store and per-agent refs (follow-up).
+- The server's git in a room never recurses into submodules (`diff.ignoreSubmodules=all`): a
+  submodule an agent commits carries its own git config, whose filter program a status read would
+  otherwise run as the server.
 - Three implementations and a conformance case to maintain — the cost 260807-233816 declined.
 - Agents work on files they do not stand among: `git -C` and absolute paths, taught by the context
   block and the skill.
