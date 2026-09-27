@@ -689,6 +689,19 @@ describe('the rooms capability domain', () => {
       return (await call('rooms.get_room', { roomId })) as RoomDetailPayload;
     }
 
+    it('names the operator as an agent reads them, on get_room and find_room (DOR-2458)', async () => {
+      const described = await describeAs(channel.id);
+      const operator = described.members.find((member) => member.authorId === human);
+      expect(operator?.name).toBe('the operator');
+      expect(described.members.some((member) => member.name === 'You')).toBe(false);
+
+      const found = (await call('rooms.find_room', { name: 'Backend' })) as {
+        rooms: RoomDetailPayload[];
+      };
+      const listed = found.rooms[0]!.members.find((member) => member.authorId === human);
+      expect(listed?.name).toBe('the operator');
+    });
+
     /** Ask for one room as somebody else — the positive control on a refusal. */
     function describeAsAgent(roomId: string, agentPath: string): Promise<unknown> {
       return registry.invoke(

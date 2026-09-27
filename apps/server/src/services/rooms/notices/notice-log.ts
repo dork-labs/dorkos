@@ -113,6 +113,12 @@ export interface RoomNoticeLogDeps {
   writer: RoomNoticeWriter;
   /** Read-only here: used to tell a person's message from an agent's. */
   authors: AuthorRegistry;
+  /**
+   * An author's name as an agent reads it (`nameForAgents`, at the start of a
+   * sentence), for a notice that names a PERSON: the text is stored, and the next turn reads it back, so the
+   * operator must never be written into it as the registry's 'You' (DOR-2458).
+   */
+  nameForAgents(authorId: string): string | null;
 }
 
 /** Who a notice is about, named the way the room names them. */
@@ -686,7 +692,7 @@ export class RoomNoticeLog {
     // Both rows exist: the caller passed `requirePersonAuthor` a moment ago, and
     // the subject passed the roster check. The fallbacks cover a row deleted
     // between those checks and this line, and say something true either way.
-    const personName = this.deps.authors.getById(about.byAuthorId)?.displayName ?? 'Somebody';
+    const personName = this.deps.nameForAgents(about.byAuthorId) ?? 'Somebody';
     const agentName = this.deps.authors.getById(about.subjectAuthorId)?.displayName ?? 'An agent';
     if (
       this.write(

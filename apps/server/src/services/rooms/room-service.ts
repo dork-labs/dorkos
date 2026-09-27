@@ -48,7 +48,7 @@ import type {
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
 import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
-import { agentFacingName } from './room-context.js';
+import { nameForAgents } from './room-context.js';
 import type { AuthorRecord, AuthorRegistry } from './author-registry.js';
 import type { CreateBridgedRoomRequest } from './manage/room-bridge-create.js';
 import type { RebridgeRequest } from './manage/room-bridge-lifecycle.js';
@@ -156,8 +156,7 @@ export class RoomService {
    * @param authorId - The author to name.
    */
   nameForAgents(authorId: string): string | null {
-    const author = this.parts.core.authors.getById(authorId);
-    return author ? agentFacingName(this.parts.core, authorId, author.displayName) : null;
+    return nameForAgents(this.parts.core, authorId);
   }
   /**
    * The room's shared canvas — the table, and the single writer that changes it.

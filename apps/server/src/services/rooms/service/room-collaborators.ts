@@ -15,6 +15,7 @@
  *
  * @module server/services/rooms/service/room-collaborators
  */
+import { nameForAgents } from '../room-context.js';
 import { RoomAuthority } from './room-authority.js';
 import { RoomBridgeCreation } from '../manage/room-bridge-create.js';
 import { RoomBridgeLifecycle } from '../manage/room-bridge-lifecycle.js';
@@ -134,7 +135,10 @@ export function createRoomCollaborators(
     broadcaster: core.broadcaster,
     maxOpsPerTurn: core.maxCanvasOpsPerTurn,
     postCanvasEvent: (roomId, input, bind) => systemPosts.postCanvasEvent(roomId, input, bind),
-    displayNameFor: (authorId) => core.authors.getById(authorId)?.displayName ?? 'Somebody',
+    // Canvas sentences are stored and read back by the next turn, so they name
+    // the operator the way an agent must read them (DOR-2458).
+    displayNameFor: (authorId) =>
+      nameForAgents(core, authorId, { sentenceStart: true }) ?? 'Somebody',
     roomRepoPath: core.roomRepoPath,
     ...(core.canvasNow ? { now: core.canvasNow } : {}),
   });

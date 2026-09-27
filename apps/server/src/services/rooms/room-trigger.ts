@@ -194,7 +194,7 @@ import {
   type RoomCollection,
 } from './room-collect.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
-import { agentFacingName, buildRoomContext } from './room-context.js';
+import { agentFacingName, buildRoomContext, nameForAgents } from './room-context.js';
 import type { RoomWorktreeManager } from './repo/room-worktree-manager.js';
 import {
   resolveRoomTurnPlace,
@@ -734,7 +734,11 @@ export class RoomTriggerDispatcher {
 
   constructor(deps: RoomTriggerDeps) {
     this.deps = deps;
-    this.notices = new RoomNoticeLog({ writer: deps.writer, authors: deps.authors });
+    this.notices = new RoomNoticeLog({
+      writer: deps.writer,
+      authors: deps.authors,
+      nameForAgents: (authorId) => nameForAgents(deps, authorId, { sentenceStart: true }),
+    });
     this.collector = new RoomCollector({
       window: deps.collect,
       run: (batch) => this.runCollected(batch),

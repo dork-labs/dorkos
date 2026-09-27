@@ -113,3 +113,64 @@ describe('the operator is named by their own name in an agent`s room context', (
     );
   });
 });
+
+describe('texts the room stores, which the next turn reads back, name the operator too', () => {
+  /** A room with Ana, Bo and the operator, and the texts it has stored. */
+  function roomWithAgents(operatorName: string | null) {
+    const harness = createRoomHarness({
+      agents: agentLookupFor({
+        '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'mention-only' },
+        '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'mention-only' },
+      }),
+      runner: scriptedRunner(() => null),
+      operatorName: () => operatorName,
+    });
+    const room = harness.service.createRoom(
+      {
+        kind: 'channel',
+        title: 'Release train',
+        members: [],
+        agentPaths: ['/agents/ana', '/agents/bo'],
+      },
+      harness.human
+    );
+    const texts = (): string[] =>
+      harness.store.listEntriesFrom(room.id, { afterSeq: 0, limit: 200 }).map((e) => e.body.text);
+    return { harness, room, texts };
+  }
+
+  it('the stop notice: "Dorian stopped Bo", never "You stopped Bo"', async () => {
+    const { harness, room, texts } = roomWithAgents('Dorian');
+    const bo = harness.authors.resolveAgent('/agents/bo', 'Bo').id;
+
+    await harness.service.haltAgent(room.id, bo, harness.human);
+
+    expect(texts().some((t) => t.startsWith('Dorian stopped Bo.'))).toBe(true);
+    expect(texts().some((t) => t.startsWith('You '))).toBe(false);
+  });
+
+  it('the canvas sentence names the operator who opened a discussion', () => {
+    const { harness, room, texts } = roomWithAgents(null);
+    const document = harness.service.canvas.open(room.id, harness.human, {
+      type: 'json',
+      data: {},
+      title: 'plan',
+    });
+    const before = texts().length;
+
+    harness.service.canvas.discuss(room.id, harness.human, document.id);
+
+    const added = texts().slice(before);
+    expect(added).toHaveLength(1);
+    expect(added[0]!.startsWith('The operator started a discussion')).toBe(true);
+  });
+
+  it('the archive notice names the operator when they archive through a tool', () => {
+    const { harness, room, texts } = roomWithAgents('Dorian');
+
+    harness.service.archiveRoomFromTool(room.id, harness.human);
+
+    expect(texts().some((t) => t.startsWith('Dorian put this channel away.'))).toBe(true);
+    expect(texts().some((t) => t.startsWith('You '))).toBe(false);
+  });
+});

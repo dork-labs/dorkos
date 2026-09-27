@@ -16,6 +16,7 @@ import {
   type UserConfig,
 } from '@dorkos/shared/config-schema';
 import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
+import { nameForAgents } from './room-context.js';
 import { configManager } from '../core/config-manager.js';
 import { readOperatorDisplayName } from '../core/config/operator-display-name.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -486,7 +487,17 @@ export function createRoomSubsystem(opts: {
         return 0;
       },
     },
-    displayNameFor: (authorId) => authors.getById(authorId)?.displayName ?? 'Somebody',
+    // Named as an agent reads them: this text reaches agents (DOR-2458).
+    displayNameFor: (authorId) =>
+      nameForAgents(
+        {
+          authors,
+          isOwnerAuthor: (id) => authors.isOwner(id, readOwnerAccount()?.id ?? null),
+          operatorName: readOperatorDisplayName,
+        },
+        authorId,
+        { sentenceStart: true }
+      ) ?? 'Somebody',
     // Read per call, never captured: a person who tells DorkOS in Settings to
     // open CSVs in the plain editor must get that answer from the agent's next
     // open too, and both sides resolve through `canvasContentForFile`.

@@ -131,6 +131,39 @@ export function agentFacingName(
   return deps.operatorName?.() ?? OPERATOR_FALLBACK_NAME;
 }
 
+/** What {@link nameForAgents} needs: the registry, who the owner is, and their name. */
+export interface AgentFacingNameDeps {
+  authors: Pick<AuthorRegistry, 'getById'>;
+  isOwnerAuthor(authorId: string): boolean;
+  operatorName?(): string | null;
+}
+
+/**
+ * An author's name as an agent should read it — {@link agentFacingName} over
+ * the stored row — or `null` when no row carries the id.
+ *
+ * The one reader for every name DorkOS writes where an agent will read it: the
+ * room context, tool results, and the texts a room stores in its log (a
+ * notice, a canvas sentence), which the next turn reads back (DOR-2458).
+ *
+ * @param deps - The registry and the owner facts.
+ * @param authorId - The author to name.
+ * @param opts.sentenceStart - The name opens a sentence DorkOS stores.
+ */
+export function nameForAgents(
+  deps: AgentFacingNameDeps,
+  authorId: string,
+  opts: { sentenceStart?: boolean } = {}
+): string | null {
+  const author = deps.authors.getById(authorId);
+  if (!author) return null;
+  const name = agentFacingName(deps, authorId, author.displayName);
+  // "The operator stopped Bo." — the fallback is a phrase, not a name, so it
+  // takes a capital when it opens a sentence. A person's own name is left
+  // exactly as they wrote it.
+  return opts.sentenceStart && name === OPERATOR_FALLBACK_NAME ? 'The operator' : name;
+}
+
 /** The data this module reads. Everything is synchronous (`better-sqlite3`). */
 export interface RoomContextDeps {
   store: RoomStore;
