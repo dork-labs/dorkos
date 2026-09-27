@@ -1,7 +1,9 @@
 import { FieldCard, FieldCardContent } from '@/layers/shared/ui';
 import type { Entitlements } from '@dork-labs/cloud-api';
-import { formatMicro } from '../lib/micro';
+import { formatCharge, formatCreditsWithMoney, formatPosition } from '@dork-labs/cloud-api/display';
+import { isReadableDenomination, withCreditUnit } from '../lib/credits';
 import { useCloudPlan } from '../model/use-cloud-plan';
+import { UnreadableFigures } from './UnreadableFigures';
 
 /**
  * How each remote-access mode reads in plain words.
@@ -43,6 +45,13 @@ const SUPPORT_WORDING: Record<Entitlements['limits']['support'], string> = {
  * render an account on any plan, including one that did not exist when it was
  * written.
  *
+ * Credit figures are rendered by `@dork-labs/cloud-api/display` in the unit each
+ * response served: included credits and credits bought are positions (rounded
+ * down) with their money value beside them, worked out from the rounded count
+ * so the two always agree; the allowance left is a position; anything owed is
+ * a charge. A response without a unit shows the "couldn't read" line in place
+ * of its figures, never a guessed number.
+ *
  * With no cloud account it renders nothing at all — the panel above it draws the
  * empty state once, for the whole section.
  */
@@ -56,10 +65,23 @@ export function PlanCard() {
 
   const { entitlements, balance } = data;
   const { limits, seats } = entitlements;
-  const includedCredits = formatMicro(limits.includedCreditsMicro);
-  const allowanceLeft = formatMicro(balance?.allowance.remainingMicro);
-  const purchasedLeft = formatMicro(balance?.purchased.remainingMicro);
-  const owed = formatMicro(balance?.owedMicro);
+  const planUnit = entitlements.denomination;
+  const balanceUnit = balance?.denomination;
+  const includedCredits = formatCreditsWithMoney(limits.includedCreditsMicro, planUnit, 'position');
+  const allowanceLeft = withCreditUnit(
+    formatPosition(balance?.allowance.remainingMicro, balanceUnit)
+  );
+  const purchasedLeft = formatCreditsWithMoney(
+    balance?.purchased.remainingMicro,
+    balanceUnit,
+    'position'
+  );
+  // A charge reads exactly "0" only for an exact zero, so any debt at all —
+  // even a sliver that reads "<1" — gets its line.
+  const owedFigure = formatCharge(balance?.owedMicro, balanceUnit);
+  const owed = owedFigure === '0' ? null : withCreditUnit(owedFigure);
+  const unreadable =
+    !isReadableDenomination(planUnit) || (balance !== null && !isReadableDenomination(balanceUnit));
 
   return (
     <FieldCard>
@@ -96,10 +118,12 @@ export function PlanCard() {
               {/* Debt carried from a turn that overran its reservation. It is
                   never folded quietly into a smaller balance — when it exists it
                   gets its own line. */}
-              {owed !== null && owed !== '0.00' && <Fact label="Owed" value={owed} />}
+              {owed !== null && <Fact label="Owed" value={owed} />}
             </dl>
           </div>
         )}
+
+        {unreadable && <UnreadableFigures />}
 
         {/* The permanent, visible distinction between local agents and addressed
             ones. Stated as MECHANISM — what takes a seat — rather than as a

@@ -86,9 +86,9 @@ function ownerColumns(owner: ConnectorOwnerAuthority): {
 
 /**
  * Grant rows that can speak for one agent: its own named grants (and, with a
- * session, that session's grants), plus every-agent grants on connections that
- * are not managed. Hosted authority keys managed grants per named agent, so an
- * every-agent row never counts there (ADR 260926-192625).
+ * session, that session's grants), plus every-agent grants (ADR 260926-192625),
+ * which count on every connection, including one made through a DorkOS account
+ * (DOR-2439).
  */
 function agentGrantRows(agentId: string, sessionId?: string) {
   const named = and(
@@ -108,7 +108,7 @@ function agentGrantRows(agentId: string, sessionId?: string) {
           )
         : named
     ),
-    and(everyAgentGrantSubject(), eq(connectorProviderInstances.mode, 'byo'))
+    everyAgentGrantSubject()
   );
 }
 

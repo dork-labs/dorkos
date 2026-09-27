@@ -249,6 +249,7 @@ import type {
   ConnectorConnectionPatch,
   ConnectorDisconnectImpact,
   ConnectorLifecycleResult,
+  ConnectorProvidersResource,
   ConnectorReconnectRequest,
   ConnectorSessionConnections,
 } from './connector-resource-schemas.js';
@@ -3020,9 +3021,10 @@ export interface Transport
   /**
    * Read every connector provider's setup state (configured, registered,
    * custody stance, disclosure copy, and the honest error text when a
-   * configured provider refused to register). Reference-free by construction.
+   * configured provider refused to register), plus how DorkOS reaches apps
+   * right now and which way new apps use. Reference-free by construction.
    */
-  getConnectorProviders(): Promise<ConnectorProviderStatus[]>;
+  getConnectorProviders(): Promise<ConnectorProvidersResource>;
 
   /**
    * Store a provider's vendor key and reload the provider live — no restart.
@@ -3197,8 +3199,14 @@ export interface Transport
     input: ConnectorManagementReviewDecision
   ): Promise<ConnectorManagementReviewDecisionResult>;
 
-  /** List owner-visible service requests raised by runtime agents. */
-  getConnectorAgentRequests(state?: 'pending' | 'resolved'): Promise<ConnectorAgentRequestItem[]>;
+  /**
+   * List owner-visible service requests raised by runtime agents, by lifecycle
+   * group, and only one conversation's when `sessionId` is given (its chat cards).
+   */
+  getConnectorAgentRequests(
+    state?: 'pending' | 'resolved',
+    sessionId?: string
+  ): Promise<ConnectorAgentRequestItem[]>;
 
   /** Read one exact owner-visible agent service request. */
   getConnectorAgentRequest(requestId: string): Promise<ConnectorAgentRequestItem>;

@@ -107,29 +107,48 @@ Spec: §6.8.
 - **The palette** (§5 of the spec): 8 colors, blue, green, amber, purple, pink, teal, indigo, stone, each at least 3:1 against every surface a dot sits on in both themes. The first four follow the mockups' order. The brief asked the spec to choose it.
 - **Bar color thresholds:** a bar turns amber at 70%, read off the mockups (72% amber, 40% green); the chip's amber rule stays 90% as decided.
 
-## 6. Open design questions
+## 6. Operator approvals of the open questions (2026-09-27)
 
-Listed with a proposed default in the spec, §14. None is decided here; each needs the operator in the visual companion.
+The operator approved the proposed defaults (spec §14), with four answers that differ from what was proposed: Q13 (tone), Q1 (a wait on a flow run goes to flow, not "accept"), Q15 (show a spend line, not nothing) and Q18 (only while out, as a final rule). The orchestrator's behavioral answers are recorded beside them.
 
-- ~~Q0. Notice placement.~~ Decided: A, with the states above.
-- Q1. Flow has no hold: in automatic mode "Wait for reset" and an unchecked "Continue automatically" cannot stop flow's own supervisor.
-- Q2. Can a person pick an account shown as "kept in reserve"?
-- ~~Q3. Wording for a session no flow run owns.~~ Resolved by §4 above; only the picker subtitle wording is this spec's.
-- Q4. Exact place of the sidebar dot among the row's existing marks, and whether the row keeps printing the name.
-- Q5. Drop "· started on this account" from the popover (always true today).
-- Q6. How a window with no reading looks (never as 0%).
-- Q7. The look of the restyled pre-launch picker.
-- Q8. The control for choosing an account's color.
-- Q9. How "+ add" takes a new repo.
-- Q10. The marker's exact look (one muted line with a small icon).
-- Q11. Whether "Continue here anyway" is remembered or per window.
-- Q12. The reset-ready wording ("Acct 4 has reset." + Continue).
-- Q13. Whether the calm states (waiting, reset-ready, moved) keep the red banner tone.
-- Q14. Whether a moved session keeps a tint or text in the sidebar.
-- Q15. Whether and how to show spend-only usage (OpenCode) in Settings.
-- Q16. Cross-runtime fallback per runtime pair, beyond one fleet-wide toggle.
-- Q17. How stale numbers are dimmed.
-- Q18. "Continue on another account →" on a healthy session (S4 cannot move one yet).
-- Q19. The chip's look when only a model is out.
-- Q20. Where one-account and Codex usage bars sit in Settings.
-- Q21. The implicit account's color in the Flow tab.
+- **Q13 (changed):** the banner is **red only while an account is out and needs action**, and **neutral grey** for waiting for the reset, reset ready, and moved.
+- **Q1 (changed):** a "Wait for reset" on a flow run is handed to flow (the advisor waits and resumes; DorkOS does not resume it too).
+- **Q2:** a reserved Main is selectable but dimmed.
+- **Q11:** "Continue here anyway" lasts for this reset window only.
+- **Q15 (changed):** a runtime that reports spend but no windows shows a small "$4.20 spent this month" line in Settings.
+- **Q16:** cross-runtime fallback is one fleet-wide toggle.
+- **Q18 (changed):** "Continue on another account" shows only while the session is out.
+- **Q21:** implicit accounts are stone.
+- **Approved as proposed:** Q4 (dot leads the title, name in the tooltip), Q5 (omit "started on this account"), Q6 (dashed empty track and "unknown"), Q7 (pre-launch chip with a chevron), Q8 (swatch popover plus "Default"), Q9 (inline "owner/name" field), Q10 (one muted line with a small icon), Q12 (reset-ready wording), Q14 (no sidebar tint after a move), Q17 (muted number, "as of" line), Q19 (amber when only a model is out), Q20 (bar placement in Settings).
+
+Spec: §14 (all resolved), §6.5, §6.7, §7.3 N10.
+
+## 7. Flow tab: helping a new user set it up (operator ask via the orchestrator, 2026-09-27)
+
+- A first-visit state that explains the three roles in one plain line each (Main: yours, kept in reserve and used last; Rotation: flow may use it fully; Kept out: flow never uses it), with a link to the guide `docs/use-all-your-accounts.mdx`.
+- When no account is in rotation: "Nothing is in rotation yet, so flow only uses your main account."
+- Built as a notice above the approved rows; anything beyond that is a design question.
+- A core "we found ~/.claude2 on this computer, add it?" prompt was taken to the operator; decided in §8.
+
+Spec: §8.3.
+
+## 8. "Found on this computer" (operator decision, 2026-09-27)
+
+Mockup: [`design/found-accounts.html`](design/found-accounts.html). **Option A chosen** (a list under your accounts); option B (a notice that opens a picker) was not.
+
+- Below the registered accounts in Settings → Runtimes → Claude accounts, a dashed "Found on this computer" group lists unregistered Claude account folders: each with its name (the folder's name), "used N ago" and its path, plus **Add** (primary) and **Dismiss**.
+- A folder that shows org-managed policy files gets an amber "managed by an organization" flag, and its Add is **not** primary: adding it must be deliberate.
+- Dismissed folders stay hidden (saved).
+- The group shows only when at least one unregistered folder exists, and disappears when empty.
+- Nothing is added without a click.
+
+Spec: §6.9, §7.4.
+
+## 9. Four more calls (orchestrator, 2026-09-27)
+
+- **Q22:** the Flow tab's guide link reads "How to use all your accounts".
+- **Q23:** when roles are saved but no account is Main or Rotation, flow has nothing it may use, so the Flow tab shows a notice in the same style as the first-visit notice: "Flow can't use any account yet. Make one account Main or Rotation."
+- Account dots and compact usage bars are not keyboard tab stops. They keep their screen-reader names and show the name in a tooltip on hover; the row or chip around them carries the account name.
+- A window with no reading shows the word "unknown" in the compact usage bar too (with the dashed empty track, Q6).
+
+Spec: §6.0, §8.3, §14.

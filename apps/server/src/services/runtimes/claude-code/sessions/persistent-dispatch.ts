@@ -487,6 +487,9 @@ export class PersistentDispatch {
     // phantom detector (DOR-1087).
     session.contextBreakdown = undefined;
     session.interruptRequestedAt = undefined;
+    // A usage limit is reported once per turn (spec claude-account-fleet D4).
+    session.limitReportedThisTurn = false;
+    session.rejectedLimitThisTurn = undefined;
     // And a Stop belongs to the turn it was pressed during, which the stop
     // RECORD only gets right if this path says so (DOR-1320). On the resume
     // path one query is one turn, so `stoppedQueries` is per-turn by

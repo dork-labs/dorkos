@@ -12,6 +12,7 @@ import { sumContextTokens } from '../context-tokens.js';
 import { advanceUsageLedger, readModelUsageTotals, type TurnUsage } from '../turn-usage.js';
 import type { LedgerWindowObservation } from '@dorkos/shared/account-usage';
 import { recordSessionUsage } from '../../accounts/account-usage-feed.js';
+import { rejectionStopsTurn, reportSessionLimit } from '../../accounts/session-limit.js';
 
 /**
  * Map a Claude rate-limit type to a human-readable window label. Authored
@@ -176,10 +177,27 @@ export async function* mapResultEvent(
       // which every session on that account (and flow) reads.
       const observation = rateLimitObservation(info, new Date());
       if (observation) recordSessionUsage(session, [observation]);
+      // A window that said `rejected` this turn is the one a limit names, even
+      // one extra usage is covering: if the turn still stops, the error that
+      // follows reports this window rather than a guess.
+      if (observation && observation.status === 'rejected') {
+        session.rejectedLimitThisTurn = {
+          window: observation.key,
+          resetsAt: observation.resetsAt ?? null,
+        };
+      }
       yield {
         type: 'session_status',
         data: { sessionId, usage },
       };
+      // The turn stopped on a hard limit (spec claude-account-fleet D4). Not
+      // when extra usage is carrying on in its place: the SDK sends `rejected`
+      // then too, and the turn continues. The ledger above recorded the event
+      // either way, as it came.
+      if (rejectionStopsTurn(info)) {
+        const limitStatus = reportSessionLimit(session, sessionId);
+        if (limitStatus) yield limitStatus;
+      }
     }
     return;
   }
@@ -380,6 +398,12 @@ export async function* mapResultEvent(
         },
       };
     }
+
+    // The turn is over, so its once-per-turn limit report is spent. The turn
+    // starts reset these too; this covers a turn the agent woke itself for,
+    // which no dispatch opened.
+    session.limitReportedThisTurn = false;
+    session.rejectedLimitThisTurn = undefined;
 
     // Always emit done to trigger client cleanup
     yield {

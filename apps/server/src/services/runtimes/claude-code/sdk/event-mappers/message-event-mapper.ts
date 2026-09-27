@@ -3,6 +3,8 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import type { AgentSession, ToolState } from '../../agent-types.js';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from '../sdk-error-mapping.js';
+import { buildApiErrorPart } from '../api-error-record.js';
+import { reportSessionLimit } from '../../accounts/session-limit.js';
 import {
   parseCreatedTaskId,
   buildTaskIdAssignedEvent,
@@ -76,11 +78,14 @@ function extractUiResourceUri(text: string): string | undefined {
  * @param session - In-memory session state (its `lastRequestUsage` is updated from
  *   main-thread assistant messages so the runtime can report current context usage).
  * @param toolState - Mutable tool tracking state (read and written).
+ * @param sessionId - DorkOS session identifier, stamped on a usage-limit
+ *   `session_status`; the session's SDK id when omitted.
  */
 export async function* mapMessageEvent(
   message: SDKMessage,
   session: AgentSession,
-  toolState: ToolState
+  toolState: ToolState,
+  sessionId?: string
 ): AsyncGenerator<StreamEvent> {
   // Backfill tool input from completed assistant message (for MCP tools with empty input)
   if (message.type === 'assistant') {
@@ -126,6 +131,29 @@ export async function* mapMessageEvent(
     // selected model is unavailable). Surface the ones not already reported via
     // the retry / rate-limit / max-tokens channels as a clear error event.
     const assistantError = (message as Record<string, unknown>).error as string | undefined;
+    // A hard usage limit (spec claude-account-fleet D4). It has its own branch
+    // rather than a place in SURFACED_ASSISTANT_ERRORS on purpose: DorkOS has no
+    // copy for it, because the CLI's own sentence ("You've hit your weekly
+    // limit · resets …") says more than any generic phrasing could, and it must
+    // stay UNCATEGORISED, because a category puts a Retry on a card that cannot
+    // honour it until the window resets. The reload path reads the same record
+    // with the same rule (`buildApiErrorPart`), so live and reload agree
+    // (DOR-1649). Transient 429s ride `api_retry` and never reach here.
+    if (assistantError === 'rate_limit') {
+      const noticeText = apiErrorNoticeText(assistantBody) ?? '';
+      const part = buildApiErrorPart('rate_limit', noticeText);
+      yield {
+        type: 'error',
+        data: {
+          message: part.message,
+          code: 'rate_limit',
+          ...(part.category !== undefined && { category: part.category }),
+          ...(part.details !== undefined && { details: part.details }),
+        },
+      };
+      const limitStatus = reportSessionLimit(session, sessionId ?? session.sdkSessionId);
+      if (limitStatus) yield limitStatus;
+    }
     if (assistantError && SURFACED_ASSISTANT_ERRORS.has(assistantError)) {
       // The CLI writes its own sentence for the failure as the message's one
       // text block ("API Error: … safeguards flagged this message … Request

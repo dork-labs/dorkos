@@ -8,8 +8,10 @@ export interface ManagedConnectorExecutionContext {
   readonly agentId: string;
   /** One-based attempt index within the broker's logical operation. */
   readonly attemptIndex: number;
-  /** Exact hosted agent-grant scope version that must authorize dispatch. */
+  /** Exact hosted grant scope version that must authorize dispatch. */
   readonly grantScopeVersion: number;
+  /** Which hosted scope that version names; absent means the agent's own, `every_agent` the owner-wide grant (DOR-2439). */
+  readonly grantSubject?: 'agent' | 'every_agent';
   /** Private hosted revision identity from the granted immutable local revision. */
   readonly hostedRevisionId: string;
   /** Verified local caller attribution retained by hosted usage evidence. */

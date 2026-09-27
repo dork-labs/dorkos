@@ -9,7 +9,7 @@ export function RelayAdaptersDialog({ onClose }: PromoDialogProps) {
 
   const handleSetUp = () => {
     onClose();
-    openConnections('messaging');
+    openConnections();
   };
 
   return (

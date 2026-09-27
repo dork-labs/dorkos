@@ -36,21 +36,31 @@ export const IMPLICIT_ACCOUNT_ID = 'default';
 export const ACCOUNT_COLOR_PATTERN = /^#[0-9a-f]{6}$/;
 
 /**
- * The positional default colors for accounts with no stored color.
+ * The positional default colors for accounts with no stored color, in
+ * default-by-position order: blue, green, amber, purple, pink, teal, indigo,
+ * stone. Owned by the `claude-account-ui` spec.
  *
- * Provisional: the UI track owns these values, and nothing persists them (a
- * stored `color: null` means "the default for this position", resolved at read
- * time), so they may change freely.
+ * Each value is at least 3:1 (WCAG non-text contrast) against all six surfaces
+ * an account dot sits on: light `#ffffff`, `#fafafa` (background) and
+ * `#e8e8e8` (sidebar), and dark `#0a0a0a`, `#1a1a1a` (sidebar) and `#262626`
+ * (hover and muted). So one hex per account works in both themes, which the
+ * contract needs because it stores one value. The first four follow the
+ * decided mockups. There is no red, because red means "out of usage" in this
+ * UI. A hand-stored `#rrggbb` outside the palette still renders.
+ *
+ * Nothing persists these values: a stored `color: null` means "the default for
+ * this position", resolved at read time, so changing them needs no config
+ * migration.
  */
 export const DEFAULT_ACCOUNT_COLORS: readonly string[] = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#8b5cf6',
-  '#ef4444',
-  '#06b6d4',
-  '#ec4899',
-  '#84cc16',
+  '#2f7be0',
+  '#1d8a4a',
+  '#c2680a',
+  '#9b51e0',
+  '#d6336c',
+  '#0d9488',
+  '#6366f1',
+  '#78716c',
 ];
 
 /** Wrap any integer position into the default palette, negatives included. */

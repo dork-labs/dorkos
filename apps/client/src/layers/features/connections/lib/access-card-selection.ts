@@ -180,6 +180,41 @@ export function cardDecision(
   return { changes, removedAgentIds, downgradedAgentIds, needsLevel };
 }
 
+/** What an agent's request for an app asks of the card's two levels. */
+export interface RequestedLevel {
+  /** The lowest level that covers everything asked for that a level can cover. */
+  level: CardAccessLevel;
+  /** Operations asked for that no level covers (destructive, or not available on this account). */
+  uncovered: string[];
+  /** Operations asked for that only Read and write covers. */
+  needsWrite: string[];
+}
+
+/**
+ * Read an agent's requested operations against one account's snapshot, so the
+ * chat card starts on the level the agent actually asked for rather than on
+ * Read, and can say plainly what a lower level, or either level, leaves out.
+ *
+ * @param candidates - The account's complete operation snapshot.
+ * @param requestedOperations - The operation slugs the agent asked for.
+ */
+export function levelForRequest(
+  candidates: ConnectorReconciliationCandidate[],
+  requestedOperations: readonly string[]
+): RequestedLevel {
+  const uncovered: string[] = [];
+  const needsWrite: string[] = [];
+  for (const operation of requestedOperations) {
+    const candidate = candidates.find((item) => item.operationSlug === operation && item.supported);
+    if (!candidate || candidate.capabilityClassification === 'destructive') {
+      uncovered.push(operation);
+    } else if (candidate.capabilityClassification === 'write') {
+      needsWrite.push(operation);
+    }
+  }
+  return { level: needsWrite.length > 0 ? 'read-write' : 'read', uncovered, needsWrite };
+}
+
 /** The page card's two answers to "Who can use it?" (DOR-2420). */
 export type WhoCanUse = 'picked' | 'every';
 
@@ -302,4 +337,28 @@ export function everyAgentCanDelete(
       shared.has(candidate.operationRevisionId) &&
       candidate.capabilityClassification === 'destructive'
   );
+}
+
+/**
+ * What one agent can do on an account today, counting an "Every agent" grant
+ * as well as its own: the chat card's question is whether THIS agent can use
+ * the app, and an agent covered by "Every agent" already can. An every-agent
+ * grant the server does not honour (a managed account) is left out, exactly as
+ * the server's own check leaves it out.
+ *
+ * @param preview - Server snapshot.
+ * @param agentId - The agent the question is about.
+ * @param countEveryAgent - Whether "Every agent" counts. Only a card answering
+ *   an agent's request counts it: there the question is "can it already?".
+ *   Setting an agent's own access on its own does not.
+ */
+export function agentHeldAccess(
+  preview: ConnectorReconciliationPreview,
+  agentId: string,
+  countEveryAgent = true
+): HeldAccess {
+  const own = selectionsFromPreview(preview)[agentId] ?? [];
+  const shared =
+    countEveryAgent && preview.everyAgent.available ? preview.everyAgent.operationRevisionIds : [];
+  return heldAccess(preview.candidates, [...new Set([...own, ...shared])]);
 }

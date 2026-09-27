@@ -48,20 +48,18 @@ function formatInstallError(err: unknown): string {
  * - A **Shape** is staged, not activated, so its toast carries an "Apply…"
  *   action that opens the Shape switcher landed on the just-installed Shape
  *   (highlighted, never auto-applied).
- * - An **adapter** just became a Connection, so its toast deep-links to the
- *   matching Connections region — Messaging for a messaging adapter, Accounts
- *   for a connector-refinement one — the seam between the marketplace word
- *   ("adapter") and the user word ("connection"), said out loud (ADR
- *   260804-021140).
+ * - An **adapter** just became something on the Connections page, so its toast
+ *   links there: the seam between the marketplace word ("adapter") and the
+ *   user word ("connection"), said out loud (ADR 260804-021140).
  *
  * @param result - The install outcome (its `type` and `adapterType` decide the action).
  * @param toastId - The loading toast id to replace in place.
- * @param goToRegion - Navigates to one of the Connections regions.
+ * @param openConnections - Navigates to the Connections page.
  */
 function successToastOptions(
   result: InstallResult,
   toastId: string | number,
-  goToRegion: (region: 'messaging' | 'accounts') => void
+  openConnections: () => void
 ) {
   // An install can land and still leave something undone — most often its npm
   // libraries, which warn rather than fail so the package's own files are not
@@ -84,8 +82,8 @@ function successToastOptions(
       id: toastId,
       description,
       action: {
-        label: bridge.region === 'messaging' ? 'Open Messaging' : 'Open Accounts',
-        onClick: () => goToRegion(bridge.region),
+        label: 'Open Connections',
+        onClick: () => openConnections(),
       },
     };
   }
@@ -132,7 +130,7 @@ function successToastOptions(
  */
 export function useInstallWithToast() {
   const install = useInstallPackage();
-  const goToRegion = useOpenConnections();
+  const openConnections = useOpenConnections();
   const { mutate: baseMutate, mutateAsync: baseMutateAsync } = install;
 
   const mutate = useCallback(
@@ -141,14 +139,17 @@ export function useInstallWithToast() {
       const toastId = toast.loading(`Installing ${label}…`);
       baseMutate(args, {
         onSuccess: (result) => {
-          toast.success(`Installed ${label}`, successToastOptions(result, toastId, goToRegion));
+          toast.success(
+            `Installed ${label}`,
+            successToastOptions(result, toastId, openConnections)
+          );
         },
         onError: (err) => {
           toast.error(formatInstallError(err), { id: toastId });
         },
       });
     },
-    [baseMutate, goToRegion]
+    [baseMutate, openConnections]
   );
 
   const mutateAsync = useCallback(
@@ -157,14 +158,14 @@ export function useInstallWithToast() {
       const toastId = toast.loading(`Installing ${label}…`);
       try {
         const result = await baseMutateAsync(args);
-        toast.success(`Installed ${label}`, successToastOptions(result, toastId, goToRegion));
+        toast.success(`Installed ${label}`, successToastOptions(result, toastId, openConnections));
         return result;
       } catch (err) {
         toast.error(formatInstallError(err), { id: toastId });
         throw err;
       }
     },
-    [baseMutateAsync, goToRegion]
+    [baseMutateAsync, openConnections]
   );
 
   return { ...install, mutate, mutateAsync };

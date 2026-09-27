@@ -56,6 +56,11 @@ interface ConnectDialogProps {
    * or hands a request-bound connection back to its request.
    */
   onChooseAccess: (connectionId: string) => void;
+  /**
+   * The person finished a standalone connection (the access step done or
+   * skipped); the page opens the new app's panel next, where "Try it" waits.
+   */
+  onConnected?: (connectionId: string) => void;
 }
 
 function authenticationGuidance(
@@ -92,7 +97,11 @@ function authenticationAction(
   return route?.authKind === 'none' ? 'Check connection' : 'Continue';
 }
 
-/** Durable service authentication flow with provider disclosure before authorization. */
+/**
+ * Durable service authentication flow with provider disclosure before
+ * authorization. The page mounts it only while it is open; a sign-in left
+ * open in the address shows as a "Connecting" row in the list instead.
+ */
 export function ConnectDialog({
   service,
   flowId,
@@ -100,6 +109,7 @@ export function ConnectDialog({
   onFlowIdChange,
   onClose,
   onChooseAccess,
+  onConnected,
 }: ConnectDialogProps) {
   const [open, setOpen] = useState(Boolean(service || flowId));
   const [label, setLabel] = useState('');
@@ -169,19 +179,8 @@ export function ConnectDialog({
     }
   };
 
-  const terminal =
-    activeFlow?.state === 'connected' ||
-    activeFlow?.state === 'failed' ||
-    activeFlow?.state === 'expired' ||
-    activeFlow?.state === 'start_unknown';
-
   return (
     <>
-      {!open && flowId && !terminal && (
-        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-          Resume {serviceName} connection
-        </Button>
-      )}
       <ResponsiveDialog
         open={open}
         onOpenChange={(next) => {
@@ -381,15 +380,21 @@ export function ConnectDialog({
             ) : activeFlow.state === 'connected' && !agentRequestId ? (
               <div className="space-y-4">
                 <p className="flex items-center gap-2 text-sm font-medium">
-                  <CheckCircle2 className="text-success size-4" aria-hidden />
+                  <CheckCircle2 className="text-status-success size-4" aria-hidden />
                   <span>{serviceName} is connected</span>
                 </p>
                 <ConnectionAccessCard
                   mode="page"
                   connectionId={activeFlow.connectionId}
                   serviceName={serviceName}
-                  onSkip={finish}
-                  onFinished={finish}
+                  onSkip={() => {
+                    finish();
+                    onConnected?.(activeFlow.connectionId);
+                  }}
+                  onFinished={() => {
+                    finish();
+                    onConnected?.(activeFlow.connectionId);
+                  }}
                   onEditExactActions={(connectionId) => {
                     onChooseAccess(connectionId);
                     finish();
@@ -398,8 +403,8 @@ export function ConnectDialog({
               </div>
             ) : activeFlow.state === 'connected' ? (
               <div className="space-y-4">
-                <div className="bg-success/5 flex items-start gap-3 rounded-lg p-4">
-                  <CheckCircle2 className="text-success mt-0.5 size-5" aria-hidden />
+                <div className="bg-status-success/5 flex items-start gap-3 rounded-lg p-4">
+                  <CheckCircle2 className="text-status-success mt-0.5 size-5" aria-hidden />
                   <div>
                     <p className="text-sm font-medium">{serviceName} is connected</p>
                     <p className="text-muted-foreground mt-1 text-xs">

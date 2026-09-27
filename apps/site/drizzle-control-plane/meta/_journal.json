@@ -15,6 +15,13 @@
       "when": 1790383940197,
       "tag": "0001_account_issuer_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790531940882,
+      "tag": "0002_connector_tenant_owner_not_unique",
+      "breakpoints": true
     }
   ]
 }

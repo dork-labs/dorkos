@@ -57,6 +57,10 @@ export const V1_ROUTES = {
   remoteCredentialsConfirm: '/v1/remote/credentials/confirm',
   remoteCommands: '/v1/remote/commands',
   remoteCommandsAck: '/v1/remote/commands/ack',
+  /**
+   * Batched activity from an instance. Every request names its batch in the
+   * `REMOTE_EVENTS_IDEMPOTENCY_HEADER` header.
+   */
   remoteEvents: '/v1/remote/events',
   /** Where the caller's account stands against the remote limits, answered with `RemoteUsageResponseSchema`. */
   remoteUsage: '/v1/remote/usage',

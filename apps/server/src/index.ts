@@ -59,7 +59,10 @@ import { TaskStore } from './services/tasks/task-store.js';
 import { createNotificationsRouter } from './routes/notifications.js';
 import { createPushRouter } from './routes/push.js';
 import { NotificationStore } from './services/notifications/notification-store.js';
-import { wireLiveChangeBroadcasts } from './services/core/streams/live-change-broadcasts.js';
+import {
+  connectorAgentRequestsChangedAnnouncer,
+  wireLiveChangeBroadcasts,
+} from './services/core/streams/live-change-broadcasts.js';
 import { NOTIFICATION_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { PushSubscriptionStore } from './services/notifications/push-subscription-store.js';
 import { WebPushChannel } from './services/notifications/channels/web-push.js';
@@ -128,6 +131,7 @@ import { ConnectorEventNativeDestination } from './services/connectors/events/ch
 import { UnclaimedChatStore } from './services/relay/unclaimed-chat-store.js';
 import { createUnclaimedChatsRouter } from './routes/unclaimed-chats.js';
 import { ConnectorRegistry } from './services/connectors/registry.js';
+import { ConnectorCatalogCache } from './services/connectors/resources/catalog-cache.js';
 import { createRawMcpPendingConnectResolver } from './services/connectors/resources/raw-mcp-pending-connect.js';
 import { ConnectorProviderBootstrapper } from './services/connectors/bootstrap.js';
 import { SessionConnectorAttachmentStore } from './services/connectors/attachment-store.js';
@@ -527,6 +531,8 @@ import {
   setMessageQueueStore,
   setSessionEventStore,
   setStagedContextStore,
+  SessionLimitStore,
+  setSessionLimitStore,
   getMessageQueueStore,
   getStagedContextStore,
   reconcileSessionRows,
@@ -998,6 +1004,9 @@ async function start() {
   const connectorRegistry = new ConnectorRegistry({
     db,
     configuredOwner: { ownerKind: 'local_install', ownerId: connectorInstallationId },
+    catalogCache: new ConnectorCatalogCache({
+      dir: path.join(dorkHome, 'cache', 'connectors', 'catalog'),
+    }),
   });
   const connectorAuthorityCleanup = new ConnectorAuthorityCleanupService({ db });
   const connectorBootEpoch = randomUUID();
@@ -1037,6 +1046,11 @@ async function start() {
   // the person "Added context for the next reply" on a stream that survives a
   // restart, so what that receipt points at has to survive one too (DOR-1324).
   setStagedContextStore(new StagedContextStore(db));
+
+  // A session's usage limit, kept so a restart or an idle eviction does not
+  // turn a limited session back into a merely failed one (spec
+  // claude-account-fleet D4).
+  setSessionLimitStore(new SessionLimitStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
@@ -3338,6 +3352,10 @@ async function start() {
         },
         nudge: nudgePrivateSession,
       },
+      // A request a room's own turn raised is answered in that room; the
+      // binding follows a session's rekey, so it is read when a card is read.
+      roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
+      onChanged: connectorAgentRequestsChangedAnnouncer(eventFanOut),
     });
     void connectorAgentRequests.reconcile().catch((error: unknown) => {
       logger.warn('[Connections] Could not recover agent service requests', logError(error));

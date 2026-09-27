@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { connectorProviderInstances, createDb, eq, runMigrations, type Db } from '@dorkos/db';
 import { FakeConnectorProvider } from '@dorkos/test-utils';
 import type {
@@ -7,6 +10,7 @@ import type {
   ProviderConnectedAccount,
 } from '@dorkos/shared/connector-provider';
 import type { ConnectionId } from '@dorkos/shared/connector-schemas';
+import { ConnectorCatalogCache } from '../resources/catalog-cache.js';
 import { ConnectorRegistry } from '../registry.js';
 
 /** A provider whose `listAccounts` always rejects — the degradation case. */
@@ -243,5 +247,74 @@ describe('ConnectorRegistry', () => {
     const { warnings } = await registry.listAccounts();
     expect(warnings).toHaveLength(1);
     expect(warnings[0]!.message).toMatch(/timed out/);
+  });
+
+  describe('kept app lists', () => {
+    const signal = () => new AbortController().signal;
+
+    it('keeps a provider app list on disk across a restart with the same setup', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'dorkos-registry-catalog-'));
+      try {
+        const boot = () =>
+          new ConnectorRegistry({ db, catalogCache: new ConnectorCatalogCache({ dir }) });
+        const first = new FakeConnectorProvider({ type: 'composio' });
+        const firstPages = vi.spyOn(first, 'listToolkitPage');
+        const before = boot();
+        before.register(first, 'material-a');
+        await before.readCatalog(first, signal());
+        expect(firstPages).toHaveBeenCalledTimes(1);
+
+        // A restart registers a new object for the same instance and key.
+        const second = new FakeConnectorProvider({ type: 'composio' });
+        const secondPages = vi.spyOn(second, 'listToolkitPage');
+        const after = boot();
+        after.register(second, 'material-a');
+        const read = await after.readCatalog(second, signal());
+
+        expect(read.status).toBe('ok');
+        expect(secondPages).not.toHaveBeenCalled();
+
+        // Removing the service deletes its file.
+        after.unregisterProviderInstance(second.instanceId);
+        await vi.waitFor(async () => expect(await fs.readdir(dir)).toEqual([]));
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('drops the kept list when the provider is removed or replaced', async () => {
+      const provider = new FakeConnectorProvider({ type: 'composio' });
+      const pages = vi.spyOn(provider, 'listToolkitPage');
+      registry.register(provider, 'material-a');
+      await registry.readCatalog(provider, signal());
+      await registry.readCatalog(provider, signal());
+      expect(pages).toHaveBeenCalledTimes(1);
+
+      registry.unregisterProviderInstance(provider.instanceId);
+      await expect(registry.readCatalog(provider, signal())).rejects.toThrow(
+        'composio is no longer set up.'
+      );
+
+      registry.register(provider, 'material-a');
+      await registry.readCatalog(provider, signal());
+      expect(pages).toHaveBeenCalledTimes(2);
+
+      // Registering over a live instance in place is a setup change too.
+      const replacement = new FakeConnectorProvider({ type: 'composio' });
+      const replacementPages = vi.spyOn(replacement, 'listToolkitPage');
+      registry.register(replacement, 'material-a');
+      await registry.readCatalog(replacement, signal());
+      expect(replacementPages).toHaveBeenCalledTimes(1);
+    });
+
+    it('finds the providers for a service from the kept list', async () => {
+      const provider = new FakeConnectorProvider({ type: 'composio' });
+      const pages = vi.spyOn(provider, 'listToolkitPage');
+      registry.register(provider, 'material-a');
+
+      expect((await registry.providersForToolkit('gmail')).providers).toEqual([provider]);
+      expect((await registry.providersForToolkit('missing')).providers).toEqual([]);
+      expect(pages).toHaveBeenCalledTimes(1);
+    });
   });
 });

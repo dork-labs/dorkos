@@ -31,6 +31,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 import {
+  connectorAgentRequestsChangedAnnouncer,
   wireLiveChangeBroadcasts,
   type AgentsChangedSource,
   type CommunityConnectionsSource,
@@ -389,5 +390,26 @@ describe('a throwing fan-out', () => {
     });
 
     expect(() => ownMesh.fire(AGENT_CHANGE)).toThrow('fan-out exploded');
+  });
+});
+
+describe('connector_agent_requests_changed', () => {
+  it('reaches an operator window with a stamp and nothing about the request', () => {
+    const fanOut = recordingFanOut();
+    const announce = connectorAgentRequestsChangedAnnouncer(fanOut, () => '2026-09-26T12:00:00Z');
+
+    announce();
+
+    const { data } = fanOut.only('connector_agent_requests_changed');
+    expect(data).toEqual({ changedAt: '2026-09-26T12:00:00Z' });
+    expect(fanOut.reaches('connector_agent_requests_changed', { kind: 'operator' })).toBe(true);
+  });
+
+  it('never reaches an agent, which must not learn what another agent asked for', () => {
+    const fanOut = recordingFanOut();
+    connectorAgentRequestsChangedAnnouncer(fanOut)();
+
+    expect(fanOut.only('connector_agent_requests_changed').audience).toBeDefined();
+    expect(fanOut.reaches('connector_agent_requests_changed', { kind: 'agent' })).toBe(false);
   });
 });

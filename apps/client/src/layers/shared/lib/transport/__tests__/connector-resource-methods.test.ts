@@ -75,6 +75,12 @@ describe('connector resource transport methods', () => {
     await setup().getConnectorAgentRequests('pending');
     expect(lastCall()[0]).toBe('http://localhost:4242/api/connectors/agent-requests?state=pending');
 
+    stubFetch({ requests: [] });
+    await setup().getConnectorAgentRequests(undefined, 'session/a');
+    expect(lastCall()[0]).toBe(
+      'http://localhost:4242/api/connectors/agent-requests?sessionId=session%2Fa'
+    );
+
     stubFetch({ requestId: 'request/a', status: 'denied' });
     await setup().resolveConnectorAgentRequest('request/a', { decision: 'denied' });
     const [url, init] = lastCall();

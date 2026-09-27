@@ -30,8 +30,16 @@ import { logger } from '../../lib/logger.js';
 import type { CreatedAgentInfo } from '../core/agent-created-hook.js';
 import type { EndedEveryAgentGrant } from './every-agent-grants.js';
 
-/** Where the Activity links: the page where access is changed. */
-export const EVERY_AGENT_ACTIVITY_LINK = '/connections?region=accounts';
+/**
+ * Where an Activity row links: that app's side panel on the Connections page,
+ * where sharing is changed or stopped, or the page itself when a row names
+ * more than one app.
+ *
+ * @param connectionId - The one connection the row is about, when there is one.
+ */
+export function everyAgentActivityLink(connectionId?: string): string {
+  return connectionId ? `/connections?app=${encodeURIComponent(connectionId)}` : '/connections';
+}
 
 /** Event type for a change to what every agent can do with one connection. */
 export const EVERY_AGENT_CHANGED_EVENT = 'connectors.every_agent_changed';
@@ -135,7 +143,7 @@ export async function recordEveryAgentChange(
     resourceId: change.connectionId,
     resourceLabel: name,
     summary,
-    linkPath: EVERY_AGENT_ACTIVITY_LINK,
+    linkPath: everyAgentActivityLink(change.connectionId),
     metadata: {
       connectionId: change.connectionId,
       operationCount: change.operationCount,
@@ -175,7 +183,9 @@ export function createEveryAgentArrivalReaction(deps: {
       summary: `${agentName} can use ${joinNames(items)}, because ${
         connections.length === 1 ? 'it is' : 'they are'
       } shared with every agent`,
-      linkPath: EVERY_AGENT_ACTIVITY_LINK,
+      linkPath: everyAgentActivityLink(
+        connections.length === 1 ? connections[0]!.connectionId : undefined
+      ),
       metadata: {
         connectionIds: connections.map((grant) => grant.connectionId),
       },
@@ -250,7 +260,7 @@ export function createEveryAgentEndedRecorder(
           reason === 'disconnected'
             ? `Stopped sharing ${name} with every agent because the account was disconnected`
             : `Stopped sharing ${name} with every agent because it now connects through your DorkOS account`,
-        linkPath: EVERY_AGENT_ACTIVITY_LINK,
+        linkPath: everyAgentActivityLink(grant.connectionId),
         metadata: {
           connectionId: grant.connectionId,
           operationCount: 0,

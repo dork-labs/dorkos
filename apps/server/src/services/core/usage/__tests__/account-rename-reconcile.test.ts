@@ -24,6 +24,7 @@ import { TaskStore } from '../../../tasks/task-store.js';
 import type { TaskFileSync } from '../../../tasks/sync/task-file-sync.js';
 import { parseContentKey } from '../../../tasks/schedule-permission-clamp.js';
 import { renameScheduleAccount } from '../../../tasks/approvals/account-rename.js';
+import { SessionLimitStore } from '../../../session/fleet/session-limit-store.js';
 import {
   dropClaudeAccountRenameMarkers,
   resolveLaunchAccountRoot,
@@ -164,8 +165,30 @@ describe('carrying a renamed `default` row through to its references', () => {
   it('moves the manifest, the schedule with its approval, and the SKILL.md, then drops the marker', async () => {
     await writeConfig([renamedRow()]);
     const scheduleId = await scheduleOn('default');
+    const limits = new SessionLimitStore(db);
+    const limitOn = (sessionId: string, accountId: string) =>
+      limits.upsert({
+        sessionId,
+        limit: {
+          accountId,
+          window: 'seven_day',
+          resetsAt: null,
+          since: '2026-09-26T10:00:00.000Z',
+          plan: { mode: 'ask' },
+        },
+        scope: 'account',
+        accountPath: null,
+      });
+    limitOn('limited-on-default', 'default');
     const store = makeStore();
     await store.reconcileAccounts();
+
+    // A stored limit is not a reference to move (spec claude-account-fleet D4):
+    // its row was written after the rename, from the folder the session ran
+    // in, so `default` there is this computer's own sign-in. The renamed row's
+    // folder is a different one, so moving it would mislabel the limit.
+    expect(renamedRow().path).not.toBe(path.join(os.homedir(), '.claude'));
+    expect(limits.get('limited-on-default')?.limit.accountId).toBe('default');
 
     expect(agents.map((a) => [a.id, a.account])).toEqual([
       ['agent-a', 'default-2'],

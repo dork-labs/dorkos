@@ -46,7 +46,7 @@ body is neither.
 | Session and account       | `GET /v1/session`, `GET /v1/account`, `POST /v1/account/export`                                                                                                                                                           |
 | Device link               | `POST /v1/device/code`, `POST /v1/device/token` (RFC 8628)                                                                                                                                                                |
 | Instances                 | heartbeat, revoke, list, organization re-link                                                                                                                                                                             |
-| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                                                                               |
+| Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage, who a grant covers (one agent or every agent)                                |
 | Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                      |
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                 |
 | Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event              |
@@ -200,6 +200,15 @@ matched to their instance. Each close report in `POST /v1/remote/events` may nam
 (`openedAt` beside `at`), the requests in that span and the bytes each way. Byte counts are
 base-10 strings (`ByteCountSchema`), because a long window can move more bytes than a JavaScript
 number holds exactly. A batch without these fields is accepted as before.
+
+Every `POST /v1/remote/events` request names its batch in an `Idempotency-Key` header
+(`REMOTE_EVENTS_IDEMPOTENCY_HEADER`, value `RemoteEventBatchKeySchema`): an opaque string you
+choose, one per batch, at most 200 characters. A request without it is refused with
+`malformed_request`. When a batch's acknowledgement is lost, send it again with the same key;
+when the contents change, use a new key. A key whose batch was already accepted from your instance
+is answered `200` with `{ accepted: 0 }`: the batch was already applied, and nothing in it is
+counted twice. A batch that was refused or failed was not accepted, so retrying it with its key
+applies it.
 
 ### Tunnel credentials: which hostnames, and how a replacement arrives
 

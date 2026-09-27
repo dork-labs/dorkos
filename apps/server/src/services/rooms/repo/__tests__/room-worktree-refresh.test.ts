@@ -9,7 +9,7 @@
  * under a folder `main` turns into a file are deleted). Each held reason was
  * seen red with its guard removed from `room-worktree-refresh.ts`.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -423,13 +423,83 @@ describe('the turn-start refresh', () => {
       await expect(git(copy, 'status', '--porcelain')).resolves.toBeDefined();
     }, 30_000);
 
-    it('removes a lock the stopped write left, and never one that was there before', async () => {
-      await writeFile(lockOf(), '', 'utf-8');
-      afterFailedWrite(lockOf(), true);
-      expect(existsSync(lockOf())).toBe(true);
+    /**
+     * Run `body` with a `git` on PATH that, for the fast-forward only, takes the
+     * copy's index lock first — then either hangs (so the write is KILLED by its
+     * timeout while holding it) or hands over to the real git, which fails on
+     * the lock exactly as it would if a person's shell or a git GUI had taken it
+     * between the idle check and the write.
+     */
+    async function withWrappedGit(mode: 'hang' | 'foreign', body: () => Promise<void>) {
+      const realGit = await whichGit();
+      const bin = path.join(scratch, 'bin');
+      await mkdir(bin, { recursive: true });
+      await writeFile(
+        path.join(bin, 'git'),
+        [
+          '#!/bin/sh',
+          'for a in "$@"; do',
+          '  if [ "$a" = "--ff-only" ]; then',
+          '    : > "$GIT_DIR/index.lock"',
+          `    ${mode === 'hang' ? 'exec sleep 30' : 'break'}`,
+          '  fi',
+          'done',
+          `exec "${realGit}" "$@"`,
+          '',
+        ].join('\n'),
+        { mode: 0o755 }
+      );
+      const original = process.env.PATH ?? '';
+      vi.stubEnv('PATH', `${bin}${path.delimiter}${original}`);
+      try {
+        await body();
+      } finally {
+        vi.stubEnv('PATH', original);
+      }
+    }
 
-      afterFailedWrite(lockOf(), false);
+    /** The real git binary, resolved before any wrapper is on PATH. */
+    async function whichGit(): Promise<string> {
+      const { execFile } = await import('node:child_process');
+      return new Promise((resolve, reject) =>
+        execFile('sh', ['-c', 'command -v git'], (err, out) =>
+          err ? reject(err) : resolve(out.trim())
+        )
+      );
+    }
+
+    it('removes the lock a KILLED write left, through the real write path', async () => {
+      await onMain({ 'PLAN.md': '# plan\n' }, 'Plan');
+      const before = await headOf(copy);
+
+      await withWrappedGit('hang', async () => {
+        const { outcome } = await refreshRoomWorktree(target, deps({ writeTimeoutMs: 500 }));
+        expect(outcome).toMatchObject({ kind: 'held', reason: 'unreadable' });
+      });
+
       expect(existsSync(lockOf())).toBe(false);
+      expect(await headOf(copy)).toBe(before);
+      await expect(git(copy, 'status', '--porcelain')).resolves.toBeDefined();
+    }, 30_000);
+
+    it('never removes a lock another process took between the check and the write', async () => {
+      await onMain({ 'PLAN.md': '# plan\n' }, 'Plan');
+      const before = await headOf(copy);
+
+      await withWrappedGit('foreign', async () => {
+        const { outcome } = await refreshRoomWorktree(target, deps());
+        expect(outcome).toMatchObject({ kind: 'held', reason: 'unreadable' });
+      });
+
+      // That process may still be running: its lock is its own.
+      expect(existsSync(lockOf())).toBe(true);
+      expect(await headOf(copy)).toBe(before);
+    }, 30_000);
+
+    it('never removes a lock that was there before the write, even after a kill', async () => {
+      await writeFile(lockOf(), '', 'utf-8');
+      afterFailedWrite(lockOf(), true, Object.assign(new Error('killed'), { killed: true }));
+      expect(existsSync(lockOf())).toBe(true);
     });
 
     /** The copy's index lock, where git takes it for a linked worktree. */

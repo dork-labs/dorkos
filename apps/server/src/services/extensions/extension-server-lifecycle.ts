@@ -208,6 +208,7 @@ export class ExtensionServerLifecycle {
       // Not in cache yet
     }
 
+    let registered: (() => void) | undefined;
     try {
       const mod = require(tempFile);
       const registerFn = mod.default ?? mod;
@@ -216,11 +217,14 @@ export class ExtensionServerLifecycle {
       }
 
       const router = Router();
-      const { ctx, getScheduledCleanups } = createDataProviderContext({
+      const { ctx, getScheduledCleanups, releaseAccounts } = createDataProviderContext({
         extensionId: id,
         extensionDir: record.path,
         dorkHome: this.dorkHome,
       });
+      // A register() that throws after adding an account listener or advisor
+      // must not leave it behind: this instance never becomes active.
+      registered = releaseAccounts;
 
       const result = await registerFn(router, ctx);
       const cleanup = typeof result === 'function' ? result : null;
@@ -236,8 +240,10 @@ export class ExtensionServerLifecycle {
         router,
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
+        releaseAccounts,
         sourceKey,
       });
+      registered = undefined;
 
       // A fixed `server.ts` took over, so the failure mark this method wrote
       // above no longer describes anything.
@@ -246,13 +252,15 @@ export class ExtensionServerLifecycle {
       logger.info(`[Extensions] Server initialized for ${id}`);
       return { ok: true };
     } catch (err) {
+      registered?.();
       logger.error(`[Extensions] Server init failed for ${id}:`, err);
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
   /**
-   * Shut down a server-side extension: cancel tasks, call cleanup, remove router.
+   * Shut down a server-side extension: cancel tasks, call cleanup, remove its
+   * account listeners and advisor, remove router.
    *
    * @param id - Extension identifier
    */
@@ -275,6 +283,10 @@ export class ExtensionServerLifecycle {
         logger.warn(`[Extensions] Cleanup error for ${id}:`, err);
       }
     }
+
+    // After the extension's own cleanup, so it can still unregister gracefully;
+    // whatever it left behind goes now.
+    active.releaseAccounts?.();
 
     this.serverExtensions.delete(id);
     logger.info(`[Extensions] Server shutdown for ${id}`);

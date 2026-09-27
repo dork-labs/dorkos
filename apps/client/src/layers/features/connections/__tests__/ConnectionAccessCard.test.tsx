@@ -301,7 +301,7 @@ describe('ConnectionAccessCard — one agent', () => {
       toolkit: 'gmail',
       serviceName: 'Gmail',
     });
-    expect(await screen.findByText('No Gmail account is connected yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No Gmail account is ready to use yet.')).toBeInTheDocument();
   });
 });
 
@@ -381,6 +381,124 @@ describe('ConnectionAccessCard — deciding for one agent never touches anyone e
       toolkit: 'gmail',
       connectionId: 'connection-1',
       serviceName: 'Gmail',
+    });
+    expect(await screen.findByText(/isn’t registered/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
+  });
+});
+
+describe('ConnectionAccessCard — answering a chat request (onAllowed)', () => {
+  it('reports the account only after the server confirmed the saved access', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'pending' },
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    const onAllowed = vi.fn();
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-bo',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+      onAllowed,
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    // Saved, but still being applied: not usable yet, so not reported, even
+    // after every effect the save caused has run.
+    expect(await screen.findByText('Access update pending')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onAllowed).not.toHaveBeenCalled();
+  });
+
+  it('does not report a save the operation catalog moved under', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'migration_needs_reconcile',
+      authoritySync: { status: 'ready' },
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    const onAllowed = vi.fn();
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-bo',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+      onAllowed,
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    expect(await screen.findByText('Access needs review')).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onAllowed).not.toHaveBeenCalled();
+  });
+
+  it('reports a confirmed save once', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
+    vi.mocked(transport.applyConnectorReconciliation).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      grants: [{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }],
+    });
+    const onAllowed = vi.fn();
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-bo',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+      onAllowed,
+    });
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    await waitFor(() => expect(onAllowed).toHaveBeenCalledWith('connection-1'));
+    expect(onAllowed).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers with access the agent already holds, writing nothing', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+    );
+    const onAllowed = vi.fn();
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-bo',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+      onAllowed,
+    });
+
+    expect(await screen.findByText('Bo can already do this.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Allow' }));
+    expect(onAllowed).toHaveBeenCalledWith('connection-1');
+    expect(transport.applyConnectorReconciliation).not.toHaveBeenCalled();
+  });
+
+  it('still refuses an agent that holds nothing and is not registered here', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(preview());
+    renderCard(transport, {
+      mode: 'agent',
+      agentId: 'agent-unknown',
+      toolkit: 'gmail',
+      connectionId: 'connection-1',
+      serviceName: 'Gmail',
+      onAllowed: vi.fn(),
     });
     expect(await screen.findByText(/isn’t registered/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();

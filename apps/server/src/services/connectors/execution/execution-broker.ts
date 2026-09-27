@@ -249,6 +249,7 @@ export class ConnectorExecutionBroker {
           agentId: authorized.agentId,
           attemptIndex,
           grantScopeVersion: authorized.managedGrantScopeVersion,
+          grantSubject: authorized.managedGrantSubject ?? 'agent',
           hostedRevisionId: authorized.managedHostedRevisionId,
           attribution: {
             surface: input.surface,

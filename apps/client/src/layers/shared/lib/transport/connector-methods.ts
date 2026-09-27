@@ -57,6 +57,7 @@ import type {
   ConnectorConnectionPatch,
   ConnectorDisconnectImpact,
   ConnectorLifecycleResult,
+  ConnectorProvidersResource,
   ConnectorReconnectRequest,
   ConnectorSessionConnections,
 } from '@dorkos/shared/connector-resource-schemas';
@@ -67,11 +68,8 @@ const CONNECTOR_AUTHENTICATION_START_TIMEOUT_MS = 75_000;
 /** Create the connector methods bound to a base URL. */
 export function createConnectorMethods(baseUrl: string) {
   return {
-    getConnectorProviders(): Promise<ConnectorProviderStatus[]> {
-      return fetchJSON<{ providers: ConnectorProviderStatus[] }>(
-        baseUrl,
-        '/connectors/providers'
-      ).then((r) => r.providers);
+    getConnectorProviders(): Promise<ConnectorProvidersResource> {
+      return fetchJSON<ConnectorProvidersResource>(baseUrl, '/connectors/providers');
     },
 
     putConnectorCredential(provider: string, secret: string): Promise<ConnectorProviderStatus> {
@@ -382,9 +380,10 @@ export function createConnectorMethods(baseUrl: string) {
     },
 
     getConnectorAgentRequests(
-      state?: 'pending' | 'resolved'
+      state?: 'pending' | 'resolved',
+      sessionId?: string
     ): Promise<ConnectorAgentRequestItem[]> {
-      const qs = buildQueryString({ state });
+      const qs = buildQueryString({ state, sessionId });
       return fetchJSON<{ requests: ConnectorAgentRequestItem[] }>(
         baseUrl,
         `/connectors/agent-requests${qs}`

@@ -2,6 +2,7 @@ import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { InterruptOutcome, StreamEvent } from '@dorkos/shared/types';
 import { DEMO_SCENARIOS } from './demo-scenarios.js';
 import { HELD_PROCESS_SCENARIOS } from './held-process-scenarios.js';
+import { CONNECTION_REQUEST_SCENARIOS } from './connection-request-scenarios.js';
 import { interactionGate, type ScenarioContext } from './interaction-gate.js';
 import { INTERACTIVE_SCENARIOS } from './interactive-scenarios.js';
 import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
@@ -280,6 +281,9 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...Q3_SCENARIOS,
   ...INTERACTIVE_SCENARIOS,
   ...HELD_PROCESS_SCENARIOS,
+  // An agent asking the owner for an app mid-chat, held until a test steps it
+  // (DOR-2415).
+  ...CONNECTION_REQUEST_SCENARIOS,
   // The scripted room turns: two that say something through the real posting
   // capability, and two that deliberately say nothing (spec
   // `tool-only-room-replies` §D14).

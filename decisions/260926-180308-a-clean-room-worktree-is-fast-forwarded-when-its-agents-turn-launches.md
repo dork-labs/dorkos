@@ -12,7 +12,7 @@ amends: [260829-115621]
 
 ## Status
 
-Accepted (spec `agent-home-desk`; designed in #2153). Shipped in DOR-2411: the launch-time
+Accepted (spec `agent-home-desk`; designed in #2153). Shipped in #2218 (DOR-2411): the launch-time
 fast-forward behind `prepareLaunch`, the "what moved" heads-up for a held copy, and a copy left
 alone (`held: unsafe-config`) while the room's shared git settings name a program. It builds on the
 `prepareLaunch` hook added in #2197 (DOR-2410).

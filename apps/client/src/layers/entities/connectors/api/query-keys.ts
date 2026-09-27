@@ -40,6 +40,8 @@ export const connectorKeys = {
   agentRequests: () => [...connectorKeys.all, 'agent-requests'] as const,
   agentRequestList: (state?: 'pending' | 'resolved') =>
     [...connectorKeys.agentRequests(), 'list', state ?? 'all'] as const,
+  sessionAgentRequests: (sessionId: string) =>
+    [...connectorKeys.agentRequests(), 'session', sessionId] as const,
   agentRequest: (requestId: string) =>
     [...connectorKeys.agentRequests(), 'detail', requestId] as const,
   agentRequestAuthentication: (requestId: string, flowId: string) =>
