@@ -42,6 +42,7 @@ import { ExperimentsTab } from '@/layers/features/settings/ui/ExperimentsTab';
 import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
 import { AccountColorControl } from '@/layers/features/settings/ui/runtimes/sections/AccountColorControl';
 import { RuntimeUsageSection } from '@/layers/features/settings/ui/runtimes/sections/RuntimeUsageSection';
+import { FoundAccountsGroup } from '@/layers/features/settings/ui/runtimes/sections/FoundAccountsGroup';
 import { ControlCenterBody } from '@/layers/widgets/control-center';
 import {
   LiveRuntimeCard,
@@ -57,6 +58,7 @@ import {
   MOCK_SERVER_CONFIG_MULTI_ACCOUNT,
   MOCK_SERVER_CONFIG_NO_EXPERIMENTS,
 } from './settings-mock-data';
+import { MOCK_FOUND_CLAUDE_FOLDERS } from './account-mock-data';
 
 /** Comprehensive showcase for the Settings dialog system. */
 export function SettingsShowcases() {
@@ -65,6 +67,7 @@ export function SettingsShowcases() {
       <FullSettingsDialogSection />
       <IndividualTabsSection />
       <ClaudeAccountsShowcaseSection />
+      <FoundAccountsGroupShowcaseSection />
       <RuntimeUsageShowcaseSection />
       <ExecutionExceptionsSection />
       <BackgroundSystemsSection />
@@ -230,6 +233,57 @@ function FlowTabToggle() {
       <Switch checked={on} onCheckedChange={setOn} aria-label="Flow installed" />
       Flow installed (shows the note under the list)
     </div>
+  );
+}
+
+/**
+ * "Found on this computer" (spec `claude-account-ui` §6.9): the account folders
+ * DorkOS found and was not told about, each with Add and Dismiss. The real
+ * component with injected folders; the buttons do nothing here.
+ */
+function FoundAccountsGroupShowcaseSection() {
+  const [refusedPath, setRefusedPath] = useState<string | null>(null);
+  return (
+    <PlaygroundSection
+      title="FoundAccountsGroup"
+      description="Claude account folders found on this computer, offered below your accounts. Nothing is added until you click Add, and a folder that looks company-managed is flagged and gets a plain Add button."
+    >
+      <ShowcaseLabel>
+        Several folders: used today, days ago, org-managed, last use unknown
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <FoundAccountsGroup
+            folders={MOCK_FOUND_CLAUDE_FOLDERS}
+            onAdd={() => {}}
+            onDismiss={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Write refused: click Add to see the message under its row</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <FoundAccountsGroup
+            folders={MOCK_FOUND_CLAUDE_FOLDERS.slice(0, 2)}
+            onAdd={(folder) => setRefusedPath(folder.path)}
+            onDismiss={() => setRefusedPath(null)}
+            error={
+              refusedPath
+                ? { path: refusedPath, message: 'Only a person can change those settings.' }
+                : null
+            }
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Nothing found: renders nothing</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="max-w-md">
+          <FoundAccountsGroup folders={[]} onAdd={() => {}} onDismiss={() => {}} />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }
 

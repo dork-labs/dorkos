@@ -5,13 +5,14 @@
  */
 
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleAlert, Trash2 } from 'lucide-react';
 import { claudeAccountId } from '@dorkos/shared/config-schema';
 import {
   FLOW_FLEET_SETTINGS_TAB_ID,
   IMPLICIT_ACCOUNT_ID,
   type AccountUsage,
+  type FoundClaudeFolder,
 } from '@dorkos/shared/account-usage';
 import type { ServerConfig } from '@dorkos/shared/types';
 import {
@@ -36,15 +37,18 @@ import {
   UsageBar,
 } from '@/layers/shared/ui';
 import {
+  accountKeys,
   useAccountUsage,
   useSettingsDeepLink,
   useSlotContributions,
+  useTransport,
   type AccountUsageView,
 } from '@/layers/shared/model';
 import { configKeys, useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { useAccountIdentityGate } from '@/layers/entities/runtime';
 import { AccountColorControl } from './AccountColorControl';
 import { AccountUsageBars } from './AccountUsageBars';
+import { FoundAccountsGroup } from './FoundAccountsGroup';
 
 /**
  * Stands in for "no account chosen", which writes `defaultAccount: null`. Radix
@@ -113,6 +117,21 @@ function toWritableAccounts(accounts: readonly Account[]): WritableAccount[] {
 }
 
 /**
+ * The registry rows with one new account appended: its id minted from the
+ * label (else the folder's name) and made unique against the ids already
+ * registered, the same rule the config migration backfills with.
+ */
+function withNewAccount(
+  accounts: readonly Account[],
+  path: string,
+  label: string | null
+): WritableAccount[] {
+  const existing = toWritableAccounts(accounts);
+  const id = claudeAccountId({ label, path, taken: existing.map((account) => account.id) });
+  return [...existing, { id, path, label, color: null }];
+}
+
+/**
  * Turn a failed config write into one sentence a person can act on.
  *
  * The server's own wording is always preferred, and a refusal is the case that
@@ -149,6 +168,21 @@ export function ClaudeAccountsSection() {
   const [adding, setAdding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const [foundError, setFoundError] = useState<{ path: string; message: string } | null>(null);
+  const transport = useTransport();
+  // Fetched only while this section is mounted: the folders on disk change
+  // outside DorkOS, so a cached answer from another visit is not trusted.
+  const found = useQuery({
+    queryKey: accountKeys.found(),
+    queryFn: () => transport.getFoundClaudeFolders(),
+  });
+  const dismissFolder = useMutation({
+    mutationFn: (folder: FoundClaudeFolder) => transport.dismissFoundClaudeFolder(folder.path),
+    onMutate: () => setFoundError(null),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: accountKeys.found() }),
+    onError: (err, folder) =>
+      setFoundError({ path: folder.path, message: describeWriteFailure(err) }),
+  });
   // Every account-identity surface opens on this one gate (spec invariant 1):
   // the dots, the color control, the per-row bars and the Flow note.
   const identityGate = useAccountIdentityGate('claude-code');
@@ -183,8 +217,13 @@ export function ClaudeAccountsSection() {
    * key comes from the entity's factory rather than a literal, so every writer
    * on this tab spells the prefix one way.
    */
-  function write(patch: ClaudeCodePatch, onDone?: () => void) {
+  function write(
+    patch: ClaudeCodePatch,
+    onDone?: () => void,
+    onError: (message: string) => void = setWriteError
+  ) {
     setWriteError(null);
+    setFoundError(null);
     updateConfig.mutate(
       { runtimes: { claudeCode: patch } },
       {
@@ -192,7 +231,7 @@ export function ClaudeAccountsSection() {
           void queryClient.invalidateQueries({ queryKey: configKeys.all });
           onDone?.();
         },
-        onError: (err) => setWriteError(describeWriteFailure(err)),
+        onError: (err) => onError(describeWriteFailure(err)),
       }
     );
   }
@@ -205,26 +244,7 @@ export function ClaudeAccountsSection() {
     if (!canAdd) return;
     write(
       {
-        accounts: (() => {
-          const existing = toWritableAccounts(accounts);
-          const label = newLabel.trim() || null;
-          return [
-            ...existing,
-            {
-              // The new account's stable reference, minted from the label (else
-              // the directory's basename) and uniquified against the ids already
-              // registered — the same rule the config migration backfills with.
-              id: claudeAccountId({
-                label,
-                path: trimmedPath,
-                taken: existing.map((account) => account.id),
-              }),
-              path: trimmedPath,
-              label,
-              color: null,
-            },
-          ];
-        })(),
+        accounts: withNewAccount(accounts, trimmedPath, newLabel.trim() || null),
         accountsSeen: shownIds(accounts),
       },
       () => {
@@ -232,6 +252,19 @@ export function ClaudeAccountsSection() {
         setNewLabel('');
         setAdding(false);
       }
+    );
+  }
+
+  /**
+   * Register a folder from "Found on this computer": the same write the add
+   * form makes, unnamed. On success the folder moves up into the accounts
+   * list, so the found list is read again; a refusal shows under its row.
+   */
+  function addFoundFolder(folder: FoundClaudeFolder) {
+    write(
+      { accounts: withNewAccount(accounts, folder.path, null), accountsSeen: shownIds(accounts) },
+      () => void queryClient.invalidateQueries({ queryKey: accountKeys.found() }),
+      (message) => setFoundError({ path: folder.path, message })
     );
   }
 
@@ -333,6 +366,16 @@ export function ClaudeAccountsSection() {
           }
         />
       ))}
+
+      {/* Not gated on the account count: a one-account user is exactly who
+          it helps (spec §6.9). It renders nothing when nothing was found. */}
+      <FoundAccountsGroup
+        folders={found.data?.folders ?? []}
+        onAdd={addFoundFolder}
+        onDismiss={(folder) => dismissFolder.mutate(folder)}
+        error={foundError}
+        disabled={updateConfig.isPending || dismissFolder.isPending}
+      />
 
       {identityGate && hasFlowTab && <FlowNote />}
 

@@ -16,6 +16,7 @@ import {
   DEFAULT_ACCOUNT_COLORS,
   type AccountUsage,
   type ContinueOptionsResponse,
+  type FoundClaudeFolder,
   type LimitHistoryEntry,
 } from '@dorkos/shared/account-usage';
 
@@ -203,5 +204,41 @@ export const MOCK_LIMIT_HISTORY: LimitHistoryEntry[] = [
     toAccountId: 'acct-1',
     modelFrom: null,
     modelTo: null,
+  },
+];
+
+/**
+ * Account folders found on this computer (spec `claude-account-ui` §6.9):
+ * one used today, one used days ago, an org-managed one, and one whose last
+ * use is unknown.
+ */
+export const MOCK_FOUND_CLAUDE_FOLDERS: FoundClaudeFolder[] = [
+  {
+    path: '/Users/you/.claude2',
+    name: '.claude2',
+    lastUsedAt: new Date(Date.now() - 2 * 24 * HOUR_MS).toISOString(),
+    orgManaged: false,
+    orgMarker: null,
+  },
+  {
+    path: '/Users/you/.claude4',
+    name: '.claude4',
+    lastUsedAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    orgManaged: false,
+    orgMarker: null,
+  },
+  {
+    path: '/Users/you/.claude-ab1',
+    name: '.claude-ab1',
+    lastUsedAt: new Date(Date.now() - 9 * 24 * HOUR_MS).toISOString(),
+    orgManaged: true,
+    orgMarker: 'remote-settings.json',
+  },
+  {
+    path: '/Users/you/.claude-old',
+    name: '.claude-old',
+    lastUsedAt: null,
+    orgManaged: false,
+    orgMarker: null,
   },
 ];

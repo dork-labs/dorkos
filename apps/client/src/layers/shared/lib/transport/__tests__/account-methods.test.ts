@@ -84,6 +84,26 @@ describe('createAccountMethods', () => {
     expect(call(fetchMock).url).toBe('/api/sessions/s1/limit-history');
   });
 
+  it('reads the Claude account folders found on this computer', async () => {
+    const fetchMock = answer(200, { folders: [] });
+    await expect(methods.getFoundClaudeFolders()).resolves.toEqual({ folders: [] });
+    expect(call(fetchMock)).toEqual({
+      url: '/api/runtimes/claude-code/accounts/found',
+      method: 'GET',
+      body: undefined,
+    });
+  });
+
+  it('dismisses one found folder by its path', async () => {
+    const fetchMock = answer(204, undefined);
+    await expect(methods.dismissFoundClaudeFolder('/Users/me/.claude2')).resolves.toBeUndefined();
+    expect(call(fetchMock)).toEqual({
+      url: '/api/runtimes/claude-code/accounts/found/dismiss',
+      method: 'POST',
+      body: { path: '/Users/me/.claude2' },
+    });
+  });
+
   it('rejects a refusal with the server’s message and the status', async () => {
     const message = 'This conversation did not start here, so it can only wait for the reset.';
     answer(409, { error: message, code: 'CONTINUE_REFUSED' });

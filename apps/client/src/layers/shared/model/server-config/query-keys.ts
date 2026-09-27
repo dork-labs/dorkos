@@ -80,4 +80,6 @@ export const accountKeys = {
     [...accountKeys.all, 'continue-options', sessionId] as const,
   /** One session's resolved usage-limit episodes. */
   limitHistory: (sessionId: string) => [...accountKeys.all, 'limit-history', sessionId] as const,
+  /** The Claude account folders found on this computer and not yet registered. */
+  found: () => [...accountKeys.all, 'found', 'claude-code'] as const,
 };

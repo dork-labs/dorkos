@@ -179,7 +179,12 @@ import type {
   HarnessStatusResponse,
   HarnessSyncResponse,
 } from './harness-schemas.js';
-import type { AccountUsage, ContinueOptionsResponse, LimitHistoryEntry } from './account-usage.js';
+import type {
+  AccountUsage,
+  ContinueOptionsResponse,
+  FoundClaudeFolder,
+  LimitHistoryEntry,
+} from './account-usage.js';
 import type { RoomTransport } from './transport-rooms.js';
 import type { CommunityConnectionTransport } from './community-connections.js';
 import type { RemoteCommunityTransport } from './community-views.js';
@@ -3379,4 +3384,21 @@ export interface Transport
    * @param sessionId - The session.
    */
   getLimitHistory(sessionId: string): Promise<{ entries: LimitHistoryEntry[] }>;
+
+  /**
+   * Read the Claude account folders found on this computer that are not
+   * registered, the machine default or dismissed (`GET
+   * /api/runtimes/claude-code/accounts/found`), for Settings' "Found on this
+   * computer" list. Nothing is registered until a person clicks Add.
+   */
+  getFoundClaudeFolders(): Promise<{ folders: FoundClaudeFolder[] }>;
+
+  /**
+   * Stop offering one found folder, across restarts (`POST
+   * /api/runtimes/claude-code/accounts/found/dismiss`). Rejects with the
+   * server's `message` and `status`.
+   *
+   * @param path - The folder, as the found list gave it.
+   */
+  dismissFoundClaudeFolder(path: string): Promise<void>;
 }

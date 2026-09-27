@@ -1,10 +1,9 @@
 ---
 covers:
   - 'feat(accounts): find unregistered Claude account folders and let Settings dismiss them (server)'
+  - 'feat(settings): offer the Claude account folders found on this computer (DOR-2387)'
 ---
 
 ### Added
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
-
-- Find unregistered Claude account folders and let Settings dismiss them (server)
+- Settings → Runtimes → Claude accounts now lists other Claude account folders it finds on your computer, like `~/.claude2`, under "Found on this computer". Nothing is added until you click Add. Dismiss hides a folder for good. A folder that looks like a company manages it says "managed by an organization", so you can decide whether to add it (DOR-2387)

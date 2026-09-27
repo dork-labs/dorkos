@@ -326,6 +326,11 @@ export function createPlaygroundTransport(): Transport {
       if (prop === 'waitForReset' || prop === 'cancelAutoContinue') {
         return async () => undefined;
       }
+      // Found account folders (spec `claude-account-ui` §6.9): none, so the
+      // accounts showcases keep their own states; the FoundAccountsGroup
+      // showcase injects its folders directly.
+      if (prop === 'getFoundClaudeFolders') return async () => ({ folders: [] });
+      if (prop === 'dismissFoundClaudeFolder') return async () => undefined;
       // Resolve with null — safe for hooks expecting arrays, objects, or primitives
       return async () => null;
     },

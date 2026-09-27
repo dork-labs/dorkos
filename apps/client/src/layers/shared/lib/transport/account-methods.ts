@@ -1,7 +1,7 @@
 /**
- * Account Transport methods (spec `claude-account-ui` §6.0): how much of each
- * account is used, and carrying a session whose account ran out over to
- * another one.
+ * Account Transport methods (spec `claude-account-ui` §6.0, §6.9): how much of
+ * each account is used, carrying a session whose account ran out over to
+ * another one, and the Claude account folders found on this computer.
  *
  * Every refusal rejects through {@link fetchJSON}'s error, which carries the
  * server's message and the HTTP `status`: the picker and the banner show that
@@ -12,6 +12,7 @@
 import type {
   AccountUsage,
   ContinueOptionsResponse,
+  FoundClaudeFolder,
   LimitHistoryEntry,
 } from '@dorkos/shared/account-usage';
 import { fetchJSON, fetchNoContent } from './http-client';
@@ -68,6 +69,20 @@ export function createAccountMethods(baseUrl: string) {
         baseUrl,
         `${sessionPath(sessionId)}/limit-history`
       );
+    },
+
+    getFoundClaudeFolders(): Promise<{ folders: FoundClaudeFolder[] }> {
+      return fetchJSON<{ folders: FoundClaudeFolder[] }>(
+        baseUrl,
+        '/runtimes/claude-code/accounts/found'
+      );
+    },
+
+    dismissFoundClaudeFolder(path: string): Promise<void> {
+      return fetchNoContent(baseUrl, '/runtimes/claude-code/accounts/found/dismiss', {
+        method: 'POST',
+        body: JSON.stringify({ path }),
+      });
     },
   };
 }

@@ -1235,6 +1235,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     waitForReset: vi.fn().mockResolvedValue(undefined),
     cancelAutoContinue: vi.fn().mockResolvedValue(undefined),
     getLimitHistory: vi.fn().mockResolvedValue({ entries: [] }),
+    // Found account folders (spec `claude-account-ui` §6.9): none, so the
+    // "Found on this computer" group stays hidden unless a test supplies some.
+    getFoundClaudeFolders: vi.fn().mockResolvedValue({ folders: [] }),
+    dismissFoundClaudeFolder: vi.fn().mockResolvedValue(undefined),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.
