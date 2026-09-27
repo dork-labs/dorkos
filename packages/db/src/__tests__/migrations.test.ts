@@ -269,7 +269,7 @@ describe('Database Migrations', () => {
       // §Part 1, migration 0048).
       'session_connector_attachments',
       // Each session's last context reading, so it shows on open and after a
-      // restart (spec claude-account-fleet §6 U, migration 0117).
+      // restart (spec claude-account-fleet §6 U, migration 0118).
       'session_context',
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
