@@ -260,6 +260,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
+import { AccountUsageSchema, LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
 
 /**
@@ -1299,6 +1300,36 @@ registry.registerPath({
         },
       },
     },
+  },
+});
+
+// --- Account usage ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/runtimes/{runtime}/accounts/usage',
+  tags: ['Runtimes'],
+  summary: "List how much of each of a runtime's accounts is used",
+  description:
+    "Every account of the runtime with its usage windows, from the server's memory: registered " +
+    'accounts in registry order, the machine-wide `default` account when it is not another ' +
+    'name for a registered one, then folders that are neither (with a null `accountId`). A ' +
+    'window with no current reading is left out, and an account with nothing to go on reads ' +
+    '`state: "unknown"`, never zero.',
+  request: {
+    params: z.object({
+      runtime: z.enum(LEDGER_RUNTIMES).openapi({ description: 'The runtime slug.' }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The runtime's accounts and their usage",
+      content: {
+        'application/json': { schema: z.object({ accounts: z.array(AccountUsageSchema) }) },
+      },
+    },
+    400: { description: 'Unknown runtime slug' },
+    503: { description: 'The usage store is not running yet' },
   },
 });
 

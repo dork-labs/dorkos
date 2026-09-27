@@ -497,6 +497,17 @@ import {
   formatFirstRunTelemetryNotice,
 } from './services/core/telemetry-first-run.js';
 import { eventFanOut } from './services/core/event-fan-out.js';
+import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
+import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
+import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
+import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
+import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
+import { readConfigFile } from './services/core/usage/account-usage-reconcile.js';
+import {
+  claudeDefaultAccountFolder,
+  dropClaudeAccountRenameMarkers,
+} from './services/runtimes/claude-code/claude-config-dir.js';
+import { machineDefaultCodexHome } from './services/runtimes/codex/codex-home.js';
 import {
   initObservability,
   shutdownObservability,
@@ -545,6 +556,7 @@ const PORT = env.DORKOS_PORT;
 
 // Global references for graceful shutdown
 let claudeRuntime: ClaudeCodeRuntime | null = null;
+let accountUsageStore: AccountUsageStore | undefined;
 // The relay's DEFAULT runtime — what answers a relay message that names no
 // runtime at all (a legacy `relay.agent.<sessionId>` subject, a direct
 // agent-to-agent send to a mesh agent). The relay carries every registered
@@ -871,6 +883,34 @@ async function start() {
   // imported by the write path, and an unwired write says so instead of claiming
   // an apply that never happened.
   initClaudeAccountApplier(() => void applyClaudeAccountChange());
+
+  // Per-account usage for every runtime (spec `claude-account-fleet` D2, §6 R):
+  // the ledger files under `<dorkHome>/runtimes/<runtime>/usage/` are its
+  // persistence, shared with flow. Built right after config so the first turn
+  // already records into it. `default` resolves from config and the OS home
+  // only (the two helpers below), never from this process's environment.
+  accountUsageStore = new AccountUsageStore({
+    dorkHome,
+    readConfig: () => readConfigFile(configManager.path),
+    resolveDefaultRoot: (runtime, config) =>
+      runtime === 'claude-code'
+        ? claudeDefaultAccountFolder(config)
+        : runtime === 'codex'
+          ? { path: machineDefaultCodexHome(), warnings: [] }
+          : { path: null, warnings: [] },
+    broadcast: (usage) => eventFanOut.broadcast('account_usage', usage),
+  });
+  await accountUsageStore.load().catch((err: unknown) => {
+    logger.warn('[DorkOS] account usage store failed to load; usage starts empty', {
+      err: String(err),
+    });
+  });
+  setAccountUsageStore(accountUsageStore);
+  // An in-app account change is reconciled at once; `flow accounts add` and hand
+  // edits never reach onChange, which is why the store's 60 s scan reconciles too.
+  configManager.onChange((change) => {
+    if (change.sections.includes('runtimes')) void accountUsageStore?.reconcileAccounts();
+  });
 
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.
@@ -2322,6 +2362,50 @@ async function start() {
     logger.error('[Mesh] Failed to initialize MeshCore', errInfo);
     setMeshInitError(errInfo.error);
     // Mesh failure is non-fatal: server continues without mesh routes.
+  }
+
+  // Carry any Claude account the '0.87.0' config migration renamed (a row called
+  // `default`, now `default-N`) through to its references: agent manifests,
+  // schedules with their approvals, and schedule files (spec
+  // `claude-account-fleet` §6 R). Wired once the agent registry and the task
+  // tables exist, and run at once, before any schedule file watcher starts, so
+  // a sync never reads a file halfway through the move.
+  if (accountUsageStore) {
+    const mesh = meshCore;
+    accountUsageStore.setReferenceMover({
+      move: (renames) =>
+        moveAccountReferences(renames, {
+          agents: mesh
+            ? {
+                list: () =>
+                  mesh.list().map((agent) => ({
+                    id: agent.id,
+                    account: agent.account,
+                    projectPath: mesh.getProjectPath(agent.id) ?? undefined,
+                  })),
+                setAccount: async (agentId, account) => {
+                  await mesh.update(agentId, { account });
+                },
+              }
+            : undefined,
+          renameScheduleAccount: (from, to) =>
+            renameScheduleAccount(db, from, to, (schedule) =>
+              isPackageOwned(
+                schedule.filePath,
+                packageOwnershipContext(
+                  dorkHome,
+                  schedule.agentId ? mesh?.getProjectPath(schedule.agentId) : undefined
+                )
+              )
+            ),
+        }),
+      dropMarkers: async (ids) => {
+        dropClaudeAccountRenameMarkers(configManager, ids);
+      },
+    });
+    // Fresh, not the one a config write or the scan may have in flight: that one
+    // started without the mover.
+    await accountUsageStore.reconcileAccounts({ fresh: true });
   }
 
   // Open #team, the room the home tab renders, and seat every registered agent
@@ -5371,6 +5455,14 @@ async function start() {
 // Extracted so the admin router can invoke it before a restart.
 async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
+  if (accountUsageStore) {
+    accountUsageStore.stop();
+    await accountUsageStore.flush().catch((err: unknown) => {
+      logger.warn('[DorkOS] account usage flush failed at shutdown', { err: String(err) });
+    });
+    setAccountUsageStore(undefined);
+    accountUsageStore = undefined;
+  }
   legacyRecordSweep.abort();
   remoteCommunitySubscriptions?.stop();
   remoteCommunitySubscriptions = undefined;

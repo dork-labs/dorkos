@@ -210,6 +210,13 @@ These talk to a running DorkOS server so you (or an agent in any runtime) can dr
 | `dorkos task runs`                               | List recent task runs                                                 |
 | `dorkos marketplace installed`                   | List every installed marketplace package, and where it lives          |
 | `dorkos marketplace outdated`                    | List only the packages that have an update                            |
+| `dorkos marketplace installed --verify`          | Also say whether each package's files changed since install           |
+| `dorkos marketplace check-files <name>`          | Check a package an older DorkOS installed, so updates keep your edits |
+| `dorkos permissions`                             | Show the preset, every area, and which agents differ                  |
+| `dorkos permissions set <area> <state>`          | Change one area or action for everyone (or `set --preset <name>`)     |
+| `dorkos permissions history`                     | Show recent permission changes, each with its id                      |
+| `dorkos permissions undo <id>`                   | Undo one change from the history                                      |
+| `dorkos agent permissions <agent>`               | Show or change what one agent may do                                  |
 | `dorkos room export <room>`                      | Save a channel or DM's history as a file (`--out`, `--force`)         |
 | `dorkos activity`                                | Show the activity feed (`--actor`, `--category`, `--type`, `--limit`) |
 | `dorkos capabilities`                            | List the actions this DorkOS accepts by name (the live catalog)       |

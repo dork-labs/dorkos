@@ -178,6 +178,7 @@ import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
+import { recordSessionUsage } from '../accounts/account-usage-feed.js';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
 interface SessionBundle {
@@ -1185,6 +1186,12 @@ export class PersistentDispatch {
         // `undefined` keeps the last known value: the item must never flicker
         // back to cost-only between turns.
         if (usage.subscription) session.lastSubscriptionUsage = usage.subscription;
+        // The same answer, account-wide, into the account's usage ledger.
+        if (usage.accountUsage) {
+          recordSessionUsage(session, usage.accountUsage.observations, {
+            subscriptionType: usage.accountUsage.subscriptionType,
+          });
+        }
       },
     });
 

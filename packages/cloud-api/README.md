@@ -49,7 +49,7 @@ body is neither.
 | Managed connections       | catalog, toolkits, connections, authentication flows, authority commands, executions, the lease-based event pull and acknowledgement, usage                                                                               |
 | Billing                   | `GET /v1/entitlements`, `/v1/balance`, `/v1/usage`, `/v1/price-list`, `/v1/nudge`, `/v1/offers`, `POST /v1/checkout`, `/v1/topup`, `/v1/portal`, `GET /v1/statement`                                                      |
 | Inference                 | `POST /v1/inference/tokens`, `GET /v1/inference/models`, token revocation                                                                                                                                                 |
-| Seats, orgs and addresses | organizations, membership, invitations, agents and claims, seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event                                                                           |
+| Seats, orgs and addresses | organizations, membership, invitations, agents and claims (an agent says whether a claim waits on approval, and which), seats, addresses, grants, add-ons, the seat inbox, presence, the seat activity event              |
 | Remote access             | status, open/close, wake tokens, enrolment, canonical and custom addresses, designation and its read, usage against the published limits, instance credentials, the command stream and its acknowledgement, event batches |
 | Hosted communities        | `GET`/`POST /v1/communities`, the short-name check, a fresh owner-claim link, keep (with a preview of what it holds) and restore, and moves: start, list, poll, cancel                                                    |
 | Shared                    | the `Problem` envelope, bearer auth, cursor pagination, the `X-DorkOS-Wire: 1` header                                                                                                                                     |
@@ -201,6 +201,17 @@ matched to their instance. Each close report in `POST /v1/remote/events` may nam
 base-10 strings (`ByteCountSchema`), because a long window can move more bytes than a JavaScript
 number holds exactly. A batch without these fields is accepted as before.
 
+### Tunnel credentials: which hostnames, and how a replacement arrives
+
+A credential from `POST /v1/remote/credentials/issue` may carry `hosts`: every hostname the
+instance should serve with it, its own address first. Serve each one, and stop serving any
+hostname that is no longer listed; compare without regard to case. When `hosts` is absent,
+keep serving as before: absent is not an empty list, and a present list is never empty. `acl`
+stays opaque; do not parse it for names. A `rotate` command's `credentialId` is an issue key,
+not a credential id: present it as the issue call's `idempotencyKey` to receive the
+replacement, then confirm the replacement with the `credentialId` that call returns. If that
+call is refused, keep the current credential; the service may offer another later.
+
 ### Hosted communities
 
 The service starts a community on a Community server and hands ownership to a person through
@@ -236,8 +247,8 @@ that server's single-use owner claim; it never owns one itself.
   transform, and Zod cannot express a transform's output in JSON Schema. Call
   `z.toJSONSchema(schema, { io: 'input' })` (or pass `unrepresentable: 'any'`) for the
   communities shapes, or the conversion throws. The same holds for `OffersResponseSchema`, whose
-  `interval` is tolerant, and for `RemoteUsageResponseSchema`, whose `unit` and `state` are
-  tolerant, for the same reason.
+  `interval` is tolerant, for `RemoteUsageResponseSchema`, whose `unit` and `state` are tolerant,
+  and for `AgentSchema`, whose `claimStatus` is tolerant, all for the same reason.
 
 Every link to a community is a runtime value.
 

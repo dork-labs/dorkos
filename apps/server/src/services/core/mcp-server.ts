@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
 import { resolveSenderIdentity } from '../runtimes/claude-code/mcp-tools/relay-helpers.js';
 import { registerCoreTools } from './external-mcp/core-tools.js';
+import { registerAccountTools } from './external-mcp/account-tools.js';
 import { registerTaskTools } from './external-mcp/task-tools.js';
 import { registerRelayTools } from './external-mcp/relay-tools.js';
 import { registerBindingTools } from './external-mcp/binding-tools.js';
@@ -105,6 +106,7 @@ export function createExternalMcpServer(
   // `agent-permissions` D15); the request tool reaches it through the reach.
   const registrar = gatedToolRegistrar(server, identity, hiddenToolNames);
   registerCoreTools(registrar, deps);
+  registerAccountTools(registrar, deps);
   registerTaskTools(registrar, deps);
   registerRelayTools(registrar, deps, relayIdentity);
   registerBindingTools(registrar, deps);

@@ -983,3 +983,127 @@ describe('the remote event batch spans', () => {
     expect(contract.ByteCountSchema.safeParse('9'.repeat(31)).success).toBe(false);
   });
 });
+
+describe('an agent`s claim, as a person`s page reads it', () => {
+  const agent = {
+    id: 'agt_x',
+    orgId: 'org_x',
+    ownerMemberId: null,
+    displayName: 'x',
+    createdAt: '2026-09-15T12:00:00.000Z',
+  };
+
+  it('parses an agent with no claim fields, which is what an older service sends', () => {
+    const parsed = contract.AgentSchema.parse(agent);
+    expect(parsed.claimStatus).toBeUndefined();
+    expect(parsed.pendingClaimId).toBeUndefined();
+  });
+
+  it('parses an agent waiting on approval, with the id the approval route takes', () => {
+    const waiting = contract.AgentSchema.parse({
+      ...agent,
+      claimStatus: 'pending',
+      pendingClaimId: 'clm_x',
+    });
+    expect(waiting.claimStatus).toBe('pending');
+    expect(contract.v1Path.agentClaimApprove(waiting.id, waiting.pendingClaimId!)).toBe(
+      '/v1/agents/agt_x/claims/clm_x/approve'
+    );
+  });
+
+  it('shares one published status vocabulary with the claim itself', () => {
+    expect(contract.AgentClaimSchema.shape.status).toBe(contract.AgentClaimStatusSchema);
+    expect(contract.AgentClaimStatusSchema.options).toEqual([
+      'pending',
+      'approved',
+      'rejected',
+      'expired',
+    ]);
+    for (const status of contract.AgentClaimStatusSchema.options) {
+      expect(contract.AgentSchema.parse({ ...agent, claimStatus: status }).claimStatus).toBe(
+        status
+      );
+    }
+  });
+
+  it('reads a status added in a later release as unrecognised, so one new status cannot fail a whole list', () => {
+    const page = contract.AgentListResponseSchema.parse({
+      items: [
+        { ...agent, claimStatus: 'revoked' },
+        { ...agent, id: 'agt_y', claimStatus: 'approved' },
+      ],
+      nextCursor: null,
+    });
+    expect(page.items.map((item) => item.claimStatus)).toEqual([contract.UNRECOGNISED, 'approved']);
+    // Tolerance is for new members, not for a broken value.
+    expect(contract.AgentSchema.safeParse({ ...agent, claimStatus: 7 }).success).toBe(false);
+    // The claim itself stays strict: its vocabulary is the one published.
+    expect(
+      contract.AgentClaimSchema.safeParse({
+        claimId: 'clm_x',
+        agentId: 'agt_x',
+        instanceId: 'inst_x',
+        status: 'revoked',
+        createdAt: '2026-09-15T12:00:00.000Z',
+        approvedAt: null,
+      }).success
+    ).toBe(false);
+  });
+
+  it('leaves the approval route and its shapes as they were', () => {
+    expect(Object.keys(contract.AgentClaimSchema.shape).sort()).toEqual([
+      'agentId',
+      'approvedAt',
+      'claimId',
+      'createdAt',
+      'instanceId',
+      'status',
+    ]);
+  });
+});
+
+describe('the hostnames a tunnel credential serves', () => {
+  const credential = {
+    issuanceId: 'iss_0001',
+    credentialId: 'cred_0001',
+    value: 'crv_0001_opaque',
+    fingerprint: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    acl: ['tunnel:connect'],
+  };
+
+  it('names every hostname the instance should serve, and keeps them readable', () => {
+    const hosts = ['example-instance.remote.invalid', 'machine.customer.invalid'];
+    const parsed = contract.RemoteCredentialSchema.safeParse({ ...credential, hosts });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.hosts).toEqual(hosts);
+  });
+
+  it('still accepts a credential without the field, as every earlier one was', () => {
+    const parsed = contract.RemoteCredentialSchema.safeParse(credential);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.hosts).toBeUndefined();
+  });
+
+  it('refuses an empty list, which would read as "serve nothing" rather than "not said"', () => {
+    expect(contract.RemoteCredentialSchema.safeParse({ ...credential, hosts: [] }).success).toBe(
+      false
+    );
+  });
+
+  it('refuses an empty hostname rather than handing the instance nothing to serve', () => {
+    expect(contract.RemoteCredentialSchema.safeParse({ ...credential, hosts: [''] }).success).toBe(
+      false
+    );
+  });
+
+  it('tells the instance how to collect a replacement from a rotate command', () => {
+    const rotate = contract.RemoteCommandSchema.options.find(
+      (option) => option.shape.kind.value === 'rotate'
+    );
+    const shape = (rotate?.shape ?? {}) as { credentialId?: { description?: string } };
+    const description = shape.credentialId?.description ?? '';
+    expect(description).toContain('idempotencyKey');
+    expect(description).toContain('not a credential id');
+    expect(description).toContain('/v1/remote/credentials/issue');
+  });
+});

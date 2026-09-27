@@ -1,7 +1,7 @@
 ---
 id: 260924-215422
 title: A host legal hold silently blocks every permanent deletion of a community until released
-status: draft
+status: accepted
 created: 2026-09-24
 spec: community-host-operator-api
 amends: null
@@ -12,7 +12,7 @@ superseded-by: null
 
 ## Status
 
-Draft (from spec `community-host-operator-api`, section "Legal hold", DOR-2299).
+Accepted (from spec `community-host-operator-api`, section "Legal hold", DOR-2299).
 
 ## Context
 
