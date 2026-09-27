@@ -106,7 +106,9 @@ describe('UsageBar', () => {
   it('puts the share and reset in the bar’s tooltip in the compact form', async () => {
     renderWith(<UsageBar window={at(72)} label="This week" compact now={NOW} />);
     expect(screen.queryByText('72% · resets Sun 9am')).toBeNull();
-    await userEvent.hover(screen.getByRole('img', { name: 'This week 72% used, resets Sun 9am' }));
+    const bar = screen.getByRole('img', { name: 'This week 72% used, resets Sun 9am' });
+    expect(bar).not.toHaveAttribute('tabindex');
+    await userEvent.hover(bar);
     expect(await screen.findByRole('tooltip')).toHaveTextContent('72% · resets Sun 9am');
   });
 });

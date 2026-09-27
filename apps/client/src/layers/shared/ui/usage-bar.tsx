@@ -187,14 +187,7 @@ export function UsageBar({
         <span className="text-muted-foreground truncate text-xs">{label}</span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span
-              role="img"
-              aria-label={sentence}
-              // A tab stop, so a keyboard reaches the tooltip as a pointer does.
-              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- a tooltip trigger, focusable by design
-              tabIndex={0}
-              className="focus-visible:ring-ring block w-[110px] shrink-0 rounded-full outline-none focus-visible:ring-2"
-            >
+            <span role="img" aria-label={sentence} className="block w-[110px] shrink-0">
               <Track entry={entry} vertical={false} className="h-1.5 w-full rounded-full" />
             </span>
           </TooltipTrigger>

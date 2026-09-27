@@ -30,10 +30,12 @@ describe('AccountDot', () => {
     expect(await screen.findByRole('tooltip')).toHaveTextContent('Acct 2');
   });
 
-  it('names the account in a tooltip on keyboard focus', async () => {
+  it('is not a tab stop: the name is read in place', async () => {
     renderDot();
+    const dot = screen.getByRole('img', { name: 'Acct 2' });
+    expect(dot).not.toHaveAttribute('tabindex');
+    expect(dot).toHaveAttribute('aria-label', 'Acct 2');
     await userEvent.tab();
-    expect(screen.getByRole('img', { name: 'Acct 2' })).toHaveFocus();
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('Acct 2');
+    expect(dot).not.toHaveFocus();
   });
 });
