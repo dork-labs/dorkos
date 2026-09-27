@@ -153,6 +153,8 @@ Follows ADR `260804-021140`'s ban on "integration", "connector", "adapter" and "
 
 ## Follow-ups this design creates
 
+All seven items shipped on 2026-09-27; see [04-implementation.md](./04-implementation.md) for the PRs, what is not done, and what not to undo.
+
 - ADR amending `260804-021140` (one list, not two regions) — lands with DOR-2418.
 - ADR for owner-wide "every agent" grants (§4) — lands with DOR-2420.
 
