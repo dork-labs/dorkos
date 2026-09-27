@@ -397,7 +397,6 @@ registerOwnerManagementTests({ apiUrl: API_URL, connectWorkAccountViaApi, gotoCo
 registerEventNotificationTests({ apiUrl: API_URL, gotoConnections });
 registerChatConnectCardTests({
   apiUrl: API_URL,
-  connectWorkAccountViaApi,
   enableTestConnector: async (request) => {
     const put = await request.put(CREDENTIAL_URL, { data: { secret: 'e2e-test-key' } });
     expect(put.ok()).toBe(true);

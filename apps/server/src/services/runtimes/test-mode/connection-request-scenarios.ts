@@ -28,12 +28,16 @@ const TOOL_NAME = 'mcp__dorkos__connectors.request_connection';
  * The arguments the scripted call records. A test opening the real request
  * must send these same values, since a held call is matched to its request by
  * service, reason and actions.
+ *
+ * Slack, not Gmail, on purpose: it is one of the scripted provider's two apps
+ * and the only one no other Connections case signs in to or removes, so this
+ * turn's card starts from a state the test controls.
  */
 export const CONNECTION_REQUEST_SCENARIO_INPUT = {
   version: 1,
-  serviceSlug: 'gmail',
-  reason: 'Summarise today’s inbox',
-  requestedOperations: ['GMAIL_FETCH_EMAILS'],
+  serviceSlug: 'slack',
+  reason: 'Summarise today’s messages',
+  requestedOperations: ['slack.messages.list'],
   requestedEvents: [],
 } as const;
 
@@ -41,7 +45,7 @@ const connectionRequest: ScenarioFn = async function* (_content, ctx) {
   const toolCallId = `connection-request-${ctx.sessionId}`;
   yield {
     type: 'text_delta',
-    data: { text: 'I’d need your Gmail for that. Asking you now.\n\n' },
+    data: { text: 'I’d need your Slack for that. Asking you now.\n\n' },
   } as StreamEvent;
   yield {
     type: 'tool_call_start',
@@ -63,7 +67,7 @@ const connectionRequest: ScenarioFn = async function* (_content, ctx) {
   } as StreamEvent;
   yield {
     type: 'text_delta',
-    data: { text: 'Here’s today’s inbox: three things need you.' },
+    data: { text: 'Here’s today in Slack: three threads need you.' },
   } as StreamEvent;
   yield { type: 'done', data: { sessionId: SCENARIO_SESSION_ID } } as StreamEvent;
 };
