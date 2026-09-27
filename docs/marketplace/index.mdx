@@ -223,7 +223,9 @@ To add the package to another scope (for example, you have it globally and want 
   affects every agent, and uninstalling it from one agent disables those extensions everywhere.
   Skills and commands, by contrast, do respect scope: an agent-scoped install's skills and commands
   only run for that agent. DorkOS warns you in the install dialog whenever the global-extensions
-  caveat applies.
+  caveat applies. An extension that arrives in a plugin shows up in **Settings → Extensions** and
+  waits for your OK before it runs. Your OK belongs to that copy: if a different plugin brings an
+  extension with the same name, DorkOS asks you again.
 </Callout>
 
 ## What updating, reinstalling and uninstalling keep

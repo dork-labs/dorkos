@@ -64,6 +64,7 @@ function connection(over: Partial<ConnectorConnectionSummary>): ConnectorConnect
     custody: 'managed',
     payer: 'operator_byo',
     agentCount: 2,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
     warnings: [],

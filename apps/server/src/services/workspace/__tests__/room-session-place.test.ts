@@ -10,11 +10,22 @@
  *
  * Seeded defects: keeping a named copy as the cwd reddens "replaces a named copy
  * of the room's files with the home"; taking `req.agentPath` over the binding
- * reddens "places the room's agent, not the one the message named".
+ * reddens "places the room's agent, not the one the message named"; dropping
+ * the refusal for a session standing in the copy reddens "refuses an OpenCode
+ * session…"; dropping the desk guard on a named folder reddens "refuses a named
+ * folder that is not the agent's own".
  */
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
-import { resolveSessionCwdWithRoom, type RoomSessionPlacePort } from '../room-session-place.js';
+import {
+  resolveSessionCwdWithRoom,
+  ROOM_SESSION_MOVED_MESSAGE,
+  type RoomSessionPlacePort,
+} from '../room-session-place.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 
 vi.mock('../../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -109,19 +120,66 @@ describe('resolveSessionCwdWithRoom', () => {
       });
     });
 
+    it('replaces a folder INSIDE the copy with the home too', async () => {
+      const resolved = await resolveSessionCwdWithRoom(
+        { cwd: `${WORKTREE}/docs`, sessionId: 's1' },
+        place()
+      );
+
+      expect(resolved).toMatchObject({ cwd: AGENT, rung: 'agent-home' });
+    });
+
+    it('refuses an OpenCode session that stands in the copy, pointing back to the room', async () => {
+      // OpenCode cannot move a session to a new folder (spec §8.1), and no turn
+      // stands in a room's files — so this one does not start.
+      const placeTurn = vi.fn(() =>
+        Promise.resolve({
+          cwd: WORKTREE,
+          additionalDirectories: [],
+          worktree: WORKTREE,
+          standsInCopy: true,
+        })
+      );
+
+      const resolved = await resolveSessionCwdWithRoom({ sessionId: 's1' }, place({ placeTurn }));
+
+      expect(placeTurn).toHaveBeenCalledWith('room-1', AGENT, 'API Bot', 's1');
+      expect(resolved.refusal).toEqual({
+        code: 'ROOM_SESSION_MOVED',
+        message: ROOM_SESSION_MOVED_MESSAGE,
+      });
+    });
+
     it('keeps the grants for a turn that names the home itself', async () => {
       const resolved = await resolveSessionCwdWithRoom({ cwd: AGENT, sessionId: 's1' }, place());
 
       expect(resolved).toMatchObject({ cwd: AGENT, additionalDirectories: GRANTS });
     });
 
-    it('runs anywhere else it names explicitly, with no grants but as the room’s agent', async () => {
-      const resolved = await resolveSessionCwdWithRoom(
-        { cwd: '/work/elsewhere', sessionId: 's1' },
-        place()
-      );
+    describe('a named folder other than the home (the desk guard)', () => {
+      afterEach(() => clearTestHomes());
 
-      expect(resolved).toEqual({ cwd: '/work/elsewhere', rung: 'explicit', forAgent: AGENT });
+      it('runs in a private copy of the agent`s own project, with no grants but as the room’s agent', async () => {
+        const own = '/home/.dork/workspaces/api-bot/fix-1';
+        registerTestHomes([AGENT, OTHER], {
+          roomsDir: '/home/.dork/rooms',
+          managed: { [own]: AGENT },
+        });
+
+        const resolved = await resolveSessionCwdWithRoom({ cwd: own, sessionId: 's1' }, place());
+
+        expect(resolved).toEqual({ cwd: own, rung: 'explicit', forAgent: AGENT });
+      });
+
+      it('refuses a named folder that is not the agent`s own: another agent`s, a room`s, or anywhere', async () => {
+        registerTestHomes([AGENT, OTHER], { roomsDir: '/home/.dork/rooms' });
+
+        for (const cwd of [OTHER, '/home/.dork/rooms/room-1/repo', '/work/elsewhere']) {
+          const resolved = await resolveSessionCwdWithRoom({ cwd, sessionId: 's1' }, place());
+          expect(resolved.refusal?.code, cwd).toBe('DESK_NOT_OWN');
+          expect(resolved.refusal?.message).toContain(`API Bot's own folder ("${AGENT}")`);
+        }
+      });
     });
   });
 
@@ -137,7 +195,7 @@ describe('resolveSessionCwdWithRoom', () => {
         place({ placeTurn })
       );
 
-      expect(placeTurn).toHaveBeenCalledWith('room-1', AGENT, 'API Bot');
+      expect(placeTurn).toHaveBeenCalledWith('room-1', AGENT, 'API Bot', 's1');
       expect(placeTurn).not.toHaveBeenCalledWith('room-1', OTHER, expect.anything());
       expect(resolved).toMatchObject({ cwd: AGENT, forAgent: AGENT });
     });

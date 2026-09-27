@@ -1816,12 +1816,12 @@ describe("the room's own files, and how work gets out of a tree (spec §3.7)", (
     expect(block).toContain(
       `This room has files of its own. Your own copy of them is at ${w}, on branch ` +
         `${FILES.branch}. Your turn runs in your own folder, not in that copy, so work on the ` +
-        `room's files by their full paths, and run git there as \`git -C ${w} …\` ` +
-        `(or \`cd ${w}\` first). The room's shared copy is at ${FILES.repoPath}: read it if ` +
+        `room's files by their full paths, and run git there as \`git -C "${w}" …\` ` +
+        `(or \`cd "${w}"\` first). The room's shared copy is at ${FILES.repoPath}: read it if ` +
         'you need to, and never write in it.'
     );
     expect(block).toContain(
-      `Sync before you edit: \`git -C ${w} merge main\`. When a change is ready, commit it in ` +
+      `Sync before you edit: \`git -C "${w}" merge main\`. When a change is ready, commit it in ` +
         'your copy, then use the tool whose name ends in `merge_to_room_main` — whatever you ' +
         'have not committed is left behind.'
     );

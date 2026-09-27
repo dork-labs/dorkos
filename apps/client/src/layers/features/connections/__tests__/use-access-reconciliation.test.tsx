@@ -26,6 +26,7 @@ function preview(expiresAt = '2099-01-01T00:00:00.000Z'): ConnectorReconciliatio
     candidates: [],
     agents: [{ agentId: 'agent-a', displayName: 'Ada' }],
     currentGrants: [],
+    everyAgent: { available: true, operationRevisionIds: [] },
     catalogComplete: true,
     createdAt: '2026-09-06T00:00:00.000Z',
     expiresAt,

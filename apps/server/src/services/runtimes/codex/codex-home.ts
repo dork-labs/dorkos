@@ -56,6 +56,18 @@ export function resolveCodexHome(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
+ * The folder Codex's `default` account names, machine-wide: `~/.codex`
+ * (shared contract rev 6d). Unlike {@link resolveCodexHome} it never reads
+ * `CODEX_HOME`: which account `default` names must not depend on the
+ * environment the server happened to start in.
+ *
+ * @returns The absolute default Codex home.
+ */
+export function machineDefaultCodexHome(): string {
+  return path.join(os.homedir(), '.codex');
+}
+
+/**
  * Every directory holding rollout files, in sweep order.
  *
  * Two roots rather than one, and both are real history: `sessions/` is where a

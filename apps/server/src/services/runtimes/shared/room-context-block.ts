@@ -571,10 +571,10 @@ function filesLines(files: RoomContextFiles): string[] {
   const lines = [
     `This room has files of its own. Your own copy of them is at ${worktree}, on branch ` +
       `${label(files.branch)}. Your turn runs in your own folder, not in that copy, so work on ` +
-      `the room's files by their full paths, and run git there as \`git -C ${worktree} …\` ` +
-      `(or \`cd ${worktree}\` first). The room's shared copy is at ` +
+      `the room's files by their full paths, and run git there as \`git -C "${worktree}" …\` ` +
+      `(or \`cd "${worktree}"\` first). The room's shared copy is at ` +
       `${directoryPath('repo', files.repoPath)}: read it if you need to, and never write in it.`,
-    `Sync before you edit: \`git -C ${worktree} merge main\`. When a change is ready, commit it ` +
+    `Sync before you edit: \`git -C "${worktree}" merge main\`. When a change is ready, commit it ` +
       'in your copy, then use the tool whose name ends in `merge_to_room_main` — whatever you ' +
       'have not committed is left behind.',
     ...refreshLines(files, worktree),

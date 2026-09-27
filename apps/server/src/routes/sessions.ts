@@ -1054,7 +1054,11 @@ router.post('/:id/messages', async (req, res) => {
     roomSessionPlace: req.app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
   });
   if (isSessionLaunchRefusal(result)) {
-    return sendError(res, 400, result.message, result.refused);
+    // A request naming something that does not exist is the caller's mistake;
+    // a turn refused for WHERE it would stand is a conflict with the session.
+    const status =
+      result.refused === 'ROOM_SESSION_MOVED' || result.refused === 'DESK_NOT_OWN' ? 409 : 400;
+    return sendError(res, status, result.message, result.refused);
   }
 
   res.status(202).json({

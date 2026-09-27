@@ -327,6 +327,17 @@ function nearestGitAncestor(dir: string): string | null {
   }
 }
 
+/**
+ * Whether `target` is the rooms directory or anywhere inside it — a room's
+ * shared files, its agents' copies, its canvas (spec `agent-home-desk` I3).
+ * No turn ever stands there. `false` when no rooms directory is wired.
+ *
+ * @param target - An absolute folder.
+ */
+export function isInsideRoomsDir(target: string): boolean {
+  return insideRoomsDir(path.resolve(target));
+}
+
 function insideRoomsDir(target: string): boolean {
   const roomsDir = registry?.roomsDir;
   if (!roomsDir) return false;
@@ -410,7 +421,8 @@ export class DeskNotOwnError extends Error {
  *    refused too.
  * 3. `cwd` is `forAgent`'s home, or resolves to it → allowed.
  * 4. `cwd` is the operator's default folder and `binding` is `none` or
- *    `boundary-refused` → allowed; identity still comes from `forAgent`.
+ *    `boundary-refused` → allowed, unless that folder sits inside another
+ *    agent's home; identity still comes from `forAgent`.
  * 5. Anything else → refused.
  *
  * **Step 2 wins over step 4 on purpose.** In a DorkOS dev checkout the default
@@ -454,12 +466,74 @@ export function assertOwnDesk(
   }
   if (found.kind === 'home' || realPathOr(dir) === realPathOr(forAgent)) return;
   if ((binding === 'none' || binding === 'boundary-refused') && sameRealPath(dir, defaultCwd)) {
+    // The default folder is only a shared desk when it is nobody's: one INSIDE
+    // another agent's home (the CLI sets it from wherever `dorkos` started) is
+    // that agent's folder, even though no home sits at exactly that path.
+    const owner = enclosingOtherHome(dir, own);
+    if (owner !== null) {
+      refuse(
+        `"${dir}" is inside another agent's folder (${owner}), so this agent can't work there. ` +
+          `This agent is set to use the default folder. Set a default folder that belongs to ` +
+          `no agent, or give this agent a folder of its own.`
+      );
+    }
     return;
   }
   refuse(
     `"${dir}" is not this agent's own folder or a private copy of it, so the turn was not ` +
       `started. Check where this agent is set to work.`
   );
+}
+
+/**
+ * Refuse a turn that names NO agent but would stand in a folder that is some
+ * agent's or a room's — a room's files, a registered home, a folder inside one,
+ * or a private copy of one. Standing there would read and write that agent's
+ * folder, and resolve to its identity, on nobody's say-so.
+ *
+ * @param cwd - Where the turn is about to stand.
+ * @throws {DeskNotOwnError} When the folder belongs to an agent or a room.
+ */
+export function assertNobodysDesk(cwd: string): void {
+  const dir = path.resolve(cwd);
+  const owned =
+    insideRoomsDir(dir) ||
+    resolveFolder(dir).kind !== 'none' ||
+    enclosingOtherHome(dir, '\0nobody') !== null;
+  if (owned) {
+    throw new DeskNotOwnError(
+      `"${dir}" belongs to an agent or a room, and this message names no agent to run as ` +
+        `there, so it was not run.`,
+      dir,
+      ''
+    );
+  }
+}
+
+/**
+ * The registered home, other than `own`, that `dir` sits in (at any depth), or
+ * `null`. Compared on real paths, so a symlinked spelling cannot slip past.
+ *
+ * @param dir - An absolute folder.
+ * @param own - The turn's agent's home, which never counts.
+ */
+function enclosingOtherHome(dir: string, own: string): string | null {
+  if (!registry) return null;
+  let homes: readonly string[];
+  try {
+    homes = registry.listRegisteredHomes();
+  } catch {
+    return null;
+  }
+  const target = realPathOr(dir);
+  const ownReal = realPathOr(own);
+  for (const home of homes) {
+    const real = realPathOr(home);
+    if (real === ownReal) continue;
+    const rel = path.relative(real, target);
+    if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) return home;
+  }
+  return null;
 }
 
 /**

@@ -445,8 +445,11 @@ describe('in-session tool exposure', () => {
     // DEFERRED: an agent asks to change a permission rarely, and always on a
     // person's card, which is a turn with room for a search. Both counts move by
     // the same one.
-    expect(tools).toHaveLength(110);
-    expect(deferred).toHaveLength(100);
+    // 110 -> 111 for `accounts_usage` (spec `claude-account-fleet` D2),
+    // DEFERRED: a turn that asks how much of an account is used can afford a
+    // search. Both counts move by the same one.
+    expect(tools).toHaveLength(111);
+    expect(deferred).toHaveLength(101);
     const retiredConnectorTools = [
       'connector_list_accounts',
       'connector_start_connect',

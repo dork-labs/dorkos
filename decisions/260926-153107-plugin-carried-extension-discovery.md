@@ -1,7 +1,7 @@
 ---
 id: 260926-153107
 title: Extensions that ship inside an installed plugin are discovered and gated like any other extension
-status: draft
+status: accepted
 created: 2026-09-26
 spec: claude-account-ui
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: claude-account-ui)
+Accepted (auto-extracted from spec: claude-account-ui)
 
 ## Context
 

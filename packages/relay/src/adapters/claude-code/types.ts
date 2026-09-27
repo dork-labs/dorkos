@@ -65,6 +65,25 @@ export type TurnExecutionSettings = Omit<SessionSettings, 'permissionMode'> & {
  *   payload can move without changing who is answering. Absent when nothing
  *   resolved either, and the manifest tier then has nothing to read.
  */
+/**
+ * The host's desk guard for a turn whose payload names its own folder (spec
+ * `agent-home-desk` §3.4). A payload `cwd` is the SENDER's words — any agent can
+ * publish one — so a folder it names is where the answering agent would stand
+ * only if the host agrees it is that agent's desk.
+ *
+ * Resolves to `null` to allow, or to the refusal in plain words.
+ */
+export type TurnDeskCheck = (input: {
+  /** The folder the payload names. */
+  cwd: string;
+  /** The answering agent's home as the relay resolved it from the subject, when it did. */
+  agentDirectory: string | undefined;
+  /** The agent the payload says the turn is for, when it says. */
+  forAgent: string | undefined;
+  /** The session key this turn runs under, for a host that looks its agent up. */
+  sessionKey: string;
+}) => Promise<string | null>;
+
 export type ExecutionSettingsResolver = (opts: {
   sessionId: string;
   runtimeType: string;
@@ -368,6 +387,12 @@ export interface ClaudeCodeAdapterDeps {
    * is what every host did before this existed.
    */
   resolveExecutionSettings?: ExecutionSettingsResolver;
+  /**
+   * The host's desk guard for a turn whose payload names its own folder (spec
+   * `agent-home-desk` §3.4) — see {@link TurnDeskCheck}. Absent means a payload
+   * `cwd` is trusted as it was before this existed.
+   */
+  checkTurnDesk?: TurnDeskCheck;
   /**
    * Which runtime a turn addressed to an AGENT by a mesh subject runs on — see
    * {@link TurnRuntimeTypeResolver}. Absent means the host's default runtime

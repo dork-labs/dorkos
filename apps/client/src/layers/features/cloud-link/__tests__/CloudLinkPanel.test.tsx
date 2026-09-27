@@ -174,6 +174,7 @@ describe('CloudLinkPanel', () => {
             label: 'work',
             lifecycle: 'connected',
             agentCount: 2,
+            everyAgent: null,
           },
           {
             ...base,
@@ -182,6 +183,7 @@ describe('CloudLinkPanel', () => {
             label: 'team',
             lifecycle: 'connected',
             agentCount: 1,
+            everyAgent: null,
           },
           {
             ...base,
@@ -190,6 +192,7 @@ describe('CloudLinkPanel', () => {
             label: 'me',
             lifecycle: 'paused',
             agentCount: 0,
+            everyAgent: null,
           },
           // Through the person's own key, so unlinking does not touch it.
           {
@@ -199,6 +202,7 @@ describe('CloudLinkPanel', () => {
             label: 'me',
             lifecycle: 'connected',
             agentCount: 1,
+            everyAgent: null,
             mode: 'byo',
             payer: 'operator_byo',
           },

@@ -59,6 +59,7 @@ function connection(over: Partial<ConnectorConnectionSummary> = {}): ConnectorCo
     custody: 'managed',
     payer: 'dorkos_managed',
     agentCount: 2,
+    everyAgent: null,
     subscriptionCount: 0,
     usage: { status: 'available', logicalOperationCount: 3, attemptCount: 4 },
     warnings: [],
@@ -268,6 +269,21 @@ describe('AccountsList', () => {
     expect(screen.getByText(/0 agents · Managed/)).toBeInTheDocument();
   });
 
+  it('says "Every agent" instead of a count when the account is shared with every agent', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorConnections).mockResolvedValue({
+      connections: [
+        connection({
+          agentCount: 0,
+          everyAgent: { operationRevisionIds: ['operation-1'], classifications: ['read'] },
+        }),
+      ],
+    });
+    renderWith(transport, <AccountsList onOpenDetail={() => undefined} />);
+    expect(await screen.findByText(/Every agent · Managed/)).toBeInTheDocument();
+    expect(screen.queryByText(/0 agents/)).not.toBeInTheDocument();
+  });
+
   it('distinguishes review, pending synchronization, and failed synchronization', async () => {
     const transport = createMockTransport();
     vi.mocked(transport.getConnectorConnections).mockResolvedValue({
@@ -389,6 +405,7 @@ describe('ConnectionDetailSheet', () => {
     vi.mocked(transport.getConnectorDisconnectImpact).mockResolvedValue({
       connectionId: 'connection-1' as never,
       affectedAgentCount: 1,
+      everyAgent: false,
       affectedSessionCount: 3,
       affectedSubscriptionCount: 0,
       pendingDeliveryCount: 2,
@@ -421,9 +438,73 @@ describe('ConnectionDetailSheet', () => {
     await user.click(screen.getByRole('button', { name: 'Disconnect' }));
     expect(
       await screen.findByText(
-        /1 agents, 3 sessions, and 0 subscriptions will lose access\. 2 pending deliveries will stop\./
+        /1 agent, 3 sessions, and 0 subscriptions will lose access\. 2 pending deliveries will stop\./
       )
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Disconnect' })).toBeEnabled();
+  });
+
+  it('shows every-agent sharing, stops it without a review, and names every agent on disconnect', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      connection: connection({
+        agentCount: 0,
+        mode: 'byo',
+        everyAgent: {
+          operationRevisionIds: ['operation-1', 'operation-2'],
+          classifications: ['read', 'write'],
+        },
+      }),
+      provider: {
+        providerInstanceId: 'provider-1' as never,
+        displayName: 'Composio',
+        mode: 'byo',
+        custody: 'external',
+        payer: 'operator_byo',
+        capabilities,
+        disclosure: 'Composio keeps this sign-in.',
+      },
+      agents: [],
+      sessions: { affectedCount: 0 },
+      subscriptions: {
+        totalCount: 0,
+        activeCount: 0,
+        capability: { status: 'unsupported', reason: 'Event controls are not available yet.' },
+      },
+    });
+    vi.mocked(transport.stopSharingConnectorWithEveryAgent).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      revokedCount: 2,
+    });
+    vi.mocked(transport.getConnectorDisconnectImpact).mockResolvedValue({
+      connectionId: 'connection-1' as never,
+      affectedAgentCount: 0,
+      everyAgent: true,
+      affectedSessionCount: 0,
+      affectedSubscriptionCount: 0,
+      pendingDeliveryCount: 0,
+    });
+    renderWith(
+      transport,
+      <ConnectionDetailSheet
+        connectionId="connection-1"
+        onClose={() => undefined}
+        onManageAccess={() => undefined}
+        onReconnect={() => undefined}
+      />
+    );
+
+    expect(await screen.findByTestId('connection-every-agent')).toHaveTextContent(
+      'Every agent · including agents you add later · 2 actions'
+    );
+    expect(screen.queryByText('No agents can use this account.')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Stop sharing' }));
+    expect(transport.stopSharingConnectorWithEveryAgent).toHaveBeenCalledWith('connection-1');
+
+    await user.click(screen.getByRole('button', { name: 'Disconnect' }));
+    expect(
+      await screen.findByText(/^Every agent, 0 sessions, and 0 subscriptions will lose access\./)
+    ).toBeInTheDocument();
   });
 });

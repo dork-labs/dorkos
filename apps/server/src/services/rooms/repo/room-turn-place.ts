@@ -29,9 +29,26 @@
  * main` in a linked worktree write (measured against real git with everything
  * else in `.git` made read-only, `__tests__/room-turn-place.test.ts`), and no
  * more. The server's own git never reads config an agent can write, for the
- * reasons `room-repo-git.ts` gives. What stays true for every runtime (§5.2): a
+ * reasons `room-repo-git.ts` gives — and when a shell that is not sandboxed
+ * writes a program into `repo/.git/config` anyway, the server refuses the room
+ * (`ROOM_REPO_CONFIG_UNSAFE`) rather than run it. What stays true for every runtime (§5.2): a
  * shell that is not sandboxed can write anywhere its permission mode allows,
  * this folder included.
+ *
+ * **What the narrow grant still allows, stated rather than hidden.** A folder
+ * grant cannot be narrower than a folder, and two of these folders are shared:
+ *
+ * - `objects/` is every agent's and `main`'s object store. Git does not re-hash
+ *   a loose object when it reads it, so an agent that overwrites one — a blob
+ *   `main` already points at — changes what `main` holds without a commit, a
+ *   merge or a room entry.
+ * - `refs/heads/room/` and its reflog folder hold every agent's branch, so one
+ *   agent can move or delete another's `room/<slug>` branch and its reflog.
+ *
+ * Neither runs code; both are tampering with shared content by an agent the
+ * room already trusts to write its files. Closing them needs a per-agent object
+ * store (objects imported into the room's only after hash verification) and
+ * per-agent refs, which is follow-up work, not a grant.
  *
  * Every grant is computed here from the room's layout, never from anything a
  * room or an agent wrote — the admin folder's name is the worktree's own
@@ -41,7 +58,7 @@
  */
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
+import type { AgentRuntime, DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { RoomContextFiles } from '@dorkos/shared/additional-context';
 import { isSameOrInside, realPathOf } from '@dorkos/shared/directory-grants';
 import { logger } from '../../../lib/logger.js';
@@ -164,6 +181,39 @@ export async function resolveRoomTurnPlace(
   };
 }
 
+/**
+ * Whether a bound session was created standing in the agent's copy of a room's
+ * files — which every room turn did before spec `agent-home-desk` — as its
+ * runtime reports the session's directory.
+ *
+ * Asked only of a runtime that cannot move a session to a new folder (OpenCode,
+ * §8.1). Never throws: a session its runtime cannot describe is carried on, as
+ * before.
+ *
+ * @param runtime - The runtime the session is bound to.
+ * @param sessionId - The bound session.
+ * @param request - The turn: its agent's home and its copy of the room's files.
+ */
+export async function sessionStandsInRoomCopy(
+  runtime: Pick<AgentRuntime, 'getSession' | 'getSessionCwd'>,
+  sessionId: string,
+  request: { agentPath: string; worktree: string | null }
+): Promise<boolean> {
+  try {
+    const cwd =
+      runtime.getSessionCwd?.(sessionId) ??
+      (await runtime.getSession(request.agentPath, sessionId))?.cwd;
+    if (typeof cwd !== 'string' || cwd === '') return false;
+    const where = path.resolve(cwd);
+    if (request.worktree !== null && where === path.resolve(request.worktree)) return true;
+    // A copy under an older folder name (the agent was renamed since) is still
+    // a room's copy: `<dorkHome>/rooms/<room>/worktrees/<name>`.
+    return /[\\/]rooms[\\/][^\\/]+[\\/]worktrees[\\/][^\\/]+$/.test(where);
+  } catch {
+    return false;
+  }
+}
+
 /** What {@link roomTurnLaunchStep} needs, injected so a test needs no server. */
 export interface RoomTurnLaunchDeps {
   /**
@@ -257,6 +307,10 @@ export interface RoomSessionPlaceDeps {
   authors: Pick<AuthorRegistry, 'getById'>;
   /** The worktree manager, or `null` on an install whose repo machinery is off. */
   worktrees: () => RoomWorktreeManager | null;
+  /** The runtime a session is bound to, to tell a session that cannot move home. */
+  sessionRuntime?: (
+    sessionId: string
+  ) => Promise<Pick<AgentRuntime, 'type' | 'getSession' | 'getSessionCwd'>>;
 }
 
 /**
@@ -290,8 +344,27 @@ export function roomSessionPlace(deps: RoomSessionPlaceDeps): RoomSessionPlacePo
         agentPath: author.naturalKey,
       };
     },
-    async placeTurn(roomId, agentPath, agentName) {
+    async placeTurn(roomId, agentPath, agentName, sessionId) {
       const place = await resolveRoomTurnPlace(deps.worktrees(), roomId, agentPath, agentName);
+      // An OpenCode session created standing in the copy cannot be moved home
+      // (§8.1). The caller refuses its turn: no turn stands in a room's files.
+      if (sessionId !== undefined && place.worktree !== null && deps.sessionRuntime) {
+        const runtime = await deps.sessionRuntime(sessionId).catch(() => null);
+        if (
+          runtime?.type === 'opencode' &&
+          (await sessionStandsInRoomCopy(runtime, sessionId, {
+            agentPath,
+            worktree: place.worktree,
+          }))
+        ) {
+          return {
+            cwd: place.worktree,
+            additionalDirectories: [],
+            worktree: place.worktree,
+            standsInCopy: true,
+          };
+        }
+      }
       return {
         cwd: place.cwd,
         additionalDirectories: place.additionalDirectories,

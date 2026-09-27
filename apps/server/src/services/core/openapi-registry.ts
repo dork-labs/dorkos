@@ -228,10 +228,12 @@ import {
   ConnectorReconciliationApplyResponseSchema,
   ConnectorReconciliationPreviewRequestSchema,
   ConnectorReconciliationPreviewSchema,
+  ConnectorEveryAgentRevokeResponseSchema,
   ConnectorUsagePageSchema,
 } from '@dorkos/shared/connector-schemas';
 import {
   ConnectorAgentConnectionsSchema,
+  ConnectorEveryAgentGrantsSchema,
   ConnectorAuthenticationFlowCreateRequestSchema,
   ConnectorAuthenticationFlowStateSchema,
   ConnectorAppConnectionsSchema,
@@ -258,6 +260,7 @@ import {
   SetPermissionPresetBodySchema,
 } from '@dorkos/shared/permissions';
 import { z } from 'zod';
+import { AccountUsageSchema, LEDGER_RUNTIMES } from '@dorkos/shared/account-usage';
 import { DisclosedEffectsSchema } from '../marketplace/disclosed-effects.js';
 
 /**
@@ -955,7 +958,10 @@ registry.registerPath({
     'in a queue behind a still-running turn, and `outcome` carries the requested and ' +
     'applied disposition (queue/steer/stage), not whether a turn began. A busy session ' +
     'is never a `409` here — read and edit what is waiting through ' +
-    '`/api/sessions/{id}/queue`. The `202` also carries the CANONICAL session id: for a ' +
+    '`/api/sessions/{id}/queue`; a `409` means the turn was refused for WHERE it would ' +
+    "run (`DESK_NOT_OWN`: inside a room's files, or a room's agent outside its own " +
+    'folder; `ROOM_SESSION_MOVED`: a room conversation its runtime keeps inside the ' +
+    "room's files), and nothing was started. The `202` also carries the CANONICAL session id: for a " +
     'brand-new session this is the real id assigned during the turn (it differs from ' +
     'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
     'to it. To avoid missing the turn, a client should be subscribed to `/events` ' +
@@ -975,6 +981,12 @@ registry.registerPath({
     },
     400: {
       description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    409: {
+      description:
+        'Refused before anything started, for where the turn would run ' +
+        '(`DESK_NOT_OWN`, `ROOM_SESSION_MOVED`); the body says what to do instead',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -1297,6 +1309,36 @@ registry.registerPath({
         },
       },
     },
+  },
+});
+
+// --- Account usage ---
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/runtimes/{runtime}/accounts/usage',
+  tags: ['Runtimes'],
+  summary: "List how much of each of a runtime's accounts is used",
+  description:
+    "Every account of the runtime with its usage windows, from the server's memory: registered " +
+    'accounts in registry order, the machine-wide `default` account when it is not another ' +
+    'name for a registered one, then folders that are neither (with a null `accountId`). A ' +
+    'window with no current reading is left out, and an account with nothing to go on reads ' +
+    '`state: "unknown"`, never zero.',
+  request: {
+    params: z.object({
+      runtime: z.enum(LEDGER_RUNTIMES).openapi({ description: 'The runtime slug.' }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "The runtime's accounts and their usage",
+      content: {
+        'application/json': { schema: z.object({ accounts: z.array(AccountUsageSchema) }) },
+      },
+    },
+    400: { description: 'Unknown runtime slug' },
+    503: { description: 'The usage store is not running yet' },
   },
 });
 
@@ -3835,6 +3877,21 @@ registry.registerPath({
 
 registry.registerPath({
   method: 'get',
+  path: '/api/connectors/every-agent-grants',
+  tags: ['Connectors'],
+  summary: 'Read what every agent, including a new one, inherits',
+  description:
+    'Lists each connection whose owner gave every agent access, with the exact reviewed actions. There is no per-agent exclusion, so this is what any new agent gets the moment it is created.',
+  responses: {
+    200: {
+      description: 'Connections every agent can use, and at which level',
+      content: { 'application/json': { schema: ConnectorEveryAgentGrantsSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
   path: '/api/connectors/sessions/{sessionId}/connections',
   tags: ['Connectors'],
   summary: 'Read effective connector access for one session',
@@ -3976,6 +4033,26 @@ registry.registerPath({
     },
     409: {
       description: 'The connection must be reconciled before it can be edited',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/connectors/connections/{connectionId}/every-agent',
+  tags: ['Connectors'],
+  summary: 'Stop sharing one connection with every agent',
+  description:
+    'Owner only. Ends the every-agent grant at once, for every agent. Needs no permission review, so it works while the service is unavailable.',
+  request: { params: z.object({ connectionId: z.string().min(1) }) },
+  responses: {
+    200: {
+      description: 'How many shared actions ended',
+      content: { 'application/json': { schema: ConnectorEveryAgentRevokeResponseSchema } },
+    },
+    404: {
+      description: 'Connection absent or owned by someone else',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

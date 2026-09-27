@@ -590,6 +590,14 @@ export type RoomErrorCode =
    */
   | 'MAIN_CHECKOUT_DIRTY'
   /**
+   * The room's shared git config names a program git would run — a filter,
+   * diff or merge driver, an include, an fsmonitor, a credential helper
+   * (`assertRoomRepoConfigSafe` in `repo/room-repo-git.ts`). Written by
+   * something outside DorkOS, most likely an agent's unsandboxed shell. Every
+   * server git command in the room refuses until a person removes the keys.
+   */
+  | 'ROOM_REPO_CONFIG_UNSAFE'
+  /**
    * The work being merged carries a symlink pointing outside the room's files
    * (spec §3.6, refusal 5).
    *

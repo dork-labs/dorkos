@@ -1003,9 +1003,10 @@ export class RoomWorktreeManager {
   }
 
   /**
-   * Whether every worktree of this room is free of untracked files the block
-   * hides — the only condition under which removing it cannot make a tree read
-   * dirty. An unreadable worktree answers "needs it", the safe direction.
+   * Whether the room's main checkout and every worktree of this room are free
+   * of untracked files the block hides — the only condition under which
+   * removing it cannot make a tree read dirty. An unreadable tree answers
+   * "needs it", the safe direction.
    *
    * @param roomId - The room.
    * @param ceiling - The room home directory git's search may not climb past.
@@ -1016,6 +1017,15 @@ export class RoomWorktreeManager {
     ceiling: string,
     patterns: readonly string[]
   ): Promise<boolean> {
+    // `repo/` reads the same `info/exclude`, and a room's main checkout found
+    // dirty stops every write to the room (`MAIN_CHECKOUT_DIRTY`) — so anything
+    // the block hides there keeps it too.
+    try {
+      const repoDir = this.deps.store.repoPath(roomId);
+      if ((await hiddenUntracked(repoDir, ceiling, patterns)).length > 0) return false;
+    } catch {
+      return false;
+    }
     const root = this.deps.store.worktreesPath(roomId);
     let names: string[];
     try {

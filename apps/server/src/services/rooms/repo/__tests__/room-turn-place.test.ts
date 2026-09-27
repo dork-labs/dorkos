@@ -36,7 +36,13 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { hasUncommittedChanges, mergeNoFf, runGit } from '../room-repo-git.js';
+import {
+  assertRoomRepoConfigSafe,
+  commitsAheadOfMain,
+  hasUncommittedChanges,
+  mergeNoFf,
+  runGit,
+} from '../room-repo-git.js';
 import {
   resolveRoomTurnPlace,
   roomSessionPlace,
@@ -285,19 +291,16 @@ describe('room turn placement and grants', () => {
     ).rejects.toMatchObject({ code: expect.stringMatching(/EACCES|EPERM|ENOENT/) });
   });
 
-  it('runs no planted hook, and no hooksPath the room`s config names, in the server`s merge', async () => {
-    // What an UNsandboxed shell could plant (spec §5.2): hooks in the shared
-    // folder, and a config pointing hook lookup somewhere it controls. The
-    // server's own git never runs either.
+  it('runs no hook planted in the room`s shared hooks folder, in the server`s merge', async () => {
+    // What an UNsandboxed shell could plant (spec §5.2). A config pointing hook
+    // lookup elsewhere is refused outright — see the config cases below.
     await service.enable(ROOM_ID, OPERATOR);
     const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
     const repo = store.repoPath(ROOM_ID);
     const git = path.join(repo, '.git');
     const marker = path.join(scratch, 'hook-ran');
-    const evilHooks = path.join(scratch, 'evil-hooks');
     await mkdir(path.join(git, 'hooks'), { recursive: true });
-    await mkdir(evilHooks, { recursive: true });
-    for (const dir of [path.join(git, 'hooks'), evilHooks]) {
+    for (const dir of [path.join(git, 'hooks')]) {
       for (const hook of [
         'pre-merge-commit',
         'post-merge',
@@ -308,7 +311,6 @@ describe('room turn placement and grants', () => {
         await writeFile(path.join(dir, hook), markingHook(marker), { mode: 0o755 });
       }
     }
-    await agentGit(repo, 'config', 'core.hooksPath', evilHooks);
     await writeFile(path.join(place.worktree!, 'PLAN.md'), '# plan\n', 'utf-8');
     await agentGit(place.worktree!, 'add', 'PLAN.md');
     await agentGit(place.worktree!, 'commit', '-q', '--no-verify', '-m', 'plan');
@@ -327,6 +329,110 @@ describe('room turn placement and grants', () => {
 
     expect(await readFile(marker, 'utf-8')).toBe('');
     expect(existsSync(path.join(repo, 'PLAN.md'))).toBe(true);
+  });
+
+  describe('a room whose shared git config names a program', () => {
+    // No agent is GRANTED `repo/.git/config`, but an unsandboxed shell can write
+    // it: a plain `git config` in an agent's copy lands there. Every server git
+    // command in the room then refuses `ROOM_REPO_CONFIG_UNSAFE` rather than run
+    // what the config defines. Seeded: skipping the audit in `runGitRaw` reddens
+    // the filter-on-merge case (the smudge runs as the server).
+    async function armed(key: string, value: string) {
+      await service.enable(ROOM_ID, OPERATOR);
+      const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+      const copy = place.worktree!;
+      const marker = path.join(scratch, `ran-${key.replace(/\W/g, '-')}`);
+      const program = path.join(scratch, `prog-${key.replace(/\W/g, '-')}.sh`);
+      await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, { mode: 0o755 });
+      // Written from the COPY, as an agent's plain shell would.
+      await agentGit(copy, 'config', key, value.replace('PROGRAM', program));
+      return { copy, marker, program };
+    }
+
+    it('lands a `git config` run in an agent`s copy in the room`s shared config', async () => {
+      await armed('core.ignoreStat', 'true');
+      const shared = await readFile(path.join(store.repoPath(ROOM_ID), '.git', 'config'), 'utf-8');
+      expect(shared).toContain('ignoreStat = true');
+    });
+
+    it('refuses the server`s merge instead of running a filter smudge a member`s attributes name', async () => {
+      const { copy, marker } = await armed('filter.x.smudge', 'PROGRAM');
+      await agentGit(copy, 'config', 'filter.x.clean', 'cat');
+      await writeFile(path.join(copy, '.gitattributes'), '*.md filter=x\n');
+      await writeFile(path.join(copy, 'PLAN.md'), '# plan\n');
+      await agentGit(copy, 'add', '-A');
+      await agentGit(copy, 'commit', '-q', '-m', 'attributes');
+      // The fixture is live: plain git checking the file out runs the smudge.
+      await agentGit(copy, 'rm', '-q', '--cached', 'PLAN.md');
+      await agentGit(copy, 'checkout', '--', 'PLAN.md').catch(() => undefined);
+      await agentGit(copy, 'reset', '-q', '--hard');
+      expect(existsSync(marker)).toBe(true);
+      await writeFile(marker, '');
+
+      await expect(
+        mergeNoFf(
+          store.repoPath(ROOM_ID),
+          `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
+          'Merge the plan',
+          { name: 'Dorian', email: 'operator@dorkos.local' },
+          store.homeDir(ROOM_ID)
+        )
+      ).rejects.toMatchObject({ code: 'ROOM_REPO_CONFIG_UNSAFE' });
+      expect(await readFile(marker, 'utf-8')).toBe('');
+      expect(existsSync(path.join(store.repoPath(ROOM_ID), 'PLAN.md'))).toBe(false);
+    });
+
+    it('refuses a diff whose textconv the config defines, and a status under an fsmonitor', async () => {
+      const { copy, marker } = await armed('diff.x.textconv', 'PROGRAM');
+      await writeFile(path.join(copy, '.gitattributes'), '*.md diff=x\n');
+      await writeFile(path.join(copy, 'A.md'), 'a\n');
+      await agentGit(copy, 'add', '-A');
+      await agentGit(copy, 'commit', '-q', '-m', 'a');
+      await writeFile(path.join(copy, 'A.md'), 'b\n');
+
+      await expect(runGit(['diff'], copy, store.homeDir(ROOM_ID))).rejects.toMatchObject({
+        code: 'ROOM_REPO_CONFIG_UNSAFE',
+      });
+      expect(existsSync(marker)).toBe(false);
+
+      await agentGit(copy, 'config', '--unset', 'diff.x.textconv');
+      await agentGit(copy, 'config', 'core.fsmonitor', marker);
+      await expect(hasUncommittedChanges(copy, store.homeDir(ROOM_ID))).rejects.toMatchObject({
+        code: 'ROOM_REPO_CONFIG_UNSAFE',
+      });
+    });
+
+    it('refuses an include, and works again once a person removes the keys', async () => {
+      const { copy } = await armed('include.path', '/nowhere/evil.config');
+      await expect(hasUncommittedChanges(copy, store.homeDir(ROOM_ID))).rejects.toMatchObject({
+        code: 'ROOM_REPO_CONFIG_UNSAFE',
+        message: expect.stringContaining('include.path'),
+      });
+
+      await agentGit(copy, 'config', '--unset', 'include.path');
+      await expect(hasUncommittedChanges(copy, store.homeDir(ROOM_ID))).resolves.toBe(false);
+      await expect(assertRoomRepoConfigSafe(store.homeDir(ROOM_ID))).resolves.toBeUndefined();
+    });
+
+    it('refuses a conditional include, whatever it would read', async () => {
+      await armed('includeIf.gitdir:/.path', '/nowhere/evil.config');
+      await expect(assertRoomRepoConfigSafe(store.homeDir(ROOM_ID))).rejects.toMatchObject({
+        code: 'ROOM_REPO_CONFIG_UNSAFE',
+        message: expect.stringContaining('includeif.gitdir:/.path'),
+      });
+    });
+
+    it('refuses turning on per-copy settings, so a copy`s own settings file is never read', async () => {
+      // An agent is granted its copy's folder under `repo/.git/worktrees/`, so
+      // it can write `config.worktree` there. Git reads that file only once
+      // `extensions.worktreeConfig` is on — refused here — so the file stays
+      // inert (the merge case below proves nothing it defines runs).
+      await armed('extensions.worktreeConfig', 'true');
+      await expect(assertRoomRepoConfigSafe(store.homeDir(ROOM_ID))).rejects.toMatchObject({
+        code: 'ROOM_REPO_CONFIG_UNSAFE',
+        message: expect.stringContaining('extensions.worktreeconfig'),
+      });
+    });
   });
 
   it('the server`s status read of a copy ignores a rewritten .git pointer', async () => {
@@ -364,6 +470,80 @@ describe('room turn placement and grants', () => {
     await hasUncommittedChanges(copy, store.homeDir(ROOM_ID)).catch(() => undefined);
 
     expect(await readFile(marker, 'utf-8')).toBe('');
+  });
+
+  it('the server`s git never walks into a submodule the agent committed into its copy', async () => {
+    // A gitlink plus a `sub/` holding its own `.git/config` with a filter
+    // program and a `.gitattributes` naming it: a plain `git status` in the
+    // copy recurses into the submodule and runs that program as the server.
+    // The worktree pin does not help — the submodule's git folder is its own.
+    await service.enable(ROOM_ID, OPERATOR);
+    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const copy = place.worktree!;
+    const marker = path.join(scratch, 'submodule-filter-ran');
+    const program = path.join(scratch, 'evil-sub-filter.sh');
+    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, { mode: 0o755 });
+    const sub = path.join(copy, 'sub');
+    await mkdir(sub, { recursive: true });
+    await agentGit(sub, 'init', '-q', '-b', 'main');
+    await writeFile(path.join(sub, 'x.txt'), 'x\n');
+    await agentGit(sub, 'add', 'x.txt');
+    await agentGit(sub, 'commit', '-q', '-m', 'sub');
+    const subHead = await agentGit(sub, 'rev-parse', 'HEAD');
+    await agentGit(sub, 'config', 'filter.x.clean', program);
+    await writeFile(path.join(sub, '.gitattributes'), '* filter=x\n');
+    await agentGit(copy, 'update-index', '--add', '--cacheinfo', `160000,${subHead},sub`);
+    await agentGit(copy, 'commit', '-q', '-m', 'add a submodule');
+    // The fixture is live: plain git status in the copy runs the program.
+    const later = new Date(Date.now() + 60_000);
+    await utimes(path.join(sub, 'x.txt'), later, later);
+    await agentGit(copy, 'status', '--porcelain');
+    expect(existsSync(marker)).toBe(true);
+    await writeFile(marker, '');
+    const later2 = new Date(Date.now() + 120_000);
+    await utimes(path.join(sub, 'x.txt'), later2, later2);
+
+    await hasUncommittedChanges(copy, store.homeDir(ROOM_ID)).catch(() => undefined);
+    await commitsAheadOfMain(copy, store.homeDir(ROOM_ID)).catch(() => undefined);
+
+    expect(await readFile(marker, 'utf-8')).toBe('');
+  });
+
+  it('runs no filter, diff or merge driver a committed .gitattributes names, in the server`s merge', async () => {
+    // `.gitattributes` is committed content an agent writes. A driver it names
+    // is only a program when a config the SERVER reads defines it — and the
+    // only such config is `repo/.git/config`, which no agent is granted. So a
+    // merge of a branch carrying such attributes runs nothing.
+    await service.enable(ROOM_ID, OPERATOR);
+    const place = await resolveRoomTurnPlace(manager, ROOM_ID, ana, 'Ana');
+    const copy = place.worktree!;
+    const marker = path.join(scratch, 'driver-ran');
+    const program = path.join(scratch, 'evil-driver.sh');
+    await writeFile(program, `#!/bin/sh\necho ran >> "${marker}"\ncat\n`, { mode: 0o755 });
+    // Drivers defined where an agent CAN write: its copy's own admin folder
+    // (read only if worktree config were enabled) and a config file an
+    // `include.path` could name. Neither may reach the server.
+    const admin = path.join(store.repoPath(ROOM_ID), '.git', 'worktrees', path.basename(copy));
+    await writeFile(
+      path.join(admin, 'config.worktree'),
+      `[filter "x"]\n\tclean = ${program}\n\tsmudge = ${program}\n[merge "x"]\n\tdriver = ${program}\n[diff "x"]\n\ttextconv = ${program}\n`
+    );
+    await writeFile(path.join(copy, '.gitattributes'), '* filter=x merge=x diff=x\n');
+    await writeFile(path.join(copy, 'PLAN.md'), '# plan\n');
+    await agentGit(copy, 'add', '-A');
+    await agentGit(copy, 'commit', '-q', '-m', 'attributes');
+
+    await mergeNoFf(
+      store.repoPath(ROOM_ID),
+      `room/${RoomWorktreeManager.slugFor('Ana', ana)}`,
+      'Merge the plan',
+      { name: 'Dorian', email: 'operator@dorkos.local' },
+      store.homeDir(ROOM_ID)
+    );
+    await hasUncommittedChanges(store.repoPath(ROOM_ID), store.homeDir(ROOM_ID));
+
+    expect(existsSync(marker)).toBe(false);
+    expect(existsSync(path.join(store.repoPath(ROOM_ID), 'PLAN.md'))).toBe(true);
   });
 });
 
@@ -509,6 +689,42 @@ describe('roomSessionPlace', () => {
     expect(unbound.roomFor('s1')).toBeNull();
     expect(human.roomFor('s1')).toBeNull();
     expect(gone.roomFor('s1')).toBeNull();
+  });
+
+  it('keeps an OpenCode session created in the copy there — it cannot move home', async () => {
+    const COPY = '/dork/rooms/r1/worktrees/api-bot-1a2b3c4d';
+    const manager = {
+      ensureWorktree: () => Promise.resolve({ path: COPY, repo: '/dork/rooms/r1/repo' }),
+      turnFilesContext: () => Promise.resolve(null),
+    } as unknown as RoomWorktreeManager;
+    const opencodeIn = (dir: string) => () =>
+      Promise.resolve({
+        type: 'opencode',
+        getSession: () => Promise.resolve({ cwd: dir } as never),
+        getSessionCwd: () => undefined,
+      });
+
+    const stuck = await roomSessionPlace({
+      bindings: { bindingForSession: () => undefined },
+      authors: { getById: () => null },
+      worktrees: () => manager,
+      sessionRuntime: opencodeIn(COPY),
+    }).placeTurn('r1', AGENT, 'API Bot', 'oc-old');
+    const moved = await roomSessionPlace({
+      bindings: { bindingForSession: () => undefined },
+      authors: { getById: () => null },
+      worktrees: () => manager,
+      sessionRuntime: opencodeIn(AGENT),
+    }).placeTurn('r1', AGENT, 'API Bot', 'oc-home');
+
+    expect(stuck).toEqual({
+      cwd: COPY,
+      additionalDirectories: [],
+      worktree: COPY,
+      standsInCopy: true,
+    });
+    expect(moved.cwd).toBe(AGENT);
+    expect(moved.standsInCopy).toBeUndefined();
   });
 
   it('places an app-resumed turn exactly as a room turn is placed: at home', async () => {

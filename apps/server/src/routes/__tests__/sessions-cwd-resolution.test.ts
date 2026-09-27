@@ -445,16 +445,18 @@ describe('POST /:id/messages — a room-bound session', () => {
     );
   });
 
-  it('still yields to a caller that names another directory, with no grants', async () => {
+  // The desk guard (spec `agent-home-desk` §3.4): a room's agent stands only
+  // at its own desk, so a folder that is no copy of its own is refused before
+  // anything starts — the same answer the binding router and tasks give.
+  it('refuses a caller that names a folder that is not the room`s agent`s own', async () => {
     manifestBinding = { mode: 'home' };
     sessionAgentPath = AGENT;
     roomBinding = { roomId: 'room-1', authorId: 'author-1', sessionId: S1 };
 
-    const opts = await sendAndCapture({ cwd: '/work/thing' });
+    const { status } = await send({ cwd: '/work/thing' });
 
-    expect(opts?.cwd).toBe('/work/thing');
-    expect(opts).not.toHaveProperty('additionalDirectories');
-    expect(opts?.forAgent).toBe(AGENT);
+    expect(status).toBe(409);
+    expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });
 
   // A room with no files of its own is the ordinary case, and the manager says

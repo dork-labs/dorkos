@@ -29,6 +29,8 @@ export {
   readHomeManifest,
   setAgentHomeRegistry,
   assertOwnDesk,
+  assertNobodysDesk,
+  isInsideRoomsDir,
   deskBindingFor,
   DeskNotOwnError,
   type AgentHome,

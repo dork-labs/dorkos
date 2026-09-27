@@ -382,6 +382,16 @@ dorkos agent permissions <agent> set files ask         # Its own Files & command
 dorkos agent permissions <agent> reset files           # Back to the setting everyone has
 ```
 
+The settings every agent shares, and the history of changes, are under `dorkos permissions`:
+
+```bash
+dorkos permissions                                     # The preset, every area, and who differs
+dorkos permissions set --preset balanced               # Choose a preset
+dorkos permissions set tasks ask                       # One area, for everyone
+dorkos permissions history --agent <agent>             # Recent changes, each with its id
+dorkos permissions undo <id>                           # Undo one of them
+```
+
 See the [Permissions guide](/docs/guides/permissions) for the areas, the presets, and the request-card flow. One edge worth knowing: a permission covers what an agent asks DorkOS to do. An agent that can run terminal commands can still act outside DorkOS. If you want that closed too, turn on **Require login** (Settings, under Access), which makes every request prove it is you.
 
 **`dorkos task`**: list, create, trigger, and inspect scheduled tasks.

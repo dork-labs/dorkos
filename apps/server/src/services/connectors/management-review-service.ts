@@ -15,6 +15,7 @@ import {
 import {
   ConnectorManagementReviewActionSchema,
   ConnectorManagementReviewContextSchema,
+  type ConnectorManagementReviewContext,
   ConnectorManagementReviewCreateRequestSchema,
   ConnectorManagementReviewDecisionResultSchema,
   ConnectorManagementReviewDecisionSchema,
@@ -378,6 +379,11 @@ export class ConnectorManagementReviewService {
 
     this.resolveTarget(owner, action, row.executionConfigGeneration ?? undefined);
 
+    // Freeze what the owner saw at approval, including live every-agent facts,
+    // so the resolved record says what was true when they said yes.
+    const approvedContext = row.reviewContextJson
+      ? JSON.stringify(this.storedContext(row))
+      : row.reviewContextJson;
     const claimed = this.db
       .update(connectorReviewRequests)
       .set({
@@ -385,6 +391,7 @@ export class ConnectorManagementReviewService {
         resolvedAt,
         resolvedBy: ownerColumns(owner).ownerId,
         resolutionSummary: `applying:${this.bootEpoch}`,
+        reviewContextJson: approvedContext,
       })
       .where(
         and(
@@ -468,9 +475,7 @@ export class ConnectorManagementReviewService {
         const action = ConnectorManagementReviewActionSchema.parse(
           decodeConnectorReviewAction(row.actionPayloadJson)
         );
-        const context = row.reviewContextJson
-          ? ConnectorManagementReviewContextSchema.parse(JSON.parse(row.reviewContextJson))
-          : ({ kind: 'unavailable', reason: 'created_before_context_snapshot' } as const);
+        const context = this.storedContext(row);
         return ConnectorManagementReviewItemSchema.parse({
           reviewRequestId: row.id,
           action,
@@ -544,12 +549,7 @@ export class ConnectorManagementReviewService {
       }
     }
 
-    const context = row.reviewContextJson
-      ? ConnectorManagementReviewContextSchema.parse(JSON.parse(row.reviewContextJson))
-      : ({
-          kind: 'unavailable',
-          reason: 'created_before_context_snapshot',
-        } as const);
+    const context = this.storedContext(row);
     const base = {
       reviewRequestId: row.id,
       action,
@@ -587,6 +587,22 @@ export class ConnectorManagementReviewService {
           resolution: approvedResolution ?? { kind: 'outcome_unknown' },
         });
     }
+  }
+
+  /**
+   * The stored context, with live every-agent facts while the review is still
+   * pending (see `withLiveEveryAgent`). A resolved review keeps what approval
+   * stored.
+   */
+  private storedContext(row: {
+    reviewContextJson: string | null;
+    state: string;
+  }): ConnectorManagementReviewContext {
+    if (!row.reviewContextJson) {
+      return { kind: 'unavailable', reason: 'created_before_context_snapshot' };
+    }
+    const context = ConnectorManagementReviewContextSchema.parse(JSON.parse(row.reviewContextJson));
+    return row.state === 'pending' ? this.reviewContext.withLiveEveryAgent(context) : context;
   }
 
   private requireOwnedRow(reviewRequestId: string, owner: ConnectorOwnerAuthority) {

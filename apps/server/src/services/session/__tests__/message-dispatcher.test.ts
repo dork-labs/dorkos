@@ -2476,10 +2476,11 @@ describe('isTurnInFlight (spec `agent-home-desk` §6.1)', () => {
     expect(isTurnInFlight(session, runtime)).toBe(false);
   });
 
-  it('is true for a turn launched with its queue budget exhausted (lock held, no slot)', async () => {
-    // The lossy case `deliverSteer` names: a budget-exhausted launch runs its
-    // turn holding the runtime's real lock and never takes the dispatcher's
-    // slot. Modelled with a lock the fake runtime actually keeps.
+  it('stays in flight across a budget-exhausted launch, and clears when it ends', async () => {
+    // The shape `deliverSteer` names: a budget-exhausted launch never takes the
+    // dispatcher's slot. This end-to-end case does NOT isolate the lock — other
+    // authorities may also answer while the turn runs — so the lock's own
+    // weight is pinned by the lock-only case below, which reds without it.
     const locks = new Map<string, string>();
     runtime.acquireLock.mockImplementation((sid: string, cid: string) => {
       if (locks.has(sid) && locks.get(sid) !== cid) return false;
@@ -2511,7 +2512,10 @@ describe('isTurnInFlight (spec `agent-home-desk` §6.1)', () => {
     expect(isTurnInFlight(session, runtime)).toBe(false);
   });
 
-  it('asks the runtime`s lock on its own: held with no dispatcher turn at all is in flight', () => {
+  it('is true on the runtime`s lock ALONE: no slot, no open projector turn (the lossy case)', () => {
+    // A budget-exhausted launch holds the runtime's real lock without the
+    // dispatcher's slot. Here nothing but the lock is held, so this is the case
+    // that fails when the lock is not asked.
     runtime.isLocked.mockReturnValue(true);
     expect(isTurnInFlight(session, runtime)).toBe(true);
     runtime.isLocked.mockReturnValue(false);

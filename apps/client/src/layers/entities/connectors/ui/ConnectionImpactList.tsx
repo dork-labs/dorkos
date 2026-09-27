@@ -1,15 +1,19 @@
 import type { ImpactApp } from '../lib/connection-impact';
 
-/** One app line: its name and, when any, how many agents use it. */
+/** One app line: its name and, when any, who uses it — every agent, or how many. */
 function AppLine({ app }: { app: ImpactApp }) {
   return (
     <li>
       {app.name}
-      {app.agentCount > 0 && (
-        <span className="text-muted-foreground">
-          {' '}
-          · used by {app.agentCount} {app.agentCount === 1 ? 'agent' : 'agents'}
-        </span>
+      {app.everyAgent ? (
+        <span className="text-muted-foreground"> · used by every agent</span>
+      ) : (
+        app.agentCount > 0 && (
+          <span className="text-muted-foreground">
+            {' '}
+            · used by {app.agentCount} {app.agentCount === 1 ? 'agent' : 'agents'}
+          </span>
+        )
       )}
     </li>
   );

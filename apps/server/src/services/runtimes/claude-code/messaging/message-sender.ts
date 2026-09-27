@@ -31,6 +31,7 @@ import { createDeferredClose, settleStdinAtDeadline, settleStdinAtResult } from 
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
+import { recordSessionUsage } from '../accounts/account-usage-feed.js';
 import { resolveEffectiveCwd, resolveLaunch } from './launch-resolver.js';
 import type { MessageSenderOpts } from './message-sender-shared.js';
 // The turn path's boundary rule and the refusal it surfaces, shared with the
@@ -396,7 +397,13 @@ export async function* executeSdkQuery(
         // stamps it onto the terminal session_status. `undefined` (API-key
         // session, fetch failure) keeps the last known value — the item must
         // never flicker back to cost-only between turns.
-        if (subscriptionUsage) session.lastSubscriptionUsage = subscriptionUsage;
+        if (subscriptionUsage?.status) session.lastSubscriptionUsage = subscriptionUsage.status;
+        // The same answer, account-wide, into the account's usage ledger.
+        if (subscriptionUsage) {
+          recordSessionUsage(session, subscriptionUsage.observations, {
+            subscriptionType: subscriptionUsage.subscriptionType,
+          });
+        }
         // Release stdin so the process drains its trailing messages and exits —
         // unless the turn is still alive, in which case the EOF would cancel
         // every hook-matched tool the CLI runs from here on and drop every

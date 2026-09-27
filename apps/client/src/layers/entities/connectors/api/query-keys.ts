@@ -27,6 +27,7 @@ export const connectorKeys = {
   usage: (connectionId: string) => [...connectorKeys.connection(connectionId), 'usage'] as const,
   agentConnections: (agentId: string) =>
     [...connectorKeys.connections(), 'agent', agentId] as const,
+  everyAgentGrants: () => [...connectorKeys.connections(), 'every-agent'] as const,
   sessionConnections: (sessionId: string) =>
     [...connectorKeys.connections(), 'session', sessionId] as const,
 
