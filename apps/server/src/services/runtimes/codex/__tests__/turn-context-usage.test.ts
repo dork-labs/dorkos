@@ -359,6 +359,17 @@ describe('readCodexTurnReading', () => {
     expect(reading?.rateLimits).toEqual([rateLimits(), spark]);
   });
 
+  it('treats a record with no limit_id as the main limit, the same one as "codex"', async () => {
+    const codexHome = await createHome();
+    const unnamed = rateLimits({ limit_id: undefined });
+    delete unnamed.limit_id;
+    await writeRollout(codexHome, [
+      tokenCountWithLimits(unnamed, '2026-09-08T22:58:01.000Z'),
+      tokenCountWithLimits(rateLimits(), '2026-09-08T22:58:05.960Z'),
+    ]);
+    expect((await read(codexHome))?.rateLimits).toEqual([rateLimits()]);
+  });
+
   it('ignores a record written before this turn started', async () => {
     const codexHome = await createHome();
     await writeRollout(codexHome, [

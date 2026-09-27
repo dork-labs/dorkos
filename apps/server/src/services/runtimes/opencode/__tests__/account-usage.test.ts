@@ -147,6 +147,42 @@ describe('OpenCode spend', () => {
     expect(spendOf(store)?.costUsd).toBe(0.25);
   });
 
+  it('a completed message re-announced later adds nothing', async () => {
+    const store = await makeStore();
+    const ctx = createOpenCodeEventContext(SESSION_ID, () => clock);
+    const message = assistantMessage(OC, { id: 'msg_a', completed: true, cost: 0.25 });
+    message.time.completed = clock;
+    mapOpenCodeEvent(messageUpdated(message), ctx);
+    clock += 5_000;
+    mapOpenCodeEvent(messageUpdated(message), ctx);
+    expect(spendOf(store)?.costUsd).toBe(0.25);
+  });
+
+  it('a message whose cost grew adds only the difference', async () => {
+    const store = await makeStore();
+    const ctx = createOpenCodeEventContext(SESSION_ID, () => clock);
+    const message = assistantMessage(OC, { id: 'msg_a', completed: true, cost: 0.25 });
+    message.time.completed = clock;
+    mapOpenCodeEvent(messageUpdated(message), ctx);
+    clock += 5_000;
+    mapOpenCodeEvent(messageUpdated({ ...message, cost: 0.4 }), ctx);
+    expect(spendOf(store)?.costUsd).toBeCloseTo(0.4, 10);
+  });
+
+  it('two messages in the same millisecond both count', async () => {
+    const store = await makeStore();
+    const ctx = createOpenCodeEventContext(SESSION_ID, () => clock);
+    for (const [id, cost] of [
+      ['msg_a', 0.1],
+      ['msg_b', 0.2],
+    ] as const) {
+      const message = assistantMessage(OC, { id, completed: true, cost });
+      message.time.completed = clock;
+      mapOpenCodeEvent(messageUpdated(message), ctx);
+    }
+    expect(spendOf(store)?.costUsd).toBeCloseTo(0.3, 10);
+  });
+
   it('never counts a message that completed before the turn began', async () => {
     const store = await makeStore();
     const ctx = createOpenCodeEventContext(SESSION_ID, () => clock);

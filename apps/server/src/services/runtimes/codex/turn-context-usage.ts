@@ -282,7 +282,11 @@ function parseTurnRateLimits(
     if (turnStartedAtMs !== undefined && recordedAt < turnStartedAtMs) break;
     const rateLimits = payload.rate_limits;
     if (!isPlainObject(rateLimits)) continue;
-    const limitKey = typeof rateLimits.limit_id === 'string' ? rateLimits.limit_id : '';
+    // No `limit_id` IS the main limit (contract §1.2), so it shares `codex`'s key.
+    const limitKey =
+      typeof rateLimits.limit_id === 'string' && rateLimits.limit_id !== ''
+        ? rateLimits.limit_id
+        : 'codex';
     if (newestByLimit.has(limitKey)) continue;
     newestByLimit.set(limitKey, {
       ...rateLimits,

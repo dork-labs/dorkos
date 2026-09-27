@@ -244,9 +244,14 @@ describe('isCodexUsageLimitMessage', () => {
       )
     ).toBe(true);
     expect(isCodexUsageLimitMessage("You've hit your usage limit.")).toBe(true);
+  });
+
+  it('a plain 429 throttle is not the account running out, so it sets no limit', () => {
+    const message = 'exceeded retry limit, last status: 429 Too Many Requests';
+    expect(isCodexUsageLimitMessage(message)).toBe(false);
     expect(
-      isCodexUsageLimitMessage('exceeded retry limit, last status: 429 Too Many Requests')
-    ).toBe(true);
+      noteCodexTurnUsage({ sessionId: 's-1' }, [], isCodexUsageLimitMessage(message), NOW)
+    ).toBeNull();
   });
 
   it('does not match an ordinary failure', () => {

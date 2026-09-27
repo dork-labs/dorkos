@@ -117,7 +117,6 @@ export function recordOpenCodeSpend(
   const already = state.spentByMessageId.get(assistant.id) ?? 0;
   const added = assistant.cost - already;
   if (added <= 0) return;
-  state.spentByMessageId.set(assistant.id, assistant.cost);
 
   const store = getAccountUsageStore();
   if (!store) return;
@@ -125,15 +124,28 @@ export function recordOpenCodeSpend(
     const periodStart = utcMonthStart(now);
     const held = store.peek('opencode', [IMPLICIT_ACCOUNT_ID])[0]?.spend ?? null;
     const sameMonth = held !== null && held.periodStart === periodStart;
+    const total = (sameMonth ? held.costUsd : 0) + added;
+    // A fact merges newest-`observedAt`-wins and keeps the stored one on a tie,
+    // so a second message in the same millisecond would be dropped with its
+    // cost. Stamping past the held reading makes the new total always newer.
+    const heldAt = held ? Date.parse(held.observedAt) : NaN;
+    const observedAt = new Date(
+      Number.isFinite(heldAt) ? Math.max(now.getTime(), heldAt + 1) : now.getTime()
+    );
     store.record('opencode', { accountId: IMPLICIT_ACCOUNT_ID }, [], {
       spend: {
         periodStart,
-        costUsd: (sameMonth ? held.costUsd : 0) + added,
+        costUsd: total,
         limitUsd: sameMonth ? (held.limitUsd ?? null) : null,
-        observedAt: now.toISOString(),
+        observedAt: observedAt.toISOString(),
         source: 'sidecar',
       },
     });
+    // Count the message only once its cost is in the total, so a write that
+    // did not land is retried by the message's next announcement.
+    if (store.peek('opencode', [IMPLICIT_ACCOUNT_ID])[0]?.spend?.costUsd === total) {
+      state.spentByMessageId.set(assistant.id, assistant.cost);
+    }
   } catch (err) {
     logger.warn('[account-usage] could not record OpenCode spend', { err: String(err) });
   }

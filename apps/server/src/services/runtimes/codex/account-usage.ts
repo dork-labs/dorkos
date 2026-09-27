@@ -36,14 +36,13 @@ const UNKNOWN_LIMIT_WINDOW = 'unknown';
 /**
  * Codex's own words for a turn that stopped on the account's usage limit, as
  * real rollouts record them ("You've hit your usage limit. Visit … or try
- * again at …", `codex_error_info: usage_limit_exceeded`), plus the transport's
- * exhausted-retry 429. Narrow on purpose: an ordinary failure must never read
- * as a limit.
+ * again at …", `codex_error_info: usage_limit_exceeded`). Narrow on purpose:
+ * an ordinary failure, or a bare 429 from a short-term throttle, must never
+ * read as the account running out.
  */
 const USAGE_LIMIT_PATTERNS: readonly RegExp[] = [
   /\bhit your usage limit\b/i,
   /\busage_limit_(?:exceeded|reached)\b/i,
-  /\b429 Too Many Requests\b/i,
 ];
 
 /**
