@@ -18,6 +18,7 @@
  */
 import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
+import type { DirectoryGrant } from '@dorkos/shared/agent-runtime';
 import type { SendMessageRequest } from '@dorkos/shared/schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { sanitizeWorkspaceKey } from '@dorkos/shared/workspace';
@@ -29,7 +30,7 @@ import { getWorkspaceManager } from '../../workspace/index.js';
 import {
   resolveSessionCwdWithRoom,
   type RoomSessionPlacePort,
-} from '../../workspace/room-session-cwd.js';
+} from '../../workspace/room-session-place.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { logError, logger } from '../../../lib/logger.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
@@ -192,6 +193,10 @@ export async function dispatchSessionMessage(
   // Additive + resilient: with no key (or a disabled/failing manager) the turn
   // proceeds with the original cwd, byte-for-byte unchanged.
   let effectiveCwd = cwd;
+  // A room-bound session's agent and grants, when the room answered for it
+  // (spec `agent-home-desk` §5.7): the turn carries the room's agent as
+  // `forAgent` and the same folder grants a room turn carries.
+  let roomPlace: { forAgent?: string; additionalDirectories?: DirectoryGrant[] } = {};
   if (workspaceKey) {
     try {
       const source = cwd ?? DEFAULT_CWD;
@@ -230,16 +235,17 @@ export async function dispatchSessionMessage(
     // has no opinion about its directory must not acquire one here.
     //
     // The room binding is offered to the chain rather than resolved here
-    // (DOR-1624). A conversation this machine also answers in a room runs its
-    // room turns in that room's worktree, so a resume from the app that took the
-    // ordinary rungs would put the operator in the agent's own folder and hide
-    // every uncommitted edit the agent has made in the room. The port answers
+    // (DOR-1624, spec `agent-home-desk` §5.7). A conversation this machine also
+    // answers in a room stands in the agent's home and reaches the room's files
+    // through folder grants, so a resume from the app must carry the same
+    // grants or the agent loses the files it was working on. The port answers
     // `null` for every other session, which leaves the chain exactly as it was.
     const resolved = await resolveSessionCwdWithRoom(
-      { cwd, agentPath: verifiedAgentPath, sessionId },
+      { ...(cwd !== undefined ? { cwd } : {}), agentPath: verifiedAgentPath, sessionId },
       roomSessionPlace
     );
     if (resolved.rung !== 'default') effectiveCwd = resolved.cwd;
+    roomPlace = resolved;
   }
 
   // First-message binding: choose + persist the runtime BEFORE resolving.
@@ -349,6 +355,13 @@ export async function dispatchSessionMessage(
       ...(seedContext ? { seedContext } : {}),
       // Only ever set on the session-creating claude-code send (see above).
       ...(accountHint ? { accountHint } : {}),
+      // A room-bound session resumed here is its room's agent, standing at home
+      // with the room's folders granted — never refreshed (§6.1): that is a
+      // room turn's own launch step.
+      ...(roomPlace.forAgent !== undefined ? { forAgent: roomPlace.forAgent } : {}),
+      ...(roomPlace.additionalDirectories !== undefined
+        ? { additionalDirectories: roomPlace.additionalDirectories }
+        : {}),
       // Absent means `queue`, which is also what every disposition resolves to
       // until the native rungs land (P4). The receipt says which it was.
       ...(disposition ? { disposition } : {}),

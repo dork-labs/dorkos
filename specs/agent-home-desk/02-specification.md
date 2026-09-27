@@ -466,11 +466,11 @@ export interface RoomTurnFiles {
 For a project room: `ensureWorktree` (unchanged lazy creation, minus seeding and projection, §5.9),
 then grants:
 
-| Grant                     | Access  | Why                                                                                               |
-| ------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| `<room>/worktrees/<slug>` | `write` | The agent's own copy                                                                              |
-| `<room>/repo`             | `read`  | Reading `main` and the room's other files                                                         |
-| `<room>/repo/.git`        | `write` | A commit in a linked worktree writes objects, its index and its ref here (01-ideation decision 8) |
+| Grant                                                                                 | Access  | Why                                                                                                                                                                                                                                      |
+| ------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<room>/worktrees/<slug>`                                                             | `write` | The agent's own copy                                                                                                                                                                                                                     |
+| `<room>/repo`                                                                         | `read`  | Reading `main` and the room's other files                                                                                                                                                                                                |
+| `<room>/repo/.git/{objects, refs/heads/room, logs/refs/heads/room, worktrees/<slug>}` | `write` | A commit and a `git merge main` in a linked worktree write exactly these (01-ideation decision 8). **Amended in T4 (DOR-2410):** never all of `.git`, which would grant the shared `hooks/`, `config` and `info/`; see ADR 260926-180223 |
 
 The dispatcher keeps its load-bearing order (spec project-rooms §3.5): place → build context →
 runner. The refresh is **not** part of placement: it runs at launch (§6.1), and fills the files

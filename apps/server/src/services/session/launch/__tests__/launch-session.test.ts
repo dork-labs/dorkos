@@ -16,7 +16,7 @@ vi.mock('../../../core/runtime-registry.js', () => ({
   },
 }));
 vi.mock('../../../core/usage-reporter.js', () => ({ reportUsageEvent: vi.fn() }));
-vi.mock('../../../workspace/room-session-cwd.js', () => ({
+vi.mock('../../../workspace/room-session-place.js', () => ({
   resolveSessionCwdWithRoom: vi.fn(async () => ({ rung: 'default', cwd: '/default' })),
 }));
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));

@@ -124,6 +124,7 @@ export {
   roomsDeclinesVisiblyCase,
   roomsJudgmentCases,
 } from './rooms-judgment.js';
+export { roomsFilesEditByPathCase, roomsFilesCases } from './rooms-files.js';
 export {
   chatTurnRoundTripCase,
   chatToolLoopCase,

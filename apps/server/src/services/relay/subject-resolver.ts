@@ -5,7 +5,7 @@
  */
 import { extractSessionIdFromSubject } from '@dorkos/relay';
 import { TASK_SUBJECT_LABEL, TASK_SUBJECT_PREFIX } from '@dorkos/shared/relay-schemas';
-import { homeOf, resolveAgentHome, type AgentHome } from '../core/agent-identity/agent-home.js';
+import { homeOf, resolveAgentHome, type AgentHome } from '../core/agent-identity/index.js';
 
 export interface SubjectLabel {
   label: string;

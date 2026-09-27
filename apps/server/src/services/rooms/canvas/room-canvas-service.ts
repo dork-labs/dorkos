@@ -49,6 +49,7 @@
  *
  * @module server/services/rooms/canvas/room-canvas-service
  */
+import path from 'node:path';
 import type { DbTransaction } from '@dorkos/db';
 import type { CanvasDocument, RoomCanvasChange, RoomEvent } from '@dorkos/shared/room-schemas';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
@@ -382,6 +383,9 @@ export class RoomCanvasService {
    *   FILE records the directory it was resolved against. Every later read
    *   resolves against that stored directory rather than re-deriving one, which
    *   is what makes §8.1's reader rule hold for a member who joined afterwards.
+   * @param input.worktree - This member's copy of the room's files, when the
+   *   turn was granted one — so a file named by an absolute path inside it is
+   *   labelled as this member's copy (spec `agent-home-desk` §5.6).
    * @param input.aheadOfMain - Commits this member's copy has that the room's
    *   `main` does not, measured once per turn by the code that already measures
    *   it. `null` — or absent — means NOT MEASURED, which is a different claim
@@ -395,6 +399,7 @@ export class RoomCanvasService {
     command: UiCommand;
     cwd?: string;
     aheadOfMain?: number | null;
+    worktree?: string;
   }): CanvasApplyResult {
     const { roomId, authorId, turnId, command } = input;
 
@@ -436,7 +441,14 @@ export class RoomCanvasService {
       tree:
         content === null
           ? undefined
-          : this.resolveTree(roomId, authorId, content, input.cwd, input.aheadOfMain ?? null),
+          : this.resolveTree(
+              roomId,
+              authorId,
+              content,
+              input.cwd,
+              input.aheadOfMain ?? null,
+              input.worktree
+            ),
       // A room has NO shared active document by design, so the only default that
       // cannot edit somebody else's work is the author's own last one (§5.6).
       defaultTarget: 'author-last',
@@ -520,6 +532,7 @@ export class RoomCanvasService {
     authorId: string;
     command: UiCommand;
     cwd?: string;
+    worktree?: string;
   }): CanvasApplyResult {
     const { sessionId, roomId, authorId, command } = input;
     this.visibility.requireMembership(roomId, authorId);
@@ -529,6 +542,7 @@ export class RoomCanvasService {
       turnId: this.targetedTurnId(sessionId, roomId),
       command,
       ...(input.cwd !== undefined ? { cwd: input.cwd } : {}),
+      ...(input.worktree !== undefined ? { worktree: input.worktree } : {}),
     });
   }
 
@@ -1109,10 +1123,14 @@ export class RoomCanvasService {
    * described to a reader (§8).
    *
    * A room has no working directory of its own, so a file document has to record
-   * one. It records the directory the TURN was standing in, which is the agent's
-   * own copy of the room's files in a project room and its own project
-   * otherwise — the tree the agent actually read the file out of. Recording the
-   * room's shared checkout instead would name a path the agent never looked at.
+   * one. A room turn stands in its agent's HOME and reaches the room's files by
+   * path (spec `agent-home-desk` §5.6), so the tree is decided by the document's
+   * SOURCE PATH, not by where the turn stands: an absolute path inside the
+   * agent's copy of the room's files is that copy (with its ahead count), one
+   * inside the room's shared checkout is `main`, and anything else — including
+   * every relative path, which resolves against the turn's own folder — is the
+   * agent's own project. The recorded directory is the tree the file is in, so
+   * the reader rule judges the file against the tree it actually came from.
    *
    * The label says whose copy it is whenever that is not the room's own, because
    * the other members can see the tab and may not be able to open it.
@@ -1122,6 +1140,7 @@ export class RoomCanvasService {
    * @param content - The content being opened.
    * @param cwd - Where the turn is standing, when the caller knows.
    * @param aheadOfMain - The open-time ahead count, or `null` for not measured.
+   * @param worktree - The author's copy of the room's files, when the caller knows.
    * @returns The directory to record and the label to show, or nulls.
    */
   private resolveTree(
@@ -1129,40 +1148,49 @@ export class RoomCanvasService {
     authorId: string,
     content: UiCanvasContent,
     cwd: string | undefined,
-    aheadOfMain: number | null
+    aheadOfMain: number | null,
+    worktree?: string
   ): CanvasTreePlacement {
-    if (canvasSourcePath(content) === null || cwd === undefined) {
+    const source = canvasSourcePath(content);
+    if (source === null || cwd === undefined) {
       return { resolvedCwd: null, sourceLabel: null, treeKind: null, aheadOfMain: null };
     }
+    const file = path.isAbsolute(source) ? path.resolve(source) : path.resolve(cwd, source);
     const repoPath = this.roomRepoPath(roomId);
-    if (repoPath !== null && isWithin(cwd, repoPath)) {
+    if (repoPath !== null && (isWithin(cwd, repoPath) || isWithin(file, repoPath))) {
       // The room's own shared copy. Every member can already read it, so there
       // is nothing to warn anybody about and no count to carry — being ahead of
       // `main` is a thing a WORKING COPY is, and this is `main`.
-      return { resolvedCwd: cwd, sourceLabel: null, treeKind: 'room-main', aheadOfMain: null };
-    }
-    const who = this.displayNameFor(authorId);
-    if (repoPath === null) {
-      // A room with no files of its own: this is somebody's own project, and
-      // nothing here is measured against anything.
       return {
-        resolvedCwd: cwd,
-        sourceLabel: `in ${who}'s project`,
-        treeKind: 'agent-cwd',
+        resolvedCwd: isWithin(cwd, repoPath) ? cwd : repoPath,
+        sourceLabel: null,
+        treeKind: 'room-main',
         aheadOfMain: null,
       };
     }
-    // A member's own working copy of the room's files. The count is a SNAPSHOT
-    // taken when the document was opened, and `null` says nobody measured —
-    // which is why the label drops the count rather than printing a zero.
+    const who = this.displayNameFor(authorId);
+    if (worktree !== undefined && isWithin(file, worktree)) {
+      // A member's own working copy of the room's files. The count is a
+      // SNAPSHOT taken when the document was opened, and `null` says nobody
+      // measured — which is why the label drops the count rather than printing
+      // a zero.
+      return {
+        resolvedCwd: worktree,
+        sourceLabel:
+          aheadOfMain !== null && aheadOfMain > 0
+            ? `${who}'s copy · ${aheadOfMain} ahead of main`
+            : `${who}'s copy`,
+        treeKind: 'worktree',
+        aheadOfMain,
+      };
+    }
+    // The member's own project — where the turn stands — and nothing here is
+    // measured against the room.
     return {
       resolvedCwd: cwd,
-      sourceLabel:
-        aheadOfMain !== null && aheadOfMain > 0
-          ? `${who}'s copy · ${aheadOfMain} ahead of main`
-          : `${who}'s copy`,
-      treeKind: 'worktree',
-      aheadOfMain,
+      sourceLabel: `in ${who}'s project`,
+      treeKind: 'agent-cwd',
+      aheadOfMain: null,
     };
   }
 

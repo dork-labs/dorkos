@@ -1,38 +1,26 @@
 /**
- * A room turn runs in that agent's working copy of the room's repo — end to end,
- * over real git (spec `project-rooms` §3.5, DOR-1597).
+ * A room turn stands in its agent's home and is granted the room's files —
+ * end to end, over real git (spec `agent-home-desk` §5.1, §11 "Integration").
  *
  * The real store, the real repo service, the real worktree manager, the real
  * trigger dispatcher, and a real temporary DorkOS home sitting INSIDE another
  * git repository — the dev layout, which is also the trap layout. Only the turn
- * runner stands in, because the alternative is a model call.
+ * runner stands in, because the alternative is a model call; what the runner
+ * hands the runtime is pinned in `__tests__/room-turn-runner.test.ts`.
  *
- * Four claims, and the second is as load-bearing as the first:
+ * The claims:
  *
- * 1. A project room's turn is placed in `worktrees/<agent>/`.
- * 2. **Everything else is exactly where it was.** A room with no files of its
- *    own still runs its turn in the agent's own directory, byte for byte.
- * 3. The files the model is told about are in the tree it is standing in — the
- *    DOR-1266 invariant, which the cwd rung could silently break by moving the
- *    tree and leaving the projection behind.
- * 4. Nothing about the busy ceilings moved (spec §5 Q6), and the reap can still
- *    see a live turn now that a live turn is standing in a worktree.
- *
- * Seeded defects, each run red before the code stood:
- *
- * - Dropping the room's `info/exclude` entry for DorkOS's own scratch area reddens "a
- *   worktree that received a file still reads clean".
- * - Keying the cross-room ceiling on `cwd` rather than `agentPath` reddens "an
- *   agent working in one room's worktree still holds another room's message".
- *
- * The two defects INSIDE the runner — stamping `agentPath` where `cwd` belongs,
- * and projecting attachments under the wrong root — are pinned in
- * `__tests__/room-turn-runner.test.ts`, not here: this file drives a scripted
- * runner, so it can see the dispatcher's answer and nothing the runner does with
- * it.
+ * 1. A project room's turn stands at home (`cwd === agentPath`, invariant I4)
+ *    and is granted exactly its copy, the room's shared tree read-only, and the
+ *    parts of `.git` a commit writes.
+ * 2. A room with no files of its own grants nothing and makes no copy.
+ * 3. The files the model is told about are under the folder it stands in — the
+ *    agent's home — and the files section names the copy it was granted.
+ * 4. Nothing about the busy ceilings moved, and the reap still sees a live turn
+ *    working on a copy it only reaches by path.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { access, mkdtemp, mkdir, readdir, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -41,7 +29,6 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { formatRoomContext } from '../../../runtimes/shared/room-context-block.js';
 import { LocalRoomAttachmentStore } from '../../attachments/local-room-attachment-store.js';
 import { projectRoomAttachments } from '../../attachments/attachment-projection.js';
-import { PROJECTED_ATTACHMENTS_ROOT } from '../../attachments/attachment-paths.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -55,12 +42,12 @@ import { RoomRepoStore } from '../room-repo-store.js';
 import { RoomRepoMutex } from '../room-repo-mutex.js';
 import { RoomRepoService } from '../room-repo-service.js';
 import { RoomWorktreeManager } from '../room-worktree-manager.js';
-import { hasUncommittedChanges, runGit } from '../room-repo-git.js';
+import { runGit } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-describe('a room turn runs in the room’s repo', () => {
+describe('a room turn stands at home with the room’s files granted', () => {
   let scratch: string;
   let dorkHome: string;
   let anaPath: string;
@@ -161,7 +148,7 @@ describe('a room turn runs in the room’s repo', () => {
     return path.join(repoStore.worktreesPath(roomId), RoomWorktreeManager.slugFor('Ana', anaPath));
   }
 
-  it('runs the turn in the agent’s own working copy of the room’s repo', async () => {
+  it('stands the turn at home and grants the agent’s copy of the room’s files', async () => {
     const runner = scriptedRunner(() => null);
     standUp(runner);
     const room = await openRoom('Release train', true);
@@ -171,15 +158,31 @@ describe('a room turn runs in the room’s repo', () => {
 
     expect(runner.turns).toHaveLength(1);
     const turn = runner.turns[0]!;
-    expect(turn.cwd).toBe(anaWorktree(room.id));
+    // Invariant I4: the agent's home, never its copy, never `repo/`.
+    expect(turn.cwd).toBe(anaPath);
+    expect(turn.agentPath).toBe(anaPath);
+    expect(turn.worktree).toBe(anaWorktree(room.id));
     // A real checkout, on its own branch, not just a directory name.
-    expect(existsSync(path.join(turn.cwd, '.git'))).toBe(true);
-    await expect(runGit(['branch', '--show-current'], turn.cwd, dorkHome)).resolves.toBe(
+    await expect(runGit(['branch', '--show-current'], turn.worktree!, dorkHome)).resolves.toBe(
       `room/${RoomWorktreeManager.slugFor('Ana', anaPath)}`
     );
-    // **And identity did not move.** Everything that decides who this agent is
-    // still says the same thing it always did.
-    expect(turn.agentPath).toBe(anaPath);
+    // Grants are realpath-resolved (a symlinked `/var` spelling would not match
+    // what a backend compares), so the expectation is too.
+    const repoDir = realpathSync(repoStore.repoPath(room.id));
+    const gitDir = path.join(repoDir, '.git');
+    expect(turn.additionalDirectories).toEqual([
+      { path: realpathSync(anaWorktree(room.id)), access: 'write' },
+      { path: repoDir, access: 'read' },
+      { path: path.join(gitDir, 'objects'), access: 'write' },
+      { path: path.join(gitDir, 'refs', 'heads', 'room'), access: 'write' },
+      { path: path.join(gitDir, 'logs', 'refs', 'heads', 'room'), access: 'write' },
+      {
+        path: path.join(gitDir, 'worktrees', RoomWorktreeManager.slugFor('Ana', anaPath)),
+        access: 'write',
+      },
+    ]);
+    // And a launch step, which the dispatcher runs when the turn launches.
+    expect(typeof turn.prepareLaunch).toBe('function');
   });
 
   it('leaves a room with no files of its own exactly where it was', async () => {
@@ -197,13 +200,15 @@ describe('a room turn runs in the room’s repo', () => {
     const turn = runner.turns[0]!;
     expect(turn.cwd).toBe(anaPath);
     expect(turn.cwd).toBe(turn.agentPath);
+    expect(turn.additionalDirectories).toEqual([]);
+    expect(turn.worktree).toBeNull();
+    expect(turn.prepareLaunch).toBeUndefined();
     expect(existsSync(repoStore.worktreesPath(room.id))).toBe(false);
   });
 
   it('tells the turn where its own copy is, and how far the room has moved', async () => {
-    // Spec §3.7 end to end. The files section is measured against the tree the
-    // resolver just chose, so the two cannot describe different directories —
-    // which is the same lockstep the attachment paths are held to.
+    // Spec §3.7 end to end. The files section names the copy the turn was just
+    // granted, never the folder it stands in.
     const runner = scriptedRunner(() => null);
     standUp(runner);
     const room = await openRoom('Release train', true);
@@ -214,7 +219,8 @@ describe('a room turn runs in the room’s repo', () => {
     const files = runner.turns[0]!.roomContext?.files;
     expect(files).toBeDefined();
     expect(files!.worktreePath).toBe(anaWorktree(room.id));
-    expect(files!.worktreePath).toBe(runner.turns[0]!.cwd);
+    expect(files!.worktreePath).toBe(runner.turns[0]!.worktree);
+    expect(files!.worktreePath).not.toBe(runner.turns[0]!.cwd);
     expect(files!.repoPath).toBe(repoStore.repoPath(room.id));
     expect(files!.branch).toBe(`room/${RoomWorktreeManager.slugFor('Ana', anaPath)}`);
     // A tree just branched off `main` is level with it in both directions.
@@ -290,16 +296,16 @@ describe('a room turn runs in the room’s repo', () => {
     // One tree per agent, standing across turns — a second turn must not mint a
     // second checkout, or an agent would lose its uncommitted work every time
     // somebody spoke to it.
-    expect(new Set(forAna.map((turn) => turn.cwd)).size).toBe(1);
-    expect(forAna[0]!.cwd).not.toBe(forBo[0]!.cwd);
+    expect(new Set(forAna.map((turn) => turn.worktree)).size).toBe(1);
+    expect(forAna[0]!.worktree).not.toBe(forBo[0]!.worktree);
+    expect(new Set(forAna.map((turn) => turn.cwd))).toEqual(new Set([anaPath]));
     expect(await readdir(repoStore.worktreesPath(room.id))).toHaveLength(2);
   });
 
-  it('puts the file the model is told about in the tree it is standing in', async () => {
-    // DOR-1266 end to end, through the moved tree. The context names an ABSOLUTE
-    // path; the projector plans a RELATIVE one and joins it to the turn's own
-    // directory. Move one and not the other and the model is handed a path that
-    // opens nothing, with no log line anywhere saying why.
+  it('puts the file the model is told about under the folder it stands in: its home', async () => {
+    // DOR-1266 end to end (spec `agent-home-desk` §5.4). The context names an
+    // ABSOLUTE path; the projector plans a RELATIVE one and joins it to the
+    // turn's own directory — the agent's home, room files or not.
     const runner = scriptedRunner(() => null);
     standUp(runner);
     const room = await openRoom('Release train', true);
@@ -341,9 +347,10 @@ describe('a room turn runs in the room’s repo', () => {
     // the turn stands.
     expect(turn.attachmentProjection).toHaveLength(1);
     const landed = path.join(turn.cwd, turn.attachmentProjection[0]!.relativePath);
-    // Under the WORKTREE, and provably not under the agent's home.
-    expect(landed.startsWith(anaWorktree(room.id) + path.sep)).toBe(true);
-    expect(landed.startsWith(anaPath + path.sep)).toBe(false);
+    // Under the agent's HOME, and provably not in its copy of the room's files,
+    // which would dirty the copy and could be merged into the room.
+    expect(landed.startsWith(anaPath + path.sep)).toBe(true);
+    expect(landed.startsWith(anaWorktree(room.id) + path.sep)).toBe(false);
     // The bytes really are there.
     await expect(access(landed)).resolves.toBeUndefined();
     // And that exact string is what the model was handed — read back out of the
@@ -352,28 +359,9 @@ describe('a room turn runs in the room’s repo', () => {
     expect(block).toContain(landed);
   });
 
-  it('leaves a worktree that received a file reading clean', async () => {
-    // A projected attachment is DorkOS's own writing, not the agent's work. Left
-    // visible it would make every worktree that ever carried a file permanently
-    // dirty — never reaped, and never mergeable once §3.6 lands.
-    const runner = scriptedRunner(() => null);
-    standUp(runner);
-    const room = await openRoom('Release train', true);
-    const worktree = (await manager.ensureWorktree(room.id, anaPath, 'Ana')).path;
-
-    await mkdir(path.join(worktree, PROJECTED_ATTACHMENTS_ROOT, 'entry-1'), { recursive: true });
-    await writeFile(
-      path.join(worktree, PROJECTED_ATTACHMENTS_ROOT, 'entry-1', 'notes.txt'),
-      'the notes',
-      'utf-8'
-    );
-
-    await expect(hasUncommittedChanges(worktree, repoStore.homeDir(room.id))).resolves.toBe(false);
-  });
-
   it('still holds another room’s message while the agent works in a worktree', async () => {
     // Spec §5 Q6: no relaxation. The second ceiling is one working tree per
-    // AGENT, and it is keyed on `agentPath` — which the cwd rung does not touch.
+    // AGENT, and it is keyed on `agentPath` — its home, where it stands.
     // An agent mid-turn in a project room is still busy everywhere else, and the
     // waiting message is HELD rather than refused (`room-hold-when-busy`).
     const runner = gatedRunner({});
@@ -383,9 +371,9 @@ describe('a room turn runs in the room’s repo', () => {
 
     harness.service.post(project.id, { authorId: harness.human, text: '@ana what is left?' });
     await settleUntil(() => runner.turns.length === 1, 'Ana started work in the project room');
-    // She really is in the worktree — otherwise this test would pass for the
-    // ordinary reason and prove nothing about the new one.
-    expect(runner.turns[0]!.cwd).toBe(anaWorktree(project.id));
+    // She really is working on the room's copy — otherwise this test would pass
+    // for the ordinary reason and prove nothing.
+    expect(runner.turns[0]!.worktree).toBe(anaWorktree(project.id));
 
     harness.service.post(other.id, { authorId: harness.human, text: '@ana and here?' });
     await settleUntil(
@@ -399,13 +387,14 @@ describe('a room turn runs in the room’s repo', () => {
     await settleUntil(() => runner.turns.length === 2, 'the held message ran');
     expect(runner.turns[1]!.roomId).toBe(other.id);
     expect(runner.turns[1]!.cwd).toBe(anaPath);
+    expect(runner.turns[1]!.worktree).toBeNull();
     runner.releaseAll();
   });
 
-  it('spares an ancient worktree that a live turn is standing in', async () => {
-    // The 2.1 gate, now that it has something to guard. A turn that only READS
-    // leaves no mark on any date source the sweep can see, so without the claim
-    // map the reap would delete the directory the turn is standing in. This
+  it('spares an ancient worktree that a live turn is working on', async () => {
+    // The 2.1 gate. A turn that only READS its copy leaves no mark on any date
+    // source the sweep can see, so without the claim map the reap would delete
+    // the copy the turn was granted. This
     // drives it through the real claim map: the turn is mid-flight, held open,
     // while the sweep runs.
     const runner = gatedRunner({});
@@ -446,7 +435,7 @@ describe('a room turn runs in the room’s repo', () => {
 
     harness.service.post(room.id, { authorId: harness.human, text: '@ana what is left?' });
     await settleUntil(() => runner.turns.length === 1, 'Ana started work');
-    const worktree = runner.turns[0]!.cwd;
+    const worktree = runner.turns[0]!.worktree!;
     expect(worktree).toBe(anaWorktree(room.id));
 
     // And age every mtime the sweep reads, so the ONLY thing keeping this tree

@@ -28,12 +28,14 @@ export {
   turnAgentOf,
   readHomeManifest,
   setAgentHomeRegistry,
-  setWorkingCopyOwnerPort,
+  assertOwnDesk,
+  deskBindingFor,
+  DeskNotOwnError,
   type AgentHome,
   type AgentHomeRegistry,
+  type DeskBinding,
   type HomeResolution,
   type HomeVia,
-  type WorkingCopyOwnerPort,
 } from './agent-home.js';
 export { createCapabilityAttributionObserver } from './capability-attribution.js';
 export { createCapabilityGateAuditObserver } from './capability-gate-audit.js';

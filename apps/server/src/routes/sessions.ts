@@ -68,7 +68,7 @@ import sessionCanvasRouter from './session-canvas.js';
 import { sessionDevtoolsRecordingHandler } from './session-recording.js';
 import { sessionAttachmentHandler } from './session-attachments-handler.js';
 import { sessionMcpAppResourceHandler } from './session-mcp-app-resource-handler.js';
-import type { RoomSessionPlacePort } from '../services/workspace/room-session-cwd.js';
+import type { RoomSessionPlacePort } from '../services/workspace/room-session-place.js';
 import {
   dispatchSessionMessage,
   isSessionLaunchRefusal,

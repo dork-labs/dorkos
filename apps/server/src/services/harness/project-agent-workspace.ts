@@ -36,12 +36,11 @@
  * `agent-creator` interleaves them with its own bookkeeping, and
  * {@link projectAgentWorkspace} stays exactly one thing.
  *
- * **Neither half is only for agent HOMES.** A room worktree is the other
- * directory a turn runs in, and Claude Code resolves its `project` setting
- * source against the cwd — so an agent working on a room's files sees the pack
- * only if the pack is in the worktree. `room-worktree-manager.ts` pairs the same
- * two exports there (DOR-1640); the reason they are usable for that is that
- * neither knows anything about mesh registration or dork home.
+ * **Only agent homes.** Every turn an agent takes stands in its home — room
+ * turns included, which reach a room's files through folder grants (spec
+ * `agent-home-desk` §5.1) — so the pack is needed nowhere else. Room worktrees
+ * were seeded here once (DOR-1640); `room-worktree-manager.ts` retires what
+ * that left behind.
  *
  * Four properties matter for the projection half:
  *
@@ -112,8 +111,8 @@ const AGENT_SKILLS_DIR = join('.agents', 'skills');
  *
  * Exported because it decides more than the scaffold: it is the harness set
  * whose projection TARGETS a caller has to account for. `room-worktree-manager`
- * derives its `info/exclude` entries by running the planner over this list, so
- * the two can never disagree about which harnesses DorkOS writes files for.
+ * reads it to recognise the harness manifest it once scaffolded into a room
+ * worktree, so the two can never disagree about which file DorkOS wrote.
  */
 export const AGENT_WORKSPACE_HARNESSES: readonly HarnessId[] = ['claude-code'];
 
@@ -247,7 +246,7 @@ export interface AgentWorkspaceBackfillSummary {
 }
 
 /** What seeding did to one workspace, collapsed to what the summary counts. */
-export type SeedStatus = 'wrote' | 'unchanged' | 'failed';
+type SeedStatus = 'wrote' | 'unchanged' | 'failed';
 
 /**
  * Seed the Operating DorkOS skill pack into one workspace, best-effort.
@@ -258,18 +257,14 @@ export type SeedStatus = 'wrote' | 'unchanged' | 'failed';
  * stop this workspace's own projection from being attempted — a pack seeded on
  * an earlier boot still needs its links.
  *
- * Exported for the caller that is not an agent home: a room worktree is seeded
- * on the turn path, where a throw would cost the turn rather than a log line
- * (DOR-1640). Callers get the three-way status back and decide — the room
- * manager only re-projects when this says `wrote`, so a steady-state turn costs
- * nothing.
+ * The caller gets the three-way status back and decides what to count.
  *
  * @param agentDir - Absolute path to the workspace root to seed.
  * @returns `wrote` when at least one skill file was created or upgraded,
  *   `unchanged` when every skill was already current or is the person's own,
  *   `failed` when the seeder threw.
  */
-export async function seedAgentWorkspace(agentDir: string): Promise<SeedStatus> {
+async function seedAgentWorkspace(agentDir: string): Promise<SeedStatus> {
   try {
     const { outcomes } = await seedOperatingSkills(agentDir);
     const created = outcomes.filter((o) => o.action === 'created').length;

@@ -52,6 +52,15 @@
  * - **`GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_SYSTEM=/dev/null`.** The
  *   room repo behaves the same on every machine, so a person's own global git
  *   config cannot change what DorkOS commits or how it reads a worktree.
+ * - **A command run in an agent's worktree is pinned to the room's own git
+ *   storage** (spec `agent-home-desk` §5.1, {@link worktreePin}). A worktree
+ *   finds its repository through its `.git` file and the admin folder's
+ *   `commondir`, and both are in folders its agent's turns may write. Left to
+ *   discovery, a rewritten pointer would hand the server's `git status` a config
+ *   the agent wrote — and a config can name programs git runs on a read (a
+ *   filter driver, say). So `GIT_DIR`, `GIT_COMMON_DIR` and `GIT_WORK_TREE` are
+ *   set from the room's layout, and the only config git reads is `repo/.git`'s,
+ *   which no agent is granted.
  *
  * **What none of this claims:** a repo-local `.git/hooks/` directory that some
  * other program populated is neutralised by `core.hooksPath`, but nothing here
@@ -260,12 +269,15 @@ export function personGitEmail(authorId: string): string {
  * @param ceilingDir - The directory git's repository search may not climb past.
  * @returns The child environment.
  */
-function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
+function gitEnv(ceilingDir: string, cwd: string): NodeJS.ProcessEnv {
   // eslint-disable-next-line no-restricted-syntax -- git must inherit PATH/HOME; this REMOVES the redirecting vars and adds the confinement, which is only expressible against the real environment.
   const env: NodeJS.ProcessEnv = { ...process.env };
   for (const name of REDIRECTING_GIT_VARS) delete env[name];
   return {
     ...env,
+    // Set from the room's layout — never read from a pointer the agent can
+    // write — when the command runs in one of the room's worktrees.
+    ...worktreePin(ceilingDir, cwd),
     // Absolute, and the room's own home: git stops the upward search here
     // rather than reaching whatever repository encloses the data directory.
     GIT_CEILING_DIRECTORIES: ceilingDir,
@@ -274,6 +286,31 @@ function gitEnv(ceilingDir: string): NodeJS.ProcessEnv {
     GIT_CONFIG_SYSTEM: '/dev/null',
     // Nothing here talks to a remote; a credential prompt would only hang.
     GIT_TERMINAL_PROMPT: '0',
+  };
+}
+
+/**
+ * The git storage a command run in `<room home>/worktrees/<name>` (or below it)
+ * must use: `repo/.git` as the common directory, its `worktrees/<name>` admin
+ * folder as the git directory, and the worktree as the work tree. Empty for
+ * every other directory, which discovers its repository as before.
+ *
+ * Computed from the path alone. A worktree whose admin folder has another name
+ * (git suffixes one when the name is taken) fails as "not a git repository",
+ * which every caller reads as unreadable — work that is spared, never deleted.
+ *
+ * @param ceilingDir - The room's home directory.
+ * @param cwd - Where the command runs.
+ */
+function worktreePin(ceilingDir: string, cwd: string): Record<string, string> {
+  const rel = path.relative(path.resolve(ceilingDir), path.resolve(cwd));
+  const [top, name] = rel.split(path.sep);
+  if (top !== 'worktrees' || !name || name === '..' || path.isAbsolute(rel)) return {};
+  const commonDir = path.join(path.resolve(ceilingDir), 'repo', '.git');
+  return {
+    GIT_COMMON_DIR: commonDir,
+    GIT_DIR: path.join(commonDir, 'worktrees', name),
+    GIT_WORK_TREE: path.join(path.resolve(ceilingDir), 'worktrees', name),
   };
 }
 
@@ -332,7 +369,7 @@ export async function runGitRaw(
     const { stdout } = await execFileAsync('git', [...SHARED_CONFIG_ARGS, ...args], {
       cwd,
       timeout: GIT_TIMEOUT_MS,
-      env: gitEnv(ceilingDir),
+      env: gitEnv(ceilingDir, cwd),
       maxBuffer: options.maxBuffer ?? GIT_MAX_OUTPUT_BYTES,
       // Bytes, not characters: this function's whole purpose is to answer what
       // git wrote rather than what a decoder made of it.

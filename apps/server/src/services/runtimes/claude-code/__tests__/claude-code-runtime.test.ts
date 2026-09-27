@@ -338,18 +338,9 @@ describe('ClaudeCodeRuntime', () => {
       // open Ana's connections. Seeded: `agentPath = cwdKey` (no anchor, no
       // cross-check) reddens the refusal row.
       const ANA = '/agents/ana';
-      const WORKTREE = '/dork/rooms/01ROOM/worktrees/ana-1a2b3c4d';
-
-      afterEach(async () => {
-        (await import('../../../core/agent-identity/index.js')).setWorkingCopyOwnerPort(undefined);
-      });
 
       async function turnFor(cwd: string, forAgent: string) {
         const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
-        const { setWorkingCopyOwnerPort } = await import('../../../core/agent-identity/index.js');
-        setWorkingCopyOwnerPort({
-          ownerOf: (dir) => (dir === WORKTREE ? { owner: ANA } : null),
-        });
         const principals: ConnectorRuntimePrincipalPort = {
           openTurn: vi.fn().mockResolvedValue({
             bindingId: 'binding-1',
@@ -402,11 +393,12 @@ describe('ClaudeCodeRuntime', () => {
         return { principals, connectorTurn };
       }
 
-      it('opens the connections as the agent its worktree belongs to', async () => {
-        const { principals } = await turnFor(WORKTREE, ANA);
+      it('opens the connections as the agent, standing in its home', async () => {
+        // A room turn stands at home (spec `agent-home-desk` §5.1).
+        const { principals } = await turnFor(ANA, ANA);
 
         expect(principals.openTurn).toHaveBeenCalledWith(
-          expect.objectContaining({ agentPath: ANA, canonicalCwd: WORKTREE }),
+          expect.objectContaining({ agentPath: ANA, canonicalCwd: ANA }),
           expect.anything()
         );
       });

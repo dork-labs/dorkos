@@ -138,6 +138,7 @@ export {
   dispatchMessage,
   dispatchCommandIntent,
   emitQueueUpdate,
+  isTurnInFlight,
   listQueuedMessages,
   noteSessionOrphaned,
   noteTurnBoundary,

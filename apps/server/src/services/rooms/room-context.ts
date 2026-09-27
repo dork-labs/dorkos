@@ -188,12 +188,9 @@ export interface RoomContextInput {
    * The directory this turn runs in — and therefore the root every attachment is
    * projected under.
    *
-   * **Not the agent's identity, and since DOR-1597 not always its folder.** A
-   * turn in a project room runs in that agent's working copy of the ROOM's repo
-   * (`resolve-session-cwd.ts` rung 2, spec §3.5) while its `agentPath` — which the claim map,
-   * the busy ceilings and the runtime lookup all key on — stays exactly what it
-   * was. This field is the files half of that split; anything that means
-   * "which agent is this" wants `agentAuthorId` or the dispatch's `agentPath`.
+   * Always the agent's home for a room turn (spec `agent-home-desk` §5.1, §5.4):
+   * a turn in a project room stands at home and reaches the room's files through
+   * grants, so its attachments land in the same folder as every other turn's.
    *
    * Passed in rather than derived, exactly as {@link RoomContextInput.engaged}
    * and {@link RoomContextInput.lastReadSeq} are: it is a fact about the
@@ -212,10 +209,9 @@ export interface RoomContextInput {
    * none — which is most rooms (spec §3.7).
    *
    * Passed in for exactly the reason {@link RoomContextInput.cwd} beside it is:
-   * it is a fact about the DISPATCH, measured at the moment the turn's directory
-   * was chosen and against the tree that was chosen. This module reads no git
-   * and knows no worktree; deriving it here would be a second answer that can
-   * disagree with where the turn is actually standing.
+   * it is a fact about the DISPATCH, measured when the turn was placed against
+   * the copy it was granted. This module reads no git and knows no worktree;
+   * deriving it here would be a second answer that can disagree with it.
    */
   files?: RoomContextFiles;
   /** The entry that triggered it. Never appears in `pending`: it IS the message. */

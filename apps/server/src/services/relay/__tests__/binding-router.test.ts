@@ -13,6 +13,10 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { isDispatchId, newDispatchId } from '@dorkos/shared/dispatch-id';
 import { currentDispatchId } from '../../../lib/dispatch-context.js';
 import { recentDispatches, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../core/agent-identity/__tests__/agent-home-fixture.js';
 
 vi.mock('node:fs/promises');
 
@@ -32,9 +36,27 @@ const AGENT_PATH = '/agents/a';
  */
 const AGENT_CWD = '/agents/a/worktree';
 
-/** The injected stand-in for the agent-cwd chain. */
-const fakeResolveCwd = async ({ agentPath }: { agentPath: string }): Promise<{ cwd: string }> =>
-  agentPath === AGENT_PATH ? { cwd: AGENT_CWD } : { cwd: agentPath };
+/**
+ * The injected stand-in for the agent-cwd chain: the agent's managed checkout
+ * for {@link AGENT_PATH}, and every other agent's own home.
+ */
+const fakeResolveCwd = async ({
+  agentPath,
+}: {
+  agentPath: string;
+}): Promise<{ cwd: string; rung: 'agent-managed' | 'agent-home' }> =>
+  agentPath === AGENT_PATH
+    ? { cwd: AGENT_CWD, rung: 'agent-managed' }
+    : { cwd: agentPath, rung: 'agent-home' };
+
+// The desk guard (spec `agent-home-desk` §3.4) asks whose each folder is: the
+// agent owns its managed checkout, as a boot-wired registry would say.
+beforeEach(() => {
+  registerTestHomes([AGENT_PATH], { managed: { [AGENT_CWD]: AGENT_PATH } });
+});
+afterEach(() => {
+  clearTestHomes();
+});
 
 describe('BindingRouter', () => {
   let router: BindingRouter;
@@ -1100,6 +1122,25 @@ describe('BindingRouter', () => {
 
       const payload = vi.mocked(mockRelayCore.publish).mock.calls[0]![1] as Record<string, unknown>;
       expect(payload.forAgent).toBe(AGENT_PATH);
+    });
+
+    it('refuses a binding whose folder is another agent`s home: no session, no turn (DESK_NOT_OWN)', async () => {
+      // Spec `agent-home-desk` §3.4, DOR-2356: a misconfigured binding that used
+      // to run as nobody in somebody else's folder now refuses loudly, before
+      // a session is created there.
+      registerTestHomes([AGENT_PATH, '/agents/b'], {
+        managed: { [AGENT_CWD]: '/agents/b' },
+      });
+      vi.mocked(mockBindingStore.resolve!).mockReturnValue(makeBinding());
+
+      await capturedHandler!(makeEnvelope());
+
+      expect(mockRelayCore.publish).not.toHaveBeenCalledWith(
+        expect.stringContaining('relay.agent'),
+        expect.anything(),
+        expect.anything()
+      );
+      expect(mockAgentManager.createSession).not.toHaveBeenCalled();
     });
 
     it('includes canReply=false in __bindingPermissions when set', async () => {

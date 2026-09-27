@@ -171,6 +171,8 @@ describe('a room turn’s canvas commands', () => {
       externalAuthor: false,
       agentPath: ANA,
       cwd: ANA,
+      additionalDirectories: [],
+      worktree: files?.worktreePath ?? null,
       sessionId: null,
       entry,
       prompt: entry.body.text,
@@ -323,18 +325,21 @@ describe('a room turn’s canvas commands', () => {
       // The review surface (spec `canvas-agent-seat` §8) appears only for a copy
       // that is measurably ahead, so the whole of it was unreachable from three
       // of the four runtimes.
+      // The turn stands at home and names the file by its full path in its
+      // copy (spec `agent-home-desk` §5.6): the source path decides the tree.
+      const copy = '/rooms/backend/worktrees/ana-1a2b3c4d';
       turnBehaviour = (opts) => {
         openTurn(opts);
         opts.projector.ingest({
           type: 'ui_command',
-          command: { action: 'open_diff', sourcePath: 'app.txt' },
+          command: { action: 'open_diff', sourcePath: `${copy}/app.txt` },
         });
         opts.projector.ingest({ type: 'turn_end' });
         return { accepted: true, canonicalId: opts.sessionId };
       };
       await createSessionRoomTurnRunner().run(
         turnRequest({
-          worktreePath: ANA,
+          worktreePath: copy,
           branch: 'room/ana',
           repoPath: '/rooms/backend/repo',
           ahead: 3,
