@@ -1220,6 +1220,31 @@ describe('core’s automatic handoff', () => {
     expect(dispatchSessionMessage).toHaveBeenCalledTimes(2);
   });
 
+  it('starts one session when the old one cannot be pointed at the new one after launch', async () => {
+    // A store error after the launch was accepted must not read as a failed
+    // move: the timer waiting behind this continue would start a second one.
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    const update = store.update.bind(store);
+    let thrown = false;
+    vi.spyOn(store, 'update').mockImplementation((...args: Parameters<typeof store.update>) => {
+      if (!thrown && (args[2] as { plan?: { mode?: string } }).plan?.mode === 'continued') {
+        thrown = true;
+        throw new Error('SQLITE_BUSY');
+      }
+      return update(...args);
+    });
+    const held = heldLaunch();
+    const person = continueSession('src-1', { account: 'busy' }, deps);
+    await vi.advanceTimersByTimeAsync(60_000);
+    held.release();
+    expect(await person).toEqual({ sessionId: 'new-held' });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(thrown).toBe(true);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('refuses a cancel whose write would land after the automatic move started', async () => {
     // The cancel read `auto` and is deriving the state (the advisor's ranking)
     // when the timer fires: its write must not land under the move.

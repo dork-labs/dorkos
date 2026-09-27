@@ -333,7 +333,18 @@ export async function carryOverSession(request: CarryOverRequest): Promise<strin
     );
   }
   const newSessionId = result.canonicalId;
-  await pointAtNewSession(source, newSessionId, targetAccountId);
+  // The new session is running: from here on nothing may reject, or a caller
+  // that retries (the automatic handoff's re-fire, a person's second click)
+  // would start a second one. A failed pointer is logged; the session stands.
+  try {
+    await pointAtNewSession(source, newSessionId, targetAccountId);
+  } catch (err) {
+    logger.error('[carry-over] started the new session but could not point the old one at it', {
+      sourceSessionId: source.sessionId,
+      newSessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
   recordCarryOverActivity(request.activity, {
     by,
     sourceSessionId: source.sessionId,

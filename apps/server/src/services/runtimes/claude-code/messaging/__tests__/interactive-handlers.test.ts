@@ -1645,7 +1645,7 @@ describe('counting the stops auto mode makes on DorkOS tools', () => {
 
 describe('an ask nobody can answer is refused the moment it is raised', () => {
   const DENIAL =
-    'Nobody is available to approve this on a scheduled run. ' +
+    'Nobody is available to approve this right now. ' +
     'Do what you can without it and say what you skipped.';
 
   /** The refusal record a handler pushed, if it pushed one. */
