@@ -168,6 +168,27 @@ function accountLimitedPayload(
 }
 
 /**
+ * Tell the person again that an account ran out, because the automatic move
+ * to another account that was planned for this session could not happen (spec
+ * `claude-account-fleet` D9 "Automatic handoff"). Its own dedupe key, so the
+ * account's first notice does not swallow it.
+ *
+ * @param sessionId - The session that stays where it is.
+ * @param cwd - Its working directory, when known.
+ * @param limit - The limit it still holds.
+ */
+export function notifyAutoMoveFailed(
+  sessionId: string,
+  cwd: string | undefined,
+  limit: SessionLimit
+): void {
+  void notify('account.limited', {
+    ...accountLimitedPayload(sessionId, cwd, limit),
+    autoMoveFailed: true,
+  });
+}
+
+/**
  * Watch every session's lifecycle and raise what it implies.
  *
  * @returns An unsubscribe function.

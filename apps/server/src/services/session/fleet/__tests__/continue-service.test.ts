@@ -25,9 +25,16 @@ vi.mock('../flow-run-link.js', () => ({ flowRunsFor: vi.fn(async () => new Map()
 vi.mock('../../launch/launch-session.js', () => ({
   dispatchSessionMessage: vi.fn(),
   isSessionLaunchRefusal: (r: object) => 'refused' in r,
+  isAgentLaunchCapFull: vi.fn(() => false),
+}));
+vi.mock('../../../notifications/emitters/session-lifecycle.js', () => ({
+  notifyAutoMoveFailed: vi.fn(),
 }));
 
-import { dispatchSessionMessage } from '../../launch/launch-session.js';
+import { dispatchSessionMessage, isAgentLaunchCapFull } from '../../launch/launch-session.js';
+import { notifyAutoMoveFailed } from '../../../notifications/emitters/session-lifecycle.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import {
   ADVISOR_TIMEOUT_MS,
@@ -77,6 +84,10 @@ let dispatchSeq = 0;
 
 interface AccountFixture {
   id: string;
+  /** Claude Code unless named. */
+  runtime?: 'claude-code' | 'codex' | 'opencode';
+  /** The runtime's machine default. */
+  isDefault?: boolean;
   state?: AccountUsage['state'];
   weekly?: number;
   resetsAt?: string | null;
@@ -104,7 +115,7 @@ function usageOf(f: AccountFixture): AccountUsage {
         ]);
   const state = f.state ?? (windows.length > 0 ? 'ok' : 'unknown');
   return {
-    runtime: 'claude-code',
+    runtime: f.runtime ?? 'claude-code',
     accountId: f.id,
     path: `/accounts/${f.id}`,
     label: f.id.toUpperCase(),
@@ -122,7 +133,7 @@ function usageOf(f: AccountFixture): AccountUsage {
 
 function runtimeAccount(f: AccountFixture): RuntimeAccount {
   return {
-    runtime: 'claude-code',
+    runtime: f.runtime ?? 'claude-code',
     id: f.id,
     path: `/accounts/${f.id}`,
     canonicalPath: `/accounts/${f.id}`,
@@ -131,20 +142,27 @@ function runtimeAccount(f: AccountFixture): RuntimeAccount {
     storedColor: null,
     routable: true,
     implicit: false,
-    isDefault: false,
+    isDefault: f.isDefault ?? false,
     ledgerId: f.id,
   };
 }
 
 const usageListeners = new Set<(u: AccountUsage) => void>();
 
+function ofRuntime(runtime: string): AccountFixture[] {
+  return accounts.filter((f) => (f.runtime ?? 'claude-code') === runtime);
+}
+
 function installUsageStore(fixtures: AccountFixture[]): void {
   accounts = fixtures;
   const fake = {
-    listAccounts: () => accounts.map(runtimeAccount),
-    usageOfAccount: (a: RuntimeAccount) => usageOf(accounts.find((f) => f.id === a.id)!),
-    peek: (_runtime: string, ids: readonly string[]) =>
-      accounts.filter((f) => ids.includes(f.id)).map(usageOf),
+    listAccounts: (runtime: string) => ofRuntime(runtime).map(runtimeAccount),
+    usageOfAccount: (a: RuntimeAccount) =>
+      usageOf(ofRuntime(a.runtime).find((f) => f.id === a.id)!),
+    peek: (runtime: string, ids: readonly string[]) =>
+      ofRuntime(runtime)
+        .filter((f) => ids.includes(f.id))
+        .map(usageOf),
     usageAtPath: () => null,
     onChange: (listener: (u: AccountUsage) => void) => {
       usageListeners.add(listener);
@@ -229,7 +247,7 @@ async function refusal(promise: Promise<unknown>): Promise<ContinueError> {
 function advise(advisor: Partial<AccountAdvisor>, owner = 'flow'): () => void {
   return registerAccountAdvisor(owner, {
     rank: vi.fn(async () => ({
-      accounts: accounts
+      accounts: ofRuntime('claude-code')
         .filter((a) => a.id !== 'main')
         .map((a) => ({ id: a.id, eligible: a.state !== 'limited', reason: 'fine' })),
       recommendedId: null,
@@ -1014,5 +1032,312 @@ describe('a session the advisor claims', () => {
     expect(store.get('src-1')?.claimedBy).toBeNull();
     advise({ claims: async () => true }, 'flow-2');
     await vi.waitFor(() => expect(store.get('src-1')?.claimedBy).toBe('flow-2'));
+  });
+});
+
+// === Core's automatic handoff (an unclaimed `auto` plan) ======================
+
+describe('core’s automatic handoff', () => {
+  const FIRE_AT = new Date(NOW.getTime() + 60_000).toISOString();
+
+  /** An advisor that plans `auto` to `spare` in 60 s, without claiming the session. */
+  function adviseAuto(extra: Partial<AccountAdvisor> = {}, delaySeconds = 60): void {
+    advise({
+      onLimited: async () => ({ mode: 'auto', target: 'spare', delaySeconds }),
+      ...extra,
+    });
+  }
+
+  /** A launch that stays open until `release` is called. */
+  function heldLaunch(): { release: () => void } {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    vi.mocked(dispatchSessionMessage).mockImplementationOnce(async () => {
+      await gate;
+      return {
+        accepted: true,
+        canonicalId: 'new-held',
+        outcome: { kind: 'started', messageId: 'm' },
+        queued: false,
+        queuePosition: 0,
+      } as never;
+    });
+    return { release: () => release() };
+  }
+
+  beforeEach(() => {
+    vi.mocked(isAgentLaunchCapFull).mockReturnValue(false);
+    vi.mocked(notifyAutoMoveFailed).mockClear();
+  });
+
+  it('plans auto for an unclaimed session, and shows it handing off', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')).toEqual({ mode: 'auto', target: 'spare', fireAt: FIRE_AT });
+    expect(state('src-1')).toBe('handing-off');
+  });
+
+  it('clamps the advisor’s delay to an hour', async () => {
+    adviseAuto({}, 99_999);
+    await limitedSession('src-1');
+    expect(plan('src-1')).toMatchObject({
+      fireAt: new Date(NOW.getTime() + 3_600_000).toISOString(),
+    });
+  });
+
+  it('fires once at fireAt, carrying the work over unattended with the advisor’s seed', async () => {
+    adviseAuto({
+      carryOver: async () => ({ seedContext: 'From HANDOFF.md', prompt: 'Pick up DOR-1' }),
+    });
+    await limitedSession('src-1');
+
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
+
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
+    expect(call.origin).toEqual({ kind: 'account-handoff' });
+    expect(call.request).toMatchObject({
+      account: 'spare',
+      seedContext: 'From HANDOFF.md',
+      content: 'Pick up DOR-1',
+    });
+    // Nobody is watching: no approval card holds it, and it counts against the cap.
+    expect(call.unattended).toBe(true);
+    expect(call.countsTowardLaunchCap).toBe(true);
+    expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'spare' });
+
+    await vi.advanceTimersByTimeAsync(3_600_000);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('seeds an automatic move with the default summary when the advisor’s seed is too big', async () => {
+    adviseAuto({
+      carryOver: async () => ({ seedContext: 'x'.repeat(SEED_CONTEXT_MAX_LENGTH + 1) }),
+    });
+    await limitedSession('src-1');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
+    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
+    expect(call.request.seedContext).toContain('Previous session: src-1');
+    expect(call.request.content).toBe(CARRY_OVER_PROMPT);
+  });
+
+  it('keeps a person’s own continue attended and outside the cap', async () => {
+    await limitedSession('src-1');
+    await continueSession('src-1', { account: 'spare' }, deps);
+    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
+    expect(call.unattended).toBeUndefined();
+    expect(call.countsTowardLaunchCap).toBeUndefined();
+  });
+
+  it('drops to ask and tells the person again when the target is no longer eligible', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    accounts = accounts.map((a) => (a.id === 'spare' ? { ...a, state: 'limited' } : a));
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(notifyAutoMoveFailed).toHaveBeenCalledTimes(1);
+    expect(notifyAutoMoveFailed).toHaveBeenCalledWith('src-1', '/work/project', expect.anything());
+  });
+
+  it('drops to ask and tells the person again when the launch cap is full', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    vi.mocked(isAgentLaunchCapFull).mockReturnValue(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(notifyAutoMoveFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops to ask when the launch itself is refused by the cap', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    vi.mocked(dispatchSessionMessage).mockResolvedValueOnce({
+      refused: 'LAUNCH_CAP_FULL',
+      message: 'Too many',
+    } as never);
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
+    expect(notifyAutoMoveFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts one session when a person’s continue is already running as the timer fires', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    const held = heldLaunch();
+    const person = continueSession('src-1', { account: 'busy' }, deps);
+    await vi.advanceTimersByTimeAsync(60_000);
+    held.release();
+    expect(await person).toEqual({ sessionId: 'new-held' });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+    expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-held', accountId: 'busy' });
+  });
+
+  it('answers a person’s continue during the automatic move with the session it starts', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    const held = heldLaunch();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
+    const person = continueSession('src-1', { account: 'busy' }, deps);
+    held.release();
+    expect(await person).toEqual({ sessionId: 'new-held' });
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a wait or a cancel once the automatic move has started', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    const held = heldLaunch();
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(dispatchSessionMessage).toHaveBeenCalledTimes(1));
+    expect((await refusal(waitForReset('src-1', {}))).code).toBe('MOVING');
+    expect((await refusal(cancelAutoContinue('src-1'))).code).toBe('MOVING');
+    held.release();
+    await vi.waitFor(() => expect(plan('src-1')?.mode).toBe('continued'));
+  });
+
+  it('stops the timer on cancel', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    expect(await cancelAutoContinue('src-1')).toEqual({ mode: 'ask' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('stops the timer on wait', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    await waitForReset('src-1', {});
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(plan('src-1')?.mode).toBe('waiting');
+  });
+
+  it('does nothing once the session’s next turn cleared its limit', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    store.delete('src-1');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('turns a pending automatic move into ask after a restart, and never fires it', async () => {
+    adviseAuto();
+    await limitedSession('src-1');
+    expect(plan('src-1')?.mode).toBe('auto');
+    // A new process: no timers, the row is all there is.
+    stopPlanning();
+    uninstall();
+    stopPlanning = startLimitPlanning({ now: () => new Date() });
+    uninstall = installContinueService({});
+    expect(plan('src-1')).toEqual({ mode: 'ask' });
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('never fires a claimed session’s auto plan itself', async () => {
+    advise({
+      claims: async () => true,
+      onLimited: async () => ({ mode: 'auto', target: 'spare', delaySeconds: 60 }),
+    });
+    await limitedSession('src-1');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(plan('src-1')?.mode).toBe('auto');
+  });
+});
+
+// === Continuing on another runtime ============================================
+
+describe('continuing on another runtime', () => {
+  let codex: FakeAgentRuntime;
+
+  /** An advisor whose ranking offers Codex's accounts beside Claude Code's. */
+  function adviseCodex(ids: string[] = ['default']): void {
+    advise({
+      rank: async () => ({
+        accounts: [
+          { id: 'spare', eligible: true, reason: 'fine' },
+          ...ids.map((id) => ({ id, runtime: 'codex', eligible: true, reason: 'Codex has room' })),
+        ],
+        recommendedId: 'spare',
+      }),
+    });
+  }
+
+  beforeEach(() => {
+    runtime.getCapabilities.mockReturnValue(CLAUDE_CODE_CAPABILITIES);
+    codex = new FakeAgentRuntime('codex');
+    codex.getCapabilities.mockReturnValue(CODEX_CAPABILITIES);
+    runtimeRegistry.register(codex as never);
+    installUsageStore([
+      ...accounts,
+      { id: 'default', runtime: 'codex', weekly: 10, isDefault: true },
+      { id: 'work', runtime: 'codex', weekly: 10 },
+    ]);
+  });
+
+  it('refuses another runtime the advisor did not offer', async () => {
+    await limitedSession('src-1');
+    const err = await refusal(
+      continueSession('src-1', { account: 'default', runtime: 'codex' }, deps)
+    );
+    expect([err.status, err.code]).toEqual([400, 'RUNTIME_NOT_OFFERED']);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('refuses a runtime that is not registered', async () => {
+    adviseCodex();
+    await limitedSession('src-1');
+    const err = await refusal(
+      continueSession('src-1', { account: 'default', runtime: 'nope' }, deps)
+    );
+    expect([err.status, err.code]).toEqual([400, 'UNKNOWN_RUNTIME']);
+  });
+
+  it('refuses an account a runtime without accounts cannot run on', async () => {
+    adviseCodex(['default', 'work']);
+    await limitedSession('src-1');
+    const err = await refusal(
+      continueSession('src-1', { account: 'work', runtime: 'codex' }, deps)
+    );
+    expect([err.status, err.code]).toEqual([400, 'ACCOUNT_NOT_ROUTABLE']);
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+  });
+
+  it('starts the offered runtime with its own defaults and never more power than the source', async () => {
+    adviseCodex();
+    await runtimeRegistry.saveSessionSettings('src-1', {
+      model: 'opus',
+      effort: 'high',
+      permissionMode: 'bypassPermissions',
+    });
+    await limitedSession('src-1');
+
+    const answer = await continueSession('src-1', { account: 'default', runtime: 'codex' }, deps);
+
+    expect(answer).toEqual({ sessionId: 'new-1' });
+    const call = vi.mocked(dispatchSessionMessage).mock.calls[0]![0];
+    expect(call.origin).toEqual({ kind: 'account-handoff' });
+    expect(call.request.runtime).toBe('codex');
+    // Codex runs on this computer's own sign-in: no account hint.
+    expect(call.request).not.toHaveProperty('account');
+    const settings = await runtimeRegistry.getSessionSettings(call.sessionId);
+    // Full autonomy is capped at act; Claude's model and effort are not carried.
+    expect(settings?.permissionMode).toBe('acceptEdits');
+    expect(settings?.model).toBeUndefined();
+    expect(settings?.effort).toBeUndefined();
+    expect(plan('src-1')).toEqual({ mode: 'continued', sessionId: 'new-1', accountId: 'default' });
   });
 });

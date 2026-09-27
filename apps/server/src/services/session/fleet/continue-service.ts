@@ -11,6 +11,11 @@
  * moved and held only by the advisor: continue, wait and cancel are handed to
  * it, and refused (503) when it cannot be reached rather than risk two writers.
  *
+ * An UNCLAIMED session whose advisor planned `auto` is moved by core itself
+ * (`auto-handoff.ts`, installed with this service); a person's continue and
+ * that handoff share one in-flight marker per episode, so they start one
+ * session between them.
+ *
  * Also the recorder behind an extension's `accounts.markContinued`.
  *
  * @module services/session/fleet/continue-service
@@ -23,6 +28,7 @@ import type {
   LimitPlan,
 } from '@dorkos/shared/schemas';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { logger } from '../../../lib/logger.js';
 import type { ActivityService } from '../../activity/activity-service.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
@@ -33,6 +39,7 @@ import {
 } from '../../core/usage/session-continuation.js';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
 import { dispatchSessionMessage, isSessionLaunchRefusal } from '../launch/launch-session.js';
+import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
 import { peekProjector } from '../session-state-projector.js';
 import { carryOverSession, recordCarryOverActivity } from './carry-over.js';
 import {
@@ -48,9 +55,20 @@ import {
   writePlan,
   isClaudeCodeLimit,
   CORE_AUTO_RESUME_AVAILABLE,
+  LIMIT_RUNTIME,
   PlanChangedError,
 } from './limit-plans.js';
 import type { StoredSessionLimit } from './session-limit-store.js';
+import {
+  ContinueError,
+  clearContinuesInFlight,
+  continueInFlight,
+  episodeKey,
+  trackContinue,
+} from './continue-in-flight.js';
+import { installAutoHandoff } from './auto-handoff.js';
+
+export { ContinueError } from './continue-in-flight.js';
 
 /** The sentence for a session that can only wait for its reset (spec D9, quoted). */
 export const WAIT_ONLY_MESSAGE =
@@ -62,31 +80,16 @@ export const FLOW_UNREACHABLE_MESSAGE = 'Flow could not be reached, so this was 
 /** The first message a model switch sends to the same session. */
 export const MODEL_CONTINUE_PROMPT = 'Continue where you left off.';
 
-/** Why a continue, wait or cancel was refused, with the status the route answers. */
-export class ContinueError extends Error {
-  /**
-   * Build a refusal.
-   *
-   * @param status - The HTTP status the route answers.
-   * @param code - A stable machine-readable code.
-   * @param message - The sentence shown to a person.
-   */
-  constructor(
-    readonly status: 400 | 409 | 503,
-    readonly code: string,
-    message: string
-  ) {
-    super(message);
-    this.name = 'ContinueError';
-  }
-}
-
-/** What a continue needs from the app to start a session. */
-export interface ContinueLaunchDeps {
+/** What starting a session needs from the app, for a person's continue or the timer's. */
+export interface CarryOverLaunchDeps {
   /** Mesh, when running, so the source's agent path can be carried over. */
   meshCore: MeshCore | undefined;
   /** The room binding port the launch service asks. */
   roomSessionPlace: RoomSessionPlacePort | undefined;
+}
+
+/** What a continue needs from the app to start a session. */
+export interface ContinueLaunchDeps extends CarryOverLaunchDeps {
   /** The client id a model switch's message is sent as. */
   clientId: string;
   /**
@@ -181,9 +184,6 @@ async function isUnbound(stored: StoredSessionLimit): Promise<boolean> {
   }
 }
 
-/** Continues in flight (a carry-over or a claimed move), per limit episode, shared by every caller. */
-const inFlight = new Map<string, Promise<ContinueSessionResponse>>();
-
 /**
  * Run an action that decides from the stored plan, and decide again when its
  * write lost a race with a newer decision (a compare-and-set miss).
@@ -196,10 +196,6 @@ async function decidingAgainOnChange<T>(action: () => Promise<T>): Promise<T> {
       if (!(err instanceof PlanChangedError) || attempt >= 3) throw err;
     }
   }
-}
-
-function episodeKey(stored: StoredSessionLimit): string {
-  return `${stored.sessionId}\u0000${stored.limit.since}`;
 }
 
 /**
@@ -241,11 +237,12 @@ async function continueOnModel(
  */
 async function moveClaimed(
   stored: StoredSessionLimit,
-  accountId: string
+  accountId: string,
+  runtime: string
 ): Promise<ContinueSessionResponse> {
   requireClaimOwner(stored);
   const accepted = await invokeAdvisor('move', await sessionInfoOf(stored), {
-    runtime: 'claude-code',
+    runtime,
     accountId,
   });
   if (!accepted) throw new ContinueError(503, 'FLOW_UNREACHABLE', FLOW_UNREACHABLE_MESSAGE);
@@ -300,25 +297,28 @@ export async function continueSession(
   }
   // Idempotent per episode: a moved session answers with where it went.
   if (body.account && plan.mode === 'continued') return { sessionId: plan.sessionId };
-  if (body.runtime && body.runtime !== 'claude-code') {
+  const targetRuntime = body.runtime ?? LIMIT_RUNTIME;
+  const crossRuntime = body.account !== undefined && targetRuntime !== LIMIT_RUNTIME;
+  if (crossRuntime && !runtimeRegistry.has(targetRuntime)) {
     throw new ContinueError(
       400,
-      'RUNTIME_NOT_OFFERED',
-      `Continuing on the ${body.runtime} runtime is not offered for this session.`
+      'UNKNOWN_RUNTIME',
+      `There is no runtime named "${targetRuntime}".`
     );
   }
   const key = episodeKey(stored);
-  const pending = inFlight.get(key);
+  const pending = continueInFlight(key);
   if (body.account && pending) return pending;
   requireNotStreaming(stored.sessionId);
 
   if (!body.account) return continueOnModel(stored, body.model as string, deps);
 
   const accountId = body.account;
-  if (!isRegisteredAccount(accountId)) {
+  // Another runtime's account is checked against the advisor's offer, below.
+  if (!crossRuntime && !isRegisteredAccount(accountId)) {
     throw new ContinueError(400, 'UNKNOWN_ACCOUNT', `There is no account named "${accountId}".`);
   }
-  if (accountId === stored.limit.accountId) {
+  if (!crossRuntime && accountId === stored.limit.accountId) {
     throw new ContinueError(
       400,
       'SAME_ACCOUNT',
@@ -335,32 +335,75 @@ export async function continueSession(
       );
     }
     // A second click after the advisor accepted: already handing off there.
-    if (plan.mode === 'auto' && plan.target === accountId) return {};
+    if (!crossRuntime && plan.mode === 'auto' && plan.target === accountId) return {};
   }
 
   // Set before any await, so a second caller (a person's second click, or the
   // automatic handoff) joins this continue rather than starting another.
-  const run = (async (): Promise<ContinueSessionResponse> => {
-    if (stored.claimedBy) return moveClaimed(stored, accountId);
-    if (body.model) {
-      const runtime = await runtimeRegistry.resolveForSession(stored.sessionId);
-      const refusal = await deps.checkModel(runtime, body.model);
-      if (refusal) throw new ContinueError(400, 'UNSUPPORTED_MODEL', refusal);
-    }
-    const sessionId = await carryOverSession({
-      source: stored,
-      targetAccountId: accountId,
-      by: 'person',
-      ...(body.model ? { model: body.model } : {}),
-      launch: { meshCore: deps.meshCore, roomSessionPlace: deps.roomSessionPlace },
-      activity,
-    });
-    return { sessionId };
-  })().finally(() => {
-    if (inFlight.get(key) === run) inFlight.delete(key);
-  });
-  inFlight.set(key, run);
-  return run;
+  return trackContinue(
+    key,
+    (async (): Promise<ContinueSessionResponse> => {
+      if (crossRuntime) await requireOfferedElsewhere(stored, targetRuntime, accountId);
+      if (stored.claimedBy) return moveClaimed(stored, accountId, targetRuntime);
+      if (body.model) {
+        const runtime = crossRuntime
+          ? runtimeRegistry.get(targetRuntime)
+          : await runtimeRegistry.resolveForSession(stored.sessionId);
+        const refusal = await deps.checkModel(runtime, body.model);
+        if (refusal) throw new ContinueError(400, 'UNSUPPORTED_MODEL', refusal);
+      }
+      const sessionId = await carryOverSession({
+        source: stored,
+        targetAccountId: accountId,
+        by: 'person',
+        ...(body.model ? { model: body.model } : {}),
+        ...(crossRuntime ? { targetRuntime } : {}),
+        launch: { meshCore: deps.meshCore, roomSessionPlace: deps.roomSessionPlace },
+        activity,
+      });
+      return { sessionId };
+    })()
+  );
+}
+
+/**
+ * Refuse another runtime's account unless the advisor's ranking offered that
+ * very account of that runtime (spec D9 "Endpoints", S5 N3): a cross-runtime
+ * move is the advisor's suggestion, never a free pick. A runtime without
+ * accounts runs on this computer's own sign-in, so only its default account
+ * can be continued on.
+ */
+async function requireOfferedElsewhere(
+  stored: StoredSessionLimit,
+  runtime: string,
+  accountId: string
+): Promise<void> {
+  const ranking = await rankForLimit(stored);
+  const offered =
+    ranking.advised && ranking.accounts.some((a) => a.runtime === runtime && a.id === accountId);
+  if (!offered) {
+    throw new ContinueError(
+      400,
+      'RUNTIME_NOT_OFFERED',
+      `Continuing on ${runtime} is not offered for this session.`
+    );
+  }
+  if (runtimeRegistry.getAllCapabilities()[runtime]?.supportsAccounts) return;
+  const ledger = (LEDGER_RUNTIMES as readonly string[]).includes(runtime)
+    ? (runtime as LedgerRuntime)
+    : null;
+  const account = ledger
+    ? getAccountUsageStore()
+        ?.listAccounts(ledger)
+        .find((a) => a.id === accountId)
+    : undefined;
+  if (!account?.isDefault) {
+    throw new ContinueError(
+      400,
+      'ACCOUNT_NOT_ROUTABLE',
+      `${runtime} runs on this computer's own sign-in, so it can only continue on that account.`
+    );
+  }
 }
 
 /**
@@ -381,9 +424,7 @@ export async function waitForReset(
   const stored = await requireLimit(sessionId);
   const current = stored.limit.plan;
   if (current.mode === 'continued') throw alreadyMoved();
-  if (inFlight.has(episodeKey(stored))) {
-    throw new ContinueError(409, 'MOVING', 'This work is already moving to another account.');
-  }
+  if (continueInFlight(episodeKey(stored))) throw moving();
   const allowed = mayCarryOver(stored);
   if (opts.autoResume === true && !allowed) {
     throw new ContinueError(400, 'WAIT_ONLY', WAIT_ONLY_MESSAGE);
@@ -418,6 +459,8 @@ export async function cancelAutoContinue(sessionId: string): Promise<LimitPlan> 
   if (stored.limit.plan.mode !== 'auto') {
     throw new ContinueError(409, 'NOT_HANDING_OFF', 'There is no handoff to cancel.');
   }
+  // Core's own handoff already started the new session: too late to cancel.
+  if (continueInFlight(episodeKey(stored))) throw moving();
   if (stored.claimedBy) {
     requireClaimOwner(stored);
     const cancelled = await invokeAdvisor('cancelAuto', await sessionInfoOf(stored));
@@ -430,6 +473,10 @@ export async function cancelAutoContinue(sessionId: string): Promise<LimitPlan> 
   return writeAfterDeciding(stored, (latest) =>
     latest.limit.plan.mode === 'auto' ? { mode: 'ask' } : null
   );
+}
+
+function moving(): ContinueError {
+  return new ContinueError(409, 'MOVING', 'This work is already moving to another account.');
 }
 
 function alreadyMoved(): ContinueError {
@@ -528,17 +575,27 @@ async function markContinuedOnce(
 
 /**
  * Install the continue service: the Activity writer it records moves with,
- * and the recorder behind `accounts.markContinued`.
+ * the recorder behind `accounts.markContinued`, and core's automatic handoff
+ * for unclaimed `auto` plans.
  *
  * @param opts.activity - The Activity feed writer, when the server has one.
- * @returns A function that uninstalls it.
+ * @param opts.launchDeps - The app's launch deps, read when a handoff fires.
+ * @returns A function that uninstalls it and clears every timer.
  */
-export function installContinueService(opts: { activity?: ActivityService }): () => void {
+export function installContinueService(opts: {
+  activity?: ActivityService;
+  launchDeps?: () => CarryOverLaunchDeps;
+}): () => void {
   activity = opts.activity;
   setContinuationRecorder(recordMarkContinued);
+  const uninstallAuto = installAutoHandoff({
+    activity: () => activity,
+    launchDeps: opts.launchDeps ?? (() => ({ meshCore: undefined, roomSessionPlace: undefined })),
+  });
   return () => {
+    uninstallAuto();
     setContinuationRecorder(undefined);
     activity = undefined;
-    inFlight.clear();
+    clearContinuesInFlight();
   };
 }

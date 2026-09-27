@@ -73,6 +73,13 @@ export interface DispatchSessionMessageOpts {
    * slot taken is refused with `LAUNCH_CAP_FULL` before anything is written.
    */
   countsTowardLaunchCap?: boolean;
+  /**
+   * Nobody is watching this turn (an automatic carry-over), so it runs like a
+   * timer-fired schedule: an approval card does not hold the turn
+   * (`unattendedApprovals`), and a new session's prompts are refused rather
+   * than waited on (`SessionOpts.unattended`).
+   */
+  unattended?: boolean;
 }
 
 /**
@@ -243,7 +250,7 @@ export async function dispatchSessionMessage(
 async function launchSessionMessage(
   opts: DispatchSessionMessageOpts
 ): Promise<DispatchSessionMessageResult> {
-  const { sessionId, clientId, meshCore, roomSessionPlace, origin, onSettled } = opts;
+  const { sessionId, clientId, meshCore, roomSessionPlace, origin, onSettled, unattended } = opts;
   const {
     content,
     cwd,
@@ -410,6 +417,25 @@ async function launchSessionMessage(
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
 
+  // An unattended NEW session is created here, before the send, because only
+  // `ensureSession` can mark it unattended, and the send's own create would
+  // not. Its settings are the row the bind just seeded, exactly what the
+  // send's create would have read.
+  if (unattended && isNewSession) {
+    const stored = await runtimeRegistry.getSessionSettings(sessionId).catch(() => null);
+    if (stored?.permissionMode) {
+      runtime.ensureSession(sessionId, {
+        permissionMode: stored.permissionMode,
+        ...(stored.model !== undefined ? { model: stored.model } : {}),
+        ...(stored.effort !== undefined ? { effort: stored.effort } : {}),
+        ...(stored.fastMode !== undefined ? { fastMode: stored.fastMode } : {}),
+        ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
+        hasStarted: false,
+        unattended: true,
+      });
+    }
+  }
+
   // One id for this whole dispatch, minted BEFORE the trigger so the line that
   // announces it already carries it and a reader can start there.
   const dispatchId = newDispatchId();
@@ -468,6 +494,7 @@ async function launchSessionMessage(
       // Absent means `queue`, which is also what every disposition resolves to
       // until the native rungs land (P4). The receipt says which it was.
       ...(disposition ? { disposition } : {}),
+      ...(unattended ? { unattendedApprovals: true } : {}),
       projector,
       runtime,
       onError: (err) => {

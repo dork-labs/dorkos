@@ -18,7 +18,7 @@ import {
 } from '../../session/fleet/session-limit-store.js';
 import { NotificationStore } from '../notification-store.js';
 import { NotificationService, setNotificationService } from '../notification-service.js';
-import { watchSessionLifecycle } from '../emitters/session-lifecycle.js';
+import { notifyAutoMoveFailed, watchSessionLifecycle } from '../emitters/session-lifecycle.js';
 import { notificationEntry } from '../notification-registry.js';
 
 const armEscalation = vi.hoisted(() => vi.fn());
@@ -196,5 +196,22 @@ describe('account.limited', () => {
     expect(entry.title(payload)).toBe('Your Claude account hit its weekly limit');
     expect(entry.dedupeKey(payload)).toBe('account-limited:3f2a9c01b7de:seven_day:2026-09-26T10');
     expect(entry.relay).toBe('never');
+  });
+
+  it('tells the person again, beside the first notice, when an automatic move could not happen', async () => {
+    failTurn('s-1', LIMIT);
+    await flush();
+    notifyAutoMoveFailed('s-1', '/Users/dev/s-1', LIMIT);
+    await flush();
+    // Once per session, whatever retries it.
+    notifyAutoMoveFailed('s-1', '/Users/dev/s-1', LIMIT);
+    await flush();
+
+    const limited = rows().filter((r) => r.kind === 'account.limited');
+    expect(limited).toHaveLength(2);
+    const repeat = limited.find((r) => r.body !== undefined && r.body !== null);
+    expect(repeat?.body).toBe(
+      'DorkOS could not move it automatically, so the session is waiting for you.'
+    );
   });
 });

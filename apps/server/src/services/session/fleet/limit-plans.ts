@@ -18,7 +18,8 @@
  *   every newly registered advisor for rows nobody claimed.
  * - **A claimed handoff settles in 10 minutes**: a claimed `auto` plan with no
  *   `markContinued` 10 minutes after `fireAt` goes back to `ask`. The timer is
- *   in memory, and at boot every `auto` plan reads `ask`.
+ *   in memory, and at boot every `auto` plan reads `ask`. An UNCLAIMED `auto`
+ *   plan is core's own handoff: the continue service fires it at `fireAt`.
  *
  * Every write goes to the `session_limits` row first (the truth, read by every
  * route) and is then pushed onto the session's live stream, when it has one.
@@ -61,7 +62,7 @@ export const CORE_AUTO_RESUME_AVAILABLE = false;
 export const CLAIMED_HANDOFF_SETTLE_MS = 10 * 60_000;
 
 /** The runtime whose sessions carry usage limits today. */
-const LIMIT_RUNTIME = 'claude-code';
+export const LIMIT_RUNTIME = 'claude-code';
 
 /** The clock, swappable in tests. */
 let now: () => Date = () => new Date();
@@ -528,21 +529,16 @@ async function planEpisode(stored: StoredSessionLimit): Promise<void> {
         resumeAt: answer.resumeAt ?? stored.limit.resetsAt,
         autoResume: claimedBy !== null || CORE_AUTO_RESUME_AVAILABLE,
       };
-    } else if (answer?.mode === 'auto' && claimedBy) {
+    } else if (answer?.mode === 'auto') {
       // A claimed session's automatic handoff is flow's to run: core shows the
-      // countdown and settles it if flow never reports back.
+      // countdown and settles it if flow never reports back. An unclaimed one
+      // is core's: the continue service arms its timer when this plan is
+      // written (`delaySeconds` is already clamped to 0..3600).
       plan = {
         mode: 'auto',
         target: answer.target,
         fireAt: new Date(now().getTime() + answer.delaySeconds * 1000).toISOString(),
       };
-    } else if (answer?.mode === 'auto') {
-      // Core's own automatic carry-over is the next slice of this task; until
-      // it lands, an unclaimed session asks the person instead.
-      logger.info('[limit-plans] automatic carry-over is not available yet; asking instead', {
-        sessionId: stored.sessionId,
-        target: answer.target,
-      });
     }
   }
   const written = await writePlan(stored, plan, { modelFallback, claimedBy });

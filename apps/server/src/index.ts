@@ -447,6 +447,7 @@ import {
 } from './services/rooms/index.js';
 import { visibleRoomsForCaller } from './services/rooms/visible-rooms-for-caller.js';
 import { roomSessionPlace } from './services/rooms/repo/room-turn-place.js';
+import type { RoomSessionPlacePort } from './services/workspace/room-session-place.js';
 import {
   frozenRoomWorktrees,
   migrateRoomTranscripts,
@@ -1263,7 +1264,15 @@ async function start() {
   // watches, and the Activity feed, which records each move.
   {
     const stopPlanning = startLimitPlanning();
-    const uninstallContinue = installContinueService({ activity: activityService });
+    const uninstallContinue = installContinueService({
+      activity: activityService,
+      // Read when an automatic handoff fires, long after boot: the app and its
+      // Mesh and room ports exist by then (the app is created further down).
+      launchDeps: () => ({
+        meshCore: app.locals.meshCore as MeshCore | undefined,
+        roomSessionPlace: app.locals.roomSessionPlace as RoomSessionPlacePort | undefined,
+      }),
+    });
     stopSessionContinuation = () => {
       stopPlanning();
       uninstallContinue();

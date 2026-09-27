@@ -7,12 +7,15 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import type { MeshCore } from '@dorkos/mesh';
 
+const fakeRuntime = { getCapabilities: () => ({}), ensureSession: vi.fn() };
+
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     has: vi.fn(() => true),
     getDefaultType: vi.fn(() => 'claude-code'),
     persistSessionRuntime: vi.fn(async () => true),
-    resolveForSession: vi.fn(async () => ({ getCapabilities: () => ({}) })),
+    resolveForSession: vi.fn(async () => fakeRuntime),
+    getSessionSettings: vi.fn(async () => null),
   },
 }));
 vi.mock('../../../core/usage-reporter.js', () => ({ reportUsageEvent: vi.fn() }));
@@ -299,6 +302,48 @@ describe('dispatchSessionMessage', () => {
         origin: { kind: 'interactive' },
       });
       expect(isSessionLaunchRefusal(result)).toBe(false);
+    });
+  });
+
+  describe('an unattended launch', () => {
+    it('creates the new session unattended from its stored row, and sends without holding for approvals', async () => {
+      vi.mocked(runtimeRegistry.getSessionSettings).mockResolvedValueOnce({
+        permissionMode: 'acceptEdits',
+        model: 'opus',
+      });
+      await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi', cwd: '/work/project' },
+        clientId: 'c',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+        origin: { kind: 'account-handoff' },
+        unattended: true,
+      });
+
+      expect(fakeRuntime.ensureSession).toHaveBeenCalledWith(
+        SESSION,
+        expect.objectContaining({
+          permissionMode: 'acceptEdits',
+          model: 'opus',
+          hasStarted: false,
+          unattended: true,
+        })
+      );
+      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattendedApprovals).toBe(true);
+    });
+
+    it('leaves an attended launch as it was', async () => {
+      await dispatchSessionMessage({
+        sessionId: SESSION,
+        request: { content: 'hi' },
+        clientId: 'c',
+        meshCore: mesh,
+        roomSessionPlace: undefined,
+        origin: { kind: 'interactive' },
+      });
+      expect(fakeRuntime.ensureSession).not.toHaveBeenCalled();
+      expect(vi.mocked(dispatchMessage).mock.calls[0]![0].unattendedApprovals).toBeUndefined();
     });
   });
 });

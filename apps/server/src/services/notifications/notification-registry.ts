@@ -304,6 +304,11 @@ export interface NotificationPayloads {
     resetsAt: string | null;
     /** When the limit was hit, ISO 8601: the episode's identity when the reset is unknown. */
     since: string;
+    /**
+     * Set on the repeat raised when a planned automatic move to another account
+     * could not happen (spec D9 "Automatic handoff"), so a person decides.
+     */
+    autoMoveFailed?: true;
   };
   /** The daily digest. */
   'report.daily': {
@@ -880,6 +885,10 @@ const ENTRIES: NotificationRegistryMap = {
       p.resetsAt
         ? `${p.accountLabel} is out until ${formatResetTime(p.resetsAt)}`
         : `${p.accountLabel} hit its ${limitWindowPhrase(p.window)} limit`,
+    body: (p) =>
+      p.autoMoveFailed
+        ? 'DorkOS could not move it automatically, so the session is waiting for you.'
+        : undefined,
     actions: () => OPEN_ACTION,
     // Per account EPISODE: five sessions hitting one account's weekly limit
     // are one thing to be told. The reset time names the episode; when it is
@@ -887,7 +896,9 @@ const ENTRIES: NotificationRegistryMap = {
     dedupeKey: (p) =>
       `account-limited:${p.runtime ? `${p.runtime}:` : ''}${
         p.accountId ?? p.accountRef ?? 'unregistered'
-      }:${p.window}:${p.resetsAt ?? p.since.slice(0, 13)}`,
+      }:${p.window}:${p.resetsAt ?? p.since.slice(0, 13)}${
+        p.autoMoveFailed ? `:auto-failed:${p.sessionId}` : ''
+      }`,
     dedupeWindowMs: ACCOUNT_LIMITED_DEDUPE_WINDOW_MS,
     relay: 'never',
   },

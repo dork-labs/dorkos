@@ -454,7 +454,9 @@ export type ContinueOptionsResponse = z.infer<typeof ContinueOptionsResponseSche
 /**
  * The body of `POST /api/sessions/:id/continue`: `account` carries the work
  * over to a new session on that account (with `model` as the new session's
- * model); `model` alone switches the same session's model and continues it.
+ * model), on `runtime` when the account advisor offered that runtime's account
+ * (default: the session's own); `model` alone switches the same session's
+ * model and continues it.
  */
 export const ContinueSessionRequestSchema = z
   .object({
