@@ -33,11 +33,19 @@ export interface SessionBilling {
   runtime: LedgerRuntime;
   /** Claude Code only: the folder the session runs in. */
   root?: string;
+  /**
+   * Claude Code only: true when the session bills per token (a stored API key
+   * or DorkOS credits), so its `usage` is its own cost and never its folder's
+   * subscription windows. Absent reads as per token: a subscription is only
+   * assumed when the runtime says so.
+   */
+  perToken?: boolean;
 }
 
 /** A runtime that can name the folder a session runs and bills on (Claude Code). */
 interface AccountAwareRuntime {
   accountRootForSession(sessionId: string, projectDir: string): Promise<string>;
+  sessionBillsPerToken?(sessionId: string): Promise<boolean>;
 }
 
 function isAccountAware(runtime: unknown): runtime is AccountAwareRuntime {
@@ -68,15 +76,17 @@ export async function billingAccountFor(
 ): Promise<SessionBilling | null> {
   if (!isLedgerRuntime(runtime.type)) return null;
   if (!isAccountAware(runtime)) return { runtime: runtime.type };
+  const perToken = await runtime.sessionBillsPerToken?.(sessionId).catch(() => true);
+  const billing: SessionBilling = {
+    runtime: runtime.type,
+    ...(perToken !== undefined ? { perToken } : {}),
+  };
   const launched = runtime.getSessionAccount?.(sessionId);
-  if (launched) return { runtime: runtime.type, root: launched };
+  if (launched) return { ...billing, root: launched };
   try {
-    return {
-      runtime: runtime.type,
-      root: await runtime.accountRootForSession(sessionId, projectDir),
-    };
+    return { ...billing, root: await runtime.accountRootForSession(sessionId, projectDir) };
   } catch {
-    return { runtime: runtime.type };
+    return billing;
   }
 }
 

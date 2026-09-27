@@ -417,3 +417,79 @@ describe('account_usage reaches every open session on the account (spec claude-a
     expect(pct('d')).toBe(30);
   });
 });
+
+describe('account_usage matching and the Claude subscription bar', () => {
+  function usage(runtime: 'claude-code' | 'codex', usedPct: number) {
+    return {
+      runtime,
+      accountId: 'default',
+      path: runtime === 'codex' ? '/h/.codex' : '/h/.claude',
+      label: null,
+      color: '#000',
+      subscriptionType: null,
+      plan: null,
+      credits: null,
+      spend: null,
+      windows: [
+        {
+          key: 'five_hour',
+          label: '5-hour window',
+          usedPct,
+          resetsAt: null,
+          status: null,
+          expired: false,
+          observedAt: '2026-09-27T10:00:00.000Z',
+          source: 'sdk_event' as const,
+        },
+      ],
+      state: 'ok' as const,
+      limit: null,
+      updatedAt: null,
+    };
+  }
+
+  beforeEach(() => {
+    useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  });
+
+  it('a Codex default event never touches a Claude default session', () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot('claude', {
+      ...SNAPSHOT,
+      status: { ...STATUS, accountUsage: usage('claude-code', 10) },
+    });
+    store.applyAccountUsage(usage('codex', 90));
+    expect(
+      useSessionStreamStore.getState().getSession('claude').status?.accountUsage?.runtime
+    ).toBe('claude-code');
+  });
+
+  it("moves a Claude subscription session's bar with its account and keeps its cost; pay-as-you-go stays", () => {
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot('sub', {
+      ...SNAPSHOT,
+      status: {
+        ...STATUS,
+        accountUsage: usage('claude-code', 10),
+        usage: { kind: 'subscription', utilization: 0.1, costUsd: 0.3 },
+      },
+    });
+    store.applySnapshot('key', {
+      ...SNAPSHOT,
+      status: {
+        ...STATUS,
+        accountUsage: usage('claude-code', 10),
+        usage: { kind: 'pay-as-you-go', costUsd: 2 },
+      },
+    });
+    store.applyAccountUsage(usage('claude-code', 70));
+    const get = (id: string) => useSessionStreamStore.getState().getSession(id).status?.usage;
+    expect(get('sub')).toEqual({
+      kind: 'subscription',
+      utilization: 0.7,
+      windowLabel: '5-hour window',
+      costUsd: 0.3,
+    });
+    expect(get('key')).toEqual({ kind: 'pay-as-you-go', costUsd: 2 });
+  });
+});

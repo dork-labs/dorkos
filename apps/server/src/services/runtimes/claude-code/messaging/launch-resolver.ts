@@ -282,6 +282,8 @@ export async function resolveLaunch(args: {
   // env seam (ADR-0315). Injected below ONLY when configured; a missing or
   // dangling reference yields `{}`, leaving host/delegated-login auth untouched.
   const claudeCredentialEnv = await resolveClaudeCredentialEnv();
+  // DorkOS credits as the inference source, when armed (DOR-2027); `{}` otherwise.
+  const creditsEnv = creditsTurnEnv('claude-code');
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
@@ -333,10 +335,14 @@ export async function resolveLaunch(args: {
   // attribute a dead sign-in to the wrong account. It is deliberately not
   // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
   session.launchedAccountRoot = accountRoot;
+  // A launch that injects a key or credits bills per token, so the folder's
+  // subscription windows are not this session's usage (spec §6 U).
+  session.launchedPerToken =
+    Object.keys(claudeCredentialEnv).length > 0 || Object.keys(creditsEnv).length > 0;
   // The session's shown account usage follows the account it now runs on: a
   // new session's per-send hint is only known here (spec `claude-account-fleet`
   // §6 U, "the first send re-stamps").
-  noteSessionAccountLaunched(sessionId, accountRoot);
+  noteSessionAccountLaunched(sessionId, accountRoot, session.launchedPerToken);
 
   const sdkOptions: Options = {
     cwd: effectiveCwd,
@@ -419,7 +425,7 @@ export async function resolveLaunch(args: {
       // URL and token are runtime values obtained before the turn, never minted
       // on this path: a launch that waited on the network would turn a cloud
       // hiccup into a stalled turn.
-      ...creditsTurnEnv('claude-code'),
+      ...creditsEnv,
     }),
     ...(opts.claudeCliPath ? { pathToClaudeCodeExecutable: opts.claudeCliPath } : {}),
   };

@@ -13,12 +13,15 @@
  *
  * @module services/runtimes/claude-code/accounts/account-usage-feed
  */
-import type { AccountUsage, LedgerObservation } from '@dorkos/shared/account-usage';
+import {
+  subscriptionUsageOf,
+  type AccountUsage,
+  type LedgerObservation,
+} from '@dorkos/shared/account-usage';
 import type { UsageStatus } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import type { AccountUsageMeta } from '../../../core/usage/account-usage-types.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
-import { subscriptionUsageOf } from '../../../core/usage/account-usage-status.js';
 import type { AgentSession } from '../agent-types.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 
@@ -71,19 +74,40 @@ export function peekSessionAccountUsage(
  * A session's subscription `usage` as the store has it: its account's binding
  * window ({@link subscriptionUsageOf}), or `undefined` while the store holds
  * no plan window for the account (callers then keep the session's own last
- * reading, the fallback spec §6 U allows until the store has a record).
+ * reading, the fallback spec §6 U allows until the store has a record), and
+ * always `undefined` for a session billed per token
+ * ({@link isSubscriptionSession}): its folder's windows are not its usage.
  *
  * @param session - The session whose usage is wanted.
  */
 export function sessionSubscriptionUsage(
-  session: Pick<AgentSession, 'launchedAccountRoot' | 'accountRoot'>
+  session: Pick<
+    AgentSession,
+    'launchedAccountRoot' | 'accountRoot' | 'launchedPerToken' | 'lastSubscriptionUsage'
+  >
 ): UsageStatus | undefined {
+  if (!isSubscriptionSession(session)) return undefined;
   const account = peekSessionAccountUsage(session);
   return account ? subscriptionUsageOf(account) : undefined;
 }
 
-/** Called with a session id and the folder a launch settled it on. */
-type AccountLaunchListener = (sessionId: string, root: string) => void;
+/**
+ * Whether a session bills against its account's subscription: it has had a
+ * subscription reading of its own, or its launch injected neither a stored API
+ * key nor DorkOS credits. A session never launched here and with no reading
+ * of its own is not known to be on a subscription.
+ *
+ * @param session - The session.
+ */
+export function isSubscriptionSession(
+  session: Pick<AgentSession, 'launchedPerToken' | 'lastSubscriptionUsage'>
+): boolean {
+  if (session.lastSubscriptionUsage?.kind === 'subscription') return true;
+  return session.launchedPerToken === false;
+}
+
+/** Called with a session id, the folder a launch settled it on, and whether it bills per token. */
+type AccountLaunchListener = (sessionId: string, root: string, perToken: boolean) => void;
 
 const accountLaunchListeners = new Set<AccountLaunchListener>();
 
@@ -109,11 +133,16 @@ export function onSessionAccountLaunched(listener: AccountLaunchListener): () =>
  *
  * @param sessionId - The session that launched.
  * @param root - The account folder the launch runs on.
+ * @param perToken - Whether the launch injected a stored API key or credits.
  */
-export function noteSessionAccountLaunched(sessionId: string, root: string): void {
+export function noteSessionAccountLaunched(
+  sessionId: string,
+  root: string,
+  perToken: boolean
+): void {
   for (const listener of accountLaunchListeners) {
     try {
-      listener(sessionId, root);
+      listener(sessionId, root, perToken);
     } catch (err) {
       logger.warn('[account-usage] an account-launch listener failed', { err: String(err) });
     }

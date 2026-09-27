@@ -70,6 +70,23 @@ export class SessionContextStore {
   }
 
   /**
+   * Store a reading only when the session has none, and return the reading the
+   * session now holds. For a DERIVED reading: a turn's reading written while the
+   * derivation was in flight is newer, and must never be replaced by it.
+   *
+   * @param sessionId - The session.
+   * @param reading - The derived reading.
+   */
+  putIfAbsent(sessionId: string, reading: SessionContextReading): SessionContextReading {
+    this.db
+      .insert(sessionContext)
+      .values({ sessionId, ...reading })
+      .onConflictDoNothing({ target: sessionContext.sessionId })
+      .run();
+    return this.get(sessionId) ?? reading;
+  }
+
+  /**
    * Store a reading, replacing the session's previous one.
    *
    * @param sessionId - The session.

@@ -23,10 +23,9 @@
  * @module services/session/fleet/session-status-hydration
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { withAccountSubscription, type AccountUsage } from '@dorkos/shared/account-usage';
 import { logger } from '../../../lib/logger.js';
 import type { AccountUsageStore } from '../../core/usage/account-usage-store.js';
-import { withAccountSubscription } from '../../core/usage/account-usage-status.js';
 import {
   listLiveProjectors,
   onProjectorTurnBoundary,
@@ -66,7 +65,7 @@ export interface SessionStatusHydration {
    * A launch settled which folder a Claude Code session runs on: re-stamp its
    * account usage from that account.
    */
-  noteAccountLaunched(sessionId: string, root: string): void;
+  noteAccountLaunched(sessionId: string, root: string, perToken: boolean): void;
   /** Uninstall every hook. */
   dispose(): void;
 }
@@ -87,11 +86,19 @@ export function installSessionStatusHydration(
   /** The context reading last written for each projector, to skip rewriting it. */
   const written = new WeakMap<SessionStateProjector, string>();
 
-  /** Put an account's usage on a projector, and for Claude Code its derived `usage`. */
-  const stamp = (projector: SessionStateProjector, account: AccountUsage): void => {
+  /**
+   * Put an account's usage on a projector, and for a Claude Code session on a
+   * subscription its derived `usage`. A session billed per token keeps its own
+   * pay-as-you-go `usage`: its folder's windows are not what it pays.
+   */
+  const stamp = (
+    projector: SessionStateProjector,
+    account: AccountUsage,
+    bill: SessionBilling
+  ): void => {
     projector.seedStatus({
       accountUsage: account,
-      ...(account.runtime === 'claude-code'
+      ...(account.runtime === 'claude-code' && bill.perToken === false
         ? { usage: withAccountSubscription(projector.getStatus().usage, account) }
         : {}),
     });
@@ -101,7 +108,7 @@ export function installSessionStatusHydration(
     const store = deps.usageStore();
     if (!store) return;
     const account = peekBillingUsage(store, bill);
-    if (account) stamp(projector, account);
+    if (account) stamp(projector, account, bill);
   };
 
   const hydrateContext = async (
@@ -116,9 +123,12 @@ export function installSessionStatusHydration(
     if (!reading && runtime.readContextUsage) {
       const derived = await runtime.readContextUsage(sessionId, cwd);
       if (derived && derived.contextTokens > 0) {
-        reading = { ...derived, observedAt: now().toISOString() };
-        contextStore.put(projector.sessionId, reading);
-        written.set(projector, readingKey(reading));
+        // Insert-only: a turn that ended while this was reading wrote a newer
+        // reading, and a derived one must never replace it.
+        reading = contextStore.putIfAbsent(projector.sessionId, {
+          ...derived,
+          observedAt: now().toISOString(),
+        });
       }
     }
     if (reading) projector.seedStatus({ contextUsage: contextUsageOfReading(reading) });
@@ -163,7 +173,7 @@ export function installSessionStatusHydration(
       const bill = billing.get(projector);
       if (!bill || bill.runtime !== changed.runtime) continue;
       const account = peekBillingUsage(store, bill);
-      if (account && isSameAccount(account, changed)) stamp(projector, account);
+      if (account && isSameAccount(account, changed)) stamp(projector, account, bill);
     }
   });
 
@@ -200,10 +210,10 @@ export function installSessionStatusHydration(
   });
 
   return {
-    noteAccountLaunched(sessionId, root) {
+    noteAccountLaunched(sessionId, root, perToken) {
       const projector = peekProjector(sessionId);
       if (!projector) return;
-      const bill: SessionBilling = { runtime: 'claude-code', root };
+      const bill: SessionBilling = { runtime: 'claude-code', root, perToken };
       billing.set(projector, bill);
       stampFromStore(projector, bill);
     },

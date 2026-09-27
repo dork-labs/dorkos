@@ -38,7 +38,7 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
-import type { AccountUsage } from '@dorkos/shared/account-usage';
+import { withAccountSubscription, type AccountUsage } from '@dorkos/shared/account-usage';
 import { isInterruptedTerminalReason } from '@dorkos/shared/schemas';
 import {
   isAbsolvingTerminalReason,
@@ -649,8 +649,9 @@ interface SessionStreamActions {
   /**
    * Apply one account's new usage (the global `account_usage` event) to every
    * held session whose `status.accountUsage` names that account (spec
-   * `claude-account-fleet` §6 U). Account usage never rides a session's own
-   * stream, so this is how an open session follows its account.
+   * `claude-account-fleet` §6 U), and to a Claude Code subscription session's
+   * `usage` too. Account usage never rides a session's own stream, so this is
+   * how an open session follows its account.
    */
   applyAccountUsage: (usage: AccountUsage) => void;
   /** Ensure a default entry exists for an unknown id (returns nothing). */
@@ -1242,6 +1243,17 @@ export const useSessionStreamStore: SessionStreamStore = create<
               const held = session.status?.accountUsage;
               if (session.status && held && isSameAccount(held, usage)) {
                 session.status.accountUsage = usage;
+                // A Claude Code session on the subscription shows its account's
+                // binding window, by the rule the server uses, so every session
+                // on the account moves together. A session billed per token
+                // (pay-as-you-go) keeps its own cost, and other runtimes' usage
+                // is their own.
+                if (
+                  usage.runtime === 'claude-code' &&
+                  session.status.usage?.kind === 'subscription'
+                ) {
+                  session.status.usage = withAccountSubscription(session.status.usage, usage);
+                }
               }
             }
           },

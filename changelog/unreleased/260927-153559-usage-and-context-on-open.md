@@ -5,5 +5,5 @@ covers:
 
 ### Changed
 
-- A session now shows how much of its account is used as soon as you open it, before it has run anything, and every open session on the same account updates together when new usage comes in. This works with one account too, and for Codex
+- A Claude Code session on a subscription now shows how much of its plan is used as soon as you open it, before it has run anything, and every open session on the same account updates together when new usage comes in. This works with a single account too
 - How full a session's context is now shows when you reopen it and after DorkOS restarts, instead of waiting for the next reply

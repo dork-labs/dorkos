@@ -1080,8 +1080,8 @@ async function start() {
     resolveCwd: async (sessionId) =>
       (await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null)) ?? DEFAULT_CWD,
   });
-  onSessionAccountLaunched((sessionId, root) =>
-    sessionStatusHydration.noteAccountLaunched(sessionId, root)
+  onSessionAccountLaunched((sessionId, root, perToken) =>
+    sessionStatusHydration.noteAccountLaunched(sessionId, root, perToken)
   );
 
   // Initialize the Better Auth identity core over the consolidated DB. Mounted

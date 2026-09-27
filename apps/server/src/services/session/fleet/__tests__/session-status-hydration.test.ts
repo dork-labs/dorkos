@@ -8,6 +8,10 @@ import { sessionMetadata, type Db } from '@dorkos/db';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { AccountUsage, LedgerObservation } from '@dorkos/shared/account-usage';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
+
+/** A `status_change` as a projector ingests it (no `seq` yet). */
+type StatusChange = Omit<Extract<SessionEvent, { type: 'status_change' }>, 'seq'>;
 import { AccountUsageStore } from '../../../core/usage/account-usage-store.js';
 import { readConfigFile } from '../../../core/usage/account-usage-reconcile.js';
 import { defaultAccountFolder } from '../../../core/usage/runtime-accounts.js';
@@ -17,6 +21,7 @@ import {
   disposeProjector,
   getOrCreateProjector,
   setSessionEventStore,
+  type RawSessionEvent,
 } from '../../session-state-projector.js';
 import { SessionEventStore } from '../../session-event-store.js';
 import { feedProjector } from '../../session-event-normalizer.js';
@@ -40,7 +45,10 @@ let launched: Map<string, string>;
 type ContextReader = Mock<
   (id: string, cwd?: string) => Promise<{ contextTokens: number; contextMaxTokens: number } | null>
 >;
-let claude: FakeAgentRuntime & { readContextUsage: ContextReader };
+let claude: FakeAgentRuntime & {
+  readContextUsage: ContextReader;
+  sessionBillsPerToken: Mock<(id: string) => Promise<boolean>>;
+};
 let codex: FakeAgentRuntime & { readContextUsage: ContextReader };
 const opened: string[] = [];
 
@@ -98,6 +106,8 @@ beforeEach(async () => {
     getSessionAccount: (id: string) => launched.get(id),
     // The launch ladder's answer for a session that has not launched: the default.
     accountRootForSession: vi.fn(async () => path.join(home, '.claude')),
+    // On a subscription unless a test says the session pays per token.
+    sessionBillsPerToken: vi.fn(async () => false),
     readContextUsage: vi.fn(async () => ({
       contextTokens: 42_000,
       contextMaxTokens: 0,
@@ -141,6 +151,27 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
     ]);
     // No turn of its own, and the status already shows the account's binding window.
     expect(status.usage).toMatchObject({ kind: 'subscription', utilization: 0.4 });
+  });
+
+  it('a Claude session billed per token keeps its own pay-as-you-go usage on a subscription folder', async () => {
+    store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 40)]);
+    launched.set('s-key', work());
+    claude.sessionBillsPerToken.mockResolvedValue(true);
+    const projector = getOrCreateProjector('s-key', root);
+    opened.push('s-key');
+    const payAsYouGo: StatusChange = {
+      type: 'status_change',
+      status: { usage: { kind: 'pay-as-you-go', costUsd: 0.4 } },
+    };
+    projector.ingest(payAsYouGo as RawSessionEvent);
+    const status = (await projector.buildSnapshot(async () => [])).status;
+    // It still names its account, and its bar is still its own cost.
+    expect(status.accountUsage?.accountId).toBe('work');
+    expect(status.usage).toEqual({ kind: 'pay-as-you-go', costUsd: 0.4 });
+
+    store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 60)]);
+    await settleBroadcast(1);
+    expect(projector.getStatus().usage).toEqual({ kind: 'pay-as-you-go', costUsd: 0.4 });
   });
 
   it('a single-account Claude session opens with the implicit default', async () => {
@@ -228,7 +259,7 @@ describe('account usage on open (spec claude-account-fleet §6 U)', () => {
     const first = await open('s-hint');
     expect(first.accountUsage?.accountId).toBe('default');
     // The per-send hint named `work`; the launch settles on its folder.
-    hydration.noteAccountLaunched('s-hint', work());
+    hydration.noteAccountLaunched('s-hint', work(), false);
     const next = await open('s-hint');
     expect(next.accountUsage?.accountId).toBe('work');
     // And later readings for `work` now reach it.
@@ -291,6 +322,48 @@ describe('context usage per session (spec claude-account-fleet §6 U)', () => {
       observedAt: contextStore.get('s-ctx')!.observedAt,
     });
     expect(reader).not.toHaveBeenCalled();
+  });
+
+  it('a derived reading never replaces one a turn wrote while it was being read', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    claude.readContextUsage = vi.fn(async () => {
+      await gate;
+      return { contextTokens: 5_000, contextMaxTokens: 0 };
+    }) as ContextReader;
+    const projector = getOrCreateProjector('s-race', root);
+    opened.push('s-race');
+    const snapshot = projector.buildSnapshot(async () => []);
+    await vi.waitFor(() => expect(claude.readContextUsage).toHaveBeenCalled());
+    // The turn ends (and writes its reading) while the derivation is in flight.
+    await feedProjector(projector, turn(150_000));
+    expect(contextStore.get('s-race')?.contextTokens).toBe(150_000);
+    release();
+    await snapshot;
+
+    expect(contextStore.get('s-race')?.contextTokens).toBe(150_000);
+    expect(projector.getStatus().contextUsage?.totalTokens).toBe(150_000);
+  });
+
+  it('a hydrate that lands after a live reading leaves the live reading in place', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    claude.readContextUsage = vi.fn(async () => {
+      await gate;
+      return { contextTokens: 5_000, contextMaxTokens: 0 };
+    }) as ContextReader;
+    const projector = getOrCreateProjector('s-late-ctx', root);
+    opened.push('s-late-ctx');
+    await vi.waitFor(() => expect(claude.readContextUsage).toHaveBeenCalled());
+    // A live reading arrives mid-turn (no turn end, so nothing is stored yet).
+    const live: StatusChange = {
+      type: 'status_change',
+      status: { contextUsage: { totalTokens: 80_000, maxTokens: 200_000 } },
+    };
+    projector.ingest(live as RawSessionEvent);
+    release();
+    await projector.buildSnapshot(async () => []);
+    expect(projector.getStatus().contextUsage?.totalTokens).toBe(80_000);
   });
 
   it("with no row, the reading is derived once from the runtime's own record and stored", async () => {

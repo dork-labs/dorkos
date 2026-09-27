@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import type { AccountUsage } from '@dorkos/shared/account-usage';
-import { subscriptionUsageOf, withAccountSubscription } from '../account-usage-status.js';
+import {
+  subscriptionUsageOf,
+  withAccountSubscription,
+  type AccountUsage,
+} from '../account-usage.js';
 
 type Window = AccountUsage['windows'][number];
 
