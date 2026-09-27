@@ -80,6 +80,11 @@
       "path": "docs/",
       "rules": ["BND-302"],
       "reason": "Self-hosting and quickstart docs use 'plan' and 'tier' in their ordinary English senses near unrelated shell snippets. Note BND-301 is deliberately NOT exempt here: a real price in shipped documentation is exactly the leak this rule exists for."
+    },
+    {
+      "path": "apps/site/src/app/(public)/pricing/",
+      "rules": ["BND-301"],
+      "reason": "The public pricing page is where DorkOS Cloud's prices are announced (DOR-2028): the operator approved publishing them there on 2026-09-26/27, so money amounts next to plan and billing words are the page's content, not a leak. Scoped to this folder and to BND-301 only: the private ruleset still scans these files, so a supplier term, margin or internal value pasted here is still caught."
     }
   ]
 }
