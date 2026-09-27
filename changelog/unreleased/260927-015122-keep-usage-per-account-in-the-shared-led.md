@@ -5,6 +5,8 @@ covers:
 
 ### Added
 
-<!-- dorkos-changelog:seeded — rewrite this bullet for a human, then delete this comment. If the change needs no changelog entry, delete the whole fragment instead. See changelog/README.md#seeded-fragments. -->
+- DorkOS now keeps track of how much of each Claude Code account you have used, across every session on that account, and remembers it after a restart. Your agents can read it with the new `accounts_usage` tool. It includes this computer's own Claude sign-in, even when you have registered other accounts, and it shares one record per account with the `flow` command (DOR-2380)
 
-- Keep usage per account in the shared ledger and serve it over REST, MCP and events (DOR-2380)
+### Fixed
+
+- Starting work on the `default` account now always uses this computer's own Claude sign-in, even when DorkOS itself was started from a terminal pointed at a different account (DOR-2380)
