@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -161,6 +169,43 @@ describe('flowRunsFor', () => {
     utimesSync(path.join(main, '.dork', 'flow', 'flow-state.json'), later, later);
     expect((await link.flowRunsFor(main)).get('s-1')?.stage).toBe('verify');
     expect(deps.readText).toHaveBeenCalledTimes(2);
+  });
+  it('shares one git lookup between concurrent calls for one cwd', async () => {
+    writeState({ 'issue-1': run({}) });
+    const deps = spiedDeps();
+    const link = createFlowRunLink(deps);
+    const all = await Promise.all([
+      link.flowRunsFor(worktree),
+      link.flowRunsFor(worktree),
+      link.flowRunsFor(worktree),
+    ]);
+    expect(deps.runGit).toHaveBeenCalledTimes(1);
+    expect(all.every((runs) => runs.get('s-1')?.identifier === 'DOR-1')).toBe(true);
+  });
+
+  it('sees a same-size rewrite by rename at the same mtime', async () => {
+    const file = path.join(main, '.dork', 'flow', 'flow-state.json');
+    const pinned = new Date('2026-09-26T16:00:00.000Z');
+    writeState({ 'issue-1': run({ stage: 'execute' }) });
+    utimesSync(file, pinned, pinned);
+    const link = createFlowRunLink(spiedDeps());
+    expect((await link.flowRunsFor(main)).get('s-1')?.stage).toBe('execute');
+    // Same byte length ("execute" and "decompo" are both 7), same mtime, new inode.
+    const next = `${file}.tmp`;
+    writeFileSync(next, JSON.stringify({ 'issue-1': run({ stage: 'decompo' }) }));
+    utimesSync(next, pinned, pinned);
+    renameSync(next, file);
+    expect((await link.flowRunsFor(main)).get('s-1')?.stage).toBe('decompo');
+  });
+
+  it('reads through the real 1 MB capped reader, and a larger file reads as no runs', async () => {
+    writeState({ 'issue-1': run({}) });
+    const warn = vi.fn();
+    const link = createFlowRunLink({ log: { warn } });
+    expect((await link.flowRunsFor(main)).get('s-1')?.identifier).toBe('DOR-1');
+    writeState({ 'issue-1': run({ padding: 'x'.repeat(1024 * 1024) }) });
+    expect((await link.flowRunsFor(main)).size).toBe(0);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
 

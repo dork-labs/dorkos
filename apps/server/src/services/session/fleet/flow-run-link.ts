@@ -15,10 +15,13 @@
  * {@link parseFlowRunState} is all-or-nothing, like flow's own reader: one
  * record that fails the `FlowRun` shape makes the whole file read as no runs.
  * That is the contract's fixture (`flow-run.cases.json`, "one invalid record
- * makes the whole file read as empty"), and it keeps DorkOS from showing an
- * item flow itself would not act on. Unknown fields pass through. Fields whose
- * vocabulary flow may grow (`stage`, `status`, `host`, `runtime`) are checked
- * as bare strings, so a record from a newer flow still reads.
+ * makes the whole file read as empty"). Unknown fields pass through.
+ *
+ * It is deliberately MORE tolerant than flow in one way: `stage` and `status`
+ * are checked as bare strings, where flow's schema accepts only the values it
+ * knows today. A DorkOS older than the flow writing the file would otherwise
+ * blank every run the moment flow adds a stage, so this reader tolerates
+ * future values, as the contract already asks for `host` and `runtime`.
  *
  * ## Cost on the session list
  *
@@ -186,29 +189,44 @@ const defaultDeps: FlowRunLinkDeps = {
  */
 export function createFlowRunLink(overrides: Partial<FlowRunLinkDeps> = {}): FlowRunLinkReader {
   const deps: FlowRunLinkDeps = { ...defaultDeps, ...overrides };
-  /** cwd to the flow-state.json path; `null` = not in a git repository until `retryAt`. */
-  const fileByCwd = new Map<string, { file: string } | { file: null; retryAt: number }>();
-  /** flow-state.json path to what it read as, at one mtime and size. */
+  /**
+   * cwd to the lookup of its flow-state.json path. The PROMISE is cached, so
+   * concurrent list requests on a cold server share one `git` per cwd. A
+   * positive answer holds for the process; `null` (not in a git repository)
+   * holds until `retryAt`, set once the lookup settles.
+   */
+  const fileByCwd = new Map<string, { file: Promise<string | null>; retryAt?: number }>();
+  /** flow-state.json path to what it read as, at one inode, mtime and size. */
   const runsByFile = new Map<string, { stamp: string; runs: Promise<Map<string, FlowRunLink>> }>();
 
-  async function stateFileFor(cwd: string): Promise<string | null> {
-    const cached = fileByCwd.get(cwd);
-    if (cached && (cached.file !== null || deps.now() < cached.retryAt)) return cached.file;
+  async function lookUpStateFile(cwd: string): Promise<string | null> {
     try {
       const commonDir = (
         await deps.runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd, {
           timeoutMs: GIT_TIMEOUT_MS,
         })
       ).trim();
-      if (!commonDir) throw new Error('git printed no common dir');
+      if (!commonDir) return null;
       // Contract §1.3: the main checkout is the parent of the git common dir.
-      const file = path.join(path.dirname(commonDir), FLOW_STATE_RELATIVE_PATH);
-      fileByCwd.set(cwd, { file });
-      return file;
+      return path.join(path.dirname(commonDir), FLOW_STATE_RELATIVE_PATH);
     } catch {
-      fileByCwd.set(cwd, { file: null, retryAt: deps.now() + NEGATIVE_CWD_TTL_MS });
       return null;
     }
+  }
+
+  function stateFileFor(cwd: string): Promise<string | null> {
+    const cached = fileByCwd.get(cwd);
+    if (cached && (cached.retryAt === undefined || deps.now() < cached.retryAt)) {
+      return cached.file;
+    }
+    const entry: { file: Promise<string | null>; retryAt?: number } = {
+      file: lookUpStateFile(cwd).then((file) => {
+        if (file === null) entry.retryAt = deps.now() + NEGATIVE_CWD_TTL_MS;
+        return file;
+      }),
+    };
+    fileByCwd.set(cwd, entry);
+    return entry.file;
   }
 
   async function readRuns(file: string): Promise<Map<string, FlowRunLink>> {
@@ -230,7 +248,9 @@ export function createFlowRunLink(overrides: Partial<FlowRunLinkDeps> = {}): Flo
     let stamp: string;
     try {
       const stat = await fs.stat(file);
-      stamp = `${stat.mtimeMs}:${stat.size}`;
+      // The inode too: flow writes by rename, so a same-size rewrite within one
+      // millisecond still gets a new inode.
+      stamp = `${stat.ino}:${stat.mtimeMs}:${stat.size}`;
     } catch {
       // No file: this project has no flow runs. Not worth a log line.
       runsByFile.delete(file);
