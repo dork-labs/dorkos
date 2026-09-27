@@ -5,6 +5,8 @@
     "problem/unauthenticated.json": "ProblemSchema",
     "problem/person-seat-required.json": "ProblemSchema",
     "problem/handle-tombstoned.json": "ProblemSchema",
+    "problem/malformed-identifier.json": "ProblemSchema",
+    "problem/malformed-request.json": "ProblemSchema",
     "session/signed-in.json": "SessionSchema",
     "session/signed-out.json": "SessionSchema",
     "session/device-code.json": "DeviceCodeResponseSchema",

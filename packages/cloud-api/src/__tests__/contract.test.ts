@@ -121,6 +121,67 @@ describe('the Problem envelope', () => {
   });
 });
 
+describe('the two request-shape codes', () => {
+  // Purpose: a client must be able to tell "the address named nothing" from
+  // "the request about a real thing could not be read" by the code alone,
+  // without parsing the path. One code for both facts made that impossible.
+  const codes = contract.ProblemCodeSchema.options;
+
+  it('publishes a distinct code for an identifier that is not one', () => {
+    expect(codes).toContain('malformed_identifier');
+    expect(codes).toContain('malformed_request');
+    expect(
+      contract.isProblem({ code: 'malformed_identifier', status: 400, title: 'No such seat.' })
+    ).toBe(true);
+  });
+
+  it('keeps every code it published before, which is what additive means', () => {
+    // A member removed or renamed narrows a published type: a `/v2` change.
+    for (const code of [
+      'unauthenticated',
+      'invalid_token',
+      'expired_token',
+      'forbidden',
+      'scope_required',
+      'malformed_request',
+      'unsupported_wire_version',
+      'not_found',
+      'conflict',
+      'precondition_failed',
+      'rate_limited',
+      'person_seat_required',
+      'seat_unavailable',
+      'handle_taken',
+      'handle_reserved',
+      'handle_tombstoned',
+      'claim_not_approved',
+      'inbox_full',
+      'entitlement_required',
+      'balance_exhausted',
+      'quota_exceeded',
+      'topup_below_minimum',
+      'first_purchase_cap',
+      'refund_window_closed',
+      'enrolment_required',
+      'remote_disabled',
+      'address_unavailable',
+      'community_name_taken',
+      'community_name_reserved',
+      'import_too_large',
+      'internal_error',
+      'temporarily_unavailable',
+    ]) {
+      expect(codes, code).toContain(code);
+    }
+  });
+
+  it('says in the schema which fact each code answers', () => {
+    const doc = contract.ProblemCodeSchema.description ?? '';
+    expect(doc).toContain('malformed_identifier');
+    expect(doc).toContain('malformed_request');
+  });
+});
+
 describe('additive within a major', () => {
   it('describes every exported schema, so a new field arrives explained', () => {
     // A contract whose types are undocumented cannot be extended safely by

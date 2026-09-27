@@ -160,6 +160,27 @@ person bought or what would change it. Limits reach the app as numbers
 (`limits.communities`, `used.communities`, and each hosted community's `limits` and `usage`),
 so it can say "this community is full" without naming a plan.
 
+### A missing thing, or an unreadable request
+
+Two codes answer two different facts, so a client can tell whether the address it asked about
+resolves without parsing the path:
+
+| Code                   | The fact                                                                                                                                                                                             |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `malformed_identifier` | The address named nothing. An identifier in the path is not one the service could have issued (`/v1/seats/not-an-id`). Say there is no such thing.                                                   |
+| `malformed_request`    | The address resolves, and the request to it could not be read: a bad cursor, limit, window, period or body, including an identifier carried in the query or the body. Fix the request and ask again. |
+| `not_found`            | The identifier is well formed, and nothing by that identifier exists (or the caller may not see it). Say there is no such thing.                                                                     |
+
+`malformed_identifier` is newer than `malformed_request`. A service that predates it sends
+`malformed_request` for both of the first two facts, so from an older service that code cannot
+rule out the first one.
+
+A client one release behind this package does not get its old `malformed_request` handling for
+the new code. An unrecognised code fails `ProblemSchema`, so the thin client raises
+`CloudApiResponseError` rather than `CloudApiProblemError`, with `error.body.code` still carrying
+`malformed_identifier` (see "Additive within a major" above). Move to this release before relying
+on the service to send it.
+
 ### Hosted communities
 
 The service starts a community on a Community server and hands ownership to a person through
