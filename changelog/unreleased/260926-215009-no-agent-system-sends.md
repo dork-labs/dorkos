@@ -2,6 +2,7 @@
 covers:
   - "fix(relay): stop agents from sending to DorkOS's own relay addresses (DOR-2432)"
   - 'fix(relay): let only DorkOS itself reach its relay addresses, and refuse webhooks aimed at them (DOR-2432)'
+  - 'fix(relay): drop the pre-DOR-2431 chat approval senders from the server-sender allowlist (DOR-2432)'
 ---
 
 ### Security

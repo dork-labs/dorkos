@@ -86,31 +86,19 @@ export function isControlSubject(subject: string): boolean {
  * and `agent:*` (an agent, or an agent's reply to a `replyTo` somebody else
  * chose), `relay.webhook.*` (a webhook's inbound subject is operator-written
  * config reachable over HTTP), `relay.human.*` (the console route takes its
- * `from` from the caller), and `relay.bridge.*` (bridged chats only ever send
- * to agents and people).
+ * `from` from the caller), `relay.bridge.*` (bridged chats only ever send to
+ * agents and people), and the bare `slack:` / `telegram:` senders approval
+ * clicks used before DOR-2431 moved them under `relay.system.approval-bridge.*`.
  */
 export const SERVER_DESTINATION_SENDERS: readonly ServerDestinationSender[] = [
   {
     prefix: 'relay.system.',
     reason:
       "The server's own principals: the task scheduler (dispatch and stop), the A2A gateway " +
-      '(stopping a turn), chat notices, delivery-failure notices, escalations and the task ' +
-      'notifier. `from` is stamped by the MCP tools from the session, and the HTTP route ' +
+      '(stopping a turn), the chat approval bridges answering a tool approval ' +
+      '(`relay.system.approval-bridge.*`, DOR-2431), chat notices, delivery-failure notices, ' +
+      'escalations and the task notifier. `from` is stamped by the MCP tools from the session, and the HTTP route ' +
       'refuses a client-asserted `relay.system.*` sender, so none of them can be forged.',
-  },
-  {
-    prefix: 'slack:',
-    reason:
-      'The Slack adapter answering a tool approval (`relay.system.approval.*`) when a person ' +
-      'presses Approve or Deny. Minted in process from the signed Slack interaction; only ' +
-      'the adapter publishes it.',
-  },
-  {
-    prefix: 'telegram:',
-    reason:
-      'The Telegram adapter answering a tool approval (`relay.system.approval.*`) when a ' +
-      'person presses Approve or Deny. Minted in process from the Telegram callback; only ' +
-      'the adapter publishes it.',
   },
 ];
 

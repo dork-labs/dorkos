@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { RelayCore } from '../relay-core.js';
 import { SERVER_DESTINATION_SENDERS, mayReachServerDestination } from '../lib/reserved-subjects.js';
+import { approvalBridgePrincipal } from '../lib/approval-principal.js';
 import {
   AGENT_SENDABLE_SERVER_SUBJECTS,
   SERVER_DESTINATION_PREFIXES,
@@ -70,11 +71,7 @@ describe('the server-destination rule', () => {
     // An allowlist, so a sender nobody thought of is refused by default.
     // Adding a prefix is a security decision: its reason must say who mints
     // it and why no agent or remote caller can.
-    expect(SERVER_DESTINATION_SENDERS.map((sender) => sender.prefix)).toEqual([
-      'relay.system.',
-      'slack:',
-      'telegram:',
-    ]);
+    expect(SERVER_DESTINATION_SENDERS.map((sender) => sender.prefix)).toEqual(['relay.system.']);
     for (const sender of SERVER_DESTINATION_SENDERS)
       expect(sender.reason.length).toBeGreaterThan(40);
   });
@@ -83,8 +80,11 @@ describe('the server-destination rule', () => {
     [TASK_SCHEDULER_PRINCIPAL, true],
     [A2A_GATEWAY_PRINCIPAL, true],
     ['relay.system.chat.notice', true],
-    ['slack:U123', true],
-    ['telegram:42', true],
+    [approvalBridgePrincipal('slack', 'slack-main'), true],
+    [approvalBridgePrincipal('telegram', 'tg-main'), true],
+    // The bare senders approval clicks used before DOR-2431; nothing mints them now.
+    ['slack:U123', false],
+    ['telegram:42', false],
     ['relay.agent.ns.agent-1', false],
     ['relay.session.project-1a2b3c4d', false],
     ['relay.external.mcp', false],
@@ -133,6 +133,10 @@ describe('publish pipeline — only server senders reach server-owned addresses'
     // aimed here, and the console route's caller-chosen sender.
     ['relay.webhook.hook-1', 'relay.system.tasks.task-1'],
     ['relay.human.console', 'relay.system.approval.agent-1'],
+    // The pre-DOR-2431 approval senders, now off the allowlist.
+    ['telegram:42', 'relay.system.approval.agent-1'],
+    ['slack:U123', 'relay.system.approval.agent-1'],
+    ['telegram:42', 'relay.system.tasks.task-1'],
   ])('refuses %s -> %s with the rule named, delivering nothing', async (from, subject) => {
     const received = collect(subject);
     await expect(relay.publish(subject, { type: 'forged' }, { from })).rejects.toThrow(
@@ -192,17 +196,13 @@ describe('publish pipeline — only server senders reach server-owned addresses'
       expect(received).toHaveLength(1);
     });
 
-    it.each(['slack:U123', 'telegram:42'])(
-      'a chat approval button (%s) answers a tool approval',
-      async (from) => {
-        const received = collect('relay.system.approval.>');
-        await relay.publish(
-          'relay.system.approval.agent-1',
-          { type: 'approval_response' },
-          { from }
-        );
-        expect(received).toHaveLength(1);
-      }
-    );
+    it.each([
+      approvalBridgePrincipal('slack', 'slack-main'),
+      approvalBridgePrincipal('telegram', 'tg-main'),
+    ])('a chat approval bridge (%s) answers a tool approval', async (from) => {
+      const received = collect('relay.system.approval.>');
+      await relay.publish('relay.system.approval.agent-1', { type: 'approval_response' }, { from });
+      expect(received).toHaveLength(1);
+    });
   });
 });
