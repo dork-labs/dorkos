@@ -86,7 +86,7 @@ export function ChatAppPanel({ entry, instance, onClose }: ChatAppPanelProps) {
             aria-hidden
           />
         </CollapsibleTrigger>
-        <CollapsibleContent className="space-y-1 pt-2" data-testid="app-panel-more">
+        <CollapsibleContent className="-mx-2 space-y-1 pt-2" data-testid="app-panel-more">
           <PanelMoreRow
             label="Settings"
             hint="Who can message it, group chats, and its token"

@@ -65,7 +65,7 @@ export function AccountPanelMore({
           aria-hidden
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="space-y-1 pt-2" data-testid="app-panel-more">
+      <CollapsibleContent className="-mx-2 space-y-1 pt-2" data-testid="app-panel-more">
         {!disconnected && <RenameRow detail={detail} />}
 
         {!disconnected && (

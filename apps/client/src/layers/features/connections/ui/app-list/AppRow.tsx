@@ -115,6 +115,8 @@ export function YourAppRowView({
             iconKey={row.iconKey}
             detail={row.detail}
             chat={row.kind === 'chat'}
+            // What broke is the one line worth reading in full.
+            wrapDetail={row.tone === 'broken'}
             detailClassName={row.tone === 'broken' ? 'text-status-warning-fg' : undefined}
           />
         </span>

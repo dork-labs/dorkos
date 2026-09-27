@@ -283,9 +283,11 @@ describe('AccountPanel', () => {
     const handlers = renderPanel(transport);
 
     await user.click(await screen.findByTestId('remove-account'));
-    const confirm = await screen.findByRole('alertdialog', { name: 'Remove Gmail from your apps?' });
+    const confirm = await screen.findByRole('alertdialog', {
+      name: 'Remove Gmail from your apps?',
+    });
     expect(transport.removeConnectorConnection).not.toHaveBeenCalled();
-    await user.click(within(confirm).getByRole('button', { name: 'Remove', exact: true }));
+    await user.click(within(confirm).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(handlers.onClose).toHaveBeenCalled());
   });
 });

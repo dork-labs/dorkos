@@ -22,6 +22,11 @@ interface AppPanelProps {
   open: boolean;
   /** Close the panel. */
   onOpenChange: (open: boolean) => void;
+  /**
+   * Where focus goes when the panel closes. The panel opens from a row or a
+   * link rather than a trigger of its own, so the page hands focus back.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
   /** The panel's body (an account's or a chat app's). */
   children: ReactNode;
 }
@@ -36,7 +41,7 @@ interface AppPanelProps {
  * works; the body decides everything else. Focus moves into the panel when it
  * opens and back to the row when it closes, and Escape closes it.
  */
-export function AppPanel({ row, open, onOpenChange, children }: AppPanelProps) {
+export function AppPanel({ row, open, onOpenChange, onCloseAutoFocus, children }: AppPanelProps) {
   const requestedMobile = useIsMobile();
   // Fixed at each open, so a window resized mid-panel never swaps a sheet for
   // a drawer under the person's focus (the ResponsiveDialog rule).
@@ -97,6 +102,7 @@ export function AppPanel({ row, open, onOpenChange, children }: AppPanelProps) {
           className="max-h-[88vh] outline-none"
           data-testid="app-panel"
           onOpenAutoFocus={focusPanel}
+          onCloseAutoFocus={onCloseAutoFocus}
         >
           <div className="px-4 pt-3 pb-3">{header ?? fallbackTitle}</div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">{children}</div>
@@ -110,6 +116,7 @@ export function AppPanel({ row, open, onOpenChange, children }: AppPanelProps) {
         className="w-full gap-0 outline-none"
         data-testid="app-panel"
         onOpenAutoFocus={focusPanel}
+        onCloseAutoFocus={onCloseAutoFocus}
       >
         <div className="px-6 pt-5 pb-4">{header ?? fallbackTitle}</div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-8">{children}</div>

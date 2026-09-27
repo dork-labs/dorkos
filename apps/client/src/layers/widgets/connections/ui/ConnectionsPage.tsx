@@ -77,13 +77,11 @@ export function ConnectionsPage() {
   // What opened a "Needs you" dialog, so closing it can hand focus back. A
   // decided item leaves the strip, and then focus lands on the page heading.
   const decisionOpener = useRef<HTMLElement | null>(null);
-  const returnDecisionFocus = (event: Event) => {
-    event.preventDefault();
-    const opener = decisionOpener.current;
-    decisionOpener.current = null;
-    if (opener?.isConnected) opener.focus();
-    else void focusPageHeading();
-  };
+  const returnDecisionFocus = (event: Event) => returnFocus(event, decisionOpener);
+  // The same for the side panel: back to the row that opened it, or the
+  // heading when it was opened by a link or its row has gone.
+  const panelOpener = useRef<HTMLElement | null>(null);
+  const returnPanelFocus = (event: Event) => returnFocus(event, panelOpener);
 
   // A sign-in left open in the address (the dialog closed, or the page
   // reloaded) is a "Connecting" row until it finishes or is cancelled.
@@ -212,9 +210,14 @@ export function ConnectionsPage() {
           query={query}
           onQueryChange={setQuery}
           data={data}
-          onOpenRow={(row) =>
-            row.kind === 'connecting' ? setConnectOpen(true) : setSearch({ app: row.id })
-          }
+          onOpenRow={(row) => {
+            if (row.kind === 'connecting') {
+              setConnectOpen(true);
+              return;
+            }
+            panelOpener.current = document.activeElement as HTMLElement | null;
+            setSearch({ app: row.id });
+          }}
           onRowAction={onRowAction}
           pendingRowId={pendingRowId}
           onConnect={onConnect}
@@ -229,6 +232,7 @@ export function ConnectionsPage() {
         onOpenChange={(open) => {
           if (!open) closePanel();
         }}
+        onCloseAutoFocus={returnPanelFocus}
       >
         {panelRow?.kind === 'account' && (
           <AccountPanel
@@ -331,6 +335,18 @@ export function ConnectionsPage() {
       {chatAppSetup.dialog}
     </PageContainer>
   );
+}
+
+/**
+ * Hand focus back after a dialog or the panel closes: to what opened it while
+ * that is still on the page, else to the page heading, never to nothing.
+ */
+function returnFocus(event: Event, opener: { current: HTMLElement | null }) {
+  event.preventDefault();
+  const target = opener.current;
+  opener.current = null;
+  if (target?.isConnected) target.focus();
+  else void focusPageHeading();
 }
 
 /** The catalog entry and setup behind a chat app row. */
