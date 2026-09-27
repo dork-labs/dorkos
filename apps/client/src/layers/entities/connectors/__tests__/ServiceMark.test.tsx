@@ -64,6 +64,13 @@ describe('ServiceMark', () => {
     expect(letter).toHaveClass('bg-muted');
   });
 
+  it('asks for nothing when the catalog lists the app without a logo', () => {
+    const mark = renderMark({ iconKey: 'zendesk', displayName: 'Zendesk', logo: null });
+
+    expect(mark.querySelector('img')).toBeNull();
+    expect(mark).toHaveTextContent('Z');
+  });
+
   it('never asks the server for an id no logo can be kept for', () => {
     const mark = renderMark({ iconKey: 'Odd.Slug', displayName: 'Odd' });
 

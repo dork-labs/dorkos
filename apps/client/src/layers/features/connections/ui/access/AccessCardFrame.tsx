@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ServiceMark } from '@/layers/entities/connectors';
+import { ServiceMark, type ServiceLogo } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 
 /**
@@ -25,8 +25,8 @@ export function AccessCardFrame({
   toolkit: string | undefined;
   /** The app's name; its first letter is the mark when the app has no logo. */
   serviceName: string;
-  /** The catalog's same-origin logo path for the app, when the caller has it. */
-  logo?: string;
+  /** What the catalog says about the app's logo, when the caller has its entry. */
+  logo?: ServiceLogo;
   title: string;
   subtitle?: ReactNode;
   variant?: AccessCardVariant;

@@ -30,12 +30,32 @@ describe('built-in app marks', () => {
   );
 });
 
+/** A script, an event handler, or a reference to anything outside the file itself. */
+const UNSAFE_SVG = /<script|\bon[a-z]+\s*=|href\s*=\s*["'](?!#)|url\(\s*(?!["']?#)/i;
+
 describe('bundled mark files', () => {
   it('carry no script, event handler or outside reference', () => {
     const dir = path.join(ICONS_SRC, 'app-logos');
     for (const name of readdirSync(dir).filter((entry) => entry.endsWith('.svg'))) {
-      const svg = readFileSync(path.join(dir, name), 'utf8');
-      expect(svg, name).not.toMatch(/<script|\bon[a-z]+=|href="(?!#)|url\((?!#)/i);
+      expect(readFileSync(path.join(dir, name), 'utf8'), name).not.toMatch(UNSAFE_SVG);
     }
   });
+
+  it.each([
+    ['<script>x()</script>'],
+    ['<svg onload="x()">'],
+    ["<a href='https://example.com'>"],
+    ['<use xlink:href="https://example.com/a.svg#b"/>'],
+    ['<rect fill="url(\'https://example.com/p.svg#g\')"/>'],
+    ['<rect fill="url(https://example.com/p.svg#g)"/>'],
+  ])('the check catches %s', (svg) => {
+    expect(svg).toMatch(UNSAFE_SVG);
+  });
+
+  it.each([['<rect fill="url(#g)"/>'], ['<rect fill="url(\'#g\')"/>'], ['<use href="#a"/>']])(
+    'the check allows an in-file reference like %s',
+    (svg) => {
+      expect(svg).not.toMatch(UNSAFE_SVG);
+    }
+  );
 });

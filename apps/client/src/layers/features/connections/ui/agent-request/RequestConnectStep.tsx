@@ -6,6 +6,7 @@ import {
   useConnectorAgentRequestAuthentication,
   useConnectorCatalog,
   useStartConnectorAgentRequestAuthentication,
+  serviceLogo,
 } from '@/layers/entities/connectors';
 import { Button, ExternalLinkAnchor, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import {
@@ -148,7 +149,7 @@ export function RequestConnectStep({
       titleId={titleId}
       toolkit={request.serviceSlug}
       serviceName={serviceName}
-      logo={service?.logo}
+      logo={serviceLogo(service)}
       title={`Connect ${serviceName}`}
       subtitle={`So ${request.agent.displayName} can use it`}
       className={className}

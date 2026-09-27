@@ -17,9 +17,9 @@
  *   logo is fetched again on the next request.
  * - **A failure is remembered briefly**, so a broken logo is not fetched again
  *   on every page view.
- * - **A kept logo is fetched again after {@link LOGO_REFRESH_MS}**, so a
- *   brand's new logo arrives in time. Until the new one arrives, and whenever
- *   fetching it fails, the kept one keeps being served.
+ * - **A kept logo is fetched again after {@link LOGO_REFRESH_MS}**, in the
+ *   background, so a brand's new logo arrives in time. The kept one is served
+ *   meanwhile, and keeps being served whenever fetching the new one fails.
  *
  * @module services/connectors/resources/catalog-logos
  */
@@ -130,9 +130,21 @@ export class CatalogLogoService {
   async get(serviceSlug: string): Promise<CatalogLogo | undefined> {
     if (!CONNECTOR_LOGO_SERVICE_ID.test(serviceSlug)) return undefined;
     const kept = await this.readKept(serviceSlug);
-    if (kept && !kept.stale) return kept.logo;
+    if (kept) {
+      // An old logo is served straight away; its refresh runs behind it.
+      if (kept.stale) void this.fetchOnce(serviceSlug);
+      return kept.logo;
+    }
+    return this.fetchOnce(serviceSlug);
+  }
+
+  /**
+   * Download one logo unless it failed recently, sharing a download already in
+   * flight so a burst of requests fetches it once.
+   */
+  private fetchOnce(serviceSlug: string): Promise<CatalogLogo | undefined> {
     const retryAt = this.failures.get(serviceSlug);
-    if (retryAt !== undefined && retryAt > this.now()) return kept?.logo;
+    if (retryAt !== undefined && retryAt > this.now()) return Promise.resolve(undefined);
     let pending = this.inFlight.get(serviceSlug);
     if (!pending) {
       pending = this.download(serviceSlug).finally(() => {
@@ -140,8 +152,7 @@ export class CatalogLogoService {
       });
       this.inFlight.set(serviceSlug, pending);
     }
-    // An old logo is still better than none while its refresh fails.
-    return (await pending) ?? kept?.logo;
+    return pending;
   }
 
   private loadIndex(): Promise<Map<string, string>> {

@@ -15,6 +15,7 @@ import type {
   ConnectorConnectionSummary,
 } from '@dorkos/shared/connector-resource-schemas';
 import { serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
+import { serviceLogo, type ServiceLogo } from '@/layers/entities/connectors';
 import type { AdapterBinding, CatalogEntry, CatalogInstance } from '@dorkos/shared/relay-schemas';
 
 /**
@@ -41,8 +42,8 @@ export interface YourAppRow {
   name: string;
   /** Icon key for the app's `ServiceMark`. */
   iconKey: string;
-  /** The catalog's same-origin logo path for the app, when it has one. */
-  logo?: string;
+  /** What the catalog says about the app's logo (`ServiceLogo`). */
+  logo?: ServiceLogo;
   /**
    * Which account or bot it is: the name the person gave it ("work"), else its
    * address ("you@gmail.com"), else the bot's name ("@lifeos_bot").
@@ -134,13 +135,13 @@ export function accountNames(connection: ConnectorConnectionSummary): {
   return { account: connection.label, identity };
 }
 
-/** The app's catalog logo path as a row field, when the catalog has one. */
+/** What the catalog says about the app's logo, as a row field. */
 function logoOf(
   toolkit: string,
   services: ReadonlyMap<string, ConnectorCatalogService>
-): { logo?: string } {
-  const logo = services.get(toolkit)?.logo;
-  return logo ? { logo } : {};
+): { logo?: ServiceLogo } {
+  const logo = serviceLogo(services.get(toolkit));
+  return logo === undefined ? {} : { logo };
 }
 
 /**

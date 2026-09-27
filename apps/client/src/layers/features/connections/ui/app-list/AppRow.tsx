@@ -1,6 +1,6 @@
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import { ServiceMark } from '@/layers/entities/connectors';
+import { ServiceMark, serviceLogo, type ServiceLogo } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 import { Badge, Button, Spinner, STATUS_TONE_DOT } from '@/layers/shared/ui';
 import type { AppRowAction, YourAppRow } from '../../lib/app-list';
@@ -39,8 +39,8 @@ function RowBody({
 }: {
   name: string;
   iconKey: string;
-  /** The catalog's same-origin logo path, when the app has one. */
-  logo?: string;
+  /** What the catalog says about the app's logo. */
+  logo?: ServiceLogo;
   detail: string;
   chat: boolean;
   /** Marks a chat app DorkOS no longer offers. */
@@ -210,7 +210,7 @@ export function CatalogAppRowView({
     <RowBody
       name={service.displayName}
       iconKey={service.iconKey}
-      logo={service.logo}
+      logo={serviceLogo(service)}
       detail={detail}
       chat={chat}
       wrapDetail

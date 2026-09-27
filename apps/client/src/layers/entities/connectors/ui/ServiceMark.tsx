@@ -3,6 +3,7 @@ import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
 import { APP_LOGO_MAP } from '@dorkos/icons/app-logos';
 import { connectorCatalogLogoPath } from '@dorkos/shared/connector-resource-schemas';
 import { cn } from '@/layers/shared/lib';
+import type { ServiceLogo } from '../lib/service-logo';
 
 interface ServiceMarkProps {
   /** The catalog's icon key for the app (its service id). */
@@ -10,12 +11,13 @@ interface ServiceMarkProps {
   /** The app's name; its first letter is the fallback mark. */
   displayName: string;
   /**
-   * The catalog's same-origin logo path for the app, when the caller has its
-   * catalog entry. Without it the mark asks the same server route by service
-   * id, so an app off the loaded catalog pages still gets its logo. Never a
-   * third-party URL: the server fetches and serves it.
+   * What the catalog says about the app's logo (see {@link ServiceLogo}): its
+   * same-origin path, `null` when the catalog lists the app with no logo (then
+   * nothing is requested), or `undefined` when the caller has no catalog entry
+   * (then the mark asks the server route by service id, so an app off the
+   * loaded catalog pages still gets its logo). Never a third-party URL.
    */
-  logo?: string;
+  logo?: ServiceLogo;
   className?: string;
 }
 
@@ -32,7 +34,8 @@ interface ServiceMarkProps {
 export function ServiceMark({ iconKey, displayName, logo, className }: ServiceMarkProps) {
   const key = iconKey.toLowerCase();
   const Glyph = ADAPTER_LOGO_MAP[key];
-  const src = APP_LOGO_MAP[key] ?? logo ?? (Glyph ? undefined : connectorCatalogLogoPath(iconKey));
+  const derived = logo === undefined && !Glyph ? connectorCatalogLogoPath(iconKey) : undefined;
+  const src = APP_LOGO_MAP[key] ?? logo ?? derived;
   // The source that failed to load; a new source gets its own try.
   const [failed, setFailed] = useState<string | null>(null);
   const tile = 'flex size-8 shrink-0 items-center justify-center rounded-md';

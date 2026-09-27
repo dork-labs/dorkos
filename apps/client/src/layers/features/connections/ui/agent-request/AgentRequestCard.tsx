@@ -7,6 +7,8 @@ import {
   useConnectorConnections,
   useResolveConnectorAgentRequest,
   serviceName as appServiceName,
+  serviceLogo,
+  type ServiceLogo,
 } from '@/layers/entities/connectors';
 import { Button, QueryErrorState, Skeleton } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -126,7 +128,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
         titleId={`agent-request-unanswered-${request.requestId}`}
         toolkit={request.serviceSlug}
         serviceName={serviceName}
-        logo={service?.logo}
+        logo={serviceLogo(service)}
         title={`${agentName} can now use ${serviceName}`}
         className={frameClass}
       >
@@ -162,7 +164,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
       <EventRequestCard
         request={request}
         serviceName={serviceName}
-        logo={service?.logo}
+        logo={serviceLogo(service)}
         onDecline={decline}
         deciding={resolve.isPending}
         className={frameClass}
@@ -220,7 +222,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           account={account}
           attention={accountAttention(account) ?? { kind: 'needs_review' }}
           serviceName={serviceName}
-          logo={service?.logo}
+          logo={serviceLogo(service)}
           agentName={agentName}
           onDecline={decline}
           deciding={resolve.isPending}
@@ -238,7 +240,7 @@ export function AgentRequestCard({ request, className }: AgentRequestCardProps) 
           agentId={request.agent.id}
           toolkit={request.serviceSlug}
           serviceName={serviceName}
-          logo={service?.logo}
+          logo={serviceLogo(service)}
           {...(signedInId ? { connectionId: signedInId } : {})}
           request={{ reason: request.reason, operations: request.requestedOperations }}
           onSkip={decline}
@@ -273,7 +275,7 @@ function EventRequestCard({
 }: {
   request: ConnectorAgentRequestItem;
   serviceName: string;
-  logo: string | undefined;
+  logo: ServiceLogo;
   onDecline: () => void;
   deciding: boolean;
   className: string;

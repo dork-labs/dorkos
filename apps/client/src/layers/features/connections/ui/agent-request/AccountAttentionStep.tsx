@@ -6,6 +6,7 @@ import {
   useConnectorAuthentication,
   useReconnectConnectorConnection,
   useResumeConnectorConnection,
+  type ServiceLogo,
 } from '@/layers/entities/connectors';
 import { Button, ExternalLinkAnchor } from '@/layers/shared/ui';
 import type { AccountAttention } from '../../lib/account-readiness';
@@ -18,8 +19,8 @@ interface AccountAttentionStepProps {
   attention: AccountAttention;
   /** The app's display name. */
   serviceName: string;
-  /** The catalog's same-origin logo path for the app, when it has one. */
-  logo?: string;
+  /** What the catalog says about the app's logo, when the caller has its entry. */
+  logo?: ServiceLogo;
   /** The agent asking. */
   agentName: string;
   /** Answer "Not now". */

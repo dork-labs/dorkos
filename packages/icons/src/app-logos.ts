@@ -8,7 +8,7 @@
  *
  * @module icons/app-logos
  */
-import airtable from './app-logos/airtable.svg?url';
+import airtable from './app-logos/airtable.png?url';
 import asana from './app-logos/asana.svg?url';
 import dropbox from './app-logos/dropbox.svg?url';
 import github from './app-logos/github.svg?url';
