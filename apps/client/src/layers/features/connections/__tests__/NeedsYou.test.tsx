@@ -142,7 +142,7 @@ describe('NeedsYou', () => {
     expect(screen.queryByTestId('needs-you-review-review-done')).not.toBeInTheDocument();
   });
 
-  it('keeps an approved connect only while its sign-in is still open', async () => {
+  it('keeps a just-approved connect without reading its sign-in, which would move it on', async () => {
     const approvedConnect = {
       ...REVIEW,
       reviewRequestId: 'review-connect',

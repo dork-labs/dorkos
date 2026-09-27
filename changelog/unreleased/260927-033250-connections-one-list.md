@@ -10,6 +10,7 @@ covers:
   - 'fix(connections): the playground panel reads a real access snapshot (DOR-2418)'
   - 'fix(connectors): a new connection is ready to share until someone holds access (DOR-2418)'
   - 'fix(connections): review round 1 for the one list (DOR-2418)'
+  - 'fix(connections): Needs you never reads a sign-in it did not open (DOR-2418)'
 ---
 
 ### Changed

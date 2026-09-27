@@ -1,18 +1,26 @@
 import { useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import type { ConnectorManagementReviewItem } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorAgentRequests,
   useConnectorManagementReviews,
-  useConnectorReviewAuthentication,
 } from '@/layers/entities/connectors';
 import { Button } from '@/layers/shared/ui';
 import { accountAppName } from '../lib/app-list';
 import { pendingReviewLine, unsettledReviewLine, type NeedsYouLine } from '../lib/needs-you-copy';
 
-/** How long a decided review whose result is unknown keeps asking to be checked. */
+/**
+ * How long a decided review whose result is unknown keeps asking to be checked.
+ */
 const UNKNOWN_OUTCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long an approved connect keeps asking the person to finish signing in.
+ * Its sign-in is not read from here on purpose: reading a flow's state moves
+ * it on, and the review dialog reads it only once the person continues. A
+ * sign-in link expires well inside this window.
+ */
+const OPEN_SIGN_IN_WINDOW_MS = 60 * 60 * 1000;
 
 interface NeedsYouProps {
   /** Catalog services by id, for app names. */
@@ -26,8 +34,8 @@ interface NeedsYouProps {
 /**
  * Decisions waiting on the owner, at the top of the page: agents asking to use
  * an app, tools or programs asking to change a connection, and two decided
- * requests that still need the person (an approved connect with its sign-in
- * still open, and an approved change DorkOS could not confirm). Each opens its
+ * requests that still need the person (an approved connect whose sign-in
+ * may still be open, and an approved change DorkOS could not confirm). Each opens its
  * own dialog.
  *
  * Renders nothing when nothing waits, so the page's first line is only ever
@@ -44,7 +52,8 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
   const unsettled = (resolved.data ?? []).filter(
     (review) =>
       review.state === 'approved' &&
-      (review.resolution.kind === 'connect_authentication_required' ||
+      ((review.resolution.kind === 'connect_authentication_required' &&
+        now - Date.parse(review.resolvedAt) < OPEN_SIGN_IN_WINDOW_MS) ||
         (review.resolution.kind === 'outcome_unknown' &&
           now - Date.parse(review.resolvedAt) < UNKNOWN_OUTCOME_WINDOW_MS))
   );
@@ -86,14 +95,17 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
             onOpen={() => onOpenReview(review.reviewRequestId)}
           />
         ))}
-        {unsettled.map((review) => (
-          <UnsettledReviewRow
-            key={`review-${review.reviewRequestId}`}
-            review={review}
-            services={services}
-            onOpen={() => onOpenReview(review.reviewRequestId)}
-          />
-        ))}
+        {unsettled.map((review) => {
+          const line = unsettledReviewLine(review, services);
+          return line ? (
+            <NeedsYouRow
+              key={`review-${review.reviewRequestId}`}
+              testId={`needs-you-review-${review.reviewRequestId}`}
+              line={line}
+              onOpen={() => onOpenReview(review.reviewRequestId)}
+            />
+          ) : null;
+        })}
       </ul>
       {failed.length > 0 && (
         <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 px-2.5 pb-1.5 text-xs">
@@ -109,39 +121,6 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
         </p>
       )}
     </section>
-  );
-}
-
-/**
- * A decided review that may still need the person. An approved connect stays
- * only while its sign-in is open, read live, so it leaves once the sign-in
- * finishes, fails or expires.
- */
-function UnsettledReviewRow({
-  review,
-  services,
-  onOpen,
-}: {
-  review: ConnectorManagementReviewItem;
-  services: ReadonlyMap<string, ConnectorCatalogService>;
-  onOpen: () => void;
-}) {
-  const flowId =
-    review.state === 'approved' && review.resolution.kind === 'connect_authentication_required'
-      ? review.resolution.authentication.flowId
-      : null;
-  const flow = useConnectorReviewAuthentication(flowId, flowId !== null);
-  const line = unsettledReviewLine(review, services);
-  if (!line) return null;
-  if (flowId !== null && flow.data?.state !== 'starting' && flow.data?.state !== 'pending') {
-    return null;
-  }
-  return (
-    <NeedsYouRow
-      testId={`needs-you-review-${review.reviewRequestId}`}
-      line={line}
-      onOpen={onOpen}
-    />
   );
 }
 

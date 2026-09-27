@@ -123,7 +123,7 @@ export function unsettledReviewLine(
   if (review.resolution.kind === 'connect_authentication_required') {
     return {
       title: `Approved: finish signing in to ${app}`,
-      detail: 'It is not connected until you finish signing in.',
+      detail: 'Open it to finish signing in, or to see that it finished.',
     };
   }
   if (review.resolution.kind === 'outcome_unknown') {
