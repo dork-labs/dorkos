@@ -112,7 +112,7 @@ function session(id: string, overrides: Partial<Session> = {}): Session {
 
 let store: {
   peek: ReturnType<typeof vi.fn>;
-  usageAtPath: ReturnType<typeof vi.fn>;
+  peekByRoot: ReturnType<typeof vi.fn>;
   list: ReturnType<typeof vi.fn>;
 };
 
@@ -120,7 +120,9 @@ beforeEach(() => {
   fakeRuntime = new FakeAgentRuntime('claude-code');
   store = {
     peek: vi.fn(() => [WORK_USAGE]),
-    usageAtPath: vi.fn((_runtime: string, dir: string) => (dir === WORK_ROOT ? WORK_USAGE : null)),
+    peekByRoot: vi.fn((_runtime: string, dir: string) =>
+      dir === WORK_ROOT ? WORK_USAGE : { runtime: 'claude-code', accountId: null, path: dir }
+    ),
     list: vi.fn(() => []),
   };
   setAccountUsageStore(store as unknown as AccountUsageStore);
@@ -173,6 +175,19 @@ describe('GET /api/sessions/:id: the fleet fields', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.accountId).toBe('work');
-    expect(res.body.status).toEqual({ lifecycle: 'idle', limit: LIMIT });
+    // The fleet overlay's status survives the session-open usage block after it.
+    expect(res.body.status).toEqual({ lifecycle: 'idle', limit: LIMIT, accountUsage: WORK_USAGE });
+  });
+
+  it('names a session the fleet overlay could not from the account its usage resolved', async () => {
+    // No transcript folder and no in-memory account: the fleet overlay names
+    // nothing, and the usage block falls back to the runtime's `default`.
+    fakeRuntime.getSession.mockResolvedValue(session(QUIET));
+    fakeRuntime.getSessionCwd = vi.fn(() => '/project');
+    const res = await request(server).get(`/api/sessions/${QUIET}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status.accountUsage).toEqual(WORK_USAGE);
+    expect(res.body.accountId).toBe('work');
   });
 });

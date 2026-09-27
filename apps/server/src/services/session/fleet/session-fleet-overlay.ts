@@ -56,13 +56,13 @@ export interface FleetUsageReader {
    */
   peek(runtime: LedgerRuntime, accountIds: readonly string[]): AccountUsage[];
   /**
-   * The usage of the account a session running in `dir` bills, from memory,
-   * or `null` when the store knows no such folder.
+   * The usage of the account a session running in `root` bills, from memory;
+   * `accountId` is `null` for a folder that is no account.
    *
    * @param runtime - The account's runtime.
-   * @param dir - The folder the session runs in.
+   * @param root - The folder the session runs in.
    */
-  usageAtPath(runtime: LedgerRuntime, dir: string): AccountUsage | null;
+  peekByRoot(runtime: LedgerRuntime, root: string): AccountUsage;
 }
 
 /** What the overlay reads from, injectable for tests. */
@@ -100,6 +100,9 @@ export interface SessionFleetOverlayDeps {
   applyTrackerItems: (page: Session[]) => Promise<void>;
 }
 
+/** Runtimes whose `getSessionAccount` threw, so each is logged once per process. */
+const warnedAccountRuntimes = new Set<string>();
+
 /** The server's own collaborators for {@link applySessionFleetOverlay}. */
 export function sessionFleetOverlayDeps(): SessionFleetOverlayDeps {
   return {
@@ -109,7 +112,20 @@ export function sessionFleetOverlayDeps(): SessionFleetOverlayDeps {
       if (!session.runtime || !runtimeRegistry.has(session.runtime)) return undefined;
       try {
         return runtimeRegistry.get(session.runtime).getSessionAccount?.(session.id);
-      } catch {
+      } catch (err) {
+        // The contract says it never throws; one that does costs only the
+        // in-memory answer, and the transcript's folder is used instead.
+        if (!warnedAccountRuntimes.has(session.runtime)) {
+          warnedAccountRuntimes.add(session.runtime);
+          logger.warn(
+            "[session-fleet-overlay] a runtime could not name a session's account; using the transcript's",
+            {
+              runtime: session.runtime,
+              sessionId: session.id,
+              err: err instanceof Error ? err.message : String(err),
+            }
+          );
+        }
         return undefined;
       }
     },
@@ -121,18 +137,6 @@ export function sessionFleetOverlayDeps(): SessionFleetOverlayDeps {
 
 function isLedgerRuntime(runtime: string | undefined): runtime is LedgerRuntime {
   return (LEDGER_RUNTIMES as readonly string[]).includes(runtime ?? '');
-}
-
-/**
- * The registry id of the Claude Code account whose folder is `root`, from the
- * store's memory: a registered row, `default` for the machine's own folder
- * (or the row `default` aliases), else `undefined`.
- *
- * Named for the store's `peekByRoot` (DOR-2385 tasks 5.3/5.4): once that lands,
- * this becomes `store.peekByRoot('claude-code', root).accountId ?? undefined`.
- */
-function accountIdAtRoot(store: FleetUsageReader, root: string): string | undefined {
-  return store.usageAtPath('claude-code', root)?.accountId ?? undefined;
 }
 
 /**
@@ -164,7 +168,11 @@ export async function applySessionFleetOverlay(
       } else {
         const root = deps.sessionAccountOf(session) ?? session.account;
         if (root) {
-          if (!idByRoot.has(root)) idByRoot.set(root, accountIdAtRoot(store, root));
+          // A registered row, `default` for the machine's own folder (or the
+          // row `default` aliases), else no id.
+          if (!idByRoot.has(root)) {
+            idByRoot.set(root, store.peekByRoot('claude-code', root).accountId ?? undefined);
+          }
           accountId = idByRoot.get(root);
         }
       }
