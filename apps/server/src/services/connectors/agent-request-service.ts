@@ -60,7 +60,7 @@ import { dorkosToolNameFor } from '../runtimes/shared/dorkos-tool-names.js';
 import { SERVICE_CATALOG_TOOL_NAME } from './connector-capabilities.js';
 import type { ConnectorAuthenticationFlowService } from './resources/authentication-flow-service.js';
 import { sessionPath } from '@dorkos/shared/session-link';
-import { everyAgentGrantSubject } from './every-agent-grants.js';
+import { agentGrantScope, type AgentGrantDenial } from './execution/agent-grant-scope.js';
 import type {
   PreparedPrivateSessionMessage,
   PrivateSessionMessageSourceAdapter,
@@ -144,6 +144,12 @@ export interface ConnectorAgentRequestServiceOptions {
    */
   readonly appOrigin?: () => string | undefined;
   /**
+   * Whether a session answers a group chat on a chat app (Telegram, Slack),
+   * where a link the agent posts reaches everyone there. Such a session gets no
+   * `openUrl`, the same as a room's turn.
+   */
+  readonly sharedChatSession?: (sessionId: string) => boolean;
+  /**
    * Told whenever a request appears or changes state, so open windows can
    * re-read their owner-scoped request lists. Carries nothing: the listener
    * decides what, if anything, goes on a wire.
@@ -168,7 +174,8 @@ export class ConnectorAgentRequestError extends Error {
       | 'request_already_resolved'
       | 'selection_invalid'
       | 'event_selection_unavailable'
-      | 'authority_sync_failed',
+      | 'authority_sync_failed'
+      | 'session_access_off',
     message: string
   ) {
     super(message);
@@ -1330,14 +1337,16 @@ export class ConnectorAgentRequestService {
    * The absolute link to the conversation holding a request's card, for an
    * agent answering the owner directly somewhere the card cannot draw.
    *
-   * Left out for a room's turn: the room already shows the owner the card, and
-   * a room can be shared (a bridged Telegram or Slack group among them), so a
-   * link there would go to everyone in it. Enforced here rather than left to
-   * the prompt. Also left out when the app has no address the owner can reach
-   * from elsewhere.
+   * Left out wherever the agent's words reach more than the owner: a room's
+   * turn (the room already shows the owner the card, and a room can be shared,
+   * a bridged Telegram or Slack group among them) and a session answering an
+   * unbridged group chat on a chat app. Enforced here rather than left to the
+   * prompt. Also left out when the app has no address the owner can reach from
+   * elsewhere.
    */
   private openUrl(sessionId: string): { openUrl?: string } {
     if (this.options.roomForSession?.(sessionId)) return {};
+    if (this.options.sharedChatSession?.(sessionId)) return {};
     const origin = this.options.appOrigin?.();
     if (!origin) return {};
     try {
@@ -1364,9 +1373,21 @@ export class ConnectorAgentRequestService {
     const connection = this.requireRequestConnection(owner, request, connectionId);
     const now = this.now().toISOString();
     const finalized = this.options.db.transaction((tx) => {
-      const live = [
-        ...liveAgentRevisionIds(tx, request.agentId, connection.id, connection.mode),
-      ].sort();
+      const access = liveAgentRevisionIds(tx, {
+        agentId: request.agentId,
+        sessionId: request.sessionId,
+        connectionId: connection.id,
+        mode: connection.mode,
+      });
+      if ('denied' in access) {
+        throw new ConnectorAgentRequestError(
+          'session_access_off',
+          access.denied === 'needs_reconciliation'
+            ? 'This chat’s access to that account needs a review on Connections first.'
+            : 'This chat has that account turned off for its agent. Change it on Connections.'
+        );
+      }
+      const live = [...access.ids].sort();
       if (live.length === 0) {
         throw new ConnectorAgentRequestError(
           'selection_invalid',
@@ -2243,43 +2264,49 @@ function hasExactLiveGrants(tx: DbTransaction, request: ConnectorAgentRequest): 
   // Every granted revision must still be live for this agent. Access added
   // since (another grant, "Every agent") changes nothing the follow-up relies
   // on; a revision taken away does, and refuses it.
-  const liveIds = liveAgentRevisionIds(
-    tx,
-    request.agentId,
-    request.resolvedConnectionId,
-    mode ?? 'managed'
-  );
-  return selected.every((id) => liveIds.has(id));
+  const access = liveAgentRevisionIds(tx, {
+    agentId: request.agentId,
+    sessionId: request.sessionId,
+    connectionId: request.resolvedConnectionId,
+    mode: mode ?? 'managed',
+  });
+  // A session override that now shuts the agent out refuses the follow-up.
+  if ('denied' in access) return false;
+  return selected.every((id) => access.ids.has(id));
 }
 
 /**
- * The operation revisions one agent can use on one account right now: its own
- * live grants, plus the owner's "Every agent" grant where the server honours
- * one (not on a managed account, exactly as `hasGrant` reads it).
+ * The operation revisions one agent can use on one account in the request's
+ * own session right now, with the same precedence the execution check uses
+ * (`agentGrantScope`): a session override decides alone, otherwise the
+ * agent's own grants and, where honoured, "Every agent". A denying override
+ * returns its reason instead of an empty set, so a refusal can say why.
  */
 function liveAgentRevisionIds(
   tx: Db | DbTransaction,
-  agentId: string,
-  connectionId: string,
-  mode: 'managed' | 'byo'
-): Set<string> {
-  const named = and(
-    eq(connectionOperationGrants.subjectType, 'agent'),
-    eq(connectionOperationGrants.subjectId, agentId)
-  );
-  const subject = mode === 'managed' ? named : or(named, everyAgentGrantSubject());
-  return new Set(
-    tx
-      .select({ id: connectionOperationGrants.operationRevisionId })
-      .from(connectionOperationGrants)
-      .where(
-        and(
-          subject,
-          eq(connectionOperationGrants.connectionId, connectionId),
-          isNull(connectionOperationGrants.revokedAt)
+  input: { agentId: string; sessionId: string; connectionId: string; mode: 'managed' | 'byo' }
+): { denied: AgentGrantDenial } | { ids: Set<string> } {
+  const scope = agentGrantScope(tx, {
+    agentId: input.agentId,
+    sessionId: input.sessionId,
+    connectionId: input.connectionId,
+    providerMode: input.mode,
+  });
+  if (scope.kind === 'denied') return { denied: scope.reason };
+  return {
+    ids: new Set(
+      tx
+        .select({ id: connectionOperationGrants.operationRevisionId })
+        .from(connectionOperationGrants)
+        .where(
+          and(
+            scope.subject,
+            eq(connectionOperationGrants.connectionId, input.connectionId),
+            isNull(connectionOperationGrants.revokedAt)
+          )
         )
-      )
-      .all()
-      .map((grant) => grant.id)
-  );
+        .all()
+        .map((grant) => grant.id)
+    ),
+  };
 }

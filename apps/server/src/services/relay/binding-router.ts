@@ -307,6 +307,13 @@ export class BindingRouter {
 
   /** Maps `bindingId:(chat|user):id` to the session that serves it. */
   private sessionMap: Map<string, SessionRecord> = new Map();
+  /**
+   * Sessions a group chat routes into, so the agent's replies land in front of
+   * everyone there. In memory on purpose: a relay turn always starts with a
+   * message routed through here, so its session is known before the agent can
+   * act in it. Read by {@link isSharedChatSession}.
+   */
+  private readonly sharedChatSessions = new Set<string>();
   /** When session activity was last flushed to disk. */
   private lastActivitySaveAt = 0;
   /** In-flight session creation promises, keyed the same as sessionMap. */
@@ -744,6 +751,7 @@ export class BindingRouter {
           let sessionId: string;
           try {
             sessionId = await this.resolveSession(binding, chatId, envelope);
+            if (channelType === 'group') this.sharedChatSessions.add(sessionId);
           } catch (err) {
             // A session that cannot be created is the one refusal that used to
             // reach only the catch-all below, where it became a log line with no
@@ -1034,6 +1042,17 @@ export class BindingRouter {
       );
       return legacyAgentSubject(sessionId);
     }
+  }
+
+  /**
+   * Whether a session answers a group chat on Telegram, Slack or another
+   * chat app, where everything the agent says reaches everyone in it. Used to
+   * keep private links (an agent request's `openUrl`) out of shared chats.
+   *
+   * @param sessionId - The session to ask about.
+   */
+  isSharedChatSession(sessionId: string): boolean {
+    return this.sharedChatSessions.has(sessionId);
   }
 
   private async resolveSession(

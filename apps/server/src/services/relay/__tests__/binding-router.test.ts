@@ -251,6 +251,42 @@ describe('BindingRouter', () => {
     );
   });
 
+  it('knows a session that answers a group chat is shared, and a direct chat is not', async () => {
+    vi.mocked(mockBindingStore.resolve!).mockReturnValue({
+      id: 'bind-1',
+      adapterId: 'tg-bot',
+      agentId: 'agent-a',
+      permissionMode: 'acceptEdits' as const,
+      sessionStrategy: 'per-chat',
+      label: '',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const envelope = (subject: string) => ({
+      id: `msg-${subject}`,
+      subject,
+      payload: { text: 'hello' },
+      from: 'tg',
+      budget: {
+        hopCount: 0,
+        maxHops: 5,
+        ttl: Date.now() + 60000,
+        callBudgetRemaining: 10,
+        ancestorChain: [],
+      },
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    vi.mocked(mockAgentManager.createSession)
+      .mockResolvedValueOnce({ id: 'session-dm' } as never)
+      .mockResolvedValueOnce({ id: 'session-group' } as never);
+
+    await capturedHandler!(envelope('relay.human.telegram.tg-bot.123'));
+    await capturedHandler!(envelope('relay.human.telegram.tg-bot.group.555'));
+
+    expect(router.isSharedChatSession('session-dm')).toBe(false);
+    expect(router.isSharedChatSession('session-group')).toBe(true);
+  });
+
   describe('the dispatch id crosses the bus', () => {
     /** The binding every case below routes through. */
     function bindOne(): void {

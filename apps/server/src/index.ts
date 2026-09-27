@@ -3240,6 +3240,9 @@ async function start() {
       // Slack). Only the remote-access address: a localhost link would not
       // open on the phone that link is sent to.
       appOrigin: () => getTunnelOrigin() ?? undefined,
+      // A group chat on Telegram or Slack is shared: no private link there.
+      sharedChatSession: (sessionId) =>
+        adapterManager?.getBindingRouter()?.isSharedChatSession(sessionId) ?? false,
       onChanged: connectorAgentRequestsChangedAnnouncer(eventFanOut),
     });
     void connectorAgentRequests.reconcile().catch((error: unknown) => {

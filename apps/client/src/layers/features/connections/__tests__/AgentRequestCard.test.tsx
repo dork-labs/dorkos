@@ -293,6 +293,28 @@ describe('AgentRequestCard — an account exists', () => {
     });
   });
 
+  it('says plainly when this chat has the app turned off, and where to change it', async () => {
+    const user = userEvent.setup();
+    const transport = transportWith([account('connection-1')]);
+    vi.mocked(transport.previewConnectorReconciliation).mockResolvedValue(
+      preview([{ agentId: 'agent-bo', operationRevisionIds: ['read-v1'] }])
+    );
+    vi.mocked(transport.resolveConnectorAgentRequest).mockRejectedValue(
+      Object.assign(new Error('off'), { code: 'session_access_off' })
+    );
+    renderWith(transport, <AgentRequestCard request={REQUEST} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Allow' }));
+    expect(await screen.findByTestId('agent-request-unanswered')).toHaveTextContent(
+      'this chat has Gmail turned off for Bo'
+    );
+    expect(screen.getByRole('link', { name: /Open Connections/ })).toHaveAttribute(
+      'href',
+      '/connections?'
+    );
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
   it.each([
     ['request_already_resolved', 'already answered somewhere else'],
     ['request_expired', 'ran out of time'],
