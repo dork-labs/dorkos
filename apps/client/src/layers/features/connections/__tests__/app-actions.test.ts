@@ -156,4 +156,17 @@ describe('actionsFromCandidates', () => {
       { operationSlug: 'GMAIL_OLD_ONLY', capabilityClassification: 'read', important: false },
     ]);
   });
+
+  it('keeps one row per action and classification, so a reclassified action shows both ways', () => {
+    const actions = actionsFromCandidates(
+      [candidate('GMAIL_TRASH', 'read', '1'), candidate('GMAIL_TRASH', 'destructive', '2')],
+      undefined
+    );
+    expect(actions.map((a) => [a.operationSlug, a.capabilityClassification])).toEqual([
+      ['GMAIL_TRASH', 'read'],
+      ['GMAIL_TRASH', 'destructive'],
+    ]);
+    expect(actionBuckets(actions, 'read').look).toHaveLength(1);
+    expect(actionBuckets(actions, 'read').outsideLevels).toHaveLength(1);
+  });
 });

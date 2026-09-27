@@ -171,13 +171,17 @@ describe('ConnectorAppActionsService', () => {
     const { provider, resolveToolkitVersion } = fakeProvider({
       version: async () => ({ status: 'unsupported', reason: 'No version.' }),
     });
-    const { list } = service(provider, tempHome(), () => now);
+    const { subject, list } = service(provider, tempHome(), () => now);
     await expect(list()).resolves.toEqual({ status: 'unlisted', toolkit: 'gmail' });
+    await subject.idle();
+    now = new Date(now.getTime() + SHORT_APP_ACTIONS_FRESH_MS - 1);
     await list();
+    await subject.idle();
     expect(resolveToolkitVersion).toHaveBeenCalledTimes(1);
-    now = new Date(now.getTime() + SHORT_APP_ACTIONS_FRESH_MS + 1);
+    now = new Date(now.getTime() + 2);
     await list();
-    await vi.waitFor(() => expect(resolveToolkitVersion).toHaveBeenCalledTimes(2));
+    await subject.idle();
+    expect(resolveToolkitVersion).toHaveBeenCalledTimes(2);
   });
 
   it('refuses a way that is unknown, not the owner’s, or no longer available', async () => {
@@ -286,13 +290,15 @@ describe('ConnectorAppActionsService', () => {
   it('drops everything kept for a way that is removed, memory and disk', async () => {
     const dorkHome = tempHome();
     const { provider, listOperationSchemas } = fakeProvider();
-    const { registry, list } = service(provider, dorkHome);
+    const { subject, registry, list } = service(provider, dorkHome);
     await list();
+    await subject.idle();
     const dir = path.join(dorkHome, 'cache', 'connectors', 'actions');
     expect(readdirSync(dir)).toHaveLength(1);
 
     registry.unregisterProviderInstance(INSTANCE);
-    await vi.waitFor(() => expect(readdirSync(dir)).toHaveLength(0));
+    await subject.idle();
+    expect(readdirSync(dir)).toHaveLength(0);
     registry.register(provider, 'digest-1');
     await list();
     expect(listOperationSchemas).toHaveBeenCalledTimes(2);
@@ -301,17 +307,16 @@ describe('ConnectorAppActionsService', () => {
   it('serves a stale copy at once and refreshes it behind, re-listing only a new version', async () => {
     let now = new Date('2026-09-27T12:00:00.000Z');
     const { provider, resolveToolkitVersion, listOperationSchemas } = fakeProvider();
-    const { list } = service(provider, tempHome(), () => now);
+    const { subject, list } = service(provider, tempHome(), () => now);
     await list();
     expect(listOperationSchemas).toHaveBeenCalledTimes(1);
 
     now = new Date(now.getTime() + APP_ACTIONS_FRESH_MS + 1);
     expect(await list()).toMatchObject({ fetchedAt: '2026-09-27T12:00:00.000Z' });
-    await vi.waitFor(() => expect(resolveToolkitVersion).toHaveBeenCalledTimes(2));
+    await subject.idle();
+    expect(resolveToolkitVersion).toHaveBeenCalledTimes(2);
     // Same version: the list is immutable, so only its date moves on.
-    await vi.waitFor(async () =>
-      expect(await list()).toMatchObject({ fetchedAt: now.toISOString() })
-    );
+    expect(await list()).toMatchObject({ fetchedAt: now.toISOString() });
     expect(listOperationSchemas).toHaveBeenCalledTimes(1);
 
     resolveToolkitVersion.mockResolvedValue({
@@ -320,12 +325,9 @@ describe('ConnectorAppActionsService', () => {
       toolkitVersion: 'v2',
     });
     now = new Date(now.getTime() + APP_ACTIONS_FRESH_MS + 1);
-    // The earlier refresh may still be writing its copy; asking again joins
-    // it until it settles, then starts the next one.
-    await vi.waitFor(async () => {
-      await list();
-      expect(listOperationSchemas).toHaveBeenCalledTimes(2);
-    });
+    await list();
+    await subject.idle();
+    expect(listOperationSchemas).toHaveBeenCalledTimes(2);
   });
 
   it('never replaces a complete list of the same version with a partial one', async () => {
@@ -339,21 +341,95 @@ describe('ConnectorAppActionsService', () => {
       ],
     };
     const { provider, resolveToolkitVersion, listOperationSchemas } = fakeProvider(pages);
-    const { list } = service(provider, tempHome(), () => now);
+    const { subject, list } = service(provider, tempHome(), () => now);
     await list();
     // From now on a listing of this version would stop part way.
     listOperationSchemas.mockRejectedValue(new Error('page failed'));
     now = new Date(now.getTime() + APP_ACTIONS_FRESH_MS + 1);
     await list();
-    await vi.waitFor(() => expect(resolveToolkitVersion).toHaveBeenCalledTimes(2));
-    await vi.waitFor(async () =>
-      expect(await list()).toMatchObject({
-        completeness: 'complete',
-        fetchedAt: now.toISOString(),
-      })
-    );
+    await subject.idle();
+    expect(resolveToolkitVersion).toHaveBeenCalledTimes(2);
+    expect(await list()).toMatchObject({
+      completeness: 'complete',
+      fetchedAt: now.toISOString(),
+    });
     const result = await list();
     expect(result.status === 'listed' && result.actions).toHaveLength(2);
+  });
+
+  /** A second provider object for the same way, listing its own actions. */
+  function replacement(slug: string) {
+    return fakeProvider({
+      pages: [{ operations: [operation(slug, 'read')], truncated: false }],
+    });
+  }
+
+  function slugs(result: Awaited<ReturnType<ConnectorAppActionsService['list']>>): string[] {
+    return result.status === 'listed' ? result.actions.map((a) => a.operationSlug) : [];
+  }
+
+  it('keeps nothing from a listing whose way is removed and re-added mid-listing', async () => {
+    const dorkHome = tempHome();
+    const first = fakeProvider();
+    let release!: () => void;
+    let started!: () => void;
+    const began = new Promise<void>((resolve) => (started = resolve));
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const original = first.listOperationSchemas.getMockImplementation()!;
+    first.listOperationSchemas.mockImplementationOnce(async (request) => {
+      started();
+      await gate;
+      return original(request);
+    });
+    const { subject, registry, list } = service(first.provider, dorkHome);
+    const pending = list();
+    await began;
+
+    registry.unregisterProviderInstance(INSTANCE);
+    const second = replacement('GMAIL_FROM_SECOND');
+    registry.register(second.provider, 'digest-1');
+    release();
+    await pending;
+    await subject.idle();
+
+    expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
+    expect(second.listOperationSchemas).toHaveBeenCalledTimes(1);
+    const files = readdirSync(path.join(dorkHome, 'cache', 'connectors', 'actions'), {
+      recursive: true,
+    })
+      .map(String)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) =>
+        readFileSync(path.join(dorkHome, 'cache', 'connectors', 'actions', name), 'utf-8')
+      );
+    expect(files).toHaveLength(1);
+    expect(files[0]).toContain('GMAIL_FROM_SECOND');
+    expect(files[0]).not.toContain('GMAIL_FETCH_EMAILS');
+  });
+
+  it('drops the kept list when the provider object is replaced, even with the same setup', async () => {
+    const { provider } = fakeProvider();
+    const { subject, registry, list } = service(provider);
+    expect(slugs(await list())).toContain('GMAIL_FETCH_EMAILS');
+    await subject.idle();
+
+    const second = replacement('GMAIL_FROM_SECOND');
+    registry.register(second.provider, 'digest-1');
+    expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
+    expect(second.listOperationSchemas).toHaveBeenCalledTimes(1);
+  });
+
+  it('never reads the old copy back from disk when asked straight after a replacement', async () => {
+    const dorkHome = tempHome();
+    const { provider } = fakeProvider();
+    const { subject, registry, list } = service(provider, dorkHome);
+    await list();
+    await subject.idle();
+
+    const second = replacement('GMAIL_FROM_SECOND');
+    registry.register(second.provider, 'digest-1');
+    // No wait: the drop of the old file is still under way.
+    expect(slugs(await list())).toEqual(['GMAIL_FROM_SECOND']);
   });
 
   it('shares one listing between callers who ask at the same time', async () => {

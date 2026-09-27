@@ -118,6 +118,14 @@ export class ConnectorAppActionsService {
   private readonly now: () => Date;
   private readonly kept = new Map<string, KeptActions>();
   private readonly inFlight = new Map<string, Promise<KeptActions>>();
+  /**
+   * Bumped each time a way is dropped. Anything read or listed before the
+   * bump is never kept after it, so a way removed or replaced mid-listing
+   * can't bring its old answer back.
+   */
+  private readonly epochs = new Map<string, number>();
+  /** Each way's disk work, one step at a time, so a drop never races a write or a read. */
+  private readonly diskQueues = new Map<string, Promise<unknown>>();
 
   /** Create the service; nothing is read from disk until a list is asked for. */
   constructor(options: ConnectorAppActionsServiceOptions) {
@@ -193,6 +201,32 @@ export class ConnectorAppActionsService {
       : undefined;
   }
 
+  /**
+   * Wait until every listing and disk step now in progress has finished. For
+   * shutdown and for deterministic tests; list() never needs it.
+   */
+  async idle(): Promise<void> {
+    await Promise.allSettled([...this.inFlight.values(), ...this.diskQueues.values()]);
+  }
+
+  private epochOf(instanceId: string): number {
+    return this.epochs.get(instanceId) ?? 0;
+  }
+
+  /** Run one disk step for a way after the ones already queued for it. */
+  private onDisk<T>(instanceId: string, step: () => Promise<T>): Promise<T> {
+    const queued = (this.diskQueues.get(instanceId) ?? Promise.resolve()).then(step, step);
+    const settled = queued.then(
+      () => undefined,
+      () => undefined
+    );
+    this.diskQueues.set(instanceId, settled);
+    void settled.then(() => {
+      if (this.diskQueues.get(instanceId) === settled) this.diskQueues.delete(instanceId);
+    });
+    return queued;
+  }
+
   private isFresh(kept: KeptActions): boolean {
     const freshFor =
       kept.status === 'listed' && kept.completeness === 'complete'
@@ -210,14 +244,21 @@ export class ConnectorAppActionsService {
   ): Promise<KeptActions> {
     const running = this.inFlight.get(key);
     if (running) return running;
+    const epoch = this.epochOf(target.providerInstanceId);
     // The body reads its own promise only after an await, once it is set here.
     const slot: { task?: Promise<KeptActions> } = {};
     slot.task = (async () => {
       const next = await this.fetch(provider, target, previous);
-      // The way may have been removed while the listing ran; keep nothing for it then.
-      if (this.inFlight.get(key) !== slot.task) return next;
+      // The way may have been removed or replaced while the listing ran; keep
+      // nothing for it then.
+      if (
+        this.inFlight.get(key) !== slot.task ||
+        this.epochOf(target.providerInstanceId) !== epoch
+      ) {
+        return next;
+      }
       this.kept.set(key, next);
-      await this.writeKept(key, target, next);
+      await this.writeKept(key, target, next, epoch);
       return next;
     })().finally(() => {
       if (this.inFlight.get(key) === slot.task) this.inFlight.delete(key);
@@ -318,7 +359,8 @@ export class ConnectorAppActionsService {
   }
 
   /** Drop everything kept for a way that was removed or replaced. */
-  private async forget(instanceId: ConnectorProviderInstanceId): Promise<void> {
+  private forget(instanceId: ConnectorProviderInstanceId): Promise<void> {
+    this.epochs.set(instanceId, this.epochOf(instanceId) + 1);
     for (const [key, kept] of this.kept) {
       if (kept.providerInstanceId === instanceId) this.kept.delete(key);
     }
@@ -326,13 +368,16 @@ export class ConnectorAppActionsService {
     for (const key of this.inFlight.keys()) {
       if (key.startsWith(prefix)) this.inFlight.delete(key);
     }
-    try {
-      await rm(path.join(this.directory, wayDir(instanceId)), { recursive: true, force: true });
-    } catch (error) {
-      logger.debug('[ConnectorAppActions] could not drop a removed way’s lists', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+    // Queued behind any write already under way, so nothing lands after it.
+    return this.onDisk(instanceId, async () => {
+      try {
+        await rm(path.join(this.directory, wayDir(instanceId)), { recursive: true, force: true });
+      } catch (error) {
+        logger.debug('[ConnectorAppActions] could not drop a removed way’s lists', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
   }
 
   private fileOf(key: string): string {
@@ -340,41 +385,53 @@ export class ConnectorAppActionsService {
   }
 
   private async readKept(key: string, target: ListTarget): Promise<KeptActions | undefined> {
-    try {
-      const parsed = KeptActionsSchema.safeParse(
-        JSON.parse(await readFile(this.fileOf(key), 'utf-8'))
-      );
-      // A file for another way, app or setup (or a hand edit) is ignored.
-      if (
-        !parsed.success ||
-        parsed.data.providerInstanceId !== target.providerInstanceId ||
-        parsed.data.toolkit !== target.toolkit ||
-        parsed.data.generation !== target.generation
-      ) {
+    const epoch = this.epochOf(target.providerInstanceId);
+    const parsed = await this.onDisk(target.providerInstanceId, async () => {
+      try {
+        return KeptActionsSchema.safeParse(JSON.parse(await readFile(this.fileOf(key), 'utf-8')));
+      } catch {
         return undefined;
       }
-      this.kept.set(key, parsed.data);
-      return parsed.data;
-    } catch {
+    });
+    // A file for another way, app or setup (or a hand edit), or one read
+    // before the way was dropped, is ignored.
+    if (
+      !parsed?.success ||
+      this.epochOf(target.providerInstanceId) !== epoch ||
+      parsed.data.providerInstanceId !== target.providerInstanceId ||
+      parsed.data.toolkit !== target.toolkit ||
+      parsed.data.generation !== target.generation
+    ) {
       return undefined;
     }
+    this.kept.set(key, parsed.data);
+    return parsed.data;
   }
 
-  private async writeKept(key: string, target: ListTarget, kept: KeptActions): Promise<void> {
-    try {
-      await mkdir(path.join(this.directory, wayDir(target.providerInstanceId)), {
-        recursive: true,
-      });
-      const file = this.fileOf(key);
-      const temp = `${file}.${process.pid}.tmp`;
-      await writeFile(temp, `${JSON.stringify(kept)}\n`, 'utf-8');
-      await rename(temp, file);
-    } catch (error) {
-      // The memory copy still serves; only the next restart pays for a listing.
-      logger.debug('[ConnectorAppActions] could not keep the list on disk', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
+  private writeKept(
+    key: string,
+    target: ListTarget,
+    kept: KeptActions,
+    epoch: number
+  ): Promise<void> {
+    return this.onDisk(target.providerInstanceId, async () => {
+      // Dropped while this waited its turn: write nothing.
+      if (this.epochOf(target.providerInstanceId) !== epoch) return;
+      try {
+        await mkdir(path.join(this.directory, wayDir(target.providerInstanceId)), {
+          recursive: true,
+        });
+        const file = this.fileOf(key);
+        const temp = `${file}.${process.pid}.tmp`;
+        await writeFile(temp, `${JSON.stringify(kept)}\n`, 'utf-8');
+        await rename(temp, file);
+      } catch (error) {
+        // The memory copy still serves; only the next restart pays for a listing.
+        logger.debug('[ConnectorAppActions] could not keep the list on disk', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
   }
 }
 
