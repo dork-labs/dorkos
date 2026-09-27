@@ -201,6 +201,17 @@ matched to their instance. Each close report in `POST /v1/remote/events` may nam
 base-10 strings (`ByteCountSchema`), because a long window can move more bytes than a JavaScript
 number holds exactly. A batch without these fields is accepted as before.
 
+### Tunnel credentials: which hostnames, and how a replacement arrives
+
+A credential from `POST /v1/remote/credentials/issue` may carry `hosts`: every hostname the
+instance should serve with it, its own address first. Serve each one, and stop serving any
+hostname that is no longer listed; compare without regard to case. When `hosts` is absent,
+keep serving as before: absent is not an empty list, and a present list is never empty. `acl`
+stays opaque; do not parse it for names. A `rotate` command's `credentialId` is an issue key,
+not a credential id: present it as the issue call's `idempotencyKey` to receive the
+replacement, then confirm the replacement with the `credentialId` that call returns. If that
+call is refused, keep the current credential; the service may offer another later.
+
 ### Hosted communities
 
 The service starts a community on a Community server and hands ownership to a person through

@@ -348,6 +348,13 @@ export const RemoteCredentialSchema = z
     acl: z
       .array(z.string())
       .describe('What this credential may do, as opaque server-supplied strings.'),
+    hosts: z
+      .array(z.string().min(1))
+      .min(1)
+      .optional()
+      .describe(
+        'Every hostname this credential lets the instance serve: its own address first, then any custom hostname its organization added. The instance serves each one, and stops serving any hostname it served before that is not in the list. Compare hostnames without regard to case. Read this rather than `acl`, which stays opaque. When the field is absent, keep serving as before: absent is not an empty list, and a present list is never empty.'
+      ),
   })
   .describe('A freshly issued tunnel credential. The `value` is returned exactly once.');
 
@@ -418,9 +425,13 @@ export const RemoteCommandSchema = z
         kind: z.literal('rotate'),
         id: IdSchema,
         leaseToken: z.string().min(1),
-        credentialId: IdSchema,
+        credentialId: IdSchema.describe(
+          'An issue key, not a credential id. Present it as the `idempotencyKey` of `POST /v1/remote/credentials/issue` to receive the replacement, then confirm the replacement with the `credentialId` that call returns. If that call is refused, keep using the current credential; the service may offer another replacement later.'
+        ),
       })
-      .describe('Replace the tunnel credential.'),
+      .describe(
+        'Replace the tunnel credential. Nothing is created until the instance asks for it, with the id this command carries.'
+      ),
     z
       .object({
         kind: z.literal('revoke'),

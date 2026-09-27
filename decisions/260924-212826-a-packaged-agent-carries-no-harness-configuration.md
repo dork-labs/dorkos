@@ -1,7 +1,7 @@
 ---
 id: 260924-212826
 title: A packaged agent carries no harness configuration for its own sessions
-status: draft
+status: accepted
 created: 2026-09-24
 spec: agent-workspace-config
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: agent-workspace-config)
+Accepted (auto-extracted from spec: agent-workspace-config)
 
 ## Context
 

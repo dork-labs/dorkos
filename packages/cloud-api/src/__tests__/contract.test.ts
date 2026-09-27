@@ -1061,3 +1061,49 @@ describe('an agent`s claim, as a person`s page reads it', () => {
     ]);
   });
 });
+
+describe('the hostnames a tunnel credential serves', () => {
+  const credential = {
+    issuanceId: 'iss_0001',
+    credentialId: 'cred_0001',
+    value: 'crv_0001_opaque',
+    fingerprint: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    acl: ['tunnel:connect'],
+  };
+
+  it('names every hostname the instance should serve, and keeps them readable', () => {
+    const hosts = ['example-instance.remote.invalid', 'machine.customer.invalid'];
+    const parsed = contract.RemoteCredentialSchema.safeParse({ ...credential, hosts });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.hosts).toEqual(hosts);
+  });
+
+  it('still accepts a credential without the field, as every earlier one was', () => {
+    const parsed = contract.RemoteCredentialSchema.safeParse(credential);
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.hosts).toBeUndefined();
+  });
+
+  it('refuses an empty list, which would read as "serve nothing" rather than "not said"', () => {
+    expect(contract.RemoteCredentialSchema.safeParse({ ...credential, hosts: [] }).success).toBe(
+      false
+    );
+  });
+
+  it('refuses an empty hostname rather than handing the instance nothing to serve', () => {
+    expect(contract.RemoteCredentialSchema.safeParse({ ...credential, hosts: [''] }).success).toBe(
+      false
+    );
+  });
+
+  it('tells the instance how to collect a replacement from a rotate command', () => {
+    const rotate = contract.RemoteCommandSchema.options.find(
+      (option) => option.shape.kind.value === 'rotate'
+    );
+    const shape = (rotate?.shape ?? {}) as { credentialId?: { description?: string } };
+    const description = shape.credentialId?.description ?? '';
+    expect(description).toContain('idempotencyKey');
+    expect(description).toContain('not a credential id');
+    expect(description).toContain('/v1/remote/credentials/issue');
+  });
+});

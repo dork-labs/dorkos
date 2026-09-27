@@ -68,6 +68,7 @@
     "remote/custom-address.json": "RemoteCustomAddressSchema",
     "remote/designation.json": "RemoteDesignationSchema",
     "remote/credential.json": "RemoteCredentialSchema",
+    "remote/credential-with-hosts.json": "RemoteCredentialSchema",
     "remote/command-open.json": "RemoteCommandSchema",
     "remote/command-keepalive.json": "RemoteCommandSchema",
     "remote/command-keepalive-reconnect.json": "RemoteCommandSchema",
