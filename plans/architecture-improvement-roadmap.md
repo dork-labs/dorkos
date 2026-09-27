@@ -104,3 +104,7 @@ Reviewed against `7168a5b7c69def16bb2cb48319b24285c9894a3f`. The [local marketpl
 The [lifecycle ownership map and pilot specification](../specs/local-workspace-lifecycle/02-specification.md) deliver DOR-2347's shaping outcome. Ordered central teardown and the concurrent-signal guard already exist. The proposed local workspace reconciler pilot addresses tracked work and bounded disposal; implementation and adoption into central startup/shutdown remain separately selected follow-ups. The spec remains `specified`, not `implemented`.
 
 This slice changes documentation only. Protected Cloud/Community work, authentication, runtime/transport contracts, shared UI, server composition and CI configuration remain outside its implementation scope. Live ownership and follow-up dispositions stay in the linked tracker records.
+
+## Class-local pilot selection, 2026-09-27
+
+At implementation baseline `4eb4d1f40b796253c7839990090626b6f79c75a9`, the operator selected [DOR-2428](https://linear.app/dorkspace/issue/DOR-2428) - Implement the class-local workspace reconciler lifecycle pilot. The [task plan](../specs/local-workspace-lifecycle/03-tasks.md) bounds production changes to the reconciler and focused adjacent tests. This supersedes only the local implementation deferral above. DOR-2429 central adoption, DOR-2340/DOR-2341 marketplace decisions and DOR-2344 coordination remain open or deferred under their existing owners. The server root does not call the new disposal API; no server-wide shutdown guarantee follows from this pilot.
