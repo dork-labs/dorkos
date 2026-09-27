@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -181,5 +181,73 @@ describe('NeedsYou', () => {
     expect(
       await screen.findByText('Approved: finish signing in to Gmail (work)')
     ).toBeInTheDocument();
+  });
+
+  it('drops an approved connect once its sign-in could no longer be finished, even on an open page', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'], shouldAdvanceTime: true });
+    try {
+      const approvedAt = (minutesAgo: number, id: string) =>
+        ({
+          ...REVIEW,
+          reviewRequestId: id,
+          action: { version: 1, kind: 'connect', providerInstanceId: 'p-1', toolkit: 'gmail' },
+          context: {
+            kind: 'connect',
+            providerInstanceId: 'p-1',
+            providerDisplayName: 'Composio',
+            toolkit: 'gmail',
+            label: id,
+          },
+          state: 'approved',
+          resolvedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+          resolution: {
+            kind: 'connect_authentication_required',
+            reviewRequestId: id,
+            authentication: { flowId: `flow-${id}` },
+          },
+        }) as unknown as ConnectorManagementReviewItem;
+      const transport = createMockTransport({
+        getConnectorAgentRequests: vi.fn().mockResolvedValue([]),
+        getConnectorManagementReviews: vi.fn(async (state) =>
+          state === 'resolved' ? [approvedAt(14, 'fresh'), approvedAt(16, 'expired')] : []
+        ),
+      });
+      renderStrip(transport);
+
+      // The sign-in lives 15 minutes: one approved 14 minutes ago still asks,
+      // one approved 16 minutes ago no longer does.
+      expect(
+        await screen.findByText('Approved: finish signing in to Gmail (fresh)')
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/Gmail \(expired\)/)).not.toBeInTheDocument();
+
+      // Left open two more minutes, the page ages the fresh one out too.
+      await act(async () => {
+        vi.advanceTimersByTime(2 * 60_000);
+      });
+      expect(screen.queryByTestId('needs-you')).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops asking about an unconfirmed change after a week', async () => {
+    const decided = (days: number, id: string) =>
+      ({
+        ...REVIEW,
+        reviewRequestId: id,
+        state: 'approved',
+        resolvedAt: new Date(Date.now() - days * 86_400_000).toISOString(),
+        resolution: { kind: 'outcome_unknown' },
+      }) as unknown as ConnectorManagementReviewItem;
+    const transport = createMockTransport({
+      getConnectorAgentRequests: vi.fn().mockResolvedValue([]),
+      getConnectorManagementReviews: vi.fn(async (state) =>
+        state === 'resolved' ? [decided(6, 'recent'), decided(8, 'old')] : []
+      ),
+    });
+    renderStrip(transport);
+    expect(await screen.findByTestId('needs-you-review-recent')).toBeInTheDocument();
+    expect(screen.queryByTestId('needs-you-review-old')).not.toBeInTheDocument();
   });
 });

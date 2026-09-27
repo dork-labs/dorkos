@@ -328,4 +328,17 @@ describe('AccountPanel', () => {
     await user.click(within(more).getByRole('button', { name: /^Sign in again/ }));
     await waitFor(() => expect(handlers.onSignInStarted).toHaveBeenCalledWith('flow-2'));
   });
+
+  it('asks for a review when the server says so even with nobody holding access', async () => {
+    const transport = transportFor(
+      summary({ agentCount: 0, reconciliationStatus: 'migration_needs_reconcile' })
+    );
+    vi.mocked(transport.getConnectorConnection).mockResolvedValue({
+      ...detail(summary({ agentCount: 0, reconciliationStatus: 'migration_needs_reconcile' })),
+      agents: [],
+    });
+    renderPanel(transport);
+    const fix = await screen.findByTestId('app-panel-fix');
+    expect(within(fix).getByRole('button', { name: 'Review' })).toBeInTheDocument();
+  });
 });

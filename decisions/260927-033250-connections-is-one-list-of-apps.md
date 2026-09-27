@@ -38,7 +38,9 @@ apps** (the catalog, with shelf chips and a small "For developers" group). Each 
 and the one thing to do next. A connected row opens a side panel whose address is `?app=<id>`,
 holding who can use it, recent activity and "Try it" prompts, with everything else folded under
 More. Pending agent requests and program reviews sit in a "Needs you" strip that renders only when
-something waits. The plumbing moves off the page: how DorkOS reaches apps and how chat apps behave
+something waits. Two decided reviews stay in it while they still need the person, by policy: an
+approved connect for as long as its sign-in can be finished (the shared sign-in lifetime, 15
+minutes by default), and an approved change DorkOS could not confirm for seven days. The plumbing moves off the page: how DorkOS reaches apps and how chat apps behave
 live in Settings › Connections, communities live in the sidebar switcher, and the built-in agent
 relay is never listed. `?region=` is retired; old links land on the list.
 

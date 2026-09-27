@@ -162,14 +162,23 @@ describe('ConnectionStore lifecycle and cleanup', () => {
     registry.register(provider, 'digest-b');
     expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
 
-    grantRead(db, connection.id);
+    // A revoked grant is no access at all: still nothing to re-check.
+    grantRead(db, connection.id, NOW);
+    registry.register(provider, 'digest-r');
+    expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe('ready');
+
+    // The same grant made live again (one row per subject and revision).
+    db.update(connectionOperationGrants)
+      .set({ revokedAt: null })
+      .where(eq(connectionOperationGrants.connectionId, connection.id))
+      .run();
     registry.register(provider, 'digest-c');
     const changed = db
       .select()
       .from(connectorProviderInstances)
       .where(eq(connectorProviderInstances.id, provider.instanceId))
       .get()!;
-    expect(changed.executionConfigGeneration).toBe(first.executionConfigGeneration + 2);
+    expect(changed.executionConfigGeneration).toBe(first.executionConfigGeneration + 3);
     expect(changed.executionConfigDigest).toBe('digest-c');
     expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe(
       'migration_needs_reconcile'
@@ -398,11 +407,14 @@ describe('ConnectionStore lifecycle and cleanup', () => {
   });
 });
 
-/** Give one named agent the read revision on a connection, as an owner save would. */
-function grantRead(db: Db, connectionId: string): void {
+/**
+ * Give one named agent the read revision on a connection, as an owner save
+ * would, optionally already revoked.
+ */
+function grantRead(db: Db, connectionId: string, revokedAt: string | null = null): void {
   db.insert(connectionOperationGrants)
     .values({
-      id: `grant-${connectionId}`,
+      id: `grant-${connectionId}-${revokedAt ? 'revoked' : 'live'}`,
       subjectType: 'agent',
       subjectId: 'agent-a',
       agentId: 'agent-a',
@@ -410,6 +422,7 @@ function grantRead(db: Db, connectionId: string): void {
       operationRevisionId: 'revision-1',
       createdBy: 'test',
       createdAt: NOW,
+      revokedAt,
     })
     .run();
 }

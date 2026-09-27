@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
+import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorAgentRequests,
   useConnectorManagementReviews,
@@ -10,17 +11,22 @@ import { accountAppName } from '../lib/app-list';
 import { pendingReviewLine, unsettledReviewLine, type NeedsYouLine } from '../lib/needs-you-copy';
 
 /**
- * How long a decided review whose result is unknown keeps asking to be checked.
+ * How long a decided review whose result is unknown keeps asking to be
+ * checked: a week, by policy (ADR 260927-033250). After that it is history,
+ * still reachable by its link, and no longer pressing.
  */
 const UNKNOWN_OUTCOME_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * How long an approved connect keeps asking the person to finish signing in.
- * Its sign-in is not read from here on purpose: reading a flow's state moves
- * it on, and the review dialog reads it only once the person continues. A
- * sign-in link expires well inside this window.
+ * How long an approved connect keeps asking the person to finish signing in:
+ * as long as its sign-in can be finished, and no longer. Its sign-in is not
+ * read from here on purpose: reading a flow's state moves it on, and the
+ * review dialog reads it only once the person continues.
  */
-const OPEN_SIGN_IN_WINDOW_MS = 60 * 60 * 1000;
+const OPEN_SIGN_IN_WINDOW_MS = CONNECTOR_AUTHENTICATION_FLOW_TTL_MS;
+
+/** How often an open page re-checks those windows, so old items age out. */
+const CLOCK_TICK_MS = 60 * 1000;
 
 interface NeedsYouProps {
   /** Catalog services by id, for app names. */
@@ -47,8 +53,7 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
   const pending = useConnectorManagementReviews('pending');
   const resolved = useConnectorManagementReviews('resolved');
 
-  // Read once per mount: the window is days wide, so a render never needs a fresher clock.
-  const [now] = useState(() => Date.now());
+  const now = useMinuteClock();
   const unsettled = (resolved.data ?? []).filter(
     (review) =>
       review.state === 'approved' &&
@@ -122,6 +127,16 @@ export function NeedsYou({ services, onOpenRequest, onOpenReview }: NeedsYouProp
       )}
     </section>
   );
+}
+
+/** The time, refreshed each minute, so an open page ages items out on its own. */
+function useMinuteClock(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
 
 /** One waiting decision: who asks for what, what it means, and Review. */

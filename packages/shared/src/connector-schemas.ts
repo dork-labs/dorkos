@@ -11,6 +11,13 @@ import { z } from 'zod';
 
 /** Maximum complete operation set supported by the provider discovery safety ceiling. */
 export const CONNECTOR_OPERATION_SELECTION_LIMIT = 100_000;
+
+/**
+ * How long a sign-in flow stays open before it expires, unless a server is
+ * configured otherwise. Shared so the app can stop asking a person to finish a
+ * sign-in that can no longer be finished.
+ */
+export const CONNECTOR_AUTHENTICATION_FLOW_TTL_MS = 15 * 60 * 1_000;
 /** Maximum event scopes one owner review can validate and apply atomically. */
 export const CONNECTOR_EVENT_REVIEW_SCOPE_LIMIT = 32;
 
