@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { Check, Clock3, ExternalLink, ShieldAlert, X } from 'lucide-react';
+import { ExternalLink, ShieldAlert } from 'lucide-react';
 import type {
   ConnectorManagementReviewContext,
   ConnectorManagementReviewItem,
 } from '@dorkos/shared/connector-schemas';
 import {
   useConnectorManagementReview,
-  useConnectorManagementReviews,
   useConnectorReviewAuthentication,
   useResolveConnectorManagementReview,
 } from '@/layers/entities/connectors';
@@ -29,151 +28,27 @@ import {
   presentManagementReview,
 } from '../lib/management-review-presentation';
 
-interface ManagementReviewsProps {
-  /** Review selected by card or `?review=` deep link. */
-  selectedReviewId: string | null;
-  /** Write an exact review id into URL state. */
-  onSelectReview: (reviewRequestId: string) => void;
-  /** Close the detail and remove it from URL state. */
-  onCloseReview: () => void;
-}
-
-/** Owner request list and URL-addressable decision detail. */
-export function ManagementReviews({
-  selectedReviewId,
-  onSelectReview,
-  onCloseReview,
-}: ManagementReviewsProps) {
-  const pending = useConnectorManagementReviews('pending');
-  const resolved = useConnectorManagementReviews('resolved');
-  const pendingItems = pending.data ?? [];
-  const resolvedItems = resolved.data ?? [];
-
-  return (
-    <section aria-labelledby="connection-reviews" className="space-y-3">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h3 id="connection-reviews" className="text-sm font-semibold">
-            Requests to review
-          </h3>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Approve or deny changes requested by tools and programs.
-          </p>
-        </div>
-        {pendingItems.length > 0 && (
-          <Badge variant="secondary">{pendingItems.length} waiting</Badge>
-        )}
-      </div>
-
-      {pending.isLoading ? (
-        <Skeleton className="h-20 rounded-lg" />
-      ) : pending.isError ? (
-        <QueryErrorState
-          title="Couldn’t load review requests"
-          description="No decision was made. Try loading them again."
-          onRetry={() => void pending.refetch()}
-          isRetrying={pending.isFetching}
-        />
-      ) : pendingItems.length === 0 ? (
-        <p className="text-muted-foreground rounded-lg border border-dashed p-4 text-sm">
-          No requests are waiting for you.
-        </p>
-      ) : (
-        <ul className="space-y-2">
-          {pendingItems.map((review) => (
-            <ReviewRow key={review.reviewRequestId} review={review} onSelect={onSelectReview} />
-          ))}
-        </ul>
-      )}
-
-      {resolved.isError ? (
-        <QueryErrorState
-          title="Couldn’t load recent decisions"
-          description="Try loading your recent access decisions again."
-          onRetry={() => void resolved.refetch()}
-          isRetrying={resolved.isFetching}
-        />
-      ) : resolvedItems.length > 0 ? (
-        <details className="rounded-lg border">
-          <summary className="focus-ring cursor-pointer rounded-lg px-4 py-3 text-sm font-medium">
-            Recent decisions ({resolvedItems.length})
-          </summary>
-          <ul className="space-y-1 border-t p-2">
-            {resolvedItems.map((review) => (
-              <ReviewRow key={review.reviewRequestId} review={review} onSelect={onSelectReview} />
-            ))}
-          </ul>
-        </details>
-      ) : null}
-
-      <ManagementReviewDialog
-        key={selectedReviewId ?? 'closed'}
-        reviewRequestId={selectedReviewId}
-        open={selectedReviewId !== null}
-        onOpenChange={(open) => {
-          if (!open) onCloseReview();
-        }}
-      />
-    </section>
-  );
-}
-
-function ReviewRow({
-  review,
-  onSelect,
-}: {
-  review: ConnectorManagementReviewItem;
-  onSelect: (reviewRequestId: string) => void;
-}) {
-  const presentation = presentManagementReview(review);
-  const outcomeUnknown =
-    review.state === 'approved' && review.resolution.kind === 'outcome_unknown';
-  return (
-    <li>
-      <button
-        data-testid={`connector-review-row-${review.reviewRequestId}`}
-        type="button"
-        onClick={() => onSelect(review.reviewRequestId)}
-        className="hover:bg-muted/50 focus-ring flex min-h-14 w-full items-center gap-3 rounded-lg border px-3 py-2 text-left"
-      >
-        <span className="bg-muted flex size-8 shrink-0 items-center justify-center rounded-md">
-          {review.state === 'pending' || review.state === 'resolving' ? (
-            <Clock3 className="size-4" aria-hidden />
-          ) : review.state === 'denied' ? (
-            <X className="size-4" aria-hidden />
-          ) : outcomeUnknown ? (
-            <ShieldAlert className="size-4" aria-hidden />
-          ) : (
-            <Check className="size-4" aria-hidden />
-          )}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{presentation.title}</span>
-          <span className="text-muted-foreground block truncate text-xs">
-            {presentation.summary}
-          </span>
-        </span>
-        <Badge
-          size="xs"
-          variant={
-            review.state === 'pending' || review.state === 'resolving' ? 'secondary' : 'outline'
-          }
-        >
-          {outcomeUnknown ? 'outcome unknown' : review.state}
-        </Badge>
-      </button>
-    </li>
-  );
-}
-
-function ManagementReviewDialog({
+/**
+ * A tool or program's request to change a connection, with the owner's
+ * decision. Opened from the page's "Needs you" strip or a `?review=` deep link.
+ */
+export function ManagementReviewDialog({
   reviewRequestId,
   open,
   onOpenChange,
+  onCloseAutoFocus,
 }: {
+  /** The request to show. */
   reviewRequestId: string | null;
+  /** Whether the dialog is open. */
   open: boolean;
+  /** Close the dialog. */
   onOpenChange: (open: boolean) => void;
+  /**
+   * Where focus goes once the dialog closes. The opener can be gone by then
+   * (a decided request leaves the "Needs you" strip), so the page decides.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   const reviewQuery = useConnectorManagementReview(reviewRequestId);
   const resolve = useResolveConnectorManagementReview();
@@ -219,6 +94,7 @@ function ManagementReviewDialog({
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
         data-testid="connector-review-dialog"
+        onCloseAutoFocus={onCloseAutoFocus}
         className="max-h-[90vh] sm:max-w-xl [&>[data-slot=dialog-content-close]]:absolute [&>[data-slot=dialog-content-close]]:top-4 [&>[data-slot=dialog-content-close]]:right-4 [&>[data-slot=dialog-content-close]]:m-0 [&>[data-slot=dialog-content-close]]:opacity-100"
       >
         <ResponsiveDialogHeader>

@@ -12,7 +12,7 @@ Visual companion session, 2026-09-26. The mockups are copied into [`mockups/`](.
 **Options:** A) one list for everything — chat apps are rows with a small "Chat" tag. B) two tabs, "Apps" and "Chat".
 **Chosen:** A. Every connection answers the same question — which agents get this — so they can share one list. Nothing new to learn.
 
-This reverses ADR `260804-021140`'s "two permanently visible regions, Messaging and Accounts". A superseding ADR is owed.
+This reverses ADR `260804-021140`'s "two permanently visible regions, Messaging and Accounts". An amending ADR is owed.
 
 **Moves off the page:** Composio/Nango keys and message-delivery settings → Settings › Connections (§7). Communities → its own home (§10). Agent requests → the chat card (§3). The internal Claude Code relay row disappears (§9).
 
@@ -44,7 +44,7 @@ The operator's point: "connected, but no agent can use it" is a dead end, and th
 - Already connected but not granted: only the "Let DorkBot use Gmail?" step.
 - Two accounts of the same app: the card asks which one.
 - In a room, only the owner sees and answers the card.
-- Over Telegram/Slack the card can't render; the agent says it asked for access and that the owner can answer in DorkOS (on the card where it asked, or under Agent requests on Connections).
+- Over Telegram/Slack the card can't render; the agent says it asked for access and that the owner can answer in DorkOS (on the card where it asked, or under Needs you on Connections).
 
 **As built (DOR-2415).** No "Allow once": the server has no one-time grant (DOR-2437). The level starts on the one covering what the agent asked for, the card shows the agent's reason and the actions it named, and says plainly what a level leaves out; an agent given less than it asked for is told so when it resumes. A paused or signed-out account is fixed from the card before any Allow. The record is past tense ("Allowed DorkBot to use Gmail"), because access can change later and the record stays in the transcript. A request that also asks for event updates goes to the full review on Connections. No link is sent to chat apps: every rule for when a link was safe to post (direct message only, owner only, not after a rename or a group message) kept failing open, so agents never receive a DorkOS URL. A safe way back to the card from a chat app is a follow-up.
 
@@ -153,7 +153,7 @@ Follows ADR `260804-021140`'s ban on "integration", "connector", "adapter" and "
 
 ## Follow-ups this design creates
 
-- ADR superseding `260804-021140` (one list, not two regions) — lands with DOR-2418.
+- ADR amending `260804-021140` (one list, not two regions) — lands with DOR-2418.
 - ADR for owner-wide "every agent" grants (§4) — lands with DOR-2420.
 
 Work items, all in the **DorkOS Connections** project. Build order: the first four unblock the page.

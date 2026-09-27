@@ -28,7 +28,7 @@ import {
   selectionsFromPreview,
 } from '../../lib/reconciliation-selection';
 import { useAccessReconciliation } from '../../model/use-access-reconciliation';
-import { AccessCardFrame } from './AccessCardFrame';
+import { AccessCardFrame, type AccessCardVariant } from './AccessCardFrame';
 import { AccessOutcome } from './AccessOutcome';
 import { AccountChoice } from './AccountChoice';
 import { AgentChecklist } from './AgentChecklist';
@@ -48,6 +48,8 @@ interface SharedCardProps {
   onFinished?: () => void;
   /** Open the exact per-action editor for this account. Hidden when omitted. */
   onEditExactActions?: (connectionId: string) => void;
+  /** A framed card of its own, or one section of a panel (see {@link AccessCardVariant}). */
+  variant?: AccessCardVariant;
   /** Extra classes for the card's outer frame. */
   className?: string;
 }
@@ -261,7 +263,9 @@ function AccessStep(
       titleId={titleId}
       toolkit={connection?.toolkit ?? (props.mode === 'agent' ? props.toolkit : undefined)}
       title={title}
-      subtitle={subtitle}
+      // Embedded in a panel that already names the account, the line would repeat it.
+      subtitle={props.variant === 'embedded' ? undefined : subtitle}
+      variant={props.variant}
       className={props.className}
     >
       {access.isLoading ? (

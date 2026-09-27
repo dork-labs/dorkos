@@ -247,7 +247,7 @@ export function wireLiveChangeBroadcasts(deps: LiveChangeBroadcastDeps): void {
  * failed. The request names an agent, a service and the agent's own reason,
  * and none of that belongs on a stream every connection shares, so each window
  * re-reads its owner-scoped `GET /api/connectors/agent-requests` instead. That
- * is what keeps the chat card, the room card and the Connections page's list in
+ * is what keeps the chat card, the room card and the Connections page's Needs you strip in
  * step across windows: answering in one retires the card in the others.
  */
 export interface ConnectorAgentRequestsChangedEvent {

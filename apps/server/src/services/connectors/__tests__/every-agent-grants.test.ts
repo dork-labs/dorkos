@@ -886,7 +886,7 @@ describe('every-agent grants', () => {
         resourceId: 'agent-adopted',
         summary:
           'Research Bot can use Gmail (Work Gmail, read, paused), because it is shared with every agent',
-        linkPath: '/connections?region=accounts',
+        linkPath: '/connections?app=connection-a',
       })
     );
   });

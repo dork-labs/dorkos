@@ -1,129 +1,355 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ConnectorConnectionSummary } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
-import { AccountRow, ConnectionWays } from '@/layers/features/connections';
+import type {
+  ConnectorAppConnections,
+  ConnectorConnectionSummary,
+} from '@dorkos/shared/connector-resource-schemas';
+import type { Transport } from '@dorkos/shared/transport';
+import {
+  AccountPanel,
+  AppList,
+  CatalogAppRowView,
+  ConnectionWays,
+  YourAppRowView,
+  type AppListData,
+  type YourAppRow,
+} from '@/layers/features/connections';
+import { buildYourApps } from '@/layers/features/connections/lib/app-list';
 import { cloudStatusKey } from '@/layers/features/cloud-link';
-import { AccountsRegion, MessagingRegion } from '@/layers/widgets/connections';
+import { ChatAppPanel } from '@/layers/widgets/connections/ui/ChatAppPanel';
 import { connectorKeys } from '@/layers/entities/connectors';
-import { CATALOG_KEY } from '@/layers/entities/relay';
-import { BINDINGS_QUERY_KEY } from '@/layers/entities/binding';
-import { configKeys } from '@/layers/entities/config';
+import { TransportProvider } from '@/layers/shared/model';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { createPlaygroundTransport } from '../playground-transport';
+import {
+  MOCK_AGENT_NAMES,
+  MOCK_CATALOG_SERVICES,
+  MOCK_CHAT_APPS,
+  MOCK_CHAT_BINDINGS,
+  MOCK_CONNECTIONS,
+  MOCK_GMAIL_USAGE,
+  mockAccessPreview,
+  mockConnection,
+  mockConnectionDetail,
+} from '../mock-samples';
 import { ConnectionAccessCardShowcase } from './ConnectionAccessCardShowcase';
 import { AgentRequestCardShowcase } from './AgentRequestCardShowcase';
 
-function mockAccount(over: Partial<ConnectorConnectionSummary>): ConnectorConnectionSummary {
-  return {
-    connectionId: 'ca_mock_1' as ConnectorConnectionSummary['connectionId'],
-    providerInstanceId: 'provider-1' as ConnectorConnectionSummary['providerInstanceId'],
-    toolkit: 'gmail',
-    label: 'work',
-    identityHint: 'work@example.com',
-    lifecycle: 'connected',
-    authenticationStatus: 'active',
-    reconciliationStatus: 'ready',
-    authoritySync: { status: 'ready' },
-    mode: 'managed',
-    custody: 'managed',
-    payer: 'dorkos_managed',
-    agentCount: 2,
-    everyAgent: null,
-    subscriptionCount: 0,
-    usage: { status: 'available', logicalOperationCount: 12, attemptCount: 12 },
-    warnings: [],
-    ...over,
-  };
+const SERVICES = new Map(MOCK_CATALOG_SERVICES.map((service) => [service.serviceSlug, service]));
+
+/** Every "Yours" row state, built by the real row logic from the fixtures. */
+const ROWS: YourAppRow[] = buildYourApps({
+  connections: MOCK_CONNECTIONS,
+  chatApps: MOCK_CHAT_APPS,
+  bindings: MOCK_CHAT_BINDINGS,
+  waitingByChatApp: { 'telegram-1': 1 },
+  agentNames: MOCK_AGENT_NAMES,
+  services: SERVICES,
+  pendingSignIn: { flowId: 'flow-github', toolkit: 'github' },
+});
+
+const NOTHING_SET_UP: ConnectorAppConnections = {
+  ways: [],
+  newApps: { status: 'setup_needed', reason: 'nothing_set_up' },
+};
+
+/** Minutes ago, as the ISO time the server would send. */
+function ago(minutes: number): string {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
 }
 
 /**
- * Connections surface: the service tile, the connected-account row, the shared
- * "who can use it" access card, and — see
- * {@link AccountsRegionShowcase}, {@link MessagingRegionShowcase} — the two
- * composed regions the leaves live inside of.
+ * The list's reads, spelled out: the list is presentational over
+ * `useAppList`, so a showcase hands it the data a server would have.
+ */
+function listData(yours: YourAppRow[], owned: string[]): AppListData {
+  const catalog = {
+    data: {
+      pages: [{ services: MOCK_CATALOG_SERVICES, warnings: [], appConnections: NOTHING_SET_UP }],
+      pageParams: [undefined],
+    },
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: async () => undefined,
+    refetch: async () => undefined,
+  } as unknown as AppListData['catalog'];
+  const ownedSet = new Set(owned);
+  return {
+    yours,
+    allYours: yours,
+    available: MOCK_CATALOG_SERVICES.filter((service) => !ownedSet.has(service.serviceSlug)),
+    services: SERVICES,
+    agentNames: MOCK_AGENT_NAMES,
+    chatApps: MOCK_CHAT_APPS,
+    owned: { accounts: ownedSet, chatApps: ownedSet },
+    yoursLoading: false,
+    yoursError: false,
+    yoursRefreshing: false,
+    retryYours: () => undefined,
+    catalog,
+    relay: {
+      enabled: true,
+      isLoading: false,
+      isError: false,
+      isRetrying: false,
+      retry: () => undefined,
+    },
+    chatAppsError: false,
+    retryChatApps: () => undefined,
+  };
+}
+
+/** A playground server for the panels: the fixtures, answered as the real one would. */
+function panelTransport(connection: ConnectorConnectionSummary): Transport {
+  const base = createPlaygroundTransport();
+  const overrides: Partial<Record<keyof Transport, unknown>> = {
+    getConnectorConnection: async () => mockConnectionDetail(connection),
+    getOperatorConnectorUsage: async () => ({ items: MOCK_GMAIL_USAGE }),
+    previewConnectorReconciliation: async ({ connectionId }: { connectionId: string }) =>
+      mockAccessPreview(connectionId),
+    getConnectorCatalog: async () => ({ services: MOCK_CATALOG_SERVICES, warnings: [] }),
+    listMeshAgents: async () => ({
+      agents: [
+        { id: 'dorkbot', name: 'DorkBot', isSystem: true },
+        { id: 'mailroom', name: 'mailroom' },
+      ],
+    }),
+    listMeshAgentPaths: async () => ({
+      agents: [{ id: 'dorkbot', name: 'DorkBot', projectPath: '/home/you/.dork/agents/dorkbot' }],
+    }),
+    getBindings: async () => MOCK_CHAT_BINDINGS,
+    listUnclaimedChats: async () => [
+      {
+        id: 'claim-1',
+        adapterId: 'telegram-1',
+        chatId: '42',
+        channelType: 'dm',
+        chatKind: 'dm',
+        platformChatType: 'private',
+        senderName: 'Sam',
+        senderId: 'sam_k',
+        chatTitle: null,
+        status: 'pending',
+        messageCount: 1,
+        firstSeenAt: ago(10),
+        lastSeenAt: ago(10),
+        decidedAt: null,
+        decidedAgentId: null,
+      },
+    ],
+    getAdapterEvents: async () => ({
+      events: [
+        { id: 'e1', subject: 'adapter.connected', status: 'ok', sentAt: ago(1440), metadata: null },
+        {
+          id: 'e2',
+          subject: 'adapter.message_received',
+          status: 'ok',
+          sentAt: ago(60),
+          metadata: null,
+        },
+        {
+          id: 'e3',
+          subject: 'adapter.message_sent',
+          status: 'ok',
+          sentAt: ago(58),
+          metadata: null,
+        },
+      ],
+    }),
+  };
+  return new Proxy(base, {
+    get: (target, prop, receiver) =>
+      typeof prop === 'string' && prop in overrides
+        ? overrides[prop as keyof Transport]
+        : (Reflect.get(target, prop, receiver) as unknown),
+  });
+}
+
+/** A panel body framed the way the side panel frames it, with its own server. */
+function PanelFrame({
+  connection,
+  children,
+}: {
+  connection: ConnectorConnectionSummary;
+  children: ReactNode;
+}) {
+  const [transport] = useState(() => panelTransport(connection));
+  const [client] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
+      })
+  );
+  return (
+    <QueryClientProvider client={client}>
+      <TransportProvider transport={transport}>
+        <div className="bg-background max-w-md rounded-xl border p-6">{children}</div>
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+}
+
+/**
+ * The Connections page's parts (design record `connections-one-list`): every
+ * row state, the list first-visit and full, both side panels, the shared
+ * access card, and Settings › Connections' ways.
  */
 export function ConnectionsShowcases() {
+  const firstVisit = useMemo(() => listData([], []), []);
+  const withApps = useMemo(
+    () => listData(ROWS, ['gmail', 'notion', 'googlecalendar', 'linear', 'telegram']),
+    []
+  );
+  const noop = () => undefined;
+
   return (
     <>
       <PlaygroundSection
-        title="AccountRow"
-        description="One connected account: service icon, Gmail (work) naming, lifecycle status, and its own server-composed custody sentence."
+        title="AppRow"
+        description="One row per app. The row tells you the state; its right side is the one thing to do next. Built by the real row logic from fixtures."
       >
-        <ShowcaseLabel>Active, managed custody</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ul className="max-w-xl">
-            <AccountRow connection={mockAccount({})} onOpenDetail={() => {}} />
+        <ShowcaseLabel>Yours: connecting, broken, review, ready, waiting, paused</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <ul className="max-w-2xl space-y-0.5">
+            {ROWS.map((row) => (
+              <YourAppRowView key={row.id} row={row} onOpen={noop} onAction={noop} />
+            ))}
           </ul>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Two accounts of one service</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ul className="max-w-xl space-y-2">
-            <AccountRow connection={mockAccount({})} onOpenDetail={() => {}} />
-            <AccountRow
-              connection={mockAccount({
-                connectionId: 'ca_mock_2' as ConnectorConnectionSummary['connectionId'],
-                label: 'personal',
-              })}
-              onOpenDetail={() => {}}
+        <ShowcaseLabel>
+          All apps: Connect, the Chat tag, For developers, and turned off
+        </ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <ul className="max-w-2xl space-y-0.5">
+            <CatalogAppRowView
+              service={MOCK_CATALOG_SERVICES[5]}
+              chat={false}
+              actionLabel="Connect"
+              onConnect={noop}
             />
-          </ul>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Expired (self-host custody)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ul className="max-w-xl">
-            <AccountRow
-              connection={mockAccount({
-                connectionId: 'ca_mock_3' as ConnectorConnectionSummary['connectionId'],
-                toolkit: 'slack',
-                label: 'team',
-                authenticationStatus: 'expired',
-                lifecycle: 'paused',
-                mode: 'byo',
-                custody: 'self-host',
-                payer: 'operator_byo',
-              })}
-              onOpenDetail={() => {}}
+            <CatalogAppRowView
+              service={MOCK_CATALOG_SERVICES[2]}
+              chat
+              actionLabel="Connect"
+              onConnect={noop}
             />
-          </ul>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Paused by the operator</ShowcaseLabel>
-        <ShowcaseDemo>
-          <ul className="max-w-xl">
-            <AccountRow
-              connection={mockAccount({
-                connectionId: 'ca_mock_4' as ConnectorConnectionSummary['connectionId'],
-                lifecycle: 'paused',
-              })}
-              onOpenDetail={() => {}}
+            <CatalogAppRowView
+              service={MOCK_CATALOG_SERVICES[7]}
+              chat
+              actionLabel="Set up"
+              onConnect={noop}
+            />
+            <CatalogAppRowView
+              service={MOCK_CATALOG_SERVICES[3]}
+              chat
+              actionLabel="Connect"
+              unavailableLabel="Turned off"
             />
           </ul>
         </ShowcaseDemo>
       </PlaygroundSection>
 
+      <PlaygroundSection
+        title="AppList"
+        description="The page's one list: search, Yours, then All apps with shelf chips and a small For developers group. On a first visit there is no Yours at all."
+      >
+        <ShowcaseLabel>First visit: nothing connected</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <div className="max-w-2xl">
+            <AppListDemo data={firstVisit} />
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>With apps</ShowcaseLabel>
+        <ShowcaseDemo responsive>
+          <div className="max-w-2xl">
+            <AppListDemo data={withApps} />
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="AccountPanel"
+        description="An app account's side panel: who can use it, what agents did lately, and a few things to try. Everything else is under More. A broken account puts its one fix on top."
+      >
+        <ShowcaseLabel>Connected</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PanelFrame connection={MOCK_CONNECTIONS[0]}>
+            <AccountPanelDemo />
+          </PanelFrame>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Signed out</ShowcaseLabel>
+        <ShowcaseDemo>
+          <PanelFrame connection={mockConnection({ authenticationStatus: 'expired' })}>
+            <AccountPanelDemo />
+          </PanelFrame>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="ChatAppPanel"
+        description="A chat app's side panel asks who answers. People who messaged the bot wait under it for your OK; the bot's settings are under More."
+      >
+        <ShowcaseDemo>
+          <PanelFrame connection={MOCK_CONNECTIONS[0]}>
+            <ChatAppPanel
+              entry={MOCK_CHAT_APPS[0]}
+              instance={MOCK_CHAT_APPS[0].instances[0]}
+              onClose={noop}
+            />
+          </PanelFrame>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
       <ConnectionAccessCardShowcase />
       <AgentRequestCardShowcase />
-      <AccountsRegionShowcase />
-      <MessagingRegionShowcase />
       <ConnectionWaysShowcase />
     </>
   );
 }
 
+/** The list with a search box that works on the fixture rows. */
+function AppListDemo({ data }: { data: AppListData }) {
+  const [query, setQuery] = useState('');
+  const noop = () => undefined;
+  return (
+    <AppList
+      query={query}
+      onQueryChange={setQuery}
+      data={data}
+      onOpenRow={noop}
+      onRowAction={noop}
+      onConnect={noop}
+    />
+  );
+}
+
+/** The Gmail account's panel, with every callback a no-op. */
+function AccountPanelDemo() {
+  const noop = () => undefined;
+  return (
+    <AccountPanel
+      connectionId="conn-gmail-personal"
+      onSignInStarted={noop}
+      onEditExactActions={noop}
+      onAddAnother={noop}
+      onClose={noop}
+    />
+  );
+}
+
 /**
- * Build an isolated, pre-seeded `QueryClient` for a connections-region demo.
+ * Build an isolated, pre-seeded `QueryClient` for the ways demo.
  *
- * Every region under `/connections` reads exclusively from hooks — see
- * `AccountsRegion`/`MessagingRegion` for why — so an isolated client is the
- * only way to show them with fixture data, the same pattern
- * `MessagingConnectionsShowcase` (`RelayShowcases.tsx`) uses for the panel one
- * level down.
- *
- * @param seed - Populates the client's cache before the region mounts.
+ * @param seed - Populates the client's cache before the section mounts.
  */
 function makeConnectionsQueryClient(seed: (qc: QueryClient) => void): QueryClient {
   const qc = new QueryClient({
@@ -131,108 +357,6 @@ function makeConnectionsQueryClient(seed: (qc: QueryClient) => void): QueryClien
   });
   seed(qc);
   return qc;
-}
-
-/**
- * `AccountsRegion` in its first-run state — no connectable services yet.
- *
- * The first-run view still reads the pending access-request collection, so the
- * showcase seeds every query the composed region needs before it mounts.
- */
-function AccountsRegionShowcase() {
-  const client = useMemo(
-    () =>
-      makeConnectionsQueryClient((qc) => {
-        qc.setQueryData(connectorKeys.connections(), { connections: [] });
-        qc.setQueryData(connectorKeys.providers(), []);
-        qc.setQueryData(connectorKeys.agentRequestList('pending'), []);
-        qc.setQueryData(connectorKeys.catalog(''), {
-          pages: [{ services: [], warnings: [] }],
-          pageParams: [undefined],
-        });
-      }),
-    []
-  );
-
-  return (
-    <PlaygroundSection
-      title="AccountsRegion"
-      description="The composed Accounts region in its calm first-run state, with one service action. Your own Composio or Nango key is set in Settings › Connections, which the region points to."
-    >
-      <ShowcaseDemo>
-        <QueryClientProvider client={client}>
-          {/* No extra padding here — `ConnectionsPage` renders the region
-              directly inside `PageContainer` with none of its own, and this
-              region's rows are tight enough on a phone width that framing it
-              any narrower than the app does wraps text the app never wraps. */}
-          <div className="max-w-2xl">
-            <AccountsRegion />
-          </div>
-        </QueryClientProvider>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-/**
- * `MessagingRegion` with one connected adapter and nothing waiting on a
- * decision — `ClaimFeed` renders nothing in this fixture (an empty claim
- * queue), which is itself a real, honest state rather than a demo gap.
- */
-function MessagingRegionShowcase() {
-  const client = useMemo(
-    () =>
-      makeConnectionsQueryClient((qc) => {
-        qc.setQueryData(configKeys.current(), { relay: { enabled: true } });
-        qc.setQueryData(CATALOG_KEY, [
-          {
-            manifest: {
-              type: 'telegram',
-              displayName: 'Telegram',
-              description: 'Send and receive messages via Telegram bots.',
-              iconId: 'telegram',
-              category: 'messaging' as const,
-              builtin: true,
-              multiInstance: false,
-              configFields: [],
-            },
-            instances: [
-              {
-                id: 'telegram-1',
-                enabled: true,
-                label: 'Team bot',
-                status: {
-                  id: 'telegram-1',
-                  type: 'telegram' as const,
-                  displayName: 'Telegram',
-                  state: 'connected' as const,
-                  messageCount: { inbound: 128, outbound: 94 },
-                  errorCount: 0,
-                },
-              },
-            ],
-          },
-        ]);
-        qc.setQueryData(BINDINGS_QUERY_KEY, []);
-      }),
-    []
-  );
-
-  return (
-    <PlaygroundSection
-      title="MessagingRegion"
-      description="The composed panel behind Connections' Messaging region — the health bar and the live adapter, real components throughout. The claim queue renders nothing in this fixture (see TSDoc)."
-    >
-      <ShowcaseDemo>
-        <QueryClientProvider client={client}>
-          {/* See AccountsRegionShowcase — no extra padding, for the same reason. */}
-          <div className="max-w-2xl">
-            <MessagingRegion />
-          </div>
-        </QueryClientProvider>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
 }
 
 /** A key's setup status for the ways showcase. */
@@ -252,9 +376,8 @@ function mockKey(over: Partial<ConnectorProviderStatus>): ConnectorProviderStatu
 
 /**
  * `ConnectionWays` (Settings › Connections, DOR-2419) in its two shapes: nothing
- * set up yet, and a DorkOS account plus a working Composio key beside a Nango
- * key the server refused. Each gets its own client, since both read the same
- * three queries.
+ * set up yet, and a DorkOS account plus a working Composio key (marked as the
+ * one new apps use) beside a Nango key the server refused.
  */
 function ConnectionWaysShowcase() {
   const empty = useMemo(
@@ -265,15 +388,18 @@ function ConnectionWaysShowcase() {
           accountLabel: null,
           lastHeartbeatAt: null,
         });
-        qc.setQueryData(connectorKeys.providers(), [
-          mockKey({}),
-          mockKey({
-            type: 'nango',
-            providerInstanceId: 'provider-2' as ConnectorProviderStatus['providerInstanceId'],
-            custody: 'self-host',
-            disclosure: 'Your Nango server keeps your logins on a machine you run.',
-          }),
-        ]);
+        qc.setQueryData(connectorKeys.providers(), {
+          providers: [
+            mockKey({}),
+            mockKey({
+              type: 'nango',
+              providerInstanceId: 'provider-2' as ConnectorProviderStatus['providerInstanceId'],
+              custody: 'self-host',
+              disclosure: 'Your Nango server keeps your logins on a machine you run.',
+            }),
+          ],
+          appConnections: NOTHING_SET_UP,
+        });
         qc.setQueryData(connectorKeys.connections(), { connections: [] });
       }),
     []
@@ -281,32 +407,39 @@ function ConnectionWaysShowcase() {
   const setUp = useMemo(
     () =>
       makeConnectionsQueryClient((qc) => {
+        const composio = { kind: 'own_key' as const, type: 'composio', status: 'ready' as const };
         qc.setQueryData(cloudStatusKey, {
           linked: true,
           accountLabel: 'you@example.com',
           lastHeartbeatAt: null,
         });
-        qc.setQueryData(connectorKeys.providers(), [
-          mockKey({ configured: true, registered: true, keyKind: 'project' }),
-          mockKey({
-            type: 'nango',
-            providerInstanceId: 'provider-2' as ConnectorProviderStatus['providerInstanceId'],
-            custody: 'self-host',
-            configured: true,
-            error: 'Set NANGO_ENCRYPTION_KEY on the server, then save the key again.',
-          }),
-        ]);
+        qc.setQueryData(connectorKeys.providers(), {
+          providers: [
+            mockKey({ configured: true, registered: true, keyKind: 'project' }),
+            mockKey({
+              type: 'nango',
+              providerInstanceId: 'provider-2' as ConnectorProviderStatus['providerInstanceId'],
+              custody: 'self-host',
+              configured: true,
+              error: 'Set NANGO_ENCRYPTION_KEY on the server, then save the key again.',
+            }),
+          ],
+          appConnections: {
+            ways: [{ kind: 'dorkos_account', type: 'dorkos-managed', status: 'ready' }, composio],
+            newApps: { status: 'ready', way: composio },
+          },
+        });
         qc.setQueryData(connectorKeys.connections(), {
           connections: [
-            mockAccount({}),
-            mockAccount({
+            mockConnection({}),
+            mockConnection({
               connectionId: 'ca_mock_5' as ConnectorConnectionSummary['connectionId'],
               toolkit: 'notion',
               label: 'team',
               mode: 'byo',
               payer: 'operator_byo',
             }),
-            mockAccount({
+            mockConnection({
               connectionId: 'ca_mock_6' as ConnectorConnectionSummary['connectionId'],
               toolkit: 'linear',
               label: 'work',
@@ -322,7 +455,7 @@ function ConnectionWaysShowcase() {
   return (
     <PlaygroundSection
       title="ConnectionWays"
-      description="Settings › Connections: how DorkOS reaches your apps, with each way's state, how many apps use it, and Change key / Remove…."
+      description="Settings › Connections: how DorkOS reaches your apps, with each way's state, how many apps use it, which one new apps use, and Change key / Remove…."
     >
       <ShowcaseLabel>Nothing set up yet</ShowcaseLabel>
       <ShowcaseDemo>
@@ -333,7 +466,9 @@ function ConnectionWaysShowcase() {
         </QueryClientProvider>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>DorkOS account, a working key, and a refused key</ShowcaseLabel>
+      <ShowcaseLabel>
+        DorkOS account, a working key used for new apps, and a refused key
+      </ShowcaseLabel>
       <ShowcaseDemo>
         <QueryClientProvider client={setUp}>
           <div className="max-w-2xl">

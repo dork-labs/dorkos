@@ -303,8 +303,12 @@ export interface OperatingSkill {
  *   an agent reads is now `permission_blocked` with `approvable: true` (it may
  *   ask with `request_permission`), not `tier_ceiling`. An agent seeded at 31
  *   would stop and give up on a refusal it can now ask past.
+ * - 33: the Connections page became one list of apps (DOR-2418). The
+ *   `operating-dorkos` page named its two retired regions, Accounts and
+ *   Messaging, so an agent seeded at 32 would send a person to a section that
+ *   no longer exists.
  */
-export const OPERATING_SKILLS_VERSION = 32;
+export const OPERATING_SKILLS_VERSION = 33;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

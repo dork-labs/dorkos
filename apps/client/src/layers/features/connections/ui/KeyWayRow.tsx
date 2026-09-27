@@ -66,11 +66,14 @@ type Confirming = 'change' | 'remove' | null;
 export function KeyWayRow({
   status,
   apps,
+  usedForNewApps = false,
 }: {
   /** The key's setup status from `GET /api/connectors/providers`. */
   status: ConnectorProviderStatus;
   /** The live apps that reach their service through this key. */
   apps: readonly ImpactApp[];
+  /** True when new apps connect through this key (see {@link WayRow}). */
+  usedForNewApps?: boolean;
 }) {
   const [changing, setChanging] = useState(false);
   const [confirming, setConfirming] = useState<Confirming>(null);
@@ -92,6 +95,7 @@ export function KeyWayRow({
       name={keyWayName(status.type)}
       detail={detail}
       status={keyStatus(status)}
+      usedForNewApps={usedForNewApps}
       actions={
         <>
           <Button size="sm" variant="outline" onClick={startChange} disabled={changing}>

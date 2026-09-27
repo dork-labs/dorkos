@@ -71,7 +71,7 @@ describe('Accounts turn awareness', () => {
       // The agent says where the owner answers, and never sends a link.
       expect(text).toContain('on the card in the conversation where you asked');
       expect(text).toContain('the owner can answer in DorkOS');
-      expect(text).toContain('under Agent requests on the Connections page');
+      expect(text).toContain('under Needs you on the Connections page');
       expect(text).toContain('Never send a link to DorkOS');
       expect(text).not.toContain('openUrl');
     }

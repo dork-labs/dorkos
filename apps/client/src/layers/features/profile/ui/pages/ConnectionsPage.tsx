@@ -23,7 +23,7 @@ export function ConnectionsPage({ member }: ProfilePageContentProps) {
 
   return (
     <div className="space-y-6">
-      <AgentConnectionAccessList agentId={agent.id} onManage={() => openConnections('accounts')} />
+      <AgentConnectionAccessList agentId={agent.id} onManage={() => openConnections()} />
       <section aria-labelledby="agent-messaging-access" className="space-y-3">
         <div>
           <h3 id="agent-messaging-access" className="text-sm font-semibold">

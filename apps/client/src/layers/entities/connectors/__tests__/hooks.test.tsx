@@ -7,9 +7,11 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ConnectorProviderStatus } from '@dorkos/shared/connector-provider';
+import type { ConnectorAppConnections } from '@dorkos/shared/connector-resource-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import {
+  useConnectorAppConnections,
   useConnectorProviders,
   useSaveConnectorCredential,
   useDeleteConnectorCredential,
@@ -44,10 +46,21 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+const APP_CONNECTIONS: ConnectorAppConnections = {
+  ways: [{ kind: 'own_key', type: 'composio', status: 'ready' }],
+  newApps: {
+    status: 'ready',
+    way: { kind: 'own_key', type: 'composio', status: 'ready' },
+  },
+};
+
 describe('useConnectorProviders', () => {
   it('fetches provider statuses via transport.getConnectorProviders', async () => {
     const transport = createMockTransport();
-    vi.mocked(transport.getConnectorProviders).mockResolvedValue([providerStatus]);
+    vi.mocked(transport.getConnectorProviders).mockResolvedValue({
+      providers: [providerStatus],
+      appConnections: APP_CONNECTIONS,
+    });
 
     const { result } = renderHook(() => useConnectorProviders(), {
       wrapper: createWrapper(transport).wrapper,
@@ -55,6 +68,25 @@ describe('useConnectorProviders', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([providerStatus]);
+  });
+
+  it('reads which way new apps use from the same response, in one request', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.getConnectorProviders).mockResolvedValue({
+      providers: [providerStatus],
+      appConnections: APP_CONNECTIONS,
+    });
+    const { wrapper } = createWrapper(transport);
+
+    const { result } = renderHook(
+      () => ({ providers: useConnectorProviders(), apps: useConnectorAppConnections() }),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.apps.isSuccess).toBe(true));
+    expect(result.current.apps.data).toEqual(APP_CONNECTIONS);
+    expect(result.current.providers.data).toEqual([providerStatus]);
+    expect(transport.getConnectorProviders).toHaveBeenCalledTimes(1);
   });
 
   it('exposes error state on transport failure', async () => {

@@ -44,19 +44,60 @@ async function fetchCatalog(page: Page): Promise<CatalogEntry[]> {
 }
 
 /**
- * Opens the Messaging region of the Connections page — where the adapters this
- * spec drives now live.
+ * Opens the Connections page, where every chat app is a row in one list.
  *
- * Integrations left the Settings dialog and became half of the Connections page
- * (DOR-857). `?settings=integrations` still resolves, but only as a *redirect*
- * to this page, so waiting on the Settings dialog after it waits forever. This
- * goes to the destination directly; `?region=messaging` is the search param the
- * page reads to scroll the half we want into view.
+ * Integrations left the Settings dialog for the Connections page (DOR-857),
+ * and the page became one list of apps (DOR-2418). `?settings=integrations`
+ * still resolves, but only as a redirect here, so this goes straight to it.
  */
-async function openMessagingRegion(page: Page) {
-  await page.goto('/connections?region=messaging');
+async function openConnections(page: Page) {
+  await page.goto('/connections');
   await new BasePage(page).waitForAppReady();
-  await expect(page.getByRole('button', { name: 'Add Slack' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^(All apps|Apps)$/ })).toBeVisible();
+}
+
+/**
+ * Opens the add wizard for one chat app, however the list offers it today.
+ *
+ * The suite shares one server, so another spec may already have set this app
+ * up. Not set up yet: its row in "All apps" says Connect, and an app with two
+ * uses (Slack) asks which one first. Already set up: it sits in "Yours", and a
+ * second one is added from its side panel, under More. Returns false when the
+ * app offers neither (it cannot be added again).
+ *
+ * @param displayName - The chat app's name, e.g. "Slack".
+ */
+async function openAddWizard(page: Page, displayName: string): Promise<boolean> {
+  await openConnections(page);
+  const connect = page.getByRole('button', { name: `Connect ${displayName}` });
+  const setUp = page.getByRole('button', { name: `Set up ${displayName}` });
+  if (
+    await connect
+      .or(setUp)
+      .first()
+      .isVisible()
+      .catch(() => false)
+  ) {
+    await connect.or(setUp).first().click();
+    const choice = page.getByTestId('app-use-choice');
+    const chatUse = choice.getByRole('button', { name: `Talk to my agents in ${displayName}` });
+    // Only an app with two uses asks; the wizard or the choice, whichever comes.
+    await expect(wizard(page).or(choice)).toBeVisible();
+    if (await choice.isVisible()) await chatUse.click();
+    return true;
+  }
+  const row = page
+    .locator('[data-testid^="app-row-"]', { hasText: displayName })
+    .filter({ hasText: 'Chat' })
+    .first();
+  if (!(await row.isVisible().catch(() => false))) return false;
+  await row.getByRole('button').first().click();
+  const panel = page.getByTestId('app-panel');
+  await panel.getByRole('button', { name: 'More' }).click();
+  const another = panel.getByRole('button', { name: `Set up another ${displayName}` });
+  if (!(await another.isVisible().catch(() => false))) return false;
+  await another.click();
+  return true;
 }
 
 /** The setup wizard dialog, whichever adapter it was opened for. */
@@ -65,20 +106,18 @@ function wizard(page: Page) {
 }
 
 /**
- * Opens Configure on one already-added adapter.
- *
- * Every per-adapter action moved behind a kebab menu whose label reads
- * "Connection actions" on every card (DOR-857), so there is no longer a
- * "Configure <name>" button to click and nothing in the menu distinguishes one
- * card from another. The card's own test id is what picks the right one.
+ * Opens a chat app's settings (the setup wizard in edit mode) from its side
+ * panel: the panel's address is `?app=<id>`, and Settings sits under More.
  *
  * @param adapterId - The instance id the adapter was created with.
  */
 async function openConfigure(page: Page, adapterId: string) {
-  const card = page.getByTestId(`adapter-card-${adapterId}`);
-  await expect(card).toBeVisible();
-  await card.getByRole('button', { name: 'Connection actions' }).click();
-  await page.getByRole('menuitem', { name: 'Configure' }).click();
+  await page.goto(`/connections?app=${encodeURIComponent(adapterId)}`);
+  await new BasePage(page).waitForAppReady();
+  const panel = page.getByTestId('app-panel');
+  await expect(panel).toBeVisible();
+  await panel.getByRole('button', { name: 'More' }).click();
+  await panel.getByRole('button', { name: /^Settings/ }).click();
 }
 
 /**
@@ -171,9 +210,7 @@ async function labelsAcrossSteps(page: Page, stepCount: number): Promise<Set<str
 test.describe('Adapter setup wizard — every declared field reaches a screen', () => {
   test('the Slack access controls render in the add wizard', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    await openMessagingRegion(page);
-
-    await page.getByRole('button', { name: 'Add Slack' }).click();
+    expect(await openAddWizard(page, 'Slack')).toBe(true);
     const dialog = wizard(page);
     await expect(dialog).toBeVisible();
     await pastAgentStep(page);
@@ -194,8 +231,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
   test('surfacing the DM policy leaves it on its safe default', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    await openMessagingRegion(page);
-    await page.getByRole('button', { name: 'Add Slack' }).click();
+    expect(await openAddWizard(page, 'Slack')).toBe(true);
     await pastAgentStep(page);
 
     const dialog = wizard(page);
@@ -233,8 +269,6 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
     try {
       await page.setViewportSize(DESKTOP);
-      await openMessagingRegion(page);
-
       await openConfigure(page, 'slack-legacy-config');
       const dialog = wizard(page);
       await expect(dialog.getByText('Edit Slack')).toBeVisible();
@@ -280,7 +314,6 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
     try {
       await page.setViewportSize(DESKTOP);
-      await openMessagingRegion(page);
       await openConfigure(page, 'slack-stored-values');
       const dialog = wizard(page);
 
@@ -333,7 +366,6 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
     try {
       await page.setViewportSize(DESKTOP);
-      await openMessagingRegion(page);
       await openConfigure(page, 'slack-refused-save');
       const dialog = wizard(page);
 
@@ -361,8 +393,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
   test('the approvers field is reachable by keyboard', async ({ page }) => {
     await page.setViewportSize(DESKTOP);
-    await openMessagingRegion(page);
-    await page.getByRole('button', { name: 'Add Slack' }).click();
+    expect(await openAddWizard(page, 'Slack')).toBe(true);
     await pastAgentStep(page);
 
     const dialog = wizard(page);
@@ -381,8 +412,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
 
   test('the access controls stay on screen at 390px', async ({ page }) => {
     await page.setViewportSize(MOBILE);
-    await openMessagingRegion(page);
-    await page.getByRole('button', { name: 'Add Slack' }).click();
+    expect(await openAddWizard(page, 'Slack')).toBe(true);
     await pastAgentStep(page);
 
     const dialog = wizard(page);
@@ -405,10 +435,7 @@ test.describe('Adapter setup wizard — every declared field reaches a screen', 
     expect(external.length, 'no external adapters in the catalog').toBeGreaterThan(0);
 
     for (const entry of external) {
-      await openMessagingRegion(page);
-      const add = page.getByRole('button', { name: `Add ${entry.manifest.displayName}` });
-      if (!(await add.isVisible().catch(() => false))) continue;
-      await add.click();
+      if (!(await openAddWizard(page, entry.manifest.displayName))) continue;
       await expect(wizard(page)).toBeVisible();
       await pastAgentStep(page);
 

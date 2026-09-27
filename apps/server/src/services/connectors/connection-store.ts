@@ -191,9 +191,19 @@ export class ConnectionStore {
         })
         .run();
       if (materialChanged) {
+        // Only access someone was given can have gone stale. A connection
+        // nobody holds a live grant on (named, session or every-agent) has
+        // nothing to re-check, so it stays ready and usable to grant.
         tx.update(connections)
           .set({ grantReconciliationStatus: 'migration_needs_reconcile', updatedAt: now })
-          .where(eq(connections.providerInstanceId, provider.instanceId))
+          .where(
+            and(
+              eq(connections.providerInstanceId, provider.instanceId),
+              sql`EXISTS (SELECT 1 FROM ${connectionOperationGrants}
+                WHERE ${connectionOperationGrants.connectionId} = ${connections.id}
+                AND ${connectionOperationGrants.revokedAt} IS NULL)`
+            )
+          )
           .run();
       }
       if (existing && existing.mode !== 'managed' && mode === 'managed') {
@@ -295,7 +305,10 @@ export class ConnectionStore {
         toolkit: account.toolkit,
         label: account.label,
         status: account.status,
-        grantReconciliationStatus: 'migration_needs_reconcile',
+        // A new connection has no grants, so there is nothing to reconcile:
+        // it is ready to be granted. Stale access is marked where it arises
+        // (a material provider change, a legacy migration), never here.
+        grantReconciliationStatus: 'ready',
         createdAt: existing?.created_at ?? now,
         updatedAt: now,
         lastVerifiedAt: now,

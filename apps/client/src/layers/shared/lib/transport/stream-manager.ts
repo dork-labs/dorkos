@@ -239,7 +239,7 @@ export const GENERIC_EVENTS = [
   'approval_resolved',
   // An agent asked the owner for an app, or one of those requests was answered,
   // expired or failed (DOR-2415). A stamp only: the chat card, the room card and
-  // the Connections page's request list re-read their owner-scoped list on it,
+  // the Connections page's Needs you strip re-read their owner-scoped list on it,
   // so answering in one window retires the card in every other.
   'connector_agent_requests_changed',
   // A blocking condition began or stopped standing (DOR-1570). A standing kind

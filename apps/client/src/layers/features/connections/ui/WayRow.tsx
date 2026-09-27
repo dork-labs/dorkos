@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/layers/shared/lib';
-import { STATUS_TONE_DOT, type StatusTone } from '@/layers/shared/ui';
+import { Badge, STATUS_TONE_DOT, type StatusTone } from '@/layers/shared/ui';
 
 /** A way's state: a coloured dot and the word beside it. */
 export interface WayStatus {
@@ -22,6 +22,7 @@ export function WayRow({
   name,
   detail,
   status,
+  usedForNewApps = false,
   actions,
   children,
 }: {
@@ -33,6 +34,8 @@ export function WayRow({
   detail: string;
   /** The way's state. */
   status: WayStatus;
+  /** Marks the way new apps connect through, when more than one is set up. */
+  usedForNewApps?: boolean;
   /** Buttons for this way. */
   actions?: ReactNode;
   /** Extra lines under the row. */
@@ -42,7 +45,14 @@ export function WayRow({
     <li data-testid={testId} className="space-y-3 px-4 py-3">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="min-w-0 flex-1 basis-48">
-          <p className="text-sm font-medium">{name}</p>
+          <p className="flex flex-wrap items-center gap-x-2 text-sm font-medium">
+            {name}
+            {usedForNewApps && (
+              <Badge size="xs" variant="secondary" data-testid="used-for-new-apps">
+                Used for new apps
+              </Badge>
+            )}
+          </p>
           <p className="text-muted-foreground text-xs">{detail}</p>
         </div>
         <span className="flex items-center gap-1.5 text-xs">

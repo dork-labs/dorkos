@@ -8,7 +8,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
 import { gmailFilterSchema } from './event-filter-fixtures';
-import { AgentRequests } from '../ui/AgentRequests';
+import { AgentRequestDialog } from '../ui/AgentRequestDialog';
 
 Element.prototype.hasPointerCapture = () => false;
 Element.prototype.setPointerCapture = () => {};
@@ -188,7 +188,12 @@ function renderRequests(transport: Transport, selectedRequestId: string | null =
   const view = render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
-        <AgentRequests selectedRequestId={selectedRequestId} />
+        <AgentRequestDialog
+          requestId={selectedRequestId}
+          open={selectedRequestId !== null}
+          onOpenChange={() => undefined}
+          onConnectService={() => undefined}
+        />
       </TransportProvider>
     </QueryClientProvider>
   );
@@ -198,7 +203,12 @@ function renderRequests(transport: Transport, selectedRequestId: string | null =
       view.rerender(
         <QueryClientProvider client={queryClient}>
           <TransportProvider transport={transport}>
-            <AgentRequests selectedRequestId={nextRequestId} />
+            <AgentRequestDialog
+              requestId={nextRequestId}
+              open={nextRequestId !== null}
+              onOpenChange={() => undefined}
+              onConnectService={() => undefined}
+            />
           </TransportProvider>
         </QueryClientProvider>
       );
@@ -206,15 +216,7 @@ function renderRequests(transport: Transport, selectedRequestId: string | null =
   };
 }
 
-describe('AgentRequests', () => {
-  it('shows the private-safe request list and exact owner reason', async () => {
-    renderRequests(transportFor(), null);
-
-    expect(await screen.findByText('Researcher · Gmail')).toBeInTheDocument();
-    expect(screen.getByText('Summarize new mail and prepare replies.')).toBeInTheDocument();
-    expect(screen.queryByText('Work mail')).not.toBeInTheDocument();
-  });
-
+describe('AgentRequestDialog', () => {
   it('defaults to requested read/write revisions and requires a separate destructive choice', async () => {
     const user = userEvent.setup();
     const transport = transportFor();

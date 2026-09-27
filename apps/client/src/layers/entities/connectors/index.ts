@@ -12,7 +12,7 @@
 export { connectorKeys } from './api/query-keys';
 
 // --- Query hooks ---
-export { useConnectorProviders } from './model/use-connector-providers';
+export { useConnectorProviders, useConnectorAppConnections } from './model/use-connector-providers';
 export {
   useConfigureConnectionEventSource,
   useConnectionEventDefinitions,

@@ -276,14 +276,14 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed px-6 py-10">
           <Plug2 className="text-muted-foreground/40 size-8" />
           <div className="space-y-1 text-center">
-            <p className="text-sm font-medium">Messaging is off</p>
+            <p className="text-sm font-medium">Chat apps are off</p>
             <p className="text-muted-foreground max-w-xs text-xs leading-relaxed">
-              Connections link this agent to messaging platforms. Turn on Messaging in Settings to
-              get started.
+              Chat apps let people reach this agent from Telegram, Slack or a webhook. They are
+              turned off on this computer; the Connections page says how to turn them on.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
-            Open Messaging settings
+          <Button variant="outline" size="sm" onClick={() => openConnections()}>
+            Open Connections
           </Button>
         </div>
         {dialogs}
@@ -304,7 +304,7 @@ export function IntegrationsTab({ agent }: IntegrationsTabProps) {
               will appear here as soon as it’s ready.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
+          <Button variant="outline" size="sm" onClick={() => openConnections()}>
             Add a connection
           </Button>
         </div>

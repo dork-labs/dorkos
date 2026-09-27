@@ -90,7 +90,7 @@ export function useResolveConnectorAgentRequest() {
     meta: { suppressErrorToast: true },
     onSuccess: (result, { requestId }) => {
       queryClient.setQueryData(connectorKeys.agentRequest(requestId), result);
-      // Every list, including each conversation's, so the page's list and the
+      // Every list, including each conversation's, so the page's Needs you strip and the
       // chat and room cards agree the moment the answer lands.
       void queryClient.invalidateQueries({
         queryKey: connectorKeys.agentRequests(),

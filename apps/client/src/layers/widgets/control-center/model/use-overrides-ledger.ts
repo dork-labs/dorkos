@@ -213,7 +213,8 @@ export function useOverridesLedger(): OverridesLedger {
         kind: 'binding',
         name: binding.label || binding.adapterId,
         detail: descriptor?.label ?? permissionModeLabel(binding.permissionMode),
-        onOpen: navigate ? openAndClose(() => openConnections('messaging')) : null,
+        // Straight to that chat app's side panel, where its answers are set.
+        onOpen: navigate ? openAndClose(() => openConnections({ app: binding.adapterId })) : null,
       });
     }
   }

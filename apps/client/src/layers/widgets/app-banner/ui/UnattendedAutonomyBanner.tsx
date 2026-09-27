@@ -105,7 +105,7 @@ export function UnattendedAutonomyBanner({ drivers }: UnattendedAutonomyBannerPr
         navigate ? (
           <>
             {kinds.has('binding') && (
-              <Button variant="outline" size="sm" onClick={() => openConnections('messaging')}>
+              <Button variant="outline" size="sm" onClick={() => openConnections()}>
                 Connections
               </Button>
             )}

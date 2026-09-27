@@ -6675,6 +6675,22 @@
         "apps/server/src/services/connectors/every-agent-activity.ts",
         "apps/server/src/services/connectors/management-review-context.ts"
       ]
+    },
+    {
+      "id": "260927-033250",
+      "slug": "connections-is-one-list-of-apps",
+      "title": "The Connections page is one list of apps, not two regions",
+      "status": "accepted",
+      "created": "2026-09-27",
+      "specSlug": "connections-one-list",
+      "amends": "260804-021140",
+      "supersedes": null,
+      "affects": [
+        "apps/client/src/layers/widgets/connections/**",
+        "apps/client/src/layers/features/connections/ui/app-list/**",
+        "apps/client/src/layers/features/connections/ui/panel/**",
+        "apps/client/src/layers/features/connections/lib/app-list.ts"
+      ]
     }
   ]
 }

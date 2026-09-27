@@ -1,6 +1,6 @@
 import type { ConnectorReconciliationCandidate } from '@dorkos/shared/connector-schemas';
 import { levelForRequest, type CardAccessLevel } from '../../lib/access-card-selection';
-import { operationLabel } from '../../lib/presentation';
+import { actionName } from '../../lib/app-panel-copy';
 import { joinNames } from './access-labels';
 
 /**
@@ -25,7 +25,7 @@ export function RequestedActions({
   level: CardAccessLevel | null;
 }) {
   const asked = levelForRequest(candidates, operations);
-  const label = (operation: string) => operationLabel(operation, toolkit);
+  const label = (operation: string) => actionName(operation, toolkit);
   const leftOutByRead = level === 'read' ? asked.needsWrite.map(label) : [];
   return (
     <div className="bg-muted/40 space-y-1.5 rounded-lg p-3 text-sm" data-testid="requested-actions">

@@ -1,22 +1,18 @@
 /**
- * Relay feature — the messaging half of the Connections page: the ways people
- * and platforms reach your agents, what has come through them, and the
- * agent-first flow for adding another.
+ * Relay feature — the chat app parts of the Connections page: who answers a
+ * chat app and what happened on it lately, the agent-first flow for setting
+ * one up, and the message history Settings › Connections keeps.
  *
  * @module features/relay
  */
-export { MessagingConnections } from './ui/MessagingConnections';
+export { ChatAppAnswerers } from './ui/ChatAppAnswerers';
+export { ChatAppRecent } from './ui/ChatAppRecent';
 export { BindingBridgeSection } from './ui/BindingBridgeSection';
 export type { BindingBridgeSectionProps } from './ui/BindingBridgeSection';
 export { ActivityFeed } from './ui/ActivityFeed';
 export { ConnectionStatusBanner } from './ui/ConnectionStatusBanner';
 export type { ConnectionStatusBannerProps } from './ui/ConnectionStatusBanner';
-export { AdapterCard } from './ui/adapter/AdapterCard';
-export { AdapterCardHeader } from './ui/adapter/AdapterCardHeader';
-export { AdapterCardBindings } from './ui/adapter/AdapterCardBindings';
-export { AdapterCardError } from './ui/adapter/AdapterCardError';
 export { AdapterBindingRow } from './ui/adapter/AdapterBindingRow';
-export { CatalogCard } from './ui/CatalogCard';
 export { MessageTrace } from './ui/MessageTrace';
 export { ConfigFieldInput, ConfigFieldGroup } from './ui/ConfigFieldInput';
 export { AdapterSetupWizard } from './ui/AdapterSetupWizard';

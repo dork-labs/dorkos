@@ -21,11 +21,10 @@ import type {
   ConnectorProviderInstanceId,
 } from '@dorkos/shared/connector-provider';
 import { ProviderConnectedAccountSchema } from '@dorkos/shared/connector-provider';
+import { CONNECTOR_AUTHENTICATION_FLOW_TTL_MS } from '@dorkos/shared/connector-schemas';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ConnectorRegistry } from '../registry.js';
 import { connectorAuthenticationRequestHash } from './authentication-flow-request.js';
-
-const DEFAULT_FLOW_TTL_MS = 15 * 60 * 1_000;
 
 /** Safe durable-flow refusal exposed by the owner resource boundary. */
 export class ConnectorAuthenticationFlowError extends Error {
@@ -82,7 +81,7 @@ export class ConnectorAuthenticationFlowService {
     this.db = options.db;
     this.registry = options.registry;
     this.now = options.now ?? (() => new Date());
-    this.flowTtlMs = options.flowTtlMs ?? DEFAULT_FLOW_TTL_MS;
+    this.flowTtlMs = options.flowTtlMs ?? CONNECTOR_AUTHENTICATION_FLOW_TTL_MS;
     this.createId = options.createId ?? ulid;
   }
 
