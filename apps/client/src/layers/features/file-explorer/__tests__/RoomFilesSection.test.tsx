@@ -396,6 +396,32 @@ describe('RoomFilesSection', () => {
   });
 });
 
+describe('RoomFilesSection, a room whose git settings name a program', () => {
+  it('says which settings and how to remove them, instead of “Couldn’t load files.”', async () => {
+    const transport = createMockTransport();
+    transport.readRoomFiles = vi
+      .fn()
+      .mockRejectedValue(
+        Object.assign(
+          new Error(
+            'This room’s shared git settings contain entries that can make git run programs: ' +
+              'filter.x.smudge. Remove each one with `git config --unset-all <name>`.'
+          ),
+          { code: 'ROOM_REPO_CONFIG_UNSAFE' }
+        )
+      );
+    renderSection(transport);
+
+    // Every read of the room's files is refused until a person removes the
+    // settings, so the listing is where they meet it — and a generic line
+    // would leave them with nothing to do.
+    expect(
+      await screen.findByText(/filter\.x\.smudge\. Remove each one with “git config/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Couldn’t load files.')).not.toBeInTheDocument();
+  });
+});
+
 describe('RoomFilesSection previews', () => {
   it('renders a markdown file in place', async () => {
     const transport = roomWithFiles([entry({ name: 'ROOM.md', lastCommit: COMMIT })]);

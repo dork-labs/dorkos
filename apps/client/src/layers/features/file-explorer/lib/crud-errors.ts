@@ -43,6 +43,21 @@ export function getErrorCode(err: unknown): CrudErrorCode | undefined {
  */
 export const COPY_INTO_SELF_MESSAGE = 'Can’t copy a folder into itself';
 
+/**
+ * The room refusing all work on its files because its shared git settings name
+ * a program git would run (spec `agent-home-desk` §5.2). The server's sentence
+ * names each setting and the command that removes it, so it is the one a person
+ * sees wherever the refusal surfaces: the listing, a save, or any other change.
+ */
+export const ROOM_REPO_CONFIG_UNSAFE_CODE = 'ROOM_REPO_CONFIG_UNSAFE';
+
+/**
+ * What a person reads for {@link ROOM_REPO_CONFIG_UNSAFE_CODE} when the server
+ * sent no sentence of its own. Exported so the save table says the same thing.
+ */
+export const ROOM_REPO_CONFIG_UNSAFE_FALLBACK =
+  'This room’s git settings could make git run a program, so DorkOS has stopped working on its files until they are removed. DorkOS’s log names each setting and how to remove it.';
+
 /** User-facing, boundary-safe message for each coded failure. */
 const MESSAGES: Record<CrudErrorCode, string> = {
   CONFLICT: 'That name already exists',
@@ -118,6 +133,7 @@ const ROOM_CHANGE_REFUSAL_COPY = new Map<string, string>([
   ],
   ['ROOM_NOT_FOUND', 'This room isn’t there any more.'],
   ['ROOM_ARCHIVED', 'This room is archived, so its files can’t be changed.'],
+  [ROOM_REPO_CONFIG_UNSAFE_CODE, ROOM_REPO_CONFIG_UNSAFE_FALLBACK],
 ]);
 
 /**
@@ -130,6 +146,7 @@ const SERVER_SENTENCE_FIRST = new Set([
   'FILE_TOO_LARGE',
   'ROOM_FILE_PATH_INVALID',
   'ROOM_FILE_NOT_READABLE',
+  ROOM_REPO_CONFIG_UNSAFE_CODE,
 ]);
 
 /**
@@ -188,4 +205,20 @@ export function serverSentenceFirst(err: unknown): string | undefined {
  */
 export function nameTakenMessage(name: string): string {
   return `There’s already something called “${name}” there, so nothing was changed. Pick another name.`;
+}
+
+/**
+ * The sentence to show when a room's files could not be listed at all, or
+ * `undefined` to keep the pane's generic "Couldn’t load files."
+ *
+ * Only a refusal a person can act on earns its own sentence here. Today that is
+ * {@link ROOM_REPO_CONFIG_UNSAFE_CODE}: every read of the room's files is
+ * refused until somebody removes the settings, so the listing is where a person
+ * meets it first, and the server's sentence is the one that says how.
+ *
+ * @param err - Whatever the listing threw.
+ */
+export function roomListRefusalMessage(err: unknown): string | undefined {
+  if (errorCodeOf(err) !== ROOM_REPO_CONFIG_UNSAFE_CODE) return undefined;
+  return serverSentenceFirst(err) ?? ROOM_REPO_CONFIG_UNSAFE_FALLBACK;
 }

@@ -125,7 +125,7 @@ export function FileExplorer({
   const changes = explorer.changes;
   const queryClient = useQueryClient();
   const showHidden = useFileExplorerStore((s) => s.showHidden);
-  const { rows, rootLoading, rootError, errorPaths } = explorer;
+  const { rows, rootLoading, rootError, rootErrorMessage, errorPaths } = explorer;
   const setCommands = useFileExplorerStore((s) => s.setCommands);
   // Selection lives in the store (DOR-404 D1) so it survives an unmount and a
   // refresh; `renamingPath`/`draft` stay component-local (ephemeral, D7).
@@ -359,8 +359,8 @@ export function FileExplorer({
             <Spinner size="md" className="text-muted-foreground" label="Loading files" />
           </div>
         ) : rootError && rows.length === 0 ? (
-          <div className="text-muted-foreground flex h-20 flex-col items-center justify-center gap-2 text-xs">
-            <span>Couldn’t load files.</span>
+          <div className="text-muted-foreground flex min-h-20 flex-col items-center justify-center gap-2 px-4 py-3 text-center text-xs [overflow-wrap:anywhere]">
+            <span>{rootErrorMessage ?? 'Couldn’t load files.'}</span>
             <Button variant="outline" size="xs" onClick={explorer.reload}>
               <RotateCw />
               Retry

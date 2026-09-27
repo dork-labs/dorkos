@@ -3,6 +3,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useAppStore, useTheme, useTransport } from '@/layers/shared/model';
 import { executeUiCommand, type DispatcherContext } from '@/layers/shared/lib';
 import { pinnedFirst, withoutHidden } from '../lib/listing-shape';
+import { roomListRefusalMessage } from '../lib/crud-errors';
 import { flattenTree, ROOT_KEY, visibleExpandedDirs } from './tree';
 import type { DirState, FlatRow } from './types';
 import {
@@ -68,6 +69,12 @@ export interface FileExplorerApi extends FileCrudApi, FileActionsApi {
   rootLoading: boolean;
   /** True when the root level's listing failed to load. */
   rootError: boolean;
+  /**
+   * A sentence a person can act on for why the root listing failed, when the
+   * source has one (a room refusing its files until its git settings are
+   * fixed); `null` means the pane's generic message.
+   */
+  rootErrorMessage: string | null;
   /** Visible expanded directories whose listing failed (for inline retry rows). */
   errorPaths: Set<string>;
   /** Expand or collapse a directory (its query mounts/unmounts declaratively). */
@@ -183,6 +190,9 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
 
   const rootLoading = Boolean(source) && Boolean(dirData[ROOT_KEY]?.loading);
   const rootError = Boolean(source) && Boolean(dirData[ROOT_KEY]?.error);
+  const rootFailure = results[0]?.error;
+  const rootErrorMessage =
+    rootError && rootFailure ? (roomListRefusalMessage(rootFailure) ?? null) : null;
   const errorPaths = useMemo(() => {
     const set = new Set<string>();
     for (const dirPath of dirPaths) {
@@ -277,6 +287,7 @@ export function useFileExplorer(source: FileExplorerSource | null): FileExplorer
     rows,
     rootLoading,
     rootError,
+    rootErrorMessage,
     errorPaths,
     toggleExpand,
     ensureExpanded,
