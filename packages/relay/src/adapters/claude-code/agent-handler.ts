@@ -242,6 +242,24 @@ function abortText(signal: AbortSignal, started: boolean): string | undefined {
     : 'The message expired before the agent could start';
 }
 
+/**
+ * Senders whose payload may shape a turn — its folder, the agent it acts as and
+ * its permission mode: a person reached through a binding (`relay.human.*`),
+ * the server's own principals (`relay.system.*`) and chat bridges
+ * (`relay.bridge.*`). Every other sender — an agent (`relay.agent.*`), a
+ * session (`relay.session.*`), an external MCP caller — is read for its words
+ * only. `from` is stamped by the server, never chosen by the sender.
+ *
+ * @param from - The envelope's sender address.
+ */
+export function isTurnShapingSender(from: string): boolean {
+  return (
+    from.startsWith('relay.human.') ||
+    from.startsWith('relay.system.') ||
+    from.startsWith('relay.bridge.')
+  );
+}
+
 /** Why a turn was stopped before it started: its folder is not its agent's desk. */
 class DeskRefusal extends Error {
   constructor(message: string) {
@@ -318,6 +336,15 @@ export async function handleAgentMessage(
     typeof envelope.payload === 'object' && envelope.payload !== null
       ? (envelope.payload as Record<string, unknown>)
       : null;
+  // **Whose words the turn-shaping fields are** (spec `agent-home-desk` §3.4,
+  // DOR-2446). `cwd`, `forAgent` and `__bindingPermissions` decide where the
+  // turn stands, who it acts as and how much it may do without asking. The
+  // binding router and the server's own principals set them; an AGENT sending
+  // with `relay_send` can put anything in a payload. `from` is stamped by the
+  // server, so it is what tells the two apart: only a human, system or bridge
+  // sender's payload may shape the turn, and an agent's is read for its text.
+  const trustedShaper = isTurnShapingSender(envelope.from);
+  const shaping = trustedShaper ? payloadObj : null;
 
   // The session scope, the persisted SDK id and the key this turn runs under all
   // come from `resolveAgentTurnIdentity` above — the same call the adapter makes
@@ -347,21 +374,19 @@ export async function handleAgentMessage(
   });
 
   // Extract binding-enriched fields from the payload resolved above.
-  const bindingPerms = payloadObj?.__bindingPermissions as
+  const bindingPerms = shaping?.__bindingPermissions as
     { permissionMode?: PermissionMode } | undefined;
   const responseContext = payloadObj?.responseContext as ResponseContext | undefined;
 
   // Resolve CWD: payload cwd > Mesh agent context directory > deferred
-  const payloadCwd = payloadObj?.cwd as string | undefined;
+  const payloadCwd = shaping?.cwd as string | undefined;
   const effectiveCwd = payloadCwd ?? context?.agent?.directory;
   // The agent a binding dispatched this turn AS (spec `agent-home-desk` §3.2
   // row 12). Read off the same payload as `cwd`, which alone already decides
   // whose identity a turn carries — so this can only NARROW what a forged
   // payload could claim: a `cwd` resolving to another agent's home is refused.
   const payloadForAgent =
-    typeof payloadObj?.forAgent === 'string' && payloadObj.forAgent !== ''
-      ? payloadObj.forAgent
-      : undefined;
+    typeof shaping?.forAgent === 'string' && shaping.forAgent !== '' ? shaping.forAgent : undefined;
   // A fallback is correct HERE and nowhere upstream: this reads a JSON payload
   // off the relay bus, so the field can be absent for reasons the binding never
   // controls (an older publisher, a hand-built envelope). It lands on the

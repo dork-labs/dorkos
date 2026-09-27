@@ -47,7 +47,11 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  *   port's type now);
  * - the task scheduler — a cron tick starting a scheduled run;
  * - the relay binding router — an inbound chat message opening or feeding a
- *   session.
+ *   session;
+ * - the relay adapter factory — the desk guard the claude-code adapter asks
+ *   when a relay message arrives, before its turn starts, reads the agent's
+ *   desk from the same chain the router stamps it from (spec `agent-home-desk`
+ *   §3.4). It runs once per delivery, never inside a running turn.
  *
  * Adding a file here is a deliberate act. Adding one that runs INSIDE a turn —
  * a tool handler, a runtime adapter, a transcript reader — breaks the invariant
@@ -61,6 +65,7 @@ const ALLOWED = new Set([
   'services/session/launch/launch-session.ts',
   'services/tasks/task-scheduler-service.ts',
   'services/relay/binding-router.ts',
+  'services/relay/adapter-factory.ts',
 ]);
 
 /** Every `.ts` file under `apps/server/src`, relative to it, tests excluded. */

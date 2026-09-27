@@ -32,7 +32,7 @@ describe('createTurnDeskCheck', () => {
   const check = (bound: string | null = null) =>
     createTurnDeskCheck({
       sessionAgentPath: async () => bound,
-      deskBinding: async () => 'home',
+      placementOf: async (agentPath) => ({ cwd: agentPath, rung: 'agent-home' }),
     });
 
   it('refuses a sender-named room folder and another agent`s home for the answering agent', async () => {
@@ -86,5 +86,33 @@ describe('createTurnDeskCheck', () => {
         sessionKey: 's',
       })
     ).resolves.toBeNull();
+  });
+
+  it('reads the desk the way the binding router does: a boundary-refused agent works in the default folder', async () => {
+    // The chain answered `default` with a degraded reason — the agent's home is
+    // outside what this server may touch. The router lets that turn stand in the
+    // default folder, so a relay turn there must pass too; reading the binding
+    // off the manifest instead (`home`) refused it. Seeded: passing `home`
+    // instead of `deskBindingFor(placement)` reddens this.
+    registerTestHomes([a, b], { roomsDir });
+    const defaultFolder = path.join(scratch, 'default');
+    fs.mkdirSync(defaultFolder, { recursive: true });
+    const refusedHome = createTurnDeskCheck({
+      sessionAgentPath: async () => null,
+      placementOf: async () => ({ cwd: defaultFolder, rung: 'default', degraded: 'boundary' }),
+    });
+
+    await expect(
+      refusedHome({ cwd: defaultFolder, agentDirectory: b, forAgent: undefined, sessionKey: 's' })
+    ).resolves.toBeNull();
+    // Still only THAT folder: somewhere else plain is not its desk.
+    await expect(
+      refusedHome({
+        cwd: path.join(scratch, 'elsewhere'),
+        agentDirectory: b,
+        forAgent: undefined,
+        sessionKey: 's',
+      })
+    ).resolves.not.toBeNull();
   });
 });

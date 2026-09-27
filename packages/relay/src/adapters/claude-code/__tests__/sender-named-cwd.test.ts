@@ -21,11 +21,16 @@ const EPOCH = Date.UTC(2026, 8, 27, 10, 0, 0);
 const now = (): number => EPOCH;
 const SUBJECT = 'relay.agent.default.agent-01';
 
-function envelope(payload: Record<string, unknown>): RelayEnvelope {
+/** A person reached through a chat binding — a sender whose payload may shape a turn. */
+const BINDING_SENDER = 'relay.human.telegram.123';
+/** Another agent, sending with `relay_send`. */
+const AGENT_SENDER = 'relay.agent.default.agent-02';
+
+function envelope(payload: Record<string, unknown>, from = BINDING_SENDER): RelayEnvelope {
   return {
     id: 'msg-1',
     subject: SUBJECT,
-    from: 'relay.agent.default.agent-02',
+    from,
     replyTo: 'relay.a2a.reply.task-1.nonce',
     budget: {
       hopCount: 1,
@@ -64,11 +69,12 @@ function relay(): RelayPublisher {
 function deliver(
   payload: Record<string, unknown>,
   agentManager: AgentRuntimeLike,
-  checkTurnDesk: TurnDeskCheck | undefined
+  checkTurnDesk: TurnDeskCheck | undefined,
+  from = BINDING_SENDER
 ) {
   return handleAgentMessage(
     SUBJECT,
-    envelope(payload),
+    envelope(payload, from),
     { agent: { directory: '/agents/b' } } as never,
     EPOCH,
     {
@@ -128,5 +134,69 @@ describe('a folder the sender names (spec `agent-home-desk` §3.4)', () => {
     await deliver({ content: 'hi' }, unnamed, untouched);
     expect(untouched).not.toHaveBeenCalled();
     expect(unnamed.sendMessage).toHaveBeenCalledOnce();
+  });
+
+  describe('who may shape a turn (DOR-2446)', () => {
+    // `cwd`, `forAgent` and `__bindingPermissions` are the binding router's and
+    // the server's to set. An agent sending with `relay_send` can put anything in
+    // a payload, and `from` — stamped by the server — says it was an agent.
+    // Seeded: reading the fields off every payload reddens all three.
+    it('runs an agent-sent turn at the receiver`s own mode, not the bypass it asked for', async () => {
+      const agentManager = runtime();
+
+      await deliver(
+        { content: 'hi', __bindingPermissions: { permissionMode: 'bypassPermissions' } },
+        agentManager,
+        undefined,
+        AGENT_SENDER
+      );
+
+      expect(agentManager.ensureSession).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ permissionMode: 'default' })
+      );
+    });
+
+    it('ignores an agent-sent folder and agent: the turn stands in the receiver`s own home', async () => {
+      const agentManager = runtime();
+      const check = vi.fn<TurnDeskCheck>(async () => null);
+
+      await deliver(
+        { content: 'hi', cwd: '/dork/rooms/r1/repo', forAgent: '/agents/a' },
+        agentManager,
+        check,
+        AGENT_SENDER
+      );
+
+      expect(check).not.toHaveBeenCalled();
+      expect(agentManager.ensureSession).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ cwd: '/agents/b' })
+      );
+      const opts = vi.mocked(agentManager.sendMessage).mock.calls[0]![2] as Record<string, unknown>;
+      expect(opts.forAgent).toBeUndefined();
+    });
+
+    it('still applies a binding delivery`s folder, agent and mode', async () => {
+      const agentManager = runtime();
+
+      await deliver(
+        {
+          content: 'hi',
+          cwd: '/agents/b/checkout',
+          forAgent: '/agents/b',
+          __bindingPermissions: { permissionMode: 'acceptEdits' },
+        },
+        agentManager,
+        async () => null
+      );
+
+      expect(agentManager.ensureSession).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ cwd: '/agents/b/checkout', permissionMode: 'acceptEdits' })
+      );
+      const opts = vi.mocked(agentManager.sendMessage).mock.calls[0]![2] as Record<string, unknown>;
+      expect(opts.forAgent).toBe('/agents/b');
+    });
   });
 });

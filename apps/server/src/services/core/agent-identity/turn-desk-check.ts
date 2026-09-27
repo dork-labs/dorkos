@@ -16,31 +16,30 @@
  * @module services/core/agent-identity/turn-desk-check
  */
 import path from 'node:path';
-import { readManifest } from '@dorkos/shared/manifest';
 import type { TurnDeskCheck } from '@dorkos/relay';
-import {
-  assertOwnDesk,
-  assertNobodysDesk,
-  DeskNotOwnError,
-  type DeskBinding,
-} from './agent-home.js';
+import { assertOwnDesk, assertNobodysDesk, deskBindingFor, DeskNotOwnError } from './agent-home.js';
+
+/** Where the session-cwd chain places an agent, and which rung answered. */
+export interface TurnDeskPlacement {
+  /** The folder the chain chose. */
+  cwd: string;
+  /** The rung that answered — see {@link deskBindingFor}. */
+  rung: string;
+  /** Why the chain fell back, when it did. */
+  degraded?: string;
+}
 
 /** What {@link createTurnDeskCheck} reads, injected so a test needs no server. */
 export interface TurnDeskCheckDeps {
   /** The agent a session was recorded for (`session_metadata.agent_path`), or `null`. */
   sessionAgentPath(sessionId: string): Promise<string | null>;
-  /** How an agent's manifest says it works — `home` when it cannot be read. */
-  deskBinding?(agentPath: string): Promise<DeskBinding>;
-}
-
-/** The binding an agent's manifest declares, read the way the cwd chain reads it. */
-async function manifestDeskBinding(agentPath: string): Promise<DeskBinding> {
-  try {
-    const mode = (await readManifest(agentPath))?.workspace?.mode;
-    return mode === 'none' ? 'none' : mode === 'managed' ? 'managed' : 'home';
-  } catch {
-    return 'home';
-  }
+  /**
+   * Where the session-cwd chain places `agentPath` — the same question the
+   * binding router asks before it stamps a folder, so the two guards read an
+   * agent's desk identically (a `none` or boundary-refused agent's desk is the
+   * default folder the chain chose, not a manifest guess).
+   */
+  placementOf(agentPath: string): Promise<TurnDeskPlacement>;
 }
 
 /**
@@ -49,7 +48,6 @@ async function manifestDeskBinding(agentPath: string): Promise<DeskBinding> {
  * @param deps - The reads above.
  */
 export function createTurnDeskCheck(deps: TurnDeskCheckDeps): TurnDeskCheck {
-  const bindingOf = deps.deskBinding ?? manifestDeskBinding;
   return async ({ cwd, agentDirectory, forAgent, sessionKey }) => {
     const known = agentDirectory ?? (await deps.sessionAgentPath(sessionKey).catch(() => null));
     if (known && forAgent && path.resolve(known) !== path.resolve(forAgent)) {
@@ -57,8 +55,12 @@ export function createTurnDeskCheck(deps: TurnDeskCheckDeps): TurnDeskCheck {
     }
     const agent = known ?? forAgent;
     try {
-      if (agent) assertOwnDesk(agent, cwd, await bindingOf(agent));
-      else assertNobodysDesk(cwd);
+      if (agent) {
+        const placement = await deps.placementOf(agent);
+        assertOwnDesk(agent, cwd, deskBindingFor(placement), placement.cwd);
+      } else {
+        assertNobodysDesk(cwd);
+      }
       return null;
     } catch (err) {
       if (err instanceof DeskNotOwnError) return err.message;

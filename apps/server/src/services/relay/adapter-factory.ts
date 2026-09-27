@@ -7,6 +7,7 @@
  * @module services/relay/adapter-factory
  */
 import { createTurnDeskCheck } from '../core/agent-identity/turn-desk-check.js';
+import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
 import { dirname } from 'node:path';
 import type {
   RelayAdapter,
@@ -176,6 +177,7 @@ export async function createAdapter(
         // there only when it is that agent's desk.
         checkTurnDesk: createTurnDeskCheck({
           sessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+          placementOf: (agentPath) => resolveSessionCwd({ agentPath }),
         }),
         // Who answers a message addressed to an AGENT rather than a session —
         // the shape an agent-to-agent `relay_send` arrives on. The same single
