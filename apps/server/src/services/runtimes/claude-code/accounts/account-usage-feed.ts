@@ -13,10 +13,12 @@
  *
  * @module services/runtimes/claude-code/accounts/account-usage-feed
  */
-import type { LedgerObservation } from '@dorkos/shared/account-usage';
+import type { AccountUsage, LedgerObservation } from '@dorkos/shared/account-usage';
+import type { UsageStatus } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import type { AccountUsageMeta } from '../../../core/usage/account-usage-types.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
+import { subscriptionUsageOf } from '../../../core/usage/account-usage-status.js';
 import type { AgentSession } from '../agent-types.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
 
@@ -40,5 +42,80 @@ export function recordSessionUsage(
     store.record('claude-code', { path: root }, observations, meta);
   } catch (err) {
     logger.warn('[account-usage] could not record a session usage reading', { err: String(err) });
+  }
+}
+
+/**
+ * The account usage of the account a session runs on, from the store's memory
+ * (no disk work), or `undefined` without an installed store. Resolved from the
+ * same folder {@link recordSessionUsage} records under, so a session reads back
+ * exactly the account its readings went to.
+ *
+ * @param session - The session whose account is wanted.
+ */
+export function peekSessionAccountUsage(
+  session: Pick<AgentSession, 'launchedAccountRoot' | 'accountRoot'>
+): AccountUsage | undefined {
+  const store = getAccountUsageStore();
+  if (!store) return undefined;
+  try {
+    const root = session.launchedAccountRoot ?? session.accountRoot ?? resolveActiveClaudeRoot();
+    return store.peekByRoot('claude-code', root);
+  } catch (err) {
+    logger.debug('[account-usage] could not read a session account usage', { err: String(err) });
+    return undefined;
+  }
+}
+
+/**
+ * A session's subscription `usage` as the store has it: its account's binding
+ * window ({@link subscriptionUsageOf}), or `undefined` while the store holds
+ * no plan window for the account (callers then keep the session's own last
+ * reading, the fallback spec §6 U allows until the store has a record).
+ *
+ * @param session - The session whose usage is wanted.
+ */
+export function sessionSubscriptionUsage(
+  session: Pick<AgentSession, 'launchedAccountRoot' | 'accountRoot'>
+): UsageStatus | undefined {
+  const account = peekSessionAccountUsage(session);
+  return account ? subscriptionUsageOf(account) : undefined;
+}
+
+/** Called with a session id and the folder a launch settled it on. */
+type AccountLaunchListener = (sessionId: string, root: string) => void;
+
+const accountLaunchListeners = new Set<AccountLaunchListener>();
+
+/**
+ * Listen for launches settling which account a session runs on. The session
+ * status hydration re-stamps a session's account usage from here, because a
+ * new session's per-send account hint is only known once its first send
+ * launches.
+ *
+ * @param listener - Called with the session id and the launch's account folder.
+ * @returns An unsubscribe function.
+ */
+export function onSessionAccountLaunched(listener: AccountLaunchListener): () => void {
+  accountLaunchListeners.add(listener);
+  return () => {
+    accountLaunchListeners.delete(listener);
+  };
+}
+
+/**
+ * Tell listeners that a launch settled a session's account. Never throws into
+ * the launch.
+ *
+ * @param sessionId - The session that launched.
+ * @param root - The account folder the launch runs on.
+ */
+export function noteSessionAccountLaunched(sessionId: string, root: string): void {
+  for (const listener of accountLaunchListeners) {
+    try {
+      listener(sessionId, root);
+    } catch (err) {
+      logger.warn('[account-usage] an account-launch listener failed', { err: String(err) });
+    }
   }
 }

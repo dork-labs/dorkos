@@ -11,7 +11,7 @@ import {
 import { sumContextTokens } from '../context-tokens.js';
 import { advanceUsageLedger, readModelUsageTotals, type TurnUsage } from '../turn-usage.js';
 import type { LedgerWindowObservation } from '@dorkos/shared/account-usage';
-import { recordSessionUsage } from '../../accounts/account-usage-feed.js';
+import { recordSessionUsage, sessionSubscriptionUsage } from '../../accounts/account-usage-feed.js';
 import { rejectionStopsTurn, reportSessionLimit } from '../../accounts/session-limit.js';
 
 /**
@@ -186,9 +186,19 @@ export async function* mapResultEvent(
           resetsAt: observation.resetsAt ?? null,
         };
       }
+      // What the session shows is the ACCOUNT's binding window, read back from
+      // the store the reading just merged into (spec §6 U), so every session on
+      // the account agrees. This event's own mapping stays as the fallback
+      // while the store has no plan window for the account.
+      const fromStore = sessionSubscriptionUsage(session);
       yield {
         type: 'session_status',
-        data: { sessionId, usage },
+        data: {
+          sessionId,
+          usage: fromStore
+            ? { ...fromStore, ...(usage.detail ? { detail: usage.detail } : {}) }
+            : usage,
+        },
       };
       // The turn stopped on a hard limit (spec claude-account-fleet D4). Not
       // when extra usage is carrying on in its place: the SDK sends `rejected`
@@ -267,15 +277,19 @@ export async function* mapResultEvent(
     // guess instead of rendering all of them with the same confidence. Attached
     // only beside a cost, because a basis with no figure under it describes
     // nothing.
+    //
+    // The subscription fields come from the account's record in the usage store
+    // (spec `claude-account-fleet` §6 U): the account's binding window, which
+    // this turn's usage call has just fed. The session's own last reading is
+    // only the fallback while the store holds no plan window for the account.
+    const subscription = sessionSubscriptionUsage(session) ?? session.lastSubscriptionUsage;
     let usage: UsageStatus | undefined;
     if (costUsd !== undefined) {
       const costBasis = resolveCostBasis(modelUsageMap);
       const cost = { costUsd, ...(costBasis ? { costBasis } : {}) };
-      usage = session.lastSubscriptionUsage
-        ? { ...session.lastSubscriptionUsage, ...cost }
-        : { kind: 'pay-as-you-go', ...cost };
+      usage = subscription ? { ...subscription, ...cost } : { kind: 'pay-as-you-go', ...cost };
     } else {
-      usage = session.lastSubscriptionUsage;
+      usage = subscription;
     }
 
     // The stop record this turn's ending is read beside. Resolved ONCE and used

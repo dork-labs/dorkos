@@ -54,7 +54,10 @@ import {
   callerNamedCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
+  peekProjector,
 } from '../services/session/index.js';
+import { accountUsageForSession } from '../services/session/fleet/session-account.js';
+import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import {
   sessionQueueListHandler,
@@ -431,6 +434,21 @@ router.get('/:id', async (req, res) => {
   // keys off the session it actually resolved, not the id asked for.
   overlayStoredSettings([session], runtimeRegistry);
   applySessionOriginOverlays([session], sessionOriginResolvers(req.app.locals));
+  // The account's cached usage, so a single-session read shows it before any
+  // turn (spec `claude-account-fleet` §6 U). A live projector's stamp is the
+  // one its snapshot carries; otherwise it is read from the store here. This
+  // read never creates a projector or a settings row.
+  const live = peekProjector(sessionId)?.getStatus();
+  const accountUsage =
+    live?.accountUsage ??
+    (await accountUsageForSession(getAccountUsageStore(), runtime, sessionId, projectDir));
+  // A runtime with no usage ledger (test-mode) has nothing to add here.
+  if (accountUsage) {
+    session.status = {
+      ...(session.status ?? { lifecycle: live?.lifecycle ?? 'idle', limit: live?.limit ?? null }),
+      accountUsage,
+    };
+  }
   res.json(session);
 });
 

@@ -60,6 +60,7 @@ function snapshot(): SessionSnapshot {
       lifecycle: 'idle',
       lastError: null,
       limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     queuedMessages: [],

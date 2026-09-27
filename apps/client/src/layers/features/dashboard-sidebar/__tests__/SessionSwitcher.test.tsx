@@ -108,6 +108,7 @@ function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
     lifecycle: 'idle',
     lastError: null,
     limit: null,
+    accountUsage: null,
     ...overrides,
   };
 }

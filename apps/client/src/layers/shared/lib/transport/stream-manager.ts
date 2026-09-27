@@ -226,9 +226,8 @@ export const GENERIC_EVENTS = [
   'relay_chat_unclaimed_burst',
   'task_run_failed',
   // How much of one account is used changed (spec `claude-account-fleet` D2):
-  // payload `AccountUsage`, throttled per account on the server. No surface
-  // subscribes yet (the usage UI track reads it); listed so it reaches dispatch
-  // instead of being silently dropped once one does.
+  // payload `AccountUsage`, throttled per account on the server. The session
+  // stream binding applies it to every open session on that account (§6 U).
   'account_usage',
   // A task definition changed (created, edited, deleted). The standing
   // unattended-autonomy banner reads it: a task dialled up to Full autonomy has

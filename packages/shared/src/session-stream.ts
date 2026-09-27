@@ -60,6 +60,7 @@ import {
 // beside it (spec `canvas-agent-seat` §1.3): one client reducer handles both
 // scopes, and two definitions of "what is on the table" would drift.
 import { CanvasDocumentSchema } from './canvas-schemas.js';
+import { AccountUsageSchema } from './account-usage.js';
 
 extendZodWithOpenApiOnce();
 
@@ -82,6 +83,14 @@ export const SessionContextUsageSchema = z
     cacheReadTokens: z.number().int(),
     /** Tokens written to prompt cache (slight write premium). */
     cacheCreationTokens: z.number().int(),
+    /**
+     * When {@link totalTokens} and {@link maxTokens} were measured (ISO-8601):
+     * the moment of a live reading, or the stored reading's time when the
+     * figures were restored on open or after a restart (spec
+     * `claude-account-fleet` §6 U). ABSENT when a runtime reported the figures
+     * without it (an older server).
+     */
+    observedAt: z.string().optional(),
   })
   .openapi('SessionContextUsage');
 
@@ -187,6 +196,21 @@ export const SessionStatusSchema = z
      * The `.default(null)` keeps pre-usage snapshots parsing (version skew).
      */
     usage: UsageStatusSchema.nullable().default(null),
+    /**
+     * Account-wide cached usage for the account this session bills (spec
+     * `claude-account-fleet` §6 U), stamped from the server's usage store when
+     * the session is opened, so it shows before the session's first turn and
+     * for a single account (`default`). `updatedAt` and each window's
+     * `observedAt` say how fresh it is. `null` when the session's runtime keeps
+     * no usage ledger.
+     *
+     * Never carried by a `status_change`: a change travels only on the global
+     * `account_usage` event, and a client applies it to every session whose
+     * value names that account, matching on (`runtime`, `accountId`), or on
+     * (`runtime`, `path`) when `accountId` is `null`. The `.default(null)` keeps
+     * older snapshots parsing (version skew).
+     */
+    accountUsage: AccountUsageSchema.nullable().default(null),
     /** Prompt-cache accounting, or `null` before the first turn. */
     cacheStats: SessionCacheStatsSchema.nullable(),
     /** Active model identifier, or `null` before the first turn. */
@@ -457,10 +481,15 @@ export const SessionEventSchema = z
     // out fleet-wide — which is a runtime naming a tool the session never
     // started. Nothing produces it (the normalizer maps no source field to it),
     // so the delta simply cannot express it.
+    //
+    // `accountUsage` is OMITTED too: it is account-wide, so a change to it
+    // travels once on the global `account_usage` event rather than into every
+    // session's log (a log-backed runtime persists each event it streams, and a
+    // reconnect would replay them all).
     z.object({
       ...seqShape,
       type: z.literal('status_change'),
-      status: SessionStatusSchema.omit({ activity: true }).partial().extend({
+      status: SessionStatusSchema.omit({ activity: true, accountUsage: true }).partial().extend({
         contextUsage: SessionContextUsageSchema.partial().nullable().optional(),
       }),
     }),

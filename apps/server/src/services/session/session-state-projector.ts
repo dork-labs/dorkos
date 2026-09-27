@@ -256,7 +256,52 @@ function coldStatus(): SessionStatus {
     lifecycle: 'idle',
     lastError: null,
     limit: null,
+    accountUsage: null,
   };
+}
+
+/**
+ * The longest a snapshot waits for a new projector's status to be hydrated
+ * ({@link setProjectorHydrator}). Hydration reads memory and, at most once per
+ * session, a bounded transcript or rollout tail, so it normally lands well
+ * inside this; past it the snapshot goes out without the cached figures rather
+ * than making a reader wait on a slow disk.
+ */
+export const PROJECTOR_HYDRATION_WAIT_MS = 1_500;
+
+/**
+ * What a hydrator may fill into a held status without an event: cached figures
+ * that describe the session but that no runtime event carries on open.
+ */
+export interface StatusSeed {
+  /** The account's cached usage (replaces the held value). */
+  accountUsage?: SessionStatus['accountUsage'];
+  /** The session's `usage` as derived from its account (replaces the held value). */
+  usage?: SessionStatus['usage'];
+  /** A stored or derived context reading (fills only an EMPTY held value). */
+  contextUsage?: SessionContextUsage;
+}
+
+/**
+ * Fills a freshly created projector's status from caches (spec
+ * `claude-account-fleet` §6 U). Installed once at boot; see
+ * {@link setProjectorHydrator}.
+ */
+export type ProjectorHydrator = (projector: SessionStateProjector) => Promise<void>;
+
+/** The installed hydrator, or `undefined` (tests, and before boot wires one). */
+let projectorHydrator: ProjectorHydrator | undefined;
+
+/**
+ * Install (or clear, with `undefined`) the hook every NEW projector's status is
+ * hydrated through. Called once from the composition root. The session-core
+ * module keeps no knowledge of accounts, stores or runtimes: whatever the hook
+ * finds, it hands back through {@link SessionStateProjector.seedStatus}.
+ *
+ * @param hydrator - The hook, or `undefined` to clear it.
+ */
+export function setProjectorHydrator(hydrator: ProjectorHydrator | undefined): void {
+  projectorHydrator = hydrator;
 }
 
 /** A live interaction the projector tracks for pending-recovery projection. */
@@ -1746,6 +1791,67 @@ export class SessionStateProjector {
   }
 
   /**
+   * Fill cached figures into the held status IN MEMORY, with no event (spec
+   * `claude-account-fleet` §6 U).
+   *
+   * No event on purpose: these are account-wide or restored values, not
+   * something this session did. A log-backed projector persists every event it
+   * ingests, so a usage change seeded through the stream would pile up in an
+   * idle session's log and replay on every reconnect. The next snapshot
+   * carries whatever was seeded; a live client learns of account changes from
+   * the global `account_usage` event.
+   *
+   * `contextUsage` fills only an EMPTY held value: a reading this projector has
+   * already taken from a turn is newer than any cache.
+   *
+   * @param seed - The fields to fill.
+   */
+  seedStatus(seed: StatusSeed): void {
+    if (seed.accountUsage !== undefined) this.status.accountUsage = seed.accountUsage;
+    if (seed.usage !== undefined) this.status.usage = seed.usage;
+    if (seed.contextUsage !== undefined && this.status.contextUsage === null) {
+      this.status.contextUsage = seed.contextUsage;
+    }
+  }
+
+  /** The hydration started when this projector was created, if one was. */
+  private hydration: Promise<void> | undefined;
+
+  /**
+   * Start hydrating this projector's status through `hydrator`, once. Failures
+   * are logged and swallowed: a missing cache is an empty field, never a
+   * broken session.
+   *
+   * @param hydrator - The installed hydrator.
+   * @internal
+   */
+  startHydration(hydrator: ProjectorHydrator): void {
+    if (this.hydration) return;
+    this.hydration = Promise.resolve()
+      .then(() => hydrator(this))
+      .catch((err: unknown) => {
+        logger.warn('[SessionStateProjector] status hydration failed', {
+          sessionId: this._sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
+
+  /** Wait for the creation-time hydration, bounded by {@link PROJECTOR_HYDRATION_WAIT_MS}. */
+  private async awaitHydration(): Promise<void> {
+    if (!this.hydration) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      this.hydration,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, PROJECTOR_HYDRATION_WAIT_MS);
+        timer.unref?.();
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+  }
+
+  /**
    * Pending interactions as recovery DTOs, with server-authoritative
    * `remainingMs` and expired entries (`remainingMs <= 0`) excluded. Delegates
    * to the canonical {@link listPendingInteractions} selector so the DOR-73
@@ -1819,7 +1925,9 @@ export class SessionStateProjector {
    */
   async buildSnapshot(loadHistory: () => Promise<HistoryMessage[]>): Promise<SessionSnapshot> {
     this.expireStaleSubagents();
-    const messages = await loadHistory();
+    // The creation-time hydration first, so a cold snapshot carries the cached
+    // account usage and context reading before any turn (spec §6 U).
+    const [messages] = await Promise.all([loadHistory(), this.awaitHydration()]);
     return {
       messages,
       inProgressTurn: this.snapshotInProgressTurn(),
@@ -2262,6 +2370,7 @@ export function getOrCreateProjector(
 ): SessionStateProjector {
   const key = resolveProjectorId(sessionId);
   let projector = projectors.get(key);
+  const minted = !projector;
   if (!projector) {
     projector = new SessionStateProjector(key);
     projectors.set(key, projector);
@@ -2275,6 +2384,8 @@ export function getOrCreateProjector(
   if (opts?.persist !== undefined && sessionEventStore !== undefined) {
     projector.enablePersistence(sessionEventStore, opts.persist);
   }
+  // After the cwd and persistence are stamped, so the hydrator sees both.
+  if (minted && projectorHydrator) projector.startHydration(projectorHydrator);
   return projector;
 }
 
@@ -2304,6 +2415,15 @@ export function listProjectorStatuses(): ProjectorStatusUpdate[] {
     cwd: projector.cwd,
     status: projector.getStatus(),
   }));
+}
+
+/**
+ * Every live projector, for a caller that must update held state across the
+ * fleet without an event (the account-usage fan-in, spec §6 U). A copy of the
+ * registry's values; each instance appears once however many ids redirect to it.
+ */
+export function listLiveProjectors(): SessionStateProjector[] {
+  return [...projectors.values()];
 }
 
 /**

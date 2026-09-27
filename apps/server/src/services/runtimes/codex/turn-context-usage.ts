@@ -43,8 +43,13 @@ export interface CodexTurnContextUsage {
 export interface ReadCodexTurnContextUsageOptions {
   /** Codex thread id emitted by `thread.started`. */
   threadId: string;
-  /** Local time when this turn's `turn.started` event was observed. */
-  turnStartedAtMs: number;
+  /**
+   * Local time when this turn's `turn.started` event was observed. OMITTED to
+   * read the rollout's last `token_count` at rest, however old (a session
+   * opened with no stored reading, spec `claude-account-fleet` §6 U): the
+   * freshness bounds exist to tie a reading to a live turn, and there is none.
+   */
+  turnStartedAtMs?: number;
   /** Codex home used by the running CLI. */
   codexHome?: string;
   /** Clock seam for deterministic tests. */
@@ -169,7 +174,7 @@ async function readTail(
 function parseLatestUsage(
   tail: string,
   truncatedAtStart: boolean,
-  turnStartedAtMs: number,
+  turnStartedAtMs: number | undefined,
   now: number
 ): CodexTurnContextUsage | null {
   const lines = tail.split('\n');
@@ -198,9 +203,10 @@ function parseLatestUsage(
     const recordedAt = Date.parse(record.data.timestamp);
     if (!Number.isFinite(recordedAt)) return null;
     if (
-      recordedAt < turnStartedAtMs ||
-      now - recordedAt > MAX_RECORD_AGE_MS ||
-      recordedAt > now + MAX_FUTURE_CLOCK_SKEW_MS
+      turnStartedAtMs !== undefined &&
+      (recordedAt < turnStartedAtMs ||
+        now - recordedAt > MAX_RECORD_AGE_MS ||
+        recordedAt > now + MAX_FUTURE_CLOCK_SKEW_MS)
     ) {
       return null;
     }

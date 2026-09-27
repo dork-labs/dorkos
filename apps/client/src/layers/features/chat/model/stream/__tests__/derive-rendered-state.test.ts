@@ -19,6 +19,7 @@ const BLOCKED_STATUS: SessionStatus = {
   lifecycle: 'blocked',
   lastError: null,
   limit: null,
+  accountUsage: null,
 };
 
 const QUESTIONS: QuestionItem[] = [

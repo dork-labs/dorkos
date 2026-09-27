@@ -182,6 +182,7 @@ function makeSnapshot(): SessionSnapshot {
       lifecycle: 'idle',
       lastError: null,
       limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     queuedMessages: [],

@@ -183,6 +183,7 @@ function snapshotWithChildren(
       lifecycle,
       lastError: null,
       limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     queuedMessages: [],

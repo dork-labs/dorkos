@@ -14,6 +14,7 @@ const baseStatus: SessionStatus = {
   lifecycle: 'idle',
   lastError: null,
   limit: null,
+  accountUsage: null,
 };
 
 describe('deriveStatusBarValues', () => {

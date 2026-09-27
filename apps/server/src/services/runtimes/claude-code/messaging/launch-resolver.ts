@@ -55,6 +55,7 @@ import { creditsTurnEnv } from '../../../core/cloud/credits-inference.js';
 import { isRelayEnabled } from '../../../relay/relay-state.js';
 import type { AgentSession } from '../agent-types.js';
 import { claudeConfigDirEnv, resolveLaunchAccountRoot } from '../claude-config-dir.js';
+import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import type { AgentIdentityPin, LaunchParams } from '../sessions/launch-fingerprint.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants } from './directory-grants.js';
@@ -332,6 +333,10 @@ export async function resolveLaunch(args: {
   // attribute a dead sign-in to the wrong account. It is deliberately not
   // `session.accountRoot` — see `AgentSession.launchedAccountRoot`.
   session.launchedAccountRoot = accountRoot;
+  // The session's shown account usage follows the account it now runs on: a
+  // new session's per-send hint is only known here (spec `claude-account-fleet`
+  // §6 U, "the first send re-stamps").
+  noteSessionAccountLaunched(sessionId, accountRoot);
 
   const sdkOptions: Options = {
     cwd: effectiveCwd,

@@ -162,6 +162,7 @@ function retireAnnounce(retiredSessionId: string, sessionId: string) {
       lifecycle: 'streaming',
       lastError: null,
       limit: null,
+      accountUsage: null,
     },
   } as const;
 }

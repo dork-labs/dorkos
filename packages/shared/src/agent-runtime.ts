@@ -1700,6 +1700,26 @@ export interface AgentRuntime {
   getSessionAccount?(sessionId: string): string | undefined;
 
   /**
+   * How full this session's context window was at its last recorded turn, read
+   * from the runtime's OWN record (ADR-0310), for a session opened with no
+   * stored reading (spec `claude-account-fleet` §6 U). DorkOS stores what this
+   * returns, so it is asked at most once per session.
+   *
+   * Optional: a runtime that cannot answer without a turn (OpenCode) omits it.
+   * `null` means no reading. Must be bounded (a tail read, never a whole
+   * transcript) and must never throw.
+   *
+   * @param sessionId - Session to read; either id a caller might hold
+   * @param cwd - The session's working directory, when known
+   * @returns Tokens in the window and the model's window size (`0` when the
+   *   record does not say), or `null`
+   */
+  readContextUsage?(
+    sessionId: string,
+    cwd: string | undefined
+  ): Promise<{ contextTokens: number; contextMaxTokens: number } | null>;
+
+  /**
    * Read new content from a session transcript starting at a byte offset.
    *
    * @param projectDir - Project directory for transcript lookup

@@ -10,7 +10,7 @@ import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-run
 import type { SessionSettings } from '@dorkos/shared/types';
 import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionMetadata, eq, type Db } from '@dorkos/db';
+import { sessionContext, sessionMetadata, eq, type Db } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 import {
   SessionLimitStore,
@@ -1465,6 +1465,45 @@ describe('RuntimeRegistry', () => {
       } finally {
         setSessionLimitStore(undefined);
       }
+    });
+
+    it("moves the session's context reading, even with no settings row (spec claude-account-fleet §6 U)", async () => {
+      db.insert(sessionContext)
+        .values({
+          sessionId: 'old',
+          contextTokens: 120_000,
+          contextMaxTokens: 200_000,
+          observedAt: '2026-09-27T10:00:00.000Z',
+        })
+        .run();
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(db.select().from(sessionContext).all()).toEqual([
+        {
+          sessionId: 'new',
+          contextTokens: 120_000,
+          contextMaxTokens: 200_000,
+          observedAt: '2026-09-27T10:00:00.000Z',
+        },
+      ]);
+      expect(allRows()).toEqual([]);
+    });
+
+    it('keeps the newer context reading when both ids hold one', async () => {
+      const row = (sessionId: string, contextTokens: number, observedAt: string) =>
+        db
+          .insert(sessionContext)
+          .values({ sessionId, contextTokens, contextMaxTokens: 200_000, observedAt })
+          .run();
+      row('old', 1, '2026-09-27T09:00:00.000Z');
+      row('new', 2, '2026-09-27T10:00:00.000Z');
+
+      await registry.rekeySessionSettings('old', 'new');
+
+      expect(db.select().from(sessionContext).all()).toEqual([
+        expect.objectContaining({ sessionId: 'new', contextTokens: 2 }),
+      ]);
     });
 
     it('moves the whole row, identity columns included', async () => {

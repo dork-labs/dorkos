@@ -93,6 +93,22 @@ describe('readCodexTurnContextUsage', () => {
     ).resolves.toEqual({ contextTokens: 54_999, contextMaxTokens: 258_400 });
   });
 
+  it("reads the rollout's last token_count at rest, however old, when no turn is live (spec claude-account-fleet §6 U)", async () => {
+    const codexHome = await createHome();
+    await writeRollout(codexHome, [tokenCount()]);
+    const opts = { threadId: THREAD_ID, codexHome, now: NOW + 30 * 24 * 60 * 60_000 };
+
+    // A live turn's freshness bounds refuse a month-old reading...
+    await expect(
+      readCodexTurnContextUsage({ ...opts, turnStartedAtMs: TURN_STARTED_AT })
+    ).resolves.toBeNull();
+    // ...and a session opened at rest takes it.
+    await expect(readCodexTurnContextUsage(opts)).resolves.toEqual({
+      contextTokens: 54_999,
+      contextMaxTokens: 258_400,
+    });
+  });
+
   it('finds an archived rollout through the same bounded suffix lookup', async () => {
     const codexHome = await createHome();
     await writeRollout(codexHome, [tokenCount()], 'archive');

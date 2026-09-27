@@ -130,6 +130,7 @@ function useSeededLadder(): void {
           lifecycle: rung.lifecycle,
           lastError: null,
           limit: null,
+          accountUsage: null,
           activity: rung.activity,
         },
       });

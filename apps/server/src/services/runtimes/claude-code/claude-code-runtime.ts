@@ -1291,6 +1291,31 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /**
    * @inheritdoc
    *
+   * The transcript tail's last assistant usage: the same bounded 64 KB read
+   * the session list's `contextTokens` comes from (`readTailStatus`), cached
+   * under the file's mtime. The transcript records no context window and the
+   * SDK's model list carries none either (`runtime-cache.ts`), so the window is
+   * `0`, which every reader shows as an unknown percentage until a turn reports
+   * the real one.
+   */
+  async readContextUsage(
+    sessionId: string,
+    cwd: string | undefined
+  ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
+    try {
+      const projectDir = cwd ?? this.sessionStore.findSession(sessionId)?.cwd ?? this.cwd;
+      const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
+      const session = await this.transcriptReader.getSession(projectDir, historyId);
+      if (!session?.contextTokens) return null;
+      return { contextTokens: session.contextTokens, contextMaxTokens: 0 };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * @inheritdoc
+   *
    * The transcript is SDK JSONL, which records that a tool ran or did not and
    * nothing about a person having been asked first — so the permission
    * decisions DorkOS recorded for this session are overlaid back on

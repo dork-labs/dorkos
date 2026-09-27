@@ -36,6 +36,7 @@ vi.mock('@/layers/shared/lib/transport', async () => {
       releaseSession: vi.fn(),
       getAttachedSessionId: vi.fn().mockReturnValue(null),
       subscribeListConnectionState: vi.fn().mockReturnValue(() => {}),
+      subscribeEvent: vi.fn().mockReturnValue(() => {}),
     },
   };
 });
@@ -124,6 +125,7 @@ function snapshotWith(lifecycle: SessionStatus['lifecycle'], cursor: number): Se
       lifecycle,
       lastError: null,
       limit: null,
+      accountUsage: null,
     },
     pendingInteractions: [],
     queuedMessages: [],
@@ -1090,6 +1092,7 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
             lifecycle: 'streaming',
             lastError: null,
             limit: null,
+            accountUsage: null,
           },
         });
         useSessionStreamStore.getState().migrateSessionContinuity('request-uuid', 'canonical-id');

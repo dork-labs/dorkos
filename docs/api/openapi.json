@@ -795,6 +795,9 @@
               },
               "limit": {
                 "$ref": "#/components/schemas/SessionLimit"
+              },
+              "accountUsage": {
+                "$ref": "#/components/schemas/AccountUsage"
               }
             },
             "required": [
@@ -990,26 +993,11 @@
           "mode": "ask"
         }
       },
-      "SessionListWarning": {
-        "type": "object",
-        "properties": {
-          "runtime": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "account": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "runtime",
-          "message"
-        ]
-      },
       "AccountUsage": {
-        "type": "object",
+        "type": [
+          "object",
+          "null"
+        ],
         "properties": {
           "runtime": {
             "type": "string",
@@ -1298,6 +1286,24 @@
           "allowed_warning",
           "rejected",
           null
+        ]
+      },
+      "SessionListWarning": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "account": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "runtime",
+          "message"
         ]
       },
       "ErrorResponse": {
@@ -3047,6 +3053,9 @@
                       },
                       "cacheCreationTokens": {
                         "type": "integer"
+                      },
+                      "observedAt": {
+                        "type": "string"
                       }
                     }
                   },
@@ -5407,6 +5416,9 @@
           "usage": {
             "$ref": "#/components/schemas/UsageStatus"
           },
+          "accountUsage": {
+            "$ref": "#/components/schemas/AccountUsage"
+          },
           "cacheStats": {
             "$ref": "#/components/schemas/SessionCacheStats"
           },
@@ -5472,6 +5484,9 @@
           },
           "cacheCreationTokens": {
             "type": "integer"
+          },
+          "observedAt": {
+            "type": "string"
           }
         },
         "required": [
@@ -15391,6 +15406,9 @@
                                 },
                                 "cacheCreationTokens": {
                                   "type": "integer"
+                                },
+                                "observedAt": {
+                                  "type": "string"
                                 }
                               }
                             },

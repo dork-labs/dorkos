@@ -509,6 +509,9 @@ import {
 import { eventFanOut } from './services/core/event-fan-out.js';
 import { AccountUsageStore } from './services/core/usage/account-usage-store.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
+import { installSessionStatusHydration } from './services/session/fleet/session-status-hydration.js';
+import { SessionContextStore } from './services/session/fleet/session-context-store.js';
+import { onSessionAccountLaunched } from './services/runtimes/claude-code/accounts/account-usage-feed.js';
 import { moveAccountReferences } from './services/core/usage/account-reference-move.js';
 import { renameScheduleAccount } from './services/tasks/approvals/account-rename.js';
 import { isPackageOwned, packageOwnershipContext } from './services/tasks/task-file-update.js';
@@ -1058,6 +1061,28 @@ async function start() {
   // and write the `session_metadata` table. Must happen before any route or
   // service uses these methods. See ADR 0255.
   runtimeRegistry.setDb(db);
+
+  // Usage and context shown the moment a session opens, before any turn (spec
+  // `claude-account-fleet` §6 U): every new projector is stamped from the usage
+  // store and `session_context`, live ones follow the store in memory (never
+  // through a session's event log), and a launch re-stamps the account it
+  // settled on.
+  const sessionStatusHydration = installSessionStatusHydration({
+    usageStore: () => accountUsageStore,
+    contextStore: new SessionContextStore(db),
+    resolveRuntime: async (sessionId) => {
+      try {
+        return await runtimeRegistry.resolveForSession(sessionId);
+      } catch {
+        return undefined;
+      }
+    },
+    resolveCwd: async (sessionId) =>
+      (await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null)) ?? DEFAULT_CWD,
+  });
+  onSessionAccountLaunched((sessionId, root) =>
+    sessionStatusHydration.noteAccountLaunched(sessionId, root)
+  );
 
   // Initialize the Better Auth identity core over the consolidated DB. Mounted
   // by createApp() at /api/auth/* regardless of `config.auth.enabled` (the gate

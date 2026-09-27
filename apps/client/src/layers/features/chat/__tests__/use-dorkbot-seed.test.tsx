@@ -43,6 +43,7 @@ function erroredStatus(): SessionStatus {
     lifecycle: 'error',
     lastError: null,
     limit: null,
+    accountUsage: null,
   };
 }
 

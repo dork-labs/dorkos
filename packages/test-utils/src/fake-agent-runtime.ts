@@ -481,6 +481,7 @@ export class FakeAgentRuntime implements AgentRuntime {
         lifecycle: 'idle',
         lastError: null,
         limit: null,
+        accountUsage: null,
       },
       pendingInteractions: [],
       queuedMessages: [],

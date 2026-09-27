@@ -59,6 +59,7 @@ function statusWithLifecycle(lifecycle: SessionLifecycle): SessionStatus {
     lifecycle,
     lastError: null,
     limit: null,
+    accountUsage: null,
   };
 }
 

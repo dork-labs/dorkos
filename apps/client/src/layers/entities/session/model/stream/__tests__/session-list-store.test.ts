@@ -23,6 +23,7 @@ function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
     lifecycle: 'streaming',
     lastError: null,
     limit: null,
+    accountUsage: null,
     ...overrides,
   };
 }

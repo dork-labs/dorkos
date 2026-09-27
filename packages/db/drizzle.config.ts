@@ -15,6 +15,7 @@ export default defineConfig({
     './src/schema/session-events.ts',
     './src/schema/session/message-acceptance.ts',
     './src/schema/session/session-limits.ts',
+    './src/schema/session/session-context.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
     // Historical inputs keep generated SQL from dropping rows before application backfill.

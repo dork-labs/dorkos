@@ -711,3 +711,33 @@ describe('AccountUsageStore: the folder watch', () => {
     await vi.waitFor(() => expect(broadcast).toHaveBeenCalled(), { timeout: 3_000 });
   });
 });
+
+describe('AccountUsageStore.peekByRoot (spec claude-account-fleet §6 U)', () => {
+  it('answers the registered account at a folder, the ambient default, and a memory-only folder', async () => {
+    await writeConfig(
+      claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: 'Work' }])
+    );
+    const store = makeStore();
+    await store.load();
+    store.record('claude-code', { accountId: 'work' }, [obs('five_hour', 30)]);
+
+    const registered = store.peekByRoot('claude-code', `${path.join(home, '.claude3')}/`);
+    expect(registered).toMatchObject({ accountId: 'work', label: 'Work' });
+    expect(registered.windows.map((w) => w.usedPct)).toEqual([30]);
+
+    expect(store.peekByRoot('claude-code', path.join(home, '.claude'))).toMatchObject({
+      accountId: 'default',
+    });
+
+    const stray = path.join(home, '.claude9');
+    // No reading yet: it still answers, with its folder, so a client can match
+    // the first event for it by path.
+    expect(store.peekByRoot('claude-code', stray)).toMatchObject({
+      accountId: null,
+      path: stray,
+      windows: [],
+    });
+    store.record('claude-code', { path: stray }, [obs('seven_day', 5)]);
+    expect(store.peekByRoot('claude-code', stray).windows.map((w) => w.usedPct)).toEqual([5]);
+  });
+});

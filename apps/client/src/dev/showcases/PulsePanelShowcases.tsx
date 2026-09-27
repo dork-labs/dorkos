@@ -98,6 +98,7 @@ const WEDGED_STATUS: SessionStatus = {
   lifecycle: 'error',
   lastError: null,
   limit: null,
+  accountUsage: null,
 };
 
 /** A schedule an agent proposed and parked — the `schedule-approval` signal. */
