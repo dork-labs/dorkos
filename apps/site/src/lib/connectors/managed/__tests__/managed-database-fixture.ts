@@ -8,6 +8,19 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
 const MIGRATIONS_DIR = fileURLToPath(new URL('../../../../../drizzle/', import.meta.url));
 const MANAGED_MIGRATION_PREFIXES = ['0011_', '0012_', '0013_', '0015_', '0016_'];
+/**
+ * Managed-table migrations made after the frozen history, applied on top of it.
+ * The owner index on `connector_tenant` stopped being unique here, so every
+ * managed test runs against the shape live databases have.
+ */
+const CURRENT_MANAGED_MIGRATIONS = [
+  fileURLToPath(
+    new URL(
+      '../../../../../drizzle-control-plane/0002_connector_tenant_owner_not_unique.sql',
+      import.meta.url
+    )
+  ),
+];
 
 function isolatedMigrationFolder(): string {
   const folder = mkdtempSync(join(tmpdir(), 'dorkos-managed-connectors-'));
@@ -82,5 +95,13 @@ export async function provisionManagedTestDatabase(client: PGlite): Promise<void
     await migrate(drizzle(client), { migrationsFolder: folder });
   } finally {
     rmSync(folder, { recursive: true, force: true });
+  }
+  await applyCurrentManagedMigrations(client);
+}
+
+/** Apply the managed-table migrations made after the frozen history. */
+export async function applyCurrentManagedMigrations(client: PGlite): Promise<void> {
+  for (const file of CURRENT_MANAGED_MIGRATIONS) {
+    await client.exec(readFileSync(file, 'utf8').replaceAll('--> statement-breakpoint', ''));
   }
 }
