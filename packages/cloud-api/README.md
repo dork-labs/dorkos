@@ -201,6 +201,15 @@ matched to their instance. Each close report in `POST /v1/remote/events` may nam
 base-10 strings (`ByteCountSchema`), because a long window can move more bytes than a JavaScript
 number holds exactly. A batch without these fields is accepted as before.
 
+Every `POST /v1/remote/events` request names its batch in an `Idempotency-Key` header
+(`REMOTE_EVENTS_IDEMPOTENCY_HEADER`, value `RemoteEventBatchKeySchema`): an opaque string you
+choose, one per batch, at most 200 characters. A request without it is refused with
+`malformed_request`. When a batch's acknowledgement is lost, send it again with the same key;
+when the contents change, use a new key. A key whose batch was already accepted from your instance
+is answered `200` with `{ accepted: 0 }`: the batch was already applied, and nothing in it is
+counted twice. A batch that was refused or failed was not accepted, so retrying it with its key
+applies it.
+
 ### Tunnel credentials: which hostnames, and how a replacement arrives
 
 A credential from `POST /v1/remote/credentials/issue` may carry `hosts`: every hostname the
