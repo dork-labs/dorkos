@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { AccountUsage, LedgerObservation } from '@dorkos/shared/account-usage';
-import { AccountUsageStore, type AccountUsageStoreOptions } from '../account-usage-store.js';
+import { AccountUsageStore } from '../account-usage-store.js';
+import { flushRetryDelayMs, type AccountUsageStoreOptions } from '../account-usage-types.js';
 import { CONFIG_UNREADABLE, readConfigFile } from '../account-usage-reconcile.js';
 import { ledgerDir, readLedger, writeLedger } from '../ledger-file.js';
 import { DEFAULT_ACCOUNT_LABEL, defaultAccountFolder } from '../runtime-accounts.js';
@@ -429,6 +430,56 @@ describe('AccountUsageStore: default.json is never lost', () => {
     expect((await readLedger(claudeDir(), 'main'))!.windows.five_hour?.usedPct).toBe(64);
   });
 
+  it("keeps default.json when the row's own ledger is of another version", async () => {
+    await writeConfig(claudeConfig([]));
+    const store = makeStore();
+    await store.load();
+    store.record('claude-code', { accountId: 'default' }, [obs('five_hour', 64)]);
+    await store.flush();
+    await ageLedgers();
+    const future = JSON.stringify({ v: 2, accountId: 'main', windows: {} });
+    await fs.writeFile(path.join(claudeDir(), 'main.json'), future);
+    await writeConfig(aliasConfig());
+
+    await store.reconcileAccounts();
+    expect((await readLedger(claudeDir(), 'default'))!.windows.five_hour?.usedPct).toBe(64);
+    expect(await fs.readFile(path.join(claudeDir(), 'main.json'), 'utf8')).toBe(future);
+  });
+
+  it('leaves a default.json of another version alone, and folds nothing', async () => {
+    await fs.mkdir(claudeDir(), { recursive: true });
+    const future = JSON.stringify({ v: 2, accountId: 'default', windows: {} });
+    await fs.writeFile(path.join(claudeDir(), 'default.json'), future);
+    await writeConfig(aliasConfig());
+    const store = makeStore();
+    await store.load();
+    expect((await fs.readdir(claudeDir())).sort()).toEqual(['default.json']);
+    expect(await fs.readFile(path.join(claudeDir(), 'default.json'), 'utf8')).toBe(future);
+  });
+
+  it('touches nothing when default.json cannot be read this pass', async () => {
+    await writeConfig(claudeConfig([]));
+    const store = makeStore();
+    await store.load();
+    store.record('claude-code', { accountId: 'default' }, [obs('five_hour', 64)]);
+    await store.flush();
+    await writeConfig(aliasConfig());
+    const defaultFile = path.join(claudeDir(), 'default.json');
+    const realReadFile = fs.readFile.bind(fs);
+    const readFile = vi.spyOn(fs, 'readFile').mockImplementation((async (
+      file: string,
+      ...rest: unknown[]
+    ) => {
+      if (file === defaultFile) throw Object.assign(new Error('EMFILE'), { code: 'EMFILE' });
+      return (realReadFile as (...a: unknown[]) => Promise<unknown>)(file, ...rest);
+    }) as typeof fs.readFile);
+
+    await store.reconcileAccounts();
+    readFile.mockRestore();
+    expect((await readLedger(claudeDir(), 'default'))!.windows.five_hour?.usedPct).toBe(64);
+    expect((await fs.readdir(claudeDir())).filter((n) => n.includes('corrupt'))).toEqual([]);
+  });
+
   it('sets an unreadable default.json aside instead of deleting it when folding', async () => {
     await fs.mkdir(claudeDir(), { recursive: true });
     await fs.writeFile(path.join(claudeDir(), 'default.json'), '{"not":"a ledger"}');
@@ -439,6 +490,69 @@ describe('AccountUsageStore: default.json is never lost', () => {
     expect(names).not.toContain('default.json');
     const corrupt = names.find((n) => /^default\.json\.corrupt-\d+$/.test(n));
     expect(await fs.readFile(path.join(claudeDir(), corrupt!), 'utf8')).toBe('{"not":"a ledger"}');
+  });
+});
+
+describe('AccountUsageStore: failed writes back off and stay bounded', () => {
+  it('waits 1 s doubling to a 60 s cap', () => {
+    expect([1, 2, 3, 4, 7, 8, 20].map((n) => flushRetryDelayMs(n, 1_000, 60_000))).toEqual([
+      1_000, 2_000, 4_000, 8_000, 60_000, 60_000, 60_000,
+    ]);
+  });
+
+  it('retries a locked ledger with growing waits, then writes at the normal pace again', async () => {
+    await writeConfig(claudeConfig([]));
+    // giveUpMs 0: each flush tries the lock exactly once, so opens count flushes.
+    const store = makeStore({
+      lockOptions: { giveUpMs: 0 },
+      timings: {
+        flushDebounceMs: 10,
+        retryBaseMs: 100,
+        retryMaxMs: 10_000,
+        scanIntervalMs: 3_600_000,
+      },
+    });
+    await store.load();
+    await fs.mkdir(claudeDir(), { recursive: true });
+    const lock = path.join(claudeDir(), 'default.json.lock');
+    await fs.writeFile(lock, '1:held');
+    const open = vi.spyOn(fs, 'open');
+    const attempts = () =>
+      open.mock.calls.filter(([p, flag]) => p === lock && flag === 'wx').length;
+
+    store.record('claude-code', { accountId: 'default' }, [obs('five_hour', 20)]);
+    await new Promise((r) => setTimeout(r, 1_600));
+    // With no backoff this is ~160 attempts; 10, 110, 310, 710, 1510 ms is five.
+    expect(attempts()).toBeGreaterThanOrEqual(2);
+    expect(attempts()).toBeLessThanOrEqual(6);
+
+    await fs.rm(lock);
+    await vi.waitFor(
+      async () =>
+        expect((await readLedger(claudeDir(), 'default'))?.windows.five_hour?.usedPct).toBe(20),
+      { timeout: 5_000 }
+    );
+    // A success resets the backoff: the next reading lands at the normal pace.
+    store.record('claude-code', { accountId: 'default' }, [obs('seven_day', 30, clock + 1)]);
+    await vi.waitFor(
+      async () =>
+        expect((await readLedger(claudeDir(), 'default'))?.windows.seven_day?.usedPct).toBe(30),
+      // The next backoff wait would be 1.6 s; the normal pace is 10 ms.
+      { timeout: 800, interval: 10 }
+    );
+  });
+
+  it('holds only the newest pending reading per window while the ledger stays locked', async () => {
+    await writeConfig(claudeConfig([]));
+    const store = makeStore({ lockOptions: { giveUpMs: 1 } });
+    await store.load();
+    for (let i = 0; i < 200; i++) {
+      store.record('claude-code', { accountId: 'default' }, [obs('five_hour', i % 100, clock + i)]);
+    }
+    const records = (store as unknown as { records: Map<string, { pending: unknown[] }> }).records;
+    expect(records.get('claude-code:default')!.pending).toEqual([
+      expect.objectContaining({ key: 'five_hour', usedPct: 99 }),
+    ]);
   });
 });
 

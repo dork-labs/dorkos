@@ -450,7 +450,11 @@ export function claudeConfigDirEnv(root: string): { CLAUDE_CONFIG_DIR: string | 
     target === canonicalAccountPath(path.join(os.homedir(), '.claude'), undefined);
   const ambientNamesRoot =
     ambient !== undefined && canonicalAccountPath(ambient, undefined) === target;
-  return { CLAUDE_CONFIG_DIR: isDefaultRoot && !ambientNamesRoot ? undefined : root };
+  if (isDefaultRoot && !ambientNamesRoot) return { CLAUDE_CONFIG_DIR: undefined };
+  // The operator exported `~/.claude` themselves: keep THEIR spelling (perhaps a
+  // symlink), because the Keychain entry is keyed on the literal string.
+  if (isDefaultRoot && ambientNamesRoot) return { CLAUDE_CONFIG_DIR: ambient };
+  return { CLAUDE_CONFIG_DIR: root };
 }
 
 /**

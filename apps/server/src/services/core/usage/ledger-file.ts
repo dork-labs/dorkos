@@ -72,6 +72,11 @@ export interface WriteLedgerResult {
   dropped: LedgerMergeWarning[];
   /** True when the lock could not be taken within the give-up time. */
   gaveUp?: boolean;
+  /**
+   * True when the file is a ledger of another version, which is left alone
+   * (contract §1.2): nothing was merged into it.
+   */
+  otherVersion?: boolean;
   /** The ledger as it stands on disk after this write (`null` when there is none). */
   ledger: UsageLedger | null;
 }
@@ -253,39 +258,72 @@ export async function withLedgerLock<T>(
   }
 }
 
+/** What one ledger file on disk is, read without judging its readings. */
+export type LedgerFileState =
+  | { state: 'missing' }
+  /** The file exists but could not be read right now (EMFILE, EIO, EACCES, …). */
+  | { state: 'read-error'; error: unknown }
+  /** Not JSON, not an object, no `v`, or a version-1 file with no `windows` object. */
+  | { state: 'not-a-ledger' }
+  /** A ledger of another version: left alone (contract §1.2). */
+  | { state: 'other-version'; raw: Record<string, unknown> }
+  /** A version-1 ledger, raw: its entries are validated when merged. */
+  | { state: 'ledger'; raw: Record<string, unknown> };
+
 /**
- * Read the file under the lock (contract step 4): missing = empty; not JSON, or
- * JSON that is not a version-1 ledger object, = set aside as `.corrupt-<ms>`
- * and read as empty, never overwritten. A ledger of ANOTHER version is returned
- * as is, for `mergeLedger` to leave alone.
+ * Read one ledger file and say what it is, without a lock and without
+ * dropping anything: only `not-a-ledger` may be set aside, `other-version` is
+ * left alone, and a `read-error` means "try again later".
+ *
+ * @param dir - The runtime's ledger folder.
+ * @param accountId - The ledger id.
  */
-async function readUnderLock(dir: string, accountId: string): Promise<unknown> {
-  const file = path.join(dir, `${accountId}.json`);
+export async function inspectLedgerFile(dir: string, accountId: string): Promise<LedgerFileState> {
+  assertAccountId(accountId);
   let text: string;
   try {
-    text = await fs.readFile(file, 'utf8');
+    text = await fs.readFile(path.join(dir, `${accountId}.json`), 'utf8');
   } catch (err) {
-    if (isErrno(err, 'ENOENT')) return null;
-    throw err;
+    return isErrno(err, 'ENOENT') ? { state: 'missing' } : { state: 'read-error', error: err };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    parsed = undefined;
+    return { state: 'not-a-ledger' };
   }
-  if (isLedgerShaped(parsed)) return parsed;
-  await setLedgerAside(dir, accountId);
-  return null;
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { state: 'not-a-ledger' };
+  }
+  const raw = parsed as Record<string, unknown>;
+  if (raw.v === undefined) return { state: 'not-a-ledger' };
+  if (raw.v !== 1) return { state: 'other-version', raw };
+  const windows = raw.windows;
+  if (windows === null || typeof windows !== 'object' || Array.isArray(windows)) {
+    return { state: 'not-a-ledger' };
+  }
+  return { state: 'ledger', raw };
 }
 
-/** A version-1 ledger object, or an object naming another version (left alone). */
-function isLedgerShaped(value: unknown): boolean {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
-  const { v, windows } = value as { v?: unknown; windows?: unknown };
-  if (v === undefined) return false;
-  if (v !== 1) return true;
-  return windows !== null && typeof windows === 'object' && !Array.isArray(windows);
+/**
+ * Read the file under the lock (contract step 4): missing = empty; not a
+ * ledger = set aside as `.corrupt-<ms>` and read as empty, never overwritten;
+ * a ledger of ANOTHER version is returned as is, for `mergeLedger` to leave
+ * alone. A read error throws, so the write is retried rather than clobbering.
+ */
+async function readUnderLock(dir: string, accountId: string): Promise<unknown> {
+  const file = await inspectLedgerFile(dir, accountId);
+  switch (file.state) {
+    case 'missing':
+      return null;
+    case 'read-error':
+      throw file.error;
+    case 'not-a-ledger':
+      await setLedgerAside(dir, accountId);
+      return null;
+    default:
+      return file.raw;
+  }
 }
 
 /**
@@ -365,6 +403,9 @@ export async function writeLedger(
           written: false,
           dropped: merged.warnings,
           ledger: parsed.success ? parsed.data : null,
+          ...(merged.warnings.some((w) => w.code === 'ledger-version-unknown')
+            ? { otherVersion: true }
+            : {}),
         };
       }
       await replaceFile(dir, file, merged.ledger);

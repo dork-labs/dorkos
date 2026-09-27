@@ -33,25 +33,16 @@ import {
   toAccountUsage,
   type AccountUsage,
   type LedgerObservation,
-  type LedgerPlan,
   type LedgerRuntime,
   type UsageLedger,
 } from '@dorkos/shared/account-usage';
-import type { LedgerCredits, LedgerSpend } from '@dorkos/shared/account-usage';
 import { logger } from '../../../lib/logger.js';
-import {
-  ledgerDir,
-  listLedgerFiles,
-  readLedger,
-  writeLedger,
-  type LedgerLockOptions,
-} from './ledger-file.js';
+import { ledgerDir, listLedgerFiles, readLedger, writeLedger } from './ledger-file.js';
 import {
   accountForPath,
   canonicalAccountPath,
   resolveAccountRef,
   systemRealpath,
-  type DefaultFolderResolver,
   type RealpathLookup,
   type RuntimeAccount,
 } from './runtime-accounts.js';
@@ -61,75 +52,14 @@ import {
   type ReconcileHost,
 } from './account-usage-reconcile.js';
 import { LedgerFolderWatcher } from './ledger-folder-watcher.js';
-
-/** Timings, overridable by tests. */
-export interface AccountUsageStoreTimings {
-  /** Trailing debounce before a record's pending readings are written. Default 1 s. */
-  flushDebounceMs?: number;
-  /** Trailing throttle on `account_usage` emissions, per account. Default 2 s. */
-  broadcastThrottleMs?: number;
-  /** Debounce on a ledger folder's change events. Default 500 ms. */
-  watchDebounceMs?: number;
-  /** The periodic scan (reconcile, new folders, re-read files). Default 60 s. */
-  scanIntervalMs?: number;
-  /** A ledger file younger than this is never pruned. Default 60 s. */
-  pruneMinAgeMs?: number;
-}
-
-/** What an {@link AccountUsageStore} is built from. */
-export interface AccountUsageStoreOptions {
-  /** The DorkOS data directory; ledgers live under `runtimes/<runtime>/usage/`. */
-  dorkHome: string;
-  /**
-   * Read `<dorkHome>/config.json` from disk, in full, on every call (never a
-   * cached copy): `null` when the file is missing, `CONFIG_UNREADABLE` (`account-usage-reconcile.ts`)
-   * when it exists but cannot be read or parsed.
-   */
-  readConfig: () => Promise<unknown>;
-  /** The folder each runtime's `default` names (`claude-config-dir.ts`, `codex-home.ts`). */
-  resolveDefaultRoot: DefaultFolderResolver;
-  /** The real-path lookup folders are compared with. Default: the filesystem. */
-  realpath?: RealpathLookup;
-  /** The clock. Default: `new Date()`. */
-  now?: () => Date;
-  /** Where each throttled change goes (the `account_usage` event). */
-  broadcast?: (usage: AccountUsage) => void;
-  /** Lock timing overrides for the ledger writes. */
-  lockOptions?: LedgerLockOptions;
-  /** Timing overrides. */
-  timings?: AccountUsageStoreTimings;
-}
-
-/** Account-level facts a reading may carry beside its windows. */
-export interface AccountUsageMeta {
-  /** The plan a usage call reported; memory only, never written. */
-  subscriptionType?: string | null;
-  /** A plan fact to merge (with its own `observedAt` and `source`). */
-  plan?: LedgerPlan;
-  /** A credits fact to merge. */
-  credits?: LedgerCredits;
-  /** A spend fact to merge. */
-  spend?: LedgerSpend;
-}
-
-/** Which account a reading belongs to: a folder a session runs in, or an id. */
-export type AccountKey = { path: string } | { accountId: string };
-
-interface UsageRecord {
-  runtime: LedgerRuntime;
-  /** The ledger id, or `null` for a memory-only root. */
-  ledgerId: string | null;
-  /** The canonical folder of a memory-only root. */
-  path: string;
-  ledger: UsageLedger | null;
-  pending: LedgerObservation[];
-  subscriptionType: string | null;
-  flushTimer?: NodeJS.Timeout;
-  flushing?: Promise<void>;
-  broadcastTimer?: NodeJS.Timeout;
-  lastSignature?: string;
-  lastFlushWarnAt?: number;
-}
+import {
+  flushRetryDelayMs,
+  type AccountKey,
+  type AccountUsageMeta,
+  type AccountUsageStoreOptions,
+  type AccountUsageStoreTimings,
+  type UsageRecord,
+} from './account-usage-types.js';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -175,6 +105,8 @@ export class AccountUsageStore {
       watchDebounceMs: 500,
       scanIntervalMs: 60_000,
       pruneMinAgeMs: 60_000,
+      retryBaseMs: 1_000,
+      retryMaxMs: 60_000,
       ...opts.timings,
     };
     this.watcher = new LedgerFolderWatcher(
@@ -308,7 +240,7 @@ export class AccountUsageStore {
       }
       if (merged.changed) record.ledger = merged.ledger;
       if (record.ledgerId !== null) {
-        record.pending.push(...all);
+        this.setPending(record, [...record.pending, ...all]);
         this.scheduleFlush(record);
       }
     }
@@ -361,7 +293,15 @@ export class AccountUsageStore {
   ): UsageRecord {
     let record = this.records.get(mapKey);
     if (!record) {
-      record = { runtime, ledgerId, path, ledger: null, pending: [], subscriptionType: null };
+      record = {
+        runtime,
+        ledgerId,
+        path,
+        ledger: null,
+        pending: [],
+        subscriptionType: null,
+        failures: 0,
+      };
       this.records.set(mapKey, record);
     }
     return record;
@@ -371,12 +311,29 @@ export class AccountUsageStore {
 
   private scheduleFlush(record: UsageRecord): void {
     if (this.stopped || record.flushTimer) return;
+    const { flushDebounceMs, retryBaseMs, retryMaxMs } = this.timings;
+    const delay =
+      record.failures > 0
+        ? flushRetryDelayMs(record.failures, retryBaseMs, retryMaxMs)
+        : flushDebounceMs;
     record.flushTimer = unref(
       setTimeout(() => {
         record.flushTimer = undefined;
         void this.flushRecord(record);
-      }, this.timings.flushDebounceMs)
+      }, delay)
     );
+  }
+
+  /**
+   * Hold at most one pending reading per window and fact (the newest), so a
+   * ledger that stays unwritable never grows memory.
+   */
+  private setPending(record: UsageRecord, observations: LedgerObservation[]): void {
+    const collapsed = mergeLedger(null, observations, this.now(), {
+      runtime: record.runtime,
+      accountId: record.ledgerId ?? IMPLICIT_ACCOUNT_ID,
+    });
+    record.pending = collapsed.changed ? observationsOf(collapsed.ledger) : [];
   }
 
   /** Write one record's pending readings; one write in flight per account. */
@@ -400,14 +357,24 @@ export class AccountUsageStore {
           this.now(),
           this.opts.lockOptions
         );
-        if (result.gaveUp) {
-          record.pending = [...batch, ...record.pending];
-          this.warnFlush(record, 'the ledger stayed locked');
+        if (result.gaveUp || result.otherVersion) {
+          this.putBack(record, batch);
+          this.warnFlush(
+            record,
+            result.gaveUp ? 'the ledger stayed locked' : 'the ledger is of another version'
+          );
           return;
+        }
+        if (record.failures > 0) {
+          // Back to the normal pace: a reading that arrived during this write
+          // was scheduled at the backoff wait, so reschedule it (in `finally`).
+          record.failures = 0;
+          if (record.flushTimer) clearTimeout(record.flushTimer);
+          record.flushTimer = undefined;
         }
         if (result.ledger) this.mergeFileIntoMemory(record, result.ledger);
       } catch (err) {
-        record.pending = [...batch, ...record.pending];
+        this.putBack(record, batch);
         this.warnFlush(record, String(err));
       } finally {
         record.flushing = undefined;
@@ -417,6 +384,12 @@ export class AccountUsageStore {
       }
     })();
     return record.flushing;
+  }
+
+  /** A write failed: keep its readings (newest per key) and back off the next try. */
+  private putBack(record: UsageRecord, batch: LedgerObservation[]): void {
+    record.failures += 1;
+    this.setPending(record, [...batch, ...record.pending]);
   }
 
   private warnFlush(record: UsageRecord, reason: string): void {

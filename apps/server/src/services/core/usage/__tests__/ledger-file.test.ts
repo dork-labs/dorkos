@@ -167,6 +167,35 @@ describe('writeLedger (contract §1.2 "Writing")', () => {
     expect((await fs.readdir(dir)).filter((n) => n.includes('.stale-'))).toEqual([]);
   });
 
+  it('puts back a lock whose holder refreshed it between the token read and the rename', async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const lock = path.join(dir, 'work.json.lock');
+    await fs.writeFile(lock, '1:slow-holder');
+    const old = new Date(Date.now() - 20_000);
+    await fs.utimes(lock, old, old);
+
+    // Same token, but its holder touched it just before the breaker's rename:
+    // the moved file is fresh, so it is a live lock and must go back.
+    const realRename = fs.rename.bind(fs);
+    const link = vi.spyOn(fs, 'link');
+    let touched = false;
+    vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (!touched && from === lock) {
+        touched = true;
+        const now = new Date();
+        await fs.utimes(lock, now, now);
+      }
+      return realRename(from, to);
+    });
+
+    const result = await writeLedger(dir, 'work', [obs('five_hour', 5)], NOW, { giveUpMs: 60 });
+
+    expect(touched).toBe(true);
+    expect(link).toHaveBeenCalledWith(expect.stringMatching(/\.stale-/), lock);
+    expect(result).toMatchObject({ written: false, gaveUp: true });
+    expect(await fs.readFile(lock, 'utf8')).toBe('1:slow-holder');
+  });
+
   it('never deletes a lock that now holds a foreign token on release', async () => {
     const lock = path.join(dir, 'work.json.lock');
     const result = await withLedgerLock(dir, 'work', async () => {

@@ -31,8 +31,8 @@ import {
 import { logger } from '../../../lib/logger.js';
 import {
   deleteLedger,
+  inspectLedgerFile,
   listLedgerFiles,
-  readLedger,
   setLedgerAside,
   withLedgerLock,
   writeLedger,
@@ -207,10 +207,30 @@ export async function reconcileAccounts(host: ReconcileHost): Promise<void> {
 }
 
 /**
+ * Readings from a raw version-1 ledger object, unvalidated: `mergeLedger`
+ * validates each one and drops (with a warning) only the entries that are bad,
+ * so one bad window never costs the others.
+ */
+function observationsOfRaw(raw: Record<string, unknown>): LedgerObservation[] {
+  const out: unknown[] = [];
+  const windows = raw.windows as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(windows)) {
+    if (entry && typeof entry === 'object') out.push({ ...entry, key });
+  }
+  for (const kind of LEDGER_FACT_KINDS) {
+    const fact = raw[kind];
+    if (fact && typeof fact === 'object') out.push({ ...fact, kind });
+  }
+  return out as LedgerObservation[];
+}
+
+/**
  * Merge `default.json` into `<aliasId>.json` under both locks, THEN delete
- * `default.json` under its lock. A `default.json` that is not a readable ledger
- * is set aside as `.corrupt-<ms>`, never deleted; a merge that gave up deletes
- * nothing.
+ * `default.json` under its lock, and only when the merge landed. Anything else
+ * keeps the file for a later pass: a merge that gave up or that the row's own
+ * ledger refused (another version), a `default.json` of another version (left
+ * alone, contract §1.2), a read error. Only a file that is not a ledger at all
+ * is set aside, as `.corrupt-<ms>`, never deleted.
  */
 async function foldDefaultInto(
   host: ReconcileHost,
@@ -222,21 +242,31 @@ async function foldDefaultInto(
   const folded = await withLedgerLock(
     dir,
     IMPLICIT_ACCOUNT_ID,
-    async () => {
-      if (!fs.existsSync(file)) return true;
-      const standalone = await readLedger(dir, IMPLICIT_ACCOUNT_ID);
-      if (!standalone) {
+    async (): Promise<boolean> => {
+      const standalone = await inspectLedgerFile(dir, IMPLICIT_ACCOUNT_ID);
+      if (standalone.state === 'missing') return false;
+      if (standalone.state === 'not-a-ledger') {
         await setLedgerAside(dir, IMPLICIT_ACCOUNT_ID);
-        return true;
+        return false;
+      }
+      if (standalone.state !== 'ledger') {
+        host.logOnce(
+          `fold-skipped:${runtime}:${standalone.state}`,
+          '[account-usage] left default.json alone for now; its readings were not merged',
+          { runtime, reason: standalone.state }
+        );
+        return false;
       }
       const result = await writeLedger(
         dir,
         aliasId,
-        observationsOf(standalone),
+        observationsOfRaw(standalone.raw),
         host.now(),
         host.lockOptions
       );
-      if (result.gaveUp) return false;
+      // Landed: written, or unchanged because the row already holds it all. A
+      // row ledger of another version took nothing, so default.json stays.
+      if (result.gaveUp || result.otherVersion) return false;
       if (result.ledger) host.mergeWritten(runtime, aliasId, result.ledger);
       await fs.promises.rm(file, { force: true });
       return true;
@@ -246,10 +276,7 @@ async function foldDefaultInto(
   if (!folded.gaveUp && folded.value) {
     logger.info(
       '[account-usage] the default account is now a registered account; merged its usage',
-      {
-        runtime,
-        accountId: aliasId,
-      }
+      { runtime, accountId: aliasId }
     );
   }
 }

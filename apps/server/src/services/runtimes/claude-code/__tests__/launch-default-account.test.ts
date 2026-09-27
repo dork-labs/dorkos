@@ -97,6 +97,25 @@ describe('launching `default` (contract rev 6d)', () => {
     }
   });
 
+  it("keeps the operator's own spelling when the server's CLAUDE_CONFIG_DIR reaches ~/.claude through a symlink", async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'default-launch-')));
+    try {
+      const home = path.join(tmp, 'home');
+      await fs.mkdir(path.join(home, '.claude'), { recursive: true });
+      const link = path.join(tmp, 'claude-link');
+      await fs.symlink(path.join(home, '.claude'), link);
+      vi.spyOn(os, 'homedir').mockReturnValue(home);
+      process.env.CLAUDE_CONFIG_DIR = link;
+
+      const root = resolveLaunchAccountRoot({ hintId: 'default', config: fakeConfig() });
+      expect(root).toBe(path.join(home, '.claude'));
+      expect(claudeConfigDirEnv(root)).toEqual({ CLAUDE_CONFIG_DIR: link });
+    } finally {
+      vi.restoreAllMocks();
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('a hand-edited row named `default` never takes the name', () => {
     const config = fakeConfig({
       accounts: [{ id: 'default', path: '/staged/imposter', label: null }],

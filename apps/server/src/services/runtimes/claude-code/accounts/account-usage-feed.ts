@@ -15,7 +15,7 @@
  */
 import type { LedgerObservation } from '@dorkos/shared/account-usage';
 import { logger } from '../../../../lib/logger.js';
-import type { AccountUsageMeta } from '../../../core/usage/account-usage-store.js';
+import type { AccountUsageMeta } from '../../../core/usage/account-usage-types.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import type { AgentSession } from '../agent-types.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
