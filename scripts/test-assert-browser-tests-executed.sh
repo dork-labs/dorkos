@@ -550,6 +550,20 @@ sharded=$tmp/sharded/apps/e2e/test-results
 check 'a healthy three-shard run passes' "$tmp/sharded" 0 '16 test(s) executed' \
   "$sharded/shard-1.json" "$sharded/shard-2.json" "$sharded/shard-3.json"
 
+# The size CI actually runs (browser-test.yml's matrix, six since 2026-09-27).
+# Nothing in the script names a count, and this is what proves it: six reports
+# union to the same run, and five of six are refused by count, not certified.
+make_workspace "$tmp/sharded6"
+make_shards "$tmp/sharded6" 6
+sharded6=$tmp/sharded6/apps/e2e/test-results
+check 'a healthy six-shard run passes' "$tmp/sharded6" 0 '16 test(s) executed' \
+  "$sharded6/shard-1.json" "$sharded6/shard-2.json" "$sharded6/shard-3.json" \
+  "$sharded6/shard-4.json" "$sharded6/shard-5.json" "$sharded6/shard-6.json"
+check 'a six-shard run missing one shard is refused by count' "$tmp/sharded6" 1 \
+  'cut into 6 shards but only 5' \
+  "$sharded6/shard-1.json" "$sharded6/shard-2.json" "$sharded6/shard-3.json" \
+  "$sharded6/shard-4.json" "$sharded6/shard-5.json"
+
 # And it must still be the same ASSERTION, not just the same total: a spec absent
 # from every shard is a spec that did not run, and has to be named exactly as it
 # is in an unsharded run.
