@@ -3,6 +3,7 @@ covers:
   - 'fix(client): give warning colors a real token so they read as warnings (DOR-2444)'
   - 'fix(client): darken warning text further and move its guard into CI (DOR-2444)'
   - 'fix(client): scan for real comment trivia, not regex guesses (DOR-2444)'
+  - 'fix(client): stop parsing, only skip whole-line comments (DOR-2444)'
 ---
 
 ### Fixed
