@@ -42,6 +42,12 @@ export const MAX_AUTO_DELAY_SECONDS = 3_600;
 /** The advisor methods core may call. */
 export type AdvisorMethod = keyof AccountAdvisor;
 
+/** Methods that resolve to nothing; their only answer is whether they succeeded ({@link invokeAdvisor}). */
+export type VoidAdvisorMethod = 'move' | 'cancelAuto' | 'wait';
+
+/** Methods that answer something core then validates ({@link callAdvisor}). */
+export type AnsweringAdvisorMethod = Exclude<AdvisorMethod, VoidAdvisorMethod>;
+
 interface Registration {
   ownerId: string;
   advisor: AccountAdvisor;
@@ -139,7 +145,7 @@ async function settleAdvisor<M extends AdvisorMethod>(
  * @returns The advisor's (unvalidated) answer, or `undefined` when no advisor
  *   is registered, it lacks the method, it throws, or it takes too long.
  */
-export async function callAdvisor<M extends AdvisorMethod>(
+export async function callAdvisor<M extends AnsweringAdvisorMethod>(
   method: M,
   ...args: AdvisorFn<M>['args']
 ): Promise<AdvisorFn<M>['result'] | undefined> {
@@ -158,7 +164,7 @@ export async function callAdvisor<M extends AdvisorMethod>(
  * @returns True when it resolved within the bound; false when no advisor is
  *   registered, it lacks the method, it throws, or it takes too long.
  */
-export async function invokeAdvisor<M extends AdvisorMethod>(
+export async function invokeAdvisor<M extends VoidAdvisorMethod>(
   method: M,
   ...args: AdvisorFn<M>['args']
 ): Promise<boolean> {

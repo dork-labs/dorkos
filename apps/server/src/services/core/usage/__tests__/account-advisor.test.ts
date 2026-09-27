@@ -134,6 +134,13 @@ describe('callAdvisor', () => {
     expect(await invokeAdvisor('cancelAuto', info)).toBe(false);
   });
 
+  it('keeps answering and void methods apart at compile time', () => {
+    // @ts-expect-error move answers nothing, so it goes through invokeAdvisor
+    void callAdvisor('move', {} as never, {} as never);
+    // @ts-expect-error rank answers a ranking, so it goes through callAdvisor
+    void invokeAdvisor('rank', [], {} as never);
+  });
+
   it('passes an answer inside the bound through', async () => {
     registerAccountAdvisor('flow', advisor({ onLimited: async () => ({ mode: 'ask' }) }));
     expect(await callAdvisor('onLimited', {} as never)).toEqual({ mode: 'ask' });
