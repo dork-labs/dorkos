@@ -308,7 +308,10 @@ export interface OperatingSkill {
  *   teaches working on that copy by full path and `git -C`, and the rule that an
  *   agent changes its own code in a private worktree of its own repo, never in
  *   its home checkout. An agent seeded at 32 would edit relative paths believing
- *   it stands in the copy, and write into its own folder instead.
+ *   it stands in the copy, and write into its own folder instead. Same unreleased
+ *   version: the page also says a clean copy is brought up to date when a room
+ *   turn starts, and that a copy with work in progress is left alone with a list
+ *   of what moved (DOR-2411).
  */
 export const OPERATING_SKILLS_VERSION = 33;
 
