@@ -162,6 +162,14 @@ describe('accountRow', () => {
     expect(
       accountRow(connection({ reconciliationStatus: 'migration_needs_reconcile' }), SERVICES)
     ).toMatchObject({ tone: 'attention', action: 'review' });
+    // A brand-new account reads "needs reconcile" until anyone is granted:
+    // nothing to review, it is connected with no agents yet.
+    expect(
+      accountRow(
+        connection({ reconciliationStatus: 'migration_needs_reconcile', agentCount: 0 }),
+        SERVICES
+      )
+    ).toMatchObject({ tone: 'ready', action: null, detail: 'you@gmail.com · No agents yet' });
     expect(
       accountRow(connection({ authoritySync: { status: 'failed', reason: 'x' } }), SERVICES)
     ).toMatchObject({ tone: 'broken', action: 'review' });

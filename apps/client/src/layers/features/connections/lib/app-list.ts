@@ -177,7 +177,10 @@ export function accountRow(
       detail: 'Couldn’t update who can use it. Check it again.',
     };
   }
-  if (connection.reconciliationStatus !== 'ready') {
+  // A new account reads "needs reconcile" until its access is first chosen;
+  // with nobody granted there is nothing to re-check, so it is simply
+  // connected with no agents yet. Only granted access can have gone stale.
+  if (connection.reconciliationStatus !== 'ready' && connection.agentCount > 0) {
     return {
       ...base,
       tone: 'attention',

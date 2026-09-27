@@ -141,7 +141,7 @@ function AccountPanelBody({
           action="Check exact actions"
           onAction={() => onEditExactActions(connectionId)}
         />
-      ) : connection.reconciliationStatus !== 'ready' ? (
+      ) : connection.reconciliationStatus !== 'ready' && detail.agents.length > 0 ? (
         <PanelFix
           message={`Some of ${appName}’s actions changed. Check who can use them.`}
           action="Review"
