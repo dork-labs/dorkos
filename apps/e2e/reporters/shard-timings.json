@@ -1,127 +1,99 @@
 {
   "source": {
-    "generated": "2026-09-27",
+    "generated": "2026-09-23",
     "runs": [
-      "36332070042",
-      "36332069313",
-      "36332068014",
-      "36332067547",
-      "36332066843",
-      "36314514672",
-      "36313950372"
+      "35840642994",
+      "35827242982",
+      "35826844257",
+      "35816414639",
+      "35811184229",
+      "35809878783",
+      "35806915156"
     ]
   },
   "units": {
     "chromium-bridge|relay/bridged-channel.spec.ts": {
-      "seconds": 4.9,
+      "seconds": 4.7,
       "tests": 1
     },
     "chromium-browser-driving|workbench/browser-driving.spec.ts": {
-      "seconds": 18.4,
+      "seconds": 23.9,
       "tests": 2
     },
     "chromium-browser-driving|workbench/browser-recording.spec.ts": {
-      "seconds": 6.9,
+      "seconds": 8.6,
       "tests": 1
     },
     "chromium-browser-driving|workbench/session-canvas-sync.spec.ts": {
-      "seconds": 66.5,
+      "seconds": 80.6,
       "tests": 6
-    },
-    "chromium-connections|connections/community-channel-view.spec.ts": {
-      "seconds": 27.2,
-      "tests": 6
-    },
-    "chromium-connections|connections/community-membership-access.spec.ts": {
-      "seconds": 58.4,
-      "tests": 4
-    },
-    "chromium-connections|connections/community-switcher-access.spec.ts": {
-      "seconds": 45.6,
-      "tests": 7
     },
     "chromium-connections|connections/community-switcher.spec.ts": {
-      "seconds": 73.8,
-      "tests": 8
-    },
-    "chromium-connections|connections/community-switching-proof.spec.ts": {
-      "seconds": 9.9,
-      "tests": 2
+      "seconds": 10.1,
+      "tests": 1
     },
     "chromium-connections|connections/connections.spec.ts": {
-      "seconds": 177.3,
-      "tests": 15
+      "seconds": 179.2,
+      "tests": 14
     },
     "chromium-connections|connections/marketplace-connectors.spec.ts": {
-      "seconds": 4.1,
+      "seconds": 5,
       "tests": 1
     },
     "chromium-connections|connections/mcp-oauth-signin.spec.ts": {
-      "seconds": 7.4,
+      "seconds": 7.2,
       "tests": 1
     },
     "chromium-mock|chat-mock.spec.ts": {
-      "seconds": 367.8,
+      "seconds": 493,
       "tests": 65
     },
     "chromium-production|production/shipped-shell.spec.ts": {
-      "seconds": 7.6,
+      "seconds": 9.6,
       "tests": 3
     },
-    "chromium-rooms-agents|permissions/agent-permissions.spec.ts": {
-      "seconds": 11.6,
-      "tests": 5
-    },
-    "chromium-rooms-agents|permissions/permission-delight.spec.ts": {
-      "seconds": 21.8,
-      "tests": 2
-    },
-    "chromium-rooms-agents|permissions/request-card.spec.ts": {
-      "seconds": 28.2,
-      "tests": 5
-    },
     "chromium-rooms-agents|rooms/agent-reactions.spec.ts": {
-      "seconds": 4.6,
+      "seconds": 4.5,
       "tests": 1
     },
     "chromium-rooms-agents|rooms/attachments/agent-attachment.spec.ts": {
-      "seconds": 4.3,
+      "seconds": 5.2,
       "tests": 1
     },
     "chromium-rooms-agents|rooms/canvas/room-canvas-thread.spec.ts": {
-      "seconds": 15.7,
+      "seconds": 15,
       "tests": 2
     },
     "chromium-rooms-agents|rooms/canvas/room-canvas.spec.ts": {
-      "seconds": 34.1,
+      "seconds": 42.4,
       "tests": 5
     },
     "chromium-rooms-agents|rooms/canvas/room-follow.spec.ts": {
-      "seconds": 30.5,
+      "seconds": 36.3,
       "tests": 4
     },
     "chromium-rooms-agents|rooms/canvas/room-merge-from-diff.spec.ts": {
-      "seconds": 5.3,
+      "seconds": 7.1,
       "tests": 1
     },
     "chromium-rooms-agents|rooms/room-autonomy.spec.ts": {
-      "seconds": 59.5,
-      "tests": 7
+      "seconds": 57.4,
+      "tests": 6
     },
     "chromium-rooms-agents|rooms/room-tool-only-replies.spec.ts": {
-      "seconds": 13.5,
+      "seconds": 16.1,
       "tests": 3
     },
     "chromium-streams|streams/live-agent-list.spec.ts": {
-      "seconds": 9.7,
+      "seconds": 11.2,
       "tests": 1
     },
     "chromium-streams|streams/multi-window.spec.ts": {
-      "seconds": 17.8,
+      "seconds": 19.1,
       "tests": 1
     },
     "chromium-streams|streams/session-queue.spec.ts": {
-      "seconds": 21.5,
+      "seconds": 28.6,
       "tests": 2
     },
     "chromium-streams|streams/sse-contract.spec.ts": {
@@ -129,251 +101,239 @@
       "tests": 2
     },
     "chromium-team-room|home-surface/team-room.spec.ts": {
-      "seconds": 74.3,
+      "seconds": 70,
       "tests": 11
     },
     "chromium|chat/codex-agent-creation.spec.ts": {
-      "seconds": 10.8,
+      "seconds": 9.7,
       "tests": 1
     },
     "chromium|chat/status-line-fit.spec.ts": {
-      "seconds": 31.8,
+      "seconds": 37.3,
       "tests": 7
     },
     "chromium|control-center/control-center.spec.ts": {
-      "seconds": 28,
-      "tests": 6
+      "seconds": 20.6,
+      "tests": 4
     },
     "chromium|conversation/lane-no-shift.spec.ts": {
-      "seconds": 5.5,
+      "seconds": 6.7,
       "tests": 1
     },
     "chromium|conversation/peek.spec.ts": {
-      "seconds": 6.3,
+      "seconds": 5.7,
       "tests": 1
     },
     "chromium|dashboard-sidebar/boot-stability.spec.ts": {
-      "seconds": 10,
+      "seconds": 10.9,
       "tests": 1
     },
     "chromium|dashboard-sidebar/mobile-sidebar-navigation.spec.ts": {
-      "seconds": 45.3,
+      "seconds": 55.6,
       "tests": 11
     },
     "chromium|dashboard-sidebar/mobile-touch.spec.ts": {
-      "seconds": 38.5,
+      "seconds": 39.7,
       "tests": 8
     },
     "chromium|dashboard-sidebar/session-switcher.spec.ts": {
-      "seconds": 39.4,
+      "seconds": 49.8,
       "tests": 8
     },
     "chromium|dashboard-sidebar/sidebar-bottom-slot.spec.ts": {
-      "seconds": 6.5,
+      "seconds": 8,
       "tests": 1
     },
     "chromium|dashboard-sidebar/sidebar-groups.spec.ts": {
-      "seconds": 77,
+      "seconds": 74.7,
       "tests": 11
     },
     "chromium|dashboard-sidebar/sidebar-model-showcase.spec.ts": {
-      "seconds": 36.3,
+      "seconds": 45.8,
       "tests": 9
     },
     "chromium|dashboard-sidebar/sidebar-row-gutter.spec.ts": {
-      "seconds": 57.3,
+      "seconds": 53.8,
       "tests": 12
     },
     "chromium|dashboard-sidebar/sidebar-today.spec.ts": {
-      "seconds": 25.4,
+      "seconds": 30.5,
       "tests": 5
     },
     "chromium|dev-playground/blintz.spec.ts": {
-      "seconds": 39.4,
+      "seconds": 37,
       "tests": 7
     },
     "chromium|dev-playground/feedback-capture-focus.spec.ts": {
-      "seconds": 10.3,
+      "seconds": 15.3,
       "tests": 1
     },
     "chromium|dev-playground/feedback-point-at-element.spec.ts": {
-      "seconds": 14.2,
+      "seconds": 20.7,
       "tests": 2
     },
     "chromium|dev-playground/project-import-error.spec.ts": {
-      "seconds": 5.2,
+      "seconds": 5.8,
       "tests": 1
     },
     "chromium|dev-playground/pulse-attention.spec.ts": {
-      "seconds": 3.3,
+      "seconds": 4.1,
       "tests": 1
     },
-    "chromium|dev-playground/timeline-capture.spec.ts": {
-      "seconds": 15.7,
-      "tests": 2
-    },
     "chromium|dialog-deep-link.spec.ts": {
-      "seconds": 34.5,
-      "tests": 9
+      "seconds": 38.9,
+      "tests": 8
     },
     "chromium|features.spec.ts": {
       "seconds": 11,
       "tests": 3
     },
     "chromium|flow/verify-proof-pipeline.spec.ts": {
-      "seconds": 0.3,
+      "seconds": 0.4,
       "tests": 2
     },
     "chromium|full-power-door.spec.ts": {
-      "seconds": 89.6,
+      "seconds": 87.1,
       "tests": 2
     },
     "chromium|harness/skills-page.spec.ts": {
-      "seconds": 12.7,
+      "seconds": 15.2,
       "tests": 3
     },
     "chromium|home-surface/home-shell.spec.ts": {
-      "seconds": 46.4,
+      "seconds": 41.3,
       "tests": 10
     },
     "chromium|home-surface/jump-back-in.spec.ts": {
-      "seconds": 17.5,
+      "seconds": 21.4,
       "tests": 5
     },
     "chromium|marketplace.spec.ts": {
-      "seconds": 9.5,
+      "seconds": 9.6,
       "tests": 3
     },
     "chromium|onboarding-power.spec.ts": {
-      "seconds": 13.7,
+      "seconds": 18.3,
       "tests": 3
     },
     "chromium|one-bar/bar-tab-strip-floor.spec.ts": {
-      "seconds": 3,
+      "seconds": 3.8,
       "tests": 1
     },
     "chromium|pip/mobile-pip-dock.spec.ts": {
-      "seconds": 11.7,
+      "seconds": 13.3,
       "tests": 3
     },
     "chromium|profile/profile-pushin.spec.ts": {
-      "seconds": 12.6,
+      "seconds": 10.3,
       "tests": 2
     },
     "chromium|pulse/pulse-panel.spec.ts": {
-      "seconds": 19.9,
+      "seconds": 18,
       "tests": 4
     },
     "chromium|pulse/right-panel-tab-strip.spec.ts": {
-      "seconds": 8.4,
+      "seconds": 10.3,
       "tests": 2
     },
     "chromium|relay/adapter-wizard-fields.spec.ts": {
-      "seconds": 38.1,
+      "seconds": 42.9,
       "tests": 8
     },
     "chromium|relay/connections-page.spec.ts": {
-      "seconds": 44.6,
-      "tests": 9
+      "seconds": 52.1,
+      "tests": 8
     },
     "chromium|responsive/no-horizontal-scroll.spec.ts": {
-      "seconds": 112,
+      "seconds": 108.4,
       "tests": 16
     },
     "chromium|responsive/touch-reach.spec.ts": {
-      "seconds": 19.7,
+      "seconds": 20.2,
       "tests": 3
     },
     "chromium|rooms/archived-in-palette.spec.ts": {
-      "seconds": 7.7,
+      "seconds": 9.7,
       "tests": 2
     },
     "chromium|rooms/attachments/human-attachments.spec.ts": {
-      "seconds": 8.1,
+      "seconds": 10.5,
       "tests": 1
     },
     "chromium|rooms/direct-messages.spec.ts": {
-      "seconds": 28.5,
+      "seconds": 25.5,
       "tests": 4
     },
     "chromium|rooms/mention-picker.spec.ts": {
-      "seconds": 31.9,
+      "seconds": 30,
       "tests": 4
     },
     "chromium|rooms/owner-sees-every-room.spec.ts": {
-      "seconds": 4.1,
+      "seconds": 5.1,
       "tests": 1
     },
     "chromium|rooms/palette-scope-chips.spec.ts": {
-      "seconds": 7.4,
+      "seconds": 9.1,
       "tests": 2
     },
     "chromium|rooms/read-state-cross-device.spec.ts": {
-      "seconds": 13.5,
+      "seconds": 18.4,
       "tests": 2
     },
     "chromium|rooms/room-conversation.spec.ts": {
-      "seconds": 56.6,
+      "seconds": 66.7,
       "tests": 10
     },
     "chromium|rooms/room-entry-actions.spec.ts": {
-      "seconds": 81.1,
+      "seconds": 104.3,
       "tests": 19
     },
-    "chromium|rooms/room-files-changes.spec.ts": {
-      "seconds": 87.2,
-      "tests": 9
-    },
     "chromium|rooms/room-files.spec.ts": {
-      "seconds": 38.7,
+      "seconds": 33.9,
       "tests": 4
     },
     "chromium|rooms/room-identity.spec.ts": {
-      "seconds": 21.7,
+      "seconds": 27.1,
       "tests": 4
     },
     "chromium|rooms/room-presence-sidebar.spec.ts": {
-      "seconds": 3.3,
-      "tests": 1
-    },
-    "chromium|rooms/room-presence.spec.ts": {
-      "seconds": 21.6,
-      "tests": 2
-    },
-    "chromium|rooms/room-reactions.spec.ts": {
-      "seconds": 44.5,
-      "tests": 7
-    },
-    "chromium|rooms/room-row-menu.spec.ts": {
-      "seconds": 11.7,
-      "tests": 2
-    },
-    "chromium|rooms/room-sheet-phone.spec.ts": {
-      "seconds": 50.1,
-      "tests": 6
-    },
-    "chromium|rooms/room-sheet.spec.ts": {
-      "seconds": 68.1,
-      "tests": 8
-    },
-    "chromium|rooms/rooms-in-palette.spec.ts": {
-      "seconds": 23.1,
-      "tests": 3
-    },
-    "chromium|rooms/threads/thread-across-the-page.spec.ts": {
       "seconds": 4.2,
       "tests": 1
     },
-    "chromium|rooms/threads/thread-width.spec.ts": {
-      "seconds": 5.5,
+    "chromium|rooms/room-presence.spec.ts": {
+      "seconds": 21.1,
+      "tests": 2
+    },
+    "chromium|rooms/room-reactions.spec.ts": {
+      "seconds": 43,
+      "tests": 7
+    },
+    "chromium|rooms/room-row-menu.spec.ts": {
+      "seconds": 14.8,
+      "tests": 2
+    },
+    "chromium|rooms/room-sheet-phone.spec.ts": {
+      "seconds": 46.6,
+      "tests": 6
+    },
+    "chromium|rooms/room-sheet.spec.ts": {
+      "seconds": 65.4,
+      "tests": 8
+    },
+    "chromium|rooms/rooms-in-palette.spec.ts": {
+      "seconds": 23.4,
+      "tests": 3
+    },
+    "chromium|rooms/threads/thread-across-the-page.spec.ts": {
+      "seconds": 5.9,
       "tests": 1
     },
     "chromium|search/message-search-deeplink.spec.ts": {
-      "seconds": 16.6,
+      "seconds": 22.6,
       "tests": 3
     },
     "chromium|search/message-search.spec.ts": {
-      "seconds": 8.5,
+      "seconds": 10.2,
       "tests": 2
     },
     "chromium|settings/auth-login.spec.ts": {
@@ -381,39 +341,39 @@
       "tests": 4
     },
     "chromium|settings/runtimes-tab.spec.ts": {
-      "seconds": 26.5,
+      "seconds": 38.8,
       "tests": 6
     },
     "chromium|settings/select-reopen.spec.ts": {
-      "seconds": 4.1,
+      "seconds": 5.9,
       "tests": 1
     },
     "chromium|settings/settings-dialog.spec.ts": {
-      "seconds": 40.8,
+      "seconds": 63.8,
       "tests": 9
     },
     "chromium|settings/settings-tab-panels.spec.ts": {
-      "seconds": 5.5,
+      "seconds": 6.2,
       "tests": 1
     },
     "chromium|shapes/shape-switcher-focus.spec.ts": {
-      "seconds": 6.7,
+      "seconds": 6.9,
       "tests": 1
     },
     "chromium|smoke/app-loads.spec.ts": {
-      "seconds": 13.6,
-      "tests": 4
+      "seconds": 8.3,
+      "tests": 2
     },
     "chromium|tasks/task-scheduler.spec.ts": {
-      "seconds": 36.5,
+      "seconds": 51.2,
       "tests": 7
     },
     "chromium|team/team-page.spec.ts": {
-      "seconds": 118.5,
+      "seconds": 114,
       "tests": 18
     },
     "chromium|workbench/dev-server-preview.spec.ts": {
-      "seconds": 25,
+      "seconds": 31.1,
       "tests": 4
     }
   }

@@ -2,7 +2,7 @@
 id: 260919-175503
 title: 'Browser suite to six shards'
 kind: experiment
-status: active
+status: reverted
 actor: agent
 gates:
   - wf.browser-test.browser-shard
@@ -116,3 +116,24 @@ A shard's suite step reaches 20 minutes (0.8 of its 25) at p95 in the
 after-window, or `queue-build` p50 or p90 gets worse than 29.7 / 58.6 (runner
 contention from three more jobs a build), or the added cost is not paid back in
 queue time.
+
+## Reverted 2026-09-27
+
+Reverted by `git revert` of ea1e913fe (PR #2212), back to three shards. From
+the first queue build after it landed (18:43Z), shard 6 of 6 failed on most
+queue builds and blocked the queue for more than two hours. The same two specs
+failed on their first attempt every time: `chat/status-line-fit.spec.ts:270` and
+`workbench/session-canvas-sync.spec.ts:42`.
+
+The cause is not the grouping logic. Vite's dev server re-bundled the client's
+packages partway through the run, and the browser suite runs it with live reload
+off (DOR-1412), so pages that were open never reloaded. A page that loaded or
+lazily imported across the switch got two copies of React and crashed. In run
+36355925886, one page load on :4248 fetched packages tagged `v=673dfcd8` and then
+`v=f24ba68b`, followed by "Invalid hook call" and "Cannot read properties of
+null (reading 'useEffect')". The page on :4244 crashed with "reading 'useMemo'".
+The new grouping put the specs that set off a mid-run re-bundle in the same
+shard as the specs that crash when it lands. The two Vite servers also share one
+package cache, `apps/client/node_modules/.vite`. Why the re-bundle happens is
+still unknown, and the six-shard change cannot land again until that is fixed.
+No verdict should be read from this entry: it ran for under a day.

@@ -2,7 +2,7 @@
 id: 260927-170236
 title: Six browser shards must not slow the queue build
 kind: experiment
-status: active
+status: reverted
 actor: agent
 gates: []
 prs: [2212]
@@ -50,3 +50,10 @@ gate. Naming `wf.browser-test.browser-shard` here would make this entry and
 (`tracked.job-minutes-per-merged-pr`, 7 days to 2026-09-26). Revert
 260919-175503 if this entry fails, or if job-minutes per merged PR rise by more
 than about 60 with no queue-build gain.
+
+## Reverted 2026-09-27
+
+Reverted along with 260919-175503, which it guards (the revert of ea1e913fe, PR
+#2212). The six-shard grouping exposed a mid-run Vite package re-bundle that
+crashes shard 6 with two copies of React (evidence: run 36355925886). See that
+entry's note. No verdict should be read from this entry.
