@@ -9,3 +9,4 @@ export * from './permission-areas.js';
 export * from './permission-presets.js';
 export * from './resolve-permission.js';
 export * from './permission-api-schemas.js';
+export * from './affected-agents.js';

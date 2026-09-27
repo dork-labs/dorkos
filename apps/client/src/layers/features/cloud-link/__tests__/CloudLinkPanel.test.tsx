@@ -144,6 +144,84 @@ describe('CloudLinkPanel', () => {
     expect(await screen.findByRole('button', { name: /link this instance/i })).toBeInTheDocument();
   });
 
+  it('linked: the unlink confirm lists every app that stops and carries the count', async () => {
+    const user = userEvent.setup();
+    const base = {
+      providerInstanceId: 'cpi_managed',
+      identityHint: null,
+      authenticationStatus: 'active',
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      mode: 'managed',
+      custody: 'managed',
+      payer: 'dorkos_managed',
+      subscriptionCount: 0,
+      usage: { status: 'available', logicalOperationCount: 0, attemptCount: 0 },
+      warnings: [],
+    } as const;
+    const transport = createMockTransport({
+      getCloudStatus: vi.fn().mockResolvedValue({
+        linked: true,
+        accountLabel: 'kai@dork.dev',
+        lastHeartbeatAt: null,
+      }),
+      getConnectorConnections: vi.fn().mockResolvedValue({
+        connections: [
+          {
+            ...base,
+            connectionId: 'a',
+            toolkit: 'gmail',
+            label: 'work',
+            lifecycle: 'connected',
+            agentCount: 2,
+          },
+          {
+            ...base,
+            connectionId: 'b',
+            toolkit: 'notion',
+            label: 'team',
+            lifecycle: 'connected',
+            agentCount: 1,
+          },
+          {
+            ...base,
+            connectionId: 'c',
+            toolkit: 'linear',
+            label: 'me',
+            lifecycle: 'paused',
+            agentCount: 0,
+          },
+          // Through the person's own key, so unlinking does not touch it.
+          {
+            ...base,
+            connectionId: 'd',
+            toolkit: 'github',
+            label: 'me',
+            lifecycle: 'connected',
+            agentCount: 1,
+            mode: 'byo',
+            payer: 'operator_byo',
+          },
+        ],
+      }),
+    });
+    vi.mocked(transport.getCloudLinkStatus).mockResolvedValue({ state: 'idle' });
+    renderPanel(transport);
+
+    await user.click(await screen.findByRole('button', { name: /unlink this instance/i }));
+    const confirm = await screen.findByRole('button', { name: 'Unlink and stop 2 apps' });
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('These 2 apps will stop working for every agent:');
+    expect(dialog).toHaveTextContent('Gmail (work) · used by 2 agents');
+    expect(dialog).toHaveTextContent('Notion (team) · used by 1 agent');
+    // Paused already: listed honestly, not counted as a loss.
+    expect(dialog).toHaveTextContent('This app can’t be used now either way:');
+    expect(dialog).toHaveTextContent('Linear (me)');
+    expect(dialog).not.toHaveTextContent('Github');
+    await user.click(confirm);
+    await waitFor(() => expect(transport.unlinkCloud).toHaveBeenCalledTimes(1));
+  });
+
   it('opens the activation page only for an http(s) verification URL, with the code pre-filled', async () => {
     const user = userEvent.setup();
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);

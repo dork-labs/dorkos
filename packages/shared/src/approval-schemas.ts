@@ -163,6 +163,20 @@ export const PendingApprovalSchema = z
      */
     alwaysOffered: z.boolean(),
     /**
+     * Set when the card should suggest Always allow: it is offered, the person
+     * answered Allow (once) for this same agent and action three times in the
+     * last seven days, and never tapped "Not now" on the suggestion for them.
+     * Computed on the server each time the card is read, so a "Not now" takes
+     * it away everywhere.
+     */
+    suggestAlways: z.literal(true).optional(),
+    /**
+     * With `suggestAlways`: how many times the person answered Allow (once)
+     * for this agent and action in the last seven days, so the card's line
+     * ("You've allowed this 4 times this week") is the true count.
+     */
+    allowedThisWeek: z.number().int().min(0).optional(),
+    /**
      * Set when the agent asked past a Blocked permission with
      * `request_permission` (spec `agent-permissions` D8), rather than an Ask
      * permission raising the card on its own.

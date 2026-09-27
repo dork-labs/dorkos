@@ -24,7 +24,6 @@ vi.mock('@/layers/features/relay', () => ({
 
 vi.mock('@/layers/features/connections', () => ({
   ClaimFeed: () => null,
-  MessagePolicyCard: () => null,
 }));
 
 import { MessagingRegion } from '../ui/MessagingRegion';

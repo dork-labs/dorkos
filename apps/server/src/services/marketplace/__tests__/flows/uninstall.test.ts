@@ -178,6 +178,7 @@ async function stageInstalledPackage(opts: {
 async function buildDeps(): Promise<{
   dorkHome: string;
   extensionManager: {
+    get: ReturnType<typeof vi.fn>;
     disable: ReturnType<typeof vi.fn>;
     forgetRunApproval: ReturnType<typeof vi.fn>;
   };
@@ -188,6 +189,7 @@ async function buildDeps(): Promise<{
   return {
     dorkHome,
     extensionManager: {
+      get: vi.fn().mockReturnValue(undefined),
       disable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
       forgetRunApproval: vi.fn().mockResolvedValue(undefined),
     },
@@ -425,8 +427,8 @@ describe('UninstallFlow', () => {
     await flow.uninstall({ name: 'plugin-approved' });
 
     expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledTimes(2);
-    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a');
-    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-b');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-b', installRoot);
   });
 
   it('forgets it even when `purge` is false, because data is not consent', async () => {
@@ -447,7 +449,7 @@ describe('UninstallFlow', () => {
     const result = await flow.uninstall({ name: 'plugin-update', purge: false });
 
     expect(result.preservedData.length).toBeGreaterThan(0);
-    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
   });
 
   it('removes adapter package files and calls adapterManager.removeAdapter', async () => {
@@ -468,6 +470,126 @@ describe('UninstallFlow', () => {
     expect(deps.adapterManager.removeAdapter).toHaveBeenCalledTimes(1);
     expect(deps.adapterManager.removeAdapter).toHaveBeenCalledWith('adapter-a');
     expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+  });
+
+  it('turns off and forgets the extensions an adapter package carries (DOR-2383)', async () => {
+    // An adapter installs under `plugins/`, and discovery now reads the extensions
+    // of everything installed there, so what it found must go with the package.
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'adapter-ext');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildAdapterManifest({ name: 'adapter-ext', adapterType: 'fixture' }),
+      extensions: [{ id: 'ext-a', manifest: { id: 'ext-a' } }],
+    });
+
+    const flow = new UninstallFlow(deps);
+    await flow.uninstall({ name: 'adapter-ext' });
+
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
+  });
+
+  describe('an update from the same plugin (DOR-2383)', () => {
+    /** Stage an installed `flow` plugin carrying the given extension ids. */
+    async function stageFlow(ids: string[]) {
+      const deps = await buildDeps();
+      cleanupDirs.push(deps.dorkHome);
+      const installRoot = path.join(deps.dorkHome, 'plugins', 'flow');
+      await stageInstalledPackage({
+        installRoot,
+        manifest: buildPluginManifest({ name: 'flow', extensions: ids }),
+        extensions: ids.map((id) => ({ id, manifest: { id } })),
+      });
+      return { deps, installRoot };
+    }
+
+    it('keeps an extension the new version still carries on, and approved', async () => {
+      const { deps } = await stageFlow(['flow']);
+
+      await new UninstallFlow(deps).uninstall({
+        name: 'flow',
+        purge: false,
+        replacing: true,
+        retainedExtensionIds: ['flow'],
+      });
+
+      expect(deps.extensionManager.disable).not.toHaveBeenCalled();
+      expect(deps.extensionManager.forgetRunApproval).not.toHaveBeenCalled();
+    });
+
+    it('turns off and forgets an extension the new version drops', async () => {
+      const { deps, installRoot } = await stageFlow(['flow', 'flow-old']);
+
+      await new UninstallFlow(deps).uninstall({
+        name: 'flow',
+        purge: false,
+        replacing: true,
+        retainedExtensionIds: ['flow'],
+      });
+
+      expect(deps.extensionManager.disable).toHaveBeenCalledTimes(1);
+      expect(deps.extensionManager.disable).toHaveBeenCalledWith('flow-old');
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledTimes(1);
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('flow-old', installRoot);
+    });
+
+    it('still forgets everything on a plain uninstall, whatever it is told to retain', async () => {
+      const { deps, installRoot } = await stageFlow(['flow']);
+
+      await new UninstallFlow(deps).uninstall({ name: 'flow', retainedExtensionIds: ['flow'] });
+
+      expect(deps.extensionManager.disable).toHaveBeenCalledWith('flow');
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('flow', installRoot);
+    });
+
+    it('forgets everything on a replace that does not say what the new version carries', async () => {
+      const { deps, installRoot } = await stageFlow(['flow']);
+
+      await new UninstallFlow(deps).uninstall({ name: 'flow', purge: false, replacing: true });
+
+      expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('flow', installRoot);
+    });
+  });
+
+  it('leaves a copy of the same id running from another plugin on (DOR-2383)', async () => {
+    // Plugin B carries `foo`, but the live `foo` is plugin A's. B's copy was
+    // never the one running, so removing B must not turn the id off. It still
+    // asks the manager to forget any approval recorded for B's own copy; the
+    // manager keeps an approval recorded for A's (extension-load-policy.test.ts).
+    const deps = await buildDeps();
+    cleanupDirs.push(deps.dorkHome);
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'plugin-b');
+    await stageInstalledPackage({
+      installRoot,
+      manifest: buildPluginManifest({ name: 'plugin-b', extensions: ['foo', 'only-b'] }),
+      extensions: [
+        { id: 'foo', manifest: { id: 'foo' } },
+        { id: 'only-b', manifest: { id: 'only-b' } },
+      ],
+    });
+    const liveElsewhere = path.join(
+      deps.dorkHome,
+      'plugins',
+      'plugin-a',
+      '.dork',
+      'extensions',
+      'foo'
+    );
+    deps.extensionManager.get.mockImplementation((id: string) =>
+      id === 'foo'
+        ? { path: liveElsewhere }
+        : { path: path.join(installRoot, '.dork', 'extensions', id) }
+    );
+
+    await new UninstallFlow(deps).uninstall({ name: 'plugin-b' });
+
+    expect(deps.extensionManager.disable).not.toHaveBeenCalledWith('foo');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('foo', installRoot);
+    // B's own extension still goes.
+    expect(deps.extensionManager.disable).toHaveBeenCalledWith('only-b');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('only-b', installRoot);
   });
 
   it('removes a Shape installed under shapes/ (DOR-355 regression)', async () => {

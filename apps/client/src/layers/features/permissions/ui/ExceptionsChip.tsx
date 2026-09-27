@@ -9,6 +9,7 @@ import {
   ResponsivePopoverTrigger,
 } from '@/layers/shared/ui';
 import { STATE_LABEL } from '../lib/permission-copy';
+import { lastChangeWhy } from '../lib/permission-why';
 
 /** Props for {@link ExceptionsChip}. */
 export interface ExceptionsChipProps {
@@ -37,11 +38,18 @@ function ExceptionRow({
         : { areas: { [area]: null } }),
       surface: 'settings',
     });
+  const changed = lastChangeWhy(exception.lastChange);
   return (
     <li className="flex items-center justify-between gap-3">
-      <span className="min-w-0 truncate text-sm">
-        {exception.agentName}: {STATE_LABEL[exception.state]}
-        {exception.action ? ' (one action)' : ''}
+      <span className="min-w-0 text-sm">
+        <span className="block break-words">
+          {exception.agentName}: {STATE_LABEL[exception.state]}
+          {exception.action ? ' (one action)' : ''}
+        </span>
+        {/* Why it differs: who set it, when and where. Inline rather than a
+            second "Why?" panel, because this list is already the answer to
+            "why is this agent different". */}
+        {changed ? <span className="text-muted-foreground block text-xs">{changed}</span> : null}
       </span>
       <Button
         variant="ghost"

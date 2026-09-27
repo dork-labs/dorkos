@@ -8,9 +8,9 @@ covers:
 
 ### Added
 
-- A room's files can now take new files, uploads of up to 20 files at once, renames, moves and deletes, and a file someone attached in the chat can be kept as one of the room's files. Each change is one saved step in the room's history under your name, and the room gets one quiet line about it that does not wake any agent. The app buttons for these arrive in a later release; this is the part that does the work (DOR-2412).
+- A room's files can now take new files, uploads of up to 20 files at once, renames, moves and deletes, and a file someone attached in the chat can be kept as one of the room's files. Each change is one saved step in the room's history under your name, and the room gets one quiet line about it that does not wake any agent (DOR-2412).
 
 ### Changed
 
-- Saving a file in a room now makes any folders it needs, and posts a quiet line in the room saying who changed what. Formatting marks in a person's name show as plain characters in that line, but a name that looks like a web address may still show as a link; the app shows the real address before opening any link (DOR-2412).
+- Saving a file in a room now makes any folders it needs, and posts a quiet line in the room saying who changed what. The app shows that line as plain text, but places that read its words, like an agent's view of the room or a chat bridge, may still show a name that looks like a web address as a link (DOR-2412).
 - With login on, a change you make to a room's files is saved under your own name, so two people's changes stay apart in the history (DOR-2412).

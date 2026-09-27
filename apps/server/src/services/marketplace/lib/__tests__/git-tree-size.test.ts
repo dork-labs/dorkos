@@ -53,7 +53,9 @@ let url: string;
 
 /** A new commit whose root tree is `tree`, pushed as `branch`; returns its id. */
 function commitTree(tree: string, branch: string): string {
-  const commit = gitIn(work, 'x', 'commit-tree', tree, '-m', branch);
+  // No stdin: with `-m` git never reads it, and writing to a pipe git may already
+  // have closed raced into `spawnSync git EPIPE` on busy CI runners.
+  const commit = git(work, 'commit-tree', tree, '-m', branch);
   git(work, 'push', '-q', 'origin', `${commit}:refs/heads/${branch}`);
   return commit;
 }

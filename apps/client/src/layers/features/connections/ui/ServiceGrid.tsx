@@ -5,6 +5,7 @@ import type {
   ConnectorCatalogService,
 } from '@dorkos/shared/connector-resource-schemas';
 import { useConnectorCatalog } from '@/layers/entities/connectors';
+import { useSettingsDeepLink } from '@/layers/shared/model';
 import {
   Badge,
   Button,
@@ -42,7 +43,13 @@ export function ServiceGrid({
   const catalog = useConnectorCatalog(deferredQuery);
   const services = catalog.data?.pages.flatMap((page) => page.services) ?? [];
   const warnings = catalog.data?.pages.flatMap((page) => page.warnings) ?? [];
-  const emptyHint = emptySearchHint(catalog.data?.pages[0]?.appConnections?.newApps);
+  const newApps = catalog.data?.pages[0]?.appConnections?.newApps;
+  const emptyHint = emptySearchHint(newApps);
+  // Only when the person's own key is the thing in the way does the fix live
+  // in Settings › Connections; every other reason is answered by connecting.
+  const keyNeedsFixing =
+    newApps?.status === 'setup_needed' && newApps.reason === 'own_key_unavailable';
+  const settings = useSettingsDeepLink();
 
   return (
     <>
@@ -90,6 +97,19 @@ export function ServiceGrid({
               <div className="bg-muted/40 rounded-lg p-6 text-center">
                 <p className="text-sm font-medium">No app matches “{deferredQuery.trim()}”</p>
                 <p className="text-muted-foreground mt-1 text-xs">{emptyHint}</p>
+                {keyNeedsFixing && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-3"
+                    onClick={() => {
+                      setOpen(false);
+                      settings.open('connections', 'ways');
+                    }}
+                  >
+                    Open Settings › Connections
+                  </Button>
+                )}
               </div>
             ) : (
               <ul className="space-y-2" data-testid="service-catalog-results">

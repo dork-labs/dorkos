@@ -77,9 +77,9 @@ export class ConnectionsPage {
     return this.page.getByRole('region', { name: 'Waiting on you' });
   }
 
-  /** Provider setup stays behind an explicit advanced action. */
+  /** Your own Composio or Nango key is set in Settings › Connections; the page points there. */
   get carrierSection() {
-    return this.accounts.getByRole('button', { name: 'Advanced account setup' });
+    return this.accounts.getByRole('button', { name: 'Set it up in Settings › Connections' });
   }
 
   /** One connected account row by its visible account name. */

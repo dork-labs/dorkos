@@ -597,13 +597,32 @@ What agents may do on their own, what waits for a person's yes, and what they ca
 
 The default layer: the chosen preset, the changes on top of it, every area with its actions resolved, the Files & commands row, and which agents differ.
 
-- `200` - `PermissionsResponse`: `{ preset, defaults, changeCount, filesAndCommands: { stop, presetStop, runtimes: [{ runtime, stop }], exceptions: [{ agentId, agentName, stop }] }, areas: [...], exceptions: [...], agentCount }`
+- `200` - `PermissionsResponse`: `{ preset, presetLastChange?, defaults, changeCount, filesAndCommands: { stop, presetStop, runtimes: [{ runtime, stop }], exceptions: [{ agentId, agentName, stop, lastChange? }], followingAgentIds, lastChange? }, areas: [...], exceptions: [...], agentCount }`
+
+Every area, action, exception and Files & commands entry carries an optional `lastChange` (`{ eventId, occurredAt, actorLabel, attribution, surface }`): the newest recorded change to any setting the resolver reads for that state, from the last 200 permission events (`readLastChanges`). It is what the app's "Why?" line names; absent when nothing in that window touched it. `followingAgentIds` lists the agents that follow the global Files & commands stop (no stop of their own, none set for their runtime). "Affects N agents" everywhere is `countAgentsFollowing` in `@dorkos/shared/permissions`, one function shared by the app and the CLI.
 
 ### GET /api/permissions/history
 
 Query params: `agentId` (optional), `before` (ISO 8601 cursor, optional), `limit` (1–100, default 50).
 
 - `200` - `{ items: PermissionHistoryEntry[], nextCursor: string | null }`
+
+### POST /api/permissions/history/:eventId/undo
+
+Undo one `permission.changed` event (spec `agent-permissions` D14): every key it moved goes back to its `before`, recorded as one new `permission.changed` with `surface: 'undo'` and `undoOf`. Person-only, like every write.
+
+**Request body:** `{ force?: boolean, acknowledgeAutonomy?: true }` (an empty body is a plain Undo).
+
+- A key whose value is no longer the recorded `after` is a conflict. A change to one target is refused whole (`409 UNDO_CONFLICT`, with `conflicts: PermissionUndoSkip[]`). A change that reached several targets sets back the ones that still match and reports the rest in `skipped`; it is refused only when none match. `force: true` sets everything back.
+- A preset switch (`presetSnapshot` on the event) goes back as one unit: the preset, the defaults it cleared, and the global stop.
+- Never writes Allowed in a floor area (skipped with `reason: 'floor'`); an agent that no longer exists is `reason: 'gone'`.
+
+**Responses:**
+
+- `200` - `{ changes: PermissionChange[], skipped: PermissionUndoSkip[] }`
+- `404` - `UNKNOWN_EVENT`
+- `409` - `UNDO_CONFLICT` (with `conflicts`), or `NOT_UNDOABLE` for a request-card answer or a notice
+- `428` - `AUTONOMY_ACK_REQUIRED` when the Undo would put a Files & commands stop back on Full autonomy
 
 ### PUT /api/permissions/preset
 
@@ -628,7 +647,7 @@ Change one or more areas or single actions for everyone. `null` removes a change
 
 One agent's resolved permissions, with where each area's state and its Files & commands stop came from.
 
-- `200` - `AgentPermissionsResponse`: `{ agentId, agentName, overrides, areas: [{ ...area, inherited, changedOutsideAt }], filesAndCommands: { stop, source, inherited: { stop, source } } }`. `source` is one of `agent | runtime | default | runtime-own`; `changedOutsideAt` is set when the area's most recent change was an edit to the agent's settings file DorkOS noticed rather than made.
+- `200` - `AgentPermissionsResponse`: `{ agentId, agentName, overrides, areas: [{ ...area, inherited, changedOutsideAt, lastChange? }], filesAndCommands: { stop, source, lastChange?, inherited: { stop, source, lastChange? } } }`. `source` is one of `agent | runtime | default | runtime-own`; `changedOutsideAt` is set when the area's most recent change was an edit to the agent's settings file DorkOS noticed rather than made.
 
 ### PATCH /api/agents/:id/permissions
 

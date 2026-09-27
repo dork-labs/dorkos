@@ -10,7 +10,7 @@ import {
 import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { useRelayEnabledState, useRelayEventStream } from '@/layers/entities/relay';
 import { MessagingConnections, ActivityFeed, RelayHealthBar } from '@/layers/features/relay';
-import { ClaimFeed, MessagePolicyCard } from '@/layers/features/connections';
+import { ClaimFeed } from '@/layers/features/connections';
 
 /**
  * Where people and platforms reach your agents.
@@ -63,7 +63,6 @@ export function MessagingRegion() {
           <ClaimFeed enabled={relay.enabled} />
           <RelayHealthBar enabled={relay.enabled} />
           <MessagingConnections enabled={relay.enabled} />
-          <MessagePolicyCard />
 
           {/* Deep enough to be worth keeping, quiet enough not to lead. */}
           <Collapsible>

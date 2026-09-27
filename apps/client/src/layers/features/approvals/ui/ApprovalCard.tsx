@@ -7,6 +7,7 @@ import { cn } from '@/layers/shared/lib';
 import { AskCard, askExitTransition, formatTimeLeft } from '@/layers/features/ask';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
+import { useDismissSuggestion, useSuggestionDismissed } from '../model/use-dismiss-suggestion';
 import {
   holdDecidedApproval,
   releaseDecidedApproval,
@@ -39,6 +40,16 @@ const ANSWER_BUTTON = 'h-11 w-full px-2.5 text-xs md:h-7 md:w-auto';
 /** The line a floor-area card shows in place of Always allow. */
 export const FLOOR_AREA_LINE =
   "Always allow isn't offered here. Changing this needs your yes every time.";
+
+/**
+ * The line a card suggesting Always allow shows: the true count, from the
+ * server.
+ *
+ * @param count - One-time Allows for this agent and action in the last week.
+ */
+function suggestionLine(count: number): string {
+  return `You've allowed this ${count} ${count === 1 ? 'time' : 'times'} this week.`;
+}
 
 /**
  * The receipt line after an answer.
@@ -114,6 +125,17 @@ export interface ApprovalCardProps {
  * a request DorkOS cannot attribute to an agent, or an action with no area, it
  * is simply absent: no setting would help, and the card already says who asked.
  *
+ * ## After three one-time Allows, Always allow is suggested, once
+ *
+ * When the server says so (`suggestAlways`: this person answered Allow three
+ * times in a week for this same agent and action, and never said "Not now"),
+ * Always allow gets a quiet highlight and one line says why, with a "Not now"
+ * that turns it off for that agent and action for good. Allow stays first and
+ * stays the filled button: the suggestion makes the lasting answer easy to
+ * see, never the easy one to hit by accident. It is never a badge, never
+ * counted anywhere, and never on a floor area, where Always allow is not
+ * offered at all.
+ *
  * ## A request past Blocked says so, in the agent's own words
  *
  * When an agent asked past a Blocked permission with `request_permission`, the
@@ -125,6 +147,8 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
   const deny = useDenyApproval();
+  const dismissSuggestion = useDismissSuggestion();
+  const suggestionDismissed = useSuggestionDismissed(approval.approvalId);
   const deciding = grant.isPending || deny.isPending;
   const reducedMotion = useReducedMotion();
   // **The answer is read, never stored.** There is no local decision state here
@@ -161,6 +185,8 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
   const floor = approval.area !== null && isFloorArea(approval.area);
+  const suggest =
+    approval.alwaysOffered && approval.suggestAlways === true && !suggestionDismissed && !decision;
 
   return (
     // The container is declared HERE, on the wrapper, and queried on the card
@@ -295,54 +321,77 @@ export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
               {receiptFor(decision, agentLabel, approval.capabilityTitle)}
             </AskCard.Receipt>
           ) : (
-            <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
-              <Button
-                size="sm"
-                data-slot="approval-allow"
-                className={ANSWER_BUTTON}
-                disabled={deciding}
-                onClick={() =>
-                  answer('granted', (onError) =>
-                    grant.mutate({ approvalId: approval.approvalId }, { onError })
-                  )
-                }
-              >
-                Allow
-              </Button>
-              {approval.alwaysOffered && (
+            <>
+              {suggest && (
+                <p
+                  data-slot="approval-suggestion"
+                  className="text-muted-foreground text-2xs @[34rem]/approval:text-right"
+                >
+                  {suggestionLine(approval.allowedThisWeek ?? 3)}{' '}
+                  <button
+                    type="button"
+                    className="hover:text-foreground underline underline-offset-2"
+                    aria-label={`Not now: stop suggesting Always allow for ${approval.capabilityTitle}`}
+                    disabled={dismissSuggestion.isPending}
+                    onClick={() => dismissSuggestion.mutate(approval.approvalId)}
+                  >
+                    Not now
+                  </button>
+                </p>
+              )}
+              <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
                 <Button
-                  variant="outline"
                   size="sm"
-                  data-slot="approval-always"
+                  data-slot="approval-allow"
                   className={ANSWER_BUTTON}
                   disabled={deciding}
                   onClick={() =>
-                    answer('granted-always', (onError) =>
-                      grant.mutate(
-                        { approvalId: approval.approvalId, answer: 'always' },
-                        { onError }
-                      )
+                    answer('granted', (onError) =>
+                      grant.mutate({ approvalId: approval.approvalId }, { onError })
                     )
                   }
                 >
-                  Always allow
+                  Allow
                 </Button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                data-slot="approval-deny"
-                className={ANSWER_BUTTON}
-                disabled={deciding}
-                onClick={() =>
-                  answer('denied', (onError) =>
-                    deny.mutate({ approvalId: approval.approvalId }, { onError })
-                  )
-                }
-              >
-                Deny
-              </Button>
-            </AskCard.Actions>
+                {approval.alwaysOffered && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    data-slot="approval-always"
+                    data-suggested={suggest ? 'true' : undefined}
+                    className={cn(
+                      ANSWER_BUTTON,
+                      suggest && 'border-primary/60 bg-primary/5 text-foreground'
+                    )}
+                    disabled={deciding}
+                    onClick={() =>
+                      answer('granted-always', (onError) =>
+                        grant.mutate(
+                          { approvalId: approval.approvalId, answer: 'always' },
+                          { onError }
+                        )
+                      )
+                    }
+                  >
+                    Always allow
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-slot="approval-deny"
+                  className={ANSWER_BUTTON}
+                  disabled={deciding}
+                  onClick={() =>
+                    answer('denied', (onError) =>
+                      deny.mutate({ approvalId: approval.approvalId }, { onError })
+                    )
+                  }
+                >
+                  Deny
+                </Button>
+              </AskCard.Actions>
+            </>
           )}
           {/* Why Always allow is missing, said once, and only where a setting
               could never change it. */}

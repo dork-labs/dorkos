@@ -224,6 +224,7 @@ import {
   recordPermissionChange,
   agentRequestWriter,
   personWriter,
+  createAlwaysSuggestion,
 } from './services/core/permissions/index.js';
 import { onTrustStopChange } from './services/core/operator/config-write.js';
 import { titleForMcpTool } from './services/core/mcp-tool-tiers.js';
@@ -2725,6 +2726,11 @@ async function start() {
     // `agent-permissions` D7). The binding follows a session's rekey, which is
     // why it is resolved when a card is read rather than stored.
     roomForSession: (sessionId) => roomStore.sessionLedger.bindingForSession(sessionId)?.roomId,
+    // After three one-time Allows in a week for the same agent and action, the
+    // next card suggests Always allow, until "Not now" (spec
+    // `agent-permissions`). Read from the permission history in the same
+    // database, when each card is read.
+    suggestAlways: createAlwaysSuggestion(db),
     describeCapability: (capabilityId) => {
       const capability = capabilityRegistry?.get(capabilityId);
       if (capability) return { title: capability.title, tier: capability.tier };

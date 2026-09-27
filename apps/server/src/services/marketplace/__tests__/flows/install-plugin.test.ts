@@ -110,7 +110,11 @@ async function stagePackage(opts: {
 async function buildDeps(): Promise<{
   dorkHome: string;
   extensionCompiler: { compile: ReturnType<typeof vi.fn> };
-  extensionManager: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  extensionManager: {
+    enable: ReturnType<typeof vi.fn>;
+    disable: ReturnType<typeof vi.fn>;
+    forgetRunApproval: ReturnType<typeof vi.fn>;
+  };
   logger: Logger;
 }> {
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'install-plugin-home-'));
@@ -122,6 +126,7 @@ async function buildDeps(): Promise<{
     extensionManager: {
       enable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
       disable: vi.fn().mockResolvedValue({ extension: {}, reloadRequired: true }),
+      forgetRunApproval: vi.fn().mockResolvedValue(undefined),
     },
     logger: buildLogger(),
   };
@@ -313,6 +318,11 @@ describe('PluginInstallFlow', () => {
     expect(deps.extensionManager.disable).toHaveBeenCalledTimes(1);
     expect(deps.extensionManager.disable).toHaveBeenCalledWith('ext-a');
     expect(deps.extensionManager.disable).not.toHaveBeenCalledWith('ext-b');
+    // The dropped one also loses its approval, so it asks again if a later
+    // version brings it back; the retained one keeps it (DOR-2383).
+    const installRoot = path.join(deps.dorkHome, 'plugins', 'drift-plugin');
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledTimes(1);
+    expect(deps.extensionManager.forgetRunApproval).toHaveBeenCalledWith('ext-a', installRoot);
     // The retained extension is re-enabled against the new bundle.
     expect(deps.extensionManager.enable).toHaveBeenCalledWith('ext-b');
 

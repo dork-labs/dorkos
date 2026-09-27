@@ -95,6 +95,7 @@ describe('PermissionObserver', () => {
         set: () => {},
         trustStops: () => ({ global: null, perRuntime: {} }),
         setGlobalTrustStop: () => {},
+        setRuntimeTrustStop: () => false,
         hasAutonomyAck: () => false,
         recordAutonomyAck: () => {},
       },

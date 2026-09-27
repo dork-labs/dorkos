@@ -127,10 +127,12 @@ describe("an agent's own Files & commands stop", () => {
       expect.objectContaining({ key: { kind: 'files' }, before: null, after: 'ask' }),
     ]);
     const view = await world.service.getAgent('agent-test');
+    // The stop names the change that set it; what it would inherit has none.
     expect(view.filesAndCommands).toEqual({
       stop: 'ask',
       source: 'agent',
       inherited: { stop: 'act', source: 'default' },
+      lastChange: expect.objectContaining({ surface: 'agent-page', eventId: world.events[0]!.id }),
     });
   });
 
@@ -183,7 +185,12 @@ describe("an agent's own Files & commands stop", () => {
     );
     const overview = await world.service.getOverview();
     expect(overview.filesAndCommands.exceptions).toEqual([
-      { agentId: 'agent-test', agentName: 'Test Bot', stop: 'ask' },
+      {
+        agentId: 'agent-test',
+        agentName: 'Test Bot',
+        stop: 'ask',
+        lastChange: expect.objectContaining({ surface: 'agent-page' }),
+      },
     ]);
   });
 });

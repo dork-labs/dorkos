@@ -73,3 +73,42 @@ describe('GET /api/cron/instance-expiry', () => {
     expect(getTransactionDb).not.toHaveBeenCalled();
   });
 });
+
+// DOR-2441: once accounts are handed to the accounts service, that service owns
+// these rows and runs the sweep. The site's job answers and touches nothing.
+describe('GET /api/cron/instance-expiry with accounts handed over', () => {
+  afterEach(() => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = undefined;
+  });
+
+  it('runs as before when the variable is unset', async () => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = undefined;
+    const res = await GET(cronRequest(`Bearer ${SECRET}`));
+    expect(res.status).toBe(200);
+    expect(runCleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers 200 without sweeping when the variable is set', async () => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = 'https://accounts.example.test';
+    const res = await GET(cronRequest(`Bearer ${SECRET}`));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, skipped: 'accounts-service' });
+    expect(runCleanup).not.toHaveBeenCalled();
+    expect(getAuth).not.toHaveBeenCalled();
+  });
+
+  it('still refuses an unauthenticated caller when the variable is set', async () => {
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = 'https://accounts.example.test';
+    const res = await GET(cronRequest());
+    expect(res.status).toBe(401);
+  });
+
+  it('runs as before when the variable is not a usable origin', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    env.DORKOS_CLOUD_ACCOUNTS_ORIGIN = 'accounts.example.test';
+    const res = await GET(cronRequest(`Bearer ${SECRET}`));
+    expect(res.status).toBe(200);
+    expect(runCleanup).toHaveBeenCalledTimes(1);
+    error.mockRestore();
+  });
+});

@@ -40,6 +40,7 @@ import type { PrivateNotificationResult } from '../../types.js';
 import { fetch as undiciFetch } from 'undici';
 import { createSlackProxyTransport } from './proxy.js';
 import { describeError } from '../../lib/describe-error.js';
+import { approvalBridgePrincipal } from '../../lib/approval-principal.js';
 
 // Re-export for consumers that import from this module
 export { SLACK_MANIFEST };
@@ -592,7 +593,9 @@ export class SlackAdapter extends BaseRelayAdapter {
       clearApprovalTimeout(this.outboundState, toolCallId);
 
       // Publish approval response to relay bus
-      const opts: PublishOptions = { from: `slack:${btnBody.user?.id ?? 'unknown'}` };
+      // Published as this adapter's approval principal, the only sender the
+      // approval handler accepts (DOR-2431); who clicked rides `respondedBy`.
+      const opts: PublishOptions = { from: approvalBridgePrincipal('slack', this.id) };
       await relay.publish(
         `relay.system.approval.${agentId}`,
         {

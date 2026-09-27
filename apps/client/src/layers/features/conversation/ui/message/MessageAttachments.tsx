@@ -17,6 +17,7 @@
  *
  * @module features/conversation/ui/message/MessageAttachments
  */
+import type { ReactNode } from 'react';
 import { File as FileIcon } from 'lucide-react';
 import type { RoomAttachment } from '@dorkos/shared/room-schemas';
 
@@ -24,6 +25,13 @@ import type { RoomAttachment } from '@dorkos/shared/room-schemas';
 export interface MessageAttachmentsProps {
   /** The message's files, in the order they were posted. */
   items: readonly RoomAttachment[];
+  /**
+   * A control to draw beside each file, for a host that can do something more
+   * with it — a room with files of its own offers to keep it there. Returning
+   * `null` draws nothing for that file. The row family never decides what the
+   * control is; only the host knows where a file could go.
+   */
+  renderAction?: (attachment: RoomAttachment) => ReactNode;
 }
 
 /** Size units, smallest first — each one 1024 of the last. */
@@ -125,7 +133,7 @@ function AttachmentItem({ attachment }: { attachment: RoomAttachment }) {
  * `EntryReactionRow` renders nothing for a message nobody reacted to, and the
  * same way an entry written before rooms carried files renders today.
  */
-export function MessageAttachments({ items }: MessageAttachmentsProps) {
+export function MessageAttachments({ items, renderAction }: MessageAttachmentsProps) {
   if (items.length === 0) return null;
 
   return (
@@ -134,9 +142,18 @@ export function MessageAttachments({ items }: MessageAttachmentsProps) {
       data-testid="room-entry-attachments"
       className="mt-1 flex flex-wrap gap-2"
     >
-      {items.map((attachment) => (
-        <AttachmentItem key={attachment.id} attachment={attachment} />
-      ))}
+      {items.map((attachment) =>
+        renderAction === undefined ? (
+          <AttachmentItem key={attachment.id} attachment={attachment} />
+        ) : (
+          // The control sits BESIDE the link rather than inside it: a button
+          // inside an anchor is two controls a keyboard cannot tell apart.
+          <span key={attachment.id} className="flex max-w-full items-start gap-1">
+            <AttachmentItem attachment={attachment} />
+            {renderAction(attachment)}
+          </span>
+        )
+      )}
     </div>
   );
 }

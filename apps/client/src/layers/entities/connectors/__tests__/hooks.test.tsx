@@ -17,6 +17,7 @@ import {
 
 const providerStatus: ConnectorProviderStatus = {
   type: 'composio',
+  providerInstanceId: 'cpi_composio' as ConnectorProviderStatus['providerInstanceId'],
   configured: false,
   registered: false,
   custody: 'managed',

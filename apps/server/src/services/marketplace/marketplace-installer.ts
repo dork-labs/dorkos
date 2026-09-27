@@ -63,6 +63,7 @@ import { materializePackageSchedules } from './lib/materialize-schedules.js';
 import { withInstallTargetLock } from './transaction.js';
 import { recordProjectInstall } from './lib/project-install-index.js';
 import { validatePackageSchedules } from './lib/validate-package-schedules.js';
+import { discoverExtensionIds } from './lib/staged-extensions.js';
 import {
   describeDisclosedEffects,
   disclosedEffectsOf,
@@ -643,11 +644,15 @@ export class MarketplaceInstaller implements InstallerLike {
     //    and the pruned installed-files record stay in the root. `replacing`
     //    keeps `ui.shapes.active` intact and an agent package's agent on the
     //    team: the same package lands back here moments later.
+    //    The extensions the new version still carries keep their approval
+    //    (DOR-2383): the same copy lands back at the same path. Ones it drops
+    //    are turned off and forgotten by the uninstall.
     await this.deps.uninstallFlow.uninstall({
       name: resolved.packageName,
       purge: false,
       projectPath: req.projectPath,
       replacing: true,
+      retainedExtensionIds: await discoverExtensionIds(staged.packagePath),
       ...(req.installRoot !== undefined && { installRoot: req.installRoot }),
     });
 

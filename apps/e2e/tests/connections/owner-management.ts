@@ -267,11 +267,9 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
       const completed = (await state.json()) as { state: string; connectionId: string };
       expect(completed.state).toBe('connected');
       expect(completed.connectionId).toBeTruthy();
-      await auth.getByRole('button', { name: 'Choose agents' }).click();
-      const access = page.getByRole('dialog', { name: 'Choose agent access' });
-      await expect(access).toBeVisible();
-      await page.keyboard.press('Escape');
-      await expect(access).toBeHidden();
+      await expect(auth.getByRole('heading', { name: 'Who can use Gmail?' })).toBeVisible();
+      await auth.getByRole('button', { name: 'Skip' }).click();
+      await expect(auth).toBeHidden();
       await expect(
         page
           .getByRole('region', { name: 'Connected accounts', exact: true })
