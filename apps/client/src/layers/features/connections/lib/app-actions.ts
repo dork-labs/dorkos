@@ -5,13 +5,17 @@
  * Look and Change come straight from the safety classification the grant
  * review enforces: `read` is Look, anything else is Change. Which actions a
  * level includes comes from {@link levelIncludes}, the same rule the level
- * presets grant with, so the panel can never promise more or less than a
- * level actually allows.
+ * presets grant with. Once an app is connected, the actions themselves come
+ * from the account's grant snapshot ({@link actionsFromCandidates}), so the
+ * panel can never promise more or less than a level actually allows.
  *
  * @module features/connections/lib/app-actions
  */
 import type { ConnectorAppAction } from '@dorkos/shared/connector-resource-schemas';
-import type { ConnectorOperationClassification } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectorOperationClassification,
+  ConnectorReconciliationCandidate,
+} from '@dorkos/shared/connector-schemas';
 import type { CardAccessLevel } from './access-card-selection';
 import { actionName } from './app-panel-copy';
 import { levelIncludes } from './reconciliation-selection';
@@ -48,6 +52,49 @@ export function plainActionName(action: ConnectorAppAction, toolkit: string): st
     return /[A-Z]/u.test(word.slice(1)) ? word : word.toLowerCase();
   });
   return words.join(' ');
+}
+
+/**
+ * The actions a connected account can actually be granted, as the panel shows
+ * them: every supported candidate in the grant snapshot, older versions the
+ * review still carries included, each with the candidate's own
+ * classification. The service's action list only lends names and its
+ * "important" mark, matched by action id; its classification is never used
+ * here. An action the list doesn't carry gets a name read from its id.
+ *
+ * @param candidates - The account's complete grant snapshot.
+ * @param listed - The app's fetched action list, when there is one.
+ */
+export function actionsFromCandidates(
+  candidates: readonly ConnectorReconciliationCandidate[],
+  listed: readonly ConnectorAppAction[] | undefined
+): ConnectorAppAction[] {
+  const bySlug = new Map(
+    (listed ?? []).map((action, index) => [action.operationSlug, { action, index }])
+  );
+  const seen = new Set<string>();
+  const actions: Array<{ action: ConnectorAppAction; order: number }> = [];
+  candidates.forEach((candidate, position) => {
+    if (!candidate.supported) return;
+    // One row per action and classification, however many versions carry it.
+    const id = `${candidate.operationSlug}\n${candidate.capabilityClassification}`;
+    if (seen.has(id)) return;
+    seen.add(id);
+    const known = bySlug.get(candidate.operationSlug);
+    actions.push({
+      action: {
+        operationSlug: candidate.operationSlug,
+        ...(known?.action.displayName !== undefined && {
+          displayName: known.action.displayName,
+        }),
+        capabilityClassification: candidate.capabilityClassification,
+        important: known?.action.important ?? false,
+      },
+      // The service's own order first, then whatever the list didn't carry.
+      order: known ? known.index : bySlug.size + position,
+    });
+  });
+  return actions.sort((a, b) => a.order - b.order).map(({ action }) => action);
 }
 
 /** The main ones first (the service's own "important" mark), then the service's order. */

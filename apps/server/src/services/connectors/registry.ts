@@ -111,6 +111,7 @@ export class ConnectorRegistry {
   private readonly _connections: ConnectionStore;
   private readonly _providers = new Map<string, ConnectorProvider>();
   private readonly _defaultInstanceByType = new Map<string, ConnectorProviderInstanceId>();
+  private readonly _removalListeners = new Set<(instanceId: ConnectorProviderInstanceId) => void>();
 
   /**
    * Construct the registry over the canonical connector database.
@@ -180,8 +181,34 @@ export class ConnectorRegistry {
         mode
       );
     }
+    const replaced = this._providers.get(provider.instanceId);
     this._providers.set(provider.instanceId, provider);
     this._defaultInstanceByType.set(provider.type, provider.instanceId);
+    if (replaced && replaced !== provider) this.notifyRemoved(provider.instanceId);
+  }
+
+  /**
+   * Be told whenever a configured instance is removed or replaced by a new
+   * object, so anything kept for it (such as an app's action list) is dropped.
+   *
+   * @param listener - Called with the instance id after it leaves the registry.
+   * @returns A function that stops the notifications.
+   */
+  onProviderInstanceRemoved(
+    listener: (instanceId: ConnectorProviderInstanceId) => void
+  ): () => void {
+    this._removalListeners.add(listener);
+    return () => this._removalListeners.delete(listener);
+  }
+
+  private notifyRemoved(instanceId: ConnectorProviderInstanceId): void {
+    for (const listener of this._removalListeners) {
+      try {
+        listener(instanceId);
+      } catch {
+        // A listener's failure never blocks a registry change.
+      }
+    }
   }
 
   /**
@@ -216,6 +243,7 @@ export class ConnectorRegistry {
     if (this._connections.health().status === 'ready') {
       this._connections.unregisterProvider(instanceId);
     }
+    this.notifyRemoved(instanceId);
   }
 
   /**

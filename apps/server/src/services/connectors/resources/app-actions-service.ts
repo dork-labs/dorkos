@@ -4,23 +4,25 @@
  *
  * Every action carries the classification the service's own discovery
  * produced, the exact value the grant review stores and execution enforces.
- * Nothing here reclassifies an action, so a screen built on this list can
- * never promise less than what an agent is allowed to do.
+ * Nothing here reclassifies an action.
  *
- * The kept copy lives in memory and at
- * `<dorkHome>/cache/connectors/actions/`, one file per way and app. It holds
- * action ids, names and classifications only: no keys, accounts or schemas.
- * A copy counts as fresh for 24 hours; after that it is served at once while
- * one refresh runs behind it. A partial list counts as fresh for 15 minutes
- * only, so a listing that stopped part way is soon tried again. Anything under
- * `cache/` is safe to delete and is rebuilt.
+ * The kept copy lives in memory and under
+ * `<dorkHome>/cache/connectors/actions/<way>/`, one file per app and setup
+ * generation. It holds action ids, names and classifications only: no keys,
+ * accounts or schemas. A complete list counts as fresh for 24 hours; after
+ * that it is served at once while one refresh runs behind it. A partial list,
+ * or an answer that the way can't list actions, counts as fresh for 15
+ * minutes only, so it is soon tried again. Changing a way's setup starts a new
+ * generation, and removing or replacing the way drops everything kept for it.
+ * Anything under `cache/` is safe to delete and is rebuilt.
  *
  * @module services/connectors/resources/app-actions-service
  */
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
+import { and, connectorProviderInstances, eq, type Db } from '@dorkos/db';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
 import {
   CONNECTOR_APP_ACTIONS_LIMIT,
@@ -30,11 +32,13 @@ import {
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorProviderInstanceId } from '@dorkos/shared/connector-schemas';
 import { logger } from '../../../lib/logger.js';
+import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
+import type { ConnectorRegistry } from '../registry.js';
 
 /** How long a complete list counts as fresh. */
 export const APP_ACTIONS_FRESH_MS = 24 * 60 * 60 * 1_000;
-/** How long a partial list counts as fresh before it is tried again. */
-export const PARTIAL_APP_ACTIONS_FRESH_MS = 15 * 60 * 1_000;
+/** How long a partial list, or an "unlisted" answer, counts as fresh. */
+export const SHORT_APP_ACTIONS_FRESH_MS = 15 * 60 * 1_000;
 /** Actions asked for per page; the widest page every way accepts. */
 const PAGE_SIZE = 100;
 /** Pages read at most, matching {@link CONNECTOR_APP_ACTIONS_LIMIT}. */
@@ -57,44 +61,58 @@ export class ConnectorAppActionsError extends Error {
 
 /** Dependencies for {@link ConnectorAppActionsService}. */
 export interface ConnectorAppActionsServiceOptions {
-  /** Resolves the configured way whose actions are listed. */
-  readonly registry: {
-    resolveProviderInstance(instanceId: ConnectorProviderInstanceId): ConnectorProvider | undefined;
-  };
+  /** The DorkOS database, for the owned-and-available check on a way. */
+  readonly db: Db;
+  /** Resolves the configured way, its setup generation, and its removal. */
+  readonly registry: Pick<
+    ConnectorRegistry,
+    'resolveProviderInstance' | 'providerExecutionConfigGeneration' | 'onProviderInstanceRemoved'
+  >;
   /** The DorkOS data directory, from `lib/dork-home.ts`. */
   readonly dorkHome: string;
   /** Clock, injected for deterministic freshness evidence. */
   readonly now?: () => Date;
 }
 
+const KeptBaseSchema = z.object({
+  version: z.literal(2),
+  providerInstanceId: z.string().min(1),
+  generation: z.number().int().nonnegative(),
+  toolkit: z.string().min(1),
+  fetchedAt: z.string().datetime(),
+});
+
 /** One kept list, as held in memory and on disk. */
 const KeptActionsSchema = z.discriminatedUnion('status', [
-  z
-    .object({
-      version: z.literal(1),
-      status: z.literal('listed'),
-      providerInstanceId: z.string().min(1),
-      toolkit: z.string().min(1),
-      toolkitVersion: z.string().min(1),
-      actions: z.array(ConnectorAppActionSchema).max(CONNECTOR_APP_ACTIONS_LIMIT),
-      complete: z.boolean(),
-      fetchedAt: z.string().datetime(),
-    })
-    .strict(),
-  z
-    .object({
-      version: z.literal(1),
-      status: z.literal('unlisted'),
-      providerInstanceId: z.string().min(1),
-      toolkit: z.string().min(1),
-      fetchedAt: z.string().datetime(),
-    })
-    .strict(),
+  KeptBaseSchema.extend({
+    status: z.literal('listed'),
+    toolkitVersion: z.string().min(1),
+    actions: z.array(ConnectorAppActionSchema).max(CONNECTOR_APP_ACTIONS_LIMIT),
+    completeness: z.enum(['complete', 'too_large', 'interrupted']),
+  }).strict(),
+  KeptBaseSchema.extend({ status: z.literal('unlisted') }).strict(),
 ]);
 type KeptActions = z.infer<typeof KeptActionsSchema>;
 
+/** Which list is asked for: one app through one way at one setup generation. */
+interface ListTarget {
+  providerInstanceId: ConnectorProviderInstanceId;
+  toolkit: string;
+  generation: number;
+}
+
+function ownerColumns(owner: ConnectorOwnerAuthority): {
+  ownerKind: 'user' | 'local_install';
+  ownerId: string;
+} {
+  return owner.kind === 'user'
+    ? { ownerKind: owner.kind, ownerId: owner.userId }
+    : { ownerKind: owner.kind, ownerId: owner.installationId };
+}
+
 /** List an app's actions through one configured way, keeping the answer. */
 export class ConnectorAppActionsService {
+  private readonly db: Db;
   private readonly registry: ConnectorAppActionsServiceOptions['registry'];
   private readonly directory: string;
   private readonly now: () => Date;
@@ -103,25 +121,29 @@ export class ConnectorAppActionsService {
 
   /** Create the service; nothing is read from disk until a list is asked for. */
   constructor(options: ConnectorAppActionsServiceOptions) {
+    this.db = options.db;
     this.registry = options.registry;
     this.directory = path.join(options.dorkHome, 'cache', 'connectors', 'actions');
     this.now = options.now ?? (() => new Date());
+    this.registry.onProviderInstanceRemoved((instanceId) => void this.forget(instanceId));
   }
 
   /**
    * What one app lets agents do through one configured way.
    *
-   * @param input.providerInstanceId - The configured way that reaches the app.
-   * @param input.toolkit - The app's service id, e.g. `gmail`.
-   * @throws {ConnectorAppActionsError} `provider_not_found` for an unknown way,
-   *   `actions_unavailable` when the service could not list anything.
+   * @param owner - The verified owner; only a way they own and can use is listed.
+   * @param input - The way that reaches the app and the app's service id.
+   * @throws {ConnectorAppActionsError} `provider_not_found` for a way that is
+   *   unknown, not the owner's, or unavailable; `actions_unavailable` when the
+   *   service could not list anything.
    */
-  async list(input: {
-    providerInstanceId: ConnectorProviderInstanceId;
-    toolkit: string;
-  }): Promise<ConnectorAppActions> {
-    const provider = this.registry.resolveProviderInstance(input.providerInstanceId);
-    if (!provider) {
+  async list(
+    owner: ConnectorOwnerAuthority,
+    input: { providerInstanceId: ConnectorProviderInstanceId; toolkit: string }
+  ): Promise<ConnectorAppActions> {
+    const provider = this.ownedProvider(owner, input.providerInstanceId);
+    const generation = provider && this.registry.providerExecutionConfigGeneration(provider);
+    if (!provider || generation === undefined) {
       throw new ConnectorAppActionsError(
         'provider_not_found',
         'This way of reaching apps is not set up.'
@@ -132,11 +154,12 @@ export class ConnectorAppActionsService {
       return { status: 'unlisted', toolkit: input.toolkit };
     }
 
-    const key = keyOf(input.providerInstanceId, input.toolkit);
-    const kept = this.kept.get(key) ?? (await this.readKept(key, input));
+    const target: ListTarget = { ...input, generation };
+    const key = keyOf(target);
+    const kept = this.kept.get(key) ?? (await this.readKept(key, target));
     if (kept) {
       if (!this.isFresh(kept)) {
-        void this.refresh(key, provider, input, kept).catch((error: unknown) =>
+        void this.refresh(key, provider, target, kept).catch((error: unknown) =>
           logger.debug('[ConnectorAppActions] background refresh failed', {
             toolkit: input.toolkit,
             error: error instanceof Error ? error.message : String(error),
@@ -145,14 +168,36 @@ export class ConnectorAppActionsService {
       }
       return present(kept);
     }
-    return present(await this.refresh(key, provider, input, undefined));
+    return present(await this.refresh(key, provider, target, undefined));
+  }
+
+  /** The same owned-and-available check a sign-in makes before it starts. */
+  private ownedProvider(
+    owner: ConnectorOwnerAuthority,
+    instanceId: ConnectorProviderInstanceId
+  ): ConnectorProvider | undefined {
+    const ownerKey = ownerColumns(owner);
+    const row = this.db
+      .select({ status: connectorProviderInstances.status })
+      .from(connectorProviderInstances)
+      .where(
+        and(
+          eq(connectorProviderInstances.id, instanceId),
+          eq(connectorProviderInstances.ownerKind, ownerKey.ownerKind),
+          eq(connectorProviderInstances.ownerId, ownerKey.ownerId)
+        )
+      )
+      .get();
+    return row?.status === 'available'
+      ? this.registry.resolveProviderInstance(instanceId)
+      : undefined;
   }
 
   private isFresh(kept: KeptActions): boolean {
     const freshFor =
-      kept.status === 'listed' && !kept.complete
-        ? PARTIAL_APP_ACTIONS_FRESH_MS
-        : APP_ACTIONS_FRESH_MS;
+      kept.status === 'listed' && kept.completeness === 'complete'
+        ? APP_ACTIONS_FRESH_MS
+        : SHORT_APP_ACTIONS_FRESH_MS;
     return this.now().getTime() - Date.parse(kept.fetchedAt) < freshFor;
   }
 
@@ -160,47 +205,55 @@ export class ConnectorAppActionsService {
   private refresh(
     key: string,
     provider: ConnectorProvider,
-    input: { providerInstanceId: ConnectorProviderInstanceId; toolkit: string },
+    target: ListTarget,
     previous: KeptActions | undefined
   ): Promise<KeptActions> {
     const running = this.inFlight.get(key);
     if (running) return running;
-    const task = (async () => {
-      const next = await this.fetch(provider, input, previous);
+    // The body reads its own promise only after an await, once it is set here.
+    const slot: { task?: Promise<KeptActions> } = {};
+    slot.task = (async () => {
+      const next = await this.fetch(provider, target, previous);
+      // The way may have been removed while the listing ran; keep nothing for it then.
+      if (this.inFlight.get(key) !== slot.task) return next;
       this.kept.set(key, next);
-      await this.writeKept(key, next);
+      await this.writeKept(key, target, next);
       return next;
-    })().finally(() => this.inFlight.delete(key));
-    this.inFlight.set(key, task);
-    return task;
+    })().finally(() => {
+      if (this.inFlight.get(key) === slot.task) this.inFlight.delete(key);
+    });
+    this.inFlight.set(key, slot.task);
+    return slot.task;
   }
 
   private async fetch(
     provider: ConnectorProvider,
-    input: { providerInstanceId: ConnectorProviderInstanceId; toolkit: string },
+    target: ListTarget,
     previous: KeptActions | undefined
   ): Promise<KeptActions> {
     const signal = AbortSignal.timeout(LISTING_DEADLINE_MS);
     const fetchedAt = this.now().toISOString();
     const base = {
-      version: 1 as const,
-      providerInstanceId: input.providerInstanceId,
-      toolkit: input.toolkit,
+      version: 2 as const,
+      providerInstanceId: target.providerInstanceId,
+      generation: target.generation,
+      toolkit: target.toolkit,
       fetchedAt,
     };
     let toolkitVersion: string;
     try {
-      const resolved = await provider.resolveToolkitVersion(input.toolkit, signal);
+      const resolved = await provider.resolveToolkitVersion(target.toolkit, signal);
       if (resolved.status === 'unsupported') return { ...base, status: 'unlisted' };
       toolkitVersion = resolved.toolkitVersion;
     } catch {
       throw unavailable();
     }
-    // A version's action list never changes, so an unchanged complete list
-    // only needs its date moved on.
+    // A version's action list never changes, so a complete list of the same
+    // version only needs its date moved on. This is also why a later partial
+    // listing can never replace a complete list of the same version.
     if (
       previous?.status === 'listed' &&
-      previous.complete &&
+      previous.completeness === 'complete' &&
       previous.toolkitVersion === toolkitVersion
     ) {
       return { ...previous, fetchedAt };
@@ -208,31 +261,33 @@ export class ConnectorAppActionsService {
 
     const actions: ConnectorAppAction[] = [];
     let cursor: string | undefined;
-    let complete = false;
+    // Running out of pages before the service says it is done means too large.
+    let completeness: 'complete' | 'too_large' | 'interrupted' = 'too_large';
     for (let page = 0; page < MAX_PAGES; page += 1) {
       let result: Awaited<ReturnType<ConnectorProvider['listOperationSchemas']>>;
       try {
         result = await provider.listOperationSchemas({
-          toolkit: input.toolkit,
+          toolkit: target.toolkit,
           toolkitVersion,
           ...(cursor !== undefined && { cursor }),
           limit: PAGE_SIZE,
           signal,
         });
       } catch {
-        // Nothing read yet is a failure. A listing that stops part way (a
-        // service's own page safety limit, or a lost connection) keeps what
-        // it read and says it is partial; it is never passed off as whole.
+        // Nothing read yet is a failure. A listing that stops part way keeps
+        // what it read and says so; it is never passed off as whole.
         if (actions.length === 0) throw unavailable();
+        completeness = 'interrupted';
         break;
       }
       if (result.status === 'unsupported') {
         if (actions.length === 0) return { ...base, status: 'unlisted' };
+        completeness = 'interrupted';
         break;
       }
       for (const operation of result.page.operations) {
         // An action from another app or version is not part of this list.
-        if (operation.toolkit !== input.toolkit || operation.toolkitVersion !== toolkitVersion) {
+        if (operation.toolkit !== target.toolkit || operation.toolkitVersion !== toolkitVersion) {
           continue;
         }
         actions.push({
@@ -244,10 +299,13 @@ export class ConnectorAppActionsService {
       }
       const next = result.page.nextCursor;
       if (!result.page.truncated && next === undefined) {
-        complete = true;
+        completeness = actions.length > CONNECTOR_APP_ACTIONS_LIMIT ? 'too_large' : 'complete';
         break;
       }
-      if (next === undefined || next === cursor) break;
+      if (next === undefined || next === cursor) {
+        completeness = 'interrupted';
+        break;
+      }
       cursor = next;
     }
     return {
@@ -255,27 +313,43 @@ export class ConnectorAppActionsService {
       status: 'listed',
       toolkitVersion,
       actions: actions.slice(0, CONNECTOR_APP_ACTIONS_LIMIT),
-      complete: complete && actions.length <= CONNECTOR_APP_ACTIONS_LIMIT,
+      completeness,
     };
+  }
+
+  /** Drop everything kept for a way that was removed or replaced. */
+  private async forget(instanceId: ConnectorProviderInstanceId): Promise<void> {
+    for (const [key, kept] of this.kept) {
+      if (kept.providerInstanceId === instanceId) this.kept.delete(key);
+    }
+    const prefix = `${wayDir(instanceId)}/`;
+    for (const key of this.inFlight.keys()) {
+      if (key.startsWith(prefix)) this.inFlight.delete(key);
+    }
+    try {
+      await rm(path.join(this.directory, wayDir(instanceId)), { recursive: true, force: true });
+    } catch (error) {
+      logger.debug('[ConnectorAppActions] could not drop a removed way’s lists', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private fileOf(key: string): string {
     return path.join(this.directory, `${key}.json`);
   }
 
-  private async readKept(
-    key: string,
-    input: { providerInstanceId: ConnectorProviderInstanceId; toolkit: string }
-  ): Promise<KeptActions | undefined> {
+  private async readKept(key: string, target: ListTarget): Promise<KeptActions | undefined> {
     try {
       const parsed = KeptActionsSchema.safeParse(
         JSON.parse(await readFile(this.fileOf(key), 'utf-8'))
       );
-      // A file for another way or app (a hash collision, or a hand edit) is ignored.
+      // A file for another way, app or setup (or a hand edit) is ignored.
       if (
         !parsed.success ||
-        parsed.data.providerInstanceId !== input.providerInstanceId ||
-        parsed.data.toolkit !== input.toolkit
+        parsed.data.providerInstanceId !== target.providerInstanceId ||
+        parsed.data.toolkit !== target.toolkit ||
+        parsed.data.generation !== target.generation
       ) {
         return undefined;
       }
@@ -286,9 +360,11 @@ export class ConnectorAppActionsService {
     }
   }
 
-  private async writeKept(key: string, kept: KeptActions): Promise<void> {
+  private async writeKept(key: string, target: ListTarget, kept: KeptActions): Promise<void> {
     try {
-      await mkdir(this.directory, { recursive: true });
+      await mkdir(path.join(this.directory, wayDir(target.providerInstanceId)), {
+        recursive: true,
+      });
       const file = this.fileOf(key);
       const temp = `${file}.${process.pid}.tmp`;
       await writeFile(temp, `${JSON.stringify(kept)}\n`, 'utf-8');
@@ -302,9 +378,18 @@ export class ConnectorAppActionsService {
   }
 }
 
-/** A file-safe key for one way and app. */
-function keyOf(providerInstanceId: string, toolkit: string): string {
-  return createHash('sha256').update(`${providerInstanceId}\n${toolkit}`).digest('hex');
+function hash(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+/** A file-safe directory name for one way. */
+function wayDir(providerInstanceId: string): string {
+  return hash(providerInstanceId);
+}
+
+/** A file-safe key for one app through one way at one setup generation. */
+function keyOf(target: ListTarget): string {
+  return `${wayDir(target.providerInstanceId)}/${hash(`${target.generation}\n${target.toolkit}`)}`;
 }
 
 function unavailable(): ConnectorAppActionsError {
@@ -322,7 +407,7 @@ function present(kept: KeptActions): ConnectorAppActions {
     toolkit: kept.toolkit,
     toolkitVersion: kept.toolkitVersion,
     actions: kept.actions,
-    complete: kept.complete,
+    completeness: kept.completeness,
     fetchedAt: kept.fetchedAt,
   };
 }

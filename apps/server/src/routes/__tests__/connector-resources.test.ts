@@ -112,7 +112,7 @@ describe('connector resource routes', () => {
     await api()
       .get('/api/connectors/apps/gmail/actions?providerInstanceId=provider-a')
       .expect(200, { status: 'unlisted', toolkit: 'gmail' });
-    expect(deps.actions.list).toHaveBeenCalledWith({
+    expect(deps.actions.list).toHaveBeenCalledWith(OWNER, {
       providerInstanceId: 'provider-a',
       toolkit: 'gmail',
     });

@@ -220,15 +220,7 @@ export function ConnectDialog({
                 isRetrying={lookup.isFetching}
               />
             ) : firstConnect ? (
-              <>
-                <FirstConnectStep reason={firstConnectReason(appConnections, resolvedService)} />
-                <AppActions
-                  toolkit={serviceSlug}
-                  appName={serviceName}
-                  providerInstanceId={null}
-                  level={null}
-                />
-              </>
+              <FirstConnectStep reason={firstConnectReason(appConnections, resolvedService)} />
             ) : !activeFlow ? (
               <>
                 <div className="space-y-1.5">
@@ -288,7 +280,6 @@ export function ConnectDialog({
                   toolkit={serviceSlug}
                   appName={serviceName}
                   providerInstanceId={route?.providerInstanceId ?? null}
-                  level={null}
                 />
 
                 {showProviders && (

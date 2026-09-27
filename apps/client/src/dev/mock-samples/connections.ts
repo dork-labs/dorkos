@@ -300,7 +300,7 @@ export const MOCK_GMAIL_ACTIONS: ConnectorAppActions = {
   status: 'listed',
   toolkit: 'gmail',
   toolkitVersion: '2026-09-01',
-  complete: true,
+  completeness: 'complete',
   fetchedAt: '2026-09-27T00:00:00.000Z',
   actions: (
     [
@@ -326,16 +326,29 @@ export const MOCK_GMAIL_ACTIONS: ConnectorAppActions = {
 
 /** What the "Who can use it?" card reads for the Gmail account: DorkBot and mailroom. */
 export function mockAccessPreview(connectionId: string): ConnectorReconciliationPreview {
-  const candidate = (id: string, classification: 'read' | 'write') => ({
-    operationRevisionId: id,
-    toolkit: 'gmail',
-    operationSlug: `gmail.${id}`,
-    toolkitVersion: '2026-09-01',
-    capabilityClassification: classification,
-    retryPolicy: 'never' as const,
-    inputSchema: {},
-    supported: true,
-  });
+  // The account's grant snapshot: Gmail's actions, as the panel's list names them.
+  const candidates =
+    MOCK_GMAIL_ACTIONS.status === 'listed'
+      ? MOCK_GMAIL_ACTIONS.actions.map((action) => ({
+          operationRevisionId: `${action.operationSlug}-v1`,
+          toolkit: 'gmail',
+          operationSlug: action.operationSlug,
+          toolkitVersion: '2026-09-01',
+          capabilityClassification: action.capabilityClassification,
+          retryPolicy: 'never' as const,
+          inputSchema: {},
+          supported: true,
+        }))
+      : [];
+  const ids = (level: 'read' | 'read-write') =>
+    candidates
+      .filter(
+        (candidate) =>
+          candidate.capabilityClassification === 'read' ||
+          (level === 'read-write' && candidate.capabilityClassification === 'write')
+      )
+      .map((candidate) => candidate.operationRevisionId)
+      .sort();
   return {
     previewId: `preview-${connectionId}`,
     connection: {
@@ -346,14 +359,14 @@ export function mockAccessPreview(connectionId: string): ConnectorReconciliation
       custody: 'managed',
       reconciliationStatus: 'ready',
     },
-    candidates: [candidate('list-v1', 'read'), candidate('send-v1', 'write')],
+    candidates,
     agents: [
       { agentId: 'dorkbot', displayName: 'DorkBot' },
       { agentId: 'mailroom', displayName: 'mailroom' },
     ],
     currentGrants: [
-      { agentId: 'dorkbot', operationRevisionIds: ['list-v1', 'send-v1'] },
-      { agentId: 'mailroom', operationRevisionIds: ['list-v1'] },
+      { agentId: 'dorkbot', operationRevisionIds: ids('read-write') },
+      { agentId: 'mailroom', operationRevisionIds: ids('read') },
     ],
     everyAgent: { available: true, operationRevisionIds: [] },
     catalogComplete: true,

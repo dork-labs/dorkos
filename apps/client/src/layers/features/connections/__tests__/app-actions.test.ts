@@ -4,6 +4,7 @@ import type { ConnectorOperationClassification } from '@dorkos/shared/connector-
 import {
   actionBuckets,
   actionKind,
+  actionsFromCandidates,
   examplePhrase,
   offersReadWrite,
   plainActionName,
@@ -113,5 +114,46 @@ describe('examplePhrase', () => {
   it('names two and counts the rest', () => {
     expect(examplePhrase([action('GMAIL_SEND_EMAIL', 'destructive')], 'gmail')).toBe('send email');
     expect(examplePhrase(GMAIL.slice(2), 'gmail')).toBe('add label, send email and 1 more');
+  });
+});
+
+describe('actionsFromCandidates', () => {
+  function candidate(
+    operationSlug: string,
+    capabilityClassification: ConnectorOperationClassification,
+    toolkitVersion = '2',
+    supported = true
+  ) {
+    return {
+      operationRevisionId: `${operationSlug}-${toolkitVersion}`,
+      toolkit: 'gmail',
+      operationSlug,
+      toolkitVersion,
+      capabilityClassification,
+      retryPolicy: 'never' as const,
+      inputSchema: {},
+      supported,
+    };
+  }
+
+  it('keeps the candidate’s classification and borrows only names and order from the list', () => {
+    const actions = actionsFromCandidates(
+      [
+        candidate('GMAIL_OLD_ONLY', 'read', '1'),
+        candidate('GMAIL_SEND_EMAIL', 'write'),
+        candidate('GMAIL_SEND_EMAIL', 'write', '1'),
+        candidate('GMAIL_GONE', 'read', '1', false),
+      ],
+      [action('GMAIL_SEND_EMAIL', 'destructive', { displayName: 'Send Email', important: true })]
+    );
+    expect(actions).toEqual([
+      {
+        operationSlug: 'GMAIL_SEND_EMAIL',
+        displayName: 'Send Email',
+        capabilityClassification: 'write',
+        important: true,
+      },
+      { operationSlug: 'GMAIL_OLD_ONLY', capabilityClassification: 'read', important: false },
+    ]);
   });
 });

@@ -3179,6 +3179,7 @@ async function start() {
     }
   );
   const connectorAppActions = new ConnectorAppActionsService({
+    db,
     registry: connectorRegistry,
     dorkHome,
   });

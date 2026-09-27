@@ -5,7 +5,11 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ConnectorAppActions } from '@dorkos/shared/connector-resource-schemas';
-import type { ConnectorReconciliationPreview } from '@dorkos/shared/connector-schemas';
+import type {
+  ConnectorOperationClassification,
+  ConnectorReconciliationCandidate,
+  ConnectorReconciliationPreview,
+} from '@dorkos/shared/connector-schemas';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -17,8 +21,8 @@ afterEach(cleanup);
 const LISTED: ConnectorAppActions = {
   status: 'listed',
   toolkit: 'gmail',
-  toolkitVersion: '1',
-  complete: true,
+  toolkitVersion: '2',
+  completeness: 'complete',
   fetchedAt: '2026-09-27T00:00:00.000Z',
   actions: [
     {
@@ -33,6 +37,32 @@ const LISTED: ConnectorAppActions = {
   ],
 };
 
+function candidate(
+  operationSlug: string,
+  capabilityClassification: ConnectorOperationClassification,
+  extra: Partial<ConnectorReconciliationCandidate> = {}
+): ConnectorReconciliationCandidate {
+  return {
+    operationRevisionId: `${operationSlug}-${extra.toolkitVersion ?? '2'}`,
+    toolkit: 'gmail',
+    operationSlug,
+    toolkitVersion: '2',
+    capabilityClassification,
+    retryPolicy: 'never',
+    inputSchema: {},
+    supported: true,
+    ...extra,
+  };
+}
+
+/** The grant snapshot that matches {@link LISTED}. */
+const CANDIDATES = [
+  candidate('GMAIL_FETCH_EMAILS', 'read'),
+  candidate('GMAIL_LIST_LABELS', 'read'),
+  candidate('GMAIL_ADD_LABEL', 'write'),
+  candidate('GMAIL_SEND_EMAIL', 'destructive'),
+];
+
 function wrap(transport: Transport, children: React.ReactNode) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -44,19 +74,10 @@ function wrap(transport: Transport, children: React.ReactNode) {
   );
 }
 
-function renderActions(
-  transport: Transport,
-  props: Partial<AppActionsProps> = {}
-): ReturnType<typeof render> {
+function renderActions(transport: Transport, props: Partial<AppActionsProps> = {}) {
   return wrap(
     transport,
-    <AppActions
-      toolkit="gmail"
-      appName="Gmail"
-      providerInstanceId="composio:1"
-      level="read-write"
-      {...props}
-    />
+    <AppActions toolkit="gmail" appName="Gmail" providerInstanceId="composio:1" {...props} />
   );
 }
 
@@ -68,15 +89,17 @@ function transportWith(result: ConnectorAppActions | Error): Transport {
   return transport;
 }
 
-describe('AppActions', () => {
+describe('AppActions on a connected account', () => {
   it('shows Look and Change for "Read and write", and says what "Read" keeps', async () => {
     const transport = transportWith(LISTED);
-    renderActions(transport);
+    renderActions(transport, { grant: { candidates: CANDIDATES, level: 'read-write' } });
 
-    const section = await screen.findByTestId('app-actions');
-    await waitFor(() => expect(section).toHaveTextContent('With “Read and write”, agents can'));
+    const section = screen.getByTestId('app-actions');
+    await waitFor(() =>
+      expect(screen.getByTestId('app-actions-look')).toHaveTextContent('Fetch emails')
+    );
+    expect(section).toHaveTextContent('With “Read and write”, agents can');
     expect(within(screen.getByTestId('app-actions-look')).getAllByRole('listitem')).toHaveLength(2);
-    expect(screen.getByTestId('app-actions-look')).toHaveTextContent('Fetch emails');
     expect(screen.getByTestId('app-actions-change')).toHaveTextContent('Add label');
     // A delete-class action is in neither level, so it is not promised here…
     expect(screen.getByTestId('app-actions-change')).not.toHaveTextContent('Send email');
@@ -89,20 +112,69 @@ describe('AppActions', () => {
   });
 
   it('keeps only Look on "Read"', async () => {
-    renderActions(transportWith(LISTED), { level: 'read' });
+    renderActions(transportWith(LISTED), { grant: { candidates: CANDIDATES, level: 'read' } });
 
-    const section = await screen.findByTestId('app-actions');
+    const section = screen.getByTestId('app-actions');
     await waitFor(() => expect(section).toHaveTextContent('With “Read”, agents can'));
-    expect(screen.getByTestId('app-actions-look')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('app-actions-look')).toBeInTheDocument());
     expect(screen.queryByTestId('app-actions-change')).not.toBeInTheDocument();
     expect(section).toHaveTextContent('Pick “Read and write” to also let agents add label.');
   });
 
-  it('opens every action, each tagged Look or Change', async () => {
+  it('follows the grant snapshot, not the list: an older version and a disagreeing classification', async () => {
+    const user = userEvent.setup();
+    renderActions(transportWith(LISTED), {
+      grant: {
+        level: 'read',
+        candidates: [
+          candidate('GMAIL_FETCH_EMAILS', 'read'),
+          // The list says Look; this account's snapshot says Change. The snapshot wins.
+          candidate('GMAIL_LIST_LABELS', 'write'),
+          // An older version the review still carries, which the list doesn't have.
+          candidate('GMAIL_LEGACY_SEARCH', 'read', { toolkitVersion: '1' }),
+          // Not grantable any more, so never shown.
+          candidate('GMAIL_GONE', 'read', { supported: false }),
+        ],
+      },
+    });
+
+    const look = await screen.findByTestId('app-actions-look');
+    await waitFor(() => expect(look).toHaveTextContent('Fetch emails'));
+    expect(look).toHaveTextContent('Legacy search');
+    expect(look).not.toHaveTextContent('List labels');
+    expect(look).not.toHaveTextContent('Gone');
+    expect(screen.getByTestId('app-actions')).toHaveTextContent(
+      'Pick “Read and write” to also let agents list labels.'
+    );
+    await user.click(screen.getByRole('button', { name: /See all 3 actions/ }));
+    const rows = within(screen.getByTestId('app-actions-all')).getAllByRole('listitem');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      'Fetch emailsLook',
+      'List labelsChange',
+      'Legacy searchLook',
+    ]);
+  });
+
+  it('still shows the snapshot, with names read from ids, when the list fails', async () => {
+    renderActions(transportWith(new Error('upstream')), {
+      grant: { candidates: CANDIDATES, level: 'read' },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('app-actions-look')).toHaveTextContent('Fetch emails')
+    );
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+});
+
+describe('AppActions before an app is connected', () => {
+  it('describes what the app offers, each change tagged, with no level promised', async () => {
     const user = userEvent.setup();
     renderActions(transportWith(LISTED));
 
     await user.click(await screen.findByRole('button', { name: /See all 4 actions/ }));
+    expect(screen.getByTestId('app-actions')).toHaveTextContent('What Gmail offers agents');
+    expect(screen.getByTestId('app-actions-change')).toHaveTextContent('Send email');
     const rows = within(screen.getByTestId('app-actions-all')).getAllByRole('listitem');
     expect(rows.map((row) => row.textContent)).toEqual([
       'Fetch emailsLook',
@@ -112,12 +184,18 @@ describe('AppActions', () => {
     ]);
   });
 
-  it('never passes off a partial list as the whole', async () => {
-    renderActions(transportWith({ ...LISTED, complete: false }));
-
+  it('says why a list is partial, and never passes it off as the whole', async () => {
+    renderActions(transportWith({ ...LISTED, completeness: 'too_large' }));
     expect(await screen.findByRole('button', { name: /See the first 4 actions/ })).toBeVisible();
     expect(screen.getByTestId('app-actions')).toHaveTextContent(
-      'Showing the first 4. Gmail has more than DorkOS can list.'
+      'Showing the first 4. Gmail has more actions than DorkOS lists.'
+    );
+    cleanup();
+
+    renderActions(transportWith({ ...LISTED, completeness: 'interrupted' }));
+    expect(await screen.findByRole('button', { name: /See the first 4 actions/ })).toBeVisible();
+    expect(screen.getByTestId('app-actions')).toHaveTextContent(
+      'Showing the first 4. The rest didn’t load this time.'
     );
   });
 
@@ -129,15 +207,14 @@ describe('AppActions', () => {
         'DorkOS can’t list Gmail’s actions, so everything agents do in it counts as a change.'
       )
     ).toBeInTheDocument();
-    expect(screen.getByTestId('app-actions')).toHaveTextContent('What agents can do in Gmail');
   });
 
-  it('stays quiet, with no request, when no way to reach the app is set up', () => {
+  it('stays quiet, with no request, when there is no way to ask', () => {
     const transport = transportWith(LISTED);
-    renderActions(transport, { providerInstanceId: null, level: null });
+    renderActions(transport, { providerInstanceId: null });
 
     expect(screen.getByTestId('app-actions')).toHaveTextContent(
-      'You’ll see what agents can do in Gmail once a way to reach it is set up.'
+      'You’ll see what Gmail offers agents once DorkOS can reach it.'
     );
     expect(transport.getConnectorAppActions).not.toHaveBeenCalled();
   });
@@ -147,9 +224,7 @@ describe('AppActions', () => {
     renderActions(transportWith(gone));
 
     expect(
-      await screen.findByText(
-        'You’ll see what agents can do in Gmail once a way to reach it is set up.'
-      )
+      await screen.findByText('You’ll see what Gmail offers agents once DorkOS can reach it.')
     ).toBeInTheDocument();
   });
 
@@ -175,16 +250,7 @@ describe('AppActions inside the page access card', () => {
         custody: 'managed',
         reconciliationStatus: 'ready',
       },
-      candidates: (['read', 'write'] as const).map((classification) => ({
-        operationRevisionId: `${classification}-v1`,
-        toolkit: 'gmail',
-        operationSlug: `gmail.${classification}`,
-        toolkitVersion: '1',
-        capabilityClassification: classification,
-        retryPolicy: 'never' as const,
-        inputSchema: {},
-        supported: true,
-      })),
+      candidates: CANDIDATES,
       agents: [{ agentId: 'agent-ada', displayName: 'Ada' }],
       currentGrants: [],
       everyAgent: { available: true, operationRevisionIds: [] },

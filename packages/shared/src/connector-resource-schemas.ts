@@ -475,11 +475,11 @@ export const ConnectorAppActionsSchema = z.discriminatedUnion('status', [
       toolkitVersion: z.string().min(1).max(200),
       actions: z.array(ConnectorAppActionSchema).max(CONNECTOR_APP_ACTIONS_LIMIT),
       /**
-       * False when the service has more actions than DorkOS read (a very
-       * large app, or a listing that stopped part way). The list is then
-       * the first ones only, never presented as the whole.
+       * Whether this is the whole list. `too_large` means the app has more
+       * actions than DorkOS reads; `interrupted` means the listing stopped part
+       * way. Either way the list is the first ones only, never the whole.
        */
-      complete: z.boolean(),
+      completeness: z.enum(['complete', 'too_large', 'interrupted']),
       /** When the list was last read from the service. */
       fetchedAt: z.string().datetime(),
     })

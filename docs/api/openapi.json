@@ -29895,8 +29895,13 @@
                           },
                           "maxItems": 2000
                         },
-                        "complete": {
-                          "type": "boolean"
+                        "completeness": {
+                          "type": "string",
+                          "enum": [
+                            "complete",
+                            "too_large",
+                            "interrupted"
+                          ]
                         },
                         "fetchedAt": {
                           "type": "string",
@@ -29908,7 +29913,7 @@
                         "toolkit",
                         "toolkitVersion",
                         "actions",
-                        "complete",
+                        "completeness",
                         "fetchedAt"
                       ],
                       "additionalProperties": false

@@ -1,6 +1,10 @@
 import { useId, type ReactNode } from 'react';
 import { ChevronRight } from 'lucide-react';
-import type { ConnectorAppAction } from '@dorkos/shared/connector-resource-schemas';
+import type {
+  ConnectorAppAction,
+  ConnectorAppActions,
+} from '@dorkos/shared/connector-resource-schemas';
+import type { ConnectorReconciliationCandidate } from '@dorkos/shared/connector-schemas';
 import { useConnectorAppActions } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -16,6 +20,7 @@ import {
   BUCKET_LIMIT,
   actionBuckets,
   actionKind,
+  actionsFromCandidates,
   examplePhrase,
   offersReadWrite,
   plainActionName,
@@ -23,20 +28,28 @@ import {
 } from '../lib/app-actions';
 import { LEVEL_LABELS } from './access/access-labels';
 
+type Completeness = Extract<ConnectorAppActions, { status: 'listed' }>['completeness'];
+
 /** Props for {@link AppActions}. */
 export interface AppActionsProps {
   /** The app's service id, e.g. `gmail`. */
   toolkit: string;
   /** The app's display name, e.g. "Gmail". */
   appName: string;
-  /** The way that reaches the app, or `null` when none is set up yet. */
+  /** The way that reaches the app, or `null` when there is none to ask. */
   providerInstanceId: string | null;
   /**
-   * The level picked in "Who can use it", or `null` when there is none (before
-   * the app is connected, or while agents hold different levels). With a
-   * level, the section shows what that level lets agents do.
+   * A connected account's grant snapshot and the level picked in "Who can use
+   * it". With it, the buckets are exactly what that level grants on this
+   * account. Without it (before the app is connected), the section describes
+   * what the app offers.
    */
-  level: CardAccessLevel | null;
+  grant?: {
+    /** Every candidate in the account's complete grant snapshot. */
+    candidates: readonly ConnectorReconciliationCandidate[];
+    /** The picked level, or `null` while agents hold different levels. */
+    level: CardAccessLevel | null;
+  };
 }
 
 const KIND_LABELS: Record<ActionKind, string> = { look: 'Look', change: 'Change' };
@@ -44,35 +57,47 @@ const KIND_LABELS: Record<ActionKind, string> = { look: 'Look', change: 'Change'
 /**
  * What an app lets agents do (design record `connection-app-details` §5):
  * a Look bucket and a Change bucket, tied to the access level, with the full
- * list one tap away. Read on demand when it first shows, then kept.
+ * list one tap away. The app's action list is read on demand and kept; on a
+ * connected account it only lends names, and the actions come from the grant
+ * snapshot itself.
  */
-export function AppActions({ toolkit, appName, providerInstanceId, level }: AppActionsProps) {
+export function AppActions({ toolkit, appName, providerInstanceId, grant }: AppActionsProps) {
   const headingId = useId();
   const actions = useConnectorAppActions(toolkit, providerInstanceId);
   const listed = actions.data?.status === 'listed' ? actions.data : null;
-  const heading =
-    listed && level
-      ? `With “${LEVEL_LABELS[level]}”, agents can`
-      : `What agents can do in ${appName}`;
+  const granted = grant && grant.candidates.length > 0 ? grant : null;
+  const level = granted?.level ?? null;
+  const heading = level
+    ? `With “${LEVEL_LABELS[level]}”, agents can`
+    : `What ${appName} offers agents`;
 
   let body: ReactNode;
-  if (!providerInstanceId || notSetUp(actions.error)) {
+  if (granted) {
+    // The snapshot decides what is shown; the list, once it answers, only names it.
+    body =
+      providerInstanceId && actions.isPending ? (
+        <Loading />
+      ) : (
+        <ListedActions
+          actions={actionsFromCandidates(granted.candidates, listed?.actions)}
+          completeness="complete"
+          toolkit={toolkit}
+          appName={appName}
+          level={level}
+        />
+      );
+  } else if (!providerInstanceId || notSetUp(actions.error)) {
     body = (
       <p className="text-muted-foreground text-sm">
-        You’ll see what agents can do in {appName} once a way to reach it is set up.
+        You’ll see what {appName} offers agents once DorkOS can reach it.
       </p>
     );
   } else if (actions.isPending) {
-    body = (
-      <>
-        <Skeleton className="h-16 rounded-lg" />
-        <span className="sr-only">Loading what agents can do</span>
-      </>
-    );
+    body = <Loading />;
   } else if (actions.isError) {
     body = (
       <p className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-sm">
-        Couldn’t load what agents can do in {appName}.
+        Couldn’t load what {appName} offers agents.
         <Button
           variant="link"
           size="xs"
@@ -94,10 +119,10 @@ export function AppActions({ toolkit, appName, providerInstanceId, level }: AppA
     body = (
       <ListedActions
         actions={listed.actions}
-        complete={listed.complete}
+        completeness={listed.completeness}
         toolkit={toolkit}
         appName={appName}
-        level={level}
+        level={null}
       />
     );
   }
@@ -112,10 +137,18 @@ export function AppActions({ toolkit, appName, providerInstanceId, level }: AppA
   );
 }
 
+function Loading() {
+  return (
+    <>
+      <Skeleton className="h-16 rounded-lg" />
+      <span className="sr-only">Loading what agents can do</span>
+    </>
+  );
+}
+
 /** True when the way named is not set up (any more): a quiet state, not a failure. */
 function notSetUp(error: unknown): boolean {
   return (
-    Boolean(error) &&
     typeof error === 'object' &&
     error !== null &&
     'code' in error &&
@@ -125,13 +158,13 @@ function notSetUp(error: unknown): boolean {
 
 function ListedActions({
   actions,
-  complete,
+  completeness,
   toolkit,
   appName,
   level,
 }: {
   actions: ConnectorAppAction[];
-  complete: boolean;
+  completeness: Completeness;
   toolkit: string;
   appName: string;
   level: CardAccessLevel | null;
@@ -160,8 +193,12 @@ function ListedActions({
       }. To allow ${plural ? 'them' : 'it'}, choose exact actions.`
     );
   }
-  if (!complete) {
-    notes.push(`Showing the first ${actions.length}. ${appName} has more than DorkOS can list.`);
+  if (completeness === 'too_large') {
+    notes.push(
+      `Showing the first ${actions.length}. ${appName} has more actions than DorkOS lists.`
+    );
+  } else if (completeness === 'interrupted') {
+    notes.push(`Showing the first ${actions.length}. The rest didn’t load this time.`);
   }
 
   return (
@@ -179,7 +216,7 @@ function ListedActions({
           {note}
         </p>
       ))}
-      <AllActions actions={actions} complete={complete} toolkit={toolkit} />
+      <AllActions actions={actions} complete={completeness === 'complete'} toolkit={toolkit} />
     </div>
   );
 }
@@ -203,7 +240,7 @@ function Bucket({
       <ul className="flex flex-wrap gap-1.5">
         {shown.map((action) => (
           <li
-            key={action.operationSlug}
+            key={`${action.operationSlug}-${action.capabilityClassification}`}
             className={cn(
               'rounded-full px-2.5 py-0.5 text-xs',
               kind === 'look' ? 'bg-muted text-foreground' : STATUS_TONE_SURFACE.warning
@@ -247,13 +284,14 @@ function AllActions({
             const kind = actionKind(action.capabilityClassification);
             return (
               <li
-                key={action.operationSlug}
-                className="flex items-center justify-between gap-3 px-3 py-1.5 text-sm"
+                key={`${action.operationSlug}-${action.capabilityClassification}`}
+                className="flex items-start justify-between gap-3 px-3 py-1.5 text-sm"
               >
-                <span className="min-w-0 truncate">{plainActionName(action, toolkit)}</span>
+                {/* Long names wrap rather than hide their end. */}
+                <span className="min-w-0 break-words">{plainActionName(action, toolkit)}</span>
                 <span
                   className={cn(
-                    'shrink-0 rounded-full px-2 py-0 text-xs',
+                    'mt-0.5 shrink-0 rounded-full px-2 py-0 text-xs',
                     kind === 'look' ? 'bg-muted text-muted-foreground' : STATUS_TONE_SURFACE.warning
                   )}
                 >

@@ -2,6 +2,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createDb, runMigrations } from '@dorkos/db';
 import type { ConnectorProvider } from '@dorkos/shared/connector-provider';
 import type {
   ConnectorOperationClassification,
@@ -12,13 +13,17 @@ import {
   APP_ACTIONS_FRESH_MS,
   ConnectorAppActionsError,
   ConnectorAppActionsService,
-  PARTIAL_APP_ACTIONS_FRESH_MS,
+  SHORT_APP_ACTIONS_FRESH_MS,
 } from '../resources/app-actions-service.js';
+import { ConnectorRegistry } from '../registry.js';
 
 const INSTANCE = 'composio:test' as ConnectorProviderInstanceId;
+const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const dirs: string[] = [];
+const dbs: Array<ReturnType<typeof createDb>> = [];
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const db of dbs.splice(0)) db.$client.close();
 });
 
 function tempHome(): string {
@@ -82,12 +87,24 @@ function fakeProvider(
     };
   });
   const provider = {
+    instanceId: INSTANCE,
+    type: 'composio',
     getCapabilities: () => ({
+      instanceId: INSTANCE,
+      type: 'composio',
+      supportsMultiAccount: true,
+      custody: 'managed',
+      features: {},
       capabilities: {
+        catalog: { status: 'available' },
+        authentication: { status: 'available' },
+        accounts: { status: 'available' },
         operations:
           opts.operations === 'unsupported'
             ? { status: 'unsupported', reason: 'No trusted list.' }
             : { status: 'available' },
+        execution: { status: 'available' },
+        triggers: { status: 'unsupported', reason: 'None.' },
       },
     }),
     resolveToolkitVersion,
@@ -101,22 +118,27 @@ function service(
   dorkHome = tempHome(),
   now: () => Date = () => new Date('2026-09-27T12:00:00.000Z')
 ) {
-  return new ConnectorAppActionsService({
-    registry: { resolveProviderInstance: () => provider },
-    dorkHome,
-    now,
+  const db = createDb(':memory:');
+  runMigrations(db);
+  dbs.push(db);
+  const registry = new ConnectorRegistry({
+    db,
+    configuredOwner: { ownerKind: OWNER.kind, ownerId: OWNER.installationId },
   });
+  if (provider) registry.register(provider, 'digest-1');
+  const subject = new ConnectorAppActionsService({ db, registry, dorkHome, now });
+  const list = () => subject.list(OWNER, { providerInstanceId: INSTANCE, toolkit: 'gmail' });
+  return { subject, registry, list };
 }
 
 describe('ConnectorAppActionsService', () => {
   it('lists each action with the exact classification discovery produced', async () => {
     const { provider } = fakeProvider();
-    const result = await service(provider).list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
-    expect(result).toEqual({
+    expect(await service(provider).list()).toEqual({
       status: 'listed',
       toolkit: 'gmail',
       toolkitVersion: 'v1',
-      complete: true,
+      completeness: 'complete',
       fetchedAt: '2026-09-27T12:00:00.000Z',
       actions: [
         {
@@ -137,47 +159,74 @@ describe('ConnectorAppActionsService', () => {
 
   it('answers "unlisted" without a call for a way that has no trusted list', async () => {
     const { provider, resolveToolkitVersion } = fakeProvider({ operations: 'unsupported' });
-    await expect(
-      service(provider).list({ providerInstanceId: INSTANCE, toolkit: 'gmail' })
-    ).resolves.toEqual({ status: 'unlisted', toolkit: 'gmail' });
+    await expect(service(provider).list()).resolves.toEqual({
+      status: 'unlisted',
+      toolkit: 'gmail',
+    });
     expect(resolveToolkitVersion).not.toHaveBeenCalled();
   });
 
-  it('answers "unlisted" when the service has no concrete version for the app', async () => {
-    const { provider } = fakeProvider({
+  it('keeps an "unlisted" answer only for the short window', async () => {
+    let now = new Date('2026-09-27T12:00:00.000Z');
+    const { provider, resolveToolkitVersion } = fakeProvider({
       version: async () => ({ status: 'unsupported', reason: 'No version.' }),
     });
-    await expect(
-      service(provider).list({ providerInstanceId: INSTANCE, toolkit: 'gmail' })
-    ).resolves.toEqual({ status: 'unlisted', toolkit: 'gmail' });
+    const { list } = service(provider, tempHome(), () => now);
+    await expect(list()).resolves.toEqual({ status: 'unlisted', toolkit: 'gmail' });
+    await list();
+    expect(resolveToolkitVersion).toHaveBeenCalledTimes(1);
+    now = new Date(now.getTime() + SHORT_APP_ACTIONS_FRESH_MS + 1);
+    await list();
+    await vi.waitFor(() => expect(resolveToolkitVersion).toHaveBeenCalledTimes(2));
   });
 
-  it('refuses an unknown way and a listing that read nothing', async () => {
+  it('refuses a way that is unknown, not the owner’s, or no longer available', async () => {
+    await expect(service(undefined).list()).rejects.toMatchObject({ code: 'provider_not_found' });
+
+    const { provider, resolveToolkitVersion } = fakeProvider();
+    const { subject, registry, list } = service(provider);
     await expect(
-      service(undefined).list({ providerInstanceId: INSTANCE, toolkit: 'gmail' })
+      subject.list(
+        { kind: 'local_install', installationId: 'someone-else' },
+        { providerInstanceId: INSTANCE, toolkit: 'gmail' }
+      )
     ).rejects.toMatchObject({ code: 'provider_not_found' });
+    registry.unregisterProviderInstance(INSTANCE);
+    await expect(list()).rejects.toMatchObject({ code: 'provider_not_found' });
+    expect(resolveToolkitVersion).not.toHaveBeenCalled();
+  });
+
+  it('refuses a listing that read nothing', async () => {
     const { provider } = fakeProvider({ pages: ['throw'] });
-    const failing = service(provider);
-    await expect(
-      failing.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' })
-    ).rejects.toBeInstanceOf(ConnectorAppActionsError);
+    await expect(service(provider).list()).rejects.toBeInstanceOf(ConnectorAppActionsError);
     const broken = fakeProvider({
       version: async () => {
         throw new Error('network');
       },
     });
-    await expect(
-      service(broken.provider).list({ providerInstanceId: INSTANCE, toolkit: 'gmail' })
-    ).rejects.toMatchObject({ code: 'actions_unavailable' });
+    await expect(service(broken.provider).list()).rejects.toMatchObject({
+      code: 'actions_unavailable',
+    });
   });
 
-  it('keeps what it read when a listing stops part way, and says it is partial', async () => {
+  it('keeps what it read when a listing stops part way, and says it was interrupted', async () => {
     const { provider } = fakeProvider({
       pages: [{ operations: [operation('GMAIL_FETCH_EMAILS', 'read')], truncated: true }, 'throw'],
     });
-    const result = await service(provider).list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
-    expect(result).toMatchObject({ status: 'listed', complete: false });
+    const result = await service(provider).list();
+    expect(result).toMatchObject({ status: 'listed', completeness: 'interrupted' });
     expect(result.status === 'listed' && result.actions).toHaveLength(1);
+  });
+
+  it('says "too large" when the app has more pages than DorkOS reads', async () => {
+    const endless = Array.from({ length: 25 }, (_, index) => ({
+      operations: [operation(`GMAIL_OP_${index}`, 'read')],
+      truncated: true,
+    }));
+    const { provider } = fakeProvider({ pages: endless });
+    const result = await service(provider).list();
+    expect(result).toMatchObject({ status: 'listed', completeness: 'too_large' });
+    expect(result.status === 'listed' && result.actions).toHaveLength(20);
   });
 
   it('never counts an action from another version as part of the list', async () => {
@@ -192,7 +241,7 @@ describe('ConnectorAppActionsService', () => {
         },
       ],
     });
-    const result = await service(provider).list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
+    const result = await service(provider).list();
     expect(result.status === 'listed' && result.actions.map((a) => a.operationSlug)).toEqual([
       'GMAIL_FETCH_EMAILS',
     ]);
@@ -201,41 +250,67 @@ describe('ConnectorAppActionsService', () => {
   it('serves a fresh copy from memory, and from disk after a restart, with no call', async () => {
     const dorkHome = tempHome();
     const first = fakeProvider();
-    await service(first.provider, dorkHome).list({
-      providerInstanceId: INSTANCE,
-      toolkit: 'gmail',
-    });
+    await service(first.provider, dorkHome).list();
 
-    const [file] = readdirSync(path.join(dorkHome, 'cache', 'connectors', 'actions'));
-    const kept = readFileSync(path.join(dorkHome, 'cache', 'connectors', 'actions', file), 'utf-8');
-    expect(kept).not.toContain('must-not-be-kept');
-    expect(kept).not.toContain('inputSchema');
+    const kept = readdirSync(path.join(dorkHome, 'cache', 'connectors', 'actions'), {
+      recursive: true,
+    })
+      .map(String)
+      .filter((name) => name.endsWith('.json'))
+      .map((name) =>
+        readFileSync(path.join(dorkHome, 'cache', 'connectors', 'actions', name), 'utf-8')
+      );
+    expect(kept).toHaveLength(1);
+    expect(kept[0]).not.toContain('must-not-be-kept');
+    expect(kept[0]).not.toContain('inputSchema');
 
     const second = fakeProvider();
     const restarted = service(second.provider, dorkHome);
-    const result = await restarted.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
-    await restarted.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
-    expect(result).toMatchObject({ status: 'listed', complete: true });
+    expect(await restarted.list()).toMatchObject({ status: 'listed', completeness: 'complete' });
+    await restarted.list();
     expect(second.resolveToolkitVersion).not.toHaveBeenCalled();
     expect(second.listOperationSchemas).not.toHaveBeenCalled();
+  });
+
+  it('lists again when the way’s setup changes', async () => {
+    const { provider, listOperationSchemas } = fakeProvider();
+    const { registry, list } = service(provider);
+    await list();
+    await list();
+    expect(listOperationSchemas).toHaveBeenCalledTimes(1);
+    registry.register(provider, 'digest-2');
+    await list();
+    expect(listOperationSchemas).toHaveBeenCalledTimes(2);
+  });
+
+  it('drops everything kept for a way that is removed, memory and disk', async () => {
+    const dorkHome = tempHome();
+    const { provider, listOperationSchemas } = fakeProvider();
+    const { registry, list } = service(provider, dorkHome);
+    await list();
+    const dir = path.join(dorkHome, 'cache', 'connectors', 'actions');
+    expect(readdirSync(dir)).toHaveLength(1);
+
+    registry.unregisterProviderInstance(INSTANCE);
+    await vi.waitFor(() => expect(readdirSync(dir)).toHaveLength(0));
+    registry.register(provider, 'digest-1');
+    await list();
+    expect(listOperationSchemas).toHaveBeenCalledTimes(2);
   });
 
   it('serves a stale copy at once and refreshes it behind, re-listing only a new version', async () => {
     let now = new Date('2026-09-27T12:00:00.000Z');
     const { provider, resolveToolkitVersion, listOperationSchemas } = fakeProvider();
-    const subject = service(provider, tempHome(), () => now);
-    await subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
+    const { list } = service(provider, tempHome(), () => now);
+    await list();
     expect(listOperationSchemas).toHaveBeenCalledTimes(1);
 
     now = new Date(now.getTime() + APP_ACTIONS_FRESH_MS + 1);
-    const stale = await subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
-    expect(stale).toMatchObject({ fetchedAt: '2026-09-27T12:00:00.000Z' });
+    expect(await list()).toMatchObject({ fetchedAt: '2026-09-27T12:00:00.000Z' });
     await vi.waitFor(() => expect(resolveToolkitVersion).toHaveBeenCalledTimes(2));
     // Same version: the list is immutable, so only its date moves on.
     await vi.waitFor(async () =>
-      expect(await subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' })).toMatchObject({
-        fetchedAt: now.toISOString(),
-      })
+      expect(await list()).toMatchObject({ fetchedAt: now.toISOString() })
     );
     expect(listOperationSchemas).toHaveBeenCalledTimes(1);
 
@@ -248,33 +323,43 @@ describe('ConnectorAppActionsService', () => {
     // The earlier refresh may still be writing its copy; asking again joins
     // it until it settles, then starts the next one.
     await vi.waitFor(async () => {
-      await subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
+      await list();
       expect(listOperationSchemas).toHaveBeenCalledTimes(2);
     });
   });
 
-  it('tries a partial list again once its short window passes', async () => {
+  it('never replaces a complete list of the same version with a partial one', async () => {
     let now = new Date('2026-09-27T12:00:00.000Z');
-    const { provider, resolveToolkitVersion } = fakeProvider({
-      pages: [{ operations: [operation('GMAIL_FETCH_EMAILS', 'read')], truncated: true }, 'throw'],
-    });
-    const subject = service(provider, tempHome(), () => now);
-    await subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
-    await subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
-    expect(resolveToolkitVersion).toHaveBeenCalledTimes(1);
-
-    now = new Date(now.getTime() + PARTIAL_APP_ACTIONS_FRESH_MS + 1);
-    await subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' });
+    const pages: Parameters<typeof fakeProvider>[0] = {
+      pages: [
+        {
+          operations: [operation('GMAIL_FETCH_EMAILS', 'read'), operation('GMAIL_SEND', 'write')],
+          truncated: false,
+        },
+      ],
+    };
+    const { provider, resolveToolkitVersion, listOperationSchemas } = fakeProvider(pages);
+    const { list } = service(provider, tempHome(), () => now);
+    await list();
+    // From now on a listing of this version would stop part way.
+    listOperationSchemas.mockRejectedValue(new Error('page failed'));
+    now = new Date(now.getTime() + APP_ACTIONS_FRESH_MS + 1);
+    await list();
     await vi.waitFor(() => expect(resolveToolkitVersion).toHaveBeenCalledTimes(2));
+    await vi.waitFor(async () =>
+      expect(await list()).toMatchObject({
+        completeness: 'complete',
+        fetchedAt: now.toISOString(),
+      })
+    );
+    const result = await list();
+    expect(result.status === 'listed' && result.actions).toHaveLength(2);
   });
 
   it('shares one listing between callers who ask at the same time', async () => {
     const { provider, listOperationSchemas } = fakeProvider();
-    const subject = service(provider);
-    await Promise.all([
-      subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' }),
-      subject.list({ providerInstanceId: INSTANCE, toolkit: 'gmail' }),
-    ]);
+    const { list } = service(provider);
+    await Promise.all([list(), list()]);
     expect(listOperationSchemas).toHaveBeenCalledTimes(1);
   });
 });

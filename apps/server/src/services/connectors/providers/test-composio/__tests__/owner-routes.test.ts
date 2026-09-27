@@ -130,7 +130,7 @@ async function fixture() {
       authentication,
       query,
       lifecycle,
-      actions: new ConnectorAppActionsService({ registry, dorkHome: dir }),
+      actions: new ConnectorAppActionsService({ db, registry, dorkHome: dir }),
     })
   );
   app.use(
@@ -316,7 +316,7 @@ describe('offline Composio through real owner and signed ingress routes', () => 
     expect(await listed.json()).toMatchObject({
       status: 'listed',
       toolkit: 'gmail',
-      complete: true,
+      completeness: 'complete',
       actions: [
         {
           operationSlug: 'GMAIL_FETCH_EMAILS',

@@ -163,7 +163,12 @@ export function createConnectorResourcesRouter(deps: ConnectorResourcesRouterDep
       const toolkit = ToolkitParamSchema.parse(req.params.toolkit);
       const query = ConnectorAppActionsQuerySchema.parse(req.query);
       res.set('Cache-Control', 'private, no-store');
-      res.json(await deps.actions.list({ providerInstanceId: query.providerInstanceId, toolkit }));
+      res.json(
+        await deps.actions.list(operator, {
+          providerInstanceId: query.providerInstanceId,
+          toolkit,
+        })
+      );
     } catch (error) {
       sendResourceError(res, error);
     }

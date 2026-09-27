@@ -561,8 +561,10 @@ function AccessEditor({
           toolkit={props.appActions.toolkit}
           appName={props.serviceName}
           providerInstanceId={props.appActions.providerInstanceId}
-          // With no level on offer there is nothing to tie the list to.
-          level={nothingToGrant ? null : level}
+          // The buckets come from this account's own snapshot, so they are
+          // exactly what the picked level grants. With no level on offer
+          // there is nothing to tie them to.
+          grant={{ candidates: preview.candidates, level: nothingToGrant ? null : level }}
         />
       )}
       {(props.mode === 'page' || exactActionsLink) && (
