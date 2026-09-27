@@ -15,6 +15,7 @@
  * names that person in its heads-up.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, realpathSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -39,6 +40,9 @@ import { RoomFileEditor } from '../room-file-editor.js';
 import { RoomFilesService } from '../room-files.js';
 import { runGit } from '../room-repo-git.js';
 import { removeFixtureTree, silenceGitAutoMaintenance } from './fixture-git.js';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import { editBaselineStore } from '../../../diff/index.js';
 
 /** One launched turn: who it was for, and the room context it launched with. */
 interface Launched {
@@ -270,5 +274,80 @@ describe('an agent’s copy of the room’s files is brought up to date at turn 
       ['person', person, ['ROOM.md']],
       ['merge', 'Ana', ['PLAN.md']],
     ]);
+  });
+
+  describe('as the room wires it (room-trigger.ts)', () => {
+    /** Session ids whose runtime lock is held, as the registered runtime reports them. */
+    let locked: Set<string>;
+
+    beforeEach(() => {
+      // The REAL registry the room's busy read resolves through, holding a
+      // runtime whose lock this test controls.
+      locked = new Set();
+      const fake = new FakeAgentRuntime();
+      fake.getInternalSessionId.mockReturnValue(undefined);
+      fake.isLocked.mockImplementation((sessionId: string) => locked.has(sessionId));
+      runtimeRegistry.register(fake);
+      runtimeRegistry.setDefault(fake.type);
+      runtimeRegistry.setDb(harness.db);
+    });
+
+    /** Commit one file on the room's `main`, as a hand commit would. */
+    async function onMain(roomId: string, file: string, text: string): Promise<void> {
+      const repoDir = repoStore.repoPath(roomId);
+      await writeFile(path.join(repoDir, file), text, 'utf-8');
+      await runGit(['add', file], repoDir, dorkHome);
+      await runGit(
+        ['-c', 'user.name=Hand', '-c', 'user.email=h@x', 'commit', '-q', '-m', file],
+        repoDir,
+        dorkHome
+      );
+    }
+
+    it('leaves the copy alone while a turn runs on a RETIRED id of the same binding', async () => {
+      const room = await openRoom();
+      await ask(room.id, '@bo hello');
+      const boSession = harness.store.getRoomSession(room.id, authorIdOf(room.id, boPath))!;
+      // The session was renamed once; the old id still resolves to the binding,
+      // so an app-resumed turn on it is granted the same copy — and one is running.
+      harness.store.sessionLedger.retire('bo-before-rename', boSession);
+      locked.add('bo-before-rename');
+      await onMain(room.id, 'PLAN.md', '# plan\n');
+      const boCopy = copyOf(room.id, boPath, 'Bo');
+
+      await ask(room.id, '@bo now?');
+      expect(lastFor(boPath).files?.refresh).toEqual({ kind: 'held', reason: 'busy', moved: null });
+      expect(existsSync(path.join(boCopy, 'PLAN.md'))).toBe(false);
+
+      locked.delete('bo-before-rename');
+      await ask(room.id, '@bo and now?');
+      expect(lastFor(boPath).files?.refresh).toMatchObject({ kind: 'refreshed' });
+      expect(existsSync(path.join(boCopy, 'PLAN.md'))).toBe(true);
+    });
+
+    it('forgets the diff baselines of the files a refresh moved, and only those', async () => {
+      const room = await openRoom();
+      await ask(room.id, '@bo hello');
+      const boSession = harness.store.getRoomSession(room.id, authorIdOf(room.id, boPath))!;
+      const boCopy = copyOf(room.id, boPath, 'Bo');
+      const baseline = {
+        bytes: Buffer.from('old'),
+        capturedAt: 1,
+        capturedFrom: 'pre-tool' as const,
+      };
+      const moved = path.join(boCopy, 'PLAN.md');
+      const movedReal = path.join(realpathSync(boCopy), 'PLAN.md');
+      const kept = path.join(boCopy, 'KEEP.md');
+      for (const p of [moved, movedReal, kept]) editBaselineStore.set(boSession, p, baseline);
+      await onMain(room.id, 'PLAN.md', '# plan\n');
+
+      await ask(room.id, '@bo now?');
+
+      expect(lastFor(boPath).files?.refresh).toMatchObject({ kind: 'refreshed' });
+      expect(editBaselineStore.get(boSession, moved)).toBeUndefined();
+      expect(editBaselineStore.get(boSession, movedReal)).toBeUndefined();
+      expect(editBaselineStore.get(boSession, kept)).toBeDefined();
+      editBaselineStore.clearSession(boSession);
+    });
   });
 });
