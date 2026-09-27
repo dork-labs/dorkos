@@ -1,8 +1,8 @@
 /** Existing authority-command receipts govern hosted event consent and physical trigger setup. */
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import { and, desc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { stableStringify } from '@dorkos/shared/capabilities';
+import { checkConnectorArguments } from '@dorkos/shared/connector-arguments';
 import { ConnectorEventDefinitionSchema } from '@dorkos/shared/connector-event-schemas';
 import type { ConnectorPhysicalTrigger } from '@dorkos/shared/connector-events';
 import type {
@@ -236,8 +236,7 @@ export async function applyManagedEventAuthorityCommand(
         try {
           if (
             Buffer.byteLength(filter) > 32_768 ||
-            stableStringify(z.fromJSONSchema(metadata.filterSchema).parse(command.filter)) !==
-              filter
+            !checkConnectorArguments(metadata.filterSchema, command.filter).ok
           )
             throw new Error();
         } catch {
